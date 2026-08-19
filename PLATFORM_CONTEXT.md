@@ -1,0 +1,242 @@
+# BioImageFlow Platform Development Context
+
+This is the required orientation for agents developing the BioImageFlow Platform.
+Read it once per agent session before changing platform code, then read the task-relevant normative sources identified below.
+
+This file is a navigation aid and architectural summary, not a new specification or a substitute for source code, tests, or the normative documents.
+It deliberately lives at the repository root and is not part of the public Sphinx documentation.
+
+## What the platform is
+
+BioImageFlow Platform is a visual application for creating, editing, executing, and inspecting bioimage-analysis workflows.
+It presents workflows as node graphs while delegating tool definitions, workflow construction, execution semantics, caching, and portable workflow formats to the BioImageFlow library.
+
+The product has three main layers:
+
+1. The Vue frontend owns the interactive presentation of canvases, panels, editors, execution state, and user actions.
+2. The FastAPI backend owns validation, persistence, workflow lifecycle, tool discovery, translation, execution coordination, results, external integrations, and security boundaries.
+3. The BioImageFlow library owns the portable tool and workflow model and the execution contracts used by the backend.
+
+The frontend communicates with the backend through the versioned REST and WebSocket APIs.
+It must not reproduce backend validation or library behavior as an independent authority.
+The backend should use public BioImageFlow APIs and should not depend on private library storage or implementation details.
+
+The application supports desktop and webapp deployment modes.
+Desktop mode is packaged with pywebview and may use trusted local capabilities such as native file dialogs and editor integration.
+Webapp mode uses managed server-side datasets and restricts capabilities that would expose or execute against arbitrary server paths.
+The existence of both modes does not make every proposal in `platform_specs_v3.md` implemented.
+
+## The core mental model
+
+### One recursive graph
+
+`GraphState` is the single editable workflow definition at every depth.
+A root workflow and a workflow embedded as a node use the same recursive graph schema, validation rules, canvas model, interface model, and execution translation.
+
+Every graph has required identity and presentation fields, nodes, edges, a workflow interface, and workflow configuration.
+There are two explicit node variants:
+
+- A tool node identifies a BioImageFlow tool invocation and owns parameter values, resource overrides, output templates, layout, enabled state, and collapsed state.
+- A workflow node embeds another complete `GraphState`, owns bindings from the parent into the embedded interface, and may retain provenance pointing to a saved workspace workflow.
+
+There are two explicit edge variants:
+
+- A column edge connects one named output to a field input or stable workflow input ID.
+- A DataFrame edge connects a complete DataFrame to a positional tool input or stable named workflow input ID.
+
+Workflow interface ports have stable immutable IDs and editable display names.
+Edges and bindings use the stable IDs, never display labels.
+Renaming a port must therefore preserve connections, while removing or incompatibly changing a connected port requires explicit destructive-effect handling.
+
+An embedded graph is the workflow node's execution authority.
+Its optional saved-workflow source is provenance only: changing, moving, or deleting the saved source must not silently mutate the embedded copy.
+
+### Three persistence contexts
+
+Do not conflate the following states:
+
+1. A saved root workflow is persisted as a `WorkflowDocument` in the workflow directory's `workflow.json`.
+   The envelope contains the canonical graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source identifiers.
+2. An open root canvas edits a durable workflow draft under that workflow directory.
+   Draft writes use expected-revision compare-and-swap, record their writer, validate the accepted graph, and track whether the draft differs from the saved artifact.
+3. An open nested canvas edits a private durable nested snapshot.
+   It has its own session identity, ownership chain, revision compare-and-swap, and validation result, and it changes its parent workflow node only when explicitly applied.
+
+Saving a root canvas promotes the accepted root graph to the saved workflow.
+Saving a nested canvas applies the accepted snapshot to its parent node.
+Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
+
+Workflow IDs are workspace-relative paths and carry identity generations.
+Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
+
+The artifact hash is a deterministic identity for canonical recursive graph content and referenced owned sources.
+Do not add timestamps, runtime state, workspace paths, source labels, or Python-authoring provenance to that hash without changing the explicit contract.
+
+### Validation, compilation, and library translation
+
+The backend Pydantic models in `backend/src/bioimageflow_server/models/graph.py` define the strict platform graph wire shape.
+Recursive structural validation, semantic validation, compilation, and translation are backend responsibilities shared by draft writes, nested snapshots, execution, import/export, cache operations, and stateless graph requests.
+
+The platform graph is translated and compiled into BioImageFlow objects in memory.
+There is no second editable child-graph language and no separately persisted library workflow document that can become another authority.
+
+Validation must cover the whole recursive graph, including unique identities, endpoint compatibility, tool availability, interfaces, local-source ownership, containment cycles, bindings, and the selected execution context.
+Errors should retain scoped node paths so a failure inside an embedded workflow remains attributable to its actual internal node.
+
+Frontend graph types are generated from backend OpenAPI into `frontend/src/api/types.ts`.
+When an API model changes, update the backend model and schema first, regenerate the frontend types, and adapt consumers instead of introducing handwritten compatibility copies.
+
+### Tools and sources
+
+BioImageFlow distinguishes processing tools, which process rows and can write templated outputs, from DataFrame tools, which create or transform DataFrames.
+Tool metadata from the registry is authoritative for tool type, inputs, outputs, parameters, packages, versions, resources, and capabilities.
+Do not infer structural names from UI labels or filenames.
+
+Installed package tools are versioned dependencies resolved through the tool store.
+Workflow-local tools are owned source content that travels with the workflow when required.
+Recursive embedding, copying, import, export, and source update must preserve all required local sources without registry shadowing when same-named sources have different content.
+
+Trusted `workflow.py` files are authoring inputs only.
+Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.
+
+### Execution and results
+
+Execution operates on one exact accepted graph or draft snapshot.
+Graph mutation is locked where required while an attached execution owns the mutable platform context.
+Do not rebuild an ad hoc partial graph for Run Selected; the selected structural boundary and its enabled completion dependencies are resolved by the normal recursive compiler.
+
+Recursive graphs compile to scoped jobs while workflow nodes project aggregate descendant status.
+Caching and result attribution remain per internal tool node, and failures preserve their scoped path through nested workflow boundaries.
+
+The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
+Local execution resolves to the appropriate supported local engine; distributed targets are platform-owned profiles and must not be persisted in portable `GraphState`.
+Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.
+
+The distributed-execution implementation and its design specification have evolved at different times.
+For work in this area, read the code and focused tests together with `platform_specs_distributed_execution.md`, verify which increments are implemented, and update the normative specs when implemented behavior is promoted.
+Do not infer that every proposed remote or multi-user capability exists merely because a model or UI component is present.
+
+Each saved workflow owns runtime storage at `<workflow-directory>/results`.
+The `outputs/latest` view is a disposable per-node projection and may combine the latest successful outputs from different runs.
+A workflow-and-results bundle instead pins one successful run.
+These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.
+
+### APIs, events, and agent control
+
+Platform HTTP endpoints use the `/api/v1/` prefix.
+Routers should remain thin transport boundaries over models and services, with stable structured errors for expected failures.
+WebSocket events carry logs, execution progress, status, and workspace changes that the frontend uses for live projection and recovery.
+
+The MCP server in `backend/src/bioimageflow_server/agent_mcp.py` is a separate control surface for agents operating the active user workspace.
+The material under `docs/agents/` documents that workflow-operation contract; it is not the development architecture guide.
+Platform development agents may edit repository source normally, but should not use direct saved-workflow JSON edits as a substitute for MCP when a task is about operating an active workflow.
+
+## State and ownership invariants
+
+Preserve these invariants unless an approved specification change explicitly replaces them:
+
+- One canonical recursive `GraphState` represents editable workflow content at every depth.
+- Each fact has one owner; avoid parallel persisted representations and duplicated frontend/backend authorities.
+- Stable IDs, not labels or positions, connect nodes, edges, ports, drafts, snapshots, runs, and results.
+- Root drafts and nested snapshots use revision compare-and-swap; conflicts must not partially apply.
+- Operations with destructive or cross-resource effects use preview, captured identity, exact confirmation, recheck, staging, and atomic commit where the specifications require them.
+- Backend validation and mutation locking are authoritative; frontend checks improve interaction but are not security or consistency barriers.
+- Embedded workflow content is independent from saved-source provenance unless the user explicitly performs an update.
+- Workflow-local source ownership is preserved recursively and same-named different-content sources can coexist.
+- Runtime translation uses public BioImageFlow contracts and does not create a second persisted workflow authority.
+- OpenAPI is the source of frontend API types.
+- Desktop-only filesystem and execution capabilities remain gated from ordinary webapp mode.
+- Path resolution, archive extraction, uploads, editor launches, and trusted Python authoring must reject traversal, symlink escape, and unintended server-path access.
+- Mutation, publication, export, execution, and result reads operate on explicitly identified accepted snapshots.
+- Expected operational failures return stable, actionable error categories and leave durable state coherent.
+
+## Repository map
+
+### Backend
+
+- `backend/src/bioimageflow_server/app.py` constructs the FastAPI application, wires service instances and dependency overrides, registers routers and WebSockets, and serves the built frontend in packaged mode.
+- `backend/src/bioimageflow_server/models/` contains strict API and persistence models.
+- `backend/src/bioimageflow_server/routers/` contains REST transport handlers grouped by domain.
+- `backend/src/bioimageflow_server/services/` contains graph validation and compilation, persistence coordinators, workflow lifecycle, tools and packages, execution, exports, results, datasets, and integrations.
+- `backend/src/bioimageflow_server/ws/` contains WebSocket connection and logging infrastructure.
+- `backend/src/bioimageflow_server/desktop.py` owns the pywebview desktop entry point.
+- `backend/src/bioimageflow_server/agent_mcp.py` exposes controlled workspace operations to MCP clients.
+- `backend/tests/` mirrors backend models, routers, services, integration boundaries, and application behavior.
+
+For graph changes, begin with the graph models and the validator/compiler/translator services rather than patching one router in isolation.
+For persistence changes, identify every coordinator participating in saved workflows, drafts, nested snapshots, identity generations, moves, source ownership, and execution locking.
+
+### Frontend
+
+- `frontend/src/api/` contains the HTTP clients and generated OpenAPI types.
+- `frontend/src/stores/` contains Pinia state for workflows, drafts, tools, settings, execution, results, datasets, and UI state.
+- `frontend/src/sessions/` contains canvas identity, graph synchronization, root-draft persistence, nested-snapshot persistence, recovery, and status projection coordinators.
+- `frontend/src/components/canvas/` renders graph nodes, pins, edges, menus, and persistence feedback.
+- `frontend/src/components/panels/` renders tools, node configuration, workflow trees, data, logs, settings, datasets, and execution inspection.
+- `frontend/src/components/execution/` contains run, target, retry, remote-input, recovery, and execution-banner interactions.
+- `frontend/src/utils/` contains graph operations and codecs such as grouping, clipboard handling, endpoint handles, output templates, and selection logic.
+- `frontend/src/App.vue` integrates the application shell, docks, menus, canvas lifecycle, and top-level actions.
+- Unit tests live beside or near their source; browser tests live under `frontend/tests/e2e/`.
+
+For a canvas change, trace ownership through the relevant session coordinator and store before changing component-local state.
+For an API change, trace the backend model and service, router, generated type, API client, store/session consumer, UI, and tests as one contract.
+
+### Other important areas
+
+- `scripts/test` is the authoritative validation entry point.
+- `docs/testing.md` defines focused, quick, scoped completion, browser, full, and certification lanes.
+- `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
+- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
+- `bioimageflow/` may be a local library checkout or link used to inspect the library source and specification; the installed dependency remains the runtime authority selected by the lockfile.
+- `external/wetlands-src` is an optional source-browsing link and must not become a package or runtime dependency.
+
+## Specification authority and reading order
+
+The specifications are intentionally separate because they belong to different products and maturity levels.
+Do not combine them into a new manually maintained normative document.
+
+Use this authority order:
+
+1. `bioimageflow/docs/source/specs.md` is authoritative for BioImageFlow library contracts.
+2. `platform_specs_v1.md` is the implemented platform baseline.
+3. `platform_specs_v2.md` is a cumulative implemented platform delta and overrides v1 where it explicitly changes the same behavior.
+4. `platform_specs_distributed_execution.md` is a proposed delta whose implemented portions must be reconciled with current code and tests and promoted into the normative platform specification when appropriate.
+5. `platform_specs_v3.md` is a future webapp and multi-user proposal, not evidence that a feature is implemented.
+
+Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.
+When implementation and specification disagree, determine whether the code is defective or the specification has not been updated, then make the task leave them consistent.
+
+Read this file first, then use the following routing table instead of loading every specification for every task:
+
+| Task area | Required additional reading |
+| --- | --- |
+| Localized platform UI, panels, shortcuts, or desktop interaction | Relevant v1 frontend section, plus any v2 section that names or overrides the feature |
+| Graph schema, nodes, edges, endpoint handles, interfaces, grouping, or clipboard | v2 Sections 1–8 and relevant v1 graph/canvas sections; library Sections 2–4 and 14 when portable contracts are involved |
+| Root drafts, save, recovery, workflow lifecycle, move/rename/delete, or identity conflicts | v1 backend workflow/state sections and v2 Sections 7, 8, 10, and 12 |
+| Nested workflows, provenance, source update, or recursive local sources | v2 Sections 1–12 and library Section 14 |
+| Tool definitions, type compatibility, DataFrame semantics, resources, packages, or tool loading | Relevant library Sections 2–4, 7, and 10, plus v1 tool and node-panel sections and applicable v2 overrides |
+| Execution, caching, cancellation, progress, or result storage | Relevant library Sections 4–7 and 10–13, v1 execution/data-flow sections, and v2 Sections 8, 9, 12, and 14 |
+| Execution targets, profiles, preflight, retained runs, Parsl, PSI/J, or remote data | `platform_specs_distributed_execution.md`, relevant library distributed-execution sections, and the current execution models/services/tests; also check v2 for already promoted behavior |
+| Import, export, latest outputs, result bundles, or Python authoring | v2 Sections 6, 8, and 10–14 plus library archive, file-management, and recursive-workflow sections |
+| Datasets, browser mode, authentication, security, or multi-user behavior | Implemented v1/v2 sections first; consult v3 only for work explicitly targeting the proposal and distinguish inherited behavior from proposed behavior |
+| MCP workspace operations or coding-agent user features | Root `AGENTS.md`, `docs/agents/`, `backend/src/bioimageflow_server/data/agent_workspace_instructions.md`, and the corresponding backend MCP/services tests |
+| Broad cross-stack architecture or library compatibility | All of v1 and v2 plus relevant library sections; add the distributed or v3 proposal only when the task includes that scope |
+
+Follow links into additional specification sections when the selected material explicitly makes them prerequisites.
+For ambiguous behavior, search all specification documents for the concept and check for a later explicit override before implementing.
+
+## How to approach a development task
+
+1. Read this file once per agent session and reread it if it changes during the work.
+2. Inspect `git status` and preserve unrelated user changes.
+3. Classify the task by ownership boundaries and use the routing table to read the relevant specifications.
+4. Trace the current behavior through models, services, transport, generated types, state/session ownership, UI, and tests as applicable.
+5. State the invariant being changed or preserved before editing.
+6. Implement the smallest coherent cross-layer change rather than adding compatibility state that creates another authority.
+7. Run focused tests during implementation and the smallest applicable completion check from `docs/testing.md` before completion.
+8. Update every affected specification document, not only the newest version, whenever the change modifies its behavior, architecture, contract, terminology, status, or acceptance criteria.
+9. Update this file in the same task whenever the platform mental model, invariants, repository map, authority order, or reading guidance would otherwise become inaccurate or incomplete.
+10. Keep internal development guidance out of the public Sphinx toctree unless a separate task explicitly turns some of it into user-facing documentation.
+
+Specification updates are part of implementation, not optional cleanup.
+Do not edit every specification mechanically when a change does not affect it, but do update all documents that make statements invalidated or superseded by the change.

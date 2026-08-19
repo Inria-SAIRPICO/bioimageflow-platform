@@ -1,5 +1,10 @@
 # Repository instructions
 
+## Platform context
+
+Before working on a platform development task, read [`PLATFORM_CONTEXT.md`](PLATFORM_CONTEXT.md) once per agent session if you have not already read its current version, then follow its task-specific specification reading guidance.
+When a change affects platform or library behavior, architecture, contracts, or developer-facing invariants, update every affected specification document and `PLATFORM_CONTEXT.md` in the same task whenever their content would otherwise become incomplete, inaccurate, or inconsistent.
+
 ## Testing
 
 Use `scripts/test` as the authoritative test entry point and see `docs/testing.md` for lane definitions and focused-test examples.
