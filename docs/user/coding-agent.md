@@ -1,8 +1,6 @@
 # Edit Workflows with a Coding Agent
 
-> **Available in:** Desktop only.
-
-BioImageFlow can connect a coding agent to the workflow open in the desktop application.
+BioImageFlow can connect a coding agent to the workflow open in the application.
 Through MCP, the agent can inspect, modify, validate, and run that workflow while changes remain visible in BioImageFlow.
 
 ## Prepare the workspace

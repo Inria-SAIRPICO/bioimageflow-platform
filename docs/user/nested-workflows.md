@@ -1,7 +1,5 @@
 # Reuse and Nest Workflows
 
-> **Available in:** Desktop and browser.
-
 A workflow can appear as one node inside another workflow.
 Use this to group a readable section of a large analysis or reuse a saved workflow.
 

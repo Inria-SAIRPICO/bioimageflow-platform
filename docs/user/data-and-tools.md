@@ -1,7 +1,5 @@
 # Find and Manage Tools
 
-> **Available in:** Desktop and browser. Installing a package from a URL or ZIP file is a trusted desktop action unless a browser deployment explicitly enables it.
-
 The **Tools** panel lists the analysis steps available to a workflow.
 Each installed package can provide several tools and one or more versions.
 
@@ -48,7 +46,7 @@ Review replacements carefully because a different package version can change wor
 
 ## Install a package from another source
 
-On trusted desktop installations, use **Install tool package** at the bottom of **Manage tools**.
+Use **Install tool package** at the bottom of **Manage tools**.
 Enter a supported GitHub or GitLab package URL, or select a `.zip` package archive, then click **Install**.
 
 ```{warning}

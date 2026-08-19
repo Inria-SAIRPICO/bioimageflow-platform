@@ -1,7 +1,5 @@
 # Distributed Execution
 
-> **Available in:** Desktop and browser when distributed profiles have been configured. Desktop users can edit profiles; browser users can be limited to administrator-provided profiles.
-
 Use distributed execution when a workflow needs cluster resources or should continue as a submitted job after the application disconnects.
 Use local execution for ordinary workstation runs.
 

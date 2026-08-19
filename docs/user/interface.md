@@ -1,7 +1,5 @@
 # Interface Tour
 
-> **Available in:** Desktop and browser. The **Datasets** panel appears only in the browser.
-
 The workflow canvas is the center of BioImageFlow.
 Panels around it let you find tools and workflows, edit the selected node, inspect results, and follow execution.
 
@@ -9,7 +7,7 @@ Panels around it let you find tools and workflows, edit the selected node, inspe
 
 ## Menus and run controls
 
-- **Workflow** creates, opens, saves, imports, exports, and deletes workflows. **Build from Python source** appears on desktop.
+- **Workflow** creates, opens, saves, imports, exports, and deletes workflows. It also contains **Build from Python source**.
 - **Edit** contains undo, redo, clipboard actions, selection, and **Preferences...**.
 - **Execution** runs the workflow or selected nodes, retries work, recomputes results, and stops the active run.
 - **View** shows or hides panels.
@@ -48,12 +46,6 @@ Click **Manage tools** for package versions and environments, or **Create Tool**
 Browse saved workflows and folders.
 Use the toolbar to create, save, duplicate, import, export, edit, or delete items.
 Drag a saved workflow onto the canvas to reuse it inside the active workflow.
-
-### Datasets
-
-In the browser, upload and organize managed input files.
-Selected files can create a **Files** node or fill one already selected on the canvas.
-Desktop users choose local files instead; see [Choose Input Data](choose-input-data.md).
 
 ### Nodes
 

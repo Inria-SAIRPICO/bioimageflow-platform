@@ -1,7 +1,5 @@
 # Keyboard Shortcuts
 
-> **Available in:** Desktop and browser. The Preferences shortcut applies to the desktop application.
-
 Shortcuts act on the active canvas unless noted otherwise.
 Use Cmd instead of Ctrl on macOS.
 
@@ -16,5 +14,5 @@ Use Cmd instead of Ctrl on macOS.
 | Delete or Backspace | Delete selected nodes or edges. |
 | F | Fit the active graph in view. |
 | Ctrl/Cmd+Enter | Finish pending canvas synchronization. |
-| Cmd+, on macOS; Ctrl+, on Windows or Linux desktop | Open **Preferences...**. |
+| Cmd+, on macOS; Ctrl+, on Windows or Linux | Open **Preferences...**. |
 | Escape | Close an open node context menu. |

@@ -1,9 +1,7 @@
 # Settings, Storage, and Integrations
 
-> **Available in:** Desktop and browser. Workspace browsing and local editor actions are desktop-only; administrators can restrict browser settings.
-
 Choose **Edit → Preferences...**.
-On macOS, Cmd+, also opens the dialog; use Ctrl+, in the desktop application on Windows or Linux.
+On macOS, Cmd+, also opens the dialog; use Ctrl+, on Windows or Linux.
 
 Changes are saved as you make them.
 If a change fails, BioImageFlow keeps the previous value and shows an error.
@@ -20,8 +18,7 @@ The same workspace root is used by the [coding-agent walkthrough](coding-agent.m
 ## Execution
 
 Choose the default execution target and how new workflows schedule independent nodes.
-Desktop users can add distributed profiles.
-Browser deployments can expose administrator-provided profiles as read-only.
+You can add and edit distributed profiles for configured remote systems.
 
 See [Distributed Execution](distributed-execution.md) before adding a remote target or startup script.
 
@@ -35,8 +32,7 @@ You can temporarily choose another page size in an individual table.
 ### Workspace path
 
 The workspace contains saved workflows and their workflow-local tools.
-Click **Reveal** to open the displayed location.
-On desktop, click **Browse...** to switch to another workspace.
+Click **Reveal** to open the displayed location, or click **Browse...** to switch to another workspace.
 
 Changing the workspace does not move workflows from the previous location.
 Each workflow stores its managed execution results in its own `results` folder.

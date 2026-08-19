@@ -1,7 +1,5 @@
 # Build a Workflow
 
-> **Available in:** Desktop and browser. Input-data selection differs by mode; see [Choose Input Data](choose-input-data.md).
-
 A workflow connects analysis tools on a canvas.
 Each node performs one task, and each edge sends data to another node.
 
@@ -37,8 +35,7 @@ The **Parameters** section uses controls suited to each input, such as text fiel
 - **Expose as workflow input** makes the value available to a parent workflow.
 
 Use a **Files** node for a group of input files or one source directory.
-Desktop users can use local pickers or drag local items onto the canvas.
-Browser users select managed files in **Datasets**.
+Use local pickers or drag local files and folders onto the canvas.
 
 ## Connect nodes
 

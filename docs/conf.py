@@ -15,6 +15,7 @@ exclude_patterns = ["_build", "build", "superpowers/**", "agents/**"]
 language = "en"
 
 redirects = {
+    "user/browser-datasets": "choose-input-data.html",
     "user/installation": "index.html",
     "user/quick-start": "index.html",
 }

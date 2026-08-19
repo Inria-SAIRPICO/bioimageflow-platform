@@ -1,7 +1,5 @@
 # Create Custom Tools
 
-> **Available in:** Desktop and trusted browser deployments. Source editing depends on the editor configured by the deployment.
-
 Start with a workflow-local tool when the code belongs to one analysis and should travel with that workflow when exported.
 Use a reusable tool package when several workflows or people need the same versioned implementation.
 

@@ -1,53 +1,37 @@
 # BioImageFlow Platform
 
-Build, run, and inspect bioimage-analysis workflows in a visual application.
-Use the desktop application with local files, or use BioImageFlow in a browser with managed Datasets.
+BioImageFlow is a desktop application for building, running, and inspecting bioimage-analysis workflows.
 
 ![A BioImageFlow workflow open on the canvas, with tools, workflow tabs, node data, and execution controls visible.](user/images/interface-overview.png)
 
-## Start here
+## Get started
 
-### [Install and run a demo](user/index.md)
+New users can follow [Getting Started](user/index.md) to install BioImageFlow, open the bundled **Fish Analysis** demo, run it, and inspect its images, tables, logs, and output files.
+When you are ready to create an analysis, [Build a Workflow](user/build-workflows.md) explains how to add tools, connect them, select local input data, and expose outputs.
 
-Install the launcher, open **Fish Analysis**, run it, and inspect its images, tables, logs, and files.
+## Build and manage workflows
 
-### [Build your own workflow](user/build-workflows.md)
+Build workflows visually on the canvas, or let a trusted technical collaborator [define a workflow in Python](user/advanced-authoring.md).
+Use [Find and Manage Tools](user/data-and-tools.md) to choose package versions and prepare their environments, and [Create Custom Tools](user/create-custom-tools.md) when an analysis needs its own Python code.
 
-Add tools to the canvas, connect them, choose input data, and expose the outputs you need.
+Saved workflows can be copied, organized, imported, and exported from the **Workflows** panel.
+[Manage Workflows](user/manage-workflows.md) covers those tasks, while [Reuse and Nest Workflows](user/nested-workflows.md) shows how to group related steps or reuse one workflow inside another.
 
-## What you can do
+## Run and inspect analyses
 
-### [Build workflows visually or from trusted Python](user/build-workflows.md)
+[Choose Input Data](user/choose-input-data.md) explains how to select local files and folders or drag them onto the canvas.
+[Run Workflows and Inspect Results](user/run-and-results.md) covers complete and partial runs, execution status, logs, tables, image previews, and output paths.
 
-Assemble tools on the canvas for everyday work, or let a trusted technical collaborator [define a workflow in Python](user/advanced-authoring.md) on desktop.
+For larger workloads, BioImageFlow can schedule independent nodes in parallel or submit work to a [configured distributed target](user/distributed-execution.md).
+Results can be exported on their own or bundled with the workflow that produced them.
 
-### [Use isolated, versioned tools or create your own](user/data-and-tools.md)
+## Configure and extend BioImageFlow
 
-Choose tool-package versions, prepare their environments, and create [workflow-local or reusable custom tools](user/create-custom-tools.md).
+[Settings, Storage, and Integrations](user/preferences.md) explains the workspace, tool store, external editor, OMERO connections, execution targets, and launcher updates.
+You can also connect a trusted coding client and [edit the active workflow through MCP](user/coding-agent.md), with every proposed change visible for review in BioImageFlow.
 
-### [Edit workflows with a coding agent](user/coding-agent.md)
-
-Connect Codex, OpenCode, or Claude Code to the desktop application through MCP, then review changes on the canvas before saving.
-
-### [Work with local files or managed Datasets](user/choose-input-data.md)
-
-Choose files and folders directly on desktop, or [upload and organize managed files](user/browser-datasets.md) in the browser.
-
-### [Run locally, in parallel, or on distributed targets](user/run-and-results.md)
-
-Run a complete workflow or selected nodes on your computer, then move advanced work to [configured distributed targets](user/distributed-execution.md).
-
-### [Inspect tables, images, logs, and output files](user/run-and-results.md)
-
-Follow execution on the canvas and examine each node's data, image previews, log messages, and output paths.
-
-### [Save, share, and export workflows and results](user/manage-workflows.md)
-
-Make copies, organize workflow folders, export a reusable workflow, or bundle one successful run with its results.
-
-### [Install and update through the launcher](user/index.md)
-
-The launcher installs a verified release, prepares an isolated application environment, and keeps the application up to date.
+Use [Troubleshooting](user/troubleshooting.md) when the launcher, a tool environment, validation, saving, execution, or a viewer needs attention.
+The [Keyboard Shortcuts](user/keyboard-shortcuts.md) page lists the main canvas and workflow commands.
 
 ```{toctree}
 :maxdepth: 1
@@ -83,7 +67,6 @@ user/create-custom-tools
 :hidden:
 
 user/choose-input-data
-user/browser-datasets
 ```
 
 ```{toctree}

@@ -1,7 +1,5 @@
 # Run Workflows and Inspect Results
 
-> **Available in:** Desktop and browser. Revealing local paths and opening Napari are desktop actions.
-
 BioImageFlow validates the active saved workflow before every run.
 You can run the whole workflow, run selected nodes, or retry failed work.
 
@@ -54,7 +52,7 @@ Otherwise it shows separate tables.
 ## Inspect images and paths
 
 Image paths can display preview thumbnails.
-On desktop, path actions can reveal a file in the system file browser or copy its full path.
+Path actions can reveal a file in the system file manager or copy its full path.
 
 Use **Open in Napari** for local interactive image viewing.
 Its first use can take longer while BioImageFlow prepares the viewer environment.
@@ -62,7 +60,7 @@ Use **Open in Avivator** for supported images when the application can reach tha
 
 ## Export results
 
-On desktop, select the workflow in **Workflows** and click **Open latest outputs** for a convenient file view.
+Select the workflow in **Workflows** and click **Open latest outputs** for a convenient file view.
 “Latest” means the latest successful result of each node, so the folder can combine files from several runs.
 
 Choose **Workflow → Export**, then:

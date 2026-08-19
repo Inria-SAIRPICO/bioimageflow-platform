@@ -1,7 +1,5 @@
 # Build Workflows from Python
 
-> **Available in:** Desktop only, for trusted local source.
-
 Use Python authoring when a technical collaborator wants to define a saved workflow with the BioImageFlow Python library and then hand it to canvas users.
 This is optional and is separate from [creating a workflow-local tool](create-custom-tools.md).
 

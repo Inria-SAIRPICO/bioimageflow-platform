@@ -1,21 +1,6 @@
 # Getting Started
 
-> **Available in:** Desktop and browser.
-
 This walkthrough installs the desktop application and runs the bundled **Fish Analysis** demo.
-If your organization provides BioImageFlow in a browser, skip the installation steps and open its web address.
-
-## Desktop or browser?
-
-Most workflow editing and execution works the same way in both modes.
-
-| Task | Desktop | Browser |
-|---|---|---|
-| Choose input data | Use local file and folder pickers, or drag local items onto the canvas. | Use managed files through the **Datasets** panel. |
-| Find the Datasets panel | The panel is not shown. | Open **View → Datasets Panel**. |
-| Use VS Code or a coding agent | Supported. | Not documented for browser deployments. |
-| Build a workflow from Python | Supported for trusted local source. | Not available. |
-
 See [Choose Input Data](choose-input-data.md) before adding your own files.
 
 ## Install the desktop application
@@ -63,7 +48,7 @@ The first run can take longer while BioImageFlow prepares tool environments and 
 2. Follow node status on the canvas and messages in the **Logger** panel.
 3. Select a completed node.
 4. Open **View → Node Data** to inspect its table, image previews, and output paths.
-5. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files on desktop.
+5. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files.
 
 The latest-output folder can combine the latest successful result from different runs.
 Use **Workflow → Export** when you need independent copies or one complete workflow-and-results bundle.

@@ -1,7 +1,5 @@
 # Manage Workflows
 
-> **Available in:** Desktop and browser. Exporting results directly to a local folder is desktop-only.
-
 Use **Workflows** to organize, copy, import, export, and delete saved workflows.
 
 ## Organize workflows
@@ -45,7 +43,7 @@ Choose **Workflow → Export**, or click **Export workflow** in **Workflows**.
 | **Workflow only** | Share or back up the workflow and its workflow-local tools without results. |
 | **Latest results** | Copy the latest successful result of each node. These files can come from different runs. |
 | **Workflow with results** | Keep the workflow and the outputs from one successful run together. |
-| **Export latest results to folder** | Write the latest successful node results to a new local folder on desktop. |
+| **Export latest results to folder** | Write the latest successful node results to a new local folder. |
 
 Exporting a workflow saves its current changes first.
 A results-only export does not change the workflow.
@@ -59,7 +57,7 @@ Extract it and import the `.bioimageflow.zip` file inside its `workflow/` folder
 
 ## Find output files
 
-Select a saved workflow and click **Open latest outputs** on desktop.
+Select a saved workflow and click **Open latest outputs**.
 This view is convenient for inspection but is not a portable backup.
 Use an export choice when files must remain valid after being moved.
 

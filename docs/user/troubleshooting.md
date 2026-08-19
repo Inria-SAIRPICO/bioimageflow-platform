@@ -1,7 +1,5 @@
 # Troubleshooting
 
-> **Available in:** Desktop and browser. Launcher, local paths, and Napari apply to desktop only.
-
 Start with the message shown by BioImageFlow.
 Validation banners, save messages, notifications, **Execution**, and error history usually identify the workflow, node, field, or environment that needs attention.
 
@@ -71,6 +69,6 @@ Use an export when you need ordinary file copies.
 
 For Napari, wait for the first-time environment preparation, retry, and inspect application logs for a launch error.
 For Avivator, confirm that the image format is supported and the application can reach the external viewer.
-On desktop, use the action that reveals the image in the file browser as a fallback.
+Use the action that reveals the image in the system file manager as a fallback.
 
 See [Keyboard Shortcuts](keyboard-shortcuts.md) for canvas and save shortcuts.

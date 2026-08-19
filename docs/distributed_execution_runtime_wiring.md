@@ -38,7 +38,7 @@ The workflow resolver compiles or loads the exact accepted draft revision and re
 
 The upload resolver is the authority boundary between a user choice and a backend-readable path.
 
-Desktop may authorize a native-picker path; webapp must resolve a managed dataset identifier and reject arbitrary server paths.
+It authorizes a path selected through the native picker and rejects arbitrary paths outside that boundary.
 
 Do not persist the decoded `LocalUpload` values or apply node overrides to the editable workflow.
 
@@ -66,7 +66,7 @@ Snapshots are full replacements keyed by their monotonic revision, so clients di
 
 The download-destination resolver must confine outputs to an application-owned export directory.
 
-It must not accept an arbitrary client-supplied server filesystem path in webapp mode.
+It must not accept an arbitrary client-supplied filesystem path.
 
 ## Current boundary
 
