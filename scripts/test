@@ -363,12 +363,9 @@ frontend_check_lane() {
 }
 
 docs_check_lane() {
-  local sphinx_build="$repo_root/.venv/bin/sphinx-build"
-  if [[ ! -x "$sphinx_build" ]]; then
-    printf 'Documentation environment missing: run uv venv && uv pip install -r docs/requirements.txt\n' >&2
-    return 1
-  fi
-  phase 'Documentation' "$sphinx_build" -W --keep-going "$repo_root/docs" "$repo_root/docs/_build/html"
+  require_command uv
+  phase 'Documentation' uv run --no-project --with-requirements "$repo_root/docs/requirements.txt" -- \
+    sphinx-build -W --keep-going "$repo_root/docs" "$repo_root/docs/_build/html"
   printf '\nDocumentation check passed.\n'
 }
 

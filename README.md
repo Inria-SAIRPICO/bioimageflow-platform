@@ -379,10 +379,19 @@ Start with [Getting Started](https://bioimageflow-platform.readthedocs.io/latest
 The documentation source is in `docs/` and can be built locally with the same warnings-as-errors policy used by CI and Read the Docs:
 
 ```bash
-uv venv
-uv pip install -r docs/requirements.txt
-.venv/bin/sphinx-build -W --keep-going docs docs/_build/html
+uv run --no-project --with-requirements docs/requirements.txt -- \
+  sphinx-build -W --keep-going docs docs/_build/html
 ```
+
+To rebuild the documentation when a source file changes and reload it in the browser, run:
+
+```bash
+uv run --no-project --with-requirements docs/requirements.txt -- \
+  sphinx-autobuild docs docs/_build/html
+```
+
+Open <http://127.0.0.1:8000/> and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop the server.
+These commands use an isolated, temporary environment and do not install documentation dependencies into the project environment.
 
 The versioned specifications are cumulative and have distinct status:
 
