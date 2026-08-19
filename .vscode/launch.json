@@ -12,6 +12,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/backend",
             "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "preLaunchTask": "Frontend: dev",
             "args": [
                 "--desktop",
                 "--dev",

@@ -153,7 +153,7 @@ uv run python -m bioimageflow_server --desktop --dev
 Use `--log-config /path/to/logging.yaml` with `python -m bioimageflow_server` when you need deployment-specific logging levels or handlers.
 
 The `--dev` flag makes the pywebview window load `http://localhost:5173` and open its developer tools while the FastAPI backend runs on port 8000; API calls reach the backend through Vite's proxy.
-The repository's VS Code **Desktop** launch profile selects this same development mode.
+The repository's VS Code **Desktop** launch profile selects this same development mode and starts Vite automatically as a background pre-launch task.
 
 ## Testing
 

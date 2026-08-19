@@ -7,7 +7,7 @@ const backendPort =
   process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ??
   process.env.BIOIMAGEFLOW_BACKEND_PORT ??
   '8000'
-const backendHttpUrl = `http://localhost:${backendPort}`
+const backendHttpUrl = `http://127.0.0.1:${backendPort}`
 const backendWsUrl = `ws://127.0.0.1:${backendPort}`
 
 export default defineConfig({
