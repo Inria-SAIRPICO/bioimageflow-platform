@@ -77,6 +77,7 @@ class TestLoad:
         on_disk = _read_disk(path)
         assert on_disk["settings_version"] == 2
         assert on_disk["deployment_mode"] == "desktop"
+        assert on_disk["fiji_path"] is None
 
     async def test_missing_parent_directory_is_created(self, tmp_path: Path) -> None:
         # Parent directory does not yet exist.

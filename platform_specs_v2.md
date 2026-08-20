@@ -308,6 +308,8 @@ OMERO remains a platform-owned integration consumed by dedicated tool packages.
 The OMERO settings UI renders each named server instance as a separate responsive form card with individually labelled fields and card-local Save, Duplicate, and Remove actions.
 Cards use multiple field columns when space permits, collapse to one column in narrow windows, and do not require horizontal scrolling to reach fields or actions.
 
+Fiji is also a platform-owned desktop integration, but the Fiji application remains user-installed and user-managed. The platform stores and validates the selected installation directory, resolves result images from their workflow-scoped identities, and never exposes this local-launch capability in webapp mode.
+
 ## 15. Keyboard And Context Actions
 
 Ctrl/Cmd+S saves the active persistence context.

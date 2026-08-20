@@ -4,6 +4,9 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
 import { useNapariStore } from '@/stores/napari'
+import { useSettingsStore } from '@/stores/settings'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { openInFiji } from '@/api/fiji'
 import PathCell from './PathCell.vue'
 
 const intersectionCallbacks = new WeakMap<Element, () => void>()
@@ -60,6 +63,10 @@ try {
 
 const napariDisabled = ref(false)
 const napari = useNapariStore()
+const settings = useSettingsStore()
+const settingsPanel = useSettingsPanel()
+const fijiPending = ref(false)
+const fijiConfigurationInvalid = ref(false)
 const blobUrl = ref<string | null>(null)
 const cellElement = ref<HTMLElement | null>(null)
 const thumbnailActivated = ref(false)
@@ -78,6 +85,10 @@ const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const shouldShowPath = computed(() => props.showPath)
 const shouldShowImageActions = computed(() => props.showImageActions)
+const shouldShowFiji = computed(() => shouldShowImageActions.value && settings.isDesktop)
+const fijiConfigured = computed(() => (
+  settings.fijiConfigured && !fijiConfigurationInvalid.value
+))
 const shouldShowThumbnail = computed(() => props.thumbnailEnabled)
 const thumbnailStyle = {
   width: `${THUMBNAIL_RENDER_SIZE}px`,
@@ -237,6 +248,13 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => settings.settings?.fiji_path,
+  () => {
+    fijiConfigurationInvalid.value = false
+  },
+)
+
 onMounted(startObserving)
 
 onBeforeUnmount(() => {
@@ -275,6 +293,41 @@ async function openNapari(event: MouseEvent) {
       return
     }
     showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not open in Napari')
+  }
+}
+
+function configureFiji() {
+  settingsPanel.open('viewers')
+}
+
+async function openFiji() {
+  if (!fijiConfigured.value) {
+    configureFiji()
+    return
+  }
+  fijiPending.value = true
+  try {
+    await openInFiji({
+      node_id: props.nodeId,
+      row: props.row,
+      col: props.col,
+      workflow_name: props.workflowName ?? null,
+    })
+  } catch (exc: any) {
+    const code = exc?.response?.data?.error
+    if (code === 'fiji_not_configured' || code === 'fiji_configuration_invalid') {
+      fijiConfigurationInvalid.value = true
+      toast?.add({
+        severity: 'warn',
+        summary: 'Fiji could not be found',
+        detail: 'Choose the Fiji.app folder again in Preferences.',
+        life: 5000,
+      })
+      return
+    }
+    showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not open in Fiji')
+  } finally {
+    fijiPending.value = false
   }
 }
 
@@ -359,6 +412,17 @@ async function reveal() {
         :disabled="napariDisabled || napari.requestPending"
         :data-testid="`open-napari-${row}-${colSlug}`"
         @click="openNapari"
+      />
+      <Button
+        v-if="shouldShowFiji"
+        :icon="fijiConfigured ? 'pi pi-images' : 'pi pi-cog'"
+        text
+        size="small"
+        :title="fijiConfigured ? 'Open in Fiji' : 'Configure Fiji'"
+        :aria-label="fijiConfigured ? 'Open in Fiji' : 'Configure Fiji'"
+        :disabled="fijiPending"
+        :data-testid="`${fijiConfigured ? 'open-fiji' : 'configure-fiji'}-${row}-${colSlug}`"
+        @click="openFiji"
       />
       <Button
         v-if="shouldShowImageActions"
@@ -457,7 +521,7 @@ async function reveal() {
   display: flex;
   flex-wrap: wrap;
   flex: 0 0 auto;
-  max-width: 4.5rem;
+  max-width: 6.75rem;
   gap: 0.125rem;
 }
 </style>

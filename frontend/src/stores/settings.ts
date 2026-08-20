@@ -42,6 +42,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const unsafeWebappFeaturesEnabled = computed(
     () => settings.value?.enable_unsafe_webapp_features === true,
   )
+  const fijiConfigured = computed(
+    () => isDesktop.value && Boolean(settings.value?.fiji_path?.trim()),
+  )
 
   function fetchSettings(): Promise<void> {
     if (fetchPromise !== null) return fetchPromise
@@ -112,6 +115,7 @@ export const useSettingsStore = defineStore('settings', () => {
     isDesktop,
     isWebapp,
     unsafeWebappFeaturesEnabled,
+    fijiConfigured,
     fetchSettings,
     updateSettings,
   }

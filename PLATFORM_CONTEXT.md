@@ -24,6 +24,7 @@ The backend should use public BioImageFlow APIs and should not depend on private
 The application supports desktop and webapp deployment modes.
 Desktop mode is packaged with pywebview and may use trusted local capabilities such as native file dialogs and editor integration.
 Webapp mode uses managed server-side datasets and restricts capabilities that would expose or execute against arbitrary server paths.
+Desktop result images may also be opened in the platform-managed Napari environment or a user-installed Fiji application configured through Settings; Fiji launch requests resolve workflow result identities on the backend and are unavailable in webapp mode.
 The existence of both modes does not make every proposal in `platform_specs_v3.md` implemented.
 
 ## The core mental model

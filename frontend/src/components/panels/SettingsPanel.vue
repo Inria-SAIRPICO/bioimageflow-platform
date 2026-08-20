@@ -17,6 +17,7 @@ import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import DisplaySection from '@/components/panels/sections/DisplaySection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import OmeroSection from '@/components/panels/sections/OmeroSection.vue'
+import ImageViewersSection from '@/components/panels/sections/ImageViewersSection.vue'
 
 const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
@@ -67,6 +68,7 @@ const fallback: WorkspaceSettings & {
 } = {
   deployment_mode: 'desktop',
   external_editor: null,
+  fiji_path: null,
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto',
@@ -117,9 +119,10 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
     >
       Loading settings…
     </p>
-    <Tabs v-else value="external" data-testid="settings-tabs">
+    <Tabs v-else v-model:value="panel.activeTab.value" data-testid="settings-tabs">
       <TabList>
         <Tab value="external">External Editor</Tab>
+        <Tab v-if="settingsStore.isDesktop" value="viewers">Image Viewers</Tab>
         <Tab value="execution">Execution</Tab>
         <Tab value="display">Display</Tab>
         <Tab value="storage">Storage</Tab>
@@ -128,6 +131,9 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
       <TabPanels>
         <TabPanel value="external">
           <ExternalEditorSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel v-if="settingsStore.isDesktop" value="viewers">
+          <ImageViewersSection :model-value="liveSettings" @update:field="onUpdate" />
         </TabPanel>
         <TabPanel value="execution">
           <ExecutionSection :model-value="liveSettings" @update:field="onUpdate" />

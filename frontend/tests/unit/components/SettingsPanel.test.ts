@@ -63,6 +63,7 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 const baseSettings = {
   deployment_mode: 'desktop' as const,
   external_editor: null,
+  fiji_path: null,
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
@@ -147,6 +148,16 @@ describe('SettingsPanel', () => {
     await flushPromises()
     expect(panel.isOpen.value).toBe(false)
   })
+
+  it('opens directly on the Image Viewers tab', async () => {
+    const wrapper = mount(SettingsPanel, mountOpts)
+    useSettingsPanel().open('viewers')
+    await flushPromises()
+
+    expect(useSettingsPanel().activeTab.value).toBe('viewers')
+    expect(document.querySelector('[data-testid="image-viewers-section"]')).not.toBeNull()
+    wrapper.unmount()
+  })
 })
 
 describe('useSettingsPanel composable', () => {
@@ -155,10 +166,11 @@ describe('useSettingsPanel composable', () => {
   })
 
   it('open() and close() toggle isOpen', () => {
-    const { open, close, isOpen } = useSettingsPanel()
+    const { open, close, isOpen, activeTab } = useSettingsPanel()
     expect(isOpen.value).toBe(false)
     open()
     expect(isOpen.value).toBe(true)
+    expect(activeTab.value).toBe('external')
     close()
     expect(isOpen.value).toBe(false)
   })

@@ -73,6 +73,7 @@ class Settings(BaseModel):
 
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None
+    fiji_path: str | None = None
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -88,6 +89,14 @@ class Settings(BaseModel):
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE
     workspace_path: str | None = None
     workspaces_root: str | None = None
+
+    @field_validator("fiji_path", mode="before")
+    @classmethod
+    def _normalize_fiji_path(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
     @model_validator(mode="before")
     @classmethod

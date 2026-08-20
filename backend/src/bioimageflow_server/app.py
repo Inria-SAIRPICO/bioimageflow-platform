@@ -38,6 +38,13 @@ from bioimageflow_server.routers.demo_workflows import (
     router as demo_workflows_router,
 )
 from bioimageflow_server.routers.filesystem import router as filesystem_router
+from bioimageflow_server.routers.fiji import (
+    get_fiji_launcher,
+    get_result_store as fiji_get_result_store,
+    get_settings as fiji_get_settings,
+    get_workflow_store as fiji_get_workflow_store,
+    router as fiji_router,
+)
 from bioimageflow_server.routers.editor import (
     get_editor_service,
     router as editor_router,
@@ -156,6 +163,7 @@ from bioimageflow_server.services.execution_runtime import (
 )
 from bioimageflow_server.services.agent_workspace_context import ensure_agent_workspace_context
 from bioimageflow_server.services.editor import EditorService
+from bioimageflow_server.services.fiji_launcher import FijiLauncher
 from bioimageflow_server.services.demo_workflows import DemoWorkflowService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
@@ -538,6 +546,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     napari_launcher = config.napari_launcher or NapariLauncher(
         connection_manager=ws_manager,
     )
+    fiji_launcher = config.fiji_launcher or FijiLauncher(settings_provider=_live_settings)
 
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
@@ -806,10 +815,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
+    app.include_router(fiji_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.include_router(data_table_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
+    app.state.fiji_launcher = fiji_launcher
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
+    app.dependency_overrides[get_fiji_launcher] = lambda: fiji_launcher
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: config.settings_store
@@ -867,6 +879,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[fiji_get_result_store] = lambda: result_store
+    app.dependency_overrides[fiji_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[fiji_get_settings] = _live_settings
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
     app.dependency_overrides[nodes_get_workflow_store] = _current_workflow_store
 

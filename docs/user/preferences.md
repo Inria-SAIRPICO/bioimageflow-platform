@@ -19,6 +19,12 @@ New terminals start in **Workspace**, and opening either kind of tool keeps the 
 A configured external editor continues to use its command-defined project folder.
 The workspace root used by external editors is also used by the [coding-agent walkthrough](coding-agent.md).
 
+## Image Viewers
+
+Fiji is installed separately from BioImageFlow.
+[Download Fiji](https://imagej.net/software/fiji/downloads), unpack it, then choose the `Fiji.app` folder in **Preferences → Image Viewers**.
+In Node Data, use the Fiji button beside Napari to open an image; before setup, the same button takes you to the Fiji setting.
+
 ## Execution
 
 Choose the default execution target and how new workflows schedule independent nodes.

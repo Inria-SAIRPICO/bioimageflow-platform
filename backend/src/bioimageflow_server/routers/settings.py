@@ -14,6 +14,10 @@ from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.settings import OMEROInstanceResponse, Settings
 from bioimageflow_server.services.omero_credentials import OmeroCredentialError
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.fiji_launcher import (
+    FijiInstallationError,
+    resolve_fiji_installation,
+)
 from bioimageflow_server.services.output_views import (
     probe_latest_output_modes,
     resolve_latest_output_mode,
@@ -117,6 +121,25 @@ async def patch_settings(
     store: SettingsStore = Depends(get_settings_store),
     output_view_probe_path: Path = Depends(get_output_view_probe_path),
 ) -> SettingsResponse:
+    body = dict(body)
+    if "fiji_path" in body:
+        if store.deployment_mode == "webapp":
+            raise HTTPException(
+                status_code=403,
+                detail="Fiji configuration is available only in desktop mode",
+            )
+        raw_fiji_path = body["fiji_path"]
+        if isinstance(raw_fiji_path, str) and raw_fiji_path.strip():
+            try:
+                installation = resolve_fiji_installation(raw_fiji_path.strip())
+            except FijiInstallationError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "invalid_fiji_path", "detail": str(exc), "field": "fiji_path"},
+                ) from exc
+            body["fiji_path"] = str(installation.root)
+        elif raw_fiji_path == "":
+            body["fiji_path"] = None
     if store.deployment_mode == "webapp" and "trusted_parsl_factories" in body:
         raise HTTPException(
             status_code=403,

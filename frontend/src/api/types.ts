@@ -1292,6 +1292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fiji/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open In Fiji */
+        post: operations["open_in_fiji_api_v1_fiji_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node_id}/data": {
         parameters: {
             query?: never;
@@ -2494,6 +2511,20 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * FijiOpenRequest
+         * @description Select one workflow result image to open in Fiji.
+         */
+        FijiOpenRequest: {
+            /** Node Id */
+            node_id: string;
+            /** Row */
+            row: number;
+            /** Col */
+            col: string;
+            /** Workflow Name */
+            workflow_name?: string | null;
+        };
         /** FolderCreate */
         FolderCreate: {
             /** Name */
@@ -3413,6 +3444,8 @@ export interface components {
             deployment_mode: "desktop" | "webapp";
             /** External Editor */
             external_editor?: string | null;
+            /** Fiji Path */
+            fiji_path?: string | null;
             /**
              * Omero Instances
              * @default []
@@ -4465,6 +4498,7 @@ export type ExposeWorkflowInputOperation = components['schemas']['ExposeWorkflow
 export type ExposeWorkflowOutputOperation = components['schemas']['ExposeWorkflowOutputOperation'];
 export type FailureDiagnosticSnapshot = components['schemas']['FailureDiagnosticSnapshot'];
 export type FieldInputPort = components['schemas']['FieldInputPort'];
+export type FijiOpenRequest = components['schemas']['FijiOpenRequest'];
 export type FolderCreate = components['schemas']['FolderCreate'];
 export type FolderUpdate = components['schemas']['FolderUpdate'];
 export type GraphState = components['schemas']['GraphState'];
@@ -7443,6 +7477,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    open_in_fiji_api_v1_fiji_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FijiOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -35,9 +35,25 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="settings-loading"]')).toBeVisible()
     releaseSettings()
     await expect(dialog.locator('[data-testid="settings-tabs"]')).toBeVisible()
-    for (const label of ['External Editor', 'Execution', 'Display', 'Storage', 'OMERO']) {
+    for (const label of ['External Editor', 'Image Viewers', 'Execution', 'Display', 'Storage', 'OMERO']) {
       await expect(dialog.getByText(label, { exact: true })).toBeVisible()
     }
+  })
+
+  test('Image Viewers explains Fiji setup and links to the official download', async ({ page }) => {
+    await page.goto('/')
+    await openSettings(page)
+    const dialog = page.locator('[data-testid="settings-panel"]')
+
+    await dialog.getByText('Image Viewers', { exact: true }).click()
+
+    const section = dialog.locator('[data-testid="image-viewers-section"]')
+    await expect(section).toContainText('Fiji is installed separately')
+    await expect(section.getByRole('link', { name: 'Download Fiji' })).toHaveAttribute(
+      'href',
+      'https://imagej.net/software/fiji/downloads',
+    )
+    await expect(section.locator('[data-testid="fiji-path-input"]')).toBeVisible()
   })
 
   test('Display exposes the persisted Node Data page-size preference', async ({ page }) => {

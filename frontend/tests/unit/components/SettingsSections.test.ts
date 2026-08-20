@@ -6,6 +6,7 @@ import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
 
 import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
+import ImageViewersSection from '@/components/panels/sections/ImageViewersSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
@@ -59,6 +60,7 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 const baseSettings = {
   deployment_mode: 'desktop' as const,
   external_editor: null,
+  fiji_path: null,
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
@@ -116,6 +118,49 @@ describe('ExternalEditorSection', () => {
     await input.trigger('blur')
     expect(wrapper.emitted('update:field')).toEqual([
       [{ field: 'external_editor', value: null }],
+    ])
+  })
+})
+
+describe('ImageViewersSection', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('links to Fiji downloads and emits a selected installation', async () => {
+    vi.spyOn(nativeDialogs, 'selectFolder').mockResolvedValue('/Applications/Fiji.app')
+    const wrapper = mount(ImageViewersSection, {
+      ...globalOpts,
+      props: { modelValue: baseSettings },
+    })
+
+    const link = wrapper.get('a')
+    expect(link.attributes('href')).toBe('https://imagej.net/software/fiji/downloads')
+    expect(link.attributes('target')).toBe('_blank')
+
+    await wrapper.get('[data-testid="fiji-path-browse"]').trigger('click')
+    expect(nativeDialogs.selectFolder).toHaveBeenCalledWith('Choose the Fiji.app folder')
+    expect(wrapper.emitted('update:field')?.[0]).toEqual([
+      { field: 'fiji_path', value: '/Applications/Fiji.app' },
+    ])
+  })
+
+  it('commits manual edits and clears the setting', async () => {
+    const wrapper = mount(ImageViewersSection, {
+      ...globalOpts,
+      props: {
+        modelValue: { ...baseSettings, fiji_path: '/old/Fiji.app' },
+      },
+    })
+    const input = wrapper.get('[data-testid="fiji-path-input"]')
+
+    await input.setValue('/new/Fiji.app')
+    await input.trigger('blur')
+    await wrapper.get('[data-testid="fiji-path-clear"]').trigger('click')
+
+    expect(wrapper.emitted('update:field')).toEqual([
+      [{ field: 'fiji_path', value: '/new/Fiji.app' }],
+      [{ field: 'fiji_path', value: null }],
     ])
   })
 })

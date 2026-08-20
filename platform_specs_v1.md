@@ -736,6 +736,7 @@ class OMEROInstance(BaseModel):
 class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
+    fiji_path: str | None = None                    # selected Fiji.app installation directory
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -770,10 +771,13 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 | `GET` | `/nodes/{node_id}/image/{filename}` | Serve the same image with a stable response filename for Avivator-compatible range and offset requests. |
 | `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool}`) |
 | `GET` | `/napari/status` | Check if Napari is running |
+| `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
 
 The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
 The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in an isolated Conda environment (`napari` + `pyqt`) with its own Qt event loop. Communication uses `multiprocessing.connection` (Client/Listener pattern on localhost). The backend launches Napari lazily on the first `/napari/open` call and reconnects automatically if the process dies.
+
+Fiji is a desktop-only, user-owned integration. BioImageFlow stores the selected `Fiji.app` installation directory, resolves the appropriate current or legacy launcher for the host platform, and passes the workflow-resolved image path as a separate process argument. BioImageFlow does not install, update, supervise, or shut down Fiji. The Fiji endpoint is forbidden in webapp mode and never accepts an arbitrary client-supplied filesystem path.
 
 #### 2.4.9 Code Editor
 
@@ -1298,6 +1302,7 @@ When multiple nodes are selected, their DataFrames are displayed in a **vertical
 - **Image cells:** For columns typed as `ImageFile` or `ImageShared`:
   - Reserve a 96×96 thumbnail area, but request `/nodes/{node_id}/thumbnail?row=0&col=mask` only after the row intersects the visible table viewport.
   - **Open in Napari** button: Opens in Napari (`POST /napari/open`). Ctrl+Click clears existing layers.
+  - **Open in Fiji** button: Opens the selected result image in the user-configured Fiji installation (`POST /fiji/open`). Before configuration, the same action opens Preferences → Image Viewers.
   - **Reveal in file browser** button.
 - **Scalar cells:** Show the value directly.
 - **Path cells (non-image):** Preserve left-to-right path order while right-aligning and truncating from the beginning so the filename and final directories remain visible. The full path remains available through its tooltip, inspector, and copy action. Show the filename with two buttons:
@@ -1423,6 +1428,8 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 - **Replace in Napari (Ctrl+Click):** Same endpoint with `clear_layers: true`.
 - Napari is launched lazily on first use.
 
+**Fiji:** Fiji is installed separately by the user. In desktop mode, the Node Data image-cell action sends the selected node, row, column, and workflow context to `POST /fiji/open`; the backend resolves the authoritative result path and launches the configured Fiji installation with that image. If Fiji is not configured, the action opens Preferences → Image Viewers. If the saved installation has moved or become invalid, the action returns to configuration mode. Fiji controls reuse of an existing Fiji process.
+
 ### 3.11 Error Handling
 
 Three levels of error display:
@@ -1444,22 +1451,28 @@ A dedicated panel or modal for application configuration. Settings are persisted
   with the current workspace folder and `{file_path}` with the focused file. If
   empty, "Open in editor" copies the relevant path to clipboard with a toast.
 
-#### 3.12.2 Execution
+#### 3.12.2 Image Viewers
+
+- **Fiji installation:** Editable directory field with Browse and Clear actions. The selected directory must be a usable `Fiji.app` installation for the current desktop platform before it is saved.
+- **Download Fiji:** Links to the official Fiji downloads page. Fiji installation and updates remain the user's responsibility.
+- The section and Fiji result action are hidden in webapp mode.
+
+#### 3.12.3 Execution
 
 - **Execution backend:** Read-only summary of the effective backend (`Automatic`, `Wetlands`, or `Direct`) when supplied by the runtime settings contract.
 - **Scheduling:** Read-only summary of `Sequential` or `Parallel`, derived from the effective execution settings and the compatibility `execution_engine` field.
 
-#### 3.12.3 Display
+#### 3.12.4 Display
 
 - **Node Data rows per page:** Select 25, 50, 100, 250, or 500 as the default for newly inspected tables. The initial default is 250, and a table-local page-size change does not rewrite this preference.
 
-#### 3.12.4 Storage
+#### 3.12.5 Storage
 
 - **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
 - **Output data folder:** resolved path display with Reveal and, in desktop mode, Change actions. Changing it does not move existing data.
 - **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
 
-#### 3.12.5 OMERO
+#### 3.12.6 OMERO
 
 OMERO data access is supplied by dedicated tool packages; the platform UI manages credentials but does not browse or broker OMERO data itself.
 
@@ -1734,6 +1747,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Node Data |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
+| 37 | `POST` | `/api/v1/fiji/open` | "Open in Fiji" button in Node Data |
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |

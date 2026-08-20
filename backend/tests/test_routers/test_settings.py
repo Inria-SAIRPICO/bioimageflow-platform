@@ -149,6 +149,47 @@ class TestPatchSettings:
         getresp = await settings_client.get("/api/v1/settings")
         assert getresp.json()["external_editor"] == "code {file_path}"
 
+    async def test_patch_validates_and_clears_fiji_installation(
+        self, settings_client: httpx.AsyncClient, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Fiji.app"
+        root.mkdir()
+        launcher = root / "fiji"
+        launcher.write_text("launcher")
+        launcher.chmod(0o755)
+        for name in ("fiji-macos-arm64", "fiji-macos-x64"):
+            mac_launcher = root / "Contents" / "MacOS" / name
+            mac_launcher.parent.mkdir(parents=True, exist_ok=True)
+            mac_launcher.write_text("launcher")
+            mac_launcher.chmod(0o755)
+
+        response = await settings_client.patch(
+            "/api/v1/settings", json={"fiji_path": str(root)}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["fiji_path"] == str(root)
+
+        cleared = await settings_client.patch(
+            "/api/v1/settings", json={"fiji_path": None}
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["fiji_path"] is None
+
+    async def test_patch_rejects_invalid_fiji_installation(
+        self, settings_client: httpx.AsyncClient, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "Fiji.app"
+        root.mkdir()
+
+        response = await settings_client.patch(
+            "/api/v1/settings", json={"fiji_path": str(root)}
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error"] == "invalid_fiji_path"
+        assert response.json()["field"] == "fiji_path"
+
     async def test_patch_invalid_value(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch(
             "/api/v1/settings", json={"execution_engine": "dask"}
@@ -248,6 +289,33 @@ class TestPatchSettings:
 
         assert response.status_code == 403
         assert "administrator-managed" in response.json()["detail"]
+
+    async def test_webapp_fiji_configuration_is_rejected(self, tmp_path: Path) -> None:
+        store = SettingsStore(
+            path=tmp_path / "settings.json",
+            deployment_mode="webapp",
+        )
+        app = create_app(
+            AppConfig(
+                settings_store=store,
+                deployment_mode="webapp",
+                workspace_path=tmp_path / "workspace",
+                workspaces_root=tmp_path / "users",
+                user_id="test-user",
+                disable_hot_reload=True,
+            )
+        )
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.patch(
+                    "/api/v1/settings",
+                    json={"fiji_path": "/server/Fiji.app"},
+                )
+
+        assert response.status_code == 403
+        assert "desktop mode" in response.json()["detail"]
 
     async def test_patch_empty_body(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={})

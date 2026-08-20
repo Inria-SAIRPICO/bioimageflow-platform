@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ImageCell from '../ImageCell.vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
 
 vi.mock('@/api/client', () => ({
   api: { post: vi.fn() },
@@ -33,6 +35,7 @@ describe('ImageCell', () => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
     mockedPost.mockReset()
+    useSettingsPanel().close()
     // jsdom doesn't ship URL.createObjectURL/revokeObjectURL
     if (typeof URL.createObjectURL !== 'function') {
       ;(URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
@@ -259,6 +262,82 @@ describe('ImageCell', () => {
       workflow_name: null,
     })
     expect(button.attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens the selected workflow image in configured Fiji', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    useSettingsStore().settings = {
+      deployment_mode: 'desktop',
+      fiji_path: '/Applications/Fiji.app',
+    } as any
+    mockedPost.mockResolvedValueOnce({ data: { status: 'ok' } })
+    const wrapper = mountCell({ workflowName: 'analysis' })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-fiji-0-mask"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/fiji/open', {
+      node_id: 'n1',
+      row: 0,
+      col: 'mask',
+      workflow_name: 'analysis',
+    })
+  })
+
+  it('opens Image Viewers preferences when Fiji is not configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    useSettingsStore().settings = {
+      deployment_mode: 'desktop',
+      fiji_path: null,
+    } as any
+    const wrapper = mountCell()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="configure-fiji-0-mask"]').trigger('click')
+
+    const panel = useSettingsPanel()
+    expect(panel.isOpen.value).toBe(true)
+    expect(panel.activeTab.value).toBe('viewers')
+    expect(mockedPost).not.toHaveBeenCalledWith('/api/v1/fiji/open', expect.anything())
+  })
+
+  it('hides Fiji actions in webapp mode', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    useSettingsStore().settings = {
+      deployment_mode: 'webapp',
+      fiji_path: '/server/Fiji.app',
+    } as any
+    const wrapper = mountCell()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="open-fiji-0-mask"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="configure-fiji-0-mask"]').exists()).toBe(false)
+  })
+
+  it('returns a stale Fiji configuration to setup mode', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    useSettingsStore().settings = {
+      deployment_mode: 'desktop',
+      fiji_path: '/moved/Fiji.app',
+    } as any
+    mockedPost.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { error: 'fiji_configuration_invalid', detail: 'Fiji moved' },
+      },
+    })
+    const wrapper = mountCell()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-fiji-0-mask"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="configure-fiji-0-mask"]').exists()).toBe(true)
   })
 
   it('reveals the selected image through the node-aware backend endpoint', async () => {
