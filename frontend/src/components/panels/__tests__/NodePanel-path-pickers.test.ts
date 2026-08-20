@@ -39,6 +39,7 @@ const filesTool: ToolMetadata = {
   accepts_upstream: false,
   dynamic_outputs: false,
   dataframe_output: true,
+  row_consumption: null,
   documentation: '',
   tags: [],
   categories: [],

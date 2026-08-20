@@ -25,6 +25,7 @@ def _make_tool(name: str = "Cellpose") -> ToolMetadata:
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         inputs={
             "diameter": InputFieldSchema(
                 type="float",
@@ -141,6 +142,7 @@ def test_register_tool_preserves_non_null_path_picker(monkeypatch):
             "accepts_upstream": False,
             "dynamic_outputs": False,
             "dataframe_output": True,
+            "row_consumption": None,
         },
     )
     monkeypatch.setattr(
@@ -181,6 +183,7 @@ def test_inner_join_accepts_upstream_is_true():
     meta = _register("InnerJoin")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is True
+    assert meta.row_consumption is None
 
 
 @pytest.mark.external
@@ -190,6 +193,7 @@ def test_processing_tool_connected_components_has_correct_type_and_accepts_upstr
     assert meta.tool_type == "ProcessingTool"
     assert meta.accepts_upstream is True
     assert meta.dataframe_output is True
+    assert meta.row_consumption == "mapped"
 
 
 def test_scan_tool_store_picks_latest_version_by_default(tmp_path, monkeypatch):
@@ -347,11 +351,12 @@ def _write_dummy_pkg(
         if extra_field is not None:
             extra_input = f"\n        {extra_field}: float = 3.0"
         (pkg_dir / "filters.py").write_text(
-            "from bioimageflow_core import ProcessingTool, IOModel, "
+            "from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, "
             "Arguments, EnvironmentSpec\n"
             "from .utils.helpers import helper_value\n\n"
             "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
             "class GaussianSmooth(ProcessingTool):\n"
+            "    row_consumption = RowConsumption.MAPPED\n"
             "    display_name = 'Gaussian Smooth'\n"
             "    environment = _env\n"
             "    class Inputs(IOModel):\n"
@@ -364,10 +369,11 @@ def _write_dummy_pkg(
 
     if add_class is not None:
         (pkg_dir / "extras.py").write_text(
-            "from bioimageflow_core import ProcessingTool, IOModel, "
+            "from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, "
             "Arguments, EnvironmentSpec\n\n"
             "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
             f"class {add_class}(ProcessingTool):\n"
+            "    row_consumption = RowConsumption.MAPPED\n"
             f"    display_name = '{add_class}'\n"
             "    environment = _env\n"
             "    class Inputs(IOModel):\n"

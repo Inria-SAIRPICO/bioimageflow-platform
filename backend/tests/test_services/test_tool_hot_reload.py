@@ -129,6 +129,7 @@ def _meta(name: str, *, package: str = "dummy", version: str = "1.0.0") -> ToolM
         package=package,
         package_version=version,
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         inputs={
             "x": InputFieldSchema(
                 type="float",
@@ -147,6 +148,7 @@ def _meta_with_input(name: str, input_name: str) -> ToolMetadata:
         package="dummy",
         package_version="1.0.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         inputs={
             input_name: InputFieldSchema(
                 type="float",
@@ -792,6 +794,7 @@ async def test_tool_reload_payload_contains_full_outputs(tmp_path):
         package=pkg,
         package_version=ver,
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         inputs={
             "src": InputFieldSchema(
                 type="image", required=True, connectable="by_default"
@@ -854,10 +857,11 @@ def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
     pkg_dir.mkdir(parents=True)
     (pkg_dir / "__init__.py").write_text("from .filters import GaussianSmooth\n")
     (pkg_dir / "filters.py").write_text(
-        "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+        "from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, Arguments, "
         "EnvironmentSpec\n\n"
         "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
         "class GaussianSmooth(ProcessingTool):\n"
+        "    row_consumption = RowConsumption.MAPPED\n"
         "    environment = _env\n"
         "    class Inputs(IOModel):\n"
         "        diameter: float = 1.0\n"
@@ -876,10 +880,11 @@ def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
 
         # Edit the source to change a parameter default.
         (pkg_dir / "filters.py").write_text(
-            "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+            "from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, Arguments, "
             "EnvironmentSpec\n\n"
             "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
             "class GaussianSmooth(ProcessingTool):\n"
+            "    row_consumption = RowConsumption.MAPPED\n"
             "    environment = _env\n"
             "    class Inputs(IOModel):\n"
             "        diameter: float = 2.0\n"
@@ -922,10 +927,11 @@ def test_dev_mode_source_unchanged_for_sibling_helper_edit(tmp_path):
     pkg_dir.mkdir(parents=True)
     (pkg_dir / "__init__.py").write_text("from .filters import GaussianSmooth\n")
     (pkg_dir / "filters.py").write_text(
-        "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+        "from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, Arguments, "
         "EnvironmentSpec\n\n"
         "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
         "class GaussianSmooth(ProcessingTool):\n"
+        "    row_consumption = RowConsumption.MAPPED\n"
         "    environment = _env\n"
         "    class Inputs(IOModel):\n"
         "        diameter: float = 1.0\n"

@@ -39,6 +39,7 @@ from bioimageflow_core import (
     ImageSpec,
     Layout,
     ProcessingTool,
+    RowConsumption,
     Semantic,
     Template,
 )
@@ -47,6 +48,7 @@ from bioimageflow_core import (
 class {class_name}(ProcessingTool):
     """Processing tool that operates on individual rows."""
 
+    row_consumption = RowConsumption.MAPPED
     display_name = "{display_name}"
     documentation = "Describe what this custom processing tool does."
     category = Category.IMAGE_PROCESSING

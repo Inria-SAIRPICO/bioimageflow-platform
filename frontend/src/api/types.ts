@@ -3623,6 +3623,8 @@ export interface components {
              * @default true
              */
             dataframe_output: boolean;
+            /** Row Consumption */
+            row_consumption: "mapped" | "collective" | null;
             /**
              * Documentation
              * @default

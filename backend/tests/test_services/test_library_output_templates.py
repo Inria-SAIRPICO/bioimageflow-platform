@@ -6,7 +6,7 @@ from typing import Any
 from bioimageflow import Workflow
 from bioimageflow.engine import DefaultEngine
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 
 
 class _TemplateOutputs(IOModel):
@@ -14,6 +14,8 @@ class _TemplateOutputs(IOModel):
 
 
 class _TemplateTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = IOModel
     Outputs = _TemplateOutputs

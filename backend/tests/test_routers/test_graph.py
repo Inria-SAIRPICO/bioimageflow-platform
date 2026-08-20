@@ -14,7 +14,7 @@ from httpx import ASGITransport
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec, Semantic
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
@@ -46,6 +46,8 @@ class _ProcOutputs(IOModel):
 
 
 class MockProcessingTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _ProcInputs
     Outputs = _ProcOutputs
@@ -68,6 +70,8 @@ class _IntInputs(IOModel):
 
 
 class IntTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _IntInputs
     Outputs = _ProcOutputs
@@ -94,6 +98,7 @@ def _test_registry() -> ToolRegistryService:
                 package="test-pkg",
                 package_version="1.0.0",
                 tool_type="ProcessingTool",
+                row_consumption="mapped",
             ),
             tool_class=cls,
         )
@@ -353,6 +358,7 @@ def _common_tools_registry() -> ToolRegistryService:
                 package="test-pkg",
                 package_version="1.0.0",
                 tool_type="ProcessingTool",
+                row_consumption="mapped",
             ),
             tool_class=cls,
         )

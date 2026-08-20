@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
@@ -71,6 +71,7 @@ class ToolMetadata(BaseModel):
     accepts_upstream: bool = True
     dynamic_outputs: bool = False
     dataframe_output: bool = True
+    row_consumption: Literal["mapped", "collective"] | None
     documentation: str = ""
     tags: list[str] = []
     categories: list[str] = []
@@ -79,6 +80,14 @@ class ToolMetadata(BaseModel):
     environment: dict[str, Any] | None = None
     source_kind: Literal["package", "custom"] = "package"
     editable: bool = False
+
+    @model_validator(mode="after")
+    def validate_row_consumption(self) -> "ToolMetadata":
+        if self.tool_type == "ProcessingTool" and self.row_consumption is None:
+            raise ValueError("ProcessingTool metadata requires row_consumption")
+        if self.tool_type == "DataFrameTool" and self.row_consumption is not None:
+            raise ValueError("DataFrameTool metadata must use null row_consumption")
+        return self
 
 
 # --- Package info ---

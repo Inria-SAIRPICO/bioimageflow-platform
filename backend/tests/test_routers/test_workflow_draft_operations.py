@@ -44,6 +44,7 @@ async def _client(
             package="test-package",
             package_version="1.0.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             inputs={
                 "image": InputFieldSchema(
                     type="ImageFile", required=True, connectable="by_default"

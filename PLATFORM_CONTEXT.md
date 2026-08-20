@@ -90,7 +90,9 @@ When an API model changes, update the backend model and schema first, regenerate
 ### Tools and sources
 
 BioImageFlow distinguishes processing tools, which process rows and can write templated outputs, from DataFrame tools, which create or transform DataFrames.
-Tool metadata from the registry is authoritative for tool type, inputs, outputs, parameters, packages, versions, resources, and capabilities.
+Tool metadata from the registry is authoritative for tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
+Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
+The canvas derives column-edge strands reactively from the target tool metadata and does not persist this presentation state in the graph.
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.

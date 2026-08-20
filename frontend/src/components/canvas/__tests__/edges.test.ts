@@ -4,7 +4,13 @@ import ColumnEdge from '../ColumnEdge.vue'
 import DataFrameEdge from '../DataFrameEdge.vue'
 
 vi.mock('@vue-flow/core', () => ({
-  getBezierPath: () => ['M 0 0 C 50 0 50 100 100 100', 50, 50, 0, 0],
+  getBezierPath: ({ sourceX, sourceY, targetX, targetY }: Record<string, number>) => [
+    `M ${sourceX} ${sourceY} C 50 0 50 100 ${targetX} ${targetY}`,
+    50,
+    50,
+    0,
+    0,
+  ],
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
@@ -26,6 +32,56 @@ describe('ColumnEdge', () => {
     const path = w.find('.vue-flow__edge-path')
     expect(path.exists()).toBe(true)
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
+  })
+
+  it('renders three parallel strands for mapped row consumption', () => {
+    const w = mount(ColumnEdge, {
+      props: {
+        ...baseEdgeProps,
+        targetNode: {
+          data: { nodeType: 'tool', tool: { row_consumption: 'mapped' } },
+        },
+      } as any,
+    })
+    const paths = w.findAll('.vue-flow__edge-path')
+    expect(paths).toHaveLength(3)
+    expect(paths.map(item => item.attributes('d'))).toEqual([
+      'M 0 -4 C 50 0 50 100 100 96',
+      'M 0 0 C 50 0 50 100 100 100',
+      'M 0 4 C 50 0 50 100 100 104',
+    ])
+    expect(w.text()).toContain('Rows are processed independently.')
+  })
+
+  it('renders three strands converging at a collective tool input', () => {
+    const w = mount(ColumnEdge, {
+      props: {
+        ...baseEdgeProps,
+        targetNode: {
+          data: { nodeType: 'tool', tool: { row_consumption: 'collective' } },
+        },
+      } as any,
+    })
+    const paths = w.findAll('.vue-flow__edge-path')
+    expect(paths).toHaveLength(3)
+    expect(paths.map(item => item.attributes('d'))).toEqual([
+      'M 0 -4 C 50 0 50 100 100 100',
+      'M 0 0 C 50 0 50 100 100 100',
+      'M 0 4 C 50 0 50 100 100 100',
+    ])
+    expect(w.text()).toContain('Rows are processed together.')
+  })
+
+  it('uses one standard wire for workflow and unknown targets', () => {
+    const workflow = mount(ColumnEdge, {
+      props: {
+        ...baseEdgeProps,
+        targetNode: { data: { nodeType: 'workflow', tool: null } },
+      } as any,
+    })
+    const unknown = mount(ColumnEdge, { props: baseEdgeProps as any })
+    expect(workflow.findAll('.vue-flow__edge-path')).toHaveLength(1)
+    expect(unknown.findAll('.vue-flow__edge-path')).toHaveLength(1)
   })
 
   it('does NOT have edge-error class when errors is empty', () => {
@@ -157,6 +213,17 @@ describe('DataFrameEdge', () => {
       props: baseEdgeProps as any,
     })
     expect(w.find('.vue-flow__edge-path').attributes('stroke-width')).toBe('2.5')
+  })
+
+  it('renders a table badge at the edge midpoint', () => {
+    const w = mount(DataFrameEdge, {
+      props: baseEdgeProps as any,
+    })
+    const badge = w.find('.dataframe-edge-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('transform')).toBe('translate(42 43)')
+    expect(badge.find('rect').exists()).toBe(true)
+    expect(badge.text()).toContain('Whole DataFrame')
   })
 
   it('renders an invisible interaction path for easier clicking', () => {

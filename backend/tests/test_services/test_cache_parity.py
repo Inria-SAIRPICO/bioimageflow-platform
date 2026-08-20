@@ -76,6 +76,7 @@ def registry() -> ToolRegistryService:
                 name=name, display_name=name,
                 package="test-pkg", package_version="1.0.0",
                 tool_type="DataFrameTool",
+                row_consumption=None,
             ),
             tool_class=cls,
         )

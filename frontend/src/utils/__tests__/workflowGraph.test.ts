@@ -13,6 +13,7 @@ const tool: ToolMetadata = {
   accepts_upstream: true,
   dynamic_outputs: false,
   dataframe_output: true,
+  row_consumption: 'mapped',
   source_kind: 'package',
   editable: false,
   documentation: '',

@@ -58,6 +58,7 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     accepts_upstream: true,
     dynamic_outputs: true,
     dataframe_output: true,
+    row_consumption: null,
     documentation: '',
     tags: [],
     categories: [],

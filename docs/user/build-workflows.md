@@ -43,6 +43,10 @@ Drag from an output handle to a compatible input handle.
 A field connection sends one named output into one input.
 A DataFrame connection sends a whole table.
 
+Three parallel field wires mean the downstream tool processes table rows independently.
+Three wires that merge into one mean the downstream tool combines the rows into one batch operation, such as creating one mosaic from an image column.
+Whole-table connections use a thicker gray wire with a table badge.
+
 BioImageFlow prevents obvious cycles and validates every connection before saving or running.
 
 ![A selected tool node with parameter controls and connections to other workflow steps.](images/node-editing.png)

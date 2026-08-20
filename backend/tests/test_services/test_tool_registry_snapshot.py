@@ -29,6 +29,7 @@ from bioimageflow_core import (
     ImageSpec,
     Layout,
     ProcessingTool,
+    RowConsumption,
     Semantic,
     Template,
 )
@@ -78,6 +79,8 @@ class SnapshotOutputs(IOModel):
 
 
 class SnapshotCellpose(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     display_name = "Snapshot Cellpose"
     documentation = "Cellpose-like local fixture for metadata serialization tests."
     category = Category.SEGMENTATION

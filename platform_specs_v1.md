@@ -150,6 +150,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream DataFrame connections. The canvas hides positional input pins. |
 | `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
 | `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `bif:v1:dataframe-output` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
+| `row_consumption` | `"mapped" \| "collective" \| null` | Required metadata describing column-edge row semantics. Processing tools use `mapped` when rows are independent and `collective` when one batch operation may combine aligned rows. DataFrame tools use `null`. |
 
 **The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
@@ -163,6 +164,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
   "accepts_upstream": true,
   "dynamic_outputs": false,
   "dataframe_output": true,
+  "row_consumption": "mapped",
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
   "categories": ["segmentation"],
@@ -1057,8 +1059,8 @@ Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled n
 
 Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)), each visually distinct:
 
-- **Positional edges** (`DataFrameEdge`): Connect a node's header DataFrame output pin (`bif:v1:dataframe-output`) to a DataFrameTool's header positional input pin (`bif:v1:dataframe-position:<index>`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
-- **Column reference edges** (`ColumnEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
+- **Positional edges** (`DataFrameEdge`): Connect a node's header DataFrame output pin (`bif:v1:dataframe-output`) to a DataFrameTool's header positional input pin (`bif:v1:dataframe-position:<index>`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves with a small table badge, anchored on header-region pins.
+- **Column reference edges** (`ColumnEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. A mapped target renders three parallel type-colored strands, while a collective target renders three strands that converge into one at the target. Workflow targets and missing or unknown tool metadata retain one standard strand.
 
 **Cross-region rejection:** Header pins can only connect to header pins; body pins can only connect to body pins. Dragging a header output to a body input (or vice versa) is rejected client-side.
 
@@ -1074,8 +1076,10 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 
 **Edge visuals:**
 - Edges are drawn as curved lines (bezier curves).
-- Positional edges: solid, neutral gray (#7A7A80), 2.5px stroke width.
-- Column reference edges: solid, type-colored (e.g., ImageFile = blue, scalar = gray), 2px stroke width.
+- Positional edges: solid, neutral gray (#7A7A80), 2.5px stroke width, with a table badge at the midpoint.
+- Mapped column reference edges: three parallel solid, type-colored 2px strands, with the tooltip "Rows are processed independently."
+- Collective column reference edges: three solid, type-colored 2px strands that converge into one at the target, with the tooltip "Rows are processed together."
+- Workflow-input targets and targets with missing or unknown tool metadata: one standard solid, type-colored 2px strand.
 - Selected edges are highlighted.
 
 #### 3.3.3 Pins

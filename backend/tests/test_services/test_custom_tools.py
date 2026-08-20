@@ -71,6 +71,7 @@ def test_create_rejects_registry_conflict(tmp_path: Path):
             package="pkg",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
         ),
     )
     service = CustomToolService(tmp_path, registry)
@@ -184,6 +185,7 @@ def test_delete_rejects_package_tool(tmp_path: Path):
             package="pkg",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
         ),
     )
     service = CustomToolService(tmp_path, registry)

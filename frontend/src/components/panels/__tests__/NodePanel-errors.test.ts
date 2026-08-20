@@ -26,6 +26,7 @@ function makeTool(): ToolMetadata {
     accepts_upstream: true,
     dynamic_outputs: false,
     dataframe_output: false,
+    row_consumption: 'mapped',
     documentation: '',
     tags: [],
     categories: [],

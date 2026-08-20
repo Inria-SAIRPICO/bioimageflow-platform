@@ -11,7 +11,7 @@ from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
@@ -39,6 +39,8 @@ class ProcOutputs(IOModel):
 
 
 class MockProcessingTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = ProcInputs
     Outputs = ProcOutputs
@@ -56,6 +58,8 @@ class CompatOutputs(IOModel):
 
 
 class CompatTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = CompatInputs
     Outputs = CompatOutputs
@@ -73,6 +77,8 @@ class IncompatOutputs(IOModel):
 
 
 class IncompatTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = IncompatInputs
     Outputs = IncompatOutputs
@@ -87,6 +93,8 @@ class IntParamInputs(IOModel):
 
 
 class IntParamTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = IntParamInputs
     Outputs = ProcOutputs
@@ -130,6 +138,7 @@ def _meta(name: str) -> ToolMetadata:
         package="test-package",
         package_version="1.0.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
     )
 
 
@@ -435,6 +444,7 @@ def test_missing_package_surfaced(tmp_path: Path) -> None:
             package="does-not-exist",
             package_version="0.0.1",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
         ),
     )
     graph = graph_state(

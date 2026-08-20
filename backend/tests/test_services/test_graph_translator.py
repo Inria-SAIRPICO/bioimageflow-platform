@@ -9,7 +9,7 @@ from typing import Any
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core import ResourceSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from pydantic import ValidationError
 import pytest
 
@@ -42,6 +42,8 @@ class ExampleTool(DataFrameTool):
 
 
 class ProcessingExample(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     Inputs = Inputs
     Outputs = Outputs
     environment = None
@@ -61,6 +63,7 @@ def _registry() -> ToolRegistryService:
             package="example-tools",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
         ),
         tool_class=ExampleTool,
     )
@@ -81,6 +84,7 @@ def _registry() -> ToolRegistryService:
             package="example-tools",
             package_version="1.0.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
         ),
         tool_class=ProcessingExample,
     )

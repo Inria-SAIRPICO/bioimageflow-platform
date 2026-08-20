@@ -18,6 +18,7 @@ from bioimageflow_core import (
     IOModel,
     Layout,
     ProcessingTool,
+    RowConsumption,
     Semantic,
 )
 
@@ -60,6 +61,8 @@ def _count_foreground_components(mask: np.ndarray) -> int:
 
 class SpotMaskMetrics(ProcessingTool):
     """Compute simple count and foreground metrics for ATLAS spot masks."""
+
+    row_consumption = RowConsumption.MAPPED
 
     display_name = "Spot Mask Metrics"
     category = Category.MEASUREMENT

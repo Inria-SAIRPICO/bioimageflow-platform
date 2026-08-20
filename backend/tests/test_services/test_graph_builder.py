@@ -11,7 +11,7 @@ from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
@@ -38,6 +38,8 @@ class ProcOutputs(IOModel):
 
 
 class MockProcessingTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = ProcInputs
     Outputs = ProcOutputs
@@ -64,6 +66,8 @@ class DownstreamOutputs(IOModel):
 
 
 class DownstreamTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = DownstreamInputs
     Outputs = DownstreamOutputs
@@ -87,6 +91,7 @@ def _make_metadata(name: str, cls: type) -> ToolMetadata:
         package="test-package",
         package_version="1.0.0",
         tool_type=tool_type,
+        row_consumption="mapped" if tool_type == "ProcessingTool" else None,
         accepts_upstream=bool(getattr(cls, "accepts_upstream", True)),
         dataframe_output=True,
         documentation="",
@@ -247,6 +252,7 @@ def test_missing_package_error(tmp_path: Path) -> None:
             package="nonexistent-package",
             package_version="0.0.1",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
         ),
     )
     graph = graph_state(

@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
             package="bioimageflow-e2e-dynamic",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
             accepts_upstream=False,
             dynamic_outputs=True,
             inputs={
@@ -146,6 +147,7 @@ def create_app() -> FastAPI:
             package="bioimageflow-e2e-dynamic",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
             accepts_upstream=True,
             dynamic_outputs=True,
         ),

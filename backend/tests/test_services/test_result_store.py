@@ -236,6 +236,7 @@ def test_get_column_types_uses_registered_tool_outputs(tmp_path: Path) -> None:
         package="pkg",
         package_version="1",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         outputs={"mask": {"type": "ImageFile", "default": None, "image_spec": {}}},
     )
     df = pd.DataFrame({"mask": ["/tmp/m.tif"], "score": [1.5]})
@@ -253,6 +254,7 @@ def test_get_column_types_passthrough_falls_back(tmp_path: Path) -> None:
         package="pkg",
         package_version="1",
         tool_type="DataFrameTool",
+        row_consumption=None,
         outputs={"_passthrough": True},
     )
     df = pd.DataFrame({"path": ["/tmp/a.tif"]})

@@ -17,7 +17,7 @@ from tests.graph_factory import graph_document
 from httpx import ASGITransport
 
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.app import create_app
@@ -65,6 +65,8 @@ class _SrcOutputs(IOModel):
 
 
 class SrcTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _SrcInputs
     Outputs = _SrcOutputs
@@ -82,6 +84,8 @@ class _DstOutputs(IOModel):
 
 
 class DstTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _DstInputs
     Outputs = _DstOutputs
@@ -101,6 +105,7 @@ def _make_registry() -> ToolRegistryService:
                 package="test-pkg",
                 package_version="1.0.0",
                 tool_type="ProcessingTool",
+                row_consumption="mapped",
             ),
             tool_class=cls,
         )

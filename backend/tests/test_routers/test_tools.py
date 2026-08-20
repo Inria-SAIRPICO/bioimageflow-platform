@@ -55,6 +55,7 @@ def _make_tool(name: str = "Cellpose") -> ToolMetadata:
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         inputs={
             "diameter": InputFieldSchema(
                 type="float",
@@ -119,9 +120,11 @@ async def test_get_tools_returns_new_metadata_fields(populated_client: httpx.Asy
     assert "accepts_upstream" in tool
     assert "dynamic_outputs" in tool
     assert "dataframe_output" in tool
+    assert "row_consumption" in tool
     assert tool["accepts_upstream"] is True
     assert tool["dynamic_outputs"] is False
     assert tool["dataframe_output"] is True
+    assert tool["row_consumption"] == "mapped"
 
 
 async def test_get_tools_empty(empty_client: httpx.AsyncClient):
@@ -171,6 +174,7 @@ async def test_get_tools_surfaces_nullable_per_field():
             package="pkg",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             inputs={
                 "size": InputFieldSchema(
                     type="int",

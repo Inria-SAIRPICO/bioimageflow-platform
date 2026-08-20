@@ -12,7 +12,7 @@ from bioimageflow.cache import dataframe_publish, dataframe_result_key
 from bioimageflow.storage import Storage
 from bioimageflow_core import IOModel
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import ProcessingTool
+from bioimageflow_core.tool import ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec
 from fastapi import APIRouter, Depends
 from PIL import Image
@@ -102,6 +102,8 @@ class GaussianBlurOutputs(IOModel):
 class GaussianBlur(ProcessingTool):
     """Tiny executable image-processing fixture for E2E graph validation."""
 
+    row_consumption = RowConsumption.MAPPED
+
     environment = EnvironmentSpec(name="bioimageflow-e2e", dependencies={})
     Inputs = GaussianBlurInputs
     Outputs = GaussianBlurOutputs
@@ -117,6 +119,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         package="bioimageflow-dev-seed",
         package_version="0.1.0",
         tool_type="DataFrameTool",
+        row_consumption=None,
         accepts_upstream=False,
         documentation=SeedNumbers.documentation,
         tags=SeedNumbers.tags,
@@ -132,6 +135,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         package="bioimageflow-dev-seed",
         package_version="0.1.0",
         tool_type="DataFrameTool",
+        row_consumption=None,
         documentation=IncrementNumbers.documentation,
         tags=IncrementNumbers.tags,
         categories=["Utilities"],
@@ -153,6 +157,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         package="bioimageflow-cellpose",
         package_version="1.2.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         documentation="Segment cells using Cellpose deep learning models.",
         tags=["segmentation", "deep-learning"],
         categories=["Segmentation"],
@@ -186,6 +191,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         package="bioimageflow-filters",
         package_version="0.5.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         documentation="Apply Gaussian blur to images.",
         tags=["preprocessing", "filter"],
         categories=["Preprocessing"],
@@ -217,6 +223,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         package="bioimageflow-filters",
         package_version="0.5.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         documentation="Binarize images using a threshold value.",
         tags=["segmentation", "threshold"],
         categories=["Segmentation"],

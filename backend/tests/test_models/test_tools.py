@@ -29,6 +29,7 @@ def test_tool_metadata_full_construction():
         package="cellpose",
         package_version="2.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
         documentation="Segment cells.",
         tags=["segmentation"],
         categories=["analysis"],
@@ -63,6 +64,7 @@ def test_tool_metadata_defaults():
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
     )
 
     assert meta.documentation == ""
@@ -71,6 +73,40 @@ def test_tool_metadata_defaults():
     assert meta.inputs == {}
     assert meta.outputs == {}
     assert meta.environment is None
+
+
+def test_tool_metadata_requires_row_consumption_field():
+    with pytest.raises(ValueError, match="row_consumption"):
+        ToolMetadata.model_validate(
+            {
+                "name": "Missing",
+                "display_name": "Missing",
+                "package": "pkg",
+                "package_version": "1.0",
+                "tool_type": "ProcessingTool",
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("tool_type", "row_consumption"),
+    [("ProcessingTool", None), ("DataFrameTool", "mapped")],
+)
+def test_tool_metadata_rejects_row_consumption_for_wrong_tool_type(
+    tool_type: str,
+    row_consumption: str | None,
+):
+    with pytest.raises(ValueError, match="row_consumption"):
+        ToolMetadata.model_validate(
+            {
+                "name": "Invalid",
+                "display_name": "Invalid",
+                "package": "pkg",
+                "package_version": "1.0",
+                "tool_type": tool_type,
+                "row_consumption": row_consumption,
+            }
+        )
 
 
 def test_input_field_schema_connectable_three_state():
@@ -180,6 +216,7 @@ def test_tool_metadata_source_defaults_to_package_not_editable():
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
+        row_consumption="mapped",
     )
     assert meta.source_kind == "package"
     assert meta.editable is False

@@ -200,6 +200,7 @@ class ToolRegistryService:
         accepts_upstream = meta["accepts_upstream"]
         dynamic_outputs = meta["dynamic_outputs"]
         dataframe_output = bool(meta.get("dataframe_output", True))
+        row_consumption = meta["row_consumption"]
 
         try:
             inputs_raw = serialize_input_schema(tool_cls)
@@ -236,6 +237,7 @@ class ToolRegistryService:
                 accepts_upstream=accepts_upstream,
                 dynamic_outputs=dynamic_outputs,
                 dataframe_output=dataframe_output,
+                row_consumption=row_consumption,
                 documentation=documentation.strip(),
                 tags=tags,
                 categories=categories,
@@ -773,6 +775,7 @@ class ToolRegistryService:
                 for name, field in metadata.outputs.items()
             },
             display_name=metadata.display_name,
+            row_consumption=metadata.row_consumption,
             tags=tuple(metadata.tags),
         )
         key = self._lib_registry._key(lib_meta)

@@ -10,7 +10,7 @@ import {
 const tool: ToolMetadata = {
   name: 'tool', display_name: 'Tool', package: 'pkg', package_version: '2',
   tool_type: 'ProcessingTool', accepts_upstream: true, dynamic_outputs: false,
-  dataframe_output: true, source_kind: 'package', editable: false,
+  dataframe_output: true, row_consumption: 'mapped', source_kind: 'package', editable: false,
   documentation: '', tags: [], categories: [], environment: null,
   inputs: { sigma: { type: 'float', required: false, nullable: false, connectable: 'by_default', default: 1 } },
   outputs: { result: { type: 'float' } },

@@ -77,6 +77,7 @@ const tool: ToolMetadata = {
   accepts_upstream: false,
   dynamic_outputs: false,
   dataframe_output: false,
+  row_consumption: 'mapped',
   documentation: '',
   tags: [],
   categories: [],

@@ -12,7 +12,7 @@ from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
@@ -38,6 +38,8 @@ class _SrcOutputs(IOModel):
 
 
 class SrcTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _SrcInputs
     Outputs = _SrcOutputs
@@ -55,6 +57,8 @@ class _DstOutputs(IOModel):
 
 
 class DstTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _DstInputs
     Outputs = _DstOutputs
@@ -81,6 +85,7 @@ def registry() -> ToolRegistryService:
                 name=name, display_name=name,
                 package="test-pkg", package_version="1.0.0",
                 tool_type="ProcessingTool",
+                row_consumption="mapped",
             ),
             tool_class=cls,
         )
@@ -258,6 +263,7 @@ def test_clear_removes_current_cache_selection(
             package="test-pkg",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
         ),
         tool_class=DFTool,
     )
@@ -309,6 +315,7 @@ def test_invalid_graph_does_not_clear_existing_cache(
             package="test-pkg",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
         ),
         tool_class=DFTool,
     )
@@ -379,6 +386,7 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
             package="test-pkg",
             package_version="1.0.0",
             tool_type="DataFrameTool",
+            row_consumption=None,
         ),
         tool_class=DFTool,
     )
@@ -463,6 +471,7 @@ def test_positional_edges_count_as_downstream(
                 name=name, display_name=name,
                 package="test-pkg", package_version="1.0.0",
                 tool_type="DataFrameTool" if name == "DFTool" else "ProcessingTool",
+                row_consumption=None if name == "DFTool" else "mapped",
             ),
             tool_class=cls,
         )

@@ -8,7 +8,7 @@ import type { ToolMetadata } from '@/api/types'
 const tool = {
   name: 'Segment', display_name: 'Segment', package: 'tests', package_version: '1',
   tool_type: 'ProcessingTool', accepts_upstream: true, dynamic_outputs: false,
-  dataframe_output: true, documentation: '', tags: [], categories: [], inputs: {}, outputs: {},
+  dataframe_output: true, row_consumption: 'mapped', documentation: '', tags: [], categories: [], inputs: {}, outputs: {},
   environment: { resources: { cpu: 2, gpu: 1 } }, source_kind: 'package', editable: false,
 } as ToolMetadata
 

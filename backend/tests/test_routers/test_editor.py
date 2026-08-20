@@ -223,7 +223,16 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     workspace.mkdir()
     tool = workspace / "tools" / "my_tool.py"
     tool.parent.mkdir()
-    tool.write_text("class MyTool: pass", encoding="utf-8")
+    tool.write_text(
+        "from bioimageflow_core import IOModel, ProcessingTool, RowConsumption\n\n"
+        "class MyTool(ProcessingTool):\n"
+        "    row_consumption = RowConsumption.MAPPED\n"
+        "    class Outputs(IOModel):\n"
+        "        result: str\n"
+        "    def process_row(self, arguments):\n"
+        "        return self.Outputs(result='ok')\n",
+        encoding="utf-8",
+    )
     registry = ToolRegistryService()
     registry.register_tool(
         "MyTool",
@@ -233,6 +242,7 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
             package="__custom__",
             package_version="local",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             source_kind="custom",
             editable=True,
         ),
@@ -270,6 +280,7 @@ async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) ->
             package="package",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             source_kind="package",
             editable=False,
         ),
@@ -314,6 +325,7 @@ async def test_editor_open_symlinked_package_tool_opens_tool_store_root(
             package="package",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             source_kind="package",
             editable=False,
         ),
@@ -354,6 +366,7 @@ async def test_editor_open_resolved_package_source_still_opens_tool_store_root(
             package="package",
             package_version="1.0",
             tool_type="ProcessingTool",
+            row_consumption="mapped",
             source_kind="package",
             editable=False,
         ),
