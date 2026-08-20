@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import ProgressBar from 'primevue/progressbar'
 import { useUIStore } from '@/stores/ui'
 import { getEditorStatus, openEditorPath } from '@/api/editor'
 import type { EditorStatus } from '@/api/editor'
@@ -18,15 +19,48 @@ const {
 const failed = ref(false)
 const statusLoading = ref(false)
 const statusDiagnostic = ref<EditorStatus | null>(null)
+const startupStatus = ref<EditorStatus | null>(null)
+const nowSeconds = ref(Date.now() / 1000)
 const focusedAfterLoadKey = ref<string | null>(null)
 const iframeElement = ref<HTMLIFrameElement | null>(null)
+let statusPollTimer: ReturnType<typeof setTimeout> | null = null
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
+let statusPollPending = false
 
 const loading = computed(() => (
   statusLoading.value || (!codeEditorUrl.value && codeEditorOpening.value)
 ))
-const loadingMessage = computed(() => (
-  codeEditorOpening.value ? 'Opening code editor...' : 'Starting code-server...'
-))
+const launchPhase = computed(() => startupStatus.value?.launch_phase ?? 'preparing')
+const loadingHeadline = computed(() => ({
+  idle: 'Preparing the code editor',
+  preparing: 'Preparing the code editor',
+  installing_extensions: 'Installing editor extensions',
+  starting: 'Starting code-server',
+  waiting: 'Waiting for the code editor to respond',
+  ready: 'Opening the code editor',
+  failed: 'The code editor could not be started',
+}[launchPhase.value]))
+const loadingDetail = computed(() => {
+  if (startupStatus.value?.launch_message) return startupStatus.value.launch_message
+  if (launchPhase.value === 'idle' || launchPhase.value === 'preparing') {
+    return 'First-time setup may take several minutes.'
+  }
+  return null
+})
+const extensionProgress = computed(() => {
+  const current = startupStatus.value?.launch_current
+  const total = startupStatus.value?.launch_total
+  if (launchPhase.value !== 'installing_extensions' || current == null || total == null) {
+    return null
+  }
+  return `Extension ${current} of ${total}`
+})
+const elapsedSeconds = computed(() => {
+  const startedAt = startupStatus.value?.launch_started_at
+  if (startedAt == null) return null
+  const elapsed = Math.max(0, Math.floor(nowSeconds.value - startedAt))
+  return elapsed >= 5 ? elapsed : null
+})
 const detached = computed(() => (
   codeEditorDetached.value && Boolean(codeEditorUrl.value) && !statusLoading.value
 ))
@@ -47,6 +81,50 @@ const unavailableDetail = computed(() => statusDiagnostic.value?.error_detail ??
 async function restoreEditor() {
   await closeCodeEditorWindow()
   uiStore.setCodeEditorDetached(false)
+}
+
+function openLogger() {
+  uiStore.openLoggerPanel()
+}
+
+function stopStartupPolling() {
+  if (statusPollTimer !== null) clearTimeout(statusPollTimer)
+  if (elapsedTimer !== null) clearInterval(elapsedTimer)
+  statusPollTimer = null
+  elapsedTimer = null
+}
+
+function scheduleStartupPoll() {
+  if (statusPollTimer !== null || !loading.value || codeEditorUrl.value) return
+  statusPollTimer = setTimeout(() => {
+    statusPollTimer = null
+    void pollStartupStatus()
+  }, 1000)
+}
+
+async function pollStartupStatus() {
+  if (statusPollPending || !loading.value || codeEditorUrl.value) return
+  statusPollPending = true
+  try {
+    const status = await getEditorStatus()
+    startupStatus.value = status
+    if (status.error_code) statusDiagnostic.value = status
+  } catch {
+    // The initiating editor request remains authoritative for final errors.
+  } finally {
+    statusPollPending = false
+    scheduleStartupPoll()
+  }
+}
+
+function startStartupPolling() {
+  if (elapsedTimer === null) {
+    nowSeconds.value = Date.now() / 1000
+    elapsedTimer = setInterval(() => {
+      nowSeconds.value = Date.now() / 1000
+    }, 1000)
+  }
+  void pollStartupStatus()
 }
 
 function shouldFocusPathAfterLoad(url: string | null, path: string | null): path is string {
@@ -102,6 +180,7 @@ onMounted(async () => {
   statusLoading.value = true
   try {
     const status = await getEditorStatus({ launch: true, workspace: true })
+    startupStatus.value = status
     if (status.available && status.url) {
       uiStore.setCodeEditorTarget(status.url, codeEditorPath.value ?? '')
       failed.value = false
@@ -117,6 +196,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopStartupPolling()
   window.removeEventListener('bioimageflow:code-editor-window-closed', onDetachedWindowClosed)
   window.removeEventListener('bif:code-editor-diagnostic', onCodeEditorDiagnostic)
 })
@@ -124,6 +204,15 @@ onBeforeUnmount(() => {
 watch([codeEditorUrl, codeEditorPath], () => {
   focusedAfterLoadKey.value = null
 })
+
+watch(
+  () => loading.value && !codeEditorUrl.value,
+  (shouldPoll) => {
+    if (shouldPoll) startStartupPolling()
+    else stopStartupPolling()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -155,9 +244,37 @@ watch([codeEditorUrl, codeEditorPath], () => {
         Restore here
       </button>
     </div>
-    <div v-else-if="loading" class="code-editor-panel__loading" data-testid="code-editor-loading">
-      <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-      <span>{{ loadingMessage }}</span>
+    <div
+      v-else-if="loading"
+      class="code-editor-panel__loading"
+      data-testid="code-editor-loading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span class="code-editor-panel__loading-headline" data-testid="code-editor-loading-headline">
+        {{ loadingHeadline }}
+      </span>
+      <ProgressBar
+        mode="indeterminate"
+        class="code-editor-panel__progress"
+        data-testid="code-editor-progress"
+      />
+      <span v-if="loadingDetail" data-testid="code-editor-loading-detail">{{ loadingDetail }}</span>
+      <span v-if="extensionProgress" data-testid="code-editor-extension-progress">
+        {{ extensionProgress }}
+      </span>
+      <span v-if="elapsedSeconds !== null" data-testid="code-editor-elapsed">
+        Elapsed: {{ elapsedSeconds }}s
+      </span>
+      <button
+        class="code-editor-panel__logger"
+        type="button"
+        data-testid="code-editor-open-logger"
+        @click="openLogger"
+      >
+        Open Logger
+      </button>
     </div>
     <div v-else class="code-editor-panel__unavailable" data-testid="code-editor-unavailable">
       <span>{{ unavailableMessage }}</span>
@@ -169,6 +286,15 @@ watch([codeEditorUrl, codeEditorPath], () => {
         {{ unavailableDetail }}
       </span>
       <span v-if="hasStatusDiagnostic">Configure an external editor in Settings, or check the server logs.</span>
+      <button
+        v-if="hasStatusDiagnostic"
+        class="code-editor-panel__logger"
+        type="button"
+        data-testid="code-editor-open-logger"
+        @click="openLogger"
+      >
+        Open Logger
+      </button>
     </div>
   </section>
 </template>
@@ -192,7 +318,8 @@ watch([codeEditorUrl, codeEditorPath], () => {
 }
 
 .code-editor-panel__unavailable,
-.code-editor-panel__detached {
+.code-editor-panel__detached,
+.code-editor-panel__loading {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -202,6 +329,29 @@ watch([codeEditorUrl, codeEditorPath], () => {
   padding: 1rem;
   color: var(--p-text-muted-color);
   text-align: center;
+}
+
+.code-editor-panel__loading-headline {
+  color: var(--p-text-color);
+  font-weight: 600;
+}
+
+.code-editor-panel__progress {
+  width: min(26rem, 100%);
+  height: 0.4rem;
+}
+
+.code-editor-panel__logger {
+  border: 0;
+  border-radius: var(--p-border-radius);
+  padding: 0.45rem 0.75rem;
+  background: var(--p-primary-color);
+  color: var(--p-primary-contrast-color);
+  cursor: pointer;
+}
+
+.code-editor-panel__logger:hover {
+  background: var(--p-primary-hover-color);
 }
 
 .code-editor-panel__unavailable-detail {
@@ -233,18 +383,4 @@ watch([codeEditorUrl, codeEditorPath], () => {
   background: var(--p-primary-hover-color);
 }
 
-.code-editor-panel__loading {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.625rem;
-  padding: 1rem;
-  color: var(--p-text-muted-color);
-  text-align: center;
-}
-
-.code-editor-panel__loading .pi {
-  font-size: 1.125rem;
-}
 </style>

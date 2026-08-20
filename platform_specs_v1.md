@@ -791,6 +791,8 @@ Embedded code-server instead uses the generated project `<workspace>/.bioimagefl
 
 Plain status probes remain side-effect free. `GET /editor/status?launch=true&workspace=true` lazily creates or refreshes the generated file atomically and returns a code-server URL with the encoded `workspace` query parameter. Generation failure returns an embedded-editor diagnostic without replacing an existing valid file. Changing the active BioImageFlow workspace changes the generated project and may reload the workbench; selecting another tool within the same active workspace does not.
 
+`EditorStatus` also exposes the current embedded launch phase (`idle`, `preparing`, `installing_extensions`, `starting`, `waiting`, `ready`, or `failed`), a short message, launch start time, and optional current/total extension-installation steps. The launch request remains synchronous and protected by the existing launch lock; concurrent plain status probes report this shared snapshot without starting another launch. During launch, the Code Editor panel polls that side-effect-free status, shows an indeterminate progress bar, phase text, extension step count when available, and elapsed time after five seconds. An **Open Logger** action activates the existing Logger panel, where embedded-editor lifecycle records are streamed as ordinary framework logs. The Logger never opens automatically.
+
 #### 2.4.10 Dataset Management
 
 Dataset management provides server-side file storage for clients that cannot access the server's filesystem directly (primarily plain-browser mode, but also useful for testing and for workflows that share inputs across machines). Datasets are uploaded via HTTP, stored under a dedicated server directory, and referenced by absolute path in node parameters.

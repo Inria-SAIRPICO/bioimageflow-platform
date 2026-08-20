@@ -5,6 +5,14 @@ import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { useUIStore } from '@/stores/ui'
 
 export type EditorOpenMethod = 'external' | 'embedded' | 'clipboard'
+export type EditorLaunchPhase =
+  | 'idle'
+  | 'preparing'
+  | 'installing_extensions'
+  | 'starting'
+  | 'waiting'
+  | 'ready'
+  | 'failed'
 
 export interface EditorStatus {
   available: boolean
@@ -12,6 +20,11 @@ export interface EditorStatus {
   version: string | null
   control_available: boolean
   launch_attempted?: boolean
+  launch_phase?: EditorLaunchPhase
+  launch_message?: string | null
+  launch_started_at?: number | null
+  launch_current?: number | null
+  launch_total?: number | null
   error_code?: string | null
   error_detail?: string | null
 }

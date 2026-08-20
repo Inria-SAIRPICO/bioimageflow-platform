@@ -539,6 +539,31 @@ async def test_emit_framework_logger_triggers_broadcast_with_null_node() -> None
         _remove_handler("wetlands", handler)
 
 
+async def test_emit_editor_logger_triggers_broadcast_with_null_node() -> None:
+    """Embedded editor lifecycle records reach the frontend Logger panel."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("bioimageflow.editor").info("Installing editor extension 2 of 5")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert len(mgr.broadcast_calls) == 1
+        level, message, node_id, _, _ = mgr.broadcast_calls[0]
+        assert level == "INFO"
+        assert message == "Installing editor extension 2 of 5"
+        assert node_id is None
+    finally:
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
+
+
 async def test_emit_wetlands_logger_triggers_broadcast_with_null_node() -> None:
     """Wetlands environment/process records should reach the frontend logger."""
     from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler

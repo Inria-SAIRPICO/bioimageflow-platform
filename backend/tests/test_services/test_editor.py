@@ -11,7 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 from wetlands import EnvironmentSpec
 
-from bioimageflow_server.models.editor import EditorOpenMethod, EditorOpenResponse, EditorStatus
+from bioimageflow_server.models.editor import (
+    EditorLaunchPhase,
+    EditorOpenMethod,
+    EditorOpenResponse,
+    EditorStatus,
+)
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.editor import (
     EmbeddedCodeServerManager,
@@ -868,6 +873,89 @@ def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> Non
         "--bind-addr",
         "127.0.0.1:32344",
     ]
+    status = manager.status(url_probe=lambda _url: False)
+    assert status.launch_phase == EditorLaunchPhase.STARTING
+    assert status.launch_message == "Starting code-server."
+    assert status.launch_started_at is not None
+
+
+def test_embedded_manager_reports_extension_installation_steps(tmp_path: Path) -> None:
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    progress: list[tuple[EditorLaunchPhase, int | None, int | None, str | None]] = []
+    manager = EmbeddedCodeServerManager(vsix_path=vsix)
+
+    def runner(args: list[str]) -> object:
+        if "--install-extension" in args:
+            status = manager.status(url_probe=lambda _url: False)
+            progress.append(
+                (
+                    status.launch_phase,
+                    status.launch_current,
+                    status.launch_total,
+                    status.launch_message,
+                )
+            )
+        return object()
+
+    manager.launch(install_runner=runner, process_launcher=runner)
+
+    assert [(phase, current, total) for phase, current, total, _ in progress] == [
+        (EditorLaunchPhase.INSTALLING_EXTENSIONS, 1, 5),
+        (EditorLaunchPhase.INSTALLING_EXTENSIONS, 2, 5),
+        (EditorLaunchPhase.INSTALLING_EXTENSIONS, 3, 5),
+        (EditorLaunchPhase.INSTALLING_EXTENSIONS, 4, 5),
+        (EditorLaunchPhase.INSTALLING_EXTENSIONS, 5, 5),
+    ]
+    assert progress[0][3] == "Installing BioImageFlow editor integration."
+    assert progress[-1][3] == "Installing Python type checking."
+
+
+def test_embedded_manager_launch_status_can_be_polled_concurrently(tmp_path: Path) -> None:
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    manager = EmbeddedCodeServerManager(vsix_path=vsix)
+    install_started = threading.Event()
+    release_install = threading.Event()
+
+    def runner(args: list[str]) -> object:
+        if "--install-extension" in args:
+            install_started.set()
+            assert release_install.wait(timeout=2.0)
+        return object()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        launch = executor.submit(
+            manager.launch,
+            install_runner=runner,
+            process_launcher=lambda _args: object(),
+        )
+        assert install_started.wait(timeout=2.0)
+        status = manager.status(url_probe=lambda _url: False)
+        release_install.set()
+        launch.result(timeout=2.0)
+
+    assert status.launch_phase == EditorLaunchPhase.INSTALLING_EXTENSIONS
+    assert status.launch_current == 1
+    assert status.launch_total == 5
+
+
+def test_embedded_manager_reports_launch_failure(tmp_path: Path) -> None:
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    manager = EmbeddedCodeServerManager(vsix_path=vsix)
+
+    with pytest.raises(RuntimeError, match="extension failed"):
+        manager.launch(
+            install_runner=lambda _args: (_ for _ in ()).throw(
+                RuntimeError("extension failed")
+            ),
+            process_launcher=lambda _args: object(),
+        )
+
+    status = manager.status(url_probe=lambda _url: False)
+    assert status.launch_phase == EditorLaunchPhase.FAILED
+    assert status.launch_message == "RuntimeError: extension failed"
 
 
 def test_embedded_manager_ignores_missing_legacy_opener_uninstall(

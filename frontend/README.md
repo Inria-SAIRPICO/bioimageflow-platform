@@ -94,6 +94,7 @@ The **Node Data** bottom panel inspects selected-node DataFrames with server-sid
 
 The Tools panel opens source through the editor API.
 Embedded code-server uses one generated multi-root VS Code workspace containing the writable BioImageFlow workspace and the read-only installed tool store, while configured external editors retain their command-defined project behavior.
+While the synchronous embedded-editor launch is in progress, the Code Editor panel polls the side-effect-free status endpoint for preparation, extension-installation, process-start, readiness, and failure phases, and users can explicitly open the Logger for streamed lifecycle details.
 
 ## Testing
 

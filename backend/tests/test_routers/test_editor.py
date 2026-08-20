@@ -72,6 +72,11 @@ async def test_editor_status_endpoint_uses_service() -> None:
         "version": None,
         "control_available": True,
         "launch_attempted": False,
+        "launch_phase": "idle",
+        "launch_message": None,
+        "launch_started_at": None,
+        "launch_current": None,
+        "launch_total": None,
         "error_code": None,
         "error_detail": None,
     }

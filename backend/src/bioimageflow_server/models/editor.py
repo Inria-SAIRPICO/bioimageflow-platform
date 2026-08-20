@@ -13,12 +13,27 @@ class EditorOpenMethod(StrEnum):
     CLIPBOARD = "clipboard"
 
 
+class EditorLaunchPhase(StrEnum):
+    IDLE = "idle"
+    PREPARING = "preparing"
+    INSTALLING_EXTENSIONS = "installing_extensions"
+    STARTING = "starting"
+    WAITING = "waiting"
+    READY = "ready"
+    FAILED = "failed"
+
+
 class EditorStatus(BaseModel):
     available: bool
     url: str | None = None
     version: str | None = None
     control_available: bool = False
     launch_attempted: bool = False
+    launch_phase: EditorLaunchPhase = EditorLaunchPhase.IDLE
+    launch_message: str | None = None
+    launch_started_at: float | None = None
+    launch_current: int | None = None
+    launch_total: int | None = None
     error_code: str | None = None
     error_detail: str | None = None
 

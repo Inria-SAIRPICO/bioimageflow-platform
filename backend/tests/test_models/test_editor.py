@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from bioimageflow_server.models.editor import (
+    EditorLaunchPhase,
     EditorOpenMethod,
     EditorOpenRequest,
     EditorOpenResponse,
@@ -35,6 +36,11 @@ def test_editor_status_allows_nullable_url_and_version() -> None:
         "version": None,
         "control_available": False,
         "launch_attempted": False,
+        "launch_phase": EditorLaunchPhase.IDLE,
+        "launch_message": None,
+        "launch_started_at": None,
+        "launch_current": None,
+        "launch_total": None,
         "error_code": None,
         "error_detail": None,
     }

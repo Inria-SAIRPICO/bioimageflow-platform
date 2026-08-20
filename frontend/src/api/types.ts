@@ -2038,6 +2038,11 @@ export interface components {
             draft_revision: number;
         };
         /**
+         * EditorLaunchPhase
+         * @enum {string}
+         */
+        EditorLaunchPhase: "idle" | "preparing" | "installing_extensions" | "starting" | "waiting" | "ready" | "failed";
+        /**
          * EditorOpenMethod
          * @enum {string}
          */
@@ -2094,6 +2099,16 @@ export interface components {
              * @default false
              */
             launch_attempted: boolean;
+            /** @default idle */
+            launch_phase: components["schemas"]["EditorLaunchPhase"];
+            /** Launch Message */
+            launch_message?: string | null;
+            /** Launch Started At */
+            launch_started_at?: number | null;
+            /** Launch Current */
+            launch_current?: number | null;
+            /** Launch Total */
+            launch_total?: number | null;
             /** Error Code */
             error_code?: string | null;
             /** Error Detail */
@@ -4422,6 +4437,7 @@ export type DemoWorkflowsStatus = components['schemas']['DemoWorkflowsStatus'];
 export type DetachWorkflowSourceOperation = components['schemas']['DetachWorkflowSourceOperation'];
 export type DistributedExecutionProfile = components['schemas']['DistributedExecutionProfile'];
 export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
+export type EditorLaunchPhase = components['schemas']['EditorLaunchPhase'];
 export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
 export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
 export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
@@ -5139,6 +5155,7 @@ export interface operations {
         parameters: {
             query?: {
                 launch?: boolean;
+                workspace?: boolean;
             };
             header?: never;
             path?: never;

@@ -18,6 +18,7 @@ import httpx
 from wetlands import EnvironmentSpec, ManagedProcess
 
 from bioimageflow_server.models.editor import (
+    EditorLaunchPhase,
     EditorOpenMethod,
     EditorOpenResponse,
     EditorStatus,
@@ -38,7 +39,9 @@ EMBEDDED_OPENER_TIMEOUT_DETAIL = (
 )
 EMBEDDED_WORKSPACE_FAILED = "embedded_workspace_failed"
 
-logger = logging.getLogger(__name__)
+# Editor lifecycle records use the streamed framework logger so setup progress
+# is available in the existing Logger panel as well as the Code Editor panel.
+logger = logging.getLogger("bioimageflow.editor")
 
 
 class EditorError(Exception):
@@ -139,16 +142,85 @@ class EmbeddedCodeServerManager:
         self.code_server_binary = code_server_binary
         self._environment_manager_provider = environment_manager_provider
         self._process: ManagedProcess | object | None = None
+        self._launch_status_lock = threading.Lock()
+        self._launch_phase = EditorLaunchPhase.IDLE
+        self._launch_message: str | None = None
+        self._launch_started_at: float | None = None
+        self._launch_current: int | None = None
+        self._launch_total: int | None = None
 
     def status(self, *, url_probe: UrlProbe = _default_url_probe) -> EditorStatus:
         editor_available = url_probe(self.editor_url)
         control_available = self.vsix_path.exists() and url_probe(f"{self.control_url}/open")
+        if editor_available:
+            self.set_launch_phase(EditorLaunchPhase.READY, "Code editor is ready.")
+        elif self._launch_status()[0] == EditorLaunchPhase.READY:
+            self._reset_launch_status()
+        phase, message, started_at, current, total = self._launch_status()
         return EditorStatus(
             available=editor_available,
             url=self.editor_url if editor_available else None,
             version=CODE_SERVER_VERSION if editor_available else None,
             control_available=control_available,
+            launch_phase=phase,
+            launch_message=message,
+            launch_started_at=started_at,
+            launch_current=current,
+            launch_total=total,
         )
+
+    def set_launch_phase(
+        self,
+        phase: EditorLaunchPhase,
+        message: str | None = None,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        """Publish a pollable embedded-editor launch phase."""
+        with self._launch_status_lock:
+            if phase == EditorLaunchPhase.PREPARING:
+                self._launch_started_at = time.time()
+            elif phase not in {EditorLaunchPhase.IDLE, EditorLaunchPhase.READY}:
+                self._launch_started_at = self._launch_started_at or time.time()
+            changed = (
+                phase != self._launch_phase
+                or message != self._launch_message
+                or current != self._launch_current
+                or total != self._launch_total
+            )
+            self._launch_phase = phase
+            self._launch_message = message
+            self._launch_current = current
+            self._launch_total = total
+        if changed:
+            logger.info(
+                "Embedded editor launch phase: phase=%s message=%s current=%s total=%s",
+                phase.value,
+                message,
+                current,
+                total,
+            )
+
+    def _reset_launch_status(self) -> None:
+        with self._launch_status_lock:
+            self._launch_phase = EditorLaunchPhase.IDLE
+            self._launch_message = None
+            self._launch_started_at = None
+            self._launch_current = None
+            self._launch_total = None
+
+    def _launch_status(
+        self,
+    ) -> tuple[EditorLaunchPhase, str | None, float | None, int | None, int | None]:
+        with self._launch_status_lock:
+            return (
+                self._launch_phase,
+                self._launch_message,
+                self._launch_started_at,
+                self._launch_current,
+                self._launch_total,
+            )
 
     def diagnostics(self) -> dict[str, object]:
         return {
@@ -189,24 +261,53 @@ class EmbeddedCodeServerManager:
         install_runner: CommandRunner | None = None,
         process_launcher: ProcessLauncher | None = None,
     ) -> None:
+        self.set_launch_phase(
+            EditorLaunchPhase.PREPARING,
+            "Preparing the code editor. First-time setup may take several minutes.",
+        )
         logger.info(
             "Launching embedded code-server: editor_url=%s control_url=%s",
             self.editor_url,
             self.control_url,
         )
-        if not self.vsix_path.exists():
-            raise FileNotFoundError(f"opener extension not found: {self.vsix_path}")
-        if install_runner is None and process_launcher is None:
-            self._process = self._launch_in_environment()
-            return
-        install_runner = install_runner or _default_command_runner
-        process_launcher = process_launcher or _default_process_launcher
-        self._uninstall_legacy_opener(install_runner)
-        for command in self.install_commands():
+        try:
+            if not self.vsix_path.exists():
+                raise FileNotFoundError(f"opener extension not found: {self.vsix_path}")
+            if install_runner is None and process_launcher is None:
+                self._process = self._launch_in_environment()
+                return
+            install_runner = install_runner or _default_command_runner
+            process_launcher = process_launcher or _default_process_launcher
+            self._uninstall_legacy_opener(install_runner)
+            self._install_extensions(install_runner)
+            command = self.launch_command()
+            self.set_launch_phase(EditorLaunchPhase.STARTING, "Starting code-server.")
+            logger.info("Starting code-server process: %s", shlex.join(command))
+            self._process = process_launcher(command)
+        except Exception as exc:
+            self.set_launch_phase(EditorLaunchPhase.FAILED, _exception_summary(exc))
+            raise
+
+    def _install_extensions(self, runner: CommandRunner) -> None:
+        commands = self.install_commands()
+        total = len(commands)
+        for current, command in enumerate(commands, start=1):
+            extension = command[-1]
+            extension_label = {
+                str(self.vsix_path): "BioImageFlow editor integration",
+                "ms-python.python": "Python support",
+                "ms-python.vscode-python-envs": "Python environment support",
+                "ms-python.debugpy": "Python debugging support",
+                "detachhead.basedpyright": "Python type checking",
+            }.get(extension, extension)
+            self.set_launch_phase(
+                EditorLaunchPhase.INSTALLING_EXTENSIONS,
+                f"Installing {extension_label}.",
+                current=current,
+                total=total,
+            )
             logger.info("Installing code-server extension: %s", shlex.join(command))
-            install_runner(command)
-        logger.info("Starting code-server process: %s", shlex.join(self.launch_command()))
-        self._process = process_launcher(self.launch_command())
+            runner(command)
 
     def _uninstall_legacy_opener(self, install_runner: CommandRunner) -> None:
         command = self.legacy_uninstall_command()
@@ -236,10 +337,9 @@ class EmbeddedCodeServerManager:
                 "Legacy code-server opener removal skipped or failed: %s",
                 legacy_result.stderr.strip(),
             )
-        for command in self.install_commands():
-            logger.info("Installing code-server extension: %s", shlex.join(command))
-            environment.run(command)
+        self._install_extensions(environment.run)
         command = self.launch_command()
+        self.set_launch_phase(EditorLaunchPhase.STARTING, "Starting code-server.")
         logger.info("Starting managed code-server process: %s", shlex.join(command))
         return environment.spawn(command, output_limit=16 * 1024 * 1024)
 
@@ -330,6 +430,8 @@ class EditorService:
                     version=None,
                     control_available=False,
                     launch_attempted=True,
+                    launch_phase=EditorLaunchPhase.FAILED,
+                    launch_message=_exception_summary(exc),
                     error_code=EMBEDDED_WORKSPACE_FAILED,
                     error_detail=_exception_summary(exc),
                 )
@@ -351,9 +453,15 @@ class EditorService:
                         status.model_copy(update={"launch_attempted": True}),
                         workspace_path,
                     )
+                self._set_embedded_launch_phase(
+                    EditorLaunchPhase.FAILED,
+                    EMBEDDED_STARTUP_TIMEOUT_DETAIL,
+                )
                 return status.model_copy(
                     update={
                         "launch_attempted": True,
+                        "launch_phase": EditorLaunchPhase.FAILED,
+                        "launch_message": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                         "error_code": EMBEDDED_STARTUP_TIMEOUT,
                         "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                     }
@@ -365,9 +473,15 @@ class EditorService:
                     start()
                 except Exception as exc:
                     logger.exception("Embedded code-server launch failed")
+                    self._set_embedded_launch_phase(
+                        EditorLaunchPhase.FAILED,
+                        _exception_summary(exc),
+                    )
                     return self._embedded.status().model_copy(
                         update={
                             "launch_attempted": True,
+                            "launch_phase": EditorLaunchPhase.FAILED,
+                            "launch_message": _exception_summary(exc),
                             "error_code": EMBEDDED_LAUNCH_FAILED,
                             "error_detail": _exception_summary(exc),
                         }
@@ -379,9 +493,15 @@ class EditorService:
                     status.model_copy(update={"launch_attempted": True}),
                     workspace_path,
                 )
+            self._set_embedded_launch_phase(
+                EditorLaunchPhase.FAILED,
+                EMBEDDED_STARTUP_TIMEOUT_DETAIL,
+            )
             return status.model_copy(
                 update={
                     "launch_attempted": True,
+                    "launch_phase": EditorLaunchPhase.FAILED,
+                    "launch_message": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                     "error_code": EMBEDDED_STARTUP_TIMEOUT,
                     "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                 }
@@ -501,10 +621,18 @@ class EditorService:
                 )
                 error_code = EMBEDDED_STARTUP_TIMEOUT
                 error_detail = EMBEDDED_STARTUP_TIMEOUT_DETAIL
+                self._set_embedded_launch_phase(
+                    EditorLaunchPhase.FAILED,
+                    EMBEDDED_STARTUP_TIMEOUT_DETAIL,
+                )
             except Exception as exc:
                 logger.exception("Embedded code-server launch failed")
                 error_code = EMBEDDED_LAUNCH_FAILED
                 error_detail = _exception_summary(exc)
+                self._set_embedded_launch_phase(
+                    EditorLaunchPhase.FAILED,
+                    error_detail,
+                )
 
         return self._clipboard_response(
             normalized_focus or normalized,
@@ -577,6 +705,10 @@ class EditorService:
         path: Path,
         focus_path: Path | None,
     ) -> EditorOpenResponse | None:
+        self._set_embedded_launch_phase(
+            EditorLaunchPhase.WAITING,
+            "Waiting for the code editor to respond.",
+        )
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
         last_status: EditorStatus | None = None
         last_error: Exception | None = None
@@ -605,12 +737,25 @@ class EditorService:
             time.sleep(max(0.0, self._embedded_poll_interval))
 
     def _wait_for_embedded_status(self) -> EditorStatus:
+        self._set_embedded_launch_phase(
+            EditorLaunchPhase.WAITING,
+            "Waiting for the code editor to respond.",
+        )
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
         last_status = self._embedded.status()
         while not last_status.available and time.monotonic() < deadline:
             time.sleep(max(0.0, self._embedded_poll_interval))
             last_status = self._embedded.status()
         return last_status
+
+    def _set_embedded_launch_phase(
+        self,
+        phase: EditorLaunchPhase,
+        message: str | None,
+    ) -> None:
+        setter = getattr(self._embedded, "set_launch_phase", None)
+        if callable(setter):
+            setter(phase, message)
 
     def _managed_workspace_path(self) -> Path:
         if self._workspace_path_provider is None or self._tool_store_path_provider is None:

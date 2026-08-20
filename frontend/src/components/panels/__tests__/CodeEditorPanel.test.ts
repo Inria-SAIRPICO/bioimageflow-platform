@@ -93,7 +93,7 @@ describe('CodeEditorPanel', () => {
     expect(wrapper.find('[data-testid="code-editor-unavailable-detail"]').text()).toBe(
       'TypeError: bad wetlands api',
     )
-    expect(mockedGetEditorStatus).not.toHaveBeenCalled()
+    expect(mockedGetEditorStatus).toHaveBeenCalledWith()
   })
 
   it('starts and renders the embedded editor when the panel opens from the menu', async () => {
@@ -128,18 +128,83 @@ describe('CodeEditorPanel', () => {
     )
   })
 
-  it('shows the opening state without checking status during an embedded open request', async () => {
+  it('shows progress and polls status during an embedded open request', async () => {
     const store = useUIStore()
     store.setCodeEditorOpening('/tmp/tool.py')
 
     const wrapper = mount(CodeEditorPanel)
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="code-editor-loading"]').text()).toBe(
-      'Opening code editor...',
+    expect(wrapper.find('[data-testid="code-editor-loading-headline"]').text()).toBe(
+      'Preparing the code editor',
     )
-    expect(wrapper.find('.pi-spinner').exists()).toBe(true)
-    expect(mockedGetEditorStatus).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="code-editor-loading-detail"]').text()).toBe(
+      'First-time setup may take several minutes.',
+    )
+    expect(wrapper.find('[data-testid="code-editor-progress"]').exists()).toBe(true)
+    expect(mockedGetEditorStatus).toHaveBeenCalledWith()
+  })
+
+  it('shows extension progress, elapsed time, and opens the Logger panel', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useUIStore()
+      store.setCodeEditorOpening('/tmp/tool.py')
+      mockedGetEditorStatus.mockResolvedValue({
+        available: false,
+        url: null,
+        version: null,
+        control_available: false,
+        launch_phase: 'installing_extensions',
+        launch_message: 'Installing Python support.',
+        launch_started_at: Date.now() / 1000 - 6,
+        launch_current: 2,
+        launch_total: 5,
+      })
+
+      const wrapper = mount(CodeEditorPanel)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="code-editor-loading-headline"]').text()).toBe(
+        'Installing editor extensions',
+      )
+      expect(wrapper.find('[data-testid="code-editor-loading-detail"]').text()).toBe(
+        'Installing Python support.',
+      )
+      expect(wrapper.find('[data-testid="code-editor-extension-progress"]').text()).toBe(
+        'Extension 2 of 5',
+      )
+      expect(wrapper.find('[data-testid="code-editor-elapsed"]').text()).toBe('Elapsed: 6s')
+
+      await wrapper.find('[data-testid="code-editor-open-logger"]').trigger('click')
+      expect(store.panels.logger).toBe(true)
+      expect(store.loggerActivationRequest).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('polls sequentially and stops when opening finishes', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useUIStore()
+      store.setCodeEditorOpening('/tmp/tool.py')
+      const wrapper = mount(CodeEditorPanel)
+      await flushPromises()
+
+      expect(mockedGetEditorStatus).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      await flushPromises()
+      expect(mockedGetEditorStatus).toHaveBeenCalledTimes(2)
+
+      store.clearCodeEditorOpening('/tmp/tool.py')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(mockedGetEditorStatus).toHaveBeenCalledTimes(2)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the existing iframe mounted while opening another file', async () => {
