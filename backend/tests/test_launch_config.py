@@ -20,6 +20,13 @@ def test_vscode_python_launch_profiles_enable_local_core_dependency() -> None:
         assert '"BIOIMAGEFLOW_USE_LOCAL_CORE": "1"' in block
 
 
+def test_vscode_uses_backend_virtual_environment_for_python_analysis() -> None:
+    settings_path = Path(__file__).resolve().parents[2] / ".vscode" / "settings.json"
+    settings = json.loads(settings_path.read_text())
+
+    assert settings["python.defaultInterpreterPath"] == "${workspaceFolder}/backend/.venv"
+
+
 def test_vscode_desktop_launch_profile_enables_development_mode() -> None:
     launch_path = Path(__file__).resolve().parents[2] / ".vscode" / "launch.json"
     desktop_block = _launch_profile_block(launch_path.read_text(), "Desktop")
