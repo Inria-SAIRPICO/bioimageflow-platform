@@ -9,6 +9,7 @@ Use these focused references when needed:
 - [Workspace, Storage, and Demos](workspace-storage-and-demos.md) documents platform-owned files, output views, exports, and bundled workflow maintenance.
 - [Release Process](releases.md) is the application and launcher release checklist.
 - [Testing](../testing.md) explains the repository-owned test lanes and focused selectors.
+- [Manual Platform Testing](manual-testing.md) provides reusable fixtures plus lightweight and complete human acceptance plans.
 - [Distributed execution runtime wiring](../distributed_execution_runtime_wiring.md) describes how the application connects distributed preparation, submission, progress, and results.
 - [How MCP Connects Coding Agents](mcp.md) explains the public architecture of the desktop coding-agent integration.
 
@@ -19,4 +20,5 @@ Detailed MCP operations are intentionally kept with the source and generated wor
 :hidden:
 
 mcp
+manual-testing
 ```

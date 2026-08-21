@@ -7,6 +7,8 @@ orphan: true
 The root test runner gives humans, agents, and CI one vocabulary for focused feedback, ordinary completion checks, and comprehensive certification.
 Run `scripts/test help` from any directory in the checkout to see the available commands.
 
+For native desktop, external-application, coding-agent, and human-judgment checks that remain outside these automated lanes, use the [Manual Platform Testing](developer/manual-testing.md) guide and its reusable `scripts/manual-qa` fixtures.
+
 ## Install test dependencies
 
 The runner does not install the repository's normal development dependencies.

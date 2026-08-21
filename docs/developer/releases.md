@@ -40,6 +40,8 @@ scripts/test full
 git status --short --untracked-files=no
 ```
 
+Run the [complete manual platform test plan](manual-testing.md#complete-test-plan) on the same revision and retain its operating-system and blocker record with the release evidence.
+
 The tracked worktree and index must be clean.
 If validation requires a fix, commit it and rerun the full lane.
 Push the validated release commit to `main` before creating its tag:
