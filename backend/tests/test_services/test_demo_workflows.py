@@ -52,6 +52,7 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     fish = store.get_workflow("Demo/Fish Analysis")
     assert {item.package_name for item in fish.missing_packages} == {
         "bioimageflow_common_tools",
+        "bioimageflow_io_tools",
         "bioimageflow_segmentation_tools",
         "bioimageflow_spot_tools",
     }

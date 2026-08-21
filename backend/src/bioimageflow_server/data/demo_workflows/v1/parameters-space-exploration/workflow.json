@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:0fb623b052665eb9c9645c12eb492991f985f5a57079d5a8830935c5f8400cf5",
+  "artifact_hash": "sha256:a5486eac673495b6bc77a70915403c7123a3e607d633072247767ca75a7f7ab5",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -224,7 +224,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -250,7 +250,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -269,7 +269,7 @@
         "tool_module": "bioimageflow_common_tools.merge",
         "tool_name": "CrossJoin",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -278,17 +278,19 @@
         "id": "extract_marker_channel",
         "name": "extract_marker_channel",
         "output_templates": {},
-        "parameters": {},
+        "parameters": {
+          "layout": "CYX"
+        },
         "position": [
           0.0,
           180.0
         ],
         "resources": {},
-        "tool_class": "ExtractChannel",
-        "tool_module": "bioimageflow_common_tools.extract_channel",
-        "tool_name": "ExtractChannel",
-        "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_class": "SelectChannel",
+        "tool_module": "bioimageflow_io_tools.selection",
+        "tool_name": "SelectChannel",
+        "tool_package": "bioimageflow_io_tools",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -307,7 +309,7 @@
         "tool_module": "bioimageflow_spot_tools.atlas",
         "tool_name": "AtlasSpotDetection",
         "tool_package": "bioimageflow_spot_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -345,7 +347,7 @@
         "tool_module": "bioimageflow_common_tools.mosaic",
         "tool_name": "Mosaic",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {

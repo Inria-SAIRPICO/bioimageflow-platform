@@ -71,6 +71,7 @@ DEFINITIONS = (
 
 PACKAGE_REQUIREMENTS = {
     "bioimageflow_common_tools": ("bioimageflow_common_tools", "bioimageflow-common-tools"),
+    "bioimageflow_io_tools": ("bioimageflow_io_tools", "bioimageflow-io-tools"),
     "bioimageflow_segmentation_tools": (
         "bioimageflow_segmentation_tools",
         "bioimageflow-segmentation-tools",
@@ -100,6 +101,7 @@ def _materialize_custom_tools(
     records: list[dict[str, Any]],
 ) -> dict[str, bytes]:
     filenames: dict[str, str] = {}
+    module_filenames: dict[str, str] = {}
     files: dict[str, bytes] = {}
     used: set[str] = set()
     for record in records:
@@ -108,6 +110,9 @@ def _materialize_custom_tools(
         source_id = str(record["id"])
         filename = _source_filename(record, used)
         filenames[source_id] = filename
+        module_name = record.get("module")
+        if module_name:
+            module_filenames[str(module_name)] = filename
         files[filename] = str(record["source"]).encode("utf-8")
 
     def visit(definition: dict[str, Any]) -> None:
@@ -115,11 +120,13 @@ def _materialize_custom_tools(
             if node.get("type") == "workflow":
                 visit(node["workflow"])
                 continue
-            source_id = node.get("source_module")
-            if source_id not in filenames:
+            filename = filenames.get(str(node.get("source_module") or ""))
+            if filename is None:
+                filename = module_filenames.get(str(node.get("tool_module") or ""))
+            if filename is None:
                 continue
             node["source_module"] = None
-            node["tool_module"] = f"tools.{Path(filenames[source_id]).stem}"
+            node["tool_module"] = f"tools.{Path(filename).stem}"
 
     visit(graph_data)
     return files

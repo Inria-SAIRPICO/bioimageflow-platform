@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:83c6e60f25a41e0ae8411bca4b5dfa1dc70bc32ab411d2df794ebd35e4f7d914",
+  "artifact_hash": "sha256:707956fb5dfe449dc7bae4078b6e5d789030534210e14827bcff1111428931c0",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -139,18 +139,19 @@
         "name": "extract_ch2_nuclei",
         "output_templates": {},
         "parameters": {
-          "channel": 2
+          "channel": 2,
+          "layout": "CYX"
         },
         "position": [
           280.0,
           0.0
         ],
         "resources": {},
-        "tool_class": "ExtractChannel",
-        "tool_module": "bioimageflow_common_tools.extract_channel",
-        "tool_name": "ExtractChannel",
-        "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.1.7",
+        "tool_class": "SelectChannel",
+        "tool_module": "bioimageflow_io_tools.selection",
+        "tool_name": "SelectChannel",
+        "tool_package": "bioimageflow_io_tools",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -171,7 +172,7 @@
         "tool_module": "bioimageflow_segmentation_tools.cellpose_v3",
         "tool_name": "Cellpose3",
         "tool_package": "bioimageflow_segmentation_tools",
-        "tool_package_version": "0.1.7",
+        "tool_package_version": "0.2.0",
         "type": "tool"
       },
       {
@@ -397,17 +398,19 @@
               "id": "extract_marker_channel",
               "name": "extract_marker_channel",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "layout": "CYX"
+              },
               "position": [
                 0.0,
                 0.0
               ],
               "resources": {},
-              "tool_class": "ExtractChannel",
-              "tool_module": "bioimageflow_common_tools.extract_channel",
-              "tool_name": "ExtractChannel",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_class": "SelectChannel",
+              "tool_module": "bioimageflow_io_tools.selection",
+              "tool_name": "SelectChannel",
+              "tool_package": "bioimageflow_io_tools",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -426,7 +429,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -445,7 +448,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -464,7 +467,7 @@
               "tool_module": "bioimageflow_common_tools.label_overlaps",
               "tool_name": "LabelOverlaps",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             }
           ],
@@ -694,17 +697,19 @@
               "id": "extract_marker_channel",
               "name": "extract_marker_channel",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "layout": "CYX"
+              },
               "position": [
                 0.0,
                 0.0
               ],
               "resources": {},
-              "tool_class": "ExtractChannel",
-              "tool_module": "bioimageflow_common_tools.extract_channel",
-              "tool_name": "ExtractChannel",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_class": "SelectChannel",
+              "tool_module": "bioimageflow_io_tools.selection",
+              "tool_name": "SelectChannel",
+              "tool_package": "bioimageflow_io_tools",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -723,7 +728,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -742,7 +747,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             },
             {
@@ -761,7 +766,7 @@
               "tool_module": "bioimageflow_common_tools.label_overlaps",
               "tool_name": "LabelOverlaps",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.1.7",
+              "tool_package_version": "0.2.0",
               "type": "tool"
             }
           ],
