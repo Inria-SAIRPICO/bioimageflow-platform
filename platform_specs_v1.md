@@ -1444,6 +1444,8 @@ Three levels of error display:
 
 **System errors:** A global error indicator (icon in the top bar). The indicator is visible whenever one or more errors have occurred. Clicking it opens a sliding panel showing the error history. Each error entry includes timestamp, type, and message, and can be dismissed individually (cross button). Auto-dismiss for transient WebSocket reconnections.
 
+All user-facing error surfaces preserve specific backend error detail ahead of generic HTTP-client status text, render structured validation locations in readable form, and keep their text selectable for copying even inside canvas, draggable panel, toast, and dialog regions.
+
 ### 3.12 Settings Panel
 
 A dedicated panel or modal for application configuration. Settings are persisted as a JSON file at `~/.bioimageflow/settings.json`. Defaults are applied for any missing keys.
@@ -1657,7 +1659,7 @@ Panel layout preferences (which panels are open, sizes) are stored in **user-lev
 
 Undo/redo is purely client-side. The frontend maintains an undo stack of graph state snapshots.
 
-- **Undoable operations:** Node add/remove, edge add/remove, parameter changes, node position changes. All are pure client-side graph state changes.
+- **Undoable operations:** Node add/remove, edge add/remove, parameter changes, node position changes. All are pure client-side graph state changes. Removing nodes prunes connected edges and every workflow-interface reference to those nodes in the same undoable snapshot; shared workflow inputs retain only their surviving targets and disappear when no target remains.
 - **Not undoable:** Execution, clear outputs, save, tool installation. These have server-side effects that can't be reversed by restoring client state. The frontend shows a confirmation dialog for destructive operations (Clear already does, per Section 3.5.2).
 - **Granularity:** Each user action is one undo step. A parameter change is captured on blur/Enter (not per keystroke). Moving multiple selected nodes is one step.
 - **Stack size:** 100 steps (configurable). Oldest entries are dropped.

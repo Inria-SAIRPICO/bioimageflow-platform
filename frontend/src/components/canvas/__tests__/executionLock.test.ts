@@ -14,6 +14,7 @@ let edgeUpdateHandler: ((event: any) => void) | null = null
 let nodeDragStartHandler: ((event: any) => void) | null = null
 let nodeDragStopHandler: ((event: any) => void) | null = null
 const vueFlowMocks = vi.hoisted(() => ({ updateEdge: vi.fn() }))
+const graphSyncMocks = vi.hoisted(() => ({ syncGraphState: vi.fn() }))
 
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
@@ -120,7 +121,7 @@ vi.mock('@/composables/useGraphSync', () => ({
   }),
   useGraphSync: () => ({
     syncGraph: vi.fn(),
-    syncGraphState: vi.fn(),
+    syncGraphState: graphSyncMocks.syncGraphState,
     flushNow: vi.fn(),
     dispose: vi.fn(),
     loadWorkflow: vi.fn().mockResolvedValue(null),
@@ -234,6 +235,7 @@ describe('CanvasView execution lock', () => {
     nodeDragStartHandler = null
     nodeDragStopHandler = null
     vueFlowMocks.updateEdge.mockClear()
+    graphSyncMocks.syncGraphState.mockClear()
     canvasCommandMocks.updateParameter = null
   })
 
@@ -398,6 +400,64 @@ describe('CanvasView execution lock', () => {
     })
     await nextTick()
     expect(mockNodes.map(node => node.id)).toEqual(['first', 'second'])
+    w.unmount()
+  })
+
+  it('removes workflow interface references in the same graph change as a node', async () => {
+    const graph = makeGraph({
+      nodes: [
+        makeGraphNode({ id: 'increment', name: 'QaIncrement' }),
+        makeGraphNode({ id: 'survivor', name: 'Survivor' }),
+      ],
+      interface: {
+        inputs: [{
+          id: 'shared-input',
+          name: 'Shared input',
+          kind: 'field',
+          schema: { type: 'int' },
+          default: null,
+          targets: [
+            { node: 'increment', port: { kind: 'field', name: 'value' } },
+            { node: 'survivor', port: { kind: 'field', name: 'value' } },
+          ],
+        }],
+        outputs: [{
+          id: 'incremented-output',
+          name: 'Incremented number',
+          schema: { type: 'int' },
+          source: { node: 'increment', column: 'number_plus_one' },
+        }],
+      },
+    })
+    const w = mountCanvas(graph)
+    await flushPromises()
+    await nextTick()
+    graphSyncMocks.syncGraphState.mockClear()
+
+    mockNodes.find(node => node.id === 'increment')!.selected = true
+    ;(w.vm as any).deleteSelected()
+
+    expect(graphSyncMocks.syncGraphState).toHaveBeenCalledOnce()
+    expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
+      nodes: [expect.objectContaining({ id: 'survivor' })],
+      interface: {
+        inputs: [{
+          ...graph.interface.inputs[0],
+          targets: [graph.interface.inputs[0].targets[1]],
+        }],
+        outputs: [],
+      },
+    }))
+
+    await w.find('.canvas-view').trigger('keydown', {
+      key: 'z',
+      ctrlKey: true,
+    })
+    await nextTick()
+    expect(mockNodes.map(node => node.id)).toEqual(['increment', 'survivor'])
+    expect(graphSyncMocks.syncGraphState).toHaveBeenLastCalledWith(expect.objectContaining({
+      interface: graph.interface,
+    }))
     w.unmount()
   })
 

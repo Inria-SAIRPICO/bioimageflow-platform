@@ -3,6 +3,7 @@ import type {
   MissingTool,
   ToolMetadata,
   ToolNodeState,
+  WorkflowInterface,
   WorkflowNodeState,
 } from '@/api/types'
 import { connectionSourceLabel } from '@/utils/displayNames'
@@ -14,6 +15,26 @@ import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 export interface VueFlowGraph {
   nodes: any[]
   edges: any[]
+}
+
+/**
+ * Remove public interface references owned by nodes that are being deleted.
+ * Inputs shared by surviving nodes retain those targets; an input with no
+ * remaining target and an output sourced from a removed node disappear.
+ */
+export function removeNodesFromWorkflowInterface(
+  workflowInterface: WorkflowInterface,
+  removedNodeIds: ReadonlySet<string>,
+): WorkflowInterface {
+  return {
+    inputs: workflowInterface.inputs.flatMap((input) => {
+      const targets = input.targets.filter(target => !removedNodeIds.has(target.node))
+      return targets.length > 0 ? [{ ...input, targets }] : []
+    }),
+    outputs: workflowInterface.outputs.filter(
+      output => !removedNodeIds.has(output.source.node),
+    ),
+  }
 }
 
 function sourceHandle(

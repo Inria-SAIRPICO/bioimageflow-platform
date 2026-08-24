@@ -242,6 +242,8 @@ If installing the local package is blocked by build-environment downloads, recor
 - Run `QA Reference Workflow` completely and by selected target, confirming required dependencies run.
 - Stop a running disposable workflow and wait for the final cancelled state.
 - Run `QA Controlled Failure` and confirm the exact node error appears once in the canvas, error history, Logger, and Execution panels.
+- Select error text in canvas banners, notifications, dialogs, and error history, copy it, and confirm specific server detail and validation field locations are preserved instead of only a generic HTTP status.
+- In a disposable copy of `QA Reference Workflow`, delete **QA Increment** and confirm **Incremented number** is removed from the workflow outputs with it. Undo once and confirm the node and output return together, redo the deletion, then move another node and save successfully without a queued 422 error.
 - Retry the failed execution and confirm successful upstream work is reused and the original target set is retained.
 - Use **Invalidate Failed Nodes and Retry** and verify failed/downstream selection is recomputed without deleting retained records.
 - Fix the controlled failure in a disposable copy, rerun, and confirm success.

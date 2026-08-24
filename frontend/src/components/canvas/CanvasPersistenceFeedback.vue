@@ -122,7 +122,7 @@ onBeforeUnmount(cancelSavingTimer)
         class="pi pi-exclamation-triangle canvas-persistence-feedback__icon"
         aria-hidden="true"
       />
-      <div class="canvas-persistence-feedback__copy">
+      <div class="canvas-persistence-feedback__copy bif-selectable-error">
         <strong>{{ visibleIssue.summary }}</strong>
         <span>{{ visibleIssue.detail }}</span>
       </div>
@@ -248,6 +248,10 @@ onBeforeUnmount(cancelSavingTimer)
   gap: 0.15rem;
   line-height: 1.35;
   min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+  white-space: pre-line;
+  -webkit-user-select: text;
 }
 
 .canvas-persistence-feedback__actions {

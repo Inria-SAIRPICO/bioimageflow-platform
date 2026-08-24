@@ -233,6 +233,41 @@ describe('canvas persistence routing', () => {
     warning.mockRestore()
   })
 
+  it('shows structured server validation detail instead of a generic 422 message', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const failure = Object.assign(new Error('Request failed with status code 422'), {
+      response: {
+        status: 422,
+        data: {
+          detail: [{
+            type: 'value_error',
+            loc: ['body', 'graph', 'interface', 'outputs', 0, 'source', 'node'],
+            msg: "Value error, Workflow output references unknown node 'increment'",
+          }],
+        },
+      },
+    })
+    const io = transports({ 'workflow-a': 1 })
+    io.putDraft.mockRejectedValueOnce(failure)
+    const persistence = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    persistence.initializeFromDraft(draft('workflow-a', 1, 'initial'))
+    persistence.queueGraph(graph('edited'))
+
+    await expect(persistence.flush()).rejects.toBe(failure)
+
+    expect(persistence.persistenceIssue.value?.detail).toContain(
+      "graph.interface.outputs[0].source.node: Workflow output references unknown node 'increment'",
+    )
+    expect(persistence.persistenceIssue.value?.detail).not.toContain(
+      'Request failed with status code 422',
+    )
+    warning.mockRestore()
+  })
+
   it('surfaces initialization failure and retries the retained graph', async () => {
     const io = transports({ 'workflow-a': 4 })
     const failure = new Error('draft endpoint unavailable')

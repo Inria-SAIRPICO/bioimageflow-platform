@@ -168,6 +168,7 @@ test.describe('error handling', () => {
     await expect(panel).toBeVisible()
     await expect(panel).toContainText('Execution failed')
     await expect(panel).toContainText('failed_node: boom')
+    await expect(panel).toHaveCSS('user-select', 'text')
 
     await page
       .locator('[data-testid="error-row-read-toggle"]')
@@ -227,6 +228,7 @@ test.describe('error handling', () => {
       mod.useGraphSync().validationResult.value = result
     }, validation)
     await expect(page.locator('.canvas-error-banner')).toBeVisible()
+    await expect(page.locator('.canvas-error-banner')).toHaveCSS('user-select', 'text')
     await expect(page.getByTestId('canvas-error-row').first()).toContainText(
       /cycle/i,
     )

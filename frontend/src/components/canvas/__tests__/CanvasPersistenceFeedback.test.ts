@@ -99,6 +99,8 @@ describe('CanvasPersistenceFeedback', () => {
     expect(alert.attributes('aria-live')).toBe('assertive')
     expect(alert.attributes('aria-atomic')).toBe('true')
     expect(alert.attributes('tabindex')).toBe('0')
+    const copy = alert.get('.canvas-persistence-feedback__copy')
+    expect(copy.classes()).toContain('bif-selectable-error')
   })
 
   it('emits the exact sticky issue id for Retry and Dismiss', async () => {

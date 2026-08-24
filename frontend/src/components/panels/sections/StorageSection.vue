@@ -19,6 +19,7 @@ import {
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
 import { isDesktop, selectFolder } from '@/utils/nativeDialogs'
+import { apiErrorMessage } from '@/utils/apiError'
 
 type StorageSettings = SettingsResponse & {
   workspace_path?: string | null
@@ -67,16 +68,7 @@ const demoStatusLabel = computed(() => {
 })
 
 function errorMessage(error: unknown): string {
-  if (
-    typeof error === 'object'
-    && error !== null
-    && 'response' in error
-  ) {
-    const detail = (error as { response?: { data?: { detail?: unknown } } })
-      .response?.data?.detail
-    if (typeof detail === 'string') return detail
-  }
-  return error instanceof Error ? error.message : String(error)
+  return apiErrorMessage(error)
 }
 
 function workflowId(workflow: { name: string; id?: string | null }): string {

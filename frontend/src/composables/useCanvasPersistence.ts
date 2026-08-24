@@ -1,5 +1,6 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
 import type { GraphState, ValidationResult } from '@/api/types'
+import { apiErrorMessage } from '@/utils/apiError'
 import { emptyGraph } from '@/sessions/graphDocument'
 import {
   fetchWorkflowDraft,
@@ -823,21 +824,7 @@ function errorFingerprint(error: unknown): string {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message.trim()
-  if (typeof error !== 'object' || error === null) {
-    return typeof error === 'string' ? error.trim() : ''
-  }
-  if ('response' in error) {
-    const response = (error as {
-      response?: { data?: { detail?: unknown; message?: unknown } }
-    }).response
-    for (const candidate of [response?.data?.detail, response?.data?.message]) {
-      if (typeof candidate === 'string' && candidate.trim().length > 0) {
-        return candidate.trim()
-      }
-    }
-  }
-  return ''
+  return apiErrorMessage(error)
 }
 
 function isConflict(error: unknown): boolean {

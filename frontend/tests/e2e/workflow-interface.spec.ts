@@ -27,6 +27,25 @@ function graph(name: string, displayName: string): GraphState {
   }
 }
 
+function graphWithExposedOutput(name: string, displayName: string): GraphState {
+  const result = graph(name, displayName)
+  result.nodes.push({
+    type: 'tool',
+    id: 'blur_2',
+    name: 'Gaussian Blur 2',
+    tool_name: 'GaussianBlur',
+    position: [520, 160],
+    parameters: { input_image: '/tmp/e2e-input.tif' },
+  })
+  result.interface.outputs.push({
+    id: 'blurred-output',
+    name: 'Blurred image',
+    schema: { type: 'ImageFile' },
+    source: { node: 'blur_1', column: 'output_image' },
+  })
+  return result
+}
+
 async function createWorkflow(page: Page, name: string, displayName: string): Promise<void> {
   await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
   expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
@@ -118,5 +137,35 @@ test.describe('workflow interface and grouping', () => {
     expect(saved.nodes[0].type).toBe('workflow')
     if (saved.nodes[0].type !== 'workflow') throw new Error('expected workflow node')
     expect(saved.nodes[0].workflow.nodes[0]).toMatchObject({ id: 'blur_1', type: 'tool' })
+  })
+
+  test('deleting an exposed node removes its interface references before autosave', async ({
+    page,
+  }) => {
+    const name = workflowName('delete_exposed')
+    const displayName = `Delete exposed ${name}`
+    await createWorkflow(page, name, displayName)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: graphWithExposedOutput(name, displayName) },
+    })).ok()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+
+    await page.locator('.vue-flow__node[data-id="blur_1"]').click()
+    const acceptedDeletion = page.waitForResponse(response => (
+      response.url().includes(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+    ))
+    await page.locator('.canvas-view').press('Delete')
+    const deletionResponse = await acceptedDeletion
+
+    expect(deletionResponse.status(), await deletionResponse.text()).toBe(200)
+    await expect(page.locator('.vue-flow__node[data-id="blur_1"]')).toHaveCount(0)
+    await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+    await saveWorkflow(page, name)
+
+    const saved = await savedGraph(page, name)
+    expect(saved.nodes.map(node => node.id)).toEqual(['blur_2'])
+    expect(saved.interface.outputs).toEqual([])
   })
 })

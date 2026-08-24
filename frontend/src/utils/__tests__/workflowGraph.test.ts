@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { ToolMetadata } from '@/api/types'
 import { emptyGraph } from '@/sessions/graphDocument'
 import { decodeEndpointHandle } from '../endpointHandles'
-import { graphStateToVueFlow } from '../workflowGraph'
+import {
+  graphStateToVueFlow,
+  removeNodesFromWorkflowInterface,
+} from '../workflowGraph'
 
 const tool: ToolMetadata = {
   name: 'threshold',
@@ -67,5 +70,62 @@ describe('graphStateToVueFlow', () => {
     expect(decodeEndpointHandle(rendered.edges[0].targetHandle)).toEqual({
       kind: 'workflow-input', id: 'image-port',
     })
+  })
+})
+
+describe('removeNodesFromWorkflowInterface', () => {
+  it('removes outputs and input targets owned by deleted nodes', () => {
+    const workflowInterface = {
+      inputs: [
+        {
+          id: 'shared-input',
+          name: 'Shared input',
+          kind: 'field' as const,
+          schema: { type: 'int' },
+          default: null,
+          targets: [
+            { node: 'deleted', port: { kind: 'field' as const, name: 'value' } },
+            { node: 'surviving', port: { kind: 'field' as const, name: 'value' } },
+          ],
+        },
+        {
+          id: 'deleted-input',
+          name: 'Deleted input',
+          kind: 'field' as const,
+          schema: { type: 'int' },
+          default: null,
+          targets: [
+            { node: 'deleted', port: { kind: 'field' as const, name: 'other' } },
+          ],
+        },
+      ],
+      outputs: [
+        {
+          id: 'deleted-output',
+          name: 'Deleted output',
+          schema: { type: 'int' },
+          source: { node: 'deleted', column: 'result' },
+        },
+        {
+          id: 'surviving-output',
+          name: 'Surviving output',
+          schema: { type: 'int' },
+          source: { node: 'surviving', column: 'result' },
+        },
+      ],
+    }
+
+    const result = removeNodesFromWorkflowInterface(
+      workflowInterface,
+      new Set(['deleted']),
+    )
+
+    expect(result.inputs).toEqual([{
+      ...workflowInterface.inputs[0],
+      targets: [workflowInterface.inputs[0].targets[1]],
+    }])
+    expect(result.outputs).toEqual([workflowInterface.outputs[1]])
+    expect(workflowInterface.inputs).toHaveLength(2)
+    expect(workflowInterface.outputs).toHaveLength(2)
   })
 })

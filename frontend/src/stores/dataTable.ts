@@ -2,6 +2,7 @@ import { computed, reactive, shallowReactive } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import type { NodeDataResponse } from '@/api/types'
+import { apiErrorMessage } from '@/utils/apiError'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -161,11 +162,7 @@ function createContext(): DataTableContext {
 }
 
 function errorMessage(exc: unknown): string {
-  if (typeof exc === 'object' && exc !== null && 'response' in exc) {
-    const response = (exc as { response?: { data?: { detail?: string } } }).response
-    if (response?.data?.detail) return response.data.detail
-  }
-  return exc instanceof Error ? exc.message : String(exc)
+  return apiErrorMessage(exc)
 }
 
 function errorStatus(exc: unknown): number | null {

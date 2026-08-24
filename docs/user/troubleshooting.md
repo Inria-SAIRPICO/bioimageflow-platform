@@ -2,6 +2,7 @@
 
 Start with the message shown by BioImageFlow.
 Validation banners, save messages, notifications, **Execution**, and error history usually identify the workflow, node, field, or environment that needs attention.
+Error text is selectable, so copy the complete detail—including any validation field location—when reporting a problem.
 
 ## The launcher does not start BioImageFlow
 

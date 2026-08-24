@@ -54,7 +54,10 @@ import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
-import { graphStateToVueFlow } from '@/utils/workflowGraph'
+import {
+  graphStateToVueFlow,
+  removeNodesFromWorkflowInterface,
+} from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { groupIntoWorkflow } from '@/utils/workflowGrouping'
 import type { GraphState, MissingTool, WorkflowInput, WorkflowOutput, WorkflowInfo } from '@/api/types'
@@ -2474,6 +2477,15 @@ function deleteSelected() {
   }
 
   const selectedNodeIds = new Set(selectedNodes.map((n: any) => n.id))
+
+  const interfaceContext = currentInterfaceContext()
+  if (interfaceContext !== null) {
+    const nextInterface = removeNodesFromWorkflowInterface(
+      interfaceContext,
+      selectedNodeIds,
+    )
+    replaceWorkflowInterface(nextInterface.inputs, nextInterface.outputs)
+  }
 
   // Remove edges connected to deleted nodes
   const edgesToRemove = getEdges.value.filter(

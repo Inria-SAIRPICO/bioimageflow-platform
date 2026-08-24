@@ -26,4 +26,19 @@ describe('API client', () => {
   it('does not set a baseURL', () => {
     expect(api.defaults.baseURL).toBeUndefined()
   })
+
+  it('promotes server validation detail into the error used by every API caller', async () => {
+    const error = Object.assign(new Error('Request failed with status code 422'), {
+      response: {
+        status: 422,
+        data: { detail: 'Workflow output references an unknown node' },
+      },
+    })
+
+    await expect(api.get('/test', {
+      adapter: async () => Promise.reject(error),
+    })).rejects.toMatchObject({
+      message: 'Workflow output references an unknown node',
+    })
+  })
 })

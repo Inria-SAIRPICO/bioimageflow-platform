@@ -1679,4 +1679,13 @@ html, body, #app, #bioimageflow-app {
 :global(.p-toast-detail) {
   white-space: pre-line;
 }
+
+/* Canvas and dock controls may disable selection to support dragging. Error
+ * text must remain selectable wherever it is rendered so users can copy the
+ * exact detail into bug reports, terminals, and support conversations. */
+:where(.bif-selectable-error, [role="alert"], [class*="error"], .p-toast-message-error),
+:where(.bif-selectable-error, [role="alert"], [class*="error"], .p-toast-message-error) * {
+  user-select: text;
+  -webkit-user-select: text;
+}
 </style>
