@@ -258,11 +258,28 @@ class ToolHotReloadService:
     def _on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
-        path = Path(os.fsdecode(event.src_path))
         if self._loop is None or self._stopped:
             return
-        # Hop to the asyncio loop where the rest of the state lives.
-        self._loop.call_soon_threadsafe(asyncio.create_task, self._handle_event(path))
+        # Atomic saves are reported as a move from an editor-owned temporary
+        # file to the registered ``*.py`` destination.  Watchdog's pattern
+        # handler admits the event when either side matches, so retain both
+        # paths here as well.  The normal package-level debounce coalesces
+        # duplicate resolutions from moves within one watched package.
+        raw_paths = [event.src_path]
+        destination = getattr(event, "dest_path", "")
+        if destination:
+            raw_paths.insert(0, destination)
+        seen: set[Path] = set()
+        for raw_path in raw_paths:
+            path = Path(os.fsdecode(raw_path))
+            if path in seen:
+                continue
+            seen.add(path)
+            # Hop to the asyncio loop where the rest of the state lives.
+            self._loop.call_soon_threadsafe(
+                asyncio.create_task,
+                self._handle_event(path),
+            )
 
     # -- loop-thread handlers --------------------------------------------
 

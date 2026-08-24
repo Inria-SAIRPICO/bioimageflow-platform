@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from watchdog.events import FileMovedEvent
 
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
@@ -489,6 +490,41 @@ async def test_custom_tool_edit_emits_tool_reload_with_updated_metadata(tmp_path
     assert args[0] == "ReloadMe"
     assert args[1]["display_name"] == "Reloaded Tool"
     assert registry.get_tool("ReloadMe") is not None
+
+
+async def test_atomic_custom_tool_save_reloads_from_move_destination(tmp_path: Path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = ToolRegistryService()
+    custom = CustomToolService(tmp_path, registry)
+    path = custom.create("AtomicReload", "DataFrameTool")
+    replacement = path.with_name(f".{path.name}.replacement.tmp")
+    replacement.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'display_name = "Atomic Reload"',
+            'display_name = "Atomically Reloaded"',
+        ),
+        encoding="utf-8",
+    )
+    replacement.replace(path)
+
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry=registry, connection_manager=cm, debounce_ms=15)
+    svc._loop = asyncio.get_running_loop()
+
+    svc._on_any_event(FileMovedEvent(str(replacement), str(path)))
+
+    assert await _wait_for(lambda: cm.broadcast_tool_reload.await_count == 1)
+    cm.broadcast_system_error.assert_not_awaited()
+    metadata = registry.get_tool("AtomicReload")
+    assert metadata is not None
+    assert metadata.display_name == "Atomically Reloaded"
+    args = cm.broadcast_tool_reload.await_args.args
+    assert args[0] == "AtomicReload"
+    assert args[1]["display_name"] == "Atomically Reloaded"
 
 
 async def test_custom_tool_delete_emits_tool_removed(tmp_path: Path):
