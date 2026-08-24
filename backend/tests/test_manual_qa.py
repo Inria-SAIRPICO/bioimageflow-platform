@@ -8,6 +8,7 @@ import zipfile
 
 import pytest
 
+from bioimageflow_server.models.graph import DataFrameEdge, PositionalInputPort
 from bioimageflow_server.models.workflow import WorkflowDocument
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -28,6 +29,8 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
     assert (root / "packages" / "qa-manual-tools.zip").is_file()
     assert (root / "evidence").is_dir()
     assert (root / "exports").is_dir()
+    assert not list(root.rglob("__pycache__"))
+    assert not list(root.rglob("*.pyc"))
     for workflow_id in payload["workflows"]:
         document = root / "workspace" / "workflows" / Path(str(workflow_id)) / "workflow.json"
         WorkflowDocument.model_validate_json(document.read_text(encoding="utf-8"))
@@ -41,11 +44,46 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
         assert zipfile.is_zipfile(root / "imports" / filename)
     assert not zipfile.is_zipfile(root / "imports" / "corrupt-workflow.bioimageflow.zip")
 
+    with zipfile.ZipFile(root / "imports" / "qa-nested-parent.bioimageflow.zip") as archive:
+        archive_payload = json.loads(archive.read("workflow.json"))
+    archived_workflow = archive_payload["workflow"]
+    assert archived_workflow["edges"][0]["type"] == "dataframe"
+    archived_child = archived_workflow["nodes"][1]["workflow"]
+    assert archived_child["interface"]["inputs"][0]["kind"] == "dataframe"
+    increment_source = next(
+        source["source"]
+        for source in archive_payload["custom_sources"]
+        if source["filename"] == "qa_increment.py"
+    )
+    assert "QaIncrementInputs" not in increment_source
+
     registry = ToolRegistryService()
     registry.register_custom_tools_directory(
         root / "workspace" / "workflows" / "QA" / "Reference Workflow" / "tools"
     )
     store = WorkflowStoreService(root / "workspace" / "workflows", registry)
+    reference = store.get_workflow("QA/Reference Workflow")
+    reference_edge = reference.graph.edges[0]
+    assert isinstance(reference_edge, DataFrameEdge)
+    assert reference_edge.target_position == 0
+
+    child = store.get_workflow("QA/Nested Child")
+    child_input = child.graph.interface.inputs[0]
+    assert child_input.id == "numbers-dataframe-input"
+    assert child_input.kind == "dataframe"
+    assert isinstance(child_input.targets[0].port, PositionalInputPort)
+    assert child_input.targets[0].port.index == 0
+
+    parent = store.get_workflow("QA/Nested Parent")
+    parent_edge = parent.graph.edges[0]
+    assert isinstance(parent_edge, DataFrameEdge)
+    assert parent_edge.target_input == "numbers-dataframe-input"
+
+    controlled_failure = store.get_workflow("QA/Controlled Failure")
+    failure_edge = controlled_failure.graph.edges[0]
+    assert isinstance(failure_edge, DataFrameEdge)
+    assert failure_edge.target_position == 0
+
     for workflow_id in (
         "QA/Reference Workflow",
         "QA/Nested Child",
@@ -59,6 +97,27 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
             storage_path=store.get_storage_path(workflow_id),
         )
         assert built.errors == []
+
+    for workflow_id, output_name in (
+        ("QA/Reference Workflow", "Incremented number"),
+        ("QA/Nested Parent", "Nested result"),
+    ):
+        workflow = store.get_workflow(workflow_id)
+        built = build_workflow(
+            workflow.graph,
+            registry,
+            storage_path=store.get_storage_path(workflow_id),
+        )
+        result = built.workflow.compute(dev_mode=True)
+        assert result[output_name].tolist() == [2, 3, 4]
+
+    built_failure = build_workflow(
+        controlled_failure.graph,
+        registry,
+        storage_path=store.get_storage_path("QA/Controlled Failure"),
+    )
+    with pytest.raises(RuntimeError, match="Intentional manual QA failure"):
+        built_failure.workflow.compute(dev_mode=True)
 
 
 def test_prepare_is_idempotent_for_an_unchanged_root(tmp_path: Path) -> None:

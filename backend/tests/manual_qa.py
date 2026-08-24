@@ -61,18 +61,13 @@ from bioimageflow import DataFrameTool
 from bioimageflow_core import IOModel
 
 
-class QaIncrementInputs(IOModel):
-    number: int
-
-
 class QaIncrementOutputs(IOModel):
     number_plus_one: int
 
 
 class QaIncrement(DataFrameTool):
     display_name = "QA Increment"
-    documentation = "Add one to the connected number column."
-    Inputs = QaIncrementInputs
+    documentation = "Add one to the number column in the connected DataFrame."
     Outputs = QaIncrementOutputs
 
     def transform(self, df: Any, arguments: Any) -> Any:
@@ -91,18 +86,13 @@ from bioimageflow import DataFrameTool
 from bioimageflow_core import IOModel
 
 
-class QaFailInputs(IOModel):
-    number: int
-
-
 class QaFailOutputs(IOModel):
     number: int
 
 
 class QaFail(DataFrameTool):
     display_name = "QA Controlled Failure"
-    documentation = "Always raise a controlled error for retry and logging tests."
-    Inputs = QaFailInputs
+    documentation = "Raise a controlled error after receiving the connected DataFrame."
     Outputs = QaFailOutputs
 
     def transform(self, df: Any, arguments: Any) -> Any:
@@ -168,21 +158,25 @@ def _tool_node(
     return node
 
 
-def _column_edge(
+def _dataframe_edge(
     edge_id: str,
     source_node: str,
-    source_output: str,
     target_node: str,
-    target_input: str,
-) -> dict[str, str]:
-    return {
-        "type": "column",
+    *,
+    target_position: int | None = None,
+    target_input: str | None = None,
+) -> dict[str, object]:
+    edge: dict[str, object] = {
+        "type": "dataframe",
         "id": edge_id,
         "source_node": source_node,
-        "source_output": source_output,
         "target_node": target_node,
-        "target_input": target_input,
     }
+    if target_position is not None:
+        edge["target_position"] = target_position
+    if target_input is not None:
+        edge["target_input"] = target_input
+    return edge
 
 
 def _reference_graph() -> GraphState:
@@ -192,7 +186,12 @@ def _reference_graph() -> GraphState:
         _tool_node("increment", "QaIncrement", 380, 120),
     ]
     graph["edges"] = [
-        _column_edge("numbers-to-increment", "numbers", "number", "increment", "number")
+        _dataframe_edge(
+            "numbers-to-increment",
+            "numbers",
+            "increment",
+            target_position=0,
+        )
     ]
     graph["interface"] = {
         "inputs": [],
@@ -214,14 +213,14 @@ def _child_graph() -> GraphState:
     graph["interface"] = {
         "inputs": [
             {
-                "id": "number-input",
-                "name": "Number",
-                "kind": "field",
-                "schema": {"type": "int"},
+                "id": "numbers-dataframe-input",
+                "name": "Numbers DataFrame",
+                "kind": "dataframe",
+                "schema": {"type": "DataFrame"},
                 "targets": [
                     {
                         "node": "increment",
-                        "port": {"kind": "field", "name": "number"},
+                        "port": {"kind": "positional", "index": 0},
                     }
                 ],
             }
@@ -257,7 +256,12 @@ def _parent_graph(child: GraphState, artifact_hash: str) -> GraphState:
         },
     ]
     graph["edges"] = [
-        _column_edge("numbers-to-child", "numbers", "number", "child", "number-input")
+        _dataframe_edge(
+            "numbers-to-child",
+            "numbers",
+            "child",
+            target_input="numbers-dataframe-input",
+        )
     ]
     graph["interface"] = {
         "inputs": [],
@@ -280,7 +284,12 @@ def _failing_graph() -> GraphState:
         _tool_node("failure", "QaFail", 380, 120),
     ]
     graph["edges"] = [
-        _column_edge("numbers-to-failure", "numbers", "number", "failure", "number")
+        _dataframe_edge(
+            "numbers-to-failure",
+            "numbers",
+            "failure",
+            target_position=0,
+        )
     ]
     return GraphState.model_validate(graph)
 
@@ -482,6 +491,12 @@ def _checksums(root: Path) -> dict[str, str]:
     return result
 
 
+def _remove_generated_bytecode(root: Path) -> None:
+    for cache_dir in root.rglob("__pycache__"):
+        if cache_dir.is_dir():
+            shutil.rmtree(cache_dir)
+
+
 def _marker_payload(root: Path) -> dict[str, object]:
     return {
         "schema": MARKER_SCHEMA,
@@ -565,6 +580,7 @@ def prepare(root: Path) -> tuple[dict[str, object], bool]:
         _write_local_package(root)
         store = _write_workflows(root)
         _write_archives(root, store)
+        _remove_generated_bytecode(root)
         (root / "evidence").mkdir()
         (root / "exports").mkdir()
         payload = _marker_payload(root)

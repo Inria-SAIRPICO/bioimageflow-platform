@@ -30,7 +30,7 @@ Running `prepare` again without changing the generated files is safe and reports
 
 The root contains:
 
-- `workspace/`: six saved workflows under `QA/` or at the workflow root;
+- `workspace/`: six saved workflows under `QA/` or at the workflow root, including deterministic DataFrame-level transform and nesting examples;
 - `inputs/qa-gradient.tif` and `inputs/qa-table.csv`;
 - `imports/`: valid collision and nested-workflow archives, a workflow-with-results bundle, and a deliberately corrupt archive;
 - `packages/qa-manual-tools.zip`: a trusted local test package;
@@ -82,7 +82,7 @@ Pass when startup and shutdown are clean, the native chooser works, and reopenin
 ### L2. Edit, save, and execute
 
 1. Open `QA Reference Workflow`.
-2. Confirm it contains **QA Numbers** connected to **QA Increment**.
+2. Confirm it contains **QA Numbers** connected from its DataFrame output header to positional DataFrame input 1 on **QA Increment**, rather than a `number` column connection.
 3. Move and rename **QA Increment**.
 4. Disable it, undo, redo, and leave it enabled.
 5. Save, close, and reopen the workflow.
@@ -95,8 +95,8 @@ Pass when editing and persistence are exact, the run succeeds, and the results m
 
 ### L3. Nested workflow
 
-1. Open `QA Nested Parent` and confirm it contains **QA Numbers** connected to a thick-bordered nested node.
-2. Open the nested node.
+1. Open `QA Nested Parent` and confirm the complete **QA Numbers** DataFrame is connected to the thick-bordered nested node's **Numbers DataFrame** header input.
+2. Open the nested node and confirm **Numbers DataFrame** targets positional DataFrame input 1 on the internal **QA Increment** node.
 3. Rename the internal **QA Increment** node and save the nested tab.
 4. Return to the parent and confirm it is dirty.
 5. Save the parent, close it, and reopen it.
@@ -110,10 +110,11 @@ Pass when nested edits apply only to the embedded copy and execute through the r
 1. Export `QA Reference Workflow` using **Workflow only**.
 2. Import the exported archive under a new name.
 3. Confirm nodes, connection, interface output, description, and local tools remain usable.
-4. Import `imports/qa_import_collision.bioimageflow.zip`.
-5. When the name collision appears, use `qa_import_collision_copy` and confirm both workflows exist.
-6. Attempt to import `imports/corrupt-workflow.bioimageflow.zip` and confirm a clear error appears without creating a workflow.
-7. Attempt to import `imports/qa-workflow-and-results.zip` and confirm BioImageFlow explains that the bundle is not directly importable.
+4. Import `imports/qa-nested-parent.bioimageflow.zip` as `qa_nested_parent_imported`, confirm its parent and nested child use DataFrame-level connections, and run it to obtain `2`, `3`, and `4`.
+5. Import `imports/qa_import_collision.bioimageflow.zip`.
+6. When the name collision appears, use `qa_import_collision_copy` and confirm both workflows exist.
+7. Attempt to import `imports/corrupt-workflow.bioimageflow.zip` and confirm a clear error appears without creating a workflow.
+8. Attempt to import `imports/qa-workflow-and-results.zip` and confirm BioImageFlow explains that the bundle is not directly importable.
 
 Pass when portable content survives the round trip and both invalid artifacts fail safely.
 
@@ -192,7 +193,7 @@ Prepare a fresh QA root rather than reusing the lightweight session.
 - Reset a parameter to its default and set a nullable parameter to null.
 - Add and remove input pins, expose workflow inputs and outputs, rename public ports, and configure distinct output templates.
 - Apply valid resource overrides and confirm invalid minimum, grammar, or concurrency values are rejected.
-- Connect compatible field and DataFrame edges and confirm incompatible connections and cycles are rejected.
+- Connect compatible field and DataFrame edges and confirm incompatible connections and cycles are rejected. In particular, feed a `DataFrameTool` through its positional header input; its declared scalar `Inputs` are constant parameters and must not be used to carry an upstream column.
 - Confirm node, field, global, and nested-path validation messages navigate to the correct item.
 - Save and reload, then compare every node, edge, parameter, interface port, position, resource, output template, and enabled state.
 
@@ -241,7 +242,7 @@ If installing the local package is blocked by build-environment downloads, recor
 
 - Run `QA Reference Workflow` completely and by selected target, confirming required dependencies run.
 - Stop a running disposable workflow and wait for the final cancelled state.
-- Run `QA Controlled Failure` and confirm the exact node error appears once in the canvas, error history, Logger, and Execution panels.
+- Run `QA Controlled Failure` and confirm **QA Numbers** first supplies its complete DataFrame, then the exact `Intentional manual QA failure` node error appears once in the canvas, error history, Logger, and Execution panels.
 - Select error text in canvas banners, notifications, dialogs, and error history, copy it, and confirm specific server detail and validation field locations are preserved instead of only a generic HTTP status.
 - In a disposable copy of `QA Reference Workflow`, delete **QA Increment** and confirm **Incremented number** is removed from the workflow outputs with it. Undo once and confirm the node and output return together, redo the deletion, then move another node and save successfully without a queued 422 error.
 - Retry the failed execution and confirm successful upstream work is reused and the original target set is retained.
