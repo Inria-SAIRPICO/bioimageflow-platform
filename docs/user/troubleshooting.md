@@ -66,6 +66,18 @@ Use **Workflow with results** when every copied output must come from one succes
 If pointer files appear, open **Edit → Preferences... → Storage** and read **Latest output view**.
 Use an export when you need ordinary file copies.
 
+## A managed cluster action failed
+
+Open **Execution** and use the structured category and next action rather than looking for a managed-run log.
+An `ssh-*` category means the site could not be reached and is normally retryable, `run-not-found` means the exact retained remote identity is absent, and submission uncertainty means BioImageFlow must reconnect to the same identity rather than allocate another run.
+Scheduler rejection, retry conflicts, result conflicts, and cleanup-plan conflicts require correcting or confirming the reported condition before repeating the action.
+
+The diagnostic may include sanitized run, attempt, or allocation identities that your site administrator can use for investigation.
+BioImageFlow does not expose unknown remote observation fields, raw exception strings, credentials, or managed logs.
+
+If you switched workspaces, switch back to the workspace where the run was created to see its retained history and verified downloaded result.
+Confirmed remote cleanup does not remove a verified local archive that was already downloaded into that workspace.
+
 ## A viewer is unavailable
 
 For Napari, wait for the first-time environment preparation, retry, and inspect application logs for a launch error.

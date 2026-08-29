@@ -24,7 +24,7 @@ That draft is shared by Save, Run, and the MCP integration so they operate on th
 A workflow can also appear as a node inside another workflow.
 Nested canvas changes remain private to that editor until the user explicitly applies them to the parent workflow.
 The saved `workflow.json` is the portable workflow document, while request-local graph validation does not replace the active draft.
-Execution state remains transient and is recorded separately from the editable workflow.
+Execution state is recorded separately from the editable workflow; managed registry snapshots, recovery journals, and verified result bundles are retained under the owning workspace and never enter the portable graph.
 
 The normative recursive graph and provenance rules are in [platform_specs_v2.md](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/platform_specs_v2.md).
 The generated workspace contract for coding agents remains in `docs/agents/` and the workspace-root `AGENTS.md`; the public overview is [How MCP Connects Coding Agents](mcp.md).
@@ -43,6 +43,6 @@ bioimageflow-platform/
 ## Related architecture references
 
 - [Workspace, Storage, and Demos](workspace-storage-and-demos.md) describes application-owned files and result views.
-- [Managed distributed execution runtime wiring](../distributed_execution_runtime_wiring.md) describes the public cluster boundary, durable attachment, structured observation, retry, result retrieval, and cleanup.
+- [Managed distributed execution runtime wiring](../distributed_execution_runtime_wiring.md) describes the public cluster boundary, workspace-scoped durable attachment, sanitized structured observation, retry, retained result retrieval, and cleanup.
 - [Platform specifications v1](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/platform_specs_v1.md) define the implemented application base.
 - [Platform specifications v3](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/platform_specs_v3.md) are a future proposal and do not describe current behavior unless explicitly inherited from v1 or v2.

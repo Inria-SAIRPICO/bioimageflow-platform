@@ -54,6 +54,7 @@ The selected script must define a top-level `cluster` value created with `Remote
 Click **Describe cluster** before selecting it for a run.
 The platform shows the observed script digest, destination, scheduler request, environment kind, setup presence, connection result, capabilities, and structured diagnostics.
 Fix any disabled reason using its reported next action, then describe the target again.
+Opening the target selector does not execute `cluster.py` or connect to the site; the trusted script runs only when you save or update its profile, explicitly describe it, or submit with it.
 
 The profile stores its name, script path, enabled state, revision, observed digest, and the non-secret cluster host and root observed when it is saved.
 Host and root are not separate editable settings; change them in `cluster.py` and save the profile again.
@@ -88,6 +89,9 @@ The platform saves the host, cluster root, run ID, and progress cursor as soon a
 A submitted run can remain queued or running after the application closes.
 After restart, the platform attaches with those saved values and does not resubmit or require the original `cluster.py`, `parsl.py`, `setup.sh`, workflow project, or input paths.
 
+Managed run history, recovery journals, and downloaded result bundles belong to the workspace in which the run was created.
+Switching workspaces shows the selected workspace's history and sends new runs there, while a run already being monitored continues updating its original workspace safely.
+
 There is a short residual risk between durable remote allocation and the return of the run ID.
 If the application crashes in that interval, it may not know the run ID and will not guess or automatically resubmit.
 
@@ -104,6 +108,8 @@ When a run succeeds, choose **Download Results** to download the verified ZIP th
 BioImageFlow verifies the portable result bundle and publishes it atomically.
 Run-owned assets become local, while paths declared as external cluster paths remain external references.
 A download problem does not change the successful run state.
+After the first verified download, BioImageFlow reuses the retained local archive on later downloads and after an application restart.
+That local result remains available even if you later apply confirmed cluster cleanup, as long as you keep the original workspace files.
 
 ## Clean up retained cluster state
 

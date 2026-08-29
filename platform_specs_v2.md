@@ -176,8 +176,10 @@ Each job is one compiled scoped node attempt; a scheduler allocation or Parsl wo
 Managed runs are monitored only through public snapshots, sequence-based progress, and structured diagnostics.
 They do not expose a managed-run log action.
 Cancellation, retry planning and start, result download, and cleanup delegate to the public run or cluster methods, and UI availability is derived from capability and diagnostic reports.
+Public run observations are projected through a strict known-field allowlist before persistence, and structured public diagnostics replace arbitrary exception text wherever the library supplies them.
 
 A managed run persists the durable run ID plus host, cluster root, and progress sequence so restart attachment does not require the original workflow or trusted configuration files.
+It also persists the deterministic workspace-owned result-bundle path so a verified local result can be reused after restart or remote cleanup.
 Retry recovery persists the exact public retry plan and planned child ID, attempts child attachment first, and repeats `start_retry()` only after the public API definitively reports that the child is absent.
 
 ## 10. Saved-Source Provenance
@@ -238,10 +240,12 @@ Workflow identities are path-derived and carry durable identity generations.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves update drafts, retained snapshots, and provenance references atomically.
 
-The platform keeps an atomic, revisioned execution registry separate from graphs and cache storage.
+The platform keeps an atomic, revisioned execution registry under the active workspace, separate from graphs and cache storage.
 The registry is an index and presentation cache rather than authority for managed run state.
-It stores only non-secret profile attribution, accepted snapshot identity, durable run identity, managed attachment tuple, progress cursor, retry journal, and normalized presentation state.
+It stores only non-secret profile attribution, accepted snapshot identity, durable run identity, managed attachment tuple, progress cursor, retry and cleanup journals, managed result-bundle identity, allowlisted observation fields, and normalized presentation state.
+Listings, startup recovery, and new runs use the current workspace; an already loaded or created execution remains bound to its original workspace for registry, journal, poller, and result writes after a workspace switch.
 On restart, managed entries attach through `RemoteCluster(host=..., root=...).attach(run_id)` and converge from public run observations without importing the original cluster script or resubmitting.
+For a succeeded run with a verified retained archive, result access uses the local bundle before attempting remote attachment.
 
 Every named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`.
 This path is not configurable or persisted in `GraphState` or workspace metadata.
@@ -312,9 +316,11 @@ Thumbnail requests are initiated only when their rendered row enters the visible
 
 The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; trusted Python-source preview using the same apply route; and explicit workflow and result exports.
 
-Execution APIs include strict profile and target models, cluster description, exact run preflight, plural execution snapshots, reload of retained observations, ID-specific cancellation, persisted retry preview and confirmation, managed result download, and plan-based cleanup.
+Execution APIs include strict profile and target models, sanitized cluster and connection descriptions, typed remote path plans, exact run preflight without a root-input field, plural execution snapshots, reload of retained observations, ID-specific cancellation, persisted retry preview and confirmation, managed result download, and typed plan-based cleanup.
 Managed profile records select a trusted desktop Python script whose top level defines `cluster = RemoteCluster(...)`; their persistence contains identity, revision, name, enabled state, script path, observed digest, and non-secret cluster host/root observations.
+Target listing reads those saved observations and capability support without executing the selected scripts; script execution occurs only during profile validation, explicit describe, and submission.
 Version-1 low-level Parsl and transport profiles are dropped without archive or conversion.
+If the saved default target no longer names Local or an enabled current profile after that load, the setting is durably repaired to Local.
 
 The export routes are:
 

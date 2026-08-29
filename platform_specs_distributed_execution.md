@@ -81,7 +81,8 @@ cluster = RemoteCluster(
 
 Reusable templates resolve companion paths from `Path(__file__).resolve().parent`, so `parsl.py` and `setup.sh` remain relative to their `cluster.py` even when the platform process has another working directory.
 The platform does not change the process working directory or rewrite arbitrary relative paths in trusted code.
-The backend imports a fresh module for each describe or submit operation so a stale `sys.modules` entry cannot silently define the target.
+The backend imports a fresh module when a profile is created or updated, described, or used for submission so a stale `sys.modules` entry cannot silently define the target.
+Ordinary target discovery reads only persisted profile metadata and the public capability report; listing targets never executes a trusted configuration script or attempts a cluster connection.
 The selected script and every executable file it names are trusted code, not sandboxed configuration.
 
 The platform does not split genuine site-owned facts into a second configuration authority.
@@ -97,6 +98,8 @@ The digest is an observation and confirmation aid, not a replacement for rereadi
 The profile schema is `bioimageflow.platform.execution-profile.v2`.
 Version-1 distributed profiles are permanently dropped during migration because their low-level modes and transport values cannot be converted safely.
 They are not archived, copied, or exposed through a compatibility execution path.
+After profile migration or load, a saved default target that is neither Local nor an enabled current version-2 profile is durably repaired to Local.
+A valid default that names an enabled version-2 profile is preserved.
 Local settings, local execution history, and local results are preserved.
 
 ### 3.3 Deployment modes
@@ -110,10 +113,11 @@ Ordinary webapp users cannot submit arbitrary server-side Python paths.
 
 ## 4. Describe and Capability-Driven State
 
-**Describe cluster** loads the selected script, requires its `cluster` value to be a `RemoteCluster`, reads the public capability report, and invokes only public non-workflow checks supported by that object.
+Target discovery combines Local with enabled saved profiles and current managed-execution capabilities without loading profile scripts.
+**Describe cluster** explicitly loads the selected script, requires its `cluster` value to be a `RemoteCluster`, reads the public capability report, and invokes only public non-workflow checks supported by that object.
 The response is a sanitized structured description of destination, scheduler request, environment kind, setup presence, configuration digest, connection observation, and capabilities.
 
-The UI derives target availability and action enablement from the returned capability report and diagnostics.
+The UI derives target availability from saved enabled state and the capability report, while structured diagnostics and capabilities determine operation-specific action enablement.
 It must not infer support from import success, scheduler strings, presence of optional packages, or exception text.
 
 The platform distinguishes client implementation availability, cluster connection observation, configured scheduler and environment description, facts validated by the managed deployment, and facts that remain unverified until an allocation exists.
@@ -154,11 +158,14 @@ The UI explains this residual risk before submission.
 
 ## 7. Execution Registry and Restart Recovery
 
+Each workspace owns its managed execution registry and journals below `<workspace>/.bioimageflow/executions` and its managed result bundles below `<workspace>/.bioimageflow/execution_exports`.
 The execution registry is separate from `GraphState`, workflow cache storage, and the selected configuration script.
 It is an index and presentation cache; the public `RemoteWorkflowRun` observation is authoritative after attachment.
 
 Registry writes use atomic replacement and revision compare-and-swap.
 No secret or resolved credential is persisted.
+When the user switches workspaces, execution listing, startup recovery, and new runs use the newly selected workspace.
+An execution ID that was already loaded or created remains bound to its original workspace registry, retry and cleanup journals, and result root, so an active poller cannot begin writing into a different workspace after the switch.
 
 At startup the platform:
 
@@ -179,6 +186,8 @@ Local registry records and local result data remain intact.
 ## 8. Monitoring and Diagnostics
 
 Managed remote monitoring uses `RemoteWorkflowRun.snapshot()`, `refresh()`, and `progress(after_sequence=...)`, including the structured node diagnostics carried by the public progress stream.
+Before persistence, the platform projects each public run observation through a strict allowlist containing only schema, run ID, state, status revision, storage path, terminal flag, update time, attempt phase, gateway publication identity, gateway artifact digest, and scheduler job ID when those values are present.
+Unknown observation keys, secret-looking values, arbitrary exception strings, and private library state are discarded before registry or API presentation.
 Structured operational diagnostics are retained from public cluster exceptions and reports.
 The platform preserves library run states and backend job details while mapping them into the engine-neutral `ExecutionSnapshot` used for local and remote runs.
 
@@ -212,10 +221,12 @@ Restart recovery is attach-first:
 
 The platform never allocates a replacement child ID, rebuilds a retry plan from the current draft, changes the target, or treats transport failure as proof of absence.
 
-Result download delegates to `run.download_result(destination)` using a platform-managed backend destination and then returns the completed archive to the client.
+The first result download delegates to `run.download_result(destination)` using the deterministic workspace-owned destination and then returns the completed archive to the client.
 Neither desktop nor browser clients supply an arbitrary backend filesystem destination.
 The library owns verification, atomic publication, destination-conflict behavior, and preservation of external cluster paths.
 A transfer failure does not change a succeeded workflow state.
+The registry retains the non-secret managed result-bundle path and verified archive digest.
+After a successful transfer, later downloads and restart recovery verify and reuse that local archive before attempting remote attachment, so the result remains downloadable after confirmed remote cleanup or a later `run-not-found` response.
 
 Cleanup uses `cluster.plan_cleanup()` followed by explicit confirmation and `cluster.apply_cleanup(plan)`.
 The UI shows exact candidates, sizes, references, and destructive consequences from the public plan.
@@ -239,7 +250,8 @@ Canvas status projects only when workflow identity and accepted draft revision s
 
 ## 11. API Surface
 
-The platform exposes strict OpenAPI models for profiles, targets, description, execution snapshots, diagnostics, retry journals, result downloads, and cleanup reports.
+The platform exposes strict OpenAPI models for profiles, targets, sanitized cluster descriptions, connection reports, remote node-path plans, execution snapshots, diagnostics, retry journals, result downloads, cleanup plans, and cleanup reports.
+These models reject unknown response fields rather than passing arbitrary public-library mappings to the frontend.
 OpenAPI remains the sole source of frontend API types.
 
 The managed profile routes are:
@@ -274,6 +286,20 @@ Events accelerate observation but do not replace full snapshot recovery.
 
 Every managed failure retains the structured library phase and category.
 The platform preserves `allocation_state`, `retry_safety`, and `next_action` so the UI can distinguish safe retry, same-attempt recovery, unsafe replay, and non-applicable actions.
+Public diagnostic identities are copied only as string pairs and remain available in structured operation errors for exact run, attempt, and allocation attribution.
+The platform uses the public diagnostic message when one exists and otherwise records a fixed sanitized observation message instead of persisting `str(exception)`.
+
+Execution operation categories map to HTTP status as follows:
+
+| HTTP status | Categories |
+| --- | --- |
+| 404 | `retry-plan-not-found`, `run-not-found` |
+| 409 | `workflow-run-retry-error`, `remote-retry-conflict`, `psij-submission-uncertain`, `remote-retry-submission-uncertain`, `submission-uncertain`, `scheduler-rejected`, `retry-plan-integrity-error`, `retry-child-conflict`, `workflow-run-result-unavailable`, `workflow-result-destination-conflict`, `workflow-result-integrity-error` |
+| 422 | `invalid-recompute-request`, `remote-invalid-retry` |
+| 503 | every `ssh-*` or `sftp-*` category, plus `remote-protocol` |
+| 500 | every otherwise unmapped operation category |
+
+The default structured `retryable` flag is true only for `ssh-connection`, `ssh-timeout`, `ssh-command-failed`, and `sftp-*`; an operation may preserve a more specific public value already present in its details.
 
 OpenSSH configuration owns keys, agents, jump hosts, ports, and host-key policy.
 Profiles must not accept passwords, private-key bytes, arbitrary SSH option strings, or host-key bypass values.
@@ -288,7 +314,7 @@ They must not appear in profile files, registry files, API responses, events, ex
 
 The settings and profile store schema increments for managed profiles.
 On first load, obsolete version-1 distributed profiles are dropped without archive or conversion.
-The default target falls back to Local if it referenced a removed profile.
+The default target is durably reset to Local if it referenced a dropped, missing, disabled, or otherwise unavailable profile, while an enabled current version-2 default remains unchanged.
 
 Obsolete attached-Parsl and submitted-local code paths, low-level remote transport models, importable `module:callable` profile factories, staging-root settings, pre-launch transport values, and cluster-agent compatibility helpers are removed.
 No dual wire path or deprecated alias is retained.
@@ -306,12 +332,15 @@ Portable workflow archives remain free of platform profile IDs and remote attach
 - Explicit local-upload versus cluster-path decisions survive only in the immutable run invocation and never dirty the graph.
 - A returned run ID is durably saved with host and root before the run is presented as reconnectable.
 - Restart attaches using only host, root, and run ID and never imports the original cluster script.
+- Workspace switching changes the registry and result roots for listings and new runs without redirecting active execution writes away from their original workspace.
 - Snapshot and progress reduction are idempotent across repeated coordinator observations, UI reloads, and process restart.
+- Unknown or sensitive run-observation keys are absent from registry files and API responses.
 - Structured capability and diagnostic fields determine action availability without log or exception-text parsing.
 - Managed runs expose no log action.
 - Cancellation is ID-specific and idempotent.
 - Retry persists the exact plan and child ID, attaches first after restart, and replays only after definitive child absence.
 - Result download delegates verification and atomic publication to `download_result()`.
+- A verified retained local result survives restart and remote cleanup and is reused before remote attachment.
 - Cleanup requires a public plan and exact confirmation.
 - Version-1 profiles are absent after migration while local history and results remain.
 - The packaged Slurm example contains `cluster.py`, `parsl.py`, and optional `setup.sh` without secrets.

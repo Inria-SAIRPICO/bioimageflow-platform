@@ -14,6 +14,11 @@ Its default location is `~/BioImageFlow/workspace/`, and the user can select ano
 
 ```text
 workspace/
+  .bioimageflow/
+    executions/
+      retry_plans/
+      cleanup_plans/
+    execution_exports/
   workflows/
     <workflow-id>/
       workflow.json
@@ -28,6 +33,10 @@ Each workflow derives its runtime storage from `<workflow-directory>/results`; t
 Moving or deleting a workflow carries or removes its results.
 Duplicating a workflow copies the reusable definition and workflow-local tools but starts without the source workflow's results.
 Stateless graph services use `<workspace>/.bioimageflow/runtime`.
+
+Managed execution snapshots and their retry or cleanup journals use `<workspace>/.bioimageflow/executions`.
+Verified managed result bundles use the deterministic `<workspace>/.bioimageflow/execution_exports/<execution-id>` destination and can be reused after restart or confirmed remote cleanup.
+Switching workspaces changes the managed history and storage roots used for new executions, while an execution already loaded or created remains bound to its original workspace for active polling, journals, and result writes.
 
 ## Workflow folders and nested sources
 

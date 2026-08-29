@@ -32,8 +32,10 @@ Choose the default execution target and how new workflows schedule independent n
 In desktop mode, a managed remote profile stores a name and the path to one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
 Saving the profile records its observed digest and non-secret host/root observations.
 Use **Describe cluster** to show its destination, scheduler request, connection observation, capabilities, and structured diagnostics.
+Opening the target list does not execute the trusted script; saving, describing, and submitting do.
 Download the reusable Slurm example to start with `cluster.py`, `parsl.py`, and optional `setup.sh` files that keep genuine site facts together.
 In webapp mode, managed profiles are provisioned out of band and appear read-only.
+If a saved default names a removed, disabled, or obsolete profile, BioImageFlow repairs the setting to **Local** the next time profiles load.
 
 See [Managed Cluster Execution](distributed-execution.md) before selecting or trusting a cluster script.
 
@@ -50,7 +52,9 @@ The workspace contains saved workflows and their workflow-local tools.
 Click **Reveal** to open the displayed location, or click **Browse...** to switch to another workspace.
 
 Changing the workspace does not move workflows from the previous location.
-Each workflow stores its managed execution results in its own `results` folder.
+Local workflow runtime results remain in each workflow's `results` folder.
+Managed run history, retry and cleanup journals, and verified downloaded result bundles remain under the workspace's private `.bioimageflow` directory.
+Already running managed executions keep writing to the workspace where they started, while the selected workspace owns new runs and the history currently shown.
 
 ### Latest output view
 

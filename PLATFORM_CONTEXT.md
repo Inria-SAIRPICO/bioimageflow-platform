@@ -125,11 +125,14 @@ Execution targets and retained run state are platform-owned and must not be pers
 Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.
 
 Managed remote profiles select one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
-Profiles persist non-secret identity, name, enabled state, script path, observed digest, cluster host, and normalized root; a managed run separately persists its own host/root attachment tuple, durable run ID, and progress cursor so restart attachment does not need the original script.
-Strict profile descriptions and execution diagnostics expose sanitized allowlists rather than retaining unknown library report fields.
+Profiles persist non-secret identity, name, enabled state, script path, observed digest, cluster host, and normalized root; target listing uses those observations and capabilities without executing the script, while profile validation, describe, and submission load the trusted code.
+A managed run separately persists its own host/root attachment tuple, durable run ID, progress cursor, and deterministic result-bundle path so restart attachment does not need the original script and a verified local result remains usable after remote cleanup.
+Strict profile descriptions, path and cleanup reports, run observations, and execution diagnostics expose typed sanitized allowlists rather than retaining unknown library report fields or arbitrary exception strings.
 The platform does not retain attached-Parsl, submitted-local, low-level SSH transport, cluster-agent, importable factory, staging-root, or manual remote-directory workflows.
 The public capability report and structured diagnostics determine UI state, and managed runs do not expose logs.
 Retry recovery is attach-first and may replay only the exact persisted public retry plan after definitive child absence.
+Managed execution registries, retry and cleanup journals, and downloaded result bundles are workspace-scoped; switching workspaces changes listings and new-run storage but does not redirect an already bound active execution's writes.
+After version-1 profiles are dropped, an invalid or disabled default target is durably repaired to Local without disturbing a valid enabled version-2 default.
 
 Each saved workflow owns runtime storage at `<workflow-directory>/results`.
 The `outputs/latest` view is a disposable per-node projection and may combine the latest successful outputs from different runs.
