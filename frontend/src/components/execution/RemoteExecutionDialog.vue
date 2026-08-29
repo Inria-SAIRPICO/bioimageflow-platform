@@ -100,45 +100,43 @@ function resolve(): void {
     data-testid="remote-execution-dialog"
     @update:visible="(next: boolean) => { if (!next) emit('cancel') }"
   >
-    <template>
-      <p class="dialog-intro">Choose explicitly whether each path is uploaded from this computer or already exists on the cluster. The resolved invocation is submitted directly through the managed cluster API.</p>
-      <div v-for="input in unresolved" :key="key(input)" class="path-input-card">
-        <div class="path-input-title">
-          <code>{{ input.node_path }}</code>
-          <strong>{{ input.input_name }}</strong>
-          <small>{{ input.value_shape }}</small>
-        </div>
-        <div v-for="(_, index) in input.values" :key="index" class="path-leaf">
-          <span v-if="input.values.length > 1" class="path-index">{{ index + 1 }}</span>
-          <SelectButton
-            v-model="draftFor(input, index).source"
-            :options="choices(input)"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            :data-testid="`remote-path-source-${input.node_path}-${input.input_name}-${index}`"
-          />
-          <InputText
-            v-if="draftFor(input, index).source !== 'none'"
-            v-model="draftFor(input, index).path"
-            :placeholder="draftFor(input, index).source === 'cluster' ? '/absolute/cluster/path' : 'Select a local file'"
-            class="path-value"
-          />
-          <Button
-            v-if="draftFor(input, index).source === 'upload'"
-            icon="pi pi-folder-open"
-            text
-            aria-label="Choose local path"
-            title="Choose local path"
-            @click="chooseUpload(input, index)"
-          />
-          <small
-            v-if="draftFor(input, index).source === 'cluster' && !leafValid(draftFor(input, index))"
-            class="path-error"
-          >Absolute POSIX path required</small>
-        </div>
+    <p class="dialog-intro">Choose explicitly whether each path is uploaded from this computer or already exists on the cluster. The resolved invocation is submitted directly through the managed cluster API.</p>
+    <div v-for="input in unresolved" :key="key(input)" class="path-input-card">
+      <div class="path-input-title">
+        <code>{{ input.node_path }}</code>
+        <strong>{{ input.input_name }}</strong>
+        <small>{{ input.value_shape }}</small>
       </div>
-    </template>
+      <div v-for="(_, index) in input.values" :key="index" class="path-leaf">
+        <span v-if="input.values.length > 1" class="path-index">{{ index + 1 }}</span>
+        <SelectButton
+          v-model="draftFor(input, index).source"
+          :options="choices(input)"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          :data-testid="`remote-path-source-${input.node_path}-${input.input_name}-${index}`"
+        />
+        <InputText
+          v-if="draftFor(input, index).source !== 'none'"
+          v-model="draftFor(input, index).path"
+          :placeholder="draftFor(input, index).source === 'cluster' ? '/absolute/cluster/path' : 'Select a local file'"
+          class="path-value"
+        />
+        <Button
+          v-if="draftFor(input, index).source === 'upload'"
+          icon="pi pi-folder-open"
+          text
+          aria-label="Choose local path"
+          title="Choose local path"
+          @click="chooseUpload(input, index)"
+        />
+        <small
+          v-if="draftFor(input, index).source === 'cluster' && !leafValid(draftFor(input, index))"
+          class="path-error"
+        >Absolute POSIX path required</small>
+      </div>
+    </div>
 
     <template #footer>
       <Button label="Cancel" text :disabled="busy" @click="emit('cancel')" />
