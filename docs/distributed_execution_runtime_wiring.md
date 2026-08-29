@@ -63,7 +63,8 @@ It never imports the original profile script or bootstraps a missing gateway.
 
 ## Snapshot reduction and diagnostics
 
-The coordinator poller uses `snapshot()`, `refresh()`, `progress(after_sequence=...)`, and `diagnostics()` and persists each converged projection.
+The coordinator poller uses `snapshot()`, `refresh()`, and `progress(after_sequence=...)` and persists each converged projection, including structured node diagnostics from the public progress stream.
+Structured operational diagnostics come from public cluster reports and exceptions.
 The Execution panel's reload action performs `GET /executions/{execution_id}` to read that latest retained observation; it does not start a second remote refresh operation.
 Progress is reduced idempotently by global sequence and scoped node path.
 The stored cursor advances only with a durable registry snapshot.
@@ -81,7 +82,7 @@ Confirmation delegates to `start_retry(plan)`.
 On recovery the coordinator attaches to the child first, repeats the exact start only after definitive child absence, and otherwise preserves uncertain state without replay.
 
 Result retrieval delegates to `download_result(destination)`.
-Desktop mode supplies a user-selected local destination, while browser delivery uses a server-owned completed artifact rather than an arbitrary client-supplied server path.
+The backend always uses a server-owned managed destination, then the frontend downloads the completed ZIP through the browser rather than supplying an arbitrary server path.
 
 Run-scoped cleanup reconstructs an attach-only cluster from the execution's persisted host and root, delegates to `plan_cleanup(run_ids=(run_id,))`, and then calls `apply_cleanup(plan)` after confirmation.
 The apply route accepts only the exact stored public plan and never a profile script, current profile revision, or recursive path.

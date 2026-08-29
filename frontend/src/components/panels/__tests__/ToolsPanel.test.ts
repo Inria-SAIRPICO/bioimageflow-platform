@@ -151,7 +151,6 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     execution_engine: 'sequential',
     new_workflow_execution: 'sequential',
     default_execution_target_id: 'local',
-    trusted_parsl_factories: [],
     node_data_page_size: 250,
     keyboard_shortcuts: {},
     dev_mode: true,

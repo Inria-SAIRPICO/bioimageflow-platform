@@ -126,15 +126,14 @@ Unknown or non-string diagnostic fields are not copied into platform persistence
 Remote execution starts from the exact accepted recursive graph or draft snapshot used by local execution.
 The backend translates that snapshot to a storage-independent BioImageFlow workflow and supplies remote storage only through the selected `RemoteCluster`.
 
-The platform resolves path-shaped invocation values explicitly before submission.
-For each unresolved root input or invocation-only node input, the user chooses **Upload from this computer**, represented by `LocalUpload`, or **Already on the cluster**, represented by a normalized absolute cluster `Path`.
+The platform resolves path-shaped invocation-only node values explicitly before submission across root and nested workflows.
+For each unresolved value, the user chooses **Upload from this computer**, represented by `LocalUpload`, or **Already on the cluster**, represented by a normalized absolute cluster `Path`.
 String values remain strings.
 Connected fields, non-path fields, workflow boundaries, and relative unmarked cluster paths are rejected.
 Invocation-only path choices never modify `GraphState` or saved workflow JSON.
 
-The backend passes resolved root inputs, selected targets, or node-input overrides through the corresponding public `RemoteCluster.submit()` arguments.
-Root inputs and explicit targets are mutually exclusive according to the public library contract.
-The platform does not manufacture an unsupported selected-node plus root-input invocation.
+The backend passes selected targets and resolved node-input overrides through the corresponding public `RemoteCluster.submit()` arguments.
+The platform does not expose a separate root-input invocation contract and therefore cannot manufacture an unsupported selected-node plus root-input call.
 
 ## 6. Submission and Identity
 
@@ -146,7 +145,8 @@ The platform must not reread or patch library-owned prepared state.
 
 The platform saves the returned durable run ID immediately with the execution registry entry.
 It also saves the non-secret attachment tuple: SSH host, normalized cluster root, durable run ID, and last consumed progress sequence.
-The profile ID, profile revision, script path, observed script digest, sanitized target description, workflow identity, accepted draft revision, graph digest, command, and normalized presentation snapshot are retained for history and attribution.
+The profile ID, profile revision, observed script digest, sanitized target description, workflow identity, accepted draft revision, command, and normalized presentation snapshot are retained for history and attribution.
+The attachment tuple is independent of the profile and original script path.
 
 The direct convenience call has an acknowledged crash window between remote durable allocation and receipt of the returned run handle.
 If the platform process dies in that interval, it may not know the new run ID and must not guess, search private storage, or automatically resubmit.
@@ -178,7 +178,8 @@ Local registry records and local result data remain intact.
 
 ## 8. Monitoring and Diagnostics
 
-Managed remote monitoring uses `RemoteWorkflowRun.snapshot()`, `refresh()`, `progress(after_sequence=...)`, and `diagnostics()`.
+Managed remote monitoring uses `RemoteWorkflowRun.snapshot()`, `refresh()`, and `progress(after_sequence=...)`, including the structured node diagnostics carried by the public progress stream.
+Structured operational diagnostics are retained from public cluster exceptions and reports.
 The platform preserves library run states and backend job details while mapping them into the engine-neutral `ExecutionSnapshot` used for local and remote runs.
 
 Progress is globally sequenced and reduced idempotently by scoped node path.
@@ -211,9 +212,8 @@ Restart recovery is attach-first:
 
 The platform never allocates a replacement child ID, rebuilds a retry plan from the current draft, changes the target, or treats transport failure as proof of absence.
 
-Result download delegates to `run.download_result(destination)`.
-The desktop chooses a local destination through its trusted file dialog.
-The browser receives a platform-managed completed artifact and never supplies an arbitrary backend filesystem destination.
+Result download delegates to `run.download_result(destination)` using a platform-managed backend destination and then returns the completed archive to the client.
+Neither desktop nor browser clients supply an arbitrary backend filesystem destination.
 The library owns verification, atomic publication, destination-conflict behavior, and preservation of external cluster paths.
 A transfer failure does not change a succeeded workflow state.
 
@@ -298,7 +298,7 @@ Portable workflow archives remain free of platform profile IDs and remote attach
 
 ## 14. Acceptance Criteria
 
-- Local Direct and Wetlands execution pass their existing validation and result tests without cluster support installed.
+- Local Direct and Wetlands execution pass their existing validation and result tests without a managed cluster profile or reachable cluster.
 - A trusted script defining `cluster = RemoteCluster(...)` can be saved, described, selected, and submitted.
 - A missing or wrong `cluster` value produces a structured profile error without creating a run.
 - Profile persistence contains name, path, enabled state, revision, digest, and non-secret host/root observations but no secret values or serialized live objects.

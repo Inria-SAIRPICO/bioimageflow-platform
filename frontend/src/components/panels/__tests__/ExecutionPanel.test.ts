@@ -285,9 +285,20 @@ describe('ExecutionPanel', () => {
         response: {
           status: 409,
           data: {
-            error: 'remote-retry-submission-uncertain',
+            error: 'submission-uncertain',
             detail: 'Scheduler acknowledgement was lost',
-            details: { retry_run_id: 'run-child' },
+            details: {
+              diagnostic: {
+                schema: 'bioimageflow.cluster_diagnostic.v1',
+                phase: 'retry-start',
+                category: 'submission-uncertain',
+                message: 'Scheduler acknowledgement was lost',
+                allocation_state: 'unknown',
+                retry_safety: 'same-attempt-only',
+                next_action: 'attach-child',
+                identities: { run_id: 'run-child' },
+              },
+            },
           },
         },
       }))

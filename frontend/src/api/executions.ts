@@ -454,9 +454,19 @@ export function executionErrorCode(cause: unknown): string | null {
 export function executionErrorDetails(cause: unknown): Record<string, unknown> {
   const payload = normalizedExecutionError(executionErrorPayload(cause))
   const details = payload?.details ?? payload?.identities
-  return typeof details === 'object' && details !== null
+  const detailRecord = typeof details === 'object' && details !== null
     ? details as Record<string, unknown>
     : {}
+  const diagnostic = typeof detailRecord.diagnostic === 'object'
+    && detailRecord.diagnostic !== null
+    ? detailRecord.diagnostic as Record<string, unknown>
+    : null
+  const identities = diagnostic
+    && typeof diagnostic.identities === 'object'
+    && diagnostic.identities !== null
+    ? diagnostic.identities as Record<string, unknown>
+    : {}
+  return { ...detailRecord, ...identities }
 }
 
 export function executionErrorMessage(cause: unknown, fallback: string): string {

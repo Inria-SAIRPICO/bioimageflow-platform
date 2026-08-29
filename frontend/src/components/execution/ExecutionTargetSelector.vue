@@ -7,12 +7,9 @@ import { useSettingsStore } from '@/stores/settings'
 const registry = useExecutionRegistryStore()
 const settings = useSettingsStore()
 
-const options = computed(() => registry.targets.map(target => ({
+const options = computed(() => registry.targets.filter(target => target.enabled).map(target => ({
   ...target,
-  option_label: target.enabled
-    ? target.label
-    : `${target.label} — unavailable`,
-  disabled: !target.enabled,
+  option_label: target.label,
 })))
 const managedTargetSelected = computed(() => registry.selectedTarget?.mode === 'managed_remote')
 const loaded = ref(false)
@@ -42,7 +39,6 @@ function ensureTargets(): void {
       :options="options"
       option-label="option_label"
       option-value="id"
-      option-disabled="disabled"
       size="small"
       class="execution-target-selector"
       aria-label="Execution target"
@@ -50,12 +46,9 @@ function ensureTargets(): void {
       @before-show="ensureTargets"
     >
       <template #option="slotProps">
-        <div class="target-option" :title="slotProps.option.disabled_reason ?? undefined">
+        <div class="target-option">
           <i :class="slotProps.option.mode === 'local' ? 'pi pi-desktop' : 'pi pi-cloud'" />
           <span>{{ slotProps.option.label }}</span>
-          <small v-if="!slotProps.option.enabled">
-            {{ slotProps.option.disabled_reason }}
-          </small>
         </div>
       </template>
     </Select>
@@ -74,7 +67,6 @@ function ensureTargets(): void {
 .execution-target-control { display: inline-flex; align-items: center; gap: .5rem; }
 .execution-target-selector { min-width: 8.5rem; max-width: 14rem; }
 .target-option { display: flex; align-items: center; gap: 0.5rem; }
-.target-option small { color: var(--p-text-muted-color); }
 .managed-submit-warning { display: inline-flex; align-items: center; gap: .3rem; max-width: 28rem; color: var(--p-orange-700, #9a3412); font-size: .75rem; line-height: 1.2; }
 @media (max-width: 900px) { .managed-submit-warning { max-width: 12rem; } }
 </style>

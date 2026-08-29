@@ -38,7 +38,6 @@ const settings = {
   execution_engine: 'sequential' as const,
   new_workflow_execution: 'sequential' as const,
   default_execution_target_id: 'local',
-  trusted_parsl_factories: [],
   node_data_page_size: 250 as const,
   keyboard_shortcuts: {},
   dev_mode: false,

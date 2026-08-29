@@ -100,7 +100,7 @@ After a restart, the platform tries to attach to that child before doing anythin
 It repeats the same retry start only when BioImageFlow definitively reports that the child does not exist.
 An uncertain connection never causes a second retry allocation.
 
-When a run succeeds, choose **Download Results** and select a local destination.
+When a run succeeds, choose **Download Results** to download the verified ZIP through your browser.
 BioImageFlow verifies the portable result bundle and publishes it atomically.
 Run-owned assets become local, while paths declared as external cluster paths remain external references.
 A download problem does not change the successful run state.

@@ -248,7 +248,9 @@ const REPLAN_REQUIRED_CODES = new Set([
   'retry-plan-not-found',
   'retry-plan-integrity-error',
   'retry-child-conflict',
-  'remote-retry-conflict',
+  'retry-conflict',
+  'invalid-retry',
+  'run-not-found',
   'workflow-run-retry-error',
 ])
 

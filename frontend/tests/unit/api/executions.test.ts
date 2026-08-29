@@ -234,19 +234,45 @@ describe('distributed execution API adapter', () => {
   it('normalizes FastAPI nested structured errors for safe uncertain-run recovery', () => {
     const cause = Object.assign(new Error('Request failed'), {
       response: { data: { detail: {
-        error: 'remote-submission-uncertain',
+        error: 'submission-uncertain',
         phase: 'submit',
         message: 'The scheduler acknowledgement was lost.',
         identities: { run_id: 'run-child', attempt_id: 'attempt-1' },
       } } },
     })
 
-    expect(executionErrorCode(cause)).toBe('remote-submission-uncertain')
+    expect(executionErrorCode(cause)).toBe('submission-uncertain')
     expect(executionErrorDetails(cause)).toEqual({
       run_id: 'run-child', attempt_id: 'attempt-1',
     })
     expect(executionErrorMessage(cause, 'fallback')).toBe(
       'The scheduler acknowledgement was lost.',
     )
+  })
+
+  it('flattens public ClusterDiagnostic identities from operation details', () => {
+    const cause = Object.assign(new Error('Request failed'), {
+      response: { data: { detail: {
+        error: 'submission-uncertain',
+        detail: 'The retry acknowledgement was lost.',
+        details: {
+          diagnostic: {
+            schema: 'bioimageflow.cluster_diagnostic.v1',
+            phase: 'retry-start',
+            category: 'submission-uncertain',
+            message: 'The retry acknowledgement was lost.',
+            allocation_state: 'unknown',
+            retry_safety: 'same-attempt-only',
+            next_action: 'attach-child',
+            identities: { run_id: 'run-child', attempt_id: 'attempt-1' },
+          },
+        },
+      } } },
+    })
+
+    expect(executionErrorDetails(cause)).toEqual(expect.objectContaining({
+      run_id: 'run-child',
+      attempt_id: 'attempt-1',
+    }))
   })
 })
