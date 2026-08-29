@@ -80,7 +80,7 @@ The stored cursor advances only with a durable registry snapshot.
 
 Library diagnostics remain structured through the API and UI, including phase, category, sanitized message, allocation state, retry safety, next action, and related identities.
 String identities remain available to exact-run recovery and error presentation.
-HTTP mapping uses 503 for `ssh-*`, `sftp-*`, and `remote-protocol`; 404 for `run-not-found` or a missing retry plan; 422 for invalid retry input; 409 for the enumerated submission, scheduler, retry, and result conflicts; and 500 for unexpected unmapped operation failures.
+HTTP mapping uses 503 for `ssh-*`, `sftp-*`, `remote-protocol`, `protocol-incompatible`, and `gateway-unavailable`; 404 for `run-not-found` or a missing retry or cleanup plan; 422 for invalid retry input; 409 for the enumerated submission, scheduler, retry, cleanup, and result conflicts; and 500 for unexpected unmapped operation failures.
 The default retryable categories are `ssh-connection`, `ssh-timeout`, `ssh-command-failed`, and `sftp-*`.
 The adapter does not parse logs or tracebacks to decide actions.
 Managed remote runs deliberately have no log-fetch adapter.

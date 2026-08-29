@@ -76,9 +76,7 @@ def load_cluster_config(
     exact_bytes = bytes(content)
     digest = f"sha256:{hashlib.sha256(exact_bytes).hexdigest()}"
     if expected_digest is not None and digest != expected_digest:
-        raise ValueError(
-            "Cluster configuration digest changed; save the profile again before use"
-        )
+        raise ValueError("Cluster configuration digest changed; save the profile again before use")
     module_name = f"_bioimageflow_cluster_{uuid4().hex}"
     values: dict[str, Any] = {
         "__builtins__": __builtins__,
@@ -86,7 +84,13 @@ def load_cluster_config(
         "__name__": module_name,
         "__package__": None,
     }
-    exec(compile(exact_bytes, str(resolved), "exec"), values, values)
+    try:
+        exec(compile(exact_bytes, str(resolved), "exec"), values, values)
+    except Exception as exc:
+        # Configuration scripts are trusted code, but their exception text can
+        # still contain credentials read from the process environment. Keep the
+        # cause for server-side logging without reflecting it through profile APIs.
+        raise ValueError("Cluster configuration script could not be evaluated") from exc
     cluster = values.get("cluster")
     if type(cluster) is not cluster_api.RemoteCluster:
         raise ValueError(

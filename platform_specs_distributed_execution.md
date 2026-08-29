@@ -293,10 +293,10 @@ Execution operation categories map to HTTP status as follows:
 
 | HTTP status | Categories |
 | --- | --- |
-| 404 | `retry-plan-not-found`, `run-not-found` |
-| 409 | `workflow-run-retry-error`, `remote-retry-conflict`, `psij-submission-uncertain`, `remote-retry-submission-uncertain`, `submission-uncertain`, `scheduler-rejected`, `retry-plan-integrity-error`, `retry-child-conflict`, `workflow-run-result-unavailable`, `workflow-result-destination-conflict`, `workflow-result-integrity-error` |
-| 422 | `invalid-recompute-request`, `remote-invalid-retry` |
-| 503 | every `ssh-*` or `sftp-*` category, plus `remote-protocol` |
+| 404 | `retry-plan-not-found`, `cleanup-plan-not-found`, `run-not-found` |
+| 409 | `workflow-run-retry-error`, `remote-retry-conflict`, `psij-submission-uncertain`, `remote-retry-submission-uncertain`, `submission-uncertain`, `attempt-still-uncertain`, `scheduler-rejected`, `operation-conflict`, `retry-conflict`, `cleanup-conflict`, `retry-plan-integrity-error`, `retry-child-conflict`, `workflow-run-result-unavailable`, `workflow-result-destination-conflict`, `workflow-result-integrity-error` |
+| 422 | `invalid-recompute-request`, `remote-invalid-retry`, `invalid-retry` |
+| 503 | every `ssh-*` or `sftp-*` category, plus `remote-protocol`, `protocol-incompatible`, and `gateway-unavailable` |
 | 500 | every otherwise unmapped operation category |
 
 The default structured `retryable` flag is true only for `ssh-connection`, `ssh-timeout`, `ssh-command-failed`, and `sftp-*`; an operation may preserve a more specific public value already present in its details.

@@ -13,6 +13,7 @@ from httpx import ASGITransport
 
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.routers.execution_profiles import (
+    _cluster_failure,
     get_execution_profile_store,
     get_settings,
     router,
@@ -146,12 +147,8 @@ async def test_describe_is_the_only_profile_observation_route(
         )
     ).json()
 
-    described = await profile_client.post(
-        f"/api/v1/execution/profiles/{created['id']}/describe"
-    )
-    deprecated_test = await profile_client.post(
-        f"/api/v1/execution/profiles/{created['id']}/test"
-    )
+    described = await profile_client.post(f"/api/v1/execution/profiles/{created['id']}/describe")
+    deprecated_test = await profile_client.post(f"/api/v1/execution/profiles/{created['id']}/test")
     deprecated_connection = await profile_client.post(
         f"/api/v1/execution/profiles/{created['id']}/test-connection"
     )
@@ -181,13 +178,53 @@ async def test_target_listing_never_executes_trusted_profile_script(
     config.write_text("raise RuntimeError('must not execute during listing')\n")
 
     targets = await profile_client.get("/api/v1/execution/targets")
-    described = await profile_client.post(
-        f"/api/v1/execution/profiles/{created['id']}/describe"
-    )
+    described = await profile_client.post(f"/api/v1/execution/profiles/{created['id']}/describe")
 
     assert targets.status_code == 200
     assert targets.json()["targets"][1]["available"] is True
     assert described.status_code == 422
+
+
+async def test_profile_script_exception_text_is_not_reflected(
+    profile_client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "cluster.py"
+    config.write_text(
+        "raise RuntimeError('credential=must-not-escape')\n",
+        encoding="utf-8",
+    )
+
+    response = await profile_client.post(
+        "/api/v1/execution/profiles",
+        json=profile_fields(config).model_dump(mode="json"),
+    )
+
+    assert response.status_code == 422
+    assert "could not be evaluated" in response.text
+    assert "must-not-escape" not in response.text
+
+
+def test_profile_cluster_failure_preserves_public_diagnostic() -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    error = _cluster_failure(
+        ClusterOperationError(
+            ClusterDiagnostic(
+                phase="connection-check",
+                category="protocol-incompatible",
+                message="The gateway protocol is incompatible.",
+                retry_safety="safe",
+                next_action="update-gateway",
+                identities={"deployment_id": "deployment-1"},
+            )
+        )
+    )
+
+    assert error.status_code == 503
+    assert error.detail["error"] == "protocol-incompatible"
+    assert error.detail["detail"] == "The gateway protocol is incompatible."
+    assert error.detail["details"]["diagnostic"]["identities"] == {"deployment_id": "deployment-1"}
 
 
 async def test_webapp_profile_mutations_are_forbidden(tmp_path: Path) -> None:

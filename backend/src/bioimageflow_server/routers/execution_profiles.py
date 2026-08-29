@@ -23,6 +23,7 @@ from bioimageflow_server.models.execution_profiles import (
     ExecutionTargetValue,
 )
 from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.routers.executions import _execution_http_error
 from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileConflictError,
     ExecutionProfileInUseError,
@@ -30,6 +31,7 @@ from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileStore,
     load_cluster_config,
 )
+from bioimageflow_server.services.execution_runtime import _operation_error
 
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -62,9 +64,7 @@ def _cluster_failure(exc: Exception) -> HTTPException:
     diagnostic = getattr(exc, "diagnostic", None)
     if diagnostic is None:
         return HTTPException(status_code=422, detail=str(exc))
-    payload = diagnostic.to_dict()
-    code = 503 if payload["category"].startswith("ssh-") else 409
-    return HTTPException(status_code=code, detail={"error": payload["category"], **payload})
+    return _execution_http_error(_operation_error(exc, fallback="cluster-profile-operation-failed"))
 
 
 def _sanitized_cluster_description(cluster: object) -> dict[str, object]:
@@ -80,9 +80,7 @@ def _sanitized_cluster_description(cluster: object) -> dict[str, object]:
         "results_root": raw["results_root"],
         "configured": cluster.configured,  # type: ignore[attr-defined]
         "environment": (
-            None
-            if not isinstance(environment, dict)
-            else {"kind": environment.get("kind")}
+            None if not isinstance(environment, dict) else {"kind": environment.get("kind")}
         ),
         "parsl": (
             None
@@ -109,10 +107,7 @@ def _sanitized_cluster_description(cluster: object) -> dict[str, object]:
         "setup": (
             None
             if not isinstance(setup, dict)
-            else {
-                key: setup.get(key)
-                for key in ("source_kind", "digest", "cluster_path")
-            }
+            else {key: setup.get(key) for key in ("source_kind", "digest", "cluster_path")}
         ),
     }
 
@@ -198,9 +193,7 @@ async def download_slurm_profile_example() -> StreamingResponse:
     return StreamingResponse(
         content,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": 'attachment; filename="bioimageflow-slurm-profile.zip"'
-        },
+        headers={"Content-Disposition": 'attachment; filename="bioimageflow-slurm-profile.zip"'},
     )
 
 
@@ -281,8 +274,7 @@ async def _describe(
         else:
             connection = report.to_dict()
             diagnostics.extend(
-                ClusterDiagnosticValue.model_validate(item.to_dict())
-                for item in report.diagnostics
+                ClusterDiagnosticValue.model_validate(item.to_dict()) for item in report.diagnostics
             )
     return ExecutionProfileDescription(
         profile_id=profile.id,

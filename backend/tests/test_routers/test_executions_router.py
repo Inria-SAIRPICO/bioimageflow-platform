@@ -15,6 +15,8 @@ from bioimageflow_server.routers.executions import (
     _execution_http_error,
     get_download_destination_resolver,
     get_execution_coordinator,
+    get_preflight_service,
+    get_prepared_run_registrar,
     preflight_router,
     router,
 )
@@ -286,8 +288,14 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
     ("code", "status", "retryable"),
     [
         ("retry-plan-not-found", 404, False),
+        ("cleanup-plan-not-found", 404, False),
         ("invalid-recompute-request", 422, False),
+        ("invalid-retry", 422, False),
         ("ssh-timeout", 503, True),
+        ("protocol-incompatible", 503, False),
+        ("gateway-unavailable", 503, False),
+        ("retry-conflict", 409, False),
+        ("cleanup-conflict", 409, False),
         ("workflow-run-retry-error", 409, False),
         ("workflow-result-export-error", 500, False),
     ],
@@ -331,6 +339,94 @@ def test_public_cluster_diagnostic_drives_http_status_and_preserves_identity() -
 
     assert error.status_code == 503
     assert error.detail["details"]["identities"] == {"run_id": "run_" + "6" * 32}
+
+
+def test_public_cluster_diagnostic_uses_global_error_handler_shape() -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    operation = _operation_error(
+        ClusterOperationError(
+            ClusterDiagnostic(
+                phase="retry-start",
+                category="retry-conflict",
+                message="The retained child conflicts with this retry.",
+                allocation_state="orchestrator-submitted",
+                retry_safety="same-attempt-only",
+                next_action="attach-child",
+                identities={"run_id": "run_" + "7" * 32},
+            )
+        ),
+        fallback="workflow-run-retry-error",
+    )
+
+    error = _execution_http_error(operation)
+
+    assert error.status_code == 409
+    assert error.detail["error"] == "retry-conflict"
+    assert error.detail["detail"] == "The retained child conflicts with this retry."
+    assert error.detail["details"]["diagnostic"] == {
+        "schema": "bioimageflow.cluster_diagnostic.v1",
+        "phase": "retry-start",
+        "category": "retry-conflict",
+        "message": "The retained child conflicts with this retry.",
+        "allocation_state": "orchestrator-submitted",
+        "retry_safety": "same-attempt-only",
+        "next_action": "attach-child",
+        "identities": {"run_id": "run_" + "7" * 32},
+    }
+
+
+@pytest.mark.anyio
+async def test_direct_submit_failure_preserves_public_diagnostic_shape(
+    tmp_path: Path,
+) -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    class _Tokens:
+        async def consume(self, token: str, *, binding: str) -> object:
+            del token, binding
+            raise ClusterOperationError(
+                ClusterDiagnostic(
+                    phase="scheduler-submit",
+                    category="scheduler-rejected",
+                    message="The scheduler rejected the request.",
+                    allocation_state="none",
+                    retry_safety="safe",
+                    next_action="inspect-scheduler-request",
+                    identities={"attempt_id": "attempt-1"},
+                )
+            )
+
+    class _Preflight:
+        tokens = _Tokens()
+
+    coordinator = ExecutionCoordinator(
+        ExecutionRegistry(tmp_path),
+        reconnector=lambda snapshot: None,  # type: ignore[arg-type,return-value]
+    )
+    app = _app(coordinator)
+    app.dependency_overrides[get_preflight_service] = _Preflight
+    app.dependency_overrides[get_prepared_run_registrar] = lambda: object()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/executions",
+            json={
+                "token": "prepared-token",
+                "workflow_id": "demo",
+                "draft_revision": 1,
+                "target_id": "profile_" + "1" * 32,
+                "requested_nodes": None,
+            },
+        )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "scheduler-rejected"
+    assert detail["detail"] == "The scheduler rejected the request."
+    assert detail["details"]["diagnostic"]["identities"] == {"attempt_id": "attempt-1"}
 
 
 @pytest.mark.anyio

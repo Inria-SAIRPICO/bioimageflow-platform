@@ -464,10 +464,7 @@ class ExecutionCoordinator:
                 continue
 
         for snapshot in await asyncio.to_thread(self.registry.non_terminal):
-            if (
-                snapshot.execution_id in self._adapters
-                or snapshot.execution_id in self._poll_tasks
-            ):
+            if snapshot.execution_id in self._adapters or snapshot.execution_id in self._poll_tasks:
                 continue
             if snapshot.backend in {"direct", "wetlands"}:
                 reconnect = snapshot.reconnect or {}
@@ -1411,6 +1408,14 @@ def _operation_error(exc: Exception, *, fallback: str) -> ExecutionOperationErro
     }:
         code_value = remote_code
     code = code_value if isinstance(code_value, str) else fallback
+    # Unexpected implementation failures do not carry BioImageFlow's public,
+    # sanitized diagnostic contract. Do not reflect arbitrary exception text or
+    # detail mappings into API responses and retained execution state.
+    if not isinstance(public_code, str):
+        return ExecutionOperationError(
+            fallback,
+            "The managed execution operation failed unexpectedly.",
+        )
     return ExecutionOperationError(code, str(exc), details=details)
 
 

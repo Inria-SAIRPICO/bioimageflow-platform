@@ -39,6 +39,7 @@ from bioimageflow_server.services.execution_registry import ExecutionNotFoundErr
 from bioimageflow_server.services.execution_runtime import (
     ExecutionCoordinator,
     ExecutionOperationError,
+    _operation_error,
 )
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -108,10 +109,8 @@ async def apply_prepared_execution(
         diagnostic = getattr(exc, "diagnostic", None)
         if diagnostic is None:
             raise
-        payload = diagnostic.to_dict()
-        raise HTTPException(
-            status_code=503 if payload["category"].startswith("ssh-") else 409,
-            detail={"error": payload["category"], **payload},
+        raise _execution_http_error(
+            _operation_error(exc, fallback="workflow-submission-failed")
         ) from exc
     return present_execution(await registrar.register_prepared_run(request, handle))
 
@@ -261,12 +260,23 @@ async def apply_execution_cleanup(
 
 
 def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
-    if exc.code in {"retry-plan-not-found", "run-not-found"}:
+    if exc.code in {"retry-plan-not-found", "cleanup-plan-not-found", "run-not-found"}:
         status = 404
-    elif exc.code in {"invalid-recompute-request", "remote-invalid-retry"}:
+    elif exc.code in {
+        "invalid-recompute-request",
+        "remote-invalid-retry",
+        "invalid-retry",
+    }:
         status = 422
     elif (
-        exc.code.startswith("ssh-") or exc.code.startswith("sftp-") or exc.code == "remote-protocol"
+        exc.code.startswith("ssh-")
+        or exc.code.startswith("sftp-")
+        or exc.code
+        in {
+            "remote-protocol",
+            "protocol-incompatible",
+            "gateway-unavailable",
+        }
     ):
         status = 503
     elif exc.code in {
@@ -276,6 +286,10 @@ def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
         "remote-retry-submission-uncertain",
         "submission-uncertain",
         "scheduler-rejected",
+        "attempt-still-uncertain",
+        "operation-conflict",
+        "retry-conflict",
+        "cleanup-conflict",
         "retry-plan-integrity-error",
         "retry-child-conflict",
         "workflow-run-result-unavailable",
