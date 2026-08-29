@@ -79,7 +79,8 @@ cluster = RemoteCluster(
 )
 ```
 
-Relative paths are resolved relative to the selected script's directory for the trusted import.
+Reusable templates resolve companion paths from `Path(__file__).resolve().parent`, so `parsl.py` and `setup.sh` remain relative to their `cluster.py` even when the platform process has another working directory.
+The platform does not change the process working directory or rewrite arbitrary relative paths in trusted code.
 The backend imports a fresh module for each describe or submit operation so a stale `sys.modules` entry cannot silently define the target.
 The selected script and every executable file it names are trusted code, not sandboxed configuration.
 
@@ -88,7 +89,8 @@ SSH host, scheduler, project or account, queue, writable root, and optional Modu
 
 ### 3.2 Persisted profile
 
-A managed remote profile persists only schema version, stable profile ID and revision, display name, enabled state, selected script path, and the SHA-256 digest last observed by **Describe cluster**.
+A managed remote profile persists schema version, stable profile ID and revision, display name, enabled state, selected script path, the observed SHA-256 digest, and the non-secret cluster host and normalized root observed when the profile is saved.
+Host and root are immutable observations used for target presentation and run attachment rather than separately editable site configuration.
 The platform does not persist the imported live object, script bytes, resolved secret values, private keys, passwords, SSH options, scheduler credentials, or environment-variable contents.
 The digest is an observation and confirmation aid, not a replacement for rereading and validating the selected trusted script at submit time.
 
@@ -116,7 +118,8 @@ It must not infer support from import success, scheduler strings, presence of op
 
 The platform distinguishes client implementation availability, cluster connection observation, configured scheduler and environment description, facts validated by the managed deployment, and facts that remain unverified until an allocation exists.
 Structured diagnostics retain phase, category, sanitized message, allocation state, retry safety, next action, and related identities when supplied by BioImageFlow.
-Unknown diagnostic fields remain available for forward-compatible display rather than being discarded.
+The strict public models expose a sanitized allowlist of diagnostic fields: phase, category, message, allocation state, retry safety, next action, and string identities.
+Unknown or non-string diagnostic fields are not copied into platform persistence, APIs, or UI.
 
 ## 5. Workflow and Input Preparation
 
@@ -170,7 +173,7 @@ At startup the platform:
 Attachment must work after the original workflow, cluster script, setup script, Parsl file, and project directory are unavailable.
 A missing or incompatible retained gateway becomes a structured observation failure and never triggers implicit bootstrap or resubmission.
 
-Version-1 distributed registry records may be removed when they cannot be attached through the managed API.
+Version-1 distributed registry records and their owned retry or cleanup journals are permanently removed without an archive because they cannot be attached through the managed API.
 Local registry records and local result data remain intact.
 
 ## 8. Monitoring and Diagnostics
@@ -187,7 +190,7 @@ Run-level diagnostics that do not name a node remain visible in the execution de
 The UI never parses traceback or log text to decide retry safety, allocation state, result availability, or recovery actions.
 
 Connection loss is observation state and does not itself change the authoritative run state to failed or lost.
-The UI keeps the retained run and offers refresh or the structured next action.
+The coordinator keeps observing the retained run automatically, and the UI can reload the latest retained observation or show the structured next action.
 
 ## 9. Cancellation, Retry, Results, and Cleanup
 
@@ -225,7 +228,7 @@ The target selector beside Run shows **Local** plus enabled managed profiles who
 Unavailable profiles remain visible in Preferences with their structured disabled reason.
 
 The Execution panel remains the common monitor for Direct, Wetlands, and managed remote runs.
-It shows run identity, target, state, duration, job tree, per-node progress, structured diagnostics, backend allocation information, and server-derived availability for refresh, cancellation, retry, result download, and cleanup.
+It shows run identity, target, state, duration, job tree, per-node progress, structured diagnostics, backend allocation information, reload of the latest retained observation, and server-derived availability for cancellation, retry, result download, and cleanup.
 
 Remote actions are enabled only from current public capability and run reports.
 Managed runs omit **Open logs**.
@@ -251,16 +254,15 @@ The target and execution routes are:
 
 - `GET /api/v1/execution/targets`;
 - `POST /api/v1/execution/preflight` for exact snapshot validation and remote path resolution only;
-- `POST /api/v1/execution/run` for local admission or managed `cluster.submit()`;
+- `POST /api/v1/executions` to consume one exact short-lived managed admission intent and call `cluster.submit()`;
 - `GET /api/v1/executions`;
 - `GET /api/v1/executions/{execution_id}`;
-- `POST /api/v1/executions/{execution_id}/refresh`;
 - `POST /api/v1/executions/{execution_id}/cancel`;
 - `POST /api/v1/executions/{execution_id}/retry/plan`;
 - `POST /api/v1/executions/{execution_id}/retry`;
 - `POST /api/v1/executions/{execution_id}/result`;
-- `POST /api/v1/execution/cleanup/plan`;
-- `POST /api/v1/execution/cleanup/apply`.
+- `POST /api/v1/executions/{execution_id}/cleanup/plan`;
+- `POST /api/v1/executions/{execution_id}/cleanup`.
 
 The run endpoint resolves a captured server-side profile revision and never accepts a raw `RemoteCluster` object or script body.
 The preflight endpoint may return explicit path-resolution requirements but does not create a remote deployment, plan, or scheduler allocation.
@@ -299,12 +301,12 @@ Portable workflow archives remain free of platform profile IDs and remote attach
 - Local Direct and Wetlands execution pass their existing validation and result tests without cluster support installed.
 - A trusted script defining `cluster = RemoteCluster(...)` can be saved, described, selected, and submitted.
 - A missing or wrong `cluster` value produces a structured profile error without creating a run.
-- Profile persistence contains name, path, enabled state, revision, and digest but no secret values or serialized live objects.
+- Profile persistence contains name, path, enabled state, revision, digest, and non-secret host/root observations but no secret values or serialized live objects.
 - Webapp users can select provisioned profiles but cannot create or edit script paths.
 - Explicit local-upload versus cluster-path decisions survive only in the immutable run invocation and never dirty the graph.
 - A returned run ID is durably saved with host and root before the run is presented as reconnectable.
 - Restart attaches using only host, root, and run ID and never imports the original cluster script.
-- Snapshot and progress reduction are idempotent across repeated refresh and process restart.
+- Snapshot and progress reduction are idempotent across repeated coordinator observations, UI reloads, and process restart.
 - Structured capability and diagnostic fields determine action availability without log or exception-text parsing.
 - Managed runs expose no log action.
 - Cancellation is ID-specific and idempotent.

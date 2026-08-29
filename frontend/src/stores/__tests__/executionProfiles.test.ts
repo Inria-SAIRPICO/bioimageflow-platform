@@ -53,7 +53,7 @@ describe('execution profiles store', () => {
       cluster_root: '/cluster/workflows',
       configured: true,
       cluster: { host: 'login.cluster', root: '/cluster/workflows' },
-      capabilities: { schema: 'bioimageflow.cluster.capabilities.v1', capabilities: {} },
+      capabilities: { schema: 'bioimageflow.execution_capabilities.v1', capabilities: {} },
       connection: null,
       diagnostics: [],
     })

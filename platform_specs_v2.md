@@ -312,8 +312,8 @@ Thumbnail requests are initiated only when their rendered row enters the visible
 
 The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; trusted Python-source preview using the same apply route; and explicit workflow and result exports.
 
-Execution APIs include strict profile and target models, cluster description, exact run preflight, plural execution snapshots, refresh, ID-specific cancellation, persisted retry preview and confirmation, managed result download, and plan-based cleanup.
-Managed profile records select a trusted desktop Python script whose top level defines `cluster = RemoteCluster(...)`; their persistence contains only identity, revision, name, enabled state, script path, and observed digest.
+Execution APIs include strict profile and target models, cluster description, exact run preflight, plural execution snapshots, reload of retained observations, ID-specific cancellation, persisted retry preview and confirmation, managed result download, and plan-based cleanup.
+Managed profile records select a trusted desktop Python script whose top level defines `cluster = RemoteCluster(...)`; their persistence contains identity, revision, name, enabled state, script path, observed digest, and non-secret cluster host/root observations.
 Version-1 low-level Parsl and transport profiles are dropped without archive or conversion.
 
 The export routes are:
@@ -356,7 +356,7 @@ The selection action is **Group into workflow**.
 
 The Run toolbar includes an execution-target selector whose visible value applies to every run command.
 **View → Execution** opens the retained run monitor.
-Run actions address one execution ID for cancellation, retry, result download, refresh, and cleanup; managed retry confirmation always names its captured target and planned child run.
+Run actions address one execution ID for cancellation, retry, result download, retained-observation reload, and cleanup; managed retry confirmation always names its captured target and planned child run.
 
 ## 16. Files Source Selection
 

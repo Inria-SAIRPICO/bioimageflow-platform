@@ -1,8 +1,31 @@
 import { api } from '@/api/client'
-import type { ClusterDiagnostic } from '@/api/executionProfiles'
+import type {
+  ApplyPreparedExecutionRequest as ApplyPreparedExecutionWireRequest,
+  ConfirmExecutionCleanupRequest,
+  ConfirmRetryRequest,
+  ExecutionActionResponse,
+  ExecutionActionAvailability as GeneratedExecutionActionAvailability,
+  ExecutionActions as GeneratedExecutionActions,
+  ExecutionCapabilitiesValue,
+  ExecutionCleanupPlanRequest,
+  ExecutionCleanupPresentation,
+  ExecutionCleanupReport as GeneratedExecutionCleanupReport,
+  ExecutionPreflightRequest as ExecutionPreflightWireRequest,
+  ExecutionPresentation,
+  ExecutionPresentationPage,
+  ExecutionTargetValue,
+  ExecutionTargetsValue,
+  FailureDiagnosticSnapshot,
+  JobSnapshot,
+  ReadyPreflight,
+  RecomputeSelection,
+  ResolutionRequiredPreflight,
+  RetryPlanPresentation,
+  RetryPlanRequest,
+} from '@/api/types'
 
-export type ExecutionTargetMode = 'local' | 'managed_remote'
-export type ExecutionBackend = 'direct' | 'wetlands' | 'managed_remote'
+export type ExecutionTargetMode = ExecutionTargetValue['mode']
+export type ExecutionBackend = ExecutionPresentation['backend']
 
 export interface ExecutionTarget {
   id: string
@@ -13,43 +36,15 @@ export interface ExecutionTarget {
   profile_revision?: number | null
 }
 
-export interface ExecutionCapabilityStatus {
-  supported: boolean
-  reason?: string | null
-}
-
-export interface ExecutionCapabilities {
-  schema: string
-  capabilities: Record<string, ExecutionCapabilityStatus>
-}
+export type ExecutionCapabilities = ExecutionCapabilitiesValue
 
 export interface ExecutionTargets {
   targets: ExecutionTarget[]
   capabilities: ExecutionCapabilities
 }
 
-export type ExecutionRunState =
-  | 'preparing'
-  | 'prepared'
-  | 'queued'
-  | 'starting'
-  | 'running'
-  | 'cancel_requested'
-  | 'finalizing'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'lost'
-
-export type ExecutionJobState =
-  | 'waiting'
-  | 'running'
-  | 'cached'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'skipped'
-  | 'blocked'
+export type ExecutionRunState = ExecutionPresentation['state']
+export type ExecutionJobState = JobSnapshot['state']
 
 export interface ExecutionResources {
   cpu?: number | null
@@ -59,27 +54,10 @@ export interface ExecutionResources {
   max_concurrent?: number | null
 }
 
-export interface ExecutionActionAvailability {
-  available: boolean
-  reason?: string | null
-}
-
-export interface ExecutionActions {
-  cancel: ExecutionActionAvailability
-  retry: ExecutionActionAvailability
-  recompute: ExecutionActionAvailability
-  download_results: ExecutionActionAvailability
-  cleanup: ExecutionActionAvailability
-}
-
-export interface NodeFailureDiagnostic {
-  category?: string | null
-  exception_type?: string | null
-  message: string
-  traceback?: string | null
-  terminal?: boolean
-  attempt_id?: string | null
-}
+export type ExecutionActionAvailability = GeneratedExecutionActionAvailability
+export type ExecutionActions = GeneratedExecutionActions
+export type NodeFailureDiagnostic = FailureDiagnosticSnapshot
+export type ClusterDiagnostic = NonNullable<ExecutionPresentation['diagnostics']>[number]
 
 export interface ExecutionJobSnapshot {
   id: string
@@ -124,36 +102,9 @@ export interface ExecutionSnapshot {
   jobs: ExecutionJobSnapshot[]
 }
 
-export interface RecomputeRequest {
-  node_paths: string[]
-  cascade: boolean
-}
+export type RecomputeRequest = RecomputeSelection
 
-export interface RetryInvalidation {
-  node_path: string
-  result_key: string
-  record_id?: string | null
-  selection_status: string
-}
-
-export interface RetryPlanTarget {
-  id: string
-  label: string
-  mode: ExecutionTargetMode
-}
-
-export interface ExecutionRetryPlan {
-  plan_digest: string
-  parent_execution_id: string
-  child_execution_id: string
-  mode: 'retry' | 'recompute'
-  target: RetryPlanTarget
-  recompute: RecomputeRequest | null
-  invalidations: RetryInvalidation[]
-  conflicting_run_ids: string[]
-  confirmable: boolean
-  disabled_reason?: string | null
-}
+export type ExecutionRetryPlan = RetryPlanPresentation
 
 export interface RemoteNodePathInput {
   node_path: string
@@ -177,10 +128,9 @@ export interface RemoteNodePathResolution {
   values: RemoteNodePathLeaf[]
 }
 
-export interface ExecutionPreflightRequest {
+export interface ManagedExecutionIntent {
   workflow_id: string
-  draft_revision: number | null
-  graph: unknown
+  draft_revision: number
   target_id: string
   profile_revision: number
   command: { kind: string; nodes?: string[]; retry_of?: string }
@@ -199,56 +149,10 @@ interface RemoteNodePathPlanWire {
   }>
 }
 
-interface ExecutionPreflightWireResponse {
-  kind: 'resolution_required' | 'ready'
-  distributed_plan?: Record<string, unknown>
-  remote_node_paths?: RemoteNodePathPlanWire
-  unresolved?: Array<{ scoped_node_path: string; input_name: string }>
-  token?: string | null
-  expires_at?: number | null
-}
+type ExecutionPreflightWireResponse = ReadyPreflight | ResolutionRequiredPreflight
 
-interface ExecutionJobWire {
-  scoped_node_path: string
-  state: ExecutionJobState
-  current?: number | null
-  maximum?: number | null
-  total_rows?: number | null
-  row?: number | null
-  message?: string | null
-  executor_label?: string | null
-  effective_resources?: ExecutionResources | null
-  route_reason?: string | null
-  started_at?: string | null
-  finished_at?: string | null
-  diagnostic?: NodeFailureDiagnostic | null
-  result_key?: string | null
-  record_id?: string | null
-}
-
-export interface ExecutionPresentationWire {
-  revision: number
-  execution_id: string
-  workflow_id: string
-  draft_revision?: number | null
-  backend: ExecutionBackend
-  target_id: string
-  target_label: string
-  target_mode: ExecutionTargetMode
-  scheduler_job_id?: string | null
-  command?: string | null
-  state: ExecutionRunState
-  retry_of_execution_id?: string | null
-  child_execution_ids?: string[]
-  actions: ExecutionActions
-  jobs?: Record<string, ExecutionJobWire>
-  progress_cursor?: number | null
-  diagnostics?: ClusterDiagnostic[]
-  observation?: { reachable: boolean; error?: string | null }
-  created_at: string
-  started_at?: string | null
-  finished_at?: string | null
-}
+type ExecutionJobWire = JobSnapshot
+export type ExecutionPresentationWire = ExecutionPresentation
 
 export type ExecutionPreflightResponse =
   | {
@@ -269,29 +173,11 @@ export interface ExecutionPage {
   limit: number
 }
 
-export interface ExecutionCleanupPlan {
-  execution_id: string
-  plan_digest: string
-  plan: Record<string, unknown>
-}
-
-export interface ExecutionCleanupReport {
-  execution_id: string
-  report: Record<string, unknown>
-}
+export type ExecutionCleanupPlan = ExecutionCleanupPresentation
+export type ExecutionCleanupReport = GeneratedExecutionCleanupReport
 
 export async function fetchExecutionTargets(): Promise<ExecutionTargets> {
-  const { data } = await api.get<{
-    capabilities: ExecutionCapabilities
-    targets: Array<{
-      id: string
-      name: string
-      mode: ExecutionTargetMode
-      available: boolean
-      disabled_reason?: string | null
-      profile_revision?: number | null
-    }>
-  }>(
+  const { data } = await api.get<ExecutionTargetsValue>(
     '/api/v1/execution/targets',
   )
   return {
@@ -308,7 +194,7 @@ export async function fetchExecutionTargets(): Promise<ExecutionTargets> {
 }
 
 export async function preflightExecution(
-  request: ExecutionPreflightRequest,
+  request: ManagedExecutionIntent,
 ): Promise<ExecutionPreflightResponse> {
   const choices: Record<string, Record<string, unknown>> = {}
   for (const resolution of request.node_path_resolutions ?? []) {
@@ -317,24 +203,30 @@ export async function preflightExecution(
       ? encodeRemoteLeaf(resolution.values[0]!)
       : resolution.values.map(encodeRemoteLeaf)
   }
+  const body: ExecutionPreflightWireRequest = {
+    workflow_id: request.workflow_id,
+    draft_revision: request.draft_revision,
+    target_id: request.target_id,
+    profile_revision: request.profile_revision,
+    requested_nodes: request.command.nodes ?? null,
+    node_path_choices: choices,
+  }
   const { data } = await api.post<ExecutionPreflightWireResponse>(
     '/api/v1/execution/preflight',
-    {
-      workflow_id: request.workflow_id,
-      draft_revision: request.draft_revision,
-      target_id: request.target_id,
-      profile_revision: request.profile_revision,
-      requested_nodes: request.command.nodes ?? null,
-      node_path_choices: choices,
-    },
+    body,
   )
   if (data.kind === 'resolution_required') {
-    const unresolvedKeys = new Set((data.unresolved ?? []).map(item => (
+    const unresolved = data.unresolved as Array<{
+      scoped_node_path: string
+      input_name: string
+    }>
+    const remoteNodePaths = data.remote_node_paths as unknown as RemoteNodePathPlanWire
+    const unresolvedKeys = new Set(unresolved.map(item => (
       `${item.scoped_node_path}\n${item.input_name}`
     )))
     return {
       status: 'resolution_required',
-      unresolved_paths: (data.remote_node_paths?.inputs ?? [])
+      unresolved_paths: (remoteNodePaths.inputs ?? [])
         .filter(item => unresolvedKeys.has(`${item.scoped_node_path}\n${item.input_name}`))
         .map(item => ({
           node_path: item.scoped_node_path,
@@ -422,17 +314,18 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
 
 export async function applyPreparedExecution(
   token: string,
-  request: ExecutionPreflightRequest,
+  request: ManagedExecutionIntent,
 ): Promise<ExecutionSnapshot> {
+  const body: ApplyPreparedExecutionWireRequest = {
+    token,
+    workflow_id: request.workflow_id,
+    draft_revision: request.draft_revision,
+    target_id: request.target_id,
+    requested_nodes: request.command.nodes ?? null,
+  }
   const { data } = await api.post<ExecutionPresentationWire>(
     '/api/v1/executions',
-    {
-      token,
-      workflow_id: request.workflow_id,
-      draft_revision: request.draft_revision,
-      target_id: request.target_id,
-      requested_nodes: request.command.nodes ?? null,
-    },
+    body,
   )
   return normalizeExecution(data)
 }
@@ -442,12 +335,7 @@ export async function fetchExecutions(options: {
   offset?: number
   limit?: number
 } = {}): Promise<ExecutionPage> {
-  const { data } = await api.get<{
-    items: ExecutionPresentationWire[]
-    total: number
-    offset: number
-    limit: number
-  }>('/api/v1/executions', {
+  const { data } = await api.get<ExecutionPresentationPage>('/api/v1/executions', {
     params: {
       ...(options.workflowId ? { workflow_id: options.workflowId } : {}),
       offset: options.offset ?? 0,
@@ -470,16 +358,17 @@ export async function fetchExecution(id: string): Promise<ExecutionSnapshot> {
 }
 
 export async function cancelExecution(id: string): Promise<ExecutionSnapshot> {
-  await api.post(
+  await api.post<ExecutionActionResponse>(
     `/api/v1/executions/${encodeURIComponent(id)}/cancel`,
   )
   return fetchExecution(id)
 }
 
 export async function planExecutionCleanup(id: string): Promise<ExecutionCleanupPlan> {
+  const body: ExecutionCleanupPlanRequest = { older_than_seconds: 0 }
   const { data } = await api.post<ExecutionCleanupPlan>(
     `/api/v1/executions/${encodeURIComponent(id)}/cleanup/plan`,
-    { older_than_seconds: 0 },
+    body,
   )
   return data
 }
@@ -488,9 +377,10 @@ export async function applyExecutionCleanup(
   id: string,
   planDigest: string,
 ): Promise<ExecutionCleanupReport> {
+  const body: ConfirmExecutionCleanupRequest = { plan_digest: planDigest }
   const { data } = await api.post<ExecutionCleanupReport>(
     `/api/v1/executions/${encodeURIComponent(id)}/cleanup`,
-    { plan_digest: planDigest },
+    body,
   )
   return data
 }
@@ -499,9 +389,10 @@ export async function planExecutionRetry(
   id: string,
   recompute: RecomputeRequest | null,
 ): Promise<ExecutionRetryPlan> {
+  const body: RetryPlanRequest = { recompute }
   const { data } = await api.post<ExecutionRetryPlan>(
     `/api/v1/executions/${encodeURIComponent(id)}/retry/plan`,
-    { recompute },
+    body,
   )
   return data
 }
@@ -510,9 +401,10 @@ export async function startExecutionRetry(
   id: string,
   planDigest: string,
 ): Promise<ExecutionSnapshot> {
+  const body: ConfirmRetryRequest = { plan_digest: planDigest }
   const { data } = await api.post<ExecutionPresentationWire>(
     `/api/v1/executions/${encodeURIComponent(id)}/retry`,
-    { plan_digest: planDigest },
+    body,
   )
   return normalizeExecution(data)
 }

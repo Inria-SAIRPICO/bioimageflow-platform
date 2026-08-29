@@ -28,11 +28,83 @@ const form = reactive({
 const description = computed(() => (
   describedProfile.value ? profiles.descriptions[describedProfile.value.id] ?? null : null
 ))
-const unsupportedCapabilities = computed(() => Object.entries(
+const requiredManagedCapabilities = new Set([
+  'remote_cluster_bootstrap',
+  'remote_cluster_validation',
+  'remote_cluster_planning',
+  'idempotent_planned_submission',
+  'durable_remote_diagnostics',
+])
+const optionalManagedCapabilities = new Set([
+  'remote_node_path_overrides',
+  'managed_uv_environment',
+  'managed_pixi_environment',
+  'managed_pylock_environment',
+  'offline_wheelhouse_environment',
+  'existing_python_attestation',
+  'managed_setup_scripts',
+  'cluster_cleanup_planning',
+  'submitted_run_retry',
+  'submitted_recompute',
+  'submitted_result_export',
+])
+const capabilityEntries = computed(() => Object.entries(
   description.value?.capabilities.capabilities ?? {},
-).filter(([, value]) => !value.supported))
+))
+const managedCapabilities = computed(() => capabilityEntries.value.filter(([key]) => (
+  requiredManagedCapabilities.has(key) || optionalManagedCapabilities.has(key)
+)))
+const otherCapabilities = computed(() => capabilityEntries.value.filter(([key]) => (
+  !requiredManagedCapabilities.has(key) && !optionalManagedCapabilities.has(key)
+)))
+const missingRequiredCapabilities = computed(() => managedCapabilities.value.filter(
+  ([key, value]) => requiredManagedCapabilities.has(key) && !value.supported,
+))
 
-function connectionSummary(connection: Record<string, unknown> | null): string {
+interface ClusterFact {
+  label: string
+  value: string
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function factValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 0) return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return null
+}
+
+const clusterFacts = computed<ClusterFact[]>(() => {
+  const cluster = description.value?.cluster
+  if (!cluster) return []
+  const environment = record(cluster.environment)
+  const parsl = record(cluster.parsl)
+  const orchestrator = record(cluster.orchestrator)
+  const setup = record(cluster.setup)
+  const walltime = factValue(orchestrator?.walltime_seconds)
+  const values: Array<[string, string | null]> = [
+    ['Results root', factValue(cluster.results_root)],
+    ['Environment kind', factValue(environment?.kind)],
+    ['Parsl source', factValue(parsl?.source_kind)],
+    ['Parsl factory', factValue(parsl?.factory)],
+    ['Scheduler', factValue(orchestrator?.scheduler)],
+    ['Project / account', factValue(orchestrator?.project)],
+    ['Queue / partition', factValue(orchestrator?.queue)],
+    ['Orchestrator walltime', walltime === null ? null : `${walltime} seconds`],
+    ['Orchestrator CPU', factValue(orchestrator?.cpu)],
+    ['Setup script', setup === null ? 'Not configured' : 'Configured'],
+    ['Setup source', factValue(setup?.source_kind)],
+    ['Setup digest', factValue(setup?.digest)],
+    ['Setup cluster path', factValue(setup?.cluster_path)],
+  ]
+  return values.flatMap(([label, value]) => value === null ? [] : [{ label, value }])
+})
+
+function connectionSummary(connection: Record<string, unknown> | null | undefined): string {
   if (!connection) return 'Not checked'
   const reachable = connection.reachable ?? connection.ok
   const message = connection.message
@@ -183,23 +255,45 @@ onMounted(() => void profiles.refresh())
           <dt>Configured</dt><dd>{{ description.configured ? 'Yes' : 'No' }}</dd>
           <dt>Connection</dt><dd>{{ connectionSummary(description.connection) }}</dd>
         </dl>
+        <section v-if="clusterFacts.length" data-testid="cluster-site-facts">
+          <h4>Sanitized site configuration</h4>
+          <dl class="description-grid">
+            <template v-for="item in clusterFacts" :key="item.label">
+              <dt>{{ item.label }}</dt><dd><code>{{ item.value }}</code></dd>
+            </template>
+          </dl>
+        </section>
         <div class="describe-actions">
           <Button label="Check connection" icon="pi pi-wifi" severity="secondary" :loading="profiles.describing === describedProfile?.id" @click="describedProfile && describe(describedProfile, true)" />
         </div>
         <section>
-          <h4>Capabilities</h4>
+          <h4>Managed execution capabilities</h4>
           <ul class="capability-list">
-            <li v-for="(value, key) in description.capabilities.capabilities" :key="key">
-              <Tag :value="value.supported ? 'supported' : 'unavailable'" :severity="value.supported ? 'success' : 'warn'" />
+            <li v-for="[key, value] in managedCapabilities" :key="key">
+              <Tag
+                :value="requiredManagedCapabilities.has(key) ? (value.supported ? 'required · ready' : 'required · unavailable') : (value.supported ? 'optional · available' : 'optional · unavailable')"
+                :severity="value.supported ? 'success' : requiredManagedCapabilities.has(key) ? 'danger' : 'secondary'"
+              />
               <code>{{ key }}</code>
               <span v-if="value.reason">{{ value.reason }}</span>
             </li>
           </ul>
-          <p v-if="unsupportedCapabilities.length === 0">All reported managed-cluster capabilities are available.</p>
+          <p v-if="missingRequiredCapabilities.length === 0">All required managed-submission capabilities are available.</p>
+          <details v-if="otherCapabilities.length" class="other-capabilities">
+            <summary>Other BioImageFlow capability discovery</summary>
+            <p>These library capabilities are not requirements for this managed target.</p>
+            <ul class="capability-list">
+              <li v-for="[key, value] in otherCapabilities" :key="key">
+                <Tag :value="value.supported ? 'supported' : 'unavailable'" severity="secondary" />
+                <code>{{ key }}</code>
+                <span v-if="value.reason">{{ value.reason }}</span>
+              </li>
+            </ul>
+          </details>
         </section>
-        <section v-if="description.diagnostics.length">
+        <section v-if="description.diagnostics?.length">
           <h4>Diagnostics</h4>
-          <article v-for="(diagnostic, index) in description.diagnostics" :key="index" class="diagnostic">
+          <article v-for="(diagnostic, index) in description.diagnostics ?? []" :key="index" class="diagnostic">
             <strong>{{ diagnostic.phase }} · {{ diagnostic.category }}</strong>
             <p>{{ diagnostic.message }}</p>
             <p v-if="diagnostic.next_action"><strong>Next action:</strong> {{ diagnostic.next_action }}</p>
@@ -231,6 +325,8 @@ header p, .profile-summary span, .profile-summary small, .empty, .security-note 
 .description-grid dd { margin: 0; overflow-wrap: anywhere; }
 .capability-list { display: grid; gap: .35rem; padding: 0; list-style: none; }
 .capability-list li { display: grid; grid-template-columns: auto minmax(12rem, auto) 1fr; align-items: center; gap: .5rem; }
+.other-capabilities { margin-top: .75rem; }
+.other-capabilities summary { cursor: pointer; font-weight: 600; }
 .diagnostic { margin-top: .5rem; padding: .65rem; border-radius: 6px; background: var(--p-surface-100); }
 @media (max-width: 680px) { header, .profile-card { align-items: stretch; flex-direction: column; } .actions { flex-wrap: wrap; } .path-row { grid-template-columns: 1fr; } }
 </style>

@@ -125,7 +125,8 @@ Execution targets and retained run state are platform-owned and must not be pers
 Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.
 
 Managed remote profiles select one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
-Profiles persist only non-secret identity, name, enabled state, script path, and observed digest; a managed run separately persists host, root, durable run ID, and progress cursor so restart attachment does not need the original script.
+Profiles persist non-secret identity, name, enabled state, script path, observed digest, cluster host, and normalized root; a managed run separately persists its own host/root attachment tuple, durable run ID, and progress cursor so restart attachment does not need the original script.
+Strict profile descriptions and execution diagnostics expose sanitized allowlists rather than retaining unknown library report fields.
 The platform does not retain attached-Parsl, submitted-local, low-level SSH transport, cluster-agent, importable factory, staging-root, or manual remote-directory workflows.
 The public capability report and structured diagnostics determine UI state, and managed runs do not expose logs.
 Retry recovery is attach-first and may replay only the exact persisted public retry plan after definitive child absence.

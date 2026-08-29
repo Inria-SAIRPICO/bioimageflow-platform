@@ -37,12 +37,27 @@ describe('ExecutionProfilesSection', () => {
       profile_id: profile.id, profile_revision: 1,
       config_digest: profile.config_digest, cluster_host: profile.cluster_host,
       cluster_root: profile.cluster_root, configured: true,
-      cluster: { host: profile.cluster_host, root: profile.cluster_root },
+      cluster: {
+        host: profile.cluster_host,
+        root: profile.cluster_root,
+        results_root: '/cluster/workflows/results',
+        environment: { kind: 'existing-python' },
+        parsl: { source_kind: 'file', factory: 'build' },
+        orchestrator: {
+          scheduler: 'slurm', queue: 'gpu', project: 'BIOIMAGE',
+          walltime_seconds: 14_400, cpu: 4,
+        },
+        setup: {
+          source_kind: 'file', digest: `sha256:${'b'.repeat(64)}`,
+          cluster_path: '/cluster/workflows/setup/setup.sh',
+        },
+      },
       capabilities: {
         schema: 'bioimageflow.execution_capabilities.v1',
         capabilities: {
           durable_remote_diagnostics: { supported: true, reason: null },
-          managed_wheelhouse_environment: { supported: false, reason: 'Not implemented' },
+          managed_pixi_environment: { supported: false, reason: 'Not implemented' },
+          attached_parsl: { supported: false, reason: 'Install the Parsl extra' },
         },
       },
       connection: null,
@@ -75,7 +90,20 @@ describe('ExecutionProfilesSection', () => {
       'Not implemented',
     )
     expect(wrapper.get('[data-testid="cluster-description"]').text()).toContain(
+      'not requirements for this managed target',
+    )
+    expect(wrapper.get('[data-testid="cluster-description"]').text()).toContain(
       'No action required.',
     )
+    const siteFacts = wrapper.get('[data-testid="cluster-site-facts"]').text()
+    expect(siteFacts).toContain('/cluster/workflows/results')
+    expect(siteFacts).toContain('existing-python')
+    expect(siteFacts).toContain('file')
+    expect(siteFacts).toContain('build')
+    expect(siteFacts).toContain('slurm')
+    expect(siteFacts).toContain('BIOIMAGE')
+    expect(siteFacts).toContain('gpu')
+    expect(siteFacts).toContain('14400 seconds')
+    expect(siteFacts).toContain('/cluster/workflows/setup/setup.sh')
   })
 })

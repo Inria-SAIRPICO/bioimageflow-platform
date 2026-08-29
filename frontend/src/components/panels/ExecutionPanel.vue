@@ -43,7 +43,7 @@ const cleanupPlanning = ref(false)
 const cleanupApplying = ref(false)
 const cleanupError = ref<string | null>(null)
 const cleanupMessage = ref<string | null>(null)
-let refreshTimer: ReturnType<typeof setInterval> | null = null
+let reloadTimer: ReturnType<typeof setInterval> | null = null
 
 const unavailableAction: ExecutionActionAvailability = {
   available: false,
@@ -67,17 +67,17 @@ watch(() => registry.selectedRunId, () => {
 watch([scope, () => ui.activeWorkflowId], () => void loadRuns())
 onMounted(() => {
   void loadRuns()
-  refreshTimer = setInterval(() => void refreshActiveRuns(), 5000)
+  reloadTimer = setInterval(() => void reloadActiveRuns(), 5000)
 })
 onUnmounted(() => {
-  if (refreshTimer !== null) clearInterval(refreshTimer)
+  if (reloadTimer !== null) clearInterval(reloadTimer)
 })
 
 async function loadRuns(): Promise<void> {
   await registry.loadRuns(scope.value === 'workflow' ? ui.activeWorkflowId : null)
 }
 
-async function refreshActiveRuns(): Promise<void> {
+async function reloadActiveRuns(): Promise<void> {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
   await Promise.allSettled(registry.activeRuns.map(run => registry.refreshRun(run.id)))
 }
@@ -275,7 +275,7 @@ async function confirmRetry(planDigest: string): Promise<void> {
         await registry.selectExecution(retryRunId)
         retryDialogVisible.value = false
       } catch {
-        retryError.value = `Submission of ${retryRunId} is uncertain. Keep this confirmed plan and refresh that exact execution; do not submit another retry.`
+        retryError.value = `Submission of ${retryRunId} is uncertain. Keep this confirmed plan and reload that exact execution; do not submit another retry.`
       }
       return
     }
@@ -319,7 +319,7 @@ function closeRetryDialog(): void {
         size="small"
         data-testid="execution-scope"
       />
-      <Button icon="pi pi-refresh" text rounded aria-label="Refresh runs" title="Refresh runs" :loading="registry.loadingRuns" @click="loadRuns" />
+      <Button icon="pi pi-refresh" text rounded aria-label="Reload retained runs" title="Reload latest retained observations" :loading="registry.loadingRuns" @click="loadRuns" />
     </header>
 
     <div v-if="registry.error && registry.runs.length === 0" class="execution-empty">

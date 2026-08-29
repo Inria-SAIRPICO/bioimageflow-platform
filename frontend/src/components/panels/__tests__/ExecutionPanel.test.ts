@@ -46,7 +46,11 @@ describe('ExecutionPanel', () => {
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         parent_path: 'preprocessing', state: 'failed', executor_label: 'gpu',
         resources: { cpu: 4, gpu: 1, memory_bytes: 16 * 1024 ** 3 }, duration_seconds: 2.5,
-        diagnostic: { exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace' },
+        diagnostic: {
+          scoped_node_path: 'preprocessing/segment', category: 'runtime',
+          exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace',
+          retry_status: 'terminal', terminal: true,
+        },
       }],
     })
 
@@ -65,7 +69,11 @@ describe('ExecutionPanel', () => {
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         state: 'failed', executor_label: 'gpu',
         resources: { cpu: 4, gpu: 1, memory_bytes: 16 * 1024 ** 3 },
-        diagnostic: { exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace' },
+        diagnostic: {
+          scoped_node_path: 'preprocessing/segment', category: 'runtime',
+          exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace',
+          retry_status: 'terminal', terminal: true,
+        },
       }],
     })
     await wrapper.vm.$nextTick()
@@ -370,7 +378,9 @@ describe('ExecutionPanel', () => {
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
       child_execution_ids: [], actions: retryActions,
       diagnostics: [{
+        schema: 'bioimageflow.cluster_diagnostic.v1' as const,
         phase: 'monitor', category: 'connection', message: 'SSH connection was interrupted',
+        allocation_state: 'unknown' as const, retry_safety: 'same-attempt-only' as const,
         next_action: 'Check SSH access and refresh this exact run.',
       }],
       jobs: [{

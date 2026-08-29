@@ -30,7 +30,8 @@ In Node Data, use the Fiji button beside Napari to open an image; before setup, 
 Choose the default execution target and how new workflows schedule independent nodes.
 **Local** preserves workstation execution through Direct and Wetlands.
 In desktop mode, a managed remote profile stores a name and the path to one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
-Use **Describe cluster** to record its observed digest and show its destination, scheduler request, connection observation, capabilities, and structured diagnostics.
+Saving the profile records its observed digest and non-secret host/root observations.
+Use **Describe cluster** to show its destination, scheduler request, connection observation, capabilities, and structured diagnostics.
 Download the reusable Slurm example to start with `cluster.py`, `parsl.py`, and optional `setup.sh` files that keep genuine site facts together.
 In webapp mode, managed profiles are provisioned out of band and appear read-only.
 

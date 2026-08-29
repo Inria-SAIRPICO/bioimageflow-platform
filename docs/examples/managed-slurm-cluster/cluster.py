@@ -1,4 +1,4 @@
-"""Trusted BioImageFlow Platform target for one managed Slurm cluster."""
+"""Example site-owned managed Slurm cluster configuration."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -23,7 +23,10 @@ cluster = RemoteCluster(
     ),
     parsl=ParslConfiguration.from_file(
         HERE / "parsl.py",
-        kwargs={"account": "CHANGE_ME_PROJECT"},
+        kwargs={
+            "account": "CHANGE_ME_PROJECT",
+            "partition": "CHANGE_ME_PARTITION",
+        },
     ),
     orchestrator=SchedulerJob(
         scheduler="slurm",

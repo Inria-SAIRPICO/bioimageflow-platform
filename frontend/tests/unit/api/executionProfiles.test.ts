@@ -6,12 +6,10 @@ vi.mock('@/api/client', () => ({
 
 import { api } from '@/api/client'
 import {
-  applyClusterCleanup,
   createExecutionProfile,
   describeExecutionProfile,
   downloadSlurmProfileExample,
   listExecutionProfiles,
-  planClusterCleanup,
   updateExecutionProfile,
   type ExecutionProfile,
 } from '@/api/executionProfiles'
@@ -61,7 +59,7 @@ describe('managed execution profile API', () => {
     })
   })
 
-  it('describes capabilities, downloads the example, and applies an exact cleanup plan', async () => {
+  it('describes capabilities and downloads the example archive', async () => {
     const description = {
       profile_id: profile.id, profile_revision: 1, config_digest: profile.config_digest,
       cluster_host: profile.cluster_host, cluster_root: profile.cluster_root, configured: true,
@@ -75,25 +73,16 @@ describe('managed execution profile API', () => {
     const archive = new Blob(['example'])
     vi.mocked(api.post)
       .mockResolvedValueOnce({ data: description })
-      .mockResolvedValueOnce({ data: {
-        profile_id: profile.id, plan_digest: 'sha256:cleanup', plan: { run_ids: ['run-1'] },
-      } })
-      .mockResolvedValueOnce({ data: { profile_id: profile.id, report: { removed: 1 } } })
     vi.mocked(api.get).mockResolvedValueOnce({ data: archive })
 
     await expect(describeExecutionProfile(profile, true)).resolves.toEqual(description)
     await expect(downloadSlurmProfileExample()).resolves.toBe(archive)
-    const plan = await planClusterCleanup(profile.id, ['run-1'])
-    await applyClusterCleanup(profile.id, plan.plan_digest)
 
     expect(vi.mocked(api.post).mock.calls.map(call => call[0])).toEqual([
       '/api/v1/execution/profiles/site-cluster/describe',
-      '/api/v1/execution/profiles/site-cluster/cleanup/plan',
-      '/api/v1/execution/profiles/site-cluster/cleanup',
     ])
     expect(vi.mocked(api.post).mock.calls[0]?.[2]).toEqual({
       params: { check_connection: true },
     })
-    expect(vi.mocked(api.post).mock.calls[2]?.[1]).toEqual({ plan_digest: 'sha256:cleanup' })
   })
 })

@@ -27,6 +27,7 @@ import {
   executionErrorCode,
   executionErrorDetails,
   preflightExecution,
+  type ManagedExecutionIntent,
   type RemoteNodePathInput,
   type RemoteNodePathResolution,
 } from '@/api/executions'
@@ -246,7 +247,6 @@ function cancelRemoteDialog(): void {
 
 async function runDistributed(
   command: ExecutionCommand,
-  graph: GraphState,
   workflowId: string,
   draftRevision: number | null,
 ): Promise<boolean> {
@@ -257,10 +257,12 @@ async function runDistributed(
   if (profileRevision == null) {
     throw new Error('Refresh execution targets before starting a distributed run')
   }
-  const baseRequest = {
+  if (draftRevision == null) {
+    throw new Error('Save or refresh the accepted workflow draft before managed submission')
+  }
+  const baseRequest: ManagedExecutionIntent = {
     workflow_id: workflowId,
     draft_revision: draftRevision,
-    graph,
     target_id: executionRegistry.selectedTargetId,
     profile_revision: profileRevision,
     command: preflightCommand(command),
@@ -361,7 +363,6 @@ async function runCore(command: ExecutionCommand) {
       if (executionRegistry.selectedTarget?.mode !== 'local') {
         const started = await runDistributed(
           command,
-          preparedGraph,
           workflowName,
           preparedDraftRevision,
         )

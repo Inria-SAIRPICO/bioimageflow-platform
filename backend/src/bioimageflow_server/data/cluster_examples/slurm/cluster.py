@@ -16,19 +16,22 @@ HERE = Path(__file__).resolve().parent
 
 
 cluster = RemoteCluster(
-    host="my-hpc",
-    root="/cluster/project/ACCOUNT/bioimageflow",
+    host="CHANGE_ME_SSH_ALIAS",
+    root="/CHANGE_ME/shared/project/user/bioimageflow",
     environment=ClusterEnvironment.from_existing_python(
-        "/shared/apps/bioimageflow/2026.08/bin/python"
+        "/CHANGE_ME/shared/apps/bioimageflow/bin/python"
     ),
     parsl=ParslConfiguration.from_file(
         HERE / "parsl.py",
-        kwargs={"account": "ACCOUNT", "partition": "compute"},
+        kwargs={
+            "account": "CHANGE_ME_PROJECT",
+            "partition": "CHANGE_ME_PARTITION",
+        },
     ),
     orchestrator=SchedulerJob(
         scheduler="slurm",
-        queue="compute",
-        project="ACCOUNT",
+        queue="CHANGE_ME_PARTITION",
+        project="CHANGE_ME_PROJECT",
         walltime=timedelta(hours=4),
         cpu=4,
     ),

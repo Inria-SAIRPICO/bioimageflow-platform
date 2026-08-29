@@ -55,7 +55,8 @@ Click **Describe cluster** before selecting it for a run.
 The platform shows the observed script digest, destination, scheduler request, environment kind, setup presence, connection result, capabilities, and structured diagnostics.
 Fix any disabled reason using its reported next action, then describe the target again.
 
-The profile stores only its name, script path, enabled state, revision, and observed digest.
+The profile stores its name, script path, enabled state, revision, observed digest, and the non-secret cluster host and root observed when it is saved.
+Host and root are not separate editable settings; change them in `cluster.py` and save the profile again.
 Secrets and imported Python objects are not saved.
 
 In webapp deployments, profiles are provisioned outside the browser and appear read-only.
@@ -74,7 +75,7 @@ For each one choose:
 BioImageFlow does not guess from local path existence.
 Strings remain strings, and these invocation choices never replace saved workflow values.
 
-Review the target, workflow snapshot, path choices, and warning about the brief submit acknowledgement window, then submit.
+Review the target, workflow snapshot, path choices, and the acknowledgement-window warning shown beside every selected managed target, then submit.
 The platform delegates deployment, validation, planning, upload, scheduler launch, and Parsl startup to BioImageFlow's managed API.
 
 ## Monitor and reconnect

@@ -192,16 +192,6 @@ describe('ExecutionSection', () => {
     expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
-  it('maps legacy parsl settings to parallel wording', () => {
-    const wrapper = mount(ExecutionSection, {
-      ...globalOpts,
-      props: { modelValue: { ...baseSettings, execution_engine: 'parsl' as 'parallel' } },
-    })
-
-    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
-    expect(wrapper.text()).toContain('Managed remote clusters')
-  })
-
   it('maps current parallel scheduling setting to parallel wording', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,

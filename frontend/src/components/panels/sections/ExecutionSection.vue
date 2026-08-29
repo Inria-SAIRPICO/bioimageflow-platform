@@ -36,10 +36,7 @@ const schedulingLabel = computed(() => {
   const execution = props.modelValue.execution
   if (execution === 'parallel') return 'Parallel'
   if (execution === 'sequential') return 'Sequential'
-  const legacyExecution = props.modelValue.execution_engine as string
-  return legacyExecution === 'parallel' || legacyExecution === 'parsl'
-    ? 'Parallel'
-    : 'Sequential'
+  return props.modelValue.execution_engine === 'parallel' ? 'Parallel' : 'Sequential'
 })
 
 const profilesEditable = computed(() => props.modelValue.deployment_mode === 'desktop')

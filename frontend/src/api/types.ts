@@ -666,6 +666,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/execution/profiles/example/slurm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Slurm Profile Example
+         * @description Download the maintained cluster.py/parsl.py/setup.sh site template.
+         */
+        get: operations["download_slurm_profile_example_api_v1_execution_profiles_example_slurm_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/execution/profiles/{profile_id}": {
         parameters: {
             query?: never;
@@ -684,7 +704,7 @@ export interface paths {
         patch: operations["update_execution_profile_api_v1_execution_profiles__profile_id__patch"];
         trace?: never;
     };
-    "/api/v1/execution/profiles/{profile_id}/test": {
+    "/api/v1/execution/profiles/{profile_id}/describe": {
         parameters: {
             query?: never;
             header?: never;
@@ -693,8 +713,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test Execution Profile */
-        post: operations["test_execution_profile_api_v1_execution_profiles__profile_id__test_post"];
+        /** Describe Execution Profile */
+        post: operations["describe_execution_profile_api_v1_execution_profiles__profile_id__describe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -804,23 +824,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/executions/{execution_id}/logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Execution Logs */
-        get: operations["execution_logs_api_v1_executions__execution_id__logs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/executions/{execution_id}/result": {
         parameters: {
             query?: never;
@@ -832,6 +835,40 @@ export interface paths {
         put?: never;
         /** Download Execution Result */
         post: operations["download_execution_result_api_v1_executions__execution_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/cleanup/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan Execution Cleanup */
+        post: operations["plan_execution_cleanup_api_v1_executions__execution_id__cleanup_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Execution Cleanup */
+        post: operations["apply_execution_cleanup_api_v1_executions__execution_id__cleanup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1532,18 +1569,6 @@ export interface components {
             /** Workflow Name */
             workflow_name: string;
         };
-        /** ClusterFilePreLaunchValue */
-        ClusterFilePreLaunchValue: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            kind: "cluster_file";
-            /** Path */
-            path: string;
-            /** Expected Digest */
-            expected_digest?: string | null;
-        };
         /** ColumnEdge */
         ColumnEdge: {
             /**
@@ -1561,6 +1586,11 @@ export interface components {
             source_output: string;
             /** Target Input */
             target_input: string;
+        };
+        /** ConfirmExecutionCleanupRequest */
+        ConfirmExecutionCleanupRequest: {
+            /** Plan Digest */
+            plan_digest: string;
         };
         /** ConfirmRetryRequest */
         ConfirmRetryRequest: {
@@ -2001,40 +2031,24 @@ export interface components {
              * @default true
              */
             enabled: boolean;
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "attached" | "submitted_local" | "submitted_remote";
-            parsl_config: components["schemas"]["ParslConfigRefValue"];
-            /** Executor Bindings */
-            executor_bindings: {
-                [key: string]: components["schemas"]["ExecutorBindingValue-Output"];
-            };
-            /** Environment Routes */
-            environment_routes?: {
-                [key: string]: string;
-            };
-            /** Shared Runtime Root */
-            shared_runtime_root?: string | null;
-            task_policy?: components["schemas"]["ParslTaskPolicyValue"];
-            /** Launch */
-            launch?: (components["schemas"]["LocalLaunchValue"] | components["schemas"]["PSIJLaunchValue"]) | null;
-            transport?: components["schemas"]["SSHSubmissionTransportValue"] | null;
-            /** Remote Workflow Root */
-            remote_workflow_root?: string | null;
-            /** Pre Launch */
-            pre_launch?: (components["schemas"]["InlinePreLaunchValue"] | components["schemas"]["LocalFilePreLaunchValue"] | components["schemas"]["ClusterFilePreLaunchValue"]) | null;
+            /** Config Path */
+            config_path: string;
             /**
              * Schema
-             * @default bioimageflow.platform.execution-profile.v1
+             * @default bioimageflow.platform.execution-profile.v2
              * @constant
              */
-            schema: "bioimageflow.platform.execution-profile.v1";
+            schema: "bioimageflow.platform.execution-profile.v2";
             /** Id */
             id: string;
             /** Revision */
             revision: number;
+            /** Config Digest */
+            config_digest: string;
+            /** Cluster Host */
+            cluster_host: string;
+            /** Cluster Root */
+            cluster_root: string;
         };
         /**
          * DraftGraphMismatchResponse
@@ -2174,6 +2188,7 @@ export interface components {
             retry: components["schemas"]["ExecutionActionAvailability"];
             recompute: components["schemas"]["ExecutionActionAvailability"];
             download_results: components["schemas"]["ExecutionActionAvailability"];
+            cleanup: components["schemas"]["ExecutionActionAvailability"];
         };
         /** ExecutionCapabilitiesValue */
         ExecutionCapabilitiesValue: {
@@ -2185,6 +2200,34 @@ export interface components {
             /** Capabilities */
             capabilities: {
                 [key: string]: components["schemas"]["CapabilityStatusValue"];
+            };
+        };
+        /** ExecutionCleanupPlanRequest */
+        ExecutionCleanupPlanRequest: {
+            /**
+             * Older Than Seconds
+             * @default 86400
+             */
+            older_than_seconds: number;
+        };
+        /** ExecutionCleanupPresentation */
+        ExecutionCleanupPresentation: {
+            /** Execution Id */
+            execution_id: string;
+            /** Plan Digest */
+            plan_digest: string;
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            };
+        };
+        /** ExecutionCleanupReport */
+        ExecutionCleanupReport: {
+            /** Execution Id */
+            execution_id: string;
+            /** Report */
+            report: {
+                [key: string]: unknown;
             };
         };
         /** ExecutionPreflightRequest */
@@ -2208,10 +2251,6 @@ export interface components {
                 [key: string]: {
                     [key: string]: unknown;
                 };
-            };
-            /** Node Routes */
-            node_routes?: {
-                [key: string]: string;
             };
         };
         /**
@@ -2240,7 +2279,7 @@ export interface components {
              * Backend
              * @enum {string}
              */
-            backend: "direct" | "wetlands" | "attached_parsl" | "submitted_local" | "submitted_remote";
+            backend: "direct" | "wetlands" | "managed_remote";
             /** Target Id */
             target_id: string;
             /** Target Label */
@@ -2249,7 +2288,7 @@ export interface components {
              * Target Mode
              * @enum {string}
              */
-            target_mode: "local" | "attached" | "submitted_local" | "submitted_remote";
+            target_mode: "local" | "managed_remote";
             /** Scheduler Job Id */
             scheduler_job_id?: string | null;
             /**
@@ -2267,6 +2306,8 @@ export interface components {
              */
             progress_cursor: number;
             actions: components["schemas"]["ExecutionActions"];
+            /** Diagnostics */
+            diagnostics?: components["schemas"]["bioimageflow_server__models__execution_runtime__ClusterDiagnosticValue"][];
             observation: components["schemas"]["ObservationSnapshot"];
             /**
              * Created At
@@ -2292,7 +2333,10 @@ export interface components {
             /** Limit */
             limit: number;
         };
-        /** ExecutionProfileCreate */
+        /**
+         * ExecutionProfileCreate
+         * @description Trusted desktop configuration-script selection.
+         */
         ExecutionProfileCreate: {
             /** Name */
             name: string;
@@ -2301,30 +2345,34 @@ export interface components {
              * @default true
              */
             enabled: boolean;
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "attached" | "submitted_local" | "submitted_remote";
-            parsl_config: components["schemas"]["ParslConfigRefValue"];
-            /** Executor Bindings */
-            executor_bindings: {
-                [key: string]: components["schemas"]["ExecutorBindingValue-Input"];
+            /** Config Path */
+            config_path: string;
+        };
+        /** ExecutionProfileDescription */
+        ExecutionProfileDescription: {
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /** Config Digest */
+            config_digest: string;
+            /** Cluster Host */
+            cluster_host: string;
+            /** Cluster Root */
+            cluster_root: string;
+            /** Configured */
+            configured: boolean;
+            /** Cluster */
+            cluster: {
+                [key: string]: unknown;
             };
-            /** Environment Routes */
-            environment_routes?: {
-                [key: string]: string;
-            };
-            /** Shared Runtime Root */
-            shared_runtime_root?: string | null;
-            task_policy?: components["schemas"]["ParslTaskPolicyValue"];
-            /** Launch */
-            launch?: (components["schemas"]["LocalLaunchValue"] | components["schemas"]["PSIJLaunchValue"]) | null;
-            transport?: components["schemas"]["SSHSubmissionTransportValue"] | null;
-            /** Remote Workflow Root */
-            remote_workflow_root?: string | null;
-            /** Pre Launch */
-            pre_launch?: (components["schemas"]["InlinePreLaunchValue"] | components["schemas"]["LocalFilePreLaunchValue"] | components["schemas"]["ClusterFilePreLaunchValue"]) | null;
+            capabilities: components["schemas"]["ExecutionCapabilitiesValue"];
+            /** Connection */
+            connection?: {
+                [key: string]: unknown;
+            } | null;
+            /** Diagnostics */
+            diagnostics?: components["schemas"]["bioimageflow_server__models__execution_profiles__ClusterDiagnosticValue"][];
         };
         /** ExecutionProfileList */
         ExecutionProfileList: {
@@ -2338,22 +2386,6 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
             profile: components["schemas"]["ExecutionProfileCreate"];
-        };
-        /** ExecutionProfileTestResult */
-        ExecutionProfileTestResult: {
-            /** Profile Id */
-            profile_id: string;
-            /** Profile Revision */
-            profile_revision: number;
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "attached" | "submitted_local" | "submitted_remote";
-            /** Report */
-            report: {
-                [key: string]: unknown;
-            };
         };
         /**
          * ExecutionRequest
@@ -2397,7 +2429,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "local" | "attached" | "submitted_local" | "submitted_remote";
+            mode: "local" | "managed_remote";
             /** Available */
             available: boolean;
             /** Disabled Reason */
@@ -2410,48 +2442,6 @@ export interface components {
             capabilities: components["schemas"]["ExecutionCapabilitiesValue"];
             /** Targets */
             targets: components["schemas"]["ExecutionTargetValue"][];
-        };
-        /** ExecutorBindingValue */
-        "ExecutorBindingValue-Input": {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.executor_binding.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.executor_binding.v1";
-            /** Label */
-            label: string;
-            /** Environments */
-            environments: components["schemas"]["WorkerEnvironmentAttestationValue"][];
-            capabilities: components["schemas"]["ExecutorCapabilitiesValue"];
-        };
-        /** ExecutorBindingValue */
-        "ExecutorBindingValue-Output": {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.executor_binding.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.executor_binding.v1";
-            /** Label */
-            label: string;
-            /** Environments */
-            environments: components["schemas"]["WorkerEnvironmentAttestationValue"][];
-            capabilities: components["schemas"]["ExecutorCapabilitiesValue"];
-        };
-        /** ExecutorCapabilitiesValue */
-        ExecutorCapabilitiesValue: {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.executor_capabilities.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.executor_capabilities.v1";
-            /** Storage Modes */
-            storage_modes: ("shared_fs" | "staged")[];
-            /** Tool Origin Modes */
-            tool_origin_modes: ("installed_module" | "versioned_module" | "shared_module" | "source_file" | "archive_module")[];
-            slot: components["schemas"]["WorkerSlotCapacityValue"];
         };
         /** ExposeWorkflowInputOperation */
         ExposeWorkflowInputOperation: {
@@ -2593,16 +2583,6 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** InlinePreLaunchValue */
-        InlinePreLaunchValue: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            kind: "inline";
-            /** Text */
-            text: string;
-        };
         /** InputFieldSchema */
         InputFieldSchema: {
             /** Type */
@@ -2693,28 +2673,6 @@ export interface components {
              * Format: date-time
              */
             updated_at?: string;
-        };
-        /** LocalFilePreLaunchValue */
-        LocalFilePreLaunchValue: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            kind: "local_file";
-            /** Path */
-            path: string;
-        };
-        /** LocalLaunchValue */
-        LocalLaunchValue: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            backend: "local";
-            /** Work Dir */
-            work_dir?: string | null;
-            /** Hard Cancel After */
-            hard_cancel_after?: number | null;
         };
         /**
          * MissingPackage
@@ -3109,34 +3067,6 @@ export interface components {
              */
             scope: "latest" | "runs" | "both";
         };
-        /** PSIJLaunchValue */
-        PSIJLaunchValue: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            backend: "psij";
-            /**
-             * Executor
-             * @enum {string}
-             */
-            executor: "slurm" | "pbs" | "lsf";
-            /** Walltime Seconds */
-            walltime_seconds: number;
-            /** Queue */
-            queue?: string | null;
-            /** Project */
-            project?: string | null;
-            /**
-             * Cpu Cores
-             * @default 1
-             */
-            cpu_cores: number;
-            /** Work Dir */
-            work_dir?: string | null;
-            /** Hard Cancel After */
-            hard_cancel_after?: number | null;
-        };
         /** PackageImportResponse */
         PackageImportResponse: {
             /**
@@ -3191,38 +3121,6 @@ export interface components {
              */
             environment_status: string;
         };
-        /** ParslConfigRefValue */
-        ParslConfigRefValue: {
-            /** Factory */
-            factory: string;
-            /** Kwargs */
-            kwargs?: {
-                [key: string]: unknown;
-            };
-            /** Secret Refs */
-            secret_refs?: {
-                [key: string]: string;
-            } | null;
-        };
-        /** ParslTaskPolicyValue */
-        ParslTaskPolicyValue: {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.task_policy.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.task_policy.v1";
-            /**
-             * Row Chunk Size
-             * @default 1
-             */
-            row_chunk_size: number;
-            /**
-             * Max In Flight
-             * @default 32
-             */
-            max_in_flight: number;
-        };
         /** PositionalInputPort */
         PositionalInputPort: {
             /**
@@ -3272,14 +3170,11 @@ export interface components {
             token?: string | null;
             /** Expires At */
             expires_at?: number | null;
-            /** Distributed Plan */
-            distributed_plan: {
-                [key: string]: unknown;
-            };
-            /** Manifest */
-            manifest?: {
-                [key: string]: unknown;
-            } | null;
+            /**
+             * Resolved Inputs
+             * @default 0
+             */
+            resolved_inputs: number;
         };
         /** RecomputeSelection */
         RecomputeSelection: {
@@ -3312,10 +3207,6 @@ export interface components {
              * @constant
              */
             kind: "resolution_required";
-            /** Distributed Plan */
-            distributed_plan: {
-                [key: string]: unknown;
-            };
             /** Remote Node Paths */
             remote_node_paths: {
                 [key: string]: unknown;
@@ -3380,7 +3271,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "local" | "attached" | "submitted_local" | "submitted_remote";
+            mode: "local" | "managed_remote";
         };
         /**
          * RevealRequest
@@ -3389,20 +3280,6 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
-        };
-        /** SSHSubmissionTransportValue */
-        SSHSubmissionTransportValue: {
-            /** Host */
-            host: string;
-            /** Staging Root */
-            staging_root: string;
-            /** Remote Executable */
-            remote_executable: string;
-            /**
-             * Connect Timeout
-             * @default 15
-             */
-            connect_timeout: number;
         };
         /**
          * SerializedConstant
@@ -3478,11 +3355,6 @@ export interface components {
              * @default local
              */
             default_execution_target_id: string;
-            /**
-             * Trusted Parsl Factories
-             * @default []
-             */
-            trusted_parsl_factories: string[];
             /**
              * Node Data Page Size
              * @default 250
@@ -3624,7 +3496,7 @@ export interface components {
              */
             dataframe_output: boolean;
             /** Row Consumption */
-            row_consumption: "mapped" | "collective" | null;
+            row_consumption: ("mapped" | "collective") | null;
             /**
              * Documentation
              * @default
@@ -3852,43 +3724,6 @@ export interface components {
              * @default []
              */
             errors: components["schemas"]["GraphValidationError"][];
-        };
-        /** WorkerEnvironmentAttestationValue */
-        WorkerEnvironmentAttestationValue: {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.worker_environment_attestation.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.worker_environment_attestation.v1";
-            /** Name */
-            name: string;
-            /** Dependency Hash */
-            dependency_hash: string;
-            /** Allow Flexible Versions */
-            allow_flexible_versions: boolean;
-            /** Core Requirement */
-            core_requirement: string;
-        };
-        /** WorkerSlotCapacityValue */
-        WorkerSlotCapacityValue: {
-            /**
-             * Schema
-             * @default bioimageflow.parsl.worker_slot_capacity.v1
-             * @constant
-             */
-            schema: "bioimageflow.parsl.worker_slot_capacity.v1";
-            /** Cpu */
-            cpu: number;
-            /**
-             * Gpu
-             * @default 0
-             */
-            gpu: number;
-            /** Memory Bytes */
-            memory_bytes?: number | null;
-            /** Gpu Memory Bytes */
-            gpu_memory_bytes?: number | null;
         };
         /** WorkflowConfig */
         WorkflowConfig: {
@@ -4427,6 +4262,69 @@ export interface components {
             /** Artifact Hash */
             artifact_hash: string;
         };
+        /** ClusterDiagnosticValue */
+        bioimageflow_server__models__execution_profiles__ClusterDiagnosticValue: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.cluster_diagnostic.v1";
+            /** Phase */
+            phase: string;
+            /** Category */
+            category: string;
+            /** Message */
+            message: string;
+            /**
+             * Allocation State
+             * @enum {string}
+             */
+            allocation_state: "none" | "orchestrator-submitted" | "workers-possible" | "unknown";
+            /**
+             * Retry Safety
+             * @enum {string}
+             */
+            retry_safety: "safe" | "same-attempt-only" | "unsafe" | "not-applicable";
+            /** Next Action */
+            next_action: string;
+            /** Identities */
+            identities?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * ClusterDiagnosticValue
+         * @description Public, secret-redacted managed cluster operation diagnostic.
+         */
+        bioimageflow_server__models__execution_runtime__ClusterDiagnosticValue: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.cluster_diagnostic.v1";
+            /** Phase */
+            phase: string;
+            /** Category */
+            category: string;
+            /** Message */
+            message: string;
+            /**
+             * Allocation State
+             * @enum {string}
+             */
+            allocation_state: "none" | "orchestrator-submitted" | "workers-possible" | "unknown";
+            /**
+             * Retry Safety
+             * @enum {string}
+             */
+            retry_safety: "safe" | "same-attempt-only" | "unsafe" | "not-applicable";
+            /** Next Action */
+            next_action: string;
+            /** Identities */
+            identities?: {
+                [key: string]: string;
+            };
+        };
     };
     responses: never;
     parameters: never;
@@ -4440,8 +4338,8 @@ export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
 export type CapabilityStatusValue = components['schemas']['CapabilityStatusValue'];
 export type ClearRequest = components['schemas']['ClearRequest'];
-export type ClusterFilePreLaunchValue = components['schemas']['ClusterFilePreLaunchValue'];
 export type ColumnEdge = components['schemas']['ColumnEdge'];
+export type ConfirmExecutionCleanupRequest = components['schemas']['ConfirmExecutionCleanupRequest'];
 export type ConfirmRetryRequest = components['schemas']['ConfirmRetryRequest'];
 export type ConnectColumnEdgeOperation = components['schemas']['ConnectColumnEdgeOperation'];
 export type ConnectDataFrameEdgeOperation = components['schemas']['ConnectDataFrameEdgeOperation'];
@@ -4483,19 +4381,19 @@ export type ExecutionActionAvailability = components['schemas']['ExecutionAction
 export type ExecutionActionResponse = components['schemas']['ExecutionActionResponse'];
 export type ExecutionActions = components['schemas']['ExecutionActions'];
 export type ExecutionCapabilitiesValue = components['schemas']['ExecutionCapabilitiesValue'];
+export type ExecutionCleanupPlanRequest = components['schemas']['ExecutionCleanupPlanRequest'];
+export type ExecutionCleanupPresentation = components['schemas']['ExecutionCleanupPresentation'];
+export type ExecutionCleanupReport = components['schemas']['ExecutionCleanupReport'];
 export type ExecutionPreflightRequest = components['schemas']['ExecutionPreflightRequest'];
 export type ExecutionPresentation = components['schemas']['ExecutionPresentation'];
 export type ExecutionPresentationPage = components['schemas']['ExecutionPresentationPage'];
 export type ExecutionProfileCreate = components['schemas']['ExecutionProfileCreate'];
+export type ExecutionProfileDescription = components['schemas']['ExecutionProfileDescription'];
 export type ExecutionProfileList = components['schemas']['ExecutionProfileList'];
 export type ExecutionProfilePatch = components['schemas']['ExecutionProfilePatch'];
-export type ExecutionProfileTestResult = components['schemas']['ExecutionProfileTestResult'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
 export type ExecutionTargetValue = components['schemas']['ExecutionTargetValue'];
 export type ExecutionTargetsValue = components['schemas']['ExecutionTargetsValue'];
-export type ExecutorBindingValueInput = components['schemas']['ExecutorBindingValue-Input'];
-export type ExecutorBindingValueOutput = components['schemas']['ExecutorBindingValue-Output'];
-export type ExecutorCapabilitiesValue = components['schemas']['ExecutorCapabilitiesValue'];
 export type ExposeWorkflowInputOperation = components['schemas']['ExposeWorkflowInputOperation'];
 export type ExposeWorkflowOutputOperation = components['schemas']['ExposeWorkflowOutputOperation'];
 export type FailureDiagnosticSnapshot = components['schemas']['FailureDiagnosticSnapshot'];
@@ -4507,11 +4405,8 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
-export type InlinePreLaunchValue = components['schemas']['InlinePreLaunchValue'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
 export type JobSnapshot = components['schemas']['JobSnapshot'];
-export type LocalFilePreLaunchValue = components['schemas']['LocalFilePreLaunchValue'];
-export type LocalLaunchValue = components['schemas']['LocalLaunchValue'];
 export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type MoveNodeItem = components['schemas']['MoveNodeItem'];
@@ -4535,12 +4430,9 @@ export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
 export type ObservationSnapshot = components['schemas']['ObservationSnapshot'];
 export type OutputViewConfig = components['schemas']['OutputViewConfig'];
-export type PsijLaunchValue = components['schemas']['PSIJLaunchValue'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
 export type PackageInfo = components['schemas']['PackageInfo'];
-export type ParslConfigRefValue = components['schemas']['ParslConfigRefValue'];
-export type ParslTaskPolicyValue = components['schemas']['ParslTaskPolicyValue'];
 export type PositionalInputPort = components['schemas']['PositionalInputPort'];
 export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
 export type PythonSourcePreviewRequest = components['schemas']['PythonSourcePreviewRequest'];
@@ -4553,7 +4445,6 @@ export type RetryPlanPresentation = components['schemas']['RetryPlanPresentation
 export type RetryPlanRequest = components['schemas']['RetryPlanRequest'];
 export type RetryTargetPresentation = components['schemas']['RetryTargetPresentation'];
 export type RevealRequest = components['schemas']['RevealRequest'];
-export type SshSubmissionTransportValue = components['schemas']['SSHSubmissionTransportValue'];
 export type SerializedConstant = components['schemas']['SerializedConstant'];
 export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOperation'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
@@ -4573,8 +4464,6 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
-export type WorkerEnvironmentAttestationValue = components['schemas']['WorkerEnvironmentAttestationValue'];
-export type WorkerSlotCapacityValue = components['schemas']['WorkerSlotCapacityValue'];
 export type WorkflowConfig = components['schemas']['WorkflowConfig'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowDeleteResponse = components['schemas']['WorkflowDeleteResponse'];
@@ -4613,6 +4502,8 @@ export type WorkflowUpdate = components['schemas']['WorkflowUpdate'];
 export type WorkspaceInfo = components['schemas']['WorkspaceInfo'];
 export type WorkspaceUpdate = components['schemas']['WorkspaceUpdate'];
 export type WorkspaceWorkflowSource = components['schemas']['WorkspaceWorkflowSource'];
+export type BioimageflowServerModelsExecutionProfilesClusterDiagnosticValue = components['schemas']['bioimageflow_server__models__execution_profiles__ClusterDiagnosticValue'];
+export type BioimageflowServerModelsExecutionRuntimeClusterDiagnosticValue = components['schemas']['bioimageflow_server__models__execution_runtime__ClusterDiagnosticValue'];
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {
@@ -5909,6 +5800,26 @@ export interface operations {
             };
         };
     };
+    download_slurm_profile_example_api_v1_execution_profiles_example_slurm_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     delete_execution_profile_api_v1_execution_profiles__profile_id__delete: {
         parameters: {
             query: {
@@ -5975,9 +5886,11 @@ export interface operations {
             };
         };
     };
-    test_execution_profile_api_v1_execution_profiles__profile_id__test_post: {
+    describe_execution_profile_api_v1_execution_profiles__profile_id__describe_post: {
         parameters: {
-            query?: never;
+            query?: {
+                check_connection?: boolean;
+            };
             header?: never;
             path: {
                 profile_id: string;
@@ -5992,7 +5905,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionProfileTestResult"];
+                    "application/json": components["schemas"]["ExecutionProfileDescription"];
                 };
             };
             /** @description Validation Error */
@@ -6237,37 +6150,6 @@ export interface operations {
             };
         };
     };
-    execution_logs_api_v1_executions__execution_id__logs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                execution_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     download_execution_result_api_v1_executions__execution_id__result_post: {
         parameters: {
             query?: never;
@@ -6285,6 +6167,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_execution_cleanup_api_v1_executions__execution_id__cleanup_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionCleanupPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionCleanupPresentation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_execution_cleanup_api_v1_executions__execution_id__cleanup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmExecutionCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionCleanupReport"];
+                };
             };
             /** @description Validation Error */
             422: {

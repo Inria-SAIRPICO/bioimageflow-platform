@@ -19,13 +19,12 @@ import {
   planExecutionCleanup,
   preflightExecution,
   startExecutionRetry,
-  type ExecutionPreflightRequest,
+  type ManagedExecutionIntent,
 } from '@/api/executions'
 
-const request: ExecutionPreflightRequest = {
+const request: ManagedExecutionIntent = {
   workflow_id: 'demo',
   draft_revision: 3,
-  graph: {},
   target_id: 'profile_1',
   profile_revision: 2,
   command: { kind: 'workflow' },
@@ -41,7 +40,6 @@ describe('distributed execution API adapter', () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       data: {
         kind: 'resolution_required',
-        distributed_plan: { nodes: [] },
         unresolved: [{ scoped_node_path: 'files', input_name: 'path' }],
         remote_node_paths: {
           inputs: [{
@@ -70,7 +68,7 @@ describe('distributed execution API adapter', () => {
       .mockResolvedValueOnce({
         data: {
           kind: 'ready', token: 'prepared', expires_at: 1_800_000_000,
-          distributed_plan: { nodes: [] },
+          resolved_inputs: 2,
         },
       })
       .mockResolvedValueOnce({
@@ -89,7 +87,7 @@ describe('distributed execution API adapter', () => {
           created_at: '2026-08-03T12:00:00Z', updated_at: '2026-08-03T12:00:00Z',
         },
       })
-    const choiceRequest: ExecutionPreflightRequest = {
+    const choiceRequest: ManagedExecutionIntent = {
       ...request,
       node_path_resolutions: [
         {
