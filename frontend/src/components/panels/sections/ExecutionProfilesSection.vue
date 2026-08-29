@@ -5,7 +5,11 @@ import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Tag from 'primevue/tag'
-import { downloadSlurmProfileExample, type ExecutionProfile } from '@/api/executionProfiles'
+import {
+  downloadSlurmProfileExample,
+  type ExecutionProfile,
+  type ProfileDescription,
+} from '@/api/executionProfiles'
 import { useExecutionProfilesStore } from '@/stores/executionProfiles'
 import { selectFile } from '@/utils/nativeDialogs'
 
@@ -66,13 +70,7 @@ interface ClusterFact {
   value: string
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
-}
-
-function factValue(value: unknown): string | null {
+function factValue(value: string | number | null | undefined): string | null {
   if (typeof value === 'string' && value.length > 0) return value
   if (typeof value === 'number' && Number.isFinite(value)) return String(value)
   return null
@@ -81,10 +79,10 @@ function factValue(value: unknown): string | null {
 const clusterFacts = computed<ClusterFact[]>(() => {
   const cluster = description.value?.cluster
   if (!cluster) return []
-  const environment = record(cluster.environment)
-  const parsl = record(cluster.parsl)
-  const orchestrator = record(cluster.orchestrator)
-  const setup = record(cluster.setup)
+  const environment = cluster.environment
+  const parsl = cluster.parsl
+  const orchestrator = cluster.orchestrator
+  const setup = cluster.setup
   const walltime = factValue(orchestrator?.walltime_seconds)
   const values: Array<[string, string | null]> = [
     ['Results root', factValue(cluster.results_root)],
@@ -96,7 +94,7 @@ const clusterFacts = computed<ClusterFact[]>(() => {
     ['Queue / partition', factValue(orchestrator?.queue)],
     ['Orchestrator walltime', walltime === null ? null : `${walltime} seconds`],
     ['Orchestrator CPU', factValue(orchestrator?.cpu)],
-    ['Setup script', setup === null ? 'Not configured' : 'Configured'],
+    ['Setup script', setup == null ? 'Not configured' : 'Configured'],
     ['Setup source', factValue(setup?.source_kind)],
     ['Setup digest', factValue(setup?.digest)],
     ['Setup cluster path', factValue(setup?.cluster_path)],
@@ -104,14 +102,18 @@ const clusterFacts = computed<ClusterFact[]>(() => {
   return values.flatMap(([label, value]) => value === null ? [] : [{ label, value }])
 })
 
-function connectionSummary(connection: Record<string, unknown> | null | undefined): string {
+function connectionSummary(connection: ProfileDescription['connection']): string {
   if (!connection) return 'Not checked'
-  const reachable = connection.reachable ?? connection.ok
-  const message = connection.message
-  if (reachable === true) return typeof message === 'string' && message ? message : 'Reachable'
-  if (typeof message === 'string' && message) return message
-  if (reachable === false) return 'Unavailable'
-  return 'Connection report available'
+  if (!connection.reachable) return 'Unreachable'
+  if (connection.bootstrap_required) return 'Reachable · gateway bootstrap required'
+  if (!connection.gateway_available) return 'Reachable · gateway unavailable'
+  const gateway = connection.gateway_version
+    ? `gateway ${connection.gateway_version}`
+    : 'gateway available'
+  const protocols = connection.protocol_versions?.length
+    ? ` · protocols ${connection.protocol_versions.join(', ')}`
+    : ''
+  return `Reachable · ${gateway}${protocols}`
 }
 
 function resetForm(): void {

@@ -872,7 +872,7 @@ describe('RunButton', () => {
       target_label: 'Cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', command: 'workflow',
       retry_of_execution_id: null, child_execution_ids: [],
-      created_at: '2026-08-03T10:00:00Z', jobs: [],
+      created_at: '2026-08-03T10:00:00Z', observation: { reachable: true }, jobs: [],
       actions: {
         cancel: { available: false, reason: 'Terminal' },
         retry: { available: true, reason: null },

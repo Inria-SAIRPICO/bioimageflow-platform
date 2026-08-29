@@ -32,7 +32,7 @@ function snapshot(revision: number, state: ExecutionSnapshot['state']): Executio
     id: 'run-1', revision, workflow_id: 'workflow', target_id: 'cluster',
     target_label: 'GPU queue', target_mode: 'managed_remote', backend: 'managed_remote',
     state, created_at: '2026-08-03T10:00:00Z',
-    child_execution_ids: [], actions, jobs: [],
+    child_execution_ids: [], actions, observation: { reachable: true }, jobs: [],
   }
 }
 

@@ -38,8 +38,10 @@ describe('ExecutionProfilesSection', () => {
       config_digest: profile.config_digest, cluster_host: profile.cluster_host,
       cluster_root: profile.cluster_root, configured: true,
       cluster: {
+        schema: 'bioimageflow.remote_cluster.v1',
         host: profile.cluster_host,
         root: profile.cluster_root,
+        configured: true,
         results_root: '/cluster/workflows/results',
         environment: { kind: 'existing-python' },
         parsl: { source_kind: 'file', factory: 'build' },
@@ -60,7 +62,15 @@ describe('ExecutionProfilesSection', () => {
           attached_parsl: { supported: false, reason: 'Install the Parsl extra' },
         },
       },
-      connection: null,
+      connection: {
+        schema: 'bioimageflow.cluster_connection_report.v1',
+        reachable: true,
+        gateway_available: false,
+        bootstrap_required: true,
+        gateway_version: null,
+        protocol_versions: [],
+        diagnostics: [],
+      },
       diagnostics: [{
         schema: 'bioimageflow.cluster_diagnostic.v1', phase: 'describe',
         category: 'configuration', message: 'Setup script is configured.',
@@ -94,6 +104,9 @@ describe('ExecutionProfilesSection', () => {
     )
     expect(wrapper.get('[data-testid="cluster-description"]').text()).toContain(
       'No action required.',
+    )
+    expect(wrapper.get('[data-testid="cluster-description"]').text()).toContain(
+      'gateway bootstrap required',
     )
     const siteFacts = wrapper.get('[data-testid="cluster-site-facts"]').text()
     expect(siteFacts).toContain('/cluster/workflows/results')

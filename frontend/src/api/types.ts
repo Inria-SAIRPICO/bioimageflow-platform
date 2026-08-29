@@ -1554,6 +1554,21 @@ export interface components {
             /** Folder Id */
             folder_id?: string | null;
         };
+        /** Candidate */
+        Candidate: {
+            /** Namespace */
+            namespace: string;
+            /** Identity */
+            identity: string;
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Reference Reasons */
+            reference_reasons?: string[];
+            /** Consequences */
+            consequences?: string[];
+        };
         /** CapabilityStatusValue */
         CapabilityStatusValue: {
             /** Supported */
@@ -1568,6 +1583,31 @@ export interface components {
             nodes: string[];
             /** Workflow Name */
             workflow_name: string;
+        };
+        /** ClusterConnectionValue */
+        ClusterConnectionValue: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.cluster_connection_report.v1";
+            /** Reachable */
+            reachable: boolean;
+            /** Gateway Available */
+            gateway_available: boolean;
+            /** Bootstrap Required */
+            bootstrap_required: boolean;
+            /** Gateway Version */
+            gateway_version?: string | null;
+            /** Protocol Versions */
+            protocol_versions?: number[];
+            /** Diagnostics */
+            diagnostics?: components["schemas"]["bioimageflow_server__models__execution_profiles__ClusterDiagnosticValue"][];
+        };
+        /** ClusterEnvironmentDescription */
+        ClusterEnvironmentDescription: {
+            /** Kind */
+            kind?: string | null;
         };
         /** ColumnEdge */
         ColumnEdge: {
@@ -2216,19 +2256,13 @@ export interface components {
             execution_id: string;
             /** Plan Digest */
             plan_digest: string;
-            /** Plan */
-            plan: {
-                [key: string]: unknown;
-            };
+            plan: components["schemas"]["Plan"];
         };
         /** ExecutionCleanupReport */
         ExecutionCleanupReport: {
             /** Execution Id */
             execution_id: string;
-            /** Report */
-            report: {
-                [key: string]: unknown;
-            };
+            report: components["schemas"]["Report"];
         };
         /** ExecutionPreflightRequest */
         ExecutionPreflightRequest: {
@@ -2242,10 +2276,6 @@ export interface components {
             profile_revision: number;
             /** Requested Nodes */
             requested_nodes?: string[] | null;
-            /** Root Inputs */
-            root_inputs?: {
-                [key: string]: unknown;
-            };
             /** Node Path Choices */
             node_path_choices?: {
                 [key: string]: {
@@ -2362,15 +2392,9 @@ export interface components {
             cluster_root: string;
             /** Configured */
             configured: boolean;
-            /** Cluster */
-            cluster: {
-                [key: string]: unknown;
-            };
+            cluster: components["schemas"]["SanitizedClusterDescription"];
             capabilities: components["schemas"]["ExecutionCapabilitiesValue"];
-            /** Connection */
-            connection?: {
-                [key: string]: unknown;
-            } | null;
+            connection?: components["schemas"]["ClusterConnectionValue"] | null;
             /** Diagnostics */
             diagnostics?: components["schemas"]["bioimageflow_server__models__execution_profiles__ClusterDiagnosticValue"][];
         };
@@ -3121,6 +3145,27 @@ export interface components {
              */
             environment_status: string;
         };
+        /** ParslConfigurationDescription */
+        ParslConfigurationDescription: {
+            /** Source Kind */
+            source_kind?: string | null;
+            /** Factory */
+            factory?: string | null;
+        };
+        /** Plan */
+        Plan: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.cluster_cleanup_plan.v1";
+            /** Plan Id */
+            plan_id: string;
+            /** Root Revision */
+            root_revision: number;
+            /** Candidates */
+            candidates: components["schemas"]["Candidate"][];
+        };
         /** PositionalInputPort */
         PositionalInputPort: {
             /**
@@ -3186,6 +3231,46 @@ export interface components {
              */
             cascade: boolean;
         };
+        /** RemoteNodePathInputValue */
+        RemoteNodePathInputValue: {
+            /** Scoped Node Path */
+            scoped_node_path: string;
+            /** Input Name */
+            input_name: string;
+            /**
+             * Value Shape
+             * @enum {string}
+             */
+            value_shape: "path" | "list" | "tuple";
+            /** Nullable */
+            nullable: boolean;
+            /** Path Picker */
+            path_picker?: string | null;
+            /** Current Paths */
+            current_paths?: string[];
+            /** Cluster Compatible */
+            cluster_compatible: boolean;
+        };
+        /** RemoteNodePathPlanValue */
+        RemoteNodePathPlanValue: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.remote_node_path_plan.v1";
+            /**
+             * Allocates Resources
+             * @constant
+             */
+            allocates_resources: false;
+            /**
+             * Reads Local Files
+             * @constant
+             */
+            reads_local_files: false;
+            /** Inputs */
+            inputs: components["schemas"]["RemoteNodePathInputValue"][];
+        };
         /** RenameNodeOperation */
         RenameNodeOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -3199,6 +3284,22 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** Report */
+        Report: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.cluster_cleanup_report.v1";
+            /** Plan Id */
+            plan_id: string;
+            /** Removed */
+            removed: string[];
+            /** Skipped */
+            skipped?: {
+                [key: string]: string;
+            };
+        };
         /** ResolutionRequiredPreflight */
         ResolutionRequiredPreflight: {
             /**
@@ -3207,10 +3308,7 @@ export interface components {
              * @constant
              */
             kind: "resolution_required";
-            /** Remote Node Paths */
-            remote_node_paths: {
-                [key: string]: unknown;
-            };
+            remote_node_paths: components["schemas"]["RemoteNodePathPlanValue"];
             /** Unresolved */
             unresolved: {
                 [key: string]: string;
@@ -3280,6 +3378,39 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
+        };
+        /** SanitizedClusterDescription */
+        SanitizedClusterDescription: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.remote_cluster.v1";
+            /** Host */
+            host: string;
+            /** Root */
+            root: string;
+            /** Results Root */
+            results_root?: string | null;
+            /** Configured */
+            configured: boolean;
+            environment?: components["schemas"]["ClusterEnvironmentDescription"] | null;
+            parsl?: components["schemas"]["ParslConfigurationDescription"] | null;
+            orchestrator?: components["schemas"]["SchedulerJobDescription"] | null;
+            setup?: components["schemas"]["SetupScriptDescription"] | null;
+        };
+        /** SchedulerJobDescription */
+        SchedulerJobDescription: {
+            /** Scheduler */
+            scheduler?: string | null;
+            /** Queue */
+            queue?: string | null;
+            /** Project */
+            project?: string | null;
+            /** Walltime Seconds */
+            walltime_seconds?: number | null;
+            /** Cpu */
+            cpu?: number | null;
         };
         /**
          * SerializedConstant
@@ -3400,6 +3531,15 @@ export interface components {
             latest_output_warning?: string | null;
         } & {
             [key: string]: unknown;
+        };
+        /** SetupScriptDescription */
+        SetupScriptDescription: {
+            /** Source Kind */
+            source_kind?: string | null;
+            /** Digest */
+            digest?: string | null;
+            /** Cluster Path */
+            cluster_path?: string | null;
         };
         /** SourceDestructiveEffect */
         SourceDestructiveEffect: {
@@ -4336,8 +4476,11 @@ export type ApplyPreparedExecutionRequest = components['schemas']['ApplyPrepared
 export type BodyImportPackageFromArchiveApiV1ToolsPackagesImportArchivePost = components['schemas']['Body_import_package_from_archive_api_v1_tools_packages_import_archive_post'];
 export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['Body_import_workflow_api_v1_workflows_import_post'];
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
+export type Candidate = components['schemas']['Candidate'];
 export type CapabilityStatusValue = components['schemas']['CapabilityStatusValue'];
 export type ClearRequest = components['schemas']['ClearRequest'];
+export type ClusterConnectionValue = components['schemas']['ClusterConnectionValue'];
+export type ClusterEnvironmentDescription = components['schemas']['ClusterEnvironmentDescription'];
 export type ColumnEdge = components['schemas']['ColumnEdge'];
 export type ConfirmExecutionCleanupRequest = components['schemas']['ConfirmExecutionCleanupRequest'];
 export type ConfirmRetryRequest = components['schemas']['ConfirmRetryRequest'];
@@ -4433,21 +4576,29 @@ export type OutputViewConfig = components['schemas']['OutputViewConfig'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
 export type PackageInfo = components['schemas']['PackageInfo'];
+export type ParslConfigurationDescription = components['schemas']['ParslConfigurationDescription'];
+export type Plan = components['schemas']['Plan'];
 export type PositionalInputPort = components['schemas']['PositionalInputPort'];
 export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
 export type PythonSourcePreviewRequest = components['schemas']['PythonSourcePreviewRequest'];
 export type ReadyPreflight = components['schemas']['ReadyPreflight'];
 export type RecomputeSelection = components['schemas']['RecomputeSelection'];
+export type RemoteNodePathInputValue = components['schemas']['RemoteNodePathInputValue'];
+export type RemoteNodePathPlanValue = components['schemas']['RemoteNodePathPlanValue'];
 export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
+export type Report = components['schemas']['Report'];
 export type ResolutionRequiredPreflight = components['schemas']['ResolutionRequiredPreflight'];
 export type RetryInvalidationPresentation = components['schemas']['RetryInvalidationPresentation'];
 export type RetryPlanPresentation = components['schemas']['RetryPlanPresentation'];
 export type RetryPlanRequest = components['schemas']['RetryPlanRequest'];
 export type RetryTargetPresentation = components['schemas']['RetryTargetPresentation'];
 export type RevealRequest = components['schemas']['RevealRequest'];
+export type SanitizedClusterDescription = components['schemas']['SanitizedClusterDescription'];
+export type SchedulerJobDescription = components['schemas']['SchedulerJobDescription'];
 export type SerializedConstant = components['schemas']['SerializedConstant'];
 export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOperation'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
+export type SetupScriptDescription = components['schemas']['SetupScriptDescription'];
 export type SourceDestructiveEffect = components['schemas']['SourceDestructiveEffect'];
 export type ToolCreate = components['schemas']['ToolCreate'];
 export type ToolCreateResponse = components['schemas']['ToolCreateResponse'];

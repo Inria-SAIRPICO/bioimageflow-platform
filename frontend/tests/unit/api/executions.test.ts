@@ -5,6 +5,11 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
+import type {
+  ExecutionCleanupPresentation,
+  ExecutionCleanupReport,
+  ResolutionRequiredPreflight,
+} from '@/api/types'
 import {
   applyPreparedExecution,
   applyExecutionCleanup,
@@ -37,18 +42,22 @@ describe('distributed execution API adapter', () => {
   })
 
   it('maps the public BioImageFlow path plan into explicit UI choices', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({
-      data: {
-        kind: 'resolution_required',
-        unresolved: [{ scoped_node_path: 'files', input_name: 'path' }],
-        remote_node_paths: {
-          inputs: [{
-            scoped_node_path: 'files', input_name: 'path', value_shape: 'path',
-            nullable: false, path_picker: 'folder', current_paths: ['images'],
-            cluster_compatible: false,
-          }],
-        },
+    const pathPlan = {
+      kind: 'resolution_required',
+      unresolved: [{ scoped_node_path: 'files', input_name: 'path' }],
+      remote_node_paths: {
+        schema: 'bioimageflow.remote_node_path_plan.v1',
+        allocates_resources: false,
+        reads_local_files: false,
+        inputs: [{
+          scoped_node_path: 'files', input_name: 'path', value_shape: 'path',
+          nullable: false, path_picker: 'folder', current_paths: ['images'],
+          cluster_compatible: false,
+        }],
       },
+    } satisfies ResolutionRequiredPreflight
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: pathPlan,
     })
 
     const response = await preflightExecution(request)
@@ -60,6 +69,14 @@ describe('distributed execution API adapter', () => {
         values: ['images'], nullable: false, path_picker: 'folder',
         cluster_compatible: false,
       }],
+    })
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({
+      workflow_id: 'demo',
+      draft_revision: 3,
+      target_id: 'profile_1',
+      profile_revision: 2,
+      requested_nodes: null,
+      node_path_choices: {},
     })
   })
 
@@ -83,7 +100,12 @@ describe('distributed execution API adapter', () => {
             retry: { available: false, reason: 'not terminal' },
             recompute: { available: false, reason: 'not terminal' },
             download_results: { available: false, reason: 'not succeeded' },
-          }, jobs: {}, progress_cursor: 0, observation: { reachable: true, error: null },
+          }, jobs: {}, progress_cursor: 0,
+          observation: {
+            reachable: false,
+            observed_at: '2026-08-03T12:00:01Z',
+            error: 'SSH observation failed',
+          },
           created_at: '2026-08-03T12:00:00Z', updated_at: '2026-08-03T12:00:00Z',
         },
       })
@@ -105,8 +127,12 @@ describe('distributed execution API adapter', () => {
     if (prepared.status !== 'ready') throw new Error('expected ready')
     const snapshot = await applyPreparedExecution(prepared.token, choiceRequest)
 
-    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toMatchObject({
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({
+      workflow_id: 'demo',
+      draft_revision: 3,
+      target_id: 'profile_1',
       profile_revision: 2,
+      requested_nodes: null,
       node_path_choices: {
         files: {
           path: { source: 'upload', value: '/local/images' },
@@ -122,6 +148,11 @@ describe('distributed execution API adapter', () => {
       id: 'run_1', workflow_id: 'demo', target_mode: 'managed_remote',
       target_label: 'GPU queue', scheduler_job_id: 'scheduler-42',
       state: 'prepared', jobs: [],
+      observation: {
+        reachable: false,
+        observed_at: '2026-08-03T12:00:01Z',
+        error: 'SSH observation failed',
+      },
     })
   })
 
@@ -195,14 +226,35 @@ describe('distributed execution API adapter', () => {
   })
 
   it('plans and applies cleanup from the retained run identity', async () => {
+    const cleanupPlan = {
+      execution_id: 'run/remote',
+      plan_digest: 'sha256:cleanup',
+      plan: {
+        schema: 'bioimageflow.cluster_cleanup_plan.v1',
+        plan_id: 'cleanup-run-remote',
+        root_revision: 4,
+        candidates: [{
+          namespace: 'runs',
+          identity: 'run/remote',
+          path: '/cluster/runs/run-remote',
+          size: 4096,
+          reference_reasons: ['retained result'],
+          consequences: ['removes reconnectable artifacts'],
+        }],
+      },
+    } satisfies ExecutionCleanupPresentation
+    const cleanupReport = {
+      execution_id: 'run/remote',
+      report: {
+        schema: 'bioimageflow.cluster_cleanup_report.v1',
+        plan_id: 'cleanup-run-remote',
+        removed: ['run/remote'],
+        skipped: {},
+      },
+    } satisfies ExecutionCleanupReport
     vi.mocked(api.post)
-      .mockResolvedValueOnce({ data: {
-        execution_id: 'run/remote', plan_digest: 'sha256:cleanup',
-        plan: { namespace: 'runs', run_ids: ['run/remote'] },
-      } })
-      .mockResolvedValueOnce({ data: {
-        execution_id: 'run/remote', report: { removed: 1 },
-      } })
+      .mockResolvedValueOnce({ data: cleanupPlan })
+      .mockResolvedValueOnce({ data: cleanupReport })
 
     const plan = await planExecutionCleanup('run/remote')
     await applyExecutionCleanup('run/remote', plan.plan_digest)

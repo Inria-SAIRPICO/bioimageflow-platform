@@ -12,6 +12,7 @@ import {
   listExecutionProfiles,
   updateExecutionProfile,
   type ExecutionProfile,
+  type ProfileDescription,
 } from '@/api/executionProfiles'
 
 const profile: ExecutionProfile = {
@@ -63,13 +64,27 @@ describe('managed execution profile API', () => {
     const description = {
       profile_id: profile.id, profile_revision: 1, config_digest: profile.config_digest,
       cluster_host: profile.cluster_host, cluster_root: profile.cluster_root, configured: true,
-      cluster: { host: profile.cluster_host, root: profile.cluster_root },
+      cluster: {
+        schema: 'bioimageflow.remote_cluster.v1',
+        host: profile.cluster_host,
+        root: profile.cluster_root,
+        configured: true,
+      },
       capabilities: {
-        schema: 'bioimageflow.cluster.capabilities.v1',
+        schema: 'bioimageflow.execution_capabilities.v1',
         capabilities: { managed_setup_scripts: { supported: true, reason: null } },
       },
-      connection: { reachable: true, message: null }, diagnostics: [],
-    }
+      connection: {
+        schema: 'bioimageflow.cluster_connection_report.v1',
+        reachable: true,
+        gateway_available: true,
+        bootstrap_required: false,
+        gateway_version: '0.7.0',
+        protocol_versions: [1],
+        diagnostics: [],
+      },
+      diagnostics: [],
+    } satisfies ProfileDescription
     const archive = new Blob(['example'])
     vi.mocked(api.post)
       .mockResolvedValueOnce({ data: description })

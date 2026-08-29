@@ -22,6 +22,12 @@ const retryActions = {
   download_results: { available: false, reason: 'Results require success' },
   cleanup: { available: true, reason: null },
 }
+const reachableObservation = { reachable: true }
+const unreachableObservation = {
+  reachable: false,
+  observed_at: '2026-08-03T10:00:01Z',
+  error: 'SSH observation failed',
+}
 
 describe('ExecutionPanel', () => {
   beforeEach(() => {
@@ -41,7 +47,7 @@ describe('ExecutionPanel', () => {
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
       command: 'recompute', retry_of_execution_id: 'run-parent',
-      child_execution_ids: [], actions: retryActions,
+      child_execution_ids: [], actions: retryActions, observation: unreachableObservation,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         parent_path: 'preprocessing', state: 'failed', executor_label: 'gpu',
@@ -64,7 +70,7 @@ describe('ExecutionPanel', () => {
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
       command: 'recompute', retry_of_execution_id: 'run-parent',
-      child_execution_ids: [], actions: retryActions,
+      child_execution_ids: [], actions: retryActions, observation: unreachableObservation,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         state: 'failed', executor_label: 'gpu',
@@ -79,6 +85,10 @@ describe('ExecutionPanel', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('GPU cluster')
+    expect(wrapper.text()).toContain('SSH observation failed')
+    expect(wrapper.get('.observation-warning').attributes('title')).toContain(
+      '2026-08-03T10:00:01Z',
+    )
     expect(wrapper.text()).toContain('Segment')
     expect(wrapper.text()).toContain('16 GiB')
     expect(wrapper.get('[data-testid="execution-history-provenance"]').text()).toContain(
@@ -112,7 +122,8 @@ describe('ExecutionPanel', () => {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
       target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
-      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      observation: reachableObservation, jobs: [],
     }
     registry.applySnapshot(parent)
     vi.mocked(api.post)
@@ -162,16 +173,28 @@ describe('ExecutionPanel', () => {
       target_label: 'GPU cluster', target_mode: 'managed_remote' as const,
       backend: 'managed_remote' as const, state: 'succeeded' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
-      child_execution_ids: [], actions: retryActions, jobs: [],
+      child_execution_ids: [], actions: retryActions, observation: reachableObservation, jobs: [],
     }
     registry.applySnapshot(run)
     vi.mocked(api.post)
       .mockResolvedValueOnce({ data: {
         execution_id: 'run-cleanup', plan_digest: 'sha256:cleanup',
-        plan: { run_ids: ['run-cleanup'] },
+        plan: {
+          schema: 'bioimageflow.cluster_cleanup_plan.v1',
+          plan_id: 'cleanup-run',
+          root_revision: 4,
+          candidates: [{
+            namespace: 'runs', identity: 'run-cleanup', path: '/cluster/runs/run-cleanup',
+            size: 4096, reference_reasons: ['retained result'],
+            consequences: ['removes reconnectable artifacts'],
+          }],
+        },
       } })
       .mockResolvedValueOnce({ data: {
-        execution_id: 'run-cleanup', report: { removed: ['run-cleanup'] },
+        execution_id: 'run-cleanup', report: {
+          schema: 'bioimageflow.cluster_cleanup_report.v1',
+          plan_id: 'cleanup-run', removed: ['run-cleanup'], skipped: {},
+        },
       } })
     const wrapper = mount(ExecutionPanel, {
       global: primeVueTestGlobal({ pinia, dialog: true }),
@@ -185,6 +208,15 @@ describe('ExecutionPanel', () => {
     expect(wrapper.get('[data-testid="execution-cleanup-dialog"]').text()).toContain(
       'sha256:cleanup',
     )
+    expect(wrapper.get('[data-testid="execution-cleanup-dialog"]').text()).toContain(
+      '/cluster/runs/run-cleanup',
+    )
+    expect(wrapper.get('[data-testid="execution-cleanup-dialog"]').text()).toContain(
+      'retained result',
+    )
+    expect(wrapper.get('[data-testid="execution-cleanup-dialog"]').text()).toContain(
+      'removes reconnectable artifacts',
+    )
     await wrapper.get('[data-testid="confirm-execution-cleanup"]').trigger('click')
     await flushPromises()
 
@@ -195,6 +227,7 @@ describe('ExecutionPanel', () => {
     expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({
       older_than_seconds: 0,
     })
+    expect(wrapper.text()).toContain('removed 1 artifact')
     expect(wrapper.text()).toContain('platform history entry is retained')
   })
 
@@ -210,6 +243,7 @@ describe('ExecutionPanel', () => {
       target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
       retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      observation: reachableObservation,
       jobs: [{
         id: 'segment', scoped_node_path: 'analysis/segment', display_name: 'Segment',
         state: 'failed' as const,
@@ -271,7 +305,8 @@ describe('ExecutionPanel', () => {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
       target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z', command: 'workflow',
-      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      observation: reachableObservation, jobs: [],
     }
     registry.applySnapshot(parent)
     vi.mocked(api.post)
@@ -345,7 +380,7 @@ describe('ExecutionPanel', () => {
       target_label: 'Cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
-      child_execution_ids: [], actions: retryActions, jobs: [],
+      child_execution_ids: [], actions: retryActions, observation: reachableObservation, jobs: [],
     }
     registry.applySnapshot(parent)
     vi.mocked(api.post)
@@ -387,7 +422,7 @@ describe('ExecutionPanel', () => {
       target_label: 'Cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'running' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
-      child_execution_ids: [], actions: retryActions,
+      child_execution_ids: [], actions: retryActions, observation: reachableObservation,
       diagnostics: [{
         schema: 'bioimageflow.cluster_diagnostic.v1' as const,
         phase: 'monitor', category: 'connection', message: 'SSH connection was interrupted',

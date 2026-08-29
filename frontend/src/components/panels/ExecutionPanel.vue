@@ -171,9 +171,11 @@ async function confirmCleanup(): Promise<void> {
   cleanupApplying.value = true
   cleanupError.value = null
   try {
-    await applyExecutionCleanup(plan.execution_id, plan.plan_digest)
+    const result = await applyExecutionCleanup(plan.execution_id, plan.plan_digest)
+    const removed = result.report.removed.length
+    const skipped = Object.keys(result.report.skipped ?? {}).length
     cleanupPlan.value = null
-    cleanupMessage.value = 'Managed cluster artifacts were cleaned up. The platform history entry is retained.'
+    cleanupMessage.value = `Managed cluster cleanup removed ${removed} artifact${removed === 1 ? '' : 's'}${skipped > 0 ? ` and skipped ${skipped}` : ''}. The platform history entry is retained.`
   } catch (cause) {
     cleanupError.value = executionErrorMessage(cause, 'Cluster cleanup could not be applied.')
   } finally {
@@ -366,8 +368,13 @@ function closeRetryDialog(): void {
           <span><code>{{ registry.selectedRun.id }}</code></span>
           <span v-if="registry.selectedRun.backend">{{ registry.selectedRun.backend.replace(/_/g, ' ') }}</span>
           <span v-if="registry.selectedRun.scheduler_job_id">Scheduler {{ registry.selectedRun.scheduler_job_id }}</span>
-          <span v-if="registry.selectedRun.observation_error" class="observation-warning">
-            <i class="pi pi-wifi" /> {{ registry.selectedRun.observation_error }}
+          <span
+            v-if="!registry.selectedRun.observation.reachable || registry.selectedRun.observation.error"
+            class="observation-warning"
+            :title="registry.selectedRun.observation.observed_at ? `Observed ${registry.selectedRun.observation.observed_at}` : undefined"
+          >
+            <i class="pi pi-wifi" />
+            {{ registry.selectedRun.observation.error ?? 'Latest observation could not reach the managed cluster.' }}
           </span>
           <div v-if="registry.selectedRun.retry_of_execution_id" class="run-provenance">
             {{ retryKind(registry.selectedRun.command) }} of
@@ -533,8 +540,19 @@ function closeRetryDialog(): void {
       <dl v-if="cleanupPlan" class="cleanup-summary">
         <dt>Execution</dt><dd>{{ cleanupPlan.execution_id }}</dd>
         <dt>Plan digest</dt><dd><code>{{ cleanupPlan.plan_digest }}</code></dd>
+        <dt>Plan</dt><dd><code>{{ cleanupPlan.plan.plan_id }}</code></dd>
+        <dt>Root revision</dt><dd>{{ cleanupPlan.plan.root_revision }}</dd>
       </dl>
-      <pre v-if="cleanupPlan" class="cleanup-plan">{{ JSON.stringify(cleanupPlan.plan, null, 2) }}</pre>
+      <section v-if="cleanupPlan" class="cleanup-plan" aria-label="Cleanup candidates">
+        <article v-for="candidate in cleanupPlan.plan.candidates" :key="`${candidate.namespace}:${candidate.identity}`">
+          <strong>{{ candidate.namespace }} · {{ candidate.identity }}</strong>
+          <code>{{ candidate.path }}</code>
+          <span>{{ formatBytes(candidate.size) }}</span>
+          <p v-if="candidate.reference_reasons?.length"><strong>References:</strong> {{ candidate.reference_reasons.join(' · ') }}</p>
+          <p v-if="candidate.consequences?.length"><strong>Consequences:</strong> {{ candidate.consequences.join(' · ') }}</p>
+        </article>
+        <p v-if="cleanupPlan.plan.candidates.length === 0">No managed cluster artifacts are eligible for cleanup.</p>
+      </section>
       <template #footer>
         <Button label="Cancel" severity="secondary" :disabled="cleanupApplying" @click="cleanupPlan = null" />
         <Button label="Apply cleanup" severity="danger" :loading="cleanupApplying" data-testid="confirm-execution-cleanup" @click="confirmCleanup" />
@@ -569,7 +587,9 @@ function closeRetryDialog(): void {
 .cleanup-summary { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: .45rem; }
 .cleanup-summary dt { color: var(--p-text-muted-color); }
 .cleanup-summary dd { margin: 0; overflow-wrap: anywhere; }
-.cleanup-plan { max-height: 18rem; overflow: auto; padding: .75rem; border-radius: 6px; background: var(--p-surface-100); }
+.cleanup-plan { display: grid; gap: .5rem; max-height: 18rem; overflow: auto; padding: .75rem; border-radius: 6px; background: var(--p-surface-100); }
+.cleanup-plan article { display: grid; gap: .25rem; padding-bottom: .5rem; border-bottom: 1px solid var(--p-content-border-color); }
+.cleanup-plan p { margin: 0; }
 .job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) 6rem minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
 button.job-row { cursor: pointer; }
 .job-row--active { background: var(--p-highlight-background); }

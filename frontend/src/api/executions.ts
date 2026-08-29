@@ -17,7 +17,9 @@ import type {
   ExecutionTargetsValue,
   FailureDiagnosticSnapshot,
   JobSnapshot,
+  ObservationSnapshot,
   ReadyPreflight,
+  RemoteNodePathInputValue,
   RecomputeSelection,
   ResolutionRequiredPreflight,
   RetryPlanPresentation,
@@ -96,7 +98,7 @@ export interface ExecutionSnapshot {
   finished_at?: string | null
   scheduler_job_id?: string | null
   progress_cursor?: number | null
-  observation_error?: string | null
+  observation: ObservationSnapshot
   diagnostics?: ClusterDiagnostic[]
   actions: ExecutionActions
   jobs: ExecutionJobSnapshot[]
@@ -135,18 +137,6 @@ export interface ManagedExecutionIntent {
   profile_revision: number
   command: { kind: string; nodes?: string[]; retry_of?: string }
   node_path_resolutions?: RemoteNodePathResolution[]
-}
-
-interface RemoteNodePathPlanWire {
-  inputs: Array<{
-    scoped_node_path: string
-    input_name: string
-    value_shape: RemoteNodePathInput['value_shape']
-    nullable: boolean
-    path_picker: string | null
-    current_paths: string[]
-    cluster_compatible: boolean
-  }>
 }
 
 type ExecutionPreflightWireResponse = ReadyPreflight | ResolutionRequiredPreflight
@@ -216,29 +206,18 @@ export async function preflightExecution(
     body,
   )
   if (data.kind === 'resolution_required') {
-    const unresolved = data.unresolved as Array<{
-      scoped_node_path: string
-      input_name: string
-    }>
-    const remoteNodePaths = data.remote_node_paths as unknown as RemoteNodePathPlanWire
-    const unresolvedKeys = new Set(unresolved.map(item => (
-      `${item.scoped_node_path}\n${item.input_name}`
-    )))
+    const unresolvedKeys = new Set(data.unresolved.flatMap((item) => {
+      const nodePath = item.scoped_node_path
+      const inputName = item.input_name
+      return typeof nodePath === 'string' && typeof inputName === 'string'
+        ? [`${nodePath}\n${inputName}`]
+        : []
+    }))
     return {
       status: 'resolution_required',
-      unresolved_paths: (remoteNodePaths.inputs ?? [])
+      unresolved_paths: data.remote_node_paths.inputs
         .filter(item => unresolvedKeys.has(`${item.scoped_node_path}\n${item.input_name}`))
-        .map(item => ({
-          node_path: item.scoped_node_path,
-          input_name: item.input_name,
-          value_shape: item.value_shape,
-          values: item.value_shape === 'path' && item.current_paths.length === 0
-            ? [null]
-            : item.current_paths,
-          nullable: item.nullable,
-          path_picker: item.path_picker,
-          cluster_compatible: item.cluster_compatible,
-        })),
+        .map(remotePathInput),
     }
   }
   if (!data.token || data.expires_at == null) {
@@ -248,6 +227,21 @@ export async function preflightExecution(
     status: 'ready',
     token: data.token,
     expires_at: new Date(data.expires_at * 1000).toISOString(),
+  }
+}
+
+function remotePathInput(item: RemoteNodePathInputValue): RemoteNodePathInput {
+  const currentPaths = item.current_paths ?? []
+  return {
+    node_path: item.scoped_node_path,
+    input_name: item.input_name,
+    value_shape: item.value_shape,
+    values: item.value_shape === 'path' && currentPaths.length === 0
+      ? [null]
+      : currentPaths,
+    nullable: item.nullable,
+    path_picker: item.path_picker,
+    cluster_compatible: item.cluster_compatible,
   }
 }
 
@@ -281,7 +275,7 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
     finished_at: data.finished_at,
     scheduler_job_id: data.scheduler_job_id,
     progress_cursor: data.progress_cursor,
-    observation_error: data.observation?.error,
+    observation: data.observation,
     diagnostics: data.diagnostics ?? [],
     actions: {
       ...data.actions,

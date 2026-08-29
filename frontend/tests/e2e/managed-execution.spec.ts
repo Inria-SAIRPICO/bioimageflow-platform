@@ -193,6 +193,9 @@ test('managed execution resolves paths, retains its run, downloads results, and 
       await fulfillJson(route, {
         kind: 'resolution_required',
         remote_node_paths: {
+          schema: 'bioimageflow.remote_node_path_plan.v1',
+          allocates_resources: false,
+          reads_local_files: false,
           inputs: [{
             scoped_node_path: 'seed_1',
             input_name: 'source_path',
@@ -252,13 +255,15 @@ test('managed execution resolves paths, retains its run, downloads results, and 
       execution_id: RUN_ID,
       plan_digest: PLAN_DIGEST,
       plan: {
+        schema: 'bioimageflow.cluster_cleanup_plan.v1',
         plan_id: 'cleanup-managed-run',
+        root_revision: 4,
         candidates: [{
           namespace: 'runs',
           identity: RUN_ID,
           path: `runs/${RUN_ID}`,
           size: 4096,
-          references: ['result bundle'],
+          reference_reasons: ['result bundle'],
           consequences: ['removes reconnectable cluster artifacts'],
         }],
       },
@@ -269,7 +274,12 @@ test('managed execution resolves paths, retains its run, downloads results, and 
     expect(route.request().postDataJSON()).toEqual({ plan_digest: PLAN_DIGEST })
     await fulfillJson(route, {
       execution_id: RUN_ID,
-      report: { plan_id: 'cleanup-managed-run', removed: [RUN_ID] },
+      report: {
+        schema: 'bioimageflow.cluster_cleanup_report.v1',
+        plan_id: 'cleanup-managed-run',
+        removed: [RUN_ID],
+        skipped: {},
+      },
     })
   })
 
@@ -321,7 +331,7 @@ test('managed execution resolves paths, retains its run, downloads results, and 
   const cleanupDialog = page.locator('[data-testid="execution-cleanup-dialog"]')
   await expect(cleanupDialog).toBeVisible()
   await expect(cleanupDialog).toContainText(RUN_ID)
-  await expect(cleanupDialog).toContainText('4096')
+  await expect(cleanupDialog).toContainText('4.0 KiB')
   await expect(cleanupDialog).toContainText('result bundle')
   await expect(cleanupDialog).toContainText('removes reconnectable cluster artifacts')
   await cleanupDialog.locator('[data-testid="confirm-execution-cleanup"]').click()
