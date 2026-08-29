@@ -265,6 +265,13 @@ async def _describe(
         profile.config_path,
         expected_digest=profile.config_digest,
     )
+    try:
+        cluster_description = _sanitized_cluster_description(loaded.cluster)
+    except Exception as exc:
+        raise _operation_error(
+            exc,
+            fallback="cluster-description-failed",
+        ) from exc
     capabilities = await execution_capabilities()
     connection = None
     diagnostics: list[ClusterDiagnosticValue] = []
@@ -295,7 +302,7 @@ async def _describe(
         cluster_host=profile.cluster_host,
         cluster_root=profile.cluster_root,
         configured=loaded.cluster.configured,
-        cluster=_sanitized_cluster_description(loaded.cluster),
+        cluster=cluster_description,
         capabilities=capabilities,
         connection=connection,
         diagnostics=diagnostics,

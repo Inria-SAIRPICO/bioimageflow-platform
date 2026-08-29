@@ -106,9 +106,6 @@ async def apply_prepared_execution(
     except PreparedTokenError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        diagnostic = getattr(exc, "diagnostic", None)
-        if diagnostic is None:
-            raise
         raise _execution_http_error(
             _operation_error(exc, fallback="workflow-submission-failed")
         ) from exc

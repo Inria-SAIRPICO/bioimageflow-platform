@@ -431,6 +431,45 @@ async def test_direct_submit_failure_preserves_public_diagnostic_shape(
 
 
 @pytest.mark.anyio
+async def test_direct_submit_failure_sanitizes_unexpected_exception(
+    tmp_path: Path,
+) -> None:
+    class _Tokens:
+        async def consume(self, token: str, *, binding: str) -> object:
+            del token, binding
+            raise RuntimeError("credential=must-not-escape")
+
+    class _Preflight:
+        tokens = _Tokens()
+
+    coordinator = ExecutionCoordinator(
+        ExecutionRegistry(tmp_path),
+        reconnector=lambda snapshot: None,  # type: ignore[arg-type,return-value]
+    )
+    app = _app(coordinator)
+    app.dependency_overrides[get_preflight_service] = _Preflight
+    app.dependency_overrides[get_prepared_run_registrar] = lambda: object()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/executions",
+            json={
+                "token": "prepared-token",
+                "workflow_id": "demo",
+                "draft_revision": 1,
+                "target_id": "profile_" + "1" * 32,
+                "requested_nodes": None,
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "workflow-submission-failed"
+    assert "must-not-escape" not in response.text
+
+
+@pytest.mark.anyio
 async def test_result_download_has_no_client_destination_body(tmp_path: Path) -> None:
     execution_id = "run_0123456789abcdef0123456789abcdef"
     calls: list[tuple[str, Path]] = []

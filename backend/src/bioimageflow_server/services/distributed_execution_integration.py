@@ -286,12 +286,29 @@ class PlatformPreparedRunRegistrar:
         if uncertainty is None and handle is None:
             raise TypeError("Managed submission returned neither a handle nor uncertainty")
         run_id = str(uncertainty.run_id if uncertainty is not None else handle.id)
-        diagnostics = (
-            []
-            if uncertainty is None
-            else [ClusterDiagnosticValue.model_validate(uncertainty.diagnostic.to_dict())]
-        )
-        state = cast(RunState, "prepared" if handle is None else str(handle.status))
+        diagnostics: list[ClusterDiagnosticValue]
+        if uncertainty is not None:
+            diagnostics = [
+                ClusterDiagnosticValue.model_validate(uncertainty.diagnostic.to_dict())
+            ]
+            state = cast(RunState, "prepared")
+            backend_metadata: dict[str, Any] = {}
+            observation = ObservationSnapshot(
+                reachable=False,
+                error=diagnostics[0].message,
+            )
+            adapter: SubmittedRunAdapter = DeferredManagedRunAdapter(
+                profile.cluster,
+                run_id,
+            )
+        else:
+            adapter = SubmittedRunAdapter(handle)
+            # Persist the returned durable identity before making any observation
+            # call that can fail independently of the accepted submission.
+            state = cast(RunState, "prepared")
+            backend_metadata = {}
+            diagnostics = []
+            observation = ObservationSnapshot()
         snapshot = ExecutionSnapshot(
             execution_id=run_id,
             workflow_id=request.workflow_id,
@@ -310,27 +327,9 @@ class PlatformPreparedRunRegistrar:
                 "run_id": run_id,
                 "result_bundle": str(self._destinations.resolve(run_id)),
             },
-            backend_metadata=(
-                {}
-                if handle is None
-                else SubmittedRunAdapter(handle).snapshot()
-            ),
+            backend_metadata=backend_metadata,
             diagnostics=diagnostics,
-            observation=ObservationSnapshot(
-                reachable=handle is not None,
-                error=(
-                    None
-                    if handle is not None
-                    else diagnostics[0].message
-                    if diagnostics
-                    else "The managed submission acknowledgement is uncertain."
-                ),
-            ),
-        )
-        adapter: SubmittedRunAdapter = (
-            SubmittedRunAdapter(handle)
-            if handle is not None
-            else DeferredManagedRunAdapter(profile.cluster, run_id)
+            observation=observation,
         )
         return await self._coordinator.register(snapshot, adapter)
 

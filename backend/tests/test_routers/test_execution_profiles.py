@@ -235,6 +235,18 @@ async def test_describe_rejects_forged_connection_diagnostic_without_reflecting_
     class Cluster:
         configured = True
 
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "schema": "bioimageflow.remote_cluster.v1",
+                "host": "cluster",
+                "root": "/shared/bioimageflow",
+                "results_root": None,
+                "environment": None,
+                "parsl": None,
+                "orchestrator": None,
+                "setup": None,
+            }
+
         def check_connection(self) -> None:
             raise ForgedDiagnosticError()
 
@@ -249,6 +261,39 @@ async def test_describe_rejects_forged_connection_diagnostic_without_reflecting_
 
     assert response.status_code == 500
     assert response.json()["detail"]["error"] == "cluster-connection-check-failed"
+    assert "must-not-escape" not in response.text
+
+
+async def test_describe_sanitizes_unexpected_cluster_description_failure(
+    profile_client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = write_config(tmp_path / "cluster.py")
+    created = (
+        await profile_client.post(
+            "/api/v1/execution/profiles",
+            json=profile_fields(config).model_dump(mode="json"),
+        )
+    ).json()
+
+    class Cluster:
+        configured = True
+
+        def to_dict(self) -> dict[str, object]:
+            raise RuntimeError("credential=must-not-escape")
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution_profiles.load_cluster_config",
+        lambda *_args, **_kwargs: SimpleNamespace(cluster=Cluster()),
+    )
+
+    response = await profile_client.post(
+        f"/api/v1/execution/profiles/{created['id']}/describe"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "cluster-description-failed"
     assert "must-not-escape" not in response.text
 
 

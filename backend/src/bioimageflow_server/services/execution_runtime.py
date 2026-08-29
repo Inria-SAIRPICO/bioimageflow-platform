@@ -981,7 +981,14 @@ class ExecutionCoordinator:
             )
         except Exception as exc:
             raise _operation_error(exc, fallback="cleanup-planning-failed") from exc
-        payload = plan.to_dict()
+        cluster_api = importlib.import_module("bioimageflow.cluster")
+        try:
+            payload = cluster_api.ClusterCleanupPlan.from_dict(plan.to_dict()).to_dict()
+        except Exception as exc:
+            raise ExecutionOperationError(
+                "cleanup-plan-integrity-error",
+                "The cleanup plan failed integrity verification.",
+            ) from exc
         digest = await asyncio.to_thread(
             self.registry.save_cleanup_plan,
             execution_id,

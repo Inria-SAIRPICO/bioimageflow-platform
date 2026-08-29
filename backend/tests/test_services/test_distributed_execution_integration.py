@@ -98,6 +98,45 @@ async def test_registrar_persists_durable_managed_identity(tmp_path: Path) -> No
     assert isinstance(coordinator.adapter, SubmittedRunAdapter)
 
 
+async def test_registrar_persists_run_id_before_initial_observation(tmp_path: Path) -> None:
+    profile, resolver = await resolved_profile(tmp_path)
+    run_id = "run_" + "3" * 32
+
+    class Handle:
+        id = run_id
+
+        @property
+        def status(self) -> str:
+            raise AssertionError("status must be observed only after registration")
+
+        def snapshot(self) -> dict[str, object]:
+            raise AssertionError("snapshot must be observed only after registration")
+
+    coordinator = _Coordinator()
+    registrar = PlatformPreparedRunRegistrar(
+        coordinator,
+        resolver,
+        ExecutionDownloadDestinationResolver(tmp_path / "exports"),
+    )
+    request = ApplyPreparedExecutionRequest(
+        token="token",
+        workflow_id="demo",
+        draft_revision=2,
+        target_id=profile.id,
+    )
+
+    snapshot = await registrar.register_prepared_run(
+        request,
+        PreparedRunAcceptance(Handle(), profile, SimpleNamespace()),
+    )
+
+    assert snapshot.execution_id == run_id
+    assert snapshot.reconnect["run_id"] == run_id
+    assert snapshot.state == "prepared"
+    assert snapshot.diagnostics == []
+    assert isinstance(coordinator.adapter, SubmittedRunAdapter)
+
+
 async def test_uncertain_submit_retains_exact_run_and_structured_diagnostic(tmp_path: Path) -> None:
     profile, resolver = await resolved_profile(tmp_path)
     diagnostic = ClusterDiagnostic(

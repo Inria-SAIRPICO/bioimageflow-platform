@@ -1279,6 +1279,54 @@ async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
 
 
 @pytest.mark.anyio
+async def test_cleanup_plan_is_verified_before_persistence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bioimageflow.cluster as cluster_api
+
+    execution_id = f"run_{uuid4().hex}"
+
+    class _MalformedPlan:
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "schema": "bioimageflow.cluster_cleanup_plan.v1",
+                "plan_id": "cleanup-1",
+                "root_revision": 1,
+                "candidates": [],
+                "credential": "must-not-persist",
+            }
+
+    class _Cluster:
+        def __init__(self, *, host: str, root: str) -> None:
+            del host, root
+
+        def plan_cleanup(self, **kwargs: Any) -> _MalformedPlan:
+            del kwargs
+            return _MalformedPlan()
+
+    monkeypatch.setattr(cluster_api, "RemoteCluster", _Cluster)
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            state="succeeded",
+            reconnect={"host": "cluster", "root": "/shared", "run_id": execution_id},
+        )
+    )
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(_FakeHandle()),
+    )
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.plan_cleanup(execution_id)
+
+    assert raised.value.code == "cleanup-plan-integrity-error"
+    assert not (registry.root / "cleanup_plans").exists()
+
+
+@pytest.mark.anyio
 async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> None:
     capabilities = {
         "remote_cluster_bootstrap": {"supported": True, "reason": None},
