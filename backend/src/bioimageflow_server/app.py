@@ -388,6 +388,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     distributed_tokens: PreparedSubmissionTokenManager | None = None
     distributed_coordinator: ExecutionCoordinator | None = None
+    distributed_registry: ExecutionRegistry | None = None
     distributed_preflight: Any | None = None
     distributed_registrar: PlatformPreparedRunRegistrar | None = None
     distributed_downloads: ExecutionDownloadDestinationResolver | None = None
@@ -397,7 +398,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
         profile_resolver = PlatformExecutionProfileResolver(
             execution_profile_store,
-            trusted_factories=lambda: list(_live_settings().trusted_parsl_factories),
             local_storage_path=lambda workflow_id: _current_workflow_store().get_storage_path(
                 workflow_id
             ),
@@ -564,6 +564,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             await config.settings_store.load()
         if execution_profile_store is not None:
             await execution_profile_store.load()
+        if distributed_registry is not None:
+            await asyncio.to_thread(distributed_registry.migrate)
         if distributed_coordinator is not None:
             await distributed_coordinator.start()
         current_workflow_store = _current_workflow_store()

@@ -148,6 +148,12 @@ class SettingsStore:
                 exc,
             )
             self._current = self._default_settings()
+        else:
+            if "trusted_parsl_factories" in data:
+                try:
+                    self._write_atomic(self._current)
+                except OSError as exc:
+                    logger.warning("Could not remove obsolete Parsl settings: %s", exc)
         return self._current
 
     def get(self) -> Settings:

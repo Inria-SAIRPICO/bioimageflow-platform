@@ -37,7 +37,6 @@ class ExecutionPreflightRequest(BaseModel):
 
 class ResolutionRequiredPreflight(BaseModel):
     kind: Literal["resolution_required"] = "resolution_required"
-    distributed_plan: dict[str, Any]
     remote_node_paths: dict[str, Any]
     unresolved: list[dict[str, str]]
 
@@ -46,8 +45,7 @@ class ReadyPreflight(BaseModel):
     kind: Literal["ready"] = "ready"
     token: str | None = None
     expires_at: float | None = None
-    distributed_plan: dict[str, Any]
-    manifest: dict[str, Any] | None = None
+    resolved_inputs: int = Field(default=0, ge=0)
 
 
 ExecutionPreflightResponse = ResolutionRequiredPreflight | ReadyPreflight

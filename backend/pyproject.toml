@@ -1,6 +1,6 @@
 [project]
 name = "bioimageflow-server"
-version = "0.1.21"
+version = "0.1.22"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
@@ -17,7 +17,7 @@ dependencies = [
     "tifffile>=2024.0",
     "keyring>=25.0",
     "bioimageflow-core>=0.3.0,<0.4",
-    "bioimageflow[parsl,psij]>=0.6.0,<0.7",
+    "bioimageflow[cluster]==0.7.0",
     "wetlands>=2.4.0,<3",
     "mcp>=1.0",
 ]
@@ -42,6 +42,9 @@ packages = ["src/bioimageflow_server"]
 "src/bioimageflow_server/logging.yaml" = "bioimageflow_server/logging.yaml"
 "src/bioimageflow_server/data/agent_workspace_instructions.md" = "bioimageflow_server/data/agent_workspace_instructions.md"
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
+"src/bioimageflow_server/data/cluster_examples/slurm/cluster.py" = "bioimageflow_server/data/cluster_examples/slurm/cluster.py"
+"src/bioimageflow_server/data/cluster_examples/slurm/parsl.py" = "bioimageflow_server/data/cluster_examples/slurm/parsl.py"
+"src/bioimageflow_server/data/cluster_examples/slurm/setup.sh" = "bioimageflow_server/data/cluster_examples/slurm/setup.sh"
 "src/bioimageflow_server/assets/app_icon.icns" = "bioimageflow_server/assets/app_icon.icns"
 "src/bioimageflow_server/assets/app_icon.ico" = "bioimageflow_server/assets/app_icon.ico"
 "src/bioimageflow_server/assets/app_icon.png" = "bioimageflow_server/assets/app_icon.png"
@@ -82,6 +85,7 @@ typeCheckingMode = "standard"
 include = ["src/bioimageflow_server"]
 exclude = [
     "src/bioimageflow_server/_external",
+    "src/bioimageflow_server/data/cluster_examples",
     "src/bioimageflow_server/data/demo_workflows",
 ]
 reportMissingTypeStubs = false

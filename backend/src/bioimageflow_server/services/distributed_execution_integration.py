@@ -1,36 +1,35 @@
-"""Application adapters for the public BioImageFlow 0.4 execution contracts."""
+"""Platform adapters for BioImageFlow's public managed-cluster API."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Literal, Mapping, cast
-from uuid import uuid4
+from pathlib import Path
+from typing import Any, Callable, Literal, cast
 
-from bioimageflow_server.models.execution_preflight import (
-    ApplyPreparedExecutionRequest,
-    ExecutionPreflightRequest,
-)
 from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.execution_preflight import ApplyPreparedExecutionRequest
 from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
 from bioimageflow_server.models.execution_runtime import (
+    ClusterDiagnosticValue,
     ExecutionBackend,
     ExecutionSnapshot,
-    JobSnapshot,
-    JobState,
+    ObservationSnapshot,
     RunState,
 )
-from bioimageflow_server.services.execution_preflight import DistributedPreflightService
-from bioimageflow_server.services.execution_preflight import PreparedRunAcceptance
 from bioimageflow_server.services.execution import ExecutionManager
+from bioimageflow_server.services.execution_preflight import (
+    DistributedPreflightService,
+    PreparedRunAcceptance,
+)
 from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileNotFoundError,
     ExecutionProfileStore,
+    load_cluster_config,
 )
 from bioimageflow_server.services.execution_runtime import (
-    AttachedRunAdapter,
     ExecutionCoordinator,
+    ResultExportSnapshot,
     SubmittedRunAdapter,
 )
 from bioimageflow_server.services.graph_builder import build_workflow
@@ -38,58 +37,12 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 
 
-def _remote_storage_path(root: str, workflow_id: str) -> str:
-    parts = workflow_id.split("/")
-    if any(not part or part in {".", ".."} for part in parts):
-        raise ValueError("Workflow ID cannot be mapped to cluster storage")
-    return str(PurePosixPath(root).joinpath(*parts, "results"))
-
-
-class _EmptyManifest:
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema": "bioimageflow.prepared_submission_manifest.v2",
-            "bundle_digest": "sha256:" + "0" * 64,
-            "entries": [],
-            "external_sources": [],
-        }
-
-
-@dataclass
-class AttachedPreparedRun:
-    workflow: Any
-    profile: "ResolvedExecutionProfile"
-    request: ExecutionPreflightRequest
-    distributed_plan: Mapping[str, Any]
-
-
-class _DeferredPreparedRun:
-    """Process-local immutable acceptance object for non-remote targets."""
-
-    expired = False
-    manifest = _EmptyManifest()
-
-    def __init__(self, submit: Callable[[], Any]) -> None:
-        self._submit = submit
-        self._closed = False
-        self._submitted = False
-
-    def submit(self, _transport: object) -> Any:
-        if self._closed or self._submitted:
-            raise RuntimeError("Prepared execution was already consumed")
-        self._submitted = True
-        return self._submit()
-
-    def close(self) -> None:
-        self._closed = True
-
-
 @dataclass(frozen=True)
 class ResolvedExecutionProfile:
     record: DistributedExecutionProfile
     workflow_id: str
-    trusted_factories: tuple[str, ...]
-    workflow_storage_path: str | Path | None
+    workflow_storage_path: Path
+    cluster: Any
 
     @property
     def id(self) -> str:
@@ -99,77 +52,17 @@ class ResolvedExecutionProfile:
     def revision(self) -> int:
         return self.record.revision
 
-    @property
-    def mode(self) -> str:
-        return self.record.mode
-
-    @property
-    def transport(self) -> Any | None:
-        value = self.record.transport
-        return value.to_library() if value is not None else None
-
-    def planning_arguments(self) -> Mapping[str, Any]:
-        return {
-            "executor_bindings": self.record.library_bindings(),
-            "environment_routes": self.record.environment_routes,
-            "shared_runtime_root": self.record.shared_runtime_root,
-            "storage_mode": "shared_fs",
-            "task_policy": self.record.task_policy.to_library(),
-        }
-
-    def submission_arguments(self) -> Mapping[str, Any]:
-        launch = self.record.launch
-        pre_launch = self.record.pre_launch
-        return {
-            "parsl_config": self.record.parsl_config.to_library(),
-            "executor_bindings": self.record.library_bindings(),
-            "environment_routes": self.record.environment_routes,
-            "shared_runtime_root": self.record.shared_runtime_root,
-            "task_policy": self.record.task_policy.to_library(),
-            "launch": launch.to_library() if launch is not None else None,
-            "pre_launch": pre_launch.to_library() if pre_launch is not None else None,
-        }
-
-    def prepare_non_remote(
-        self,
-        workflow: Any,
-        request: ExecutionPreflightRequest,
-        distributed_plan: Mapping[str, Any],
-    ) -> _DeferredPreparedRun:
-        if self.mode == "attached":
-            prepared = AttachedPreparedRun(workflow, self, request, distributed_plan)
-            return _DeferredPreparedRun(lambda: prepared)
-
-        def submit_local() -> Any:
-            import bioimageflow
-
-            handle = bioimageflow.submit_workflow(
-                workflow,
-                inputs=request.root_inputs,
-                targets=request.requested_nodes,
-                node_routes=request.node_routes or None,
-                **self.submission_arguments(),
-            )
-            return PreparedRunAcceptance(
-                handle=handle,
-                profile=self,
-                request=request.model_copy(deep=True),
-                distributed_plan=dict(distributed_plan),
-            )
-
-        return _DeferredPreparedRun(submit_local)
-
 
 class PlatformExecutionProfileResolver:
     def __init__(
         self,
         store: ExecutionProfileStore,
         *,
-        trusted_factories: Callable[[], list[str]],
+        trusted_factories: Callable[[], list[str]] | None = None,
         local_storage_path: Callable[[str], Path],
     ) -> None:
+        del trusted_factories
         self._store = store
-        self._trusted_factories = trusted_factories
         self._local_storage_path = local_storage_path
 
     def resolve_target(
@@ -179,14 +72,14 @@ class PlatformExecutionProfileResolver:
         profile_revision: int,
     ) -> ResolvedExecutionProfile:
         if target_id == "local":
-            raise ValueError("Local execution does not use distributed preflight")
+            raise ValueError("Local execution does not use managed-cluster preflight")
         try:
             profile = self._store.get(target_id)
         except ExecutionProfileNotFoundError as exc:
             raise ValueError("Execution target does not exist") from exc
         if profile.revision != profile_revision:
             raise ValueError(
-                "The visible execution profile revision changed; refresh targets and confirm again"
+                "The visible execution profile revision changed; refresh targets and try again"
             )
         return self._resolve(profile, workflow_id)
 
@@ -208,18 +101,17 @@ class PlatformExecutionProfileResolver:
         profile: DistributedExecutionProfile,
         workflow_id: str,
     ) -> ResolvedExecutionProfile:
-        trusted = tuple(self._trusted_factories())
         if not profile.enabled:
             raise ValueError("Execution profile is disabled")
-        if profile.parsl_config.factory not in trusted:
-            raise ValueError("Execution profile factory is not trusted")
-        storage: str | Path
-        if profile.mode == "submitted_remote":
-            assert profile.remote_workflow_root is not None
-            storage = _remote_storage_path(profile.remote_workflow_root, workflow_id)
-        else:
-            storage = self._local_storage_path(workflow_id)
-        return ResolvedExecutionProfile(profile, workflow_id, trusted, storage)
+        loaded = load_cluster_config(profile.config_path, expected_digest=profile.config_digest)
+        if loaded.cluster.host != profile.cluster_host or str(loaded.cluster.root) != profile.cluster_root:
+            raise ValueError("Cluster identity changed; save the profile again before use")
+        return ResolvedExecutionProfile(
+            profile,
+            workflow_id,
+            self._local_storage_path(workflow_id),
+            loaded.cluster,
+        )
 
 
 class DraftWorkflowResolver:
@@ -270,41 +162,61 @@ class AuthorizedUploadResolver:
         return candidate
 
 
-def _plan_jobs(plan: Mapping[str, Any]) -> dict[str, JobSnapshot]:
-    import bioimageflow
-
-    decoded = bioimageflow.DistributedExecutionPlan.from_dict(dict(plan))
-    jobs: dict[str, JobSnapshot] = {}
-    for node in decoded.nodes:
-        state = cast(
-            JobState,
-            {
-                "cached": "cached",
-                "skipped": "skipped",
-                "prior_selection_miss": "waiting",
-                "unexecuted": "waiting",
-                "pending_upstream": "waiting",
-            }[node.execution_status],
-        )
-        jobs[node.scoped_node_path] = JobSnapshot(
-            scoped_node_path=node.scoped_node_path,
-            state=state,
-            executor_label=node.selected_executor,
-            route_reason=node.route_reason,
-            effective_resources=node.resources.to_dict(),
-        )
-    return jobs
-
-
 def _target_snapshot(profile: ResolvedExecutionProfile) -> dict[str, Any]:
-    # Pre-launch bytes and local source paths are not needed for reconnect and
-    # must not be exposed through retained execution API responses.
-    sanitized = profile.record.model_copy(update={"pre_launch": None})
     return {
         "name": profile.record.name,
-        "mode": profile.mode,
-        "profile": sanitized.model_dump(mode="json"),
+        "mode": "managed_remote",
+        "host": profile.record.cluster_host,
+        "root": profile.record.cluster_root,
+        "config_digest": profile.record.config_digest,
     }
+
+
+class DeferredManagedRunAdapter(SubmittedRunAdapter):
+    """Attach the exact uncertain run identity lazily; never resubmit."""
+
+    def __init__(self, cluster: Any, run_id: str) -> None:
+        self._cluster = cluster
+        self._run_id = run_id
+        self._delegate: SubmittedRunAdapter | None = None
+        super().__init__(None)
+
+    def _attached(self) -> SubmittedRunAdapter:
+        if self._delegate is None:
+            self._delegate = SubmittedRunAdapter(self._cluster.attach(self._run_id))
+        return self._delegate
+
+    @property
+    def status(self) -> str:
+        return "prepared" if self._delegate is None else self._delegate.status
+
+    def refresh(self) -> None:
+        self._attached().refresh()
+
+    def progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
+        return self._attached().progress(after_sequence=after_sequence)
+
+    def snapshot(self) -> dict[str, Any]:
+        return self._attached().snapshot()
+
+    def diagnostics(self) -> tuple[Any, ...]:
+        return self._attached().diagnostics()
+
+    def cancel(self) -> None:
+        self._attached().cancel()
+
+    def export_result(self, destination: Path) -> Path:
+        return self._attached().export_result(destination)
+
+    @property
+    def result_export(self) -> ResultExportSnapshot:
+        return ResultExportSnapshot() if self._delegate is None else self._delegate.result_export
+
+    def plan_retry(self, recompute: Any | None = None) -> Any:
+        return self._attached().plan_retry(recompute)
+
+    def start_retry(self, plan: Any) -> SubmittedRunAdapter:
+        return self._attached().start_retry(plan)
 
 
 class PlatformPreparedRunRegistrar:
@@ -364,87 +276,50 @@ class PlatformPreparedRunRegistrar:
         request: ApplyPreparedExecutionRequest,
         run_handle: object,
     ) -> ExecutionSnapshot:
-        if isinstance(run_handle, AttachedPreparedRun):
-            return await self._register_attached(request, run_handle)
         if not isinstance(run_handle, PreparedRunAcceptance):
-            raise TypeError("Prepared run is missing its accepted profile binding")
-        accepted = run_handle
-        profile = accepted.profile
+            raise TypeError("Managed run is missing its accepted profile binding")
+        profile = run_handle.profile
         if not isinstance(profile, ResolvedExecutionProfile):
-            raise TypeError("Prepared run has an invalid profile binding")
-        handle = accepted.handle
-        run_id = str(getattr(handle, "id"))
-        storage_path = str(profile.workflow_storage_path)
+            raise TypeError("Managed run has an invalid profile binding")
+        uncertainty = run_handle.uncertainty
+        handle = run_handle.handle
+        if uncertainty is None and handle is None:
+            raise TypeError("Managed submission returned neither a handle nor uncertainty")
+        run_id = str(uncertainty.run_id if uncertainty is not None else handle.id)
+        diagnostics = (
+            []
+            if uncertainty is None
+            else [ClusterDiagnosticValue.model_validate(uncertainty.diagnostic.to_dict())]
+        )
+        state = cast(RunState, "prepared" if handle is None else str(handle.status))
         snapshot = ExecutionSnapshot(
             execution_id=run_id,
             workflow_id=request.workflow_id,
             draft_revision=request.draft_revision,
             command="run_selected" if request.requested_nodes else "run",
             requested_nodes=request.requested_nodes,
-            backend=cast(ExecutionBackend, profile.mode),
+            backend="managed_remote",
             target_id=profile.id,
             profile_id=profile.id,
             profile_revision=profile.revision,
             target_snapshot=_target_snapshot(profile),
-            state=cast(RunState, str(getattr(handle, "status"))),
-            jobs=_plan_jobs(accepted.distributed_plan),
-            reconnect={"storage_path": storage_path, "run_id": run_id},
+            state=state,
+            reconnect={
+                "host": profile.record.cluster_host,
+                "root": profile.record.cluster_root,
+                "run_id": run_id,
+            },
+            backend_metadata={} if handle is None else dict(handle.snapshot()),
+            diagnostics=diagnostics,
+            observation=ObservationSnapshot(
+                reachable=handle is not None,
+                error=None if handle is not None else str(uncertainty),
+            ),
         )
-        return await self._coordinator.register(snapshot, SubmittedRunAdapter(handle))
-
-    async def _register_attached(
-        self,
-        request: ApplyPreparedExecutionRequest,
-        prepared: AttachedPreparedRun,
-    ) -> ExecutionSnapshot:
-        import bioimageflow
-
-        run_id = f"run_{uuid4().hex}"
-        context = bioimageflow.WorkflowExecutionContext(run_id=run_id)
-        profile = prepared.profile
-        managed_destination = self._managed_result_root / run_id
-
-        def compute(progress: Callable[[Any], None]) -> Any:
-            prepared.workflow.on_progress = progress
-            targets = tuple(prepared.workflow.nodes[node] for node in request.requested_nodes or [])
-            with bioimageflow.ParslEngine.from_config_ref(
-                profile.record.parsl_config.to_library(),
-                executor_bindings=profile.record.library_bindings(),
-                trusted_factories=profile.trusted_factories,
-                environment_routes=profile.record.environment_routes,
-                shared_runtime_root=profile.record.shared_runtime_root,
-                task_policy=profile.record.task_policy.to_library(),
-            ) as engine:
-                return prepared.workflow.compute(
-                    *targets,
-                    engine=engine,
-                    run_context=context,
-                )
-
-        def export_result(value: Any, destination: Path) -> Path:
-            context.export_result(value, destination=destination)
-            return destination
-
-        adapter = AttachedRunAdapter(
-            compute=compute,
-            cancel=context.request_cancel,
-            result_exporter=export_result,
-            managed_destination=managed_destination,
-        )
-        snapshot = ExecutionSnapshot(
-            execution_id=run_id,
-            workflow_id=request.workflow_id,
-            draft_revision=request.draft_revision,
-            command="run_selected" if request.requested_nodes else "run",
-            requested_nodes=request.requested_nodes,
-            backend="attached_parsl",
-            target_id=profile.id,
-            profile_id=profile.id,
-            profile_revision=profile.revision,
-            target_snapshot=_target_snapshot(profile),
-            state="starting",
-            jobs=_plan_jobs(prepared.distributed_plan),
-            reconnect={"result_bundle": str(managed_destination)},
+        adapter: SubmittedRunAdapter = (
+            SubmittedRunAdapter(handle)
+            if handle is not None
+            else DeferredManagedRunAdapter(profile.cluster, run_id)
         )
         return await self._coordinator.register(snapshot, adapter)
 
@@ -459,8 +334,6 @@ class ExecutionDownloadDestinationResolver:
 
 
 class LegacyExecutionManagerAdapter:
-    """Expose the regular Direct/Wetlands manager through the retained panel."""
-
     def __init__(
         self,
         manager: ExecutionManager,
@@ -493,18 +366,13 @@ class LegacyExecutionManagerAdapter:
         )
         future.result()
 
-    def logs(self) -> str:
-        return ""
-
-    def download_result(self, destination: Path) -> Path:
+    def export_result(self, destination: Path) -> Path:
         if destination != self._managed_destination:
             raise RuntimeError("Managed result destination does not match this execution")
         return self._manager.export_retained_result(self._context, destination)
 
-    export_result = download_result
-
     @property
-    def result_export(self):
+    def result_export(self) -> ResultExportSnapshot:
         return self._manager.retained_result_export(self._context)
 
 

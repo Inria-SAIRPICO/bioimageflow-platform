@@ -1,19 +1,28 @@
-"""Execution capability, target, and distributed-profile APIs."""
+"""Managed-cluster capability, profile, describe, and cleanup APIs."""
 
 from __future__ import annotations
 
 import asyncio
 import importlib
+import io
+import zipfile
+from importlib.resources import files
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from bioimageflow_server.models.execution_profiles import (
+    ClusterCleanupConfirmation,
+    ClusterCleanupPlanRequest,
+    ClusterCleanupPresentation,
+    ClusterCleanupReportValue,
+    ClusterDiagnosticValue,
     DistributedExecutionProfile,
     ExecutionCapabilitiesValue,
     ExecutionProfileCreate,
+    ExecutionProfileDescription,
     ExecutionProfileList,
     ExecutionProfilePatch,
-    ExecutionProfileTestResult,
     ExecutionTargetsValue,
     ExecutionTargetValue,
 )
@@ -23,6 +32,7 @@ from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileInUseError,
     ExecutionProfileNotFoundError,
     ExecutionProfileStore,
+    load_cluster_config,
 )
 
 
@@ -45,19 +55,70 @@ def _mutable(store: ExecutionProfileStore, settings: Settings) -> None:
         )
 
 
-def _trusted(profile: ExecutionProfileCreate, settings: Settings) -> None:
-    if profile.parsl_config.factory not in settings.trusted_parsl_factories:
-        raise HTTPException(
-            status_code=422,
-            detail="The Parsl configuration factory is not in trusted_parsl_factories",
-        )
-
-
 def _profile(store: ExecutionProfileStore, profile_id: str) -> DistributedExecutionProfile:
     try:
         return store.get(profile_id)
     except ExecutionProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution profile not found") from exc
+
+
+def _cluster_failure(exc: Exception) -> HTTPException:
+    diagnostic = getattr(exc, "diagnostic", None)
+    if diagnostic is None:
+        return HTTPException(status_code=422, detail=str(exc))
+    payload = diagnostic.to_dict()
+    code = 503 if payload["category"].startswith("ssh-") else 409
+    return HTTPException(status_code=code, detail={"error": payload["category"], **payload})
+
+
+def _sanitized_cluster_description(cluster: object) -> dict[str, object]:
+    raw = cluster.to_dict()  # type: ignore[attr-defined]
+    environment = raw.get("environment")
+    parsl = raw.get("parsl")
+    orchestrator = raw.get("orchestrator")
+    setup = raw.get("setup")
+    return {
+        "schema": raw["schema"],
+        "host": raw["host"],
+        "root": raw["root"],
+        "results_root": raw["results_root"],
+        "configured": cluster.configured,  # type: ignore[attr-defined]
+        "environment": (
+            None
+            if not isinstance(environment, dict)
+            else {"kind": environment.get("kind")}
+        ),
+        "parsl": (
+            None
+            if not isinstance(parsl, dict)
+            else {
+                "source_kind": parsl.get("source_kind"),
+                "factory": parsl.get("factory"),
+            }
+        ),
+        "orchestrator": (
+            None
+            if not isinstance(orchestrator, dict)
+            else {
+                key: orchestrator.get(key)
+                for key in (
+                    "scheduler",
+                    "queue",
+                    "project",
+                    "walltime_seconds",
+                    "cpu",
+                )
+            }
+        ),
+        "setup": (
+            None
+            if not isinstance(setup, dict)
+            else {
+                key: setup.get(key)
+                for key in ("source_kind", "digest", "cluster_path")
+            }
+        ),
+    }
 
 
 @router.get("/capabilities", response_model=ExecutionCapabilitiesValue)
@@ -69,9 +130,15 @@ async def execution_capabilities() -> ExecutionCapabilitiesValue:
 @router.get("/targets", response_model=ExecutionTargetsValue)
 async def execution_targets(
     store: ExecutionProfileStore = Depends(get_execution_profile_store),
-    settings: Settings = Depends(get_settings),
 ) -> ExecutionTargetsValue:
     capabilities = await execution_capabilities()
+    required_capabilities = (
+        "remote_cluster_bootstrap",
+        "remote_cluster_validation",
+        "remote_cluster_planning",
+        "idempotent_planned_submission",
+        "durable_remote_diagnostics",
+    )
     targets = [
         ExecutionTargetValue(
             id="local",
@@ -81,26 +148,37 @@ async def execution_targets(
             available=True,
         )
     ]
-    capability_for_mode = {
-        "attached": "attached_parsl",
-        "submitted_local": "submitted_local_parsl",
-        "submitted_remote": "submitted_remote_parsl",
-    }
     for profile in store.list():
-        capability = capabilities.capabilities[capability_for_mode[profile.mode]]
         reason = None
         if not profile.enabled:
             reason = "Profile is disabled."
-        elif profile.parsl_config.factory not in settings.trusted_parsl_factories:
-            reason = "The Parsl configuration factory is not trusted."
-        elif not capability.supported:
-            reason = capability.reason
+        elif missing := [
+            (name, capabilities.capabilities.get(name))
+            for name in required_capabilities
+            if capabilities.capabilities.get(name) is None
+            or not capabilities.capabilities[name].supported
+        ]:
+            name, capability = missing[0]
+            reason = (
+                capability.reason
+                if capability is not None and capability.reason
+                else f"BioImageFlow does not support {name}."
+            )
+        else:
+            try:
+                await asyncio.to_thread(
+                    load_cluster_config,
+                    profile.config_path,
+                    expected_digest=profile.config_digest,
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                reason = str(exc)
         targets.append(
             ExecutionTargetValue(
                 id=profile.id,
                 name=profile.name,
                 kind="profile",
-                mode=profile.mode,
+                mode="managed_remote",
                 available=reason is None,
                 disabled_reason=reason,
                 profile_revision=profile.revision,
@@ -114,14 +192,28 @@ async def list_execution_profiles(
     store: ExecutionProfileStore = Depends(get_execution_profile_store),
     settings: Settings = Depends(get_settings),
 ) -> ExecutionProfileList:
-    editable = store.editable and settings.deployment_mode == "desktop"
     return ExecutionProfileList(
-        editable=editable,
-        profiles=(
-            store.list()
-            if editable
-            else [profile.model_copy(update={"pre_launch": None}) for profile in store.list()]
-        ),
+        editable=store.editable and settings.deployment_mode == "desktop",
+        profiles=store.list(),
+    )
+
+
+@router.get("/profiles/example/slurm")
+async def download_slurm_profile_example() -> StreamingResponse:
+    """Download the maintained cluster.py/parsl.py/setup.sh site template."""
+
+    root = files("bioimageflow_server").joinpath("data/cluster_examples/slurm")
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in ("cluster.py", "parsl.py", "setup.sh"):
+            archive.writestr(name, root.joinpath(name).read_bytes())
+    content.seek(0)
+    return StreamingResponse(
+        content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="bioimageflow-slurm-profile.zip"'
+        },
     )
 
 
@@ -136,8 +228,10 @@ async def create_execution_profile(
     settings: Settings = Depends(get_settings),
 ) -> DistributedExecutionProfile:
     _mutable(store, settings)
-    _trusted(body, settings)
-    return await store.create(body)
+    try:
+        return await store.create(body)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/profiles/{profile_id}", response_model=DistributedExecutionProfile)
@@ -148,13 +242,14 @@ async def update_execution_profile(
     settings: Settings = Depends(get_settings),
 ) -> DistributedExecutionProfile:
     _mutable(store, settings)
-    _trusted(body.profile, settings)
     try:
         return await store.update(profile_id, body.expected_revision, body.profile)
     except ExecutionProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution profile not found") from exc
     except ExecutionProfileConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -175,38 +270,118 @@ async def delete_execution_profile(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/profiles/{profile_id}/test", response_model=ExecutionProfileTestResult)
+async def _describe(
+    profile: DistributedExecutionProfile,
+    *,
+    check_connection: bool,
+) -> ExecutionProfileDescription:
+    loaded = await asyncio.to_thread(
+        load_cluster_config,
+        profile.config_path,
+        expected_digest=profile.config_digest,
+    )
+    capabilities = await execution_capabilities()
+    connection = None
+    diagnostics: list[ClusterDiagnosticValue] = []
+    if check_connection:
+        try:
+            report = await asyncio.to_thread(loaded.cluster.check_connection)
+        except Exception as exc:
+            diagnostic = getattr(exc, "diagnostic", None)
+            if diagnostic is None:
+                raise
+            diagnostics.append(ClusterDiagnosticValue.model_validate(diagnostic.to_dict()))
+        else:
+            connection = report.to_dict()
+            diagnostics.extend(
+                ClusterDiagnosticValue.model_validate(item.to_dict())
+                for item in report.diagnostics
+            )
+    return ExecutionProfileDescription(
+        profile_id=profile.id,
+        profile_revision=profile.revision,
+        config_digest=profile.config_digest,
+        cluster_host=profile.cluster_host,
+        cluster_root=profile.cluster_root,
+        configured=loaded.cluster.configured,
+        cluster=_sanitized_cluster_description(loaded.cluster),
+        capabilities=capabilities,
+        connection=connection,
+        diagnostics=diagnostics,
+    )
+
+
+@router.post("/profiles/{profile_id}/describe", response_model=ExecutionProfileDescription)
+async def describe_execution_profile(
+    profile_id: str,
+    check_connection: bool = Query(default=False),
+    store: ExecutionProfileStore = Depends(get_execution_profile_store),
+) -> ExecutionProfileDescription:
+    try:
+        return await _describe(_profile(store, profile_id), check_connection=check_connection)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise _cluster_failure(exc) from exc
+
+
+@router.post("/profiles/{profile_id}/test", response_model=ExecutionProfileDescription)
 async def test_execution_profile(
     profile_id: str,
     store: ExecutionProfileStore = Depends(get_execution_profile_store),
-    settings: Settings = Depends(get_settings),
-) -> ExecutionProfileTestResult:
-    profile = _profile(store, profile_id)
-    if profile.parsl_config.factory not in settings.trusted_parsl_factories:
-        raise HTTPException(status_code=422, detail="The profile factory is not trusted")
+) -> ExecutionProfileDescription:
+    return await describe_execution_profile(profile_id, False, store)
 
-    if profile.mode == "submitted_remote":
-        assert profile.transport is not None
-        assert profile.launch is not None
-        assert profile.remote_workflow_root is not None
-        report = await asyncio.to_thread(
-            importlib.import_module("bioimageflow").validate_remote_execution_profile,
-            transport=profile.transport.to_library(),
-            parsl_config=profile.parsl_config.to_library(),
-            executor_bindings=profile.library_bindings(),
-            launch=profile.launch.to_library(),
-            storage_path=profile.remote_workflow_root,
+
+@router.post("/profiles/{profile_id}/test-connection", response_model=ExecutionProfileDescription)
+async def test_execution_profile_connection(
+    profile_id: str,
+    store: ExecutionProfileStore = Depends(get_execution_profile_store),
+) -> ExecutionProfileDescription:
+    return await describe_execution_profile(profile_id, True, store)
+
+
+@router.post(
+    "/profiles/{profile_id}/cleanup/plan",
+    response_model=ClusterCleanupPresentation,
+)
+async def plan_cluster_cleanup(
+    profile_id: str,
+    body: ClusterCleanupPlanRequest,
+    store: ExecutionProfileStore = Depends(get_execution_profile_store),
+) -> ClusterCleanupPresentation:
+    profile = _profile(store, profile_id)
+    try:
+        loaded = await asyncio.to_thread(
+            load_cluster_config,
+            profile.config_path,
+            expected_digest=profile.config_digest,
         )
-    else:
-        report = await asyncio.to_thread(
-            importlib.import_module("bioimageflow").validate_parsl_config_ref,
-            profile.parsl_config.to_library(),
-            executor_bindings=profile.library_bindings(),
-            trusted_factories=settings.trusted_parsl_factories,
+        plan = await asyncio.to_thread(
+            loaded.cluster.plan_cleanup,
+            namespace=body.namespace,
+            run_ids=tuple(body.run_ids),
+            older_than_seconds=body.older_than_seconds,
         )
-    return ExecutionProfileTestResult(
-        profile_id=profile.id,
-        profile_revision=profile.revision,
-        mode=profile.mode,
-        report=report.to_dict(),
-    )
+    except Exception as exc:
+        raise _cluster_failure(exc) from exc
+    digest = store.retain_cleanup_plan(profile_id, plan)
+    return ClusterCleanupPresentation(profile_id=profile_id, plan_digest=digest, plan=plan.to_dict())
+
+
+@router.post("/profiles/{profile_id}/cleanup", response_model=ClusterCleanupReportValue)
+async def apply_cluster_cleanup(
+    profile_id: str,
+    body: ClusterCleanupConfirmation,
+    store: ExecutionProfileStore = Depends(get_execution_profile_store),
+) -> ClusterCleanupReportValue:
+    profile = _profile(store, profile_id)
+    try:
+        plan = store.cleanup_plan(profile_id, body.plan_digest)
+        loaded = await asyncio.to_thread(
+            load_cluster_config,
+            profile.config_path,
+            expected_digest=profile.config_digest,
+        )
+        report = await asyncio.to_thread(loaded.cluster.apply_cleanup, plan)
+    except Exception as exc:
+        raise _cluster_failure(exc) from exc
+    return ClusterCleanupReportValue(profile_id=profile_id, report=report.to_dict())

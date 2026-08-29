@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -33,11 +33,9 @@ JobState = Literal[
 ExecutionBackend = Literal[
     "direct",
     "wetlands",
-    "attached_parsl",
-    "submitted_local",
-    "submitted_remote",
+    "managed_remote",
 ]
-ExecutionTargetMode = Literal["local", "attached", "submitted_local", "submitted_remote"]
+ExecutionTargetMode = Literal["local", "managed_remote"]
 
 
 def utc_now() -> datetime:
@@ -57,6 +55,23 @@ class FailureDiagnosticSnapshot(BaseModel):
     attempt_id: str | None = None
     retry_status: str = "terminal"
     terminal: bool = True
+
+
+class ClusterDiagnosticValue(BaseModel):
+    """Public, secret-redacted managed cluster operation diagnostic."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
+
+    schema_: Literal["bioimageflow.cluster_diagnostic.v1"] = Field(alias="schema")
+    phase: str
+    category: str
+    message: str
+    allocation_state: Literal[
+        "none", "orchestrator-submitted", "workers-possible", "unknown"
+    ]
+    retry_safety: Literal["safe", "same-attempt-only", "unsafe", "not-applicable"]
+    next_action: str
+    identities: dict[str, str] = Field(default_factory=dict)
 
 
 class JobSnapshot(BaseModel):
@@ -110,6 +125,7 @@ class ExecutionActions(BaseModel):
     retry: ExecutionActionAvailability
     recompute: ExecutionActionAvailability
     download_results: ExecutionActionAvailability
+    cleanup: ExecutionActionAvailability
 
 
 def unavailable_execution_actions() -> ExecutionActions:
@@ -122,6 +138,7 @@ def unavailable_execution_actions() -> ExecutionActions:
         retry=unavailable,
         recompute=unavailable,
         download_results=unavailable,
+        cleanup=unavailable,
     )
 
 
@@ -144,7 +161,7 @@ class ExecutionSnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     revision: int = Field(default=0, ge=0)
     execution_id: str = Field(min_length=1)
     workflow_id: str = Field(min_length=1)
@@ -164,6 +181,7 @@ class ExecutionSnapshot(BaseModel):
     progress_cursor: int = Field(default=0, ge=0)
     reconnect: dict[str, Any] | None = None
     backend_metadata: dict[str, Any] = Field(default_factory=dict)
+    diagnostics: list[ClusterDiagnosticValue] = Field(default_factory=list)
     actions: ExecutionActions = Field(default_factory=unavailable_execution_actions)
     result_export: ResultExportSnapshot = Field(default_factory=ResultExportSnapshot)
     observation: ObservationSnapshot = Field(default_factory=ObservationSnapshot)
@@ -205,6 +223,7 @@ class ExecutionPresentation(BaseModel):
     jobs: dict[str, JobSnapshot] = Field(default_factory=dict)
     progress_cursor: int = Field(default=0, ge=0)
     actions: ExecutionActions
+    diagnostics: list[ClusterDiagnosticValue] = Field(default_factory=list)
     observation: ObservationSnapshot
     created_at: datetime
     updated_at: datetime
@@ -216,13 +235,11 @@ def present_execution(snapshot: ExecutionSnapshot) -> ExecutionPresentation:
 
     target_label = snapshot.target_snapshot.get("name")
     scheduler_job_id = snapshot.backend_metadata.get("scheduler_job_id")
-    target_mode: ExecutionTargetMode = {
+    target_mode = cast(ExecutionTargetMode, {
         "direct": "local",
         "wetlands": "local",
-        "attached_parsl": "attached",
-        "submitted_local": "submitted_local",
-        "submitted_remote": "submitted_remote",
-    }[snapshot.backend]
+        "managed_remote": "managed_remote",
+    }[snapshot.backend])
     return ExecutionPresentation(
         revision=snapshot.revision,
         execution_id=snapshot.execution_id,
@@ -240,6 +257,7 @@ def present_execution(snapshot: ExecutionSnapshot) -> ExecutionPresentation:
         jobs=snapshot.jobs,
         progress_cursor=snapshot.progress_cursor,
         actions=snapshot.actions,
+        diagnostics=snapshot.diagnostics,
         observation=snapshot.observation,
         created_at=snapshot.created_at,
         updated_at=snapshot.updated_at,
@@ -297,7 +315,7 @@ class RetryTargetPresentation(BaseModel):
 
     id: str
     label: str
-    mode: Literal["local", "attached", "submitted_local", "submitted_remote"]
+    mode: Literal["local", "managed_remote"]
 
 
 class RetryPlanPresentation(BaseModel):
@@ -327,3 +345,26 @@ class ConfirmRetryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ExecutionCleanupPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    older_than_seconds: int = Field(default=86_400, ge=0)
+
+
+class ExecutionCleanupPresentation(BaseModel):
+    execution_id: str
+    plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    plan: dict[str, Any]
+
+
+class ConfirmExecutionCleanupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ExecutionCleanupReport(BaseModel):
+    execution_id: str
+    report: dict[str, Any]

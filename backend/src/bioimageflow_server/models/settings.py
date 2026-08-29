@@ -80,7 +80,6 @@ class Settings(BaseModel):
     execution_engine: Literal["sequential", "parallel"] = "sequential"
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     default_execution_target_id: str = "local"
-    trusted_parsl_factories: list[str] = []
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
@@ -131,17 +130,6 @@ class Settings(BaseModel):
             value = value.strip()
         if not value:
             raise ValueError("default_execution_target_id must be non-empty")
-        return value
-
-    @field_validator("trusted_parsl_factories")
-    @classmethod
-    def _validate_trusted_factories(cls, value: list[str]) -> list[str]:
-        import importlib
-
-        if len(value) != len(set(value)):
-            raise ValueError("trusted_parsl_factories must not contain duplicates")
-        for factory in value:
-            importlib.import_module("bioimageflow").ParslConfigRef(factory=factory, kwargs={})
         return value
 
     @model_validator(mode="after")

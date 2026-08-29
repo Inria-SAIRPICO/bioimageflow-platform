@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 
 from bioimageflow_server.models.execution_preflight import (
     ApplyPreparedExecutionRequest,
@@ -14,12 +14,16 @@ from bioimageflow_server.models.execution_preflight import (
     ExecutionPreflightResponse,
 )
 from bioimageflow_server.models.execution_runtime import (
+    ConfirmExecutionCleanupRequest,
     ConfirmRetryRequest,
     ExecutionActionResponse,
     ExecutionPage,
     ExecutionPresentation,
     ExecutionPresentationPage,
     ExecutionSnapshot,
+    ExecutionCleanupPlanRequest,
+    ExecutionCleanupPresentation,
+    ExecutionCleanupReport,
     RetryPlanPresentation,
     RetryPlanRequest,
     present_execution,
@@ -100,6 +104,15 @@ async def apply_prepared_execution(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PreparedTokenError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        diagnostic = getattr(exc, "diagnostic", None)
+        if diagnostic is None:
+            raise
+        payload = diagnostic.to_dict()
+        raise HTTPException(
+            status_code=503 if payload["category"].startswith("ssh-") else 409,
+            detail={"error": payload["category"], **payload},
+        ) from exc
     return present_execution(await registrar.register_prepared_run(request, handle))
 
 
@@ -186,17 +199,6 @@ async def confirm_retry_execution(
         raise _execution_http_error(exc) from exc
 
 
-@router.get("/{execution_id}/logs", response_class=PlainTextResponse)
-async def execution_logs(
-    execution_id: str,
-    coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
-) -> str:
-    try:
-        return await coordinator.logs(execution_id)
-    except ExecutionNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Execution not found") from exc
-
-
 @router.post("/{execution_id}/result", response_class=FileResponse)
 async def download_execution_result(
     execution_id: str,
@@ -211,6 +213,49 @@ async def download_execution_result(
     except ExecutionOperationError as exc:
         raise _execution_http_error(exc) from exc
     return FileResponse(path)
+
+
+@router.post(
+    "/{execution_id}/cleanup/plan",
+    response_model=ExecutionCleanupPresentation,
+)
+async def plan_execution_cleanup(
+    execution_id: str,
+    request: ExecutionCleanupPlanRequest,
+    coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
+) -> ExecutionCleanupPresentation:
+    try:
+        digest, plan = await coordinator.plan_cleanup(
+            execution_id,
+            older_than_seconds=request.older_than_seconds,
+        )
+    except ExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Execution not found") from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
+    return ExecutionCleanupPresentation(
+        execution_id=execution_id,
+        plan_digest=digest,
+        plan=plan,
+    )
+
+
+@router.post("/{execution_id}/cleanup", response_model=ExecutionCleanupReport)
+async def apply_execution_cleanup(
+    execution_id: str,
+    request: ConfirmExecutionCleanupRequest,
+    coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
+) -> ExecutionCleanupReport:
+    try:
+        report = await coordinator.apply_cleanup(
+            execution_id,
+            plan_digest=request.plan_digest,
+        )
+    except ExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Execution not found") from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
+    return ExecutionCleanupReport(execution_id=execution_id, report=report)
 
 
 def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:

@@ -1,9 +1,10 @@
-"""Public BioImageFlow planning and immutable prepared-submission boundary."""
+"""Managed-cluster path resolution and short-lived direct-submit intents."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
 import json
 import time
 from collections.abc import Mapping
@@ -40,24 +41,10 @@ class DistributedProfile(Protocol):
     def revision(self) -> int: ...
 
     @property
-    def mode(self) -> str: ...
-
-    @property
-    def transport(self) -> Any | None: ...
+    def cluster(self) -> Any: ...
 
     @property
     def workflow_storage_path(self) -> str | Path | None: ...
-
-    def planning_arguments(self) -> Mapping[str, Any]: ...
-
-    def submission_arguments(self) -> Mapping[str, Any]: ...
-
-    def prepare_non_remote(
-        self,
-        workflow: Any,
-        request: ExecutionPreflightRequest,
-        distributed_plan: Mapping[str, Any],
-    ) -> Any: ...
 
 
 class ExecutionProfileResolver(Protocol):
@@ -79,69 +66,70 @@ class PreflightWorkflowResolver(Protocol):
 
 
 class UploadPathResolver(Protocol):
-    """Authorize a desktop-local path or managed dataset reference."""
-
     def resolve_upload(self, value: str) -> Path: ...
+
+
+@dataclass(frozen=True)
+class PreparedRunAcceptance:
+    handle: Any | None
+    profile: DistributedProfile
+    request: ExecutionPreflightRequest
+    uncertainty: Any | None = None
+
+
+class ManagedSubmitIntent:
+    """One exact in-process intent consumed by a direct ``RemoteCluster.submit``."""
+
+    expired = False
+
+    def __init__(
+        self,
+        *,
+        workflow: Any,
+        profile: DistributedProfile,
+        request: ExecutionPreflightRequest,
+        inputs: Mapping[str, Any],
+        overrides: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        self._workflow = workflow
+        self._profile = profile
+        self._request = request.model_copy(deep=True)
+        self._inputs = dict(inputs)
+        self._overrides = {path: dict(values) for path, values in overrides.items()}
+        self._closed = False
+        self._submitted = False
+
+    def submit(self, _transport: object = None) -> PreparedRunAcceptance:
+        if self._closed or self._submitted:
+            raise RuntimeError("Managed submit intent was already consumed")
+        self._submitted = True
+        try:
+            handle = self._profile.cluster.submit(
+                self._workflow,
+                inputs=self._inputs or None,
+                targets=self._request.requested_nodes,
+                node_input_overrides=self._overrides or None,
+            )
+        except Exception as exc:
+            cluster_api = importlib.import_module("bioimageflow.cluster")
+
+            if isinstance(exc, cluster_api.RemoteSubmissionUncertainError):
+                return PreparedRunAcceptance(None, self._profile, self._request, exc)
+            raise
+        return PreparedRunAcceptance(handle, self._profile, self._request)
+
+    def close(self) -> None:
+        self._closed = True
 
 
 @dataclass
 class _PreparedEntry:
     prepared: Any
-    transport: Any
     binding: str
     expires_at: float
 
 
-@dataclass(frozen=True)
-class PreparedRunAcceptance:
-    """Run handle plus the exact immutable intent accepted at preflight."""
-
-    handle: Any
-    profile: DistributedProfile
-    request: ExecutionPreflightRequest
-    distributed_plan: Mapping[str, Any]
-
-
-class _BoundPreparedSubmission:
-    """Keep platform intent metadata bound to one library preparation."""
-
-    def __init__(
-        self,
-        prepared: Any,
-        *,
-        profile: DistributedProfile,
-        request: ExecutionPreflightRequest,
-        distributed_plan: Mapping[str, Any],
-    ) -> None:
-        self._prepared = prepared
-        self._profile = profile
-        self._request = request.model_copy(deep=True)
-        self._distributed_plan = dict(distributed_plan)
-
-    @property
-    def expired(self) -> bool:
-        return bool(getattr(self._prepared, "expired", False))
-
-    @property
-    def manifest(self) -> Any:
-        return self._prepared.manifest
-
-    def submit(self, transport: Any) -> PreparedRunAcceptance:
-        handle = self._prepared.submit(transport)
-        return PreparedRunAcceptance(
-            handle=handle,
-            profile=self._profile,
-            request=self._request,
-            distributed_plan=self._distributed_plan,
-        )
-
-    def close(self) -> None:
-        self._prepared.close()
-
-
 class PreparedSubmissionTokenManager:
-    """Own live process-local preparations and consume each exact object once."""
-
     def __init__(self) -> None:
         self._entries: dict[str, _PreparedEntry] = {}
         self._lock = asyncio.Lock()
@@ -150,29 +138,32 @@ class PreparedSubmissionTokenManager:
         self,
         prepared: Any,
         *,
-        transport: Any,
+        transport: Any = None,
         binding: str,
         lifetime: float,
     ) -> tuple[str, float]:
+        del transport
         expires_at = time.time() + lifetime
         token = uuid4().hex
         async with self._lock:
-            self._entries[token] = _PreparedEntry(prepared, transport, binding, expires_at)
+            self._entries[token] = _PreparedEntry(prepared, binding, expires_at)
         return token, expires_at
 
     async def consume(self, token: str, *, binding: str) -> Any:
         async with self._lock:
             entry = self._entries.pop(token, None)
         if entry is None:
-            raise PreparedTokenError("Prepared submission token is unknown or already consumed")
+            raise PreparedTokenError("Managed submit token is unknown or already consumed")
         if entry.binding != binding:
             entry.prepared.close()
-            raise PreparedTokenConflict("Prepared submission token does not match this invocation")
-        if time.time() >= entry.expires_at or getattr(entry.prepared, "expired", False):
+            raise PreparedTokenConflict("Managed submit token does not match this invocation")
+        if time.time() >= entry.expires_at:
             entry.prepared.close()
-            raise PreparedTokenExpired("Prepared submission token expired")
+            raise PreparedTokenExpired("Managed submit token expired")
         try:
-            return await asyncio.to_thread(entry.prepared.submit, entry.transport)
+            # Direct submit intentionally has a small crash window before the returned
+            # durable run ID can be persisted. The public API owns all later recovery.
+            return await asyncio.to_thread(entry.prepared.submit)
         finally:
             entry.prepared.close()
 
@@ -227,6 +218,8 @@ def preflight_binding(request: ExecutionPreflightRequest) -> str:
 
 
 class DistributedPreflightService:
+    """Resolve explicit local-upload/cluster-path choices without remote allocation."""
+
     def __init__(
         self,
         *,
@@ -260,98 +253,42 @@ class DistributedPreflightService:
         )
         import bioimageflow
 
-        inspect_remote_node_paths = getattr(bioimageflow, "inspect_remote_node_paths")
-        plan_distributed_execution = getattr(bioimageflow, "plan_distributed_execution")
-
-        planning_arguments = dict(profile.planning_arguments())
-        planning_arguments["node_routes"] = request.node_routes or planning_arguments.get(
-            "node_routes"
-        )
-        planning_targets = _planning_targets(workflow, request.requested_nodes)
-        plan = await asyncio.to_thread(
-            plan_distributed_execution,
-            workflow,
-            targets=planning_targets,
-            **planning_arguments,
-        )
-        decoded_plan = bioimageflow.DistributedExecutionPlan.from_dict(plan.to_dict())
-        if not decoded_plan.valid:
-            diagnostics = [
-                diagnostic.message for node in decoded_plan.nodes for diagnostic in node.diagnostics
-            ]
-            raise ValueError("Distributed execution plan is invalid: " + "; ".join(diagnostics[:5]))
-        plan_payload = decoded_plan.to_dict()
-        if profile.mode != "submitted_remote":
-            prepared = await asyncio.to_thread(
-                profile.prepare_non_remote,
-                workflow,
-                request,
-                plan_payload,
-            )
-            token, expires_at = await self.tokens.issue(
-                prepared,
-                transport=None,
-                binding=preflight_binding(request),
-                lifetime=self._preparation_lifetime,
-            )
-            return ReadyPreflight(
-                token=token,
-                expires_at=expires_at,
-                distributed_plan=plan_payload,
-                manifest=prepared.manifest.to_dict(),
-            )
-
-        path_plan = await asyncio.to_thread(inspect_remote_node_paths, workflow)
+        path_plan = await asyncio.to_thread(bioimageflow.inspect_remote_node_paths, workflow)
         unresolved = [
-            {
-                "scoped_node_path": item.scoped_node_path,
-                "input_name": item.input_name,
-            }
+            {"scoped_node_path": item.scoped_node_path, "input_name": item.input_name}
             for item in path_plan.inputs
             if item.scoped_node_path not in request.node_path_choices
             or item.input_name not in request.node_path_choices[item.scoped_node_path]
         ]
         if unresolved:
             return ResolutionRequiredPreflight(
-                distributed_plan=plan_payload,
                 remote_node_paths=path_plan.to_dict(),
                 unresolved=unresolved,
             )
-
         overrides = self._decode_overrides(path_plan, request.node_path_choices)
-        prepare_remote_submission = getattr(bioimageflow, "prepare_remote_submission")
-
-        prepared = await asyncio.to_thread(
-            prepare_remote_submission,
-            workflow,
-            inputs=request.root_inputs,
-            targets=request.requested_nodes,
-            node_input_overrides=overrides,
-            node_routes=request.node_routes or None,
-            lifetime=self._preparation_lifetime,
-            **dict(profile.submission_arguments()),
-        )
-        bound_prepared = _BoundPreparedSubmission(
-            prepared,
+        inputs = {key: self._decode_value(value) for key, value in request.root_inputs.items()}
+        intent = ManagedSubmitIntent(
+            workflow=workflow,
             profile=profile,
             request=request,
-            distributed_plan=plan_payload,
+            inputs=inputs,
+            overrides=overrides,
         )
         token, expires_at = await self.tokens.issue(
-            bound_prepared,
-            transport=profile.transport,
+            intent,
             binding=preflight_binding(request),
             lifetime=self._preparation_lifetime,
         )
         return ReadyPreflight(
             token=token,
             expires_at=expires_at,
-            distributed_plan=plan_payload,
-            manifest=bound_prepared.manifest.to_dict(),
+            resolved_inputs=len(request.root_inputs) + len(path_plan.inputs),
         )
 
     def _decode_overrides(
-        self, path_plan: Any, choices: Mapping[str, Mapping[str, Any]]
+        self,
+        path_plan: Any,
+        choices: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         expected = {(item.scoped_node_path, item.input_name) for item in path_plan.inputs}
         supplied = {
@@ -363,8 +300,7 @@ class DistributedPreflightService:
             raise ValueError("Remote node path choices do not exactly match discovery")
         result: dict[str, dict[str, Any]] = {}
         for item in path_plan.inputs:
-            raw = choices[item.scoped_node_path][item.input_name]
-            decoded = self._decode_value(raw)
+            decoded = self._decode_value(choices[item.scoped_node_path][item.input_name])
             if item.value_shape == "tuple" and isinstance(decoded, list):
                 decoded = tuple(decoded)
             result.setdefault(item.scoped_node_path, {})[item.input_name] = decoded
@@ -373,35 +309,16 @@ class DistributedPreflightService:
     def _decode_value(self, raw: Any) -> Any:
         if isinstance(raw, list):
             return [self._decode_value(item) for item in raw]
+        if not isinstance(raw, dict) or "source" not in raw:
+            return raw
         leaf = RemotePathLeaf.model_validate(raw)
         if leaf.source == "none":
             return None
         if leaf.source == "cluster":
-            return Path(leaf.value or "")
-        import bioimageflow
+            value = Path(leaf.value or "")
+            if not value.is_absolute():
+                raise ValueError("Cluster paths must be absolute")
+            return value
+        cluster_api = importlib.import_module("bioimageflow.cluster")
 
-        local_upload = getattr(bioimageflow, "LocalUpload")
-        return local_upload(self._uploads.resolve_upload(leaf.value or ""))
-
-
-def _planning_targets(workflow: Any, requested: list[str] | None) -> list[Any] | None:
-    if requested is None:
-        return None
-    scoped: dict[str, Any] = {}
-
-    def collect(definition: Any, prefix: str = "") -> None:
-        nodes = getattr(definition, "nodes", None)
-        if not isinstance(nodes, dict):
-            raise TypeError("Workflow does not expose a valid node mapping")
-        for local_name, node in nodes.items():
-            path = f"{prefix}/{local_name}" if prefix else local_name
-            scoped[path] = node
-            nested = getattr(node, "workflow", None)
-            if nested is not None:
-                collect(nested, path)
-
-    collect(workflow)
-    unknown = [path for path in requested if path not in scoped]
-    if unknown:
-        raise ValueError(f"Unknown requested workflow nodes: {unknown}")
-    return [scoped[path] for path in requested]
+        return cluster_api.LocalUpload(self._uploads.resolve_upload(leaf.value or ""))

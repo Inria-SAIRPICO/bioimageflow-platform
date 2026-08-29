@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
 import threading
@@ -61,6 +62,79 @@ class ExecutionRegistry:
             raise ValueError("retry plan digest is invalid")
         return self.root / "retry_plans" / f"{match.group(1)}.json"
 
+    def _cleanup_plan_path(self, digest: str) -> Path:
+        match = _RETRY_DIGEST.fullmatch(digest)
+        if match is None:
+            raise ValueError("cleanup plan digest is invalid")
+        return self.root / "cleanup_plans" / f"{match.group(1)}.json"
+
+    @staticmethod
+    def _decode_snapshot(payload: object) -> ExecutionSnapshot | None:
+        if not isinstance(payload, dict):
+            raise ValueError("Execution snapshot must contain an object")
+        if payload.get("schema_version") == 2:
+            return ExecutionSnapshot.model_validate(payload)
+        if payload.get("schema_version") != 1:
+            raise ValueError("Unsupported execution snapshot schema")
+        if payload.get("backend") not in {"direct", "wetlands"}:
+            # Legacy distributed records depend on removed executable profiles and
+            # transports. They are deliberately excluded without touching local runs.
+            return None
+        migrated = dict(payload)
+        migrated["schema_version"] = 2
+        migrated.pop("actions", None)
+        migrated.setdefault("diagnostics", [])
+        return ExecutionSnapshot.model_validate(migrated)
+
+    @classmethod
+    def _read_snapshot(cls, path: Path) -> ExecutionSnapshot | None:
+        return cls._decode_snapshot(json.loads(path.read_text(encoding="utf-8")))
+
+    def migrate(self) -> tuple[int, int]:
+        """Preserve v1 local history and erase obsolete distributed state."""
+
+        if not self.root.exists():
+            return 0, 0
+        migrated = 0
+        removed_ids: set[str] = set()
+        with self._lock:
+            for path in sorted(self.root.glob("*.json")):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+                    continue
+                execution_id = payload.get("execution_id")
+                if payload.get("backend") in {"direct", "wetlands"}:
+                    snapshot = self._decode_snapshot(payload)
+                    assert snapshot is not None
+                    self._atomic_write(path, snapshot.model_dump(mode="json"))
+                    migrated += 1
+                    continue
+                path.unlink()
+                fsync_directory(path.parent)
+                if isinstance(execution_id, str):
+                    removed_ids.add(execution_id)
+            for directory in (self.root / "retry_plans", self.root / "cleanup_plans"):
+                if not directory.exists():
+                    continue
+                for path in directory.glob("*.json"):
+                    try:
+                        envelope = json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    plan = envelope.get("plan") if isinstance(envelope, dict) else None
+                    owner = (
+                        envelope.get("execution_id")
+                        if isinstance(envelope, dict)
+                        else None
+                    )
+                    parent = plan.get("parent_run_id") if isinstance(plan, dict) else None
+                    if owner in removed_ids or parent in removed_ids:
+                        path.unlink()
+                        fsync_directory(path.parent)
+        return migrated, len(removed_ids)
+
     def get(self, execution_id: str) -> ExecutionSnapshot:
         path = self._path(execution_id)
         with self._lock:
@@ -68,7 +142,10 @@ class ExecutionRegistry:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except FileNotFoundError as exc:
                 raise ExecutionNotFoundError(execution_id) from exc
-        return ExecutionSnapshot.model_validate(payload)
+        snapshot = self._decode_snapshot(payload)
+        if snapshot is None:
+            raise ExecutionNotFoundError(execution_id)
+        return snapshot
 
     def save(
         self,
@@ -82,7 +159,7 @@ class ExecutionRegistry:
         with self._lock:
             current: ExecutionSnapshot | None = None
             if path.exists():
-                current = ExecutionSnapshot.model_validate_json(path.read_text(encoding="utf-8"))
+                current = self._read_snapshot(path)
             current_revision = current.revision if current is not None else -1
             if expected_revision is not None and current_revision != expected_revision:
                 raise ExecutionRevisionConflict(
@@ -113,7 +190,9 @@ class ExecutionRegistry:
             for path in self.root.glob("*.json"):
                 if path.is_symlink() or not path.is_file():
                     continue
-                snapshots.append(ExecutionSnapshot.model_validate_json(path.read_text("utf-8")))
+                snapshot = self._read_snapshot(path)
+                if snapshot is not None:
+                    snapshots.append(snapshot)
         if workflow_id is not None:
             snapshots = [item for item in snapshots if item.workflow_id == workflow_id]
         snapshots.sort(key=lambda item: (item.created_at, item.execution_id), reverse=True)
@@ -128,11 +207,13 @@ class ExecutionRegistry:
         with self._lock:
             if not self.root.exists():
                 return []
-            snapshots = [
-                ExecutionSnapshot.model_validate_json(path.read_text("utf-8"))
-                for path in self.root.glob("*.json")
-                if path.is_file() and not path.is_symlink()
-            ]
+            snapshots = []
+            for path in self.root.glob("*.json"):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                snapshot = self._read_snapshot(path)
+                if snapshot is not None:
+                    snapshots.append(snapshot)
         return [item for item in snapshots if not item.terminal]
 
     def save_retry_plan(self, payload: dict[str, object]) -> None:
@@ -156,6 +237,33 @@ class ExecutionRegistry:
                     raise RetryPlanConflictError("retry plan digest is already retained")
                 return
             self._atomic_write(path, envelope)
+
+    def save_cleanup_plan(self, execution_id: str, payload: dict[str, object]) -> str:
+        digest = "sha256:" + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        envelope = {
+            "schema": "bioimageflow.platform.cluster-cleanup-confirmation.v1",
+            "execution_id": execution_id,
+            "plan": payload,
+        }
+        with self._lock:
+            self._atomic_write(self._cleanup_plan_path(digest), envelope)
+        return digest
+
+    def get_cleanup_plan(self, execution_id: str, digest: str) -> dict[str, object]:
+        with self._lock:
+            try:
+                envelope = json.loads(
+                    self._cleanup_plan_path(digest).read_text(encoding="utf-8")
+                )
+            except FileNotFoundError as exc:
+                raise ExecutionNotFoundError("cleanup plan") from exc
+        if envelope.get("execution_id") != execution_id or not isinstance(
+            envelope.get("plan"), dict
+        ):
+            raise ExecutionNotFoundError("cleanup plan")
+        return envelope["plan"]
 
     def get_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
         path = self._retry_plan_path(digest)
@@ -237,6 +345,20 @@ class ExecutionRegistry:
             envelope["state"] = "uncertain"
             self._atomic_write(path, envelope)
 
+    def mark_retry_absent(self, parent_execution_id: str, digest: str) -> None:
+        """Permit replay only after the exact child is definitively absent."""
+
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            plan = envelope.get("plan")
+            if not isinstance(plan, dict) or plan.get("parent_run_id") != parent_execution_id:
+                raise RetryPlanNotFoundError(digest)
+            if envelope.get("state") != "uncertain":
+                raise RetryPlanConflictError("retry plan is not awaiting exact-child recovery")
+            envelope["state"] = "confirmed"
+            self._atomic_write(path, envelope)
+
     def mark_retry_failed(
         self,
         parent_execution_id: str,
@@ -261,7 +383,7 @@ class ExecutionRegistry:
         with self._lock:
             for path in sorted(directory.glob("*.json")):
                 envelope = json.loads(path.read_text(encoding="utf-8"))
-                if envelope.get("state") != "confirmed":
+                if envelope.get("state") not in {"confirmed", "uncertain"}:
                     continue
                 plan = envelope.get("plan")
                 if not isinstance(plan, dict):

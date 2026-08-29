@@ -17,55 +17,37 @@ from bioimageflow_server.services.execution_preflight import (
 )
 
 
-class _Prepared:
-    expired = False
-
+class _Intent:
     def __init__(self) -> None:
         self.closed = False
-        self.submit_calls: list[object] = []
-        self.manifest = SimpleNamespace(to_dict=lambda: {"bundle_digest": "digest"})
+        self.calls = 0
 
-    def submit(self, transport: object) -> object:
-        self.submit_calls.append(transport)
-        return SimpleNamespace(id="run_remote", status="prepared")
+    def submit(self) -> object:
+        self.calls += 1
+        return SimpleNamespace(id="run_" + "1" * 32)
 
     def close(self) -> None:
         self.closed = True
 
 
 @pytest.mark.anyio
-async def test_token_consumes_exact_prepared_object_once_and_checks_binding() -> None:
+async def test_token_consumes_exact_intent_once_and_checks_binding() -> None:
     manager = PreparedSubmissionTokenManager()
-    prepared = _Prepared()
-    token, _ = await manager.issue(
-        prepared,
-        transport="ssh",
-        binding="expected",
-        lifetime=60,
-    )
-
+    intent = _Intent()
+    token, _ = await manager.issue(intent, binding="expected", lifetime=60)
     with pytest.raises(PreparedTokenConflict):
         await manager.consume(token, binding="different")
-    assert prepared.closed
-    assert prepared.submit_calls == []
+    assert intent.closed and intent.calls == 0
 
-    prepared = _Prepared()
-    token, _ = await manager.issue(
-        prepared,
-        transport="ssh",
-        binding="expected",
-        lifetime=60,
-    )
+    intent = _Intent()
+    token, _ = await manager.issue(intent, binding="expected", lifetime=60)
     handle = await manager.consume(token, binding="expected")
-    assert handle.id == "run_remote"
-    assert prepared.submit_calls == ["ssh"]
-    assert prepared.closed
+    assert handle.id == "run_" + "1" * 32
+    assert intent.closed and intent.calls == 1
 
 
 @pytest.mark.anyio
-async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypatch) -> None:
-    prepared = _Prepared()
-    captured: dict[str, Any] = {}
+async def test_preflight_resolves_paths_then_directly_submits(monkeypatch: pytest.MonkeyPatch) -> None:
     path_item = SimpleNamespace(
         scoped_node_path="preprocessing/files",
         input_name="path",
@@ -75,73 +57,36 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
         inputs=(path_item,),
         to_dict=lambda: {"inputs": [{"scoped_node_path": "preprocessing/files"}]},
     )
+    monkeypatch.setattr(bioimageflow, "inspect_remote_node_paths", lambda _workflow: path_plan)
+    captured: dict[str, Any] = {}
 
-    class _Plan:
-        valid = True
+    class _Cluster:
+        def submit(self, workflow: object, **kwargs: Any) -> object:
+            captured.update(kwargs)
+            return SimpleNamespace(id="run_" + "2" * 32, status="prepared")
 
-        def to_dict(self) -> dict[str, Any]:
-            return {
-                "schema": "bioimageflow.distributed_execution_plan.v1",
-                "allocates_resources": False,
-                "task_policy": {
-                    "schema": "bioimageflow.parsl.task_policy.v1",
-                    "row_chunk_size": 1,
-                    "max_in_flight": 32,
-                },
-                "nodes": [],
-            }
-
-    monkeypatch.setattr(
-        bioimageflow, "plan_distributed_execution", lambda *a, **k: _Plan(), raising=False
-    )
-    monkeypatch.setattr(
-        bioimageflow, "inspect_remote_node_paths", lambda workflow: path_plan, raising=False
-    )
-
-    def prepare(*args: Any, **kwargs: Any) -> _Prepared:
-        captured.update(kwargs)
-        return prepared
-
-    monkeypatch.setattr(bioimageflow, "prepare_remote_submission", prepare, raising=False)
-    monkeypatch.setattr(
-        bioimageflow,
-        "LocalUpload",
-        lambda path: SimpleNamespace(path=path),
-        raising=False,
-    )
     profile = SimpleNamespace(
         id="cluster",
         revision=1,
-        mode="submitted_remote",
-        transport="ssh",
-        workflow_storage_path="/cluster/demo/results",
-        planning_arguments=lambda: {"executor_bindings": {}},
-        submission_arguments=lambda: {
-            "parsl_config": "config",
-            "executor_bindings": {},
-            "launch": "launch",
-        },
+        cluster=_Cluster(),
+        workflow_storage_path=Path("/tmp/results"),
     )
     service = DistributedPreflightService(
-        workflows=SimpleNamespace(
-            resolve_workflow=lambda workflow_id, revision, storage_path: object()
-        ),
-        profiles=SimpleNamespace(
-            resolve_target=lambda target_id, workflow_id, profile_revision: profile
-        ),
+        workflows=SimpleNamespace(resolve_workflow=lambda *_args: object()),
+        profiles=SimpleNamespace(resolve_target=lambda *_args: profile),
         uploads=SimpleNamespace(resolve_upload=lambda value: Path("/authorized") / value),
         tokens=PreparedSubmissionTokenManager(),
     )
-    unresolved_request = ExecutionPreflightRequest(
+    request = ExecutionPreflightRequest(
         workflow_id="demo",
         draft_revision=3,
         target_id="cluster",
         profile_revision=1,
     )
-    unresolved = await service.preflight(unresolved_request)
+    unresolved = await service.preflight(request)
     assert unresolved.kind == "resolution_required"
 
-    ready_request = unresolved_request.model_copy(
+    ready_request = request.model_copy(
         update={
             "node_path_choices": {
                 "preprocessing/files": {"path": {"source": "upload", "value": "dataset"}}
@@ -150,13 +95,39 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
     )
     ready = await service.preflight(ready_request)
     assert ready.kind == "ready"
-    assert ready.manifest == {"bundle_digest": "digest"}
+    accepted = await service.tokens.consume(
+        ready.token,
+        binding=preflight_binding(ready_request),
+    )
+    assert isinstance(accepted, PreparedRunAcceptance)
+    assert accepted.handle.id == "run_" + "2" * 32
     override = captured["node_input_overrides"]["preprocessing/files"]["path"]
     assert override.path == Path("/authorized/dataset")
 
-    accepted = await service.tokens.consume(ready.token, binding=preflight_binding(ready_request))
-    assert isinstance(accepted, PreparedRunAcceptance)
-    assert accepted.handle.id == "run_remote"
-    assert accepted.profile is profile
-    assert accepted.request == ready_request
-    assert prepared.submit_calls == ["ssh"]
+
+@pytest.mark.anyio
+async def test_cluster_path_must_be_absolute(monkeypatch: pytest.MonkeyPatch) -> None:
+    item = SimpleNamespace(scoped_node_path="files", input_name="path", value_shape="path")
+    plan = SimpleNamespace(inputs=(item,), to_dict=lambda: {"inputs": []})
+    monkeypatch.setattr(bioimageflow, "inspect_remote_node_paths", lambda _workflow: plan)
+    profile = SimpleNamespace(
+        id="cluster",
+        revision=1,
+        cluster=object(),
+        workflow_storage_path=None,
+    )
+    service = DistributedPreflightService(
+        workflows=SimpleNamespace(resolve_workflow=lambda *_args: object()),
+        profiles=SimpleNamespace(resolve_target=lambda *_args: profile),
+        uploads=SimpleNamespace(resolve_upload=Path),
+        tokens=PreparedSubmissionTokenManager(),
+    )
+    request = ExecutionPreflightRequest(
+        workflow_id="demo",
+        draft_revision=0,
+        target_id="cluster",
+        profile_revision=1,
+        node_path_choices={"files": {"path": {"source": "cluster", "value": "relative"}}},
+    )
+    with pytest.raises(ValueError, match="absolute"):
+        await service.preflight(request)

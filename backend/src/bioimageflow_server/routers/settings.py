@@ -140,11 +140,6 @@ async def patch_settings(
             body["fiji_path"] = str(installation.root)
         elif raw_fiji_path == "":
             body["fiji_path"] = None
-    if store.deployment_mode == "webapp" and "trusted_parsl_factories" in body:
-        raise HTTPException(
-            status_code=403,
-            detail="trusted_parsl_factories is administrator-managed in webapp mode",
-        )
     if "enable_unsafe_webapp_features" in body:
         raise HTTPException(
             status_code=422,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib
 import json
 import os
 import shutil
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from bioimageflow_server.models.execution_runtime import (
+    ClusterDiagnosticValue,
     ExecutionActionAvailability,
     ExecutionActions,
     ExecutionPage,
@@ -61,8 +63,6 @@ class ExecutionRunAdapter(Protocol):
     def progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]: ...
 
     def cancel(self) -> None: ...
-
-    def logs(self) -> str: ...
 
     def export_result(self, destination: Path) -> Path: ...
 
@@ -218,8 +218,11 @@ class SubmittedRunAdapter:
     def cancel(self) -> None:
         self.handle.cancel()
 
-    def logs(self) -> str:
-        return str(self.handle.logs())
+    def snapshot(self) -> dict[str, Any]:
+        return dict(self.handle.snapshot())
+
+    def diagnostics(self) -> tuple[Any, ...]:
+        return tuple(self.handle.diagnostics())
 
     def export_result(self, destination: Path) -> Path:
         try:
@@ -358,9 +361,6 @@ class AttachedRunAdapter:
         self._status = "cancel_requested"
         self._cancel()
 
-    def logs(self) -> str:
-        return ""
-
     def export_result(self, destination: Path) -> Path:
         if self._status != "succeeded":
             if self._error is not None:
@@ -397,9 +397,6 @@ class ManagedResultAdapter:
 
     def cancel(self) -> None:
         return None
-
-    def logs(self) -> str:
-        return ""
 
     def export_result(self, destination: Path) -> Path:
         if destination != self._bundle:
@@ -466,7 +463,7 @@ class ExecutionCoordinator:
         for snapshot in await asyncio.to_thread(self.registry.non_terminal):
             if snapshot.execution_id in self._adapters:
                 continue
-            if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
+            if snapshot.backend in {"direct", "wetlands"}:
                 reconnect = snapshot.reconnect or {}
                 result_bundle = reconnect.get("result_bundle")
                 completion = (
@@ -493,7 +490,7 @@ class ExecutionCoordinator:
                         initial=False,
                     )
                     continue
-            if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
+            if snapshot.backend in {"direct", "wetlands"}:
                 lost = snapshot.model_copy(update={"state": "lost", "finished_at": utc_now()})
                 persisted = await asyncio.to_thread(
                     self.registry.save,
@@ -580,7 +577,11 @@ class ExecutionCoordinator:
         snapshot = await self.get(execution_id)
         if snapshot.terminal or snapshot.state == "cancel_requested":
             return snapshot
-        if snapshot.state not in {"prepared", "starting", "running"}:
+        if snapshot.backend == "managed_remote":
+            cancellable = not snapshot.terminal
+        else:
+            cancellable = snapshot.state in {"prepared", "starting", "running"}
+        if not cancellable:
             raise RuntimeError(f"Execution cannot be cancelled while {snapshot.state}")
         adapter = self._adapters.get(execution_id)
         if adapter is None:
@@ -719,14 +720,100 @@ class ExecutionCoordinator:
                         "retry-plan-integrity-error",
                         "The retained retry state is missing its exact child identity.",
                     ) from exc
-                if plan_state == "uncertain":
-                    await self._ensure_uncertain_retry_observation(child)
-                return self._with_actions(child)
+                if plan_state == "started":
+                    return self._with_actions(child)
+                try:
+                    attached = await asyncio.to_thread(self._reconnector, child)
+                except Exception as exc:
+                    diagnostic = getattr(exc, "diagnostic", None)
+                    if getattr(diagnostic, "category", None) != "run-not-found":
+                        await self._ensure_uncertain_retry_observation(child)
+                        return self._with_actions(child)
+                    await asyncio.to_thread(
+                        self.registry.mark_retry_absent,
+                        execution_id,
+                        plan_digest,
+                    )
+                else:
+                    recovered = child.model_copy(
+                        update={
+                            "state": attached.status,
+                            "observation": ObservationSnapshot(),
+                        }
+                    )
+                    persisted = await asyncio.to_thread(
+                        self.registry.save,
+                        self._with_actions(recovered),
+                        expected_revision=child.revision,
+                    )
+                    # The run exists, so the exact retry start is durably complete.
+                    await asyncio.to_thread(
+                        self.registry.mark_retry_absent,
+                        execution_id,
+                        plan_digest,
+                    )
+                    await asyncio.to_thread(
+                        self.registry.mark_retry_started,
+                        execution_id,
+                        plan_digest,
+                    )
+                    await self.attach(persisted.execution_id, attached, publish_initial=True)
+                    return persisted
             await asyncio.to_thread(
                 self.registry.confirm_retry_plan,
                 execution_id,
                 plan_digest,
             )
+            child = await self._ensure_retry_child(source, plan)
+            # Recovery always observes the exact preallocated child first. Only a
+            # definitive public run-not-found diagnostic permits starting this plan.
+            try:
+                attached_child = await asyncio.to_thread(self._reconnector, child)
+            except Exception as attach_exc:
+                diagnostic = getattr(attach_exc, "diagnostic", None)
+                if getattr(diagnostic, "category", None) != "run-not-found":
+                    error = _operation_error(
+                        attach_exc,
+                        fallback="retry-child-observation-uncertain",
+                    )
+                    await asyncio.to_thread(
+                        self.registry.mark_retry_uncertain,
+                        execution_id,
+                        plan_digest,
+                    )
+                    failed_observation = child.model_copy(
+                        update={
+                            "observation": ObservationSnapshot(
+                                reachable=False,
+                                error=str(error),
+                            )
+                        }
+                    )
+                    await asyncio.to_thread(
+                        self.registry.save,
+                        self._with_actions(failed_observation),
+                        expected_revision=child.revision,
+                    )
+                    raise error from attach_exc
+            else:
+                started = child.model_copy(
+                    update={
+                        "state": attached_child.status,
+                        "observation": ObservationSnapshot(),
+                    }
+                )
+                persisted = await asyncio.to_thread(
+                    self.registry.save,
+                    self._with_actions(started),
+                    expected_revision=child.revision,
+                )
+                await asyncio.to_thread(
+                    self.registry.mark_retry_started,
+                    execution_id,
+                    plan_digest,
+                )
+                await self.attach(persisted.execution_id, attached_child, publish_initial=True)
+                return persisted
             parent_adapter = self._adapters.get(execution_id)
             if parent_adapter is None:
                 parent_adapter = await asyncio.to_thread(self._reconnector, source)
@@ -739,12 +826,8 @@ class ExecutionCoordinator:
                 child_adapter = await asyncio.to_thread(parent_adapter.start_retry, plan)
             except Exception as exc:
                 error = _operation_error(exc, fallback="workflow-run-retry-error")
-                uncertain_codes = {
-                    "psij-submission-uncertain",
-                    "remote-retry-submission-uncertain",
-                }
+                uncertain_codes = {"submission-uncertain", "remote-retry-submission-uncertain"}
                 if error.code in uncertain_codes:
-                    child = await self._ensure_retry_child(source, plan)
                     await asyncio.to_thread(
                         self.registry.mark_retry_uncertain,
                         execution_id,
@@ -777,7 +860,6 @@ class ExecutionCoordinator:
                         },
                     )
                 raise error from exc
-            child = await self._ensure_retry_child(source, plan)
             started = child.model_copy(
                 update={
                     "state": child_adapter.status,
@@ -822,6 +904,63 @@ class ExecutionCoordinator:
             await self._persist_result_export(execution_id, adapter.result_export)
         return archive
 
+    async def plan_cleanup(
+        self,
+        execution_id: str,
+        *,
+        older_than_seconds: int = 86_400,
+    ) -> tuple[str, dict[str, Any]]:
+        snapshot = await self.get(execution_id)
+        if not snapshot.actions.cleanup.available:
+            raise ExecutionOperationError(
+                "cleanup-unavailable",
+                snapshot.actions.cleanup.reason or "Managed cleanup is unavailable.",
+            )
+        cluster = _cluster_from_snapshot(snapshot)
+        try:
+            plan = await asyncio.to_thread(
+                cluster.plan_cleanup,
+                namespace="runs",
+                run_ids=(execution_id,),
+                older_than_seconds=older_than_seconds,
+            )
+        except Exception as exc:
+            raise _operation_error(exc, fallback="cleanup-planning-failed") from exc
+        payload = plan.to_dict()
+        digest = await asyncio.to_thread(
+            self.registry.save_cleanup_plan,
+            execution_id,
+            payload,
+        )
+        return digest, payload
+
+    async def apply_cleanup(self, execution_id: str, *, plan_digest: str) -> dict[str, Any]:
+        snapshot = await self.get(execution_id)
+        if not snapshot.actions.cleanup.available:
+            raise ExecutionOperationError(
+                "cleanup-unavailable",
+                snapshot.actions.cleanup.reason or "Managed cleanup is unavailable.",
+            )
+        try:
+            payload = await asyncio.to_thread(
+                self.registry.get_cleanup_plan,
+                execution_id,
+                plan_digest,
+            )
+        except ExecutionNotFoundError as exc:
+            raise ExecutionOperationError(
+                "cleanup-plan-not-found",
+                "The confirmed cleanup plan is unknown; create a new preview.",
+            ) from exc
+        cluster_api = importlib.import_module("bioimageflow.cluster")
+        plan = cluster_api.ClusterCleanupPlan.from_dict(payload)
+        cluster = _cluster_from_snapshot(snapshot)
+        try:
+            report = await asyncio.to_thread(cluster.apply_cleanup, plan)
+        except Exception as exc:
+            raise _operation_error(exc, fallback="cleanup-apply-failed") from exc
+        return report.to_dict()
+
     async def _persist_result_export(
         self,
         execution_id: str,
@@ -836,13 +975,6 @@ class ExecutionCoordinator:
             self._with_actions(updated),
             expected_revision=current.revision,
         )
-
-    async def logs(self, execution_id: str) -> str:
-        snapshot = await self.get(execution_id)
-        adapter = self._adapters.get(execution_id)
-        if adapter is None:
-            adapter = await asyncio.to_thread(self._reconnector, snapshot)
-        return await asyncio.to_thread(adapter.logs)
 
     async def _ensure_retry_child(self, source: ExecutionSnapshot, plan: Any) -> ExecutionSnapshot:
         try:
@@ -883,7 +1015,7 @@ class ExecutionCoordinator:
                 state="preparing",
                 jobs=jobs,
                 reconnect={
-                    "storage_path": plan.storage_path,
+                    **(source.reconnect or {}),
                     "run_id": plan.retry_run_id,
                 },
                 backend_metadata={"retry_plan_digest": plan.digest},
@@ -997,6 +1129,8 @@ class ExecutionCoordinator:
                     "observation": ObservationSnapshot(),
                     "result_export": adapter.result_export,
                 }
+                if isinstance(adapter, SubmittedRunAdapter):
+                    update["backend_metadata"] = adapter.snapshot()
                 if state in self.TERMINAL and reduced.finished_at is None:
                     update["finished_at"] = utc_now()
                 reduced = reduced.model_copy(update=update)
@@ -1029,6 +1163,18 @@ class ExecutionCoordinator:
         failed = snapshot.model_copy(
             update={
                 "observation": ObservationSnapshot(reachable=False, error=str(exc)),
+                "diagnostics": [
+                    *snapshot.diagnostics,
+                    *(
+                        [
+                            ClusterDiagnosticValue.model_validate(
+                                getattr(exc, "diagnostic").to_dict()
+                            )
+                        ]
+                        if getattr(exc, "diagnostic", None) is not None
+                        else []
+                    ),
+                ],
             }
         )
         persisted = await asyncio.to_thread(
@@ -1075,15 +1221,17 @@ def _execution_actions(
     backend_capability = {
         "direct": "direct",
         "wetlands": "wetlands",
-        "attached_parsl": "attached_parsl",
-        "submitted_local": "submitted_local_parsl",
-        "submitted_remote": "submitted_remote_parsl",
+        "managed_remote": "remote_cluster_bootstrap",
     }[snapshot.backend]
     backend_supported, backend_reason = _capability(capabilities, backend_capability)
-    cancellable = snapshot.state in {"prepared", "starting", "running"}
+    cancellable = (
+        not snapshot.terminal
+        if snapshot.backend == "managed_remote"
+        else snapshot.state in {"prepared", "starting", "running"}
+    )
     cancel_reason = backend_reason if not backend_supported else f"Execution is {snapshot.state}."
 
-    submitted = snapshot.backend in {"submitted_local", "submitted_remote"}
+    submitted = snapshot.backend == "managed_remote"
     retry_supported, retry_reason = _capability(capabilities, "submitted_run_retry")
     recompute_supported, recompute_reason = _capability(capabilities, "submitted_recompute")
     retry_available = backend_supported and submitted and snapshot.terminal and retry_supported
@@ -1114,11 +1262,21 @@ def _execution_actions(
         result_reason = backend_reason
     elif snapshot.result_export.state == "unavailable":
         result_reason = snapshot.result_export.detail or "Result export is unavailable."
+    cleanup_supported, cleanup_reason = _capability(
+        capabilities,
+        "cluster_cleanup_planning",
+    )
+    cleanup_available = submitted and snapshot.terminal and cleanup_supported
+    if not submitted:
+        cleanup_reason = "Managed cleanup applies only to remote cluster runs."
+    elif not snapshot.terminal:
+        cleanup_reason = f"Execution is {snapshot.state}."
     return ExecutionActions(
         cancel=_availability(backend_supported and cancellable, cancel_reason),
         retry=_availability(retry_available, retry_reason),
         recompute=_availability(recompute_available, recompute_reason),
         download_results=_availability(result_available, result_reason),
+        cleanup=_availability(cleanup_available, cleanup_reason),
     )
 
 
@@ -1159,6 +1317,14 @@ def _retry_presentation(source: ExecutionSnapshot, plan: Any) -> RetryPlanPresen
 def _operation_error(exc: Exception, *, fallback: str) -> ExecutionOperationError:
     if isinstance(exc, ExecutionOperationError):
         return exc
+    diagnostic = getattr(exc, "diagnostic", None)
+    if diagnostic is not None:
+        payload = diagnostic.to_dict()
+        return ExecutionOperationError(
+            payload["category"],
+            payload["message"],
+            details={"diagnostic": payload},
+        )
     details_value = getattr(exc, "details", None)
     details = dict(details_value) if isinstance(details_value, dict) else {}
     public_code = getattr(exc, "code", None)
@@ -1179,42 +1345,37 @@ def open_public_submitted_run(
 ) -> ExecutionRunAdapter:
     """Reconnect using only public BioImageFlow handles and sanitized profile values."""
 
-    import bioimageflow
-
-    remote_workflow_run = getattr(bioimageflow, "RemoteWorkflowRun")
-    workflow_run = getattr(bioimageflow, "WorkflowRun")
-
     reconnect = snapshot.reconnect or {}
-    if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
+    if snapshot.backend in {"direct", "wetlands"}:
         result_bundle = reconnect.get("result_bundle")
         if snapshot.state == "succeeded" and isinstance(result_bundle, str):
             return ManagedResultAdapter(Path(result_bundle), snapshot.result_export)
         raise ValueError("Attached executions cannot be reconnected before success")
-    storage_path = reconnect.get("storage_path")
+    host = reconnect.get("host")
+    root = reconnect.get("root")
     run_id = reconnect.get("run_id")
-    if not isinstance(storage_path, str) or not isinstance(run_id, str):
-        raise ValueError("Submitted execution reconnect metadata is incomplete")
-    if snapshot.backend == "submitted_remote":
-        profile_payload = snapshot.target_snapshot.get("profile")
-        if not isinstance(profile_payload, dict):
-            raise ValueError("Retained remote execution profile snapshot is missing")
-        from bioimageflow_server.models.execution_profiles import (
-            DistributedExecutionProfile,
-        )
-
-        record = DistributedExecutionProfile.model_validate(profile_payload)
-        if record.id != snapshot.profile_id or record.revision != snapshot.profile_revision:
-            raise ValueError("Retained execution profile binding is inconsistent")
-        if record.transport is None:
-            raise ValueError("Retained remote execution transport is missing")
-        transport = record.transport.to_library()
+    if snapshot.backend == "managed_remote":
+        if not all(isinstance(value, str) for value in (host, root, run_id)):
+            raise ValueError("Managed execution reconnect metadata is incomplete")
+        cluster_api = importlib.import_module("bioimageflow.cluster")
+        cluster = cluster_api.RemoteCluster(host=host, root=root)
         return SubmittedRunAdapter(
-            remote_workflow_run.open(transport, storage_path, run_id),
-            result_export=snapshot.result_export,
-        )
-    if snapshot.backend == "submitted_local":
-        return SubmittedRunAdapter(
-            workflow_run.open(storage_path, run_id),
+            cluster.attach(run_id),
             result_export=snapshot.result_export,
         )
     raise ValueError("Execution backend cannot be reconnected")
+
+
+def _cluster_from_snapshot(snapshot: ExecutionSnapshot) -> Any:
+    reconnect = snapshot.reconnect or {}
+    host = reconnect.get("host")
+    root = reconnect.get("root")
+    if snapshot.backend != "managed_remote" or not all(
+        isinstance(value, str) for value in (host, root)
+    ):
+        raise ExecutionOperationError(
+            "cleanup-unavailable",
+            "Managed cluster reconnect facts are unavailable.",
+        )
+    cluster_api = importlib.import_module("bioimageflow.cluster")
+    return cluster_api.RemoteCluster(host=host, root=root)
