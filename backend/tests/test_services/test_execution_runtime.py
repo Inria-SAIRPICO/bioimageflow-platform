@@ -25,6 +25,8 @@ from bioimageflow_server.services.execution_runtime import (
     ExecutionOperationError,
     ManagedResultAdapter,
     SubmittedRunAdapter,
+    _archive_bundle,
+    _archive_digest,
     _operation_error,
     open_public_submitted_run,
 )
@@ -66,6 +68,45 @@ def test_registry_atomically_revisions_lists_and_reloads(tmp_path: Path) -> None
 
     with pytest.raises(ExecutionRevisionConflict):
         registry.save(updated, expected_revision=0)
+
+
+def test_registry_binds_active_execution_and_journals_across_workspace_switch(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    current = [first]
+    registry = ExecutionRegistry(lambda: current[0])
+    active = registry.save(
+        _snapshot(execution_id=f"run_{uuid4().hex}", state="running")
+    )
+
+    current[0] = second
+    updated = registry.save(
+        active.model_copy(update={"state": "cancel_requested"}),
+        expected_revision=active.revision,
+    )
+    plan = _retry_plan(active.execution_id, f"run_{uuid4().hex}", tmp_path)
+    registry.save_retry_plan(plan.to_dict())
+    newer = registry.save(
+        _snapshot(execution_id=f"run_{uuid4().hex}", workflow_id="second")
+    )
+
+    assert registry.get(active.execution_id) == updated
+    assert (
+        first / ".bioimageflow" / "executions" / f"{active.execution_id}.json"
+    ).is_file()
+    assert (
+        first
+        / ".bioimageflow"
+        / "executions"
+        / "retry_plans"
+        / f"{plan.digest.removeprefix('sha256:')}.json"
+    ).is_file()
+    assert (
+        second / ".bioimageflow" / "executions" / f"{newer.execution_id}.json"
+    ).is_file()
+    assert registry.list().items == [newer]
 
 
 def test_progress_reducer_is_idempotent_and_keeps_parallel_diagnostics() -> None:
@@ -237,7 +278,7 @@ async def test_observation_failure_does_not_fail_authoritative_run(tmp_path: Pat
 
     assert observed.state == "running"
     assert not observed.observation.reachable
-    assert observed.observation.error == "offline"
+    assert observed.observation.error == "The execution could not be observed."
 
 
 def _retry_plan(
@@ -480,6 +521,47 @@ async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -
 
     assert len(handle.started) == 1
     assert registry.get(child_id).retry_of_execution_id == parent_id
+
+
+@pytest.mark.anyio
+async def test_startup_keeps_one_reconnect_task_for_unreachable_uncertain_child(
+    tmp_path: Path,
+) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            state="failed",
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    registry.save_retry_plan(plan.to_dict())
+    registry.confirm_retry_plan(parent_id, plan.digest)
+    parent = _FailingRetryHandle(plan, "remote-retry-submission-uncertain")
+    child_attempts = 0
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        nonlocal child_attempts
+        if snapshot.execution_id == child_id:
+            child_attempts += 1
+            if child_attempts == 1:
+                raise _RunNotFound
+            raise ConnectionError("unreachable child")
+        return SubmittedRunAdapter(parent)
+
+    coordinator = ExecutionCoordinator(registry, reconnector=reconnect, poll_interval=60)
+
+    await coordinator.start()
+
+    assert child_attempts == 2
+    assert list(coordinator._poll_tasks) == [child_id]
+    task = coordinator._poll_tasks[child_id]
+    await coordinator.close()
+    assert task.done()
+    assert coordinator._poll_tasks == {}
 
 
 @pytest.mark.anyio
@@ -915,6 +997,81 @@ def test_operation_error_prefers_public_code_and_retains_remote_detail() -> None
     assert converted.details["remote_code"] == "remote-result-integrity-error"
 
 
+def test_operation_error_normalizes_public_cluster_diagnostic_with_identities() -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    exc = ClusterOperationError(
+        ClusterDiagnostic(
+            phase="retry-start",
+            category="submission-uncertain",
+            message="The scheduler acknowledgement is uncertain.",
+            allocation_state="unknown",
+            retry_safety="same-attempt-only",
+            next_action="attach-exact-child",
+            identities={"run_id": "run_" + "4" * 32, "attempt_id": "attempt-1"},
+        )
+    )
+
+    converted = _operation_error(exc, fallback="workflow-run-retry-error")
+
+    assert converted.code == "submission-uncertain"
+    assert converted.details["phase"] == "retry-start"
+    assert converted.details["allocation_state"] == "unknown"
+    assert converted.details["retry_safety"] == "same-attempt-only"
+    assert converted.details["next_action"] == "attach-exact-child"
+    assert converted.details["identities"]["attempt_id"] == "attempt-1"
+    assert "scheduler acknowledgement" in str(converted)
+
+
+def test_submitted_snapshot_projection_drops_unknown_and_sensitive_values() -> None:
+    class _ObservationHandle(_FakeHandle):
+        def snapshot(self) -> dict[str, Any]:
+            return {
+                "state": "running",
+                "scheduler_job_id": "job-42",
+                "unknown": "must-disappear",
+                "secret_token": "sensitive-value",
+            }
+
+    projected = SubmittedRunAdapter(_ObservationHandle()).snapshot()
+
+    assert projected == {"state": "running", "scheduler_job_id": "job-42"}
+    assert "sensitive-value" not in json.dumps(projected)
+
+
+@pytest.mark.anyio
+async def test_cancel_normalizes_public_cluster_operation_error(tmp_path: Path) -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    class _CancelFailure(_FakeHandle):
+        def cancel(self) -> None:
+            raise ClusterOperationError(
+                ClusterDiagnostic(
+                    phase="run-cancel",
+                    category="ssh-timeout",
+                    message="The cluster could not be reached.",
+                    allocation_state="orchestrator-submitted",
+                    retry_safety="safe",
+                    next_action="retry-cancel",
+                    identities={"run_id": "run_" + "5" * 32},
+                )
+            )
+
+    registry = ExecutionRegistry(tmp_path)
+    saved = registry.save(_snapshot(state="running"))
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(_CancelFailure()),
+    )
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.cancel(saved.execution_id)
+    await coordinator.close()
+
+    assert raised.value.code == "ssh-timeout"
+    assert raised.value.details["identities"]["run_id"] == "run_" + "5" * 32
+
+
 @pytest.mark.anyio
 async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
     tmp_path: Path,
@@ -1061,3 +1218,54 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
 
     assert manager_error.value.code == "workflow-result-integrity-error"
     assert adapter_error.value.code == "workflow-result-integrity-error"
+
+
+@pytest.mark.anyio
+async def test_managed_download_reuses_verified_local_bundle_after_remote_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    execution_id = f"run_{uuid4().hex}"
+    bundle = tmp_path / "exports" / execution_id
+    bundle.mkdir(parents=True)
+    (bundle / "result.txt").write_text("retained")
+    archive = _archive_bundle(bundle)
+    result_export = {
+        "state": "available",
+        "archive_digest": _archive_digest(archive),
+    }
+    registry = ExecutionRegistry(tmp_path / "registry")
+    saved = registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            state="succeeded",
+            reconnect={
+                "host": "cluster",
+                "root": "/shared",
+                "run_id": execution_id,
+                "result_bundle": str(bundle),
+            },
+            result_export=result_export,
+        )
+    )
+
+    class _RemovedCluster:
+        def __init__(self, *, host: str, root: str) -> None:
+            assert (host, root) == ("cluster", "/shared")
+
+        def attach(self, run_id: str) -> object:
+            raise AssertionError(f"remote run {run_id} was already cleaned up")
+
+    import bioimageflow.cluster as cluster_api
+
+    monkeypatch.setattr(cluster_api, "RemoteCluster", _RemovedCluster)
+    coordinator = ExecutionCoordinator(registry, reconnector=open_public_submitted_run)
+    destination = tmp_path / "exports" / execution_id
+
+    downloaded = await coordinator.download_result(execution_id, destination)
+    reopened = open_public_submitted_run(saved)
+    await coordinator.close()
+
+    assert downloaded == archive
+    assert isinstance(reopened, ManagedResultAdapter)
+    assert registry.get(execution_id).reconnect["result_bundle"] == str(bundle)

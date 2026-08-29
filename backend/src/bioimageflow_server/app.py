@@ -399,9 +399,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     distributed_registrar: PlatformPreparedRunRegistrar | None = None
     distributed_downloads: ExecutionDownloadDestinationResolver | None = None
     if execution_profile_store is not None:
-        managed_execution_results = (
-            workspace_path / ".bioimageflow" / "execution_exports"
-        )
+        def managed_execution_results() -> Path:
+            return (
+                _current_workspace_service().workspace_path()
+                / ".bioimageflow"
+                / "execution_exports"
+            )
+
         profile_resolver = PlatformExecutionProfileResolver(
             execution_profile_store,
             local_storage_path=lambda workflow_id: _current_workflow_store().get_storage_path(
@@ -409,7 +413,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ),
         )
         distributed_tokens = PreparedSubmissionTokenManager()
-        distributed_registry = ExecutionRegistry(workspace_path)
+        distributed_registry = ExecutionRegistry(
+            lambda: _current_workspace_service().workspace_path()
+        )
         execution_profile_store.set_reference_checker(
             lambda profile_id: any(
                 snapshot.profile_id == profile_id
@@ -434,13 +440,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ),
             tokens=distributed_tokens,
         )
+        distributed_downloads = ExecutionDownloadDestinationResolver(
+            managed_execution_results
+        )
         distributed_registrar = PlatformPreparedRunRegistrar(
             distributed_coordinator,
             profile_resolver,
-            managed_execution_results,
-        )
-        distributed_downloads = ExecutionDownloadDestinationResolver(
-            managed_execution_results
+            distributed_downloads,
         )
     workflow_source_service = WorkflowSourceService(
         _current_workflow_store,
@@ -541,8 +547,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             environment_manager_provider=_tool_environment_manager,
             retained_execution_started=_retain_local_execution,
             managed_result_root=(
-                workspace_path / ".bioimageflow" / "execution_exports"
-                if distributed_registrar is not None
+                distributed_downloads.resolve
+                if distributed_downloads is not None
                 else None
             ),
         )
@@ -569,7 +575,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if config.settings_store is not None:
             await config.settings_store.load()
         if execution_profile_store is not None:
-            await execution_profile_store.load()
+            profiles = await execution_profile_store.load()
+            if config.settings_store is not None:
+                await config.settings_store.ensure_default_execution_target(
+                    {profile.id for profile in profiles if profile.enabled}
+                )
         if distributed_registry is not None:
             await asyncio.to_thread(distributed_registry.migrate)
         if distributed_coordinator is not None:

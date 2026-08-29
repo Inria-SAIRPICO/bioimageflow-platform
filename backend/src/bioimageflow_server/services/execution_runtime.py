@@ -22,6 +22,7 @@ from bioimageflow_server.models.execution_runtime import (
     ExecutionSnapshot,
     ObservationSnapshot,
     RecomputeSelection,
+    RemoteRunObservationSnapshot,
     ResultExportSnapshot,
     RetryInvalidationPresentation,
     RetryPlanPresentation,
@@ -219,7 +220,9 @@ class SubmittedRunAdapter:
         self.handle.cancel()
 
     def snapshot(self) -> dict[str, Any]:
-        return dict(self.handle.snapshot())
+        return RemoteRunObservationSnapshot.from_public_mapping(
+            self.handle.snapshot()
+        ).as_backend_metadata()
 
     def diagnostics(self) -> tuple[Any, ...]:
         return tuple(self.handle.diagnostics())
@@ -461,7 +464,10 @@ class ExecutionCoordinator:
                 continue
 
         for snapshot in await asyncio.to_thread(self.registry.non_terminal):
-            if snapshot.execution_id in self._adapters:
+            if (
+                snapshot.execution_id in self._adapters
+                or snapshot.execution_id in self._poll_tasks
+            ):
                 continue
             if snapshot.backend in {"direct", "wetlands"}:
                 reconnect = snapshot.reconnect or {}
@@ -585,13 +591,19 @@ class ExecutionCoordinator:
             raise RuntimeError(f"Execution cannot be cancelled while {snapshot.state}")
         adapter = self._adapters.get(execution_id)
         if adapter is None:
-            adapter = await asyncio.to_thread(self._reconnector, snapshot)
+            try:
+                adapter = await asyncio.to_thread(self._reconnector, snapshot)
+            except Exception as exc:
+                raise _operation_error(exc, fallback="execution-cancel-failed") from exc
             reconnect_task = self._poll_tasks.pop(execution_id, None)
             if reconnect_task is not None:
                 reconnect_task.cancel()
                 await asyncio.gather(reconnect_task, return_exceptions=True)
             await self.attach(execution_id, adapter, publish_initial=False)
-        await asyncio.to_thread(adapter.cancel)
+        try:
+            await asyncio.to_thread(adapter.cancel)
+        except Exception as exc:
+            raise _operation_error(exc, fallback="execution-cancel-failed") from exc
         return await self._refresh_once(execution_id)
 
     async def plan_retry(
@@ -727,8 +739,7 @@ class ExecutionCoordinator:
                     if attached is None:
                         attached = await asyncio.to_thread(self._reconnector, child)
                 except Exception as exc:
-                    diagnostic = getattr(exc, "diagnostic", None)
-                    if getattr(diagnostic, "category", None) != "run-not-found":
+                    if _diagnostic_category(exc) != "run-not-found":
                         await self._ensure_uncertain_retry_observation(child)
                         return self._with_actions(child)
                     await asyncio.to_thread(
@@ -777,8 +788,7 @@ class ExecutionCoordinator:
             try:
                 attached_child = await asyncio.to_thread(self._reconnector, child)
             except Exception as attach_exc:
-                diagnostic = getattr(attach_exc, "diagnostic", None)
-                if getattr(diagnostic, "category", None) != "run-not-found":
+                if _diagnostic_category(attach_exc) != "run-not-found":
                     error = _operation_error(
                         attach_exc,
                         fallback="retry-child-observation-uncertain",
@@ -792,7 +802,7 @@ class ExecutionCoordinator:
                         update={
                             "observation": ObservationSnapshot(
                                 reachable=False,
-                                error=str(error),
+                                error=_observation_error_text(attach_exc),
                             )
                         }
                     )
@@ -844,7 +854,7 @@ class ExecutionCoordinator:
                         update={
                             "observation": ObservationSnapshot(
                                 reachable=False,
-                                error=str(error),
+                                error=_observation_error_text(exc),
                             )
                         }
                     )
@@ -921,7 +931,9 @@ class ExecutionCoordinator:
                 snapshot.actions.download_results.reason
                 or "Execution result export is unavailable.",
             )
-        adapter = self._adapters.get(execution_id)
+        adapter = _retained_managed_result_adapter(snapshot)
+        if adapter is None:
+            adapter = self._adapters.get(execution_id)
         if adapter is None:
             adapter = await asyncio.to_thread(self._reconnector, snapshot)
         async with self._locks.setdefault(execution_id, asyncio.Lock()):
@@ -1190,22 +1202,23 @@ class ExecutionCoordinator:
         exc: Exception,
     ) -> ExecutionSnapshot:
         # Observation loss never changes the authoritative run state.
-        if not snapshot.observation.reachable and snapshot.observation.error == str(exc):
+        observation_error = _observation_error_text(exc)
+        diagnostic = _cluster_diagnostic_value(exc)
+        if (
+            not snapshot.observation.reachable
+            and snapshot.observation.error == observation_error
+            and (diagnostic is None or diagnostic in snapshot.diagnostics)
+        ):
             return snapshot
         failed = snapshot.model_copy(
             update={
-                "observation": ObservationSnapshot(reachable=False, error=str(exc)),
+                "observation": ObservationSnapshot(
+                    reachable=False,
+                    error=observation_error,
+                ),
                 "diagnostics": [
                     *snapshot.diagnostics,
-                    *(
-                        [
-                            ClusterDiagnosticValue.model_validate(
-                                getattr(exc, "diagnostic").to_dict()
-                            )
-                        ]
-                        if getattr(exc, "diagnostic", None) is not None
-                        else []
-                    ),
+                    *([diagnostic] if diagnostic is not None else []),
                 ],
             }
         )
@@ -1346,16 +1359,45 @@ def _retry_presentation(source: ExecutionSnapshot, plan: Any) -> RetryPlanPresen
     )
 
 
+def _cluster_diagnostic_value(exc: Exception) -> ClusterDiagnosticValue | None:
+    diagnostic = getattr(exc, "diagnostic", None)
+    if diagnostic is None or not callable(getattr(diagnostic, "to_dict", None)):
+        return None
+    try:
+        return ClusterDiagnosticValue.model_validate(diagnostic.to_dict())
+    except (TypeError, ValueError):
+        return None
+
+
+def _diagnostic_category(exc: Exception) -> str | None:
+    diagnostic = _cluster_diagnostic_value(exc)
+    return None if diagnostic is None else diagnostic.category
+
+
+def _observation_error_text(exc: Exception) -> str:
+    diagnostic = _cluster_diagnostic_value(exc)
+    if diagnostic is not None:
+        return diagnostic.message
+    return "The execution could not be observed."
+
+
 def _operation_error(exc: Exception, *, fallback: str) -> ExecutionOperationError:
     if isinstance(exc, ExecutionOperationError):
         return exc
-    diagnostic = getattr(exc, "diagnostic", None)
+    diagnostic = _cluster_diagnostic_value(exc)
     if diagnostic is not None:
-        payload = diagnostic.to_dict()
+        payload = diagnostic.model_dump(mode="json", by_alias=True)
         return ExecutionOperationError(
-            payload["category"],
-            payload["message"],
-            details={"diagnostic": payload},
+            diagnostic.category,
+            diagnostic.message,
+            details={
+                "diagnostic": payload,
+                "phase": diagnostic.phase,
+                "allocation_state": diagnostic.allocation_state,
+                "retry_safety": diagnostic.retry_safety,
+                "next_action": diagnostic.next_action,
+                "identities": dict(diagnostic.identities),
+            },
         )
     details_value = getattr(exc, "details", None)
     details = dict(details_value) if isinstance(details_value, dict) else {}
@@ -1378,6 +1420,9 @@ def open_public_submitted_run(
     """Reconnect using only public BioImageFlow handles and sanitized profile values."""
 
     reconnect = snapshot.reconnect or {}
+    retained_result = _retained_managed_result_adapter(snapshot)
+    if retained_result is not None:
+        return retained_result
     if snapshot.backend in {"direct", "wetlands"}:
         result_bundle = reconnect.get("result_bundle")
         if snapshot.state == "succeeded" and isinstance(result_bundle, str):
@@ -1396,6 +1441,22 @@ def open_public_submitted_run(
             result_export=snapshot.result_export,
         )
     raise ValueError("Execution backend cannot be reconnected")
+
+
+def _retained_managed_result_adapter(
+    snapshot: ExecutionSnapshot,
+) -> ManagedResultAdapter | None:
+    if snapshot.state != "succeeded" or snapshot.result_export.state != "available":
+        return None
+    reconnect = snapshot.reconnect or {}
+    result_bundle = reconnect.get("result_bundle")
+    if not isinstance(result_bundle, str):
+        return None
+    try:
+        _verified_archive(Path(result_bundle), snapshot.result_export)
+    except ExecutionOperationError:
+        return None
+    return ManagedResultAdapter(Path(result_bundle), snapshot.result_export)
 
 
 def _cluster_from_snapshot(snapshot: ExecutionSnapshot) -> Any:

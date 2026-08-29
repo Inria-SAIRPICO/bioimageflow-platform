@@ -55,7 +55,22 @@ async def test_preflight_resolves_paths_then_directly_submits(monkeypatch: pytes
     )
     path_plan = SimpleNamespace(
         inputs=(path_item,),
-        to_dict=lambda: {"inputs": [{"scoped_node_path": "preprocessing/files"}]},
+        to_dict=lambda: {
+            "schema": "bioimageflow.remote_node_path_plan.v1",
+            "allocates_resources": False,
+            "reads_local_files": False,
+            "inputs": [
+                {
+                    "scoped_node_path": "preprocessing/files",
+                    "input_name": "path",
+                    "value_shape": "path",
+                    "nullable": False,
+                    "path_picker": "folder",
+                    "current_paths": [],
+                    "cluster_compatible": True,
+                }
+            ],
+        },
     )
     monkeypatch.setattr(bioimageflow, "inspect_remote_node_paths", lambda _workflow: path_plan)
     captured: dict[str, Any] = {}
@@ -103,6 +118,7 @@ async def test_preflight_resolves_paths_then_directly_submits(monkeypatch: pytes
     assert accepted.handle.id == "run_" + "2" * 32
     override = captured["node_input_overrides"]["preprocessing/files"]["path"]
     assert override.path == Path("/authorized/dataset")
+    assert "inputs" not in captured
 
 
 @pytest.mark.anyio

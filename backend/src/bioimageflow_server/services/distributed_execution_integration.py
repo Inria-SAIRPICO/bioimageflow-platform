@@ -224,11 +224,11 @@ class PlatformPreparedRunRegistrar:
         self,
         coordinator: ExecutionCoordinator,
         profiles: PlatformExecutionProfileResolver,
-        managed_result_root: Path,
+        destinations: "ExecutionDownloadDestinationResolver",
     ) -> None:
         self._coordinator = coordinator
         self._profiles = profiles
-        self._managed_result_root = managed_result_root
+        self._destinations = destinations
 
     async def register_local(
         self,
@@ -259,7 +259,7 @@ class PlatformPreparedRunRegistrar:
             target_id="local",
             target_snapshot={"name": "Local", "mode": "local"},
             state="running",
-            reconnect={"result_bundle": str(self._managed_result_root / context.execution_id)},
+            reconnect={"result_bundle": str(self._destinations.resolve(context.execution_id))},
         )
         return await self._coordinator.register(
             snapshot,
@@ -267,7 +267,7 @@ class PlatformPreparedRunRegistrar:
                 manager,
                 context,
                 loop,
-                self._managed_result_root / context.execution_id,
+                self._destinations.resolve(context.execution_id),
             ),
         )
 
@@ -308,12 +308,23 @@ class PlatformPreparedRunRegistrar:
                 "host": profile.record.cluster_host,
                 "root": profile.record.cluster_root,
                 "run_id": run_id,
+                "result_bundle": str(self._destinations.resolve(run_id)),
             },
-            backend_metadata={} if handle is None else dict(handle.snapshot()),
+            backend_metadata=(
+                {}
+                if handle is None
+                else SubmittedRunAdapter(handle).snapshot()
+            ),
             diagnostics=diagnostics,
             observation=ObservationSnapshot(
                 reachable=handle is not None,
-                error=None if handle is not None else str(uncertainty),
+                error=(
+                    None
+                    if handle is not None
+                    else diagnostics[0].message
+                    if diagnostics
+                    else "The managed submission acknowledgement is uncertain."
+                ),
             ),
         )
         adapter: SubmittedRunAdapter = (
@@ -325,12 +336,14 @@ class PlatformPreparedRunRegistrar:
 
 
 class ExecutionDownloadDestinationResolver:
-    def __init__(self, root: Path) -> None:
-        self._root = root
+    def __init__(self, root: Path | Callable[[], Path]) -> None:
+        self._root_provider = root if callable(root) else lambda: root
+        self._bindings: dict[str, Path] = {}
 
     def resolve(self, execution_id: str) -> Path:
-        self._root.mkdir(parents=True, exist_ok=True)
-        return self._root / execution_id
+        root = self._bindings.setdefault(execution_id, self._root_provider())
+        root.mkdir(parents=True, exist_ok=True)
+        return root / execution_id
 
 
 class LegacyExecutionManagerAdapter:

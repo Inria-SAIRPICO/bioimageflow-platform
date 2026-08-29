@@ -156,6 +156,41 @@ class ResultExportSnapshot(BaseModel):
     )
 
 
+class RemoteRunObservationSnapshot(BaseModel):
+    """Allowlisted, persistence-safe projection of a public remote observation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_: Literal["bioimageflow.launcher.run-observation.v1"] | None = Field(
+        default=None,
+        alias="schema",
+    )
+    run_id: str | None = None
+    state: RunState | None = None
+    status_revision: int | None = Field(default=None, ge=0)
+    storage_path: str | None = None
+    terminal: bool | None = None
+    updated_at: str | None = None
+    attempt_phase: str | None = None
+    gateway_publication_id: str | None = None
+    gateway_artifact_digest: str | None = None
+    scheduler_job_id: str | None = None
+
+    @classmethod
+    def from_public_mapping(cls, value: object) -> "RemoteRunObservationSnapshot":
+        if not isinstance(value, dict):
+            raise ValueError("Remote run observation must contain an object")
+        allowed = {
+            field.alias or name: value[field.alias or name]
+            for name, field in cls.model_fields.items()
+            if (field.alias or name) in value
+        }
+        return cls.model_validate(allowed)
+
+    def as_backend_metadata(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
 class ExecutionSnapshot(BaseModel):
     """Durable internal record for one execution; never serialize directly to clients."""
 
@@ -356,7 +391,26 @@ class ExecutionCleanupPlanRequest(BaseModel):
 class ExecutionCleanupPresentation(BaseModel):
     execution_id: str
     plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    plan: dict[str, Any]
+
+    class Candidate(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        namespace: str
+        identity: str
+        path: str
+        size: int = Field(ge=0)
+        reference_reasons: list[str] = Field(default_factory=list)
+        consequences: list[str] = Field(default_factory=list)
+
+    class Plan(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        schema_: Literal["bioimageflow.cluster_cleanup_plan.v1"] = Field(alias="schema")
+        plan_id: str
+        root_revision: int = Field(ge=0)
+        candidates: list["ExecutionCleanupPresentation.Candidate"]
+
+    plan: Plan
 
 
 class ConfirmExecutionCleanupRequest(BaseModel):
@@ -367,4 +421,13 @@ class ConfirmExecutionCleanupRequest(BaseModel):
 
 class ExecutionCleanupReport(BaseModel):
     execution_id: str
-    report: dict[str, Any]
+
+    class Report(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        schema_: Literal["bioimageflow.cluster_cleanup_report.v1"] = Field(alias="schema")
+        plan_id: str
+        removed: list[str]
+        skipped: dict[str, str] = Field(default_factory=dict)
+
+    report: Report

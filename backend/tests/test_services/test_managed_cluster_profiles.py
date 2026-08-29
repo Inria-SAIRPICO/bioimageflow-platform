@@ -13,6 +13,7 @@ from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileStore,
     load_cluster_config,
 )
+from bioimageflow_server.services.settings_store import SettingsStore
 
 
 pytestmark = pytest.mark.anyio
@@ -175,6 +176,41 @@ async def test_v1_profile_file_is_dropped_without_archive_or_secret_retention(
     }
     assert not any(item.name.startswith("profiles.json.") for item in tmp_path.iterdir())
     assert "must-disappear" not in path.read_text(encoding="utf-8")
+
+
+async def test_v1_profile_drop_durably_repairs_removed_default_target(
+    tmp_path: Path,
+) -> None:
+    obsolete_id = "profile_" + "1" * 32
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps({"profiles_version": 1, "profiles": [{"id": obsolete_id}]}),
+        encoding="utf-8",
+    )
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "settings_version": 2,
+                "deployment_mode": "desktop",
+                "default_execution_target_id": obsolete_id,
+            }
+        ),
+        encoding="utf-8",
+    )
+    profiles = ExecutionProfileStore(profiles_path)
+    settings = SettingsStore(settings_path)
+
+    await settings.load()
+    loaded = await profiles.load()
+    await settings.ensure_default_execution_target(
+        {profile.id for profile in loaded if profile.enabled}
+    )
+
+    assert settings.get().default_execution_target_id == "local"
+    assert json.loads(settings_path.read_text(encoding="utf-8"))[
+        "default_execution_target_id"
+    ] == "local"
 
 
 async def test_profile_digest_is_refreshed_only_by_an_explicit_update(tmp_path: Path) -> None:

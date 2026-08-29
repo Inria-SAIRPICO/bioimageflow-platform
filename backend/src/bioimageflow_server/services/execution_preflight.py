@@ -88,13 +88,11 @@ class ManagedSubmitIntent:
         workflow: Any,
         profile: DistributedProfile,
         request: ExecutionPreflightRequest,
-        inputs: Mapping[str, Any],
         overrides: Mapping[str, Mapping[str, Any]],
     ) -> None:
         self._workflow = workflow
         self._profile = profile
         self._request = request.model_copy(deep=True)
-        self._inputs = dict(inputs)
         self._overrides = {path: dict(values) for path, values in overrides.items()}
         self._closed = False
         self._submitted = False
@@ -106,7 +104,6 @@ class ManagedSubmitIntent:
         try:
             handle = self._profile.cluster.submit(
                 self._workflow,
-                inputs=self._inputs or None,
                 targets=self._request.requested_nodes,
                 node_input_overrides=self._overrides or None,
             )
@@ -266,12 +263,10 @@ class DistributedPreflightService:
                 unresolved=unresolved,
             )
         overrides = self._decode_overrides(path_plan, request.node_path_choices)
-        inputs = {key: self._decode_value(value) for key, value in request.root_inputs.items()}
         intent = ManagedSubmitIntent(
             workflow=workflow,
             profile=profile,
             request=request,
-            inputs=inputs,
             overrides=overrides,
         )
         token, expires_at = await self.tokens.issue(
@@ -282,7 +277,7 @@ class DistributedPreflightService:
         return ReadyPreflight(
             token=token,
             expires_at=expires_at,
-            resolved_inputs=len(request.root_inputs) + len(path_plan.inputs),
+            resolved_inputs=len(path_plan.inputs),
         )
 
     def _decode_overrides(

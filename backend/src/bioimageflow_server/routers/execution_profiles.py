@@ -160,15 +160,6 @@ async def execution_targets(
                 if capability is not None and capability.reason
                 else f"BioImageFlow does not support {name}."
             )
-        else:
-            try:
-                await asyncio.to_thread(
-                    load_cluster_config,
-                    profile.config_path,
-                    expected_digest=profile.config_digest,
-                )
-            except (OSError, RuntimeError, TypeError, ValueError) as exc:
-                reason = str(exc)
         targets.append(
             ExecutionTargetValue(
                 id=profile.id,

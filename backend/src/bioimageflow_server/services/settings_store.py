@@ -215,6 +215,19 @@ class SettingsStore:
             self._current = candidate
             return self._current
 
+    async def ensure_default_execution_target(
+        self,
+        enabled_profile_ids: set[str],
+    ) -> Settings:
+        """Durably repair a default that names a removed or disabled profile."""
+
+        current = self.get()
+        if current.default_execution_target_id == "local" or (
+            current.default_execution_target_id in enabled_profile_ids
+        ):
+            return current
+        return await self.patch({"default_execution_target_id": "local"})
+
     def omero_password_stored(self, instance: OMEROInstance) -> bool:
         """Return whether keyring has a stored password for ``instance``."""
         key = OmeroCredentialKey.from_instance(instance)

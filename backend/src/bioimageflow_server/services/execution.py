@@ -210,7 +210,7 @@ class ExecutionManager:
         settings_provider: Callable[[], Settings] | None = None,
         environment_manager_provider: Callable[[], Any | None] | None = None,
         retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
-        managed_result_root: Path | None = None,
+        managed_result_root: Path | Callable[[str], Path] | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
@@ -522,6 +522,12 @@ class ExecutionManager:
                 )
         return context
 
+    def _managed_result_destination(self, execution_id: str) -> Path:
+        root = self._managed_result_root
+        if root is None:
+            raise RuntimeError("Managed result storage is not configured")
+        return root(execution_id) if callable(root) else root / execution_id
+
     def _export_managed_result(self, context: ExecutionContext, value: Any) -> None:
         if self._managed_result_root is None:
             self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
@@ -531,7 +537,7 @@ class ExecutionManager:
             )
             self._workflow_run_contexts.pop(context.execution_id, None)
             return
-        destination = self._managed_result_root / context.execution_id
+        destination = self._managed_result_destination(context.execution_id)
         run_context = self._workflow_run_contexts[context.execution_id]
         try:
             run_context.export_result(value, destination=destination)
@@ -1145,7 +1151,7 @@ class ExecutionManager:
                     )
 
                     _persist_attached_completion(
-                        self._managed_result_root / context.execution_id,
+                        self._managed_result_destination(context.execution_id),
                         state=terminal_status,
                         result_export=result_export,
                     )

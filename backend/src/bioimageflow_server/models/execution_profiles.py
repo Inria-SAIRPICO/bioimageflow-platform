@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -76,6 +76,51 @@ class ClusterDiagnosticValue(ProfileValue):
     identities: dict[str, str] = Field(default_factory=dict)
 
 
+class ClusterEnvironmentDescription(ProfileValue):
+    kind: str | None = None
+
+
+class ParslConfigurationDescription(ProfileValue):
+    source_kind: str | None = None
+    factory: str | None = None
+
+
+class SchedulerJobDescription(ProfileValue):
+    scheduler: str | None = None
+    queue: str | None = None
+    project: str | None = None
+    walltime_seconds: int | None = Field(default=None, ge=1)
+    cpu: int | None = Field(default=None, ge=1)
+
+
+class SetupScriptDescription(ProfileValue):
+    source_kind: str | None = None
+    digest: str | None = None
+    cluster_path: str | None = None
+
+
+class SanitizedClusterDescription(ProfileValue):
+    schema_: Literal["bioimageflow.remote_cluster.v1"] = Field(alias="schema")
+    host: str
+    root: str
+    results_root: str | None = None
+    configured: bool
+    environment: ClusterEnvironmentDescription | None = None
+    parsl: ParslConfigurationDescription | None = None
+    orchestrator: SchedulerJobDescription | None = None
+    setup: SetupScriptDescription | None = None
+
+
+class ClusterConnectionValue(ProfileValue):
+    schema_: Literal["bioimageflow.cluster_connection_report.v1"] = Field(alias="schema")
+    reachable: bool
+    gateway_available: bool
+    bootstrap_required: bool
+    gateway_version: str | None = None
+    protocol_versions: list[int] = Field(default_factory=list)
+    diagnostics: list[ClusterDiagnosticValue] = Field(default_factory=list)
+
+
 class ExecutionProfileDescription(ProfileValue):
     profile_id: str
     profile_revision: int
@@ -83,9 +128,9 @@ class ExecutionProfileDescription(ProfileValue):
     cluster_host: str
     cluster_root: str
     configured: bool
-    cluster: dict[str, Any]
+    cluster: SanitizedClusterDescription
     capabilities: ExecutionCapabilitiesValue
-    connection: dict[str, Any] | None = None
+    connection: ClusterConnectionValue | None = None
     diagnostics: list[ClusterDiagnosticValue] = Field(default_factory=list)
 
 

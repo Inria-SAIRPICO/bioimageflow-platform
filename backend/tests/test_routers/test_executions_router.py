@@ -19,8 +19,12 @@ from bioimageflow_server.routers.executions import (
     router,
 )
 from bioimageflow_server.services.execution_registry import ExecutionRegistry
-from bioimageflow_server.services.execution_runtime import ExecutionCoordinator
-from bioimageflow_server.services.execution_runtime import ExecutionOperationError
+from bioimageflow_server.services.execution_runtime import (
+    ExecutionCoordinator,
+    ExecutionOperationError,
+    SubmittedRunAdapter,
+    _operation_error,
+)
 
 
 def _app(coordinator: ExecutionCoordinator) -> FastAPI:
@@ -133,6 +137,67 @@ def test_execution_openapi_uses_public_presentation_without_durable_fields(
 
 
 @pytest.mark.anyio
+async def test_remote_observation_is_allowlisted_before_registry_and_api(
+    tmp_path: Path,
+) -> None:
+    class _SensitiveObservationHandle:
+        status = "running"
+
+        def refresh(self) -> None:
+            return None
+
+        def progress(self, *, after_sequence: int = 0) -> list[dict[str, object]]:
+            return []
+
+        def snapshot(self) -> dict[str, object]:
+            return {
+                "state": "running",
+                "scheduler_job_id": "scheduler-42",
+                "unknown": "must-disappear",
+                "secret_token": "sensitive-value",
+            }
+
+        def diagnostics(self) -> tuple[object, ...]:
+            return ()
+
+    execution_id = "run_0123456789abcdef0123456789abcdef"
+    registry = ExecutionRegistry(tmp_path)
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda snapshot: None,  # type: ignore[arg-type,return-value]
+        poll_interval=60,
+    )
+    await coordinator.register(
+        ExecutionSnapshot(
+            execution_id=execution_id,
+            workflow_id="demo",
+            backend="managed_remote",
+            target_id="cluster",
+            state="prepared",
+        ),
+        SubmittedRunAdapter(_SensitiveObservationHandle()),
+    )
+    await coordinator._refresh_once(execution_id)
+
+    persisted = registry.get(execution_id)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=_app(coordinator)),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(f"/api/v1/executions/{execution_id}")
+    await coordinator.close()
+
+    assert persisted.backend_metadata == {
+        "state": "running",
+        "scheduler_job_id": "scheduler-42",
+    }
+    assert response.status_code == 200
+    assert response.json()["scheduler_job_id"] == "scheduler-42"
+    assert "sensitive-value" not in response.text
+    assert "must-disappear" not in response.text
+
+
+@pytest.mark.anyio
 async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: Path) -> None:
     parent_id = "run_0123456789abcdef0123456789abcdef"
     digest = "sha256:" + "1" * 64
@@ -242,6 +307,30 @@ def test_execution_errors_have_structured_status_and_retryability(
         "detail": "failed",
         "details": {"run_id": "run-id", "retryable": retryable},
     }
+
+
+def test_public_cluster_diagnostic_drives_http_status_and_preserves_identity() -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    operation = _operation_error(
+        ClusterOperationError(
+            ClusterDiagnostic(
+                phase="run-cancel",
+                category="ssh-timeout",
+                message="The cluster could not be reached.",
+                allocation_state="orchestrator-submitted",
+                retry_safety="safe",
+                next_action="retry-cancel",
+                identities={"run_id": "run_" + "6" * 32},
+            )
+        ),
+        fallback="execution-cancel-failed",
+    )
+
+    error = _execution_http_error(operation)
+
+    assert error.status_code == 503
+    assert error.detail["details"]["identities"] == {"run_id": "run_" + "6" * 32}
 
 
 @pytest.mark.anyio

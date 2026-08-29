@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from bioimageflow_server.models.execution_runtime import ExecutionPage, ExecutionSnapshot, utc_now
@@ -49,24 +50,42 @@ def _safe_execution_id(value: str) -> str:
 class ExecutionRegistry:
     """Persist one atomically replaced JSON snapshot per execution."""
 
-    def __init__(self, workspace_root: Path) -> None:
-        self.root = workspace_root / ".bioimageflow" / "executions"
+    def __init__(self, workspace_root: Path | Callable[[], Path]) -> None:
+        self._workspace_provider = (
+            workspace_root if callable(workspace_root) else lambda: workspace_root
+        )
+        self._execution_roots: dict[str, Path] = {}
         self._lock = threading.RLock()
 
-    def _path(self, execution_id: str) -> Path:
-        return self.root / f"{_safe_execution_id(execution_id)}.json"
+    @property
+    def root(self) -> Path:
+        return self._workspace_provider() / ".bioimageflow" / "executions"
 
-    def _retry_plan_path(self, digest: str) -> Path:
+    def _bind_root(self, execution_id: str, root: Path | None = None) -> Path:
+        safe_id = _safe_execution_id(execution_id)
+        selected = self.root if root is None else root
+        return self._execution_roots.setdefault(safe_id, selected)
+
+    def _execution_root(self, execution_id: str) -> Path:
+        safe_id = _safe_execution_id(execution_id)
+        return self._execution_roots.get(safe_id, self.root)
+
+    def _path(self, execution_id: str, *, bind: bool = False) -> Path:
+        safe_id = _safe_execution_id(execution_id)
+        root = self._bind_root(safe_id) if bind else self._execution_root(safe_id)
+        return root / f"{safe_id}.json"
+
+    def _retry_plan_path(self, execution_id: str, digest: str) -> Path:
         match = _RETRY_DIGEST.fullmatch(digest)
         if match is None:
             raise ValueError("retry plan digest is invalid")
-        return self.root / "retry_plans" / f"{match.group(1)}.json"
+        return self._execution_root(execution_id) / "retry_plans" / f"{match.group(1)}.json"
 
-    def _cleanup_plan_path(self, digest: str) -> Path:
+    def _cleanup_plan_path(self, execution_id: str, digest: str) -> Path:
         match = _RETRY_DIGEST.fullmatch(digest)
         if match is None:
             raise ValueError("cleanup plan digest is invalid")
-        return self.root / "cleanup_plans" / f"{match.group(1)}.json"
+        return self._execution_root(execution_id) / "cleanup_plans" / f"{match.group(1)}.json"
 
     @staticmethod
     def _decode_snapshot(payload: object) -> ExecutionSnapshot | None:
@@ -145,6 +164,7 @@ class ExecutionRegistry:
         snapshot = self._decode_snapshot(payload)
         if snapshot is None:
             raise ExecutionNotFoundError(execution_id)
+        self._bind_root(execution_id, path.parent)
         return snapshot
 
     def save(
@@ -155,7 +175,7 @@ class ExecutionRegistry:
     ) -> ExecutionSnapshot:
         """Increment and durably replace a snapshot with optional CAS semantics."""
 
-        path = self._path(snapshot.execution_id)
+        path = self._path(snapshot.execution_id, bind=True)
         with self._lock:
             current: ExecutionSnapshot | None = None
             if path.exists():
@@ -192,6 +212,7 @@ class ExecutionRegistry:
                     continue
                 snapshot = self._read_snapshot(path)
                 if snapshot is not None:
+                    self._bind_root(snapshot.execution_id, path.parent)
                     snapshots.append(snapshot)
         if workflow_id is not None:
             snapshots = [item for item in snapshots if item.workflow_id == workflow_id]
@@ -213,6 +234,7 @@ class ExecutionRegistry:
                     continue
                 snapshot = self._read_snapshot(path)
                 if snapshot is not None:
+                    self._bind_root(snapshot.execution_id, path.parent)
                     snapshots.append(snapshot)
         return [item for item in snapshots if not item.terminal]
 
@@ -223,7 +245,8 @@ class ExecutionRegistry:
         parent_run_id = payload.get("parent_run_id")
         if not isinstance(digest, str) or not isinstance(parent_run_id, str):
             raise ValueError("retry plan payload is incomplete")
-        path = self._retry_plan_path(digest)
+        self._bind_root(parent_run_id)
+        path = self._retry_plan_path(parent_run_id, digest)
         envelope = {
             "schema": "bioimageflow.platform.retry-confirmation.v1",
             "state": "planned",
@@ -248,14 +271,15 @@ class ExecutionRegistry:
             "plan": payload,
         }
         with self._lock:
-            self._atomic_write(self._cleanup_plan_path(digest), envelope)
+            self._bind_root(execution_id)
+            self._atomic_write(self._cleanup_plan_path(execution_id, digest), envelope)
         return digest
 
     def get_cleanup_plan(self, execution_id: str, digest: str) -> dict[str, object]:
         with self._lock:
             try:
                 envelope = json.loads(
-                    self._cleanup_plan_path(digest).read_text(encoding="utf-8")
+                    self._cleanup_plan_path(execution_id, digest).read_text(encoding="utf-8")
                 )
             except FileNotFoundError as exc:
                 raise ExecutionNotFoundError("cleanup plan") from exc
@@ -266,7 +290,7 @@ class ExecutionRegistry:
         return envelope["plan"]
 
     def get_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             try:
                 envelope = json.loads(path.read_text(encoding="utf-8"))
@@ -280,7 +304,7 @@ class ExecutionRegistry:
         return payload
 
     def retry_plan_state(self, parent_execution_id: str, digest: str) -> str:
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             try:
                 envelope = json.loads(path.read_text(encoding="utf-8"))
@@ -299,7 +323,7 @@ class ExecutionRegistry:
     def confirm_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
         """Durably record confirmation before any child allocation or submission."""
 
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             try:
                 envelope = json.loads(path.read_text(encoding="utf-8"))
@@ -316,7 +340,7 @@ class ExecutionRegistry:
         return plan
 
     def mark_retry_started(self, parent_execution_id: str, digest: str) -> None:
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             envelope = json.loads(path.read_text(encoding="utf-8"))
             plan = envelope.get("plan")
@@ -332,7 +356,7 @@ class ExecutionRegistry:
     def mark_retry_uncertain(self, parent_execution_id: str, digest: str) -> None:
         """Stop replaying start while preserving exact-child reconnection."""
 
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             envelope = json.loads(path.read_text(encoding="utf-8"))
             plan = envelope.get("plan")
@@ -348,7 +372,7 @@ class ExecutionRegistry:
     def mark_retry_absent(self, parent_execution_id: str, digest: str) -> None:
         """Permit replay only after the exact child is definitively absent."""
 
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             envelope = json.loads(path.read_text(encoding="utf-8"))
             plan = envelope.get("plan")
@@ -366,7 +390,7 @@ class ExecutionRegistry:
         *,
         error: dict[str, object],
     ) -> None:
-        path = self._retry_plan_path(digest)
+        path = self._retry_plan_path(parent_execution_id, digest)
         with self._lock:
             envelope = json.loads(path.read_text(encoding="utf-8"))
             plan = envelope.get("plan")
@@ -376,7 +400,8 @@ class ExecutionRegistry:
             self._atomic_write(path, envelope)
 
     def confirmed_retry_plans(self) -> list[tuple[str, str]]:
-        directory = self.root / "retry_plans"
+        current_root = self.root
+        directory = current_root / "retry_plans"
         if not directory.exists():
             return []
         confirmed: list[tuple[str, str]] = []
@@ -392,6 +417,7 @@ class ExecutionRegistry:
                 digest = plan.get("digest")
                 if not isinstance(parent, str) or not isinstance(digest, str):
                     raise RetryPlanConflictError("retained retry plan is incomplete")
+                self._bind_root(parent, current_root)
                 confirmed.append((parent, digest))
         return confirmed
 

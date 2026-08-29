@@ -156,6 +156,8 @@ async def cancel_execution(
         snapshot = await coordinator.cancel(execution_id)
     except (ExecutionNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="Execution not found") from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ExecutionActionResponse(execution_id=execution_id, state=snapshot.state)
@@ -259,7 +261,7 @@ async def apply_execution_cleanup(
 
 
 def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
-    if exc.code == "retry-plan-not-found":
+    if exc.code in {"retry-plan-not-found", "run-not-found"}:
         status = 404
     elif exc.code in {"invalid-recompute-request", "remote-invalid-retry"}:
         status = 422
@@ -272,6 +274,8 @@ def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
         "remote-retry-conflict",
         "psij-submission-uncertain",
         "remote-retry-submission-uncertain",
+        "submission-uncertain",
+        "scheduler-rejected",
         "retry-plan-integrity-error",
         "retry-child-conflict",
         "workflow-run-result-unavailable",

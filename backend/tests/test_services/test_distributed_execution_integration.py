@@ -9,6 +9,7 @@ from bioimageflow.cluster import ClusterDiagnostic
 from bioimageflow_server.models.execution_preflight import ApplyPreparedExecutionRequest
 from bioimageflow_server.models.execution_profiles import ExecutionProfileCreate
 from bioimageflow_server.services.distributed_execution_integration import (
+    ExecutionDownloadDestinationResolver,
     PlatformExecutionProfileResolver,
     PlatformPreparedRunRegistrar,
 )
@@ -74,7 +75,8 @@ async def test_registrar_persists_durable_managed_identity(tmp_path: Path) -> No
         snapshot=lambda: {"state": "prepared"},
     )
     coordinator = _Coordinator()
-    registrar = PlatformPreparedRunRegistrar(coordinator, resolver, tmp_path / "exports")
+    destinations = ExecutionDownloadDestinationResolver(tmp_path / "exports")
+    registrar = PlatformPreparedRunRegistrar(coordinator, resolver, destinations)
     request = ApplyPreparedExecutionRequest(
         token="token",
         workflow_id="demo",
@@ -91,6 +93,7 @@ async def test_registrar_persists_durable_managed_identity(tmp_path: Path) -> No
         "host": "cluster",
         "root": "/shared/bioimageflow",
         "run_id": handle.id,
+        "result_bundle": str(tmp_path / "exports" / handle.id),
     }
     assert isinstance(coordinator.adapter, SubmittedRunAdapter)
 
@@ -112,7 +115,8 @@ async def test_uncertain_submit_retains_exact_run_and_structured_diagnostic(tmp_
         __str__=lambda: "uncertain",
     )
     coordinator = _Coordinator()
-    registrar = PlatformPreparedRunRegistrar(coordinator, resolver, tmp_path / "exports")
+    destinations = ExecutionDownloadDestinationResolver(tmp_path / "exports")
+    registrar = PlatformPreparedRunRegistrar(coordinator, resolver, destinations)
     request = ApplyPreparedExecutionRequest(
         token="token",
         workflow_id="demo",
@@ -127,3 +131,17 @@ async def test_uncertain_submit_retains_exact_run_and_structured_diagnostic(tmp_
     assert snapshot.state == "prepared"
     assert snapshot.diagnostics[0].category == "submission-uncertain"
     assert snapshot.observation.reachable is False
+    assert snapshot.observation.error == "acknowledgement lost"
+
+
+def test_download_destinations_bind_execution_to_workspace_root(tmp_path: Path) -> None:
+    current = [tmp_path / "first" / "exports"]
+    resolver = ExecutionDownloadDestinationResolver(lambda: current[0])
+
+    first = resolver.resolve("run_first")
+    current[0] = tmp_path / "second" / "exports"
+    retained = resolver.resolve("run_first")
+    second = resolver.resolve("run_second")
+
+    assert retained == first
+    assert second == tmp_path / "second" / "exports" / "run_second"

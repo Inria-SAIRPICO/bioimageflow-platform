@@ -167,6 +167,29 @@ async def test_describe_is_the_only_profile_observation_route(
     assert deprecated_cleanup.status_code == 404
 
 
+async def test_target_listing_never_executes_trusted_profile_script(
+    profile_client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    config = write_config(tmp_path / "cluster.py")
+    created = (
+        await profile_client.post(
+            "/api/v1/execution/profiles",
+            json=profile_fields(config).model_dump(mode="json"),
+        )
+    ).json()
+    config.write_text("raise RuntimeError('must not execute during listing')\n")
+
+    targets = await profile_client.get("/api/v1/execution/targets")
+    described = await profile_client.post(
+        f"/api/v1/execution/profiles/{created['id']}/describe"
+    )
+
+    assert targets.status_code == 200
+    assert targets.json()["targets"][1]["available"] is True
+    assert described.status_code == 422
+
+
 async def test_webapp_profile_mutations_are_forbidden(tmp_path: Path) -> None:
     store = ExecutionProfileStore(tmp_path / "profiles.json", editable=False)
     await store.load()

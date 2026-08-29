@@ -30,13 +30,36 @@ class ExecutionPreflightRequest(BaseModel):
     target_id: str = Field(min_length=1)
     profile_revision: int = Field(ge=1)
     requested_nodes: list[str] | None = None
-    root_inputs: dict[str, Any] = Field(default_factory=dict)
     node_path_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class RemoteNodePathInputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scoped_node_path: str = Field(min_length=1)
+    input_name: str = Field(min_length=1)
+    value_shape: Literal["path", "list", "tuple"]
+    nullable: bool
+    path_picker: str | None = None
+    current_paths: list[str] = Field(default_factory=list)
+    cluster_compatible: bool
+
+
+class RemoteNodePathPlanValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_: Literal["bioimageflow.remote_node_path_plan.v1"] = Field(
+        alias="schema",
+        serialization_alias="schema",
+    )
+    allocates_resources: Literal[False]
+    reads_local_files: Literal[False]
+    inputs: list[RemoteNodePathInputValue]
 
 
 class ResolutionRequiredPreflight(BaseModel):
     kind: Literal["resolution_required"] = "resolution_required"
-    remote_node_paths: dict[str, Any]
+    remote_node_paths: RemoteNodePathPlanValue
     unresolved: list[dict[str, str]]
 
 
