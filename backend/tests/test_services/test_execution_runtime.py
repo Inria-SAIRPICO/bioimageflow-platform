@@ -1072,6 +1072,109 @@ async def test_cancel_normalizes_public_cluster_operation_error(tmp_path: Path) 
     assert raised.value.details["identities"]["run_id"] == "run_" + "5" * 32
 
 
+def _public_reconnect_error(*, phase: str, category: str) -> Exception:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    return ClusterOperationError(
+        ClusterDiagnostic(
+            phase=phase,
+            category=category,
+            message="The retained run could not be attached.",
+            allocation_state="orchestrator-submitted",
+            retry_safety="safe",
+            next_action="retry-attachment",
+            identities={"run_id": "run_" + "6" * 32},
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_retry_planning_normalizes_public_reconnect_diagnostic(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    saved = registry.save(_snapshot(state="failed"))
+    capabilities = {
+        "remote_cluster_bootstrap": {"supported": True, "reason": None},
+        "submitted_run_retry": {"supported": True, "reason": None},
+        "submitted_recompute": {"supported": True, "reason": None},
+        "submitted_result_export": {"supported": True, "reason": None},
+    }
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: (_ for _ in ()).throw(
+            _public_reconnect_error(phase="run-attach", category="gateway-unavailable")
+        ),
+        capability_provider=lambda: capabilities,
+    )
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.plan_retry(saved.execution_id)
+    await coordinator.close()
+
+    assert raised.value.code == "gateway-unavailable"
+    assert raised.value.details["diagnostic"]["next_action"] == "retry-attachment"
+    assert raised.value.details["identities"]["run_id"] == "run_" + "6" * 32
+
+
+@pytest.mark.anyio
+async def test_result_download_normalizes_public_reconnect_diagnostic(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    saved = registry.save(_snapshot(state="succeeded"))
+    capabilities = {
+        "remote_cluster_bootstrap": {"supported": True, "reason": None},
+        "submitted_run_retry": {"supported": True, "reason": None},
+        "submitted_recompute": {"supported": True, "reason": None},
+        "submitted_result_export": {"supported": True, "reason": None},
+    }
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: (_ for _ in ()).throw(
+            _public_reconnect_error(phase="run-attach", category="run-not-found")
+        ),
+        capability_provider=lambda: capabilities,
+    )
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.download_result(saved.execution_id, tmp_path / "export")
+    await coordinator.close()
+
+    assert raised.value.code == "run-not-found"
+    assert raised.value.details["diagnostic"]["phase"] == "run-attach"
+    assert raised.value.details["identities"]["run_id"] == "run_" + "6" * 32
+
+
+@pytest.mark.anyio
+async def test_retry_start_normalizes_parent_reconnect_diagnostic(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    parent = registry.save(_snapshot(execution_id=f"run_{uuid4().hex}", state="failed"))
+    child_id = f"run_{uuid4().hex}"
+    plan = _retry_plan(parent.execution_id, child_id, tmp_path)
+    registry.save_retry_plan(plan.to_dict())
+    capabilities = {
+        "remote_cluster_bootstrap": {"supported": True, "reason": None},
+        "submitted_run_retry": {"supported": True, "reason": None},
+        "submitted_recompute": {"supported": True, "reason": None},
+        "submitted_result_export": {"supported": True, "reason": None},
+    }
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        category = "run-not-found" if snapshot.execution_id == child_id else "gateway-unavailable"
+        raise _public_reconnect_error(phase="run-attach", category=category)
+
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=reconnect,
+        capability_provider=lambda: capabilities,
+    )
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.confirm_retry(parent.execution_id, plan_digest=plan.digest)
+    await coordinator.close()
+
+    assert raised.value.code == "gateway-unavailable"
+    assert raised.value.details["diagnostic"]["retry_safety"] == "safe"
+    assert registry.retry_plan_state(parent.execution_id, plan.digest) == "confirmed"
+
+
 @pytest.mark.anyio
 async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
     tmp_path: Path,

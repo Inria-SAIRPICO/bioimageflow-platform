@@ -625,7 +625,13 @@ class ExecutionCoordinator:
         async with self._locks.setdefault(execution_id, asyncio.Lock()):
             adapter = self._adapters.get(execution_id)
             if adapter is None:
-                adapter = await asyncio.to_thread(self._reconnector, source)
+                try:
+                    adapter = await asyncio.to_thread(self._reconnector, source)
+                except Exception as exc:
+                    raise _operation_error(
+                        exc,
+                        fallback="workflow-run-retry-error",
+                    ) from exc
             if not isinstance(adapter, SubmittedRunAdapter):
                 raise ExecutionOperationError(
                     "workflow-run-retry-error",
@@ -830,7 +836,13 @@ class ExecutionCoordinator:
                 return persisted
             parent_adapter = self._adapters.get(execution_id)
             if parent_adapter is None:
-                parent_adapter = await asyncio.to_thread(self._reconnector, source)
+                try:
+                    parent_adapter = await asyncio.to_thread(self._reconnector, source)
+                except Exception as exc:
+                    raise _operation_error(
+                        exc,
+                        fallback="workflow-run-retry-error",
+                    ) from exc
             if not isinstance(parent_adapter, SubmittedRunAdapter):
                 raise ExecutionOperationError(
                     "workflow-run-retry-error",
@@ -932,7 +944,13 @@ class ExecutionCoordinator:
         if adapter is None:
             adapter = self._adapters.get(execution_id)
         if adapter is None:
-            adapter = await asyncio.to_thread(self._reconnector, snapshot)
+            try:
+                adapter = await asyncio.to_thread(self._reconnector, snapshot)
+            except Exception as exc:
+                raise _operation_error(
+                    exc,
+                    fallback="workflow-result-export-error",
+                ) from exc
         async with self._locks.setdefault(execution_id, asyncio.Lock()):
             try:
                 archive = await asyncio.to_thread(adapter.export_result, destination)
