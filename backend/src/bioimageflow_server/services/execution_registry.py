@@ -281,10 +281,12 @@ class ExecutionRegistry:
                 envelope = json.loads(
                     self._cleanup_plan_path(execution_id, digest).read_text(encoding="utf-8")
                 )
-            except FileNotFoundError as exc:
+            except (FileNotFoundError, json.JSONDecodeError) as exc:
                 raise ExecutionNotFoundError("cleanup plan") from exc
-        if envelope.get("execution_id") != execution_id or not isinstance(
-            envelope.get("plan"), dict
+        if (
+            not isinstance(envelope, dict)
+            or envelope.get("execution_id") != execution_id
+            or not isinstance(envelope.get("plan"), dict)
         ):
             raise ExecutionNotFoundError("cleanup plan")
         return envelope["plan"]

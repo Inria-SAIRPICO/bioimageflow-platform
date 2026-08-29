@@ -852,8 +852,7 @@ class ExecutionCoordinator:
                 child_adapter = await asyncio.to_thread(parent_adapter.start_retry, plan)
             except Exception as exc:
                 error = _operation_error(exc, fallback="workflow-run-retry-error")
-                uncertain_codes = {"submission-uncertain", "remote-retry-submission-uncertain"}
-                if error.code in uncertain_codes:
+                if error.code == "submission-uncertain":
                     await asyncio.to_thread(
                         self.registry.mark_retry_uncertain,
                         execution_id,
@@ -1008,8 +1007,22 @@ class ExecutionCoordinator:
                 "cleanup-plan-not-found",
                 "The confirmed cleanup plan is unknown; create a new preview.",
             ) from exc
+        retained_digest = "sha256:" + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if retained_digest != plan_digest:
+            raise ExecutionOperationError(
+                "cleanup-plan-integrity-error",
+                "The retained cleanup plan failed integrity verification.",
+            )
         cluster_api = importlib.import_module("bioimageflow.cluster")
-        plan = cluster_api.ClusterCleanupPlan.from_dict(payload)
+        try:
+            plan = cluster_api.ClusterCleanupPlan.from_dict(payload)
+        except (TypeError, ValueError) as exc:
+            raise ExecutionOperationError(
+                "cleanup-plan-integrity-error",
+                "The retained cleanup plan failed integrity verification.",
+            ) from exc
         cluster = _cluster_from_snapshot(snapshot)
         try:
             report = await asyncio.to_thread(cluster.apply_cleanup, plan)
@@ -1375,6 +1388,9 @@ def _retry_presentation(source: ExecutionSnapshot, plan: Any) -> RetryPlanPresen
 
 
 def _cluster_diagnostic_value(exc: Exception) -> ClusterDiagnosticValue | None:
+    cluster_api = importlib.import_module("bioimageflow.cluster")
+    if not isinstance(exc, cluster_api.ClusterOperationError):
+        return None
     diagnostic = getattr(exc, "diagnostic", None)
     if diagnostic is None or not callable(getattr(diagnostic, "to_dict", None)):
         return None
@@ -1414,27 +1430,13 @@ def _operation_error(exc: Exception, *, fallback: str) -> ExecutionOperationErro
                 "identities": dict(diagnostic.identities),
             },
         )
-    details_value = getattr(exc, "details", None)
-    details = dict(details_value) if isinstance(details_value, dict) else {}
-    public_code = getattr(exc, "code", None)
-    remote_code = details.get("remote_code")
-    code_value = public_code if isinstance(public_code, str) else fallback
-    if code_value == "workflow-run-retry-error" and remote_code in {
-        "remote-invalid-retry",
-        "remote-retry-conflict",
-        "remote-retry-submission-uncertain",
-    }:
-        code_value = remote_code
-    code = code_value if isinstance(code_value, str) else fallback
     # Unexpected implementation failures do not carry BioImageFlow's public,
     # sanitized diagnostic contract. Do not reflect arbitrary exception text or
     # detail mappings into API responses and retained execution state.
-    if not isinstance(public_code, str):
-        return ExecutionOperationError(
-            fallback,
-            "The managed execution operation failed unexpectedly.",
-        )
-    return ExecutionOperationError(code, str(exc), details=details)
+    return ExecutionOperationError(
+        fallback,
+        "The managed execution operation failed unexpectedly.",
+    )
 
 
 def open_public_submitted_run(

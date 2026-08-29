@@ -296,6 +296,7 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
         ("gateway-unavailable", 503, False),
         ("retry-conflict", 409, False),
         ("cleanup-conflict", 409, False),
+        ("cleanup-plan-integrity-error", 409, False),
         ("workflow-run-retry-error", 409, False),
         ("workflow-result-export-error", 500, False),
     ],

@@ -264,7 +264,6 @@ def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
         status = 404
     elif exc.code in {
         "invalid-recompute-request",
-        "remote-invalid-retry",
         "invalid-retry",
     }:
         status = 422
@@ -273,7 +272,6 @@ def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
         or exc.code.startswith("sftp-")
         or exc.code
         in {
-            "remote-protocol",
             "protocol-incompatible",
             "gateway-unavailable",
         }
@@ -281,15 +279,13 @@ def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
         status = 503
     elif exc.code in {
         "workflow-run-retry-error",
-        "remote-retry-conflict",
-        "psij-submission-uncertain",
-        "remote-retry-submission-uncertain",
         "submission-uncertain",
         "scheduler-rejected",
         "attempt-still-uncertain",
         "operation-conflict",
         "retry-conflict",
         "cleanup-conflict",
+        "cleanup-plan-integrity-error",
         "retry-plan-integrity-error",
         "retry-child-conflict",
         "workflow-run-result-unavailable",

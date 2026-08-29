@@ -323,31 +323,24 @@ class _RetryHandle(_FakeHandle):
         return child
 
 
-class _RetryStartError(RuntimeError):
+class _RetryStartError(ExecutionOperationError):
     def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
-        self.details = {"remote_code": code, "retryable": False}
+        super().__init__(code, code, details={"retryable": False})
 
 
-class _RunNotFound(RuntimeError):
-    class _Diagnostic:
-        category = "run-not-found"
-
-        @staticmethod
-        def to_dict() -> dict[str, Any]:
-            return {
-                "schema": "bioimageflow.cluster_diagnostic.v1",
-                "phase": "run-observation",
-                "category": "run-not-found",
-                "message": "The exact child run does not exist.",
-                "allocation_state": "none",
-                "retry_safety": "safe",
-                "next_action": "replay-exact-plan",
-                "identities": {},
-            }
-
-    diagnostic = _Diagnostic()
+class _RunNotFound(bioimageflow.cluster.ClusterOperationError):
+    def __init__(self) -> None:
+        super().__init__(
+            bioimageflow.cluster.ClusterDiagnostic(
+                phase="run-observation",
+                category="run-not-found",
+                message="The exact child run does not exist.",
+                allocation_state="none",
+                retry_safety="safe",
+                next_action="replay-exact-plan",
+                identities={},
+            )
+        )
 
 
 class _FailingRetryHandle(_RetryHandle):
@@ -356,8 +349,30 @@ class _FailingRetryHandle(_RetryHandle):
         self.code = code
 
     def start_retry(self, plan: Any) -> _FakeHandle:
+        from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
         self.started.append(plan)
-        raise _RetryStartError(self.code)
+        raise ClusterOperationError(
+            ClusterDiagnostic(
+                phase="retry-start",
+                category=self.code,
+                message="The managed retry could not be started.",
+                allocation_state=(
+                    "unknown" if self.code == "submission-uncertain" else "none"
+                ),
+                retry_safety=(
+                    "same-attempt-only"
+                    if self.code == "submission-uncertain"
+                    else "safe"
+                ),
+                next_action=(
+                    "attach-exact-child"
+                    if self.code == "submission-uncertain"
+                    else "create-new-plan"
+                ),
+                identities={"run_id": plan.retry_run_id},
+            )
+        )
 
 
 class _RecordingPublisher:
@@ -540,7 +555,7 @@ async def test_startup_keeps_one_reconnect_task_for_unreachable_uncertain_child(
     plan = _retry_plan(parent_id, child_id, tmp_path)
     registry.save_retry_plan(plan.to_dict())
     registry.confirm_retry_plan(parent_id, plan.digest)
-    parent = _FailingRetryHandle(plan, "remote-retry-submission-uncertain")
+    parent = _FailingRetryHandle(plan, "submission-uncertain")
     child_attempts = 0
 
     def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
@@ -580,7 +595,7 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
-    parent_handle = _FailingRetryHandle(plan, "remote-retry-submission-uncertain")
+    parent_handle = _FailingRetryHandle(plan, "submission-uncertain")
     child_handle = _FakeHandle()
     child_handle.status = "queued"
     reconnects: list[str] = []
@@ -627,7 +642,7 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
     await restarted.start()
     await restarted.close()
 
-    assert raised.value.code == "remote-retry-submission-uncertain"
+    assert raised.value.code == "submission-uncertain"
     assert repeated.execution_id == child_id
     assert len(parent_handle.started) == 1
     assert reconnects.count(parent_id) == 2
@@ -663,7 +678,7 @@ async def test_definite_retry_start_failure_retains_terminal_exact_child(
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
-    handle = _FailingRetryHandle(plan, "workflow-run-retry-error")
+    handle = _FailingRetryHandle(plan, "route-incompatible")
 
     def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
         if snapshot.execution_id == child_id:
@@ -685,9 +700,7 @@ async def test_definite_retry_start_failure_retains_terminal_exact_child(
     assert registry.get(parent_id).child_execution_ids == [child_id]
     child = registry.get(child_id)
     assert child.state == "failed"
-    assert child.backend_metadata["retry_start_failed"]["code"] == (
-        "workflow-run-retry-error"
-    )
+    assert child.backend_metadata["retry_start_failed"]["code"] == "route-incompatible"
 
 
 @pytest.mark.anyio
@@ -987,14 +1000,29 @@ def test_submitted_export_unavailable_failure_is_terminal(tmp_path: Path) -> Non
     assert adapter.result_export.error_code == "workflow-run-result-unavailable"
 
 
-def test_operation_error_prefers_public_code_and_retains_remote_detail() -> None:
+def test_operation_error_preserves_explicit_platform_operation_error() -> None:
     exc = _RetryStartError("workflow-result-integrity-error")
-    exc.details["remote_code"] = "remote-result-integrity-error"
 
     converted = _operation_error(exc, fallback="workflow-result-export-error")
 
     assert converted.code == "workflow-result-integrity-error"
-    assert converted.details["remote_code"] == "remote-result-integrity-error"
+    assert converted.details == {"retryable": False}
+
+
+def test_operation_error_does_not_trust_arbitrary_code_or_details() -> None:
+    class _UntrustedFailure(RuntimeError):
+        code = "submission-uncertain"
+        details = {"credential": "must-not-escape"}
+
+    converted = _operation_error(
+        _UntrustedFailure("credential=must-not-escape"),
+        fallback="workflow-result-export-error",
+    )
+
+    assert converted.code == "workflow-result-export-error"
+    assert str(converted) == "The managed execution operation failed unexpectedly."
+    assert converted.details == {}
+    assert "must-not-escape" not in repr(converted.details)
 
 
 def test_operation_error_normalizes_public_cluster_diagnostic_with_identities() -> None:
@@ -1237,6 +1265,17 @@ async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
     assert plan["candidates"][0]["identity"] == execution_id
     assert applied[0].candidates[0].identity == execution_id
     assert report["removed"] == [execution_id]
+
+    plan_path = registry._cleanup_plan_path(execution_id, digest)
+    retained = json.loads(plan_path.read_text(encoding="utf-8"))
+    retained["plan"]["root_revision"] = 8
+    plan_path.write_text(json.dumps(retained), encoding="utf-8")
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.apply_cleanup(execution_id, plan_digest=digest)
+
+    assert raised.value.code == "cleanup-plan-integrity-error"
+    assert len(applied) == 1
 
 
 @pytest.mark.anyio
