@@ -1,6 +1,7 @@
 """Trusted BioImageFlow Platform target for one managed Slurm cluster."""
 
 from datetime import timedelta
+from pathlib import Path
 
 from bioimageflow.cluster import (
     ClusterEnvironment,
@@ -11,6 +12,9 @@ from bioimageflow.cluster import (
 )
 
 
+HERE = Path(__file__).resolve().parent
+
+
 cluster = RemoteCluster(
     host="CHANGE_ME_SSH_ALIAS",
     root="/CHANGE_ME/shared/project/user/bioimageflow",
@@ -18,7 +22,7 @@ cluster = RemoteCluster(
         "/CHANGE_ME/shared/apps/bioimageflow/bin/python"
     ),
     parsl=ParslConfiguration.from_file(
-        "parsl.py",
+        HERE / "parsl.py",
         kwargs={"account": "CHANGE_ME_PROJECT"},
     ),
     orchestrator=SchedulerJob(
@@ -28,5 +32,5 @@ cluster = RemoteCluster(
         walltime=timedelta(hours=4),
         cpu=4,
     ),
-    setup=SetupScript.from_file("setup.sh"),
+    setup=SetupScript.from_file(HERE / "setup.sh"),
 )
