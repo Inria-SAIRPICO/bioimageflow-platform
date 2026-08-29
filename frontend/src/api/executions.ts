@@ -1,11 +1,8 @@
 import { api } from '@/api/client'
-import type { components } from '@/api/types'
+import type { ClusterDiagnostic } from '@/api/executionProfiles'
 
-export type ExecutionTargetMode =
-  | 'local'
-  | 'attached'
-  | 'submitted_local'
-  | 'submitted_remote'
+export type ExecutionTargetMode = 'local' | 'managed_remote'
+export type ExecutionBackend = 'direct' | 'wetlands' | 'managed_remote'
 
 export interface ExecutionTarget {
   id: string
@@ -72,6 +69,7 @@ export interface ExecutionActions {
   retry: ExecutionActionAvailability
   recompute: ExecutionActionAvailability
   download_results: ExecutionActionAvailability
+  cleanup: ExecutionActionAvailability
 }
 
 export interface NodeFailureDiagnostic {
@@ -110,6 +108,7 @@ export interface ExecutionSnapshot {
   target_id: string
   target_label: string
   target_mode: ExecutionTargetMode
+  backend?: ExecutionBackend
   state: ExecutionRunState
   command?: string | null
   retry_of_execution_id?: string | null
@@ -118,7 +117,9 @@ export interface ExecutionSnapshot {
   started_at?: string | null
   finished_at?: string | null
   scheduler_job_id?: string | null
+  progress_cursor?: number | null
   observation_error?: string | null
+  diagnostics?: ClusterDiagnostic[]
   actions: ExecutionActions
   jobs: ExecutionJobSnapshot[]
 }
@@ -176,23 +177,6 @@ export interface RemoteNodePathResolution {
   values: RemoteNodePathLeaf[]
 }
 
-export interface PreparedManifestEntry {
-  kind: 'upload' | 'cluster_path' | 'pre_launch_script'
-  label: string
-  source_kind?: string | null
-  size_bytes?: number | null
-  file_count?: number | null
-  digest?: string | null
-  cluster_path?: string | null
-  pinned?: boolean | null
-}
-
-export interface PreparedManifest {
-  uploads_count: number
-  total_bytes: number
-  entries: PreparedManifestEntry[]
-}
-
 export interface ExecutionPreflightRequest {
   workflow_id: string
   draft_revision: number | null
@@ -217,23 +201,54 @@ interface RemoteNodePathPlanWire {
 
 interface ExecutionPreflightWireResponse {
   kind: 'resolution_required' | 'ready'
-  distributed_plan: Record<string, unknown>
+  distributed_plan?: Record<string, unknown>
   remote_node_paths?: RemoteNodePathPlanWire
   unresolved?: Array<{ scoped_node_path: string; input_name: string }>
   token?: string | null
   expires_at?: number | null
-  manifest?: {
-    bundle_digest: string
-    entries: Array<{ path: string; kind: 'file' | 'directory'; size: number; digest: string }>
-    external_sources: Array<{
-      kind: 'cluster_pre_launch'
-      path: string
-      expected_digest: string | null
-    }>
-  } | null
 }
 
-export type ExecutionPresentationWire = components['schemas']['ExecutionPresentation']
+interface ExecutionJobWire {
+  scoped_node_path: string
+  state: ExecutionJobState
+  current?: number | null
+  maximum?: number | null
+  total_rows?: number | null
+  row?: number | null
+  message?: string | null
+  executor_label?: string | null
+  effective_resources?: ExecutionResources | null
+  route_reason?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  diagnostic?: NodeFailureDiagnostic | null
+  result_key?: string | null
+  record_id?: string | null
+}
+
+export interface ExecutionPresentationWire {
+  revision: number
+  execution_id: string
+  workflow_id: string
+  draft_revision?: number | null
+  backend: ExecutionBackend
+  target_id: string
+  target_label: string
+  target_mode: ExecutionTargetMode
+  scheduler_job_id?: string | null
+  command?: string | null
+  state: ExecutionRunState
+  retry_of_execution_id?: string | null
+  child_execution_ids?: string[]
+  actions: ExecutionActions
+  jobs?: Record<string, ExecutionJobWire>
+  progress_cursor?: number | null
+  diagnostics?: ClusterDiagnostic[]
+  observation?: { reachable: boolean; error?: string | null }
+  created_at: string
+  started_at?: string | null
+  finished_at?: string | null
+}
 
 export type ExecutionPreflightResponse =
   | {
@@ -245,9 +260,6 @@ export type ExecutionPreflightResponse =
       status: 'ready'
       token: string
       expires_at: string
-      manifest: PreparedManifest
-      plan_summary?: { scheduled_jobs?: number; cached_jobs?: number }
-      warnings?: string[]
     }
 
 export interface ExecutionPage {
@@ -255,6 +267,17 @@ export interface ExecutionPage {
   total: number
   offset: number
   limit: number
+}
+
+export interface ExecutionCleanupPlan {
+  execution_id: string
+  plan_digest: string
+  plan: Record<string, unknown>
+}
+
+export interface ExecutionCleanupReport {
+  execution_id: string
+  report: Record<string, unknown>
 }
 
 export async function fetchExecutionTargets(): Promise<ExecutionTargets> {
@@ -326,36 +349,13 @@ export async function preflightExecution(
         })),
     }
   }
-  if (!data.token || data.expires_at == null || !data.manifest) {
+  if (!data.token || data.expires_at == null) {
     throw new Error('This execution target cannot yet be started by the retained runtime')
   }
-  const uploadEntries = data.manifest.entries.filter(entry => (
-    entry.path.startsWith('uploads/')
-  ))
   return {
     status: 'ready',
     token: data.token,
     expires_at: new Date(data.expires_at * 1000).toISOString(),
-    manifest: {
-      uploads_count: uploadEntries.length,
-      total_bytes: data.manifest.entries.reduce((total, entry) => total + entry.size, 0),
-      entries: [
-        ...data.manifest.entries.map(entry => ({
-          kind: entry.path.includes('pre-launch') ? 'pre_launch_script' as const : 'upload' as const,
-          label: entry.path,
-          size_bytes: entry.size,
-          digest: entry.digest,
-        })),
-        ...data.manifest.external_sources.map(source => ({
-          kind: 'pre_launch_script' as const,
-          label: source.path,
-          source_kind: source.kind,
-          digest: source.expected_digest,
-          cluster_path: source.path,
-          pinned: source.expected_digest !== null,
-        })),
-      ],
-    },
   }
 }
 
@@ -380,6 +380,7 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
     target_id: data.target_id,
     target_label: data.target_label,
     target_mode: data.target_mode,
+    backend: data.backend,
     state: data.state,
     command: data.command,
     retry_of_execution_id: data.retry_of_execution_id,
@@ -387,8 +388,16 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
     created_at: data.created_at,
     finished_at: data.finished_at,
     scheduler_job_id: data.scheduler_job_id,
-    observation_error: data.observation.error,
-    actions: data.actions,
+    progress_cursor: data.progress_cursor,
+    observation_error: data.observation?.error,
+    diagnostics: data.diagnostics ?? [],
+    actions: {
+      ...data.actions,
+      cleanup: data.actions.cleanup ?? {
+        available: false,
+        reason: 'Managed cluster cleanup is unavailable for this execution.',
+      },
+    },
     jobs: Object.values(data.jobs ?? {}).map(job => ({
       id: job.scoped_node_path,
       scoped_node_path: job.scoped_node_path,
@@ -467,6 +476,25 @@ export async function cancelExecution(id: string): Promise<ExecutionSnapshot> {
   return fetchExecution(id)
 }
 
+export async function planExecutionCleanup(id: string): Promise<ExecutionCleanupPlan> {
+  const { data } = await api.post<ExecutionCleanupPlan>(
+    `/api/v1/executions/${encodeURIComponent(id)}/cleanup/plan`,
+    { older_than_seconds: 0 },
+  )
+  return data
+}
+
+export async function applyExecutionCleanup(
+  id: string,
+  planDigest: string,
+): Promise<ExecutionCleanupReport> {
+  const { data } = await api.post<ExecutionCleanupReport>(
+    `/api/v1/executions/${encodeURIComponent(id)}/cleanup`,
+    { plan_digest: planDigest },
+  )
+  return data
+}
+
 export async function planExecutionRetry(
   id: string,
   recompute: RecomputeRequest | null,
@@ -489,14 +517,6 @@ export async function startExecutionRetry(
   return normalizeExecution(data)
 }
 
-export async function fetchExecutionLogs(id: string): Promise<string> {
-  const { data } = await api.get<string>(
-    `/api/v1/executions/${encodeURIComponent(id)}/logs`,
-    { responseType: 'text' },
-  )
-  return data
-}
-
 export async function downloadExecutionResults(id: string): Promise<Blob> {
   const response = await api.post<Blob>(
     `/api/v1/executions/${encodeURIComponent(id)}/result`,
@@ -510,6 +530,8 @@ interface ExecutionErrorPayload {
   error?: unknown
   detail?: unknown
   details?: unknown
+  message?: unknown
+  identities?: unknown
 }
 
 function executionErrorPayload(cause: unknown): ExecutionErrorPayload | null {
@@ -519,13 +541,27 @@ function executionErrorPayload(cause: unknown): ExecutionErrorPayload | null {
   return data as ExecutionErrorPayload
 }
 
+function normalizedExecutionError(
+  payload: ExecutionErrorPayload | null,
+): ExecutionErrorPayload | null {
+  if (!payload) return null
+  const nested = payload.detail
+  if (typeof nested !== 'object' || nested === null) return payload
+  const candidate = nested as ExecutionErrorPayload
+  if (candidate.error !== undefined || candidate.details !== undefined || candidate.detail !== undefined) {
+    return candidate
+  }
+  return payload
+}
+
 export function executionErrorCode(cause: unknown): string | null {
-  const code = executionErrorPayload(cause)?.error
+  const code = normalizedExecutionError(executionErrorPayload(cause))?.error
   return typeof code === 'string' && code.length > 0 ? code : null
 }
 
 export function executionErrorDetails(cause: unknown): Record<string, unknown> {
-  const details = executionErrorPayload(cause)?.details
+  const payload = normalizedExecutionError(executionErrorPayload(cause))
+  const details = payload?.details ?? payload?.identities
   return typeof details === 'object' && details !== null
     ? details as Record<string, unknown>
     : {}
@@ -533,13 +569,14 @@ export function executionErrorDetails(cause: unknown): Record<string, unknown> {
 
 export function executionErrorMessage(cause: unknown, fallback: string): string {
   if (cause instanceof Error && cause.message) {
-    const payload = executionErrorPayload(cause)
+    const payload = normalizedExecutionError(executionErrorPayload(cause))
     const detail = payload?.detail
     if (typeof detail === 'string' && detail) return detail
     if (typeof detail === 'object' && detail !== null) {
       const message = (detail as { message?: unknown }).message
       if (typeof message === 'string' && message) return message
     }
+    if (typeof payload?.message === 'string' && payload.message) return payload.message
     const code = payload?.error
     if (typeof code === 'string' && code) return code.replace(/_/g, ' ')
     return cause.message
@@ -556,15 +593,15 @@ export async function executionResultErrorMessage(
   const data = response?.data
   if (!(data instanceof Blob)) return executionErrorMessage(cause, fallback)
   try {
-    const payload = JSON.parse(await data.text()) as {
-      detail?: string | { message?: string }
-      error?: string
-    }
+    const decoded = JSON.parse(await data.text()) as ExecutionErrorPayload
+    const payload = normalizedExecutionError(decoded)
+    if (!payload) return fallback
     if (typeof payload.detail === 'string' && payload.detail) return payload.detail
     if (typeof payload.detail === 'object' && payload.detail !== null) {
-      const message = payload.detail.message
+      const message = (payload.detail as { message?: unknown }).message
       if (typeof message === 'string' && message) return message
     }
+    if (typeof payload.message === 'string' && payload.message) return payload.message
     if (typeof payload.error === 'string' && payload.error) {
       return payload.error.replace(/_/g, ' ')
     }

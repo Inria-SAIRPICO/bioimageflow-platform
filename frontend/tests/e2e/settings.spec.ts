@@ -66,7 +66,7 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
   })
 
-  test('execution settings show runtime summary and distributed controls', async ({
+  test('execution settings show runtime summary and managed-cluster controls', async ({
     page,
   }) => {
     await page.goto('/')
@@ -78,8 +78,10 @@ test.describe('Settings Panel', () => {
 
     await expect(dialog.locator('[data-testid="execution-backend-value"]')).toBeVisible()
     await expect(dialog.locator('[data-testid="execution-scheduling-value"]')).toBeVisible()
-    await expect(dialog).toContainText('Trusted Parsl configuration factories')
-    await expect(dialog).toContainText('Distributed profiles')
+    await expect(dialog).toContainText('Managed remote clusters')
+    await expect(dialog).toContainText('Secrets are never saved')
+    await expect(dialog.getByRole('button', { name: 'Slurm example' })).toBeVisible()
+    await expect(dialog).not.toContainText('Trusted Parsl configuration factories')
     await expect(dialog.locator('[data-testid="cache-unlimited-checkbox"]')).toHaveCount(0)
     await expect(
       dialog.locator('[data-testid="cache-max-executions-input"]'),

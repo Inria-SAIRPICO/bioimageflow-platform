@@ -24,8 +24,9 @@ import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import RemoteExecutionDialog from '@/components/execution/RemoteExecutionDialog.vue'
 import {
   applyPreparedExecution,
+  executionErrorCode,
+  executionErrorDetails,
   preflightExecution,
-  type ExecutionPreflightResponse,
   type RemoteNodePathInput,
   type RemoteNodePathResolution,
 } from '@/api/executions'
@@ -68,15 +69,14 @@ const isNestedCanvasActive = computed(() => {
 const remoteDialogVisible = ref(false)
 const remoteDialogBusy = ref(false)
 const remoteUnresolved = ref<RemoteNodePathInput[]>([])
-const remotePrepared = ref<Extract<ExecutionPreflightResponse, { status: 'ready' }> | null>(null)
 let resolutionResolve: ((value: RemoteNodePathResolution[] | null) => void) | null = null
-let confirmationResolve: ((value: boolean) => void) | null = null
 
 const runDisabled = computed(
   () => exec.isMutationLocked
     || activeCanvasLifecycleBusy.value
     || !activeWorkflowId.value
-    || isNestedCanvasActive.value,
+    || isNestedCanvasActive.value
+    || !executionRegistry.selectedTarget?.enabled,
 )
 const runTooltip = computed(() => {
   if (exec.isStarting) return 'Execution is starting'
@@ -86,6 +86,10 @@ const runTooltip = computed(() => {
     return 'Run the owning root workflow to execute this nested-workflow'
   }
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
+  if (!executionRegistry.selectedTarget) return 'Execution targets are unavailable'
+  if (!executionRegistry.selectedTarget.enabled) {
+    return executionRegistry.selectedTarget.disabled_reason ?? 'This execution target is unavailable'
+  }
   return ''
 })
 
@@ -222,17 +226,8 @@ function requestRemoteResolution(
   unresolved: RemoteNodePathInput[],
 ): Promise<RemoteNodePathResolution[] | null> {
   remoteUnresolved.value = unresolved
-  remotePrepared.value = null
   remoteDialogVisible.value = true
   return new Promise(resolve => { resolutionResolve = resolve })
-}
-
-function requestPreparedConfirmation(
-  prepared: Extract<ExecutionPreflightResponse, { status: 'ready' }>,
-): Promise<boolean> {
-  remotePrepared.value = prepared
-  remoteDialogVisible.value = true
-  return new Promise(resolve => { confirmationResolve = resolve })
 }
 
 function onRemoteResolved(resolutions: RemoteNodePathResolution[]): void {
@@ -242,20 +237,11 @@ function onRemoteResolved(resolutions: RemoteNodePathResolution[]): void {
   resolve?.(resolutions)
 }
 
-function onRemoteConfirmed(): void {
-  const resolve = confirmationResolve
-  confirmationResolve = null
-  resolve?.(true)
-}
-
 function cancelRemoteDialog(): void {
   remoteDialogVisible.value = false
-  remotePrepared.value = null
   remoteUnresolved.value = []
   resolutionResolve?.(null)
-  confirmationResolve?.(false)
   resolutionResolve = null
-  confirmationResolve = null
 }
 
 async function runDistributed(
@@ -291,15 +277,32 @@ async function runDistributed(
   if (response.status !== 'ready') {
     throw new Error('Remote data resolution is incomplete')
   }
-  const confirmed = await requestPreparedConfirmation(response)
-  if (!confirmed) return false
   remoteDialogBusy.value = true
   try {
-    const snapshot = await applyPreparedExecution(response.token, baseRequest)
-    executionRegistry.applySnapshot(snapshot, true)
-    remoteDialogVisible.value = false
-    remotePrepared.value = null
-    return true
+    try {
+      const snapshot = await applyPreparedExecution(response.token, baseRequest)
+      executionRegistry.applySnapshot(snapshot, true)
+      remoteDialogVisible.value = false
+      return true
+    } catch (cause) {
+      const code = executionErrorCode(cause)
+      if (!code?.includes('uncertain')) throw cause
+      const details = executionErrorDetails(cause)
+      const executionId = details.execution_id ?? details.run_id
+      if (typeof executionId !== 'string' || !executionId) throw cause
+      try {
+        await executionRegistry.selectExecution(executionId)
+      } catch {
+        // The durable identity is still sufficient for the next reconnect attempt.
+      }
+      emit('toast', {
+        severity: 'warn',
+        summary: 'Remote submission acknowledgement is uncertain',
+        detail: `Execution ${executionId} may already exist on the cluster. Reconnect to this exact run; do not submit the workflow again.`,
+      })
+      remoteDialogVisible.value = false
+      return true
+    }
   } finally {
     remoteDialogBusy.value = false
   }
@@ -605,10 +608,8 @@ defineExpose({
     <RemoteExecutionDialog
       :visible="remoteDialogVisible"
       :unresolved="remoteUnresolved"
-      :prepared="remotePrepared"
       :busy="remoteDialogBusy"
       @resolve="onRemoteResolved"
-      @confirm="onRemoteConfirmed"
       @cancel="cancelRemoteDialog"
     />
 

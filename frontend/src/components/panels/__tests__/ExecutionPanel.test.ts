@@ -20,6 +20,7 @@ const retryActions = {
   retry: { available: true, reason: null },
   recompute: { available: true, reason: null },
   download_results: { available: false, reason: 'Results require success' },
+  cleanup: { available: true, reason: null },
 }
 
 describe('ExecutionPanel', () => {
@@ -37,7 +38,7 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     registry.applySnapshot({
       id: 'run-1', revision: 1, workflow_id: 'workflow', workflow_name: 'Workflow',
-      target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
+      target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
       command: 'recompute', retry_of_execution_id: 'run-parent',
       child_execution_ids: [], actions: retryActions,
@@ -56,7 +57,7 @@ describe('ExecutionPanel', () => {
     // The mount refresh can replace history; restore a live snapshot exactly as a websocket does.
     registry.applySnapshot({
       id: 'run-1', revision: 2, workflow_id: 'workflow', workflow_name: 'Workflow',
-      target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
+      target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
       command: 'recompute', retry_of_execution_id: 'run-parent',
       child_execution_ids: [], actions: retryActions,
@@ -101,7 +102,7 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const parent = {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
       retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
     }
@@ -110,13 +111,13 @@ describe('ExecutionPanel', () => {
       .mockResolvedValueOnce({ data: {
         plan_digest: 'sha256:confirmed', parent_execution_id: 'run-parent',
         child_execution_id: 'run-child', mode: 'retry',
-        target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+        target: { id: 'cluster', label: 'GPU cluster', mode: 'managed_remote' },
         recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
       } })
       .mockResolvedValueOnce({ data: {
         revision: 0, execution_id: 'run-child', workflow_id: 'workflow',
-        backend: 'submitted_remote', target_id: 'cluster', target_label: 'GPU cluster',
-        target_mode: 'submitted_remote', scheduler_job_id: 'scheduler-child', command: 'retry',
+        backend: 'managed_remote', target_id: 'cluster', target_label: 'GPU cluster',
+        target_mode: 'managed_remote', scheduler_job_id: 'scheduler-child', command: 'retry',
         state: 'prepared', retry_of_execution_id: 'run-parent',
         child_execution_ids: [], actions: {
           cancel: { available: true, reason: null },
@@ -144,6 +145,51 @@ describe('ExecutionPanel', () => {
     expect(registry.selectedRunId).toBe('run-child')
   })
 
+  it('previews and applies cleanup for the exact managed run identity', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const run = {
+      id: 'run-cleanup', revision: 1, workflow_id: 'workflow', target_id: 'profile-cluster',
+      target_label: 'GPU cluster', target_mode: 'managed_remote' as const,
+      backend: 'managed_remote' as const, state: 'succeeded' as const,
+      created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
+      child_execution_ids: [], actions: retryActions, jobs: [],
+    }
+    registry.applySnapshot(run)
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        execution_id: 'run-cleanup', plan_digest: 'sha256:cleanup',
+        plan: { run_ids: ['run-cleanup'] },
+      } })
+      .mockResolvedValueOnce({ data: {
+        execution_id: 'run-cleanup', report: { removed: ['run-cleanup'] },
+      } })
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(run)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="execution-cleanup"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="execution-cleanup-dialog"]').text()).toContain(
+      'sha256:cleanup',
+    )
+    await wrapper.get('[data-testid="confirm-execution-cleanup"]').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(api.post).mock.calls.map(call => call[0])).toEqual([
+      '/api/v1/executions/run-cleanup/cleanup/plan',
+      '/api/v1/executions/run-cleanup/cleanup',
+    ])
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({
+      older_than_seconds: 0,
+    })
+    expect(wrapper.text()).toContain('platform history entry is retained')
+  })
+
   it.each([
     'retry-plan-integrity-error',
     'retry-child-conflict',
@@ -153,7 +199,7 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const parent = {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
       retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
       jobs: [{
@@ -164,7 +210,7 @@ describe('ExecutionPanel', () => {
     const plan = (digest: string) => ({
       plan_digest: digest, parent_execution_id: 'run-parent',
       child_execution_id: 'run-child', mode: 'recompute' as const,
-      target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' as const },
+        target: { id: 'cluster', label: 'GPU cluster', mode: 'managed_remote' as const },
       recompute: { node_paths: ['analysis/segment'], cascade: true },
       invalidations: [], conflicting_run_ids: [], confirmable: true,
     })
@@ -215,7 +261,7 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const parent = {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      target_label: 'GPU cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const, created_at: '2026-08-03T10:00:00Z', command: 'workflow',
       retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
     }
@@ -224,14 +270,14 @@ describe('ExecutionPanel', () => {
       .mockResolvedValueOnce({ data: {
         plan_digest: 'sha256:uncertain', parent_execution_id: 'run-parent',
         child_execution_id: 'run-child', mode: 'retry',
-        target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+        target: { id: 'cluster', label: 'GPU cluster', mode: 'managed_remote' },
         recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
       } })
       .mockRejectedValueOnce(Object.assign(new Error('Submission uncertain'), {
         response: {
           status: 409,
           data: {
-            error: 'psij-submission-uncertain',
+            error: 'remote-retry-submission-uncertain',
             detail: 'Scheduler acknowledgement was lost',
             details: { retry_run_id: 'run-child' },
           },
@@ -245,8 +291,8 @@ describe('ExecutionPanel', () => {
     await wrapper.vm.$nextTick()
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       revision: 1, execution_id: 'run-child', workflow_id: 'workflow',
-      backend: 'submitted_remote', target_id: 'cluster', target_label: 'GPU cluster',
-      target_mode: 'submitted_remote', scheduler_job_id: 'scheduler-child',
+      backend: 'managed_remote', target_id: 'cluster', target_label: 'GPU cluster',
+      target_mode: 'managed_remote', scheduler_job_id: 'scheduler-child',
       state: 'starting', command: 'retry', retry_of_execution_id: 'run-parent',
       child_execution_ids: [], actions: {
         cancel: { available: true, reason: null },
@@ -277,7 +323,7 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const parent = {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_label: 'Cluster', target_mode: 'submitted_remote' as const,
+      target_label: 'Cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'failed' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
       child_execution_ids: [], actions: retryActions, jobs: [],
@@ -287,7 +333,7 @@ describe('ExecutionPanel', () => {
       .mockResolvedValueOnce({ data: {
         plan_digest: 'sha256:confirmed', parent_execution_id: 'run-parent',
         child_execution_id: 'run-child', mode: 'retry',
-        target: { id: 'cluster', label: 'Cluster', mode: 'submitted_remote' },
+        target: { id: 'cluster', label: 'Cluster', mode: 'managed_remote' },
         recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
       } })
       .mockRejectedValueOnce(Object.assign(new Error('Conflict'), {
@@ -313,16 +359,20 @@ describe('ExecutionPanel', () => {
     expect(wrapper.find('[data-testid="confirm-execution-retry"]').exists()).toBe(true)
   })
 
-  it('shows retained submitted logs and keeps attached runs in the live Logger', async () => {
+  it('uses structured diagnostics instead of retained logs for managed runs', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
     const submitted = {
       id: 'run-logs', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_label: 'Cluster', target_mode: 'submitted_remote' as const,
+      target_label: 'Cluster', target_mode: 'managed_remote' as const, backend: 'managed_remote' as const,
       state: 'running' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
       child_execution_ids: [], actions: retryActions,
+      diagnostics: [{
+        phase: 'monitor', category: 'connection', message: 'SSH connection was interrupted',
+        next_action: 'Check SSH access and refresh this exact run.',
+      }],
       jobs: [{
         id: 'job-logs', scoped_node_path: 'analysis/segment', state: 'running' as const,
       }],
@@ -336,36 +386,20 @@ describe('ExecutionPanel', () => {
     await wrapper.vm.$nextTick()
     await wrapper.get('button.job-row').trigger('click')
 
-    let resolveLogs!: (response: { data: string }) => void
-    vi.mocked(api.get).mockReturnValueOnce(new Promise(resolve => {
-      resolveLogs = resolve
-    }))
-    await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.find('[data-testid="retained-logs-loading"]').exists()).toBe(true)
-    resolveLogs({ data: 'scheduler output\nworker output' })
-    await flushPromises()
-    expect(wrapper.get('[data-testid="retained-logs-content"]').text()).toContain('worker output')
-    const logGetCalls = vi.mocked(api.get).mock.calls
-    expect(logGetCalls[logGetCalls.length - 1]?.[0]).toBe(
-      '/api/v1/executions/run-logs/logs',
-    )
-
-    vi.mocked(api.get).mockRejectedValueOnce(Object.assign(new Error('Logs unavailable'), {
-      response: { data: { error: 'execution_logs_unavailable', detail: 'Retained logs were pruned' } },
-    }))
-    await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-testid="retained-logs-error"]').text()).toContain(
-      'Retained logs were pruned',
+    expect(wrapper.find('[data-testid="execution-job-logs"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="execution-cluster-diagnostics"]').text()).toContain(
+      'Check SSH access and refresh this exact run.',
     )
 
     const getCallCount = vi.mocked(api.get).mock.calls.length
     registry.applySnapshot({
       ...submitted,
       revision: 2,
-      target_mode: 'attached',
+      target_id: 'local',
+      target_label: 'Local',
+      target_mode: 'local',
+      backend: 'direct',
+      diagnostics: [],
     })
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')

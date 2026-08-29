@@ -26,6 +26,7 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 }))
 
 import RunButton from '../RunButton.vue'
+import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useUIStore } from '@/stores/ui'
@@ -73,6 +74,8 @@ function mountButton(opts: {
 
 describe('RunButton', () => {
   beforeEach(() => {
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     useWorkflowStore().current = {
@@ -861,12 +864,12 @@ describe('RunButton', () => {
     const ui = useUIStore()
     const registry = useExecutionRegistryStore()
     registry.targets = [{
-      id: 'cluster', label: 'Cluster', mode: 'submitted_remote', enabled: true,
+      id: 'cluster', label: 'Cluster', mode: 'managed_remote', enabled: true,
     }]
     registry.selectedTargetId = 'cluster'
     registry.applySnapshot({
       id: 'run-retained', revision: 1, workflow_id: 'wf_a', target_id: 'cluster',
-      target_label: 'Cluster', target_mode: 'submitted_remote',
+      target_label: 'Cluster', target_mode: 'managed_remote', backend: 'managed_remote',
       state: 'failed', command: 'workflow',
       retry_of_execution_id: null, child_execution_ids: [],
       created_at: '2026-08-03T10:00:00Z', jobs: [],
@@ -875,6 +878,7 @@ describe('RunButton', () => {
         retry: { available: true, reason: null },
         recompute: { available: true, reason: null },
         download_results: { available: false, reason: 'Failed' },
+        cleanup: { available: true, reason: null },
       },
     })
 
@@ -895,5 +899,51 @@ describe('RunButton', () => {
     })
     expect(toastPayload.detail).toContain('immutable workflow')
     expect(wrapper.find('[data-testid="advanced-run-confirm"]').exists()).toBe(false)
+  })
+
+  it('submits a ready managed run directly without a preparation confirmation', async () => {
+    const registry = useExecutionRegistryStore()
+    registry.runs = []
+    registry.selectedRunId = null
+    registry.targets = [{
+      id: 'profile-cluster', label: 'Cluster', mode: 'managed_remote', enabled: true,
+      profile_revision: 4,
+    }]
+    registry.selectedTargetId = 'profile-cluster'
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        kind: 'ready', token: 'run-token', expires_at: 1_800_000_000,
+        resolved_inputs: {},
+      } })
+      .mockResolvedValueOnce({ data: {
+        revision: 1, execution_id: 'run-managed', workflow_id: 'wf_a', draft_revision: 1,
+        backend: 'managed_remote', target_id: 'profile-cluster', target_label: 'Cluster',
+        target_mode: 'managed_remote', scheduler_job_id: 'job-42', command: 'workflow',
+        state: 'queued', retry_of_execution_id: null, child_execution_ids: [],
+        actions: {
+          cancel: { available: true, reason: null },
+          retry: { available: false, reason: 'Not terminal' },
+          recompute: { available: false, reason: 'Not terminal' },
+          download_results: { available: false, reason: 'Not succeeded' },
+          cleanup: { available: false, reason: 'Run is active' },
+        },
+        jobs: {}, progress_cursor: 0, diagnostics: [],
+        observation: { reachable: true, error: null },
+        created_at: '2026-08-03T10:00:00Z', updated_at: '2026-08-03T10:00:00Z',
+      } })
+    const { wrapper } = mountButton()
+
+    await (wrapper.vm as unknown as { onRun(): Promise<void> }).onRun()
+    await nextTick()
+
+    expect(vi.mocked(api.post).mock.calls.map(call => call[0])).toEqual([
+      '/api/v1/execution/preflight',
+      '/api/v1/executions',
+    ])
+    expect(vi.mocked(api.post).mock.calls[1]?.[1]).toMatchObject({
+      token: 'run-token', workflow_id: 'wf_a', target_id: 'profile-cluster',
+    })
+    expect(wrapper.find('[data-testid="remote-execution-dialog"]').exists()).toBe(false)
+    expect(registry.selectedRunId).toBe('run-managed')
   })
 })

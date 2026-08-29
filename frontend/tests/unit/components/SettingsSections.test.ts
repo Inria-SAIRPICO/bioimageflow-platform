@@ -166,7 +166,7 @@ describe('ImageViewersSection', () => {
 })
 
 describe('ExecutionSection', () => {
-  it('summarizes direct/sequential execution and exposes distributed controls', () => {
+  it('summarizes direct/sequential execution and exposes managed-cluster controls', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: {
@@ -186,8 +186,9 @@ describe('ExecutionSection', () => {
     expect(
       wrapper.find('[data-testid="cache-max-age-input"]').exists(),
     ).toBe(false)
-    expect(wrapper.text()).toContain('Trusted Parsl configuration factories')
-    expect(wrapper.text()).toContain('Distributed profiles')
+    expect(wrapper.text()).toContain('Managed remote clusters')
+    expect(wrapper.text()).toContain('cluster = RemoteCluster(...)')
+    expect(wrapper.text()).not.toContain('Trusted Parsl configuration factories')
     expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
@@ -198,7 +199,7 @@ describe('ExecutionSection', () => {
     })
 
     expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
-    expect(wrapper.text()).toContain('Distributed profiles')
+    expect(wrapper.text()).toContain('Managed remote clusters')
   })
 
   it('maps current parallel scheduling setting to parallel wording', () => {

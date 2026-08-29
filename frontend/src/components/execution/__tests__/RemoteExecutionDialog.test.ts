@@ -17,7 +17,6 @@ describe('RemoteExecutionDialog', () => {
     const wrapper = mount(RemoteExecutionDialog, {
       props: {
         visible: true,
-        prepared: null,
         unresolved: [{
           node_path: 'preprocessing/masks', input_name: 'files', value_shape: 'list',
           values: ['/laptop/a.tif', '/cluster/b.tif'],
@@ -46,29 +45,28 @@ describe('RemoteExecutionDialog', () => {
     wrapper.unmount()
   })
 
-  it('shows immutable manifest digests and unpinned pre-launch warnings', async () => {
+  it('submits directly after explicit path resolution without a preparation confirmation', async () => {
     const wrapper = mount(RemoteExecutionDialog, {
       props: {
         visible: true,
-        unresolved: [],
-        prepared: {
-          status: 'ready', token: 'token', expires_at: '2026-08-03T10:15:00Z',
-          manifest: {
-            uploads_count: 1, total_bytes: 42,
-            entries: [{
-              kind: 'pre_launch_script', label: 'Cluster setup', digest: 'sha256:abc',
-              pinned: false,
-            }],
-          },
-        },
+        unresolved: [{
+          node_path: 'files', input_name: 'path', value_shape: 'path',
+          values: ['/cluster/images'],
+        }],
       },
       global: { plugins: [createPinia(), PrimeVue] },
       attachTo: document.body,
     })
     await flushPromises()
 
-    expect(document.body.textContent).toContain('sha256:abc')
-    expect(document.body.textContent).toContain('unpinned cluster script')
+    const drafts = (wrapper.vm as any).drafts['files\npath']
+    drafts[0].source = 'cluster'
+    await wrapper.vm.$nextTick()
+    expect(document.body.textContent).toContain('submitted directly')
+    expect(document.querySelector('[data-testid="confirm-remote-execution"]')).toBeNull()
+    expect(document.querySelector('[data-testid="prepare-remote-execution"]')?.textContent).toContain(
+      'Resolve and submit',
+    )
     wrapper.unmount()
   })
 })

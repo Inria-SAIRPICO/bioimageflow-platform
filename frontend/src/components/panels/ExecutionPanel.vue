@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import ProgressBar from 'primevue/progressbar'
@@ -7,12 +7,15 @@ import SelectButton from 'primevue/selectbutton'
 import Tag from 'primevue/tag'
 import ExecutionRetryDialog from '@/components/execution/ExecutionRetryDialog.vue'
 import {
+  applyExecutionCleanup,
   downloadExecutionResults,
   executionErrorCode,
   executionErrorDetails,
   executionErrorMessage,
   executionResultErrorMessage,
+  planExecutionCleanup,
   type ExecutionActionAvailability,
+  type ExecutionCleanupPlan,
   type ExecutionActions,
   type ExecutionJobSnapshot,
   type ExecutionRetryPlan,
@@ -35,11 +38,12 @@ const retryStarting = ref(false)
 const retryError = ref<string | null>(null)
 const resultDownloadingId = ref<string | null>(null)
 const resultError = ref<string | null>(null)
-const retainedLogsVisible = ref(false)
-const retainedLogsLoading = ref(false)
-const retainedLogsRunId = ref<string | null>(null)
-const retainedLogs = ref('')
-const retainedLogsError = ref<string | null>(null)
+const cleanupPlan = ref<ExecutionCleanupPlan | null>(null)
+const cleanupPlanning = ref(false)
+const cleanupApplying = ref(false)
+const cleanupError = ref<string | null>(null)
+const cleanupMessage = ref<string | null>(null)
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const unavailableAction: ExecutionActionAvailability = {
   available: false,
@@ -57,12 +61,25 @@ const selectedJob = computed(() => (
 watch(() => registry.selectedRunId, () => {
   selectedJobId.value = null
   resultError.value = null
+  cleanupError.value = null
+  cleanupMessage.value = null
 })
 watch([scope, () => ui.activeWorkflowId], () => void loadRuns())
-onMounted(() => void loadRuns())
+onMounted(() => {
+  void loadRuns()
+  refreshTimer = setInterval(() => void refreshActiveRuns(), 5000)
+})
+onUnmounted(() => {
+  if (refreshTimer !== null) clearInterval(refreshTimer)
+})
 
 async function loadRuns(): Promise<void> {
   await registry.loadRuns(scope.value === 'workflow' ? ui.activeWorkflowId : null)
+}
+
+async function refreshActiveRuns(): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  await Promise.allSettled(registry.activeRuns.map(run => registry.refreshRun(run.id)))
 }
 
 function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
@@ -116,7 +133,10 @@ function formatBytes(value: number): string {
 }
 
 function action(name: keyof ExecutionActions): ExecutionActionAvailability {
-  return registry.selectedRun!.actions[name]
+  return registry.selectedRun?.actions[name] ?? {
+    available: false,
+    reason: 'This action is unavailable for the retained execution.',
+  }
 }
 
 function selectOnCanvas(job: ExecutionJobSnapshot): void {
@@ -125,28 +145,40 @@ function selectOnCanvas(job: ExecutionJobSnapshot): void {
   ui.panels.nodePanel = true
 }
 
-async function openLogs(job: ExecutionJobSnapshot): Promise<void> {
-  const run = registry.selectedRun
-  if (run?.target_mode === 'submitted_local' || run?.target_mode === 'submitted_remote') {
-    retainedLogsVisible.value = true
-    retainedLogsLoading.value = true
-    retainedLogsRunId.value = run.id
-    retainedLogs.value = ''
-    retainedLogsError.value = null
-    try {
-      retainedLogs.value = await registry.loadLogs(run.id)
-    } catch (cause) {
-      retainedLogsError.value = executionErrorMessage(
-        cause,
-        'The retained execution logs could not be loaded.',
-      )
-    } finally {
-      retainedLogsLoading.value = false
-    }
-    return
-  }
+function openLogs(job: ExecutionJobSnapshot): void {
   selectOnCanvas(job)
   ui.openLoggerPanel()
+}
+
+async function previewCleanup(): Promise<void> {
+  const run = registry.selectedRun
+  if (!run || !action('cleanup').available) return
+  cleanupPlanning.value = true
+  cleanupError.value = null
+  cleanupMessage.value = null
+  try {
+    cleanupPlan.value = await planExecutionCleanup(run.id)
+  } catch (cause) {
+    cleanupError.value = executionErrorMessage(cause, 'Cluster cleanup could not be planned.')
+  } finally {
+    cleanupPlanning.value = false
+  }
+}
+
+async function confirmCleanup(): Promise<void> {
+  const plan = cleanupPlan.value
+  if (!plan) return
+  cleanupApplying.value = true
+  cleanupError.value = null
+  try {
+    await applyExecutionCleanup(plan.execution_id, plan.plan_digest)
+    cleanupPlan.value = null
+    cleanupMessage.value = 'Managed cluster artifacts were cleaned up. The platform history entry is retained.'
+  } catch (cause) {
+    cleanupError.value = executionErrorMessage(cause, 'Cluster cleanup could not be applied.')
+  } finally {
+    cleanupApplying.value = false
+  }
 }
 
 async function downloadResults(id: string): Promise<void> {
@@ -212,11 +244,6 @@ async function previewRetry(
   }
 }
 
-const UNCERTAIN_RETRY_CODES = new Set([
-  'psij-submission-uncertain',
-  'remote-retry-submission-uncertain',
-])
-
 const REPLAN_REQUIRED_CODES = new Set([
   'retry-plan-not-found',
   'retry-plan-integrity-error',
@@ -236,8 +263,9 @@ async function confirmRetry(planDigest: string): Promise<void> {
     retryPlan.value = null
   } catch (cause) {
     const code = executionErrorCode(cause)
-    if (code && UNCERTAIN_RETRY_CODES.has(code)) {
-      const retryRunId = executionErrorDetails(cause).retry_run_id
+    if (code?.includes('uncertain')) {
+      const details = executionErrorDetails(cause)
+      const retryRunId = details.retry_run_id ?? details.child_execution_id ?? details.run_id
       const plannedRunId = retryPlan.value?.child_execution_id
       if (typeof retryRunId !== 'string' || retryRunId !== plannedRunId) {
         retryError.value = 'The uncertain submission did not identify the confirmed child execution. Do not submit another retry.'
@@ -333,6 +361,8 @@ function closeRetryDialog(): void {
             <small>{{ registry.selectedRun.target_label ?? registry.selectedRun.target_id }}</small>
           </div>
           <Tag :value="registry.selectedRun.state" :severity="stateSeverity(registry.selectedRun.state)" />
+          <span><code>{{ registry.selectedRun.id }}</code></span>
+          <span v-if="registry.selectedRun.backend">{{ registry.selectedRun.backend.replace(/_/g, ' ') }}</span>
           <span v-if="registry.selectedRun.scheduler_job_id">Scheduler {{ registry.selectedRun.scheduler_job_id }}</span>
           <span v-if="registry.selectedRun.observation_error" class="observation-warning">
             <i class="pi pi-wifi" /> {{ registry.selectedRun.observation_error }}
@@ -398,11 +428,33 @@ function closeRetryDialog(): void {
               data-testid="execution-results"
               @click="downloadResults(registry.selectedRun.id)"
             />
+            <Button
+              label="Cleanup"
+              icon="pi pi-trash"
+              text
+              size="small"
+              :disabled="!action('cleanup').available"
+              :title="action('cleanup').reason ?? 'Plan cleanup of this run’s managed cluster artifacts'"
+              :loading="cleanupPlanning"
+              data-testid="execution-cleanup"
+              @click="previewCleanup"
+            />
           </div>
         </div>
         <div v-if="resultError" class="action-error" role="alert" data-testid="execution-result-error">
           {{ resultError }}
         </div>
+        <div v-if="cleanupError" class="action-error" role="alert" data-testid="execution-cleanup-error">{{ cleanupError }}</div>
+        <div v-if="cleanupMessage" class="action-message" role="status">{{ cleanupMessage }}</div>
+        <section v-if="registry.selectedRun.diagnostics?.length" class="cluster-diagnostics" data-testid="execution-cluster-diagnostics">
+          <article v-for="(diagnostic, index) in registry.selectedRun.diagnostics" :key="index">
+            <strong>{{ diagnostic.phase }} · {{ diagnostic.category }}</strong>
+            <span>{{ diagnostic.message }}</span>
+            <small v-if="diagnostic.allocation_state">Allocation: {{ diagnostic.allocation_state }}</small>
+            <small v-if="diagnostic.retry_safety">Retry safety: {{ diagnostic.retry_safety }}</small>
+            <small v-if="diagnostic.next_action">Next action: {{ diagnostic.next_action }}</small>
+          </article>
+        </section>
 
         <div class="jobs-table" role="table" aria-label="Execution jobs">
           <div class="job-row job-header" role="row">
@@ -435,7 +487,7 @@ function closeRetryDialog(): void {
             <strong>{{ selectedJob.scoped_node_path }}</strong>
             <div>
               <Button label="Canvas" icon="pi pi-sitemap" text size="small" @click="selectOnCanvas(selectedJob)" />
-              <Button label="Logs" icon="pi pi-list" text size="small" data-testid="execution-job-logs" @click="openLogs(selectedJob)" />
+              <Button v-if="registry.selectedRun.backend !== 'managed_remote'" label="Logs" icon="pi pi-list" text size="small" data-testid="execution-job-logs" @click="openLogs(selectedJob)" />
             </div>
           </header>
           <p v-if="selectedJob.route_reason"><strong>Route:</strong> {{ selectedJob.route_reason }}</p>
@@ -467,20 +519,24 @@ function closeRetryDialog(): void {
       @confirm="confirmRetry"
     />
     <Dialog
-      v-model:visible="retainedLogsVisible"
+      :visible="cleanupPlan !== null"
       modal
-      :header="`Execution logs · ${retainedLogsRunId ?? ''}`"
-      :style="{ width: 'min(60rem, 95vw)' }"
-      data-testid="retained-execution-logs"
+      header="Confirm managed cluster cleanup"
+      :closable="!cleanupApplying"
+      :style="{ width: 'min(46rem, 95vw)' }"
+      data-testid="execution-cleanup-dialog"
+      @update:visible="(visible: boolean) => { if (!visible && !cleanupApplying) cleanupPlan = null }"
     >
-      <p class="retained-logs-note">These are run-level logs retained by the submitted execution backend.</p>
-      <div v-if="retainedLogsLoading" class="retained-logs-loading" data-testid="retained-logs-loading">
-        <i class="pi pi-spin pi-spinner" /> Loading retained logs…
-      </div>
-      <div v-else-if="retainedLogsError" class="action-error" role="alert" data-testid="retained-logs-error">
-        {{ retainedLogsError }}
-      </div>
-      <pre v-else class="retained-logs-content" data-testid="retained-logs-content">{{ retainedLogs || 'No retained logs are available.' }}</pre>
+      <p>This applies the server-created cleanup plan for the exact durable run identity. It does not remove the platform history entry.</p>
+      <dl v-if="cleanupPlan" class="cleanup-summary">
+        <dt>Execution</dt><dd>{{ cleanupPlan.execution_id }}</dd>
+        <dt>Plan digest</dt><dd><code>{{ cleanupPlan.plan_digest }}</code></dd>
+      </dl>
+      <pre v-if="cleanupPlan" class="cleanup-plan">{{ JSON.stringify(cleanupPlan.plan, null, 2) }}</pre>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" :disabled="cleanupApplying" @click="cleanupPlan = null" />
+        <Button label="Apply cleanup" severity="danger" :loading="cleanupApplying" data-testid="confirm-execution-cleanup" @click="confirmCleanup" />
+      </template>
     </Dialog>
   </div>
 </template>
@@ -504,9 +560,14 @@ function closeRetryDialog(): void {
 .run-provenance button { border: 0; padding: 0; background: transparent; color: var(--p-primary-color); cursor: pointer; font-family: monospace; }
 .observation-warning, .diagnostic-message { color: var(--p-orange-600); }
 .action-error { margin: 0.5rem; padding: 0.6rem; border-radius: 6px; color: var(--p-red-600); background: var(--p-red-50); }
-.retained-logs-note { color: var(--p-text-muted-color); }
-.retained-logs-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 12rem; }
-.retained-logs-content { min-height: 12rem; max-height: 65vh; overflow: auto; padding: 0.75rem; border-radius: 6px; background: var(--p-surface-100); white-space: pre-wrap; }
+.action-message { margin: 0.5rem; padding: 0.6rem; border-radius: 6px; color: var(--p-green-700); background: var(--p-green-50); }
+.cluster-diagnostics { display: grid; gap: .45rem; margin: .6rem; }
+.cluster-diagnostics article { display: grid; gap: .2rem; padding: .6rem; border-radius: 6px; background: var(--p-surface-100); }
+.cluster-diagnostics small { color: var(--p-text-muted-color); }
+.cleanup-summary { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: .45rem; }
+.cleanup-summary dt { color: var(--p-text-muted-color); }
+.cleanup-summary dd { margin: 0; overflow-wrap: anywhere; }
+.cleanup-plan { max-height: 18rem; overflow: auto; padding: .75rem; border-radius: 6px; background: var(--p-surface-100); }
 .job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) 6rem minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
 button.job-row { cursor: pointer; }
 .job-row--active { background: var(--p-highlight-background); }

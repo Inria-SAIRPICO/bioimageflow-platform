@@ -24,12 +24,13 @@ const actions = {
   retry: { available: true, reason: null },
   recompute: { available: true, reason: null },
   download_results: { available: false, reason: 'not succeeded' },
+  cleanup: { available: true, reason: null },
 }
 
 function snapshot(revision: number, state: ExecutionSnapshot['state']): ExecutionSnapshot {
   return {
     id: 'run-1', revision, workflow_id: 'workflow', target_id: 'cluster',
-    target_label: 'GPU queue', target_mode: 'submitted_remote',
+    target_label: 'GPU queue', target_mode: 'managed_remote', backend: 'managed_remote',
     state, created_at: '2026-08-03T10:00:00Z',
     child_execution_ids: [], actions, jobs: [],
   }
@@ -40,10 +41,10 @@ function snapshotWire(revision: number, state: ExecutionSnapshot['state'], id = 
     revision,
     execution_id: id,
     workflow_id: 'workflow',
-    backend: 'submitted_remote',
+    backend: 'managed_remote',
     target_id: 'cluster',
     target_label: 'GPU queue',
-    target_mode: 'submitted_remote',
+    target_mode: 'managed_remote',
     scheduler_job_id: 'scheduler-1',
     command: 'run',
     state,
@@ -98,7 +99,7 @@ describe('execution registry store', () => {
       .mockResolvedValueOnce({ data: {
         plan_digest: 'sha256:plan', parent_execution_id: 'run-1',
         child_execution_id: 'run-2', mode: 'retry',
-        target: { id: 'cluster', label: 'Cluster', mode: 'submitted_remote' },
+        target: { id: 'cluster', label: 'Cluster', mode: 'managed_remote' },
         recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
       } })
       .mockResolvedValueOnce({ data: {
@@ -199,17 +200,6 @@ describe('execution registry store', () => {
     })
     expect(store.totalRuns).toBe(2)
     expect(store.selectedRunId).toBe('run-a')
-  })
-
-  it('loads retained run logs through the store API', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: 'retained log' })
-    const store = useExecutionRegistryStore()
-
-    await expect(store.loadLogs('run-1')).resolves.toBe('retained log')
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/executions/run-1/logs',
-      { responseType: 'text' },
-    )
   })
 
   it('buffers live snapshots against the destination scope during a scope switch', async () => {

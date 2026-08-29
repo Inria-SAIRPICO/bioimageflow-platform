@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import Button from 'primevue/button'
+import { computed, onMounted } from 'vue'
 import Select from 'primevue/select'
-import Textarea from 'primevue/textarea'
 import type { Settings } from '@/stores/settings'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import ExecutionProfilesSection from './ExecutionProfilesSection.vue'
@@ -44,32 +42,7 @@ const schedulingLabel = computed(() => {
     : 'Sequential'
 })
 
-const trustedFactories = computed(() => {
-  const value = (props.modelValue as Settings & {
-    trusted_parsl_factories?: string[]
-  }).trusted_parsl_factories
-  return Array.isArray(value) ? value : []
-})
-
 const profilesEditable = computed(() => props.modelValue.deployment_mode === 'desktop')
-const trustedFactoriesText = ref('')
-
-watch(trustedFactories, value => {
-  trustedFactoriesText.value = value.join('\n')
-}, { immediate: true })
-
-function saveTrustedFactories(): void {
-  const values = [...new Set(
-    trustedFactoriesText.value
-      .split(/\r?\n/)
-      .map(value => value.trim())
-      .filter(Boolean),
-  )]
-  emit('update:field', {
-    field: 'trusted_parsl_factories' as keyof Settings,
-    value: values,
-  })
-}
 
 function updateExecutionPreference(field: string, value: unknown): void {
   emit('update:field', { field: field as keyof Settings, value })
@@ -119,28 +92,7 @@ onMounted(() => void executionRegistry.loadTargets())
       <small>Local remains available even when optional distributed runtimes are unavailable.</small>
     </div>
 
-    <div class="field" data-testid="trusted-parsl-factories">
-      <span class="field-label">Trusted Parsl configuration factories</span>
-      <Textarea
-        v-model="trustedFactoriesText"
-        rows="4"
-        :readonly="!profilesEditable"
-        placeholder="package.module:build_config"
-      />
-      <small>One importable module:callable reference per line. Secrets remain environment-variable references.</small>
-      <Button
-        v-if="profilesEditable"
-        label="Save trusted factories"
-        severity="secondary"
-        size="small"
-        @click="saveTrustedFactories"
-      />
-    </div>
-
-    <ExecutionProfilesSection
-      :trusted-factories="trustedFactories"
-      :editable="profilesEditable"
-    />
+    <ExecutionProfilesSection :editable="profilesEditable" />
   </div>
 </template>
 

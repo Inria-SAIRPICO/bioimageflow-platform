@@ -7,12 +7,16 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import {
   applyPreparedExecution,
+  applyExecutionCleanup,
   downloadExecutionResults,
+  executionErrorCode,
+  executionErrorDetails,
+  executionErrorMessage,
   executionResultErrorMessage,
-  fetchExecutionLogs,
   fetchExecutionTargets,
   fetchExecutions,
   planExecutionRetry,
+  planExecutionCleanup,
   preflightExecution,
   startExecutionRetry,
   type ExecutionPreflightRequest,
@@ -67,17 +71,13 @@ describe('distributed execution API adapter', () => {
         data: {
           kind: 'ready', token: 'prepared', expires_at: 1_800_000_000,
           distributed_plan: { nodes: [] },
-          manifest: {
-            bundle_digest: `sha256:${'1'.repeat(64)}`,
-            entries: [], external_sources: [],
-          },
         },
       })
       .mockResolvedValueOnce({
         data: {
           revision: 0, execution_id: 'run_1', workflow_id: 'demo',
-          draft_revision: 3, backend: 'submitted_remote', target_id: 'profile_1',
-          target_label: 'GPU queue', target_mode: 'submitted_remote',
+          draft_revision: 3, backend: 'managed_remote', target_id: 'profile_1',
+          target_label: 'GPU queue', target_mode: 'managed_remote',
           scheduler_job_id: 'scheduler-42', command: 'run',
           state: 'prepared', retry_of_execution_id: null, child_execution_ids: [],
           actions: {
@@ -121,7 +121,7 @@ describe('distributed execution API adapter', () => {
       target_id: 'profile_1', requested_nodes: null,
     })
     expect(snapshot).toMatchObject({
-      id: 'run_1', workflow_id: 'demo', target_mode: 'submitted_remote',
+      id: 'run_1', workflow_id: 'demo', target_mode: 'managed_remote',
       target_label: 'GPU queue', scheduler_job_id: 'scheduler-42',
       state: 'prepared', jobs: [],
     })
@@ -156,14 +156,14 @@ describe('distributed execution API adapter', () => {
     const plan = {
       plan_digest: 'sha256:plan', parent_execution_id: 'run-parent',
       child_execution_id: 'run-child', mode: 'recompute' as const,
-      target: { id: 'cluster', label: 'Cluster', mode: 'submitted_remote' as const },
+      target: { id: 'cluster', label: 'Cluster', mode: 'managed_remote' as const },
       recompute: { node_paths: ['analysis/segment'], cascade: true },
       invalidations: [], conflicting_run_ids: [], confirmable: true,
     }
     const child = {
       revision: 0, execution_id: 'run-child', workflow_id: 'demo',
-      backend: 'submitted_remote', target_id: 'cluster', state: 'prepared',
-      target_label: 'GPU queue', target_mode: 'submitted_remote',
+      backend: 'managed_remote', target_id: 'cluster', state: 'prepared',
+      target_label: 'GPU queue', target_mode: 'managed_remote',
       scheduler_job_id: 'scheduler-child', command: 'retry',
       retry_of_execution_id: 'run-parent', child_execution_ids: [],
       actions: {
@@ -190,22 +190,29 @@ describe('distributed execution API adapter', () => {
     expect(vi.mocked(api.post).mock.calls[2]?.[1]).toBeUndefined()
     expect(started).toMatchObject({
       id: 'run-child', retry_of_execution_id: 'run-parent',
-      target_label: 'GPU queue', target_mode: 'submitted_remote',
+      target_label: 'GPU queue', target_mode: 'managed_remote',
       scheduler_job_id: 'scheduler-child',
     })
     expect(downloaded).toBe(blob)
   })
 
-  it('fetches retained execution logs as plain text', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: 'scheduler output\nworker output' })
+  it('plans and applies cleanup from the retained run identity', async () => {
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        execution_id: 'run/remote', plan_digest: 'sha256:cleanup',
+        plan: { namespace: 'runs', run_ids: ['run/remote'] },
+      } })
+      .mockResolvedValueOnce({ data: {
+        execution_id: 'run/remote', report: { removed: 1 },
+      } })
 
-    await expect(fetchExecutionLogs('run/remote')).resolves.toBe(
-      'scheduler output\nworker output',
-    )
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      '/api/v1/executions/run%2Fremote/logs',
-      { responseType: 'text' },
-    )
+    const plan = await planExecutionCleanup('run/remote')
+    await applyExecutionCleanup('run/remote', plan.plan_digest)
+
+    expect(vi.mocked(api.post).mock.calls).toEqual([
+      ['/api/v1/executions/run%2Fremote/cleanup/plan', { older_than_seconds: 0 }],
+      ['/api/v1/executions/run%2Fremote/cleanup', { plan_digest: 'sha256:cleanup' }],
+    ])
   })
 
   it('decodes structured errors returned through the result download blob channel', async () => {
@@ -213,10 +220,9 @@ describe('distributed execution API adapter', () => {
       response: {
         data: new Blob([JSON.stringify({
           detail: {
-            code: 'result_unavailable',
-            message: 'The retained result is no longer available.',
-            details: {},
-            retryable: false,
+            error: 'result_unavailable',
+            detail: 'The retained result is no longer available.',
+            details: { run_id: 'run-child' },
           },
         })], { type: 'application/json' }),
       },
@@ -224,6 +230,25 @@ describe('distributed execution API adapter', () => {
 
     await expect(executionResultErrorMessage(cause, 'Download failed.')).resolves.toBe(
       'The retained result is no longer available.',
+    )
+  })
+
+  it('normalizes FastAPI nested structured errors for safe uncertain-run recovery', () => {
+    const cause = Object.assign(new Error('Request failed'), {
+      response: { data: { detail: {
+        error: 'remote-submission-uncertain',
+        phase: 'submit',
+        message: 'The scheduler acknowledgement was lost.',
+        identities: { run_id: 'run-child', attempt_id: 'attempt-1' },
+      } } },
+    })
+
+    expect(executionErrorCode(cause)).toBe('remote-submission-uncertain')
+    expect(executionErrorDetails(cause)).toEqual({
+      run_id: 'run-child', attempt_id: 'attempt-1',
+    })
+    expect(executionErrorMessage(cause, 'fallback')).toBe(
+      'The scheduler acknowledgement was lost.',
     )
   })
 })

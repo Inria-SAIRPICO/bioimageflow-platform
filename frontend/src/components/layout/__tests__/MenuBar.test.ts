@@ -2289,7 +2289,7 @@ describe('MenuBar', () => {
       registerActiveRootWorkflow()
       const registry = useExecutionRegistryStore()
       registry.targets = [{
-        id: 'cluster', label: 'Cluster', mode: 'submitted_remote', enabled: true,
+        id: 'cluster', label: 'Cluster', mode: 'managed_remote', enabled: true,
       }]
       registry.selectedTargetId = 'cluster'
       const wrapper = mountMenuBar()

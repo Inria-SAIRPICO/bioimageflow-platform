@@ -44,7 +44,7 @@ describe('ExecutionRetryDialog', () => {
           parent_execution_id: 'run-parent',
           child_execution_id: 'run-child',
           mode: 'recompute',
-          target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+          target: { id: 'cluster', label: 'GPU cluster', mode: 'managed_remote' },
           recompute: { node_paths: ['analysis/segment'], cascade: true },
           invalidations: [{
             node_path: 'analysis/segment', result_key: 'result-key',
@@ -97,7 +97,7 @@ describe('ExecutionRetryDialog', () => {
           parent_execution_id: 'run-parent',
           child_execution_id: 'run-child',
           mode: 'retry',
-          target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+          target: { id: 'cluster', label: 'GPU cluster', mode: 'managed_remote' },
           recompute: null,
           invalidations: [],
           conflicting_run_ids: [],

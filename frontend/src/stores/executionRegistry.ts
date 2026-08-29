@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 import {
   cancelExecution,
   fetchExecution,
-  fetchExecutionLogs,
   fetchExecutions,
   fetchExecutionTargets,
   planExecutionRetry,
@@ -205,10 +204,6 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     selectedRunId.value = id
   }
 
-  async function loadLogs(id: string): Promise<string> {
-    return fetchExecutionLogs(id)
-  }
-
   function applySnapshot(snapshot: ExecutionSnapshot, initial = false): void {
     if (!snapshotMatchesLoadedScope(snapshot)) return
     if (activePageLoadGeneration !== null) {
@@ -241,7 +236,6 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     planRetry,
     startRetry,
     selectExecution,
-    loadLogs,
     applySnapshot,
   }
 })

@@ -4,166 +4,46 @@ import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
-import Textarea from 'primevue/textarea'
+import Tag from 'primevue/tag'
+import { downloadSlurmProfileExample, type ExecutionProfile } from '@/api/executionProfiles'
 import { useExecutionProfilesStore } from '@/stores/executionProfiles'
-import type {
-  ExecutionProfile,
-  ExecutionProfileDraft,
-  ExecutionProfileMode,
-  PreLaunchSource,
-} from '@/api/executionProfiles'
 import { selectFile } from '@/utils/nativeDialogs'
 
-const props = defineProps<{
-  trustedFactories: string[]
-  editable: boolean
-}>()
+defineProps<{ editable: boolean }>()
 
 const profiles = useExecutionProfilesStore()
 const editorOpen = ref(false)
+const describeOpen = ref(false)
 const editing = ref<ExecutionProfile | null>(null)
+const describedProfile = ref<ExecutionProfile | null>(null)
 const formError = ref<string | null>(null)
-const testMessage = ref<string | null>(null)
-
-const modes: Array<{ label: string; value: ExecutionProfileMode }> = [
-  { label: 'Attached Parsl', value: 'attached' },
-  { label: 'Submitted locally', value: 'submitted_local' },
-  { label: 'Submitted to cluster', value: 'submitted_remote' },
-]
-
-const preLaunchKinds = [
-  { label: 'None', value: 'none' },
-  { label: 'Inline script', value: 'inline' },
-  { label: 'Local script file', value: 'local_file' },
-  { label: 'Cluster script file', value: 'cluster_file' },
-]
+const actionError = ref<string | null>(null)
 
 const form = reactive({
   name: '',
+  configPath: '',
   enabled: true,
-  mode: 'attached' as ExecutionProfileMode,
-  factory: '',
-  kwargs: '{}',
-  secretRefs: '{}',
-  executorBindings: '{}',
-  environmentRoutes: '{}',
-  sharedRuntimeRoot: '',
-  rowChunkSize: '1',
-  maxInFlight: '32',
-  localWorkDir: '',
-  scheduler: 'slurm',
-  walltimeSeconds: '3600',
-  queue: '',
-  project: '',
-  cpuCores: '1',
-  clusterWorkDir: '',
-  hardCancelAfter: '',
-  host: '',
-  stagingRoot: '',
-  remoteExecutable: '',
-  connectTimeout: '15',
-  remoteWorkflowRoot: '',
-  preLaunchKind: 'none',
-  preLaunchText: '',
-  preLaunchPath: '',
-  preLaunchDigest: '',
 })
 
-const remote = computed(() => form.mode === 'submitted_remote')
-const submitted = computed(() => form.mode !== 'attached')
+const description = computed(() => (
+  describedProfile.value ? profiles.descriptions[describedProfile.value.id] ?? null : null
+))
+const unsupportedCapabilities = computed(() => Object.entries(
+  description.value?.capabilities.capabilities ?? {},
+).filter(([, value]) => !value.supported))
 
-function jsonObject(text: string, label: string): Record<string, unknown> {
-  const value: unknown = JSON.parse(text)
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${label} must be a JSON object`)
-  }
-  return value as Record<string, unknown>
-}
-
-function optionalNumber(value: string): number | null {
-  return value.trim() ? Number(value) : null
-}
-
-function preLaunch(): PreLaunchSource {
-  if (!remote.value || form.preLaunchKind === 'none') return null
-  if (form.preLaunchKind === 'inline') {
-    return { kind: 'inline', text: form.preLaunchText }
-  }
-  if (form.preLaunchKind === 'local_file') {
-    return { kind: 'local_file', path: form.preLaunchPath }
-  }
-  return {
-    kind: 'cluster_file',
-    path: form.preLaunchPath,
-    expected_digest: form.preLaunchDigest.trim() || null,
-  }
-}
-
-function buildDraft(): ExecutionProfileDraft {
-  const secretRefs = jsonObject(form.secretRefs, 'Secret references')
-  const launch = form.mode === 'attached'
-    ? null
-    : form.mode === 'submitted_local'
-      ? {
-          backend: 'local',
-          work_dir: form.localWorkDir.trim() || null,
-          hard_cancel_after: optionalNumber(form.hardCancelAfter),
-        }
-      : {
-          backend: 'psij',
-          executor: form.scheduler,
-          walltime_seconds: Number(form.walltimeSeconds),
-          queue: form.queue.trim() || null,
-          project: form.project.trim() || null,
-          cpu_cores: Number(form.cpuCores),
-          work_dir: form.clusterWorkDir.trim() || null,
-          hard_cancel_after: optionalNumber(form.hardCancelAfter),
-        }
-  return {
-    schema: 'bioimageflow.platform.execution-profile.v1',
-    name: form.name.trim(),
-    enabled: form.enabled,
-    mode: form.mode,
-    parsl_config: {
-      factory: form.factory,
-      kwargs: jsonObject(form.kwargs, 'Factory arguments'),
-      secret_refs: Object.keys(secretRefs).length > 0
-        ? secretRefs as Record<string, string>
-        : null,
-    },
-    executor_bindings: jsonObject(form.executorBindings, 'Executor bindings'),
-    environment_routes: jsonObject(form.environmentRoutes, 'Environment routes') as Record<string, string>,
-    shared_runtime_root: form.sharedRuntimeRoot.trim() || null,
-    task_policy: {
-      schema: 'bioimageflow.parsl.task_policy.v1',
-      row_chunk_size: Number(form.rowChunkSize),
-      max_in_flight: Number(form.maxInFlight),
-    },
-    launch,
-    transport: remote.value
-      ? {
-          host: form.host,
-          staging_root: form.stagingRoot,
-          remote_executable: form.remoteExecutable,
-          connect_timeout: Number(form.connectTimeout),
-        }
-      : null,
-    remote_workflow_root: remote.value ? form.remoteWorkflowRoot : null,
-    pre_launch: preLaunch(),
-  }
+function connectionSummary(connection: Record<string, unknown> | null): string {
+  if (!connection) return 'Not checked'
+  const reachable = connection.reachable ?? connection.ok
+  const message = connection.message
+  if (reachable === true) return typeof message === 'string' && message ? message : 'Reachable'
+  if (typeof message === 'string' && message) return message
+  if (reachable === false) return 'Unavailable'
+  return 'Connection report available'
 }
 
 function resetForm(): void {
-  Object.assign(form, {
-    name: '', enabled: true, mode: 'attached', factory: props.trustedFactories[0] ?? '',
-    kwargs: '{}', secretRefs: '{}', executorBindings: '{}', environmentRoutes: '{}',
-    sharedRuntimeRoot: '', rowChunkSize: '1', maxInFlight: '32', localWorkDir: '',
-    scheduler: 'slurm', walltimeSeconds: '3600', queue: '', project: '', cpuCores: '1',
-    clusterWorkDir: '', hardCancelAfter: '', host: '', stagingRoot: '', remoteExecutable: '',
-    connectTimeout: '15', remoteWorkflowRoot: '', preLaunchKind: 'none', preLaunchText: '',
-    preLaunchPath: '', preLaunchDigest: '',
-  })
+  Object.assign(form, { name: '', configPath: '', enabled: true })
 }
 
 function openNew(): void {
@@ -175,67 +55,62 @@ function openNew(): void {
 
 function openEdit(profile: ExecutionProfile): void {
   editing.value = profile
-  resetForm()
-  const launch = profile.launch ?? {}
-  const transport = profile.transport ?? {}
   Object.assign(form, {
     name: profile.name,
+    configPath: profile.config_path,
     enabled: profile.enabled,
-    mode: profile.mode,
-    factory: profile.parsl_config.factory,
-    kwargs: JSON.stringify(profile.parsl_config.kwargs, null, 2),
-    secretRefs: JSON.stringify(profile.parsl_config.secret_refs ?? {}, null, 2),
-    executorBindings: JSON.stringify(profile.executor_bindings, null, 2),
-    environmentRoutes: JSON.stringify(profile.environment_routes, null, 2),
-    sharedRuntimeRoot: profile.shared_runtime_root ?? '',
-    rowChunkSize: String(profile.task_policy.row_chunk_size ?? 1),
-    maxInFlight: String(profile.task_policy.max_in_flight ?? 32),
-    localWorkDir: String(launch.work_dir ?? ''),
-    scheduler: String(launch.executor ?? 'slurm'),
-    walltimeSeconds: String(launch.walltime_seconds ?? 3600),
-    queue: String(launch.queue ?? ''),
-    project: String(launch.project ?? ''),
-    cpuCores: String(launch.cpu_cores ?? 1),
-    clusterWorkDir: String(launch.work_dir ?? ''),
-    hardCancelAfter: String(launch.hard_cancel_after ?? ''),
-    host: String(transport.host ?? ''),
-    stagingRoot: String(transport.staging_root ?? ''),
-    remoteExecutable: String(transport.remote_executable ?? ''),
-    connectTimeout: String(transport.connect_timeout ?? 15),
-    remoteWorkflowRoot: profile.remote_workflow_root ?? '',
-    preLaunchKind: profile.pre_launch?.kind ?? 'none',
-    preLaunchText: profile.pre_launch?.kind === 'inline' ? profile.pre_launch.text : '',
-    preLaunchPath: profile.pre_launch?.kind !== 'inline' ? profile.pre_launch?.path ?? '' : '',
-    preLaunchDigest: profile.pre_launch?.kind === 'cluster_file'
-      ? profile.pre_launch.expected_digest ?? ''
-      : '',
   })
   formError.value = null
   editorOpen.value = true
 }
 
+async function chooseConfig(): Promise<void> {
+  const selected = await selectFile('Select RemoteCluster configuration', ['*.py'])
+  if (selected !== null) form.configPath = selected
+}
+
 async function save(): Promise<void> {
   formError.value = null
   try {
-    const draft = buildDraft()
+    const draft = {
+      name: form.name.trim(),
+      enabled: form.enabled,
+      config_path: form.configPath.trim(),
+    }
+    if (!draft.name) throw new Error('Name is required')
+    if (!draft.config_path) throw new Error('Configuration script is required')
     if (editing.value) await profiles.update(editing.value, draft)
     else await profiles.create(draft)
     editorOpen.value = false
-  } catch (errorValue) {
-    formError.value = errorValue instanceof Error ? errorValue.message : String(errorValue)
+  } catch (cause) {
+    formError.value = cause instanceof Error ? cause.message : String(cause)
   }
 }
 
-async function testProfile(profile: ExecutionProfile): Promise<void> {
-  const result = await profiles.test(profile)
-  testMessage.value = result.valid
-    ? 'Profile validation passed. Pre-launch setup was not executed.'
-    : result.diagnostics.map(item => item.message).join('\n')
+async function describe(profile: ExecutionProfile, checkConnection = false): Promise<void> {
+  actionError.value = null
+  describedProfile.value = profile
+  describeOpen.value = true
+  try {
+    await profiles.describe(profile, checkConnection)
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 
-async function chooseLocalPreLaunch(): Promise<void> {
-  const selected = await selectFile('Select PSI/J pre-launch script', ['*.sh'])
-  if (selected !== null) form.preLaunchPath = selected
+async function downloadExample(): Promise<void> {
+  actionError.value = null
+  try {
+    const blob = await downloadSlurmProfileExample()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'bioimageflow-slurm-profile.zip'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 
 onMounted(() => void profiles.refresh())
@@ -245,76 +120,49 @@ onMounted(() => void profiles.refresh())
   <section class="profiles" data-testid="execution-profiles-section">
     <header>
       <div>
-        <h3>Distributed profiles</h3>
-        <p>Configure attached Parsl or durable cluster execution targets.</p>
-      </div>
-      <Button v-if="editable" label="Add profile" icon="pi pi-plus" size="small" @click="openNew" />
-    </header>
-    <p v-if="profiles.loading" role="status">Loading execution profiles…</p>
-    <p v-if="profiles.error" class="error" role="alert">{{ profiles.error }}</p>
-    <p v-if="testMessage" class="notice" role="status">{{ testMessage }}</p>
-    <div v-for="profile in profiles.profiles" :key="profile.id" class="profile-card">
-      <div>
-        <strong>{{ profile.name }}</strong>
-        <span>{{ profile.mode.replace(/_/g, ' ') }} · revision {{ profile.revision }}</span>
+        <h3>Managed remote clusters</h3>
+        <p>Each profile loads one trusted Python script that defines <code>cluster = RemoteCluster(...)</code>.</p>
       </div>
       <div class="actions">
-        <Button label="Test" severity="secondary" size="small" :loading="profiles.testing === profile.id" @click="testProfile(profile)" />
+        <Button label="Slurm example" icon="pi pi-download" severity="secondary" size="small" @click="downloadExample" />
+        <Button v-if="editable" label="Add profile" icon="pi pi-plus" size="small" @click="openNew" />
+      </div>
+    </header>
+    <p class="security-note">Authentication stays in SSH and the process environment. Secrets are never saved in platform profile state.</p>
+    <p v-if="profiles.loading" role="status">Loading execution profiles…</p>
+    <p v-if="profiles.error" class="error" role="alert">{{ profiles.error }}</p>
+    <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+    <article v-for="profile in profiles.profiles" :key="profile.id" class="profile-card">
+      <div class="profile-summary">
+        <div>
+          <strong>{{ profile.name }}</strong>
+          <Tag :value="profile.enabled ? 'enabled' : 'disabled'" :severity="profile.enabled ? 'success' : 'secondary'" />
+        </div>
+        <span>{{ profile.cluster_host }} · {{ profile.cluster_root }}</span>
+        <code :title="profile.config_digest">{{ profile.config_digest }}</code>
+        <small>{{ profile.config_path }} · revision {{ profile.revision }}</small>
+      </div>
+      <div class="actions">
+        <Button label="Describe" severity="secondary" size="small" :loading="profiles.describing === profile.id" @click="describe(profile)" />
         <Button v-if="profile.editable" label="Edit" severity="secondary" size="small" @click="openEdit(profile)" />
         <Button v-if="profile.editable" label="Remove" severity="danger" text size="small" @click="profiles.remove(profile)" />
       </div>
-    </div>
+    </article>
     <p v-if="!profiles.loading && profiles.profiles.length === 0" class="empty">
-      No distributed profiles are configured. Local execution remains available.
+      No managed remote cluster is configured. Local Direct and Wetlands execution remain available.
     </p>
 
-    <Dialog v-model:visible="editorOpen" modal :header="editing ? 'Edit execution profile' : 'Add execution profile'" :style="{ width: 'min(820px, calc(100vw - 2rem))' }">
+    <Dialog v-model:visible="editorOpen" modal :header="editing ? 'Edit remote cluster' : 'Add remote cluster'" :style="{ width: 'min(42rem, calc(100vw - 2rem))' }">
       <div class="form-grid">
         <label>Name<InputText v-model="form.name" /></label>
-        <label>Mode<Select v-model="form.mode" :options="modes" option-label="label" option-value="value" /></label>
-        <label class="wide">Trusted configuration factory<Select v-model="form.factory" editable :options="trustedFactories" /></label>
-        <label class="wide">Factory arguments (JSON)<Textarea v-model="form.kwargs" rows="4" /></label>
-        <label class="wide">Secret argument → environment reference (JSON)<Textarea v-model="form.secretRefs" rows="3" /></label>
-        <label class="wide">Executor bindings (BioImageFlow JSON)<Textarea v-model="form.executorBindings" rows="7" /></label>
-        <label class="wide">Environment routes (JSON)<Textarea v-model="form.environmentRoutes" rows="3" /></label>
-        <label>Shared runtime root<InputText v-model="form.sharedRuntimeRoot" /></label>
-        <label>Row chunk size<InputText v-model="form.rowChunkSize" /></label>
-        <label>Maximum in flight<InputText v-model="form.maxInFlight" /></label>
-        <template v-if="submitted">
-          <label>Hard-cancel grace (seconds)<InputText v-model="form.hardCancelAfter" /></label>
-        </template>
-        <template v-if="form.mode === 'submitted_local'">
-          <label class="wide">Local orchestrator work directory<InputText v-model="form.localWorkDir" /></label>
-        </template>
-        <template v-if="remote">
-          <label>OpenSSH host or alias<InputText v-model="form.host" /></label>
-          <label>Transport staging root<InputText v-model="form.stagingRoot" /></label>
-          <label class="wide">Cluster agent executable<InputText v-model="form.remoteExecutable" /></label>
-          <label>Connection timeout<InputText v-model="form.connectTimeout" /></label>
-          <label>Workflow storage root<InputText v-model="form.remoteWorkflowRoot" /></label>
-          <label>Scheduler<Select v-model="form.scheduler" :options="['slurm', 'pbs', 'lsf']" /></label>
-          <label>Walltime (seconds)<InputText v-model="form.walltimeSeconds" /></label>
-          <label>Queue<InputText v-model="form.queue" /></label>
-          <label>Project / account<InputText v-model="form.project" /></label>
-          <label>Orchestrator CPU cores<InputText v-model="form.cpuCores" /></label>
-          <label>Cluster work directory<InputText v-model="form.clusterWorkDir" /></label>
-          <label class="wide">Pre-launch setup<Select v-model="form.preLaunchKind" :options="preLaunchKinds" option-label="label" option-value="value" /></label>
-          <label v-if="form.preLaunchKind === 'inline'" class="wide">Inline UTF-8 shell source<Textarea v-model="form.preLaunchText" rows="8" /></label>
-          <label v-if="form.preLaunchKind === 'local_file'" class="wide">
-            Local script path
-            <span class="path-row">
-              <InputText v-model="form.preLaunchPath" />
-              <Button label="Browse…" severity="secondary" @click="chooseLocalPreLaunch" />
-            </span>
-          </label>
-          <template v-if="form.preLaunchKind === 'cluster_file'">
-            <label class="wide">Cluster script path<InputText v-model="form.preLaunchPath" /></label>
-            <label class="wide">Expected SHA-256 digest (recommended)<InputText v-model="form.preLaunchDigest" placeholder="sha256:…" /></label>
-          </template>
-          <p v-if="form.preLaunchKind !== 'none'" class="wide warning">
-            The script is sourced once before the PSI/J orchestrator. Do not put credentials in it. It does not initialize Parsl workers or replace OpenSSH and cluster-agent setup.
-          </p>
-        </template>
+        <label>
+          Configuration script
+          <span class="path-row">
+            <InputText v-model="form.configPath" placeholder="/absolute/path/to/cluster.py" />
+            <Button label="Browse…" severity="secondary" @click="chooseConfig" />
+          </span>
+        </label>
+        <small>The platform imports this trusted script only on the backend. Saving snapshots its digest and the non-secret host and root identities.</small>
         <label class="checkbox"><Checkbox v-model="form.enabled" binary />Enabled</label>
       </div>
       <p v-if="formError" class="error" role="alert">{{ formError }}</p>
@@ -323,24 +171,66 @@ onMounted(() => void profiles.refresh())
         <Button label="Save" @click="save" />
       </template>
     </Dialog>
+
+    <Dialog v-model:visible="describeOpen" modal header="Cluster description" :style="{ width: 'min(52rem, calc(100vw - 2rem))' }" data-testid="cluster-description">
+      <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+      <div v-else-if="profiles.describing" class="loading"><i class="pi pi-spin pi-spinner" /> Describing cluster…</div>
+      <template v-else-if="description">
+        <dl class="description-grid">
+          <dt>Host</dt><dd>{{ description.cluster_host }}</dd>
+          <dt>Writable root</dt><dd>{{ description.cluster_root }}</dd>
+          <dt>Configuration digest</dt><dd><code>{{ description.config_digest }}</code></dd>
+          <dt>Configured</dt><dd>{{ description.configured ? 'Yes' : 'No' }}</dd>
+          <dt>Connection</dt><dd>{{ connectionSummary(description.connection) }}</dd>
+        </dl>
+        <div class="describe-actions">
+          <Button label="Check connection" icon="pi pi-wifi" severity="secondary" :loading="profiles.describing === describedProfile?.id" @click="describedProfile && describe(describedProfile, true)" />
+        </div>
+        <section>
+          <h4>Capabilities</h4>
+          <ul class="capability-list">
+            <li v-for="(value, key) in description.capabilities.capabilities" :key="key">
+              <Tag :value="value.supported ? 'supported' : 'unavailable'" :severity="value.supported ? 'success' : 'warn'" />
+              <code>{{ key }}</code>
+              <span v-if="value.reason">{{ value.reason }}</span>
+            </li>
+          </ul>
+          <p v-if="unsupportedCapabilities.length === 0">All reported managed-cluster capabilities are available.</p>
+        </section>
+        <section v-if="description.diagnostics.length">
+          <h4>Diagnostics</h4>
+          <article v-for="(diagnostic, index) in description.diagnostics" :key="index" class="diagnostic">
+            <strong>{{ diagnostic.phase }} · {{ diagnostic.category }}</strong>
+            <p>{{ diagnostic.message }}</p>
+            <p v-if="diagnostic.next_action"><strong>Next action:</strong> {{ diagnostic.next_action }}</p>
+          </article>
+        </section>
+      </template>
+    </Dialog>
   </section>
 </template>
 
 <style scoped>
 .profiles { display: grid; gap: .75rem; }
-header, .profile-card, .actions { display: flex; align-items: center; gap: .5rem; }
+header, .profile-card, .actions, .profile-summary > div, .describe-actions { display: flex; align-items: center; gap: .5rem; }
 header, .profile-card { justify-content: space-between; }
-h3, p { margin: 0; }
-header p, .profile-card span, .empty { color: var(--p-text-muted-color, #666); }
+h3, h4, p { margin: 0; }
+header p, .profile-summary span, .profile-summary small, .empty, .security-note { color: var(--p-text-muted-color, #666); }
+.security-note { padding: .65rem; border-radius: 6px; background: var(--p-surface-100); }
 .profile-card { padding: .75rem; border: 1px solid var(--p-content-border-color, #ddd); border-radius: 6px; }
-.profile-card > div:first-child { display: grid; gap: .2rem; }
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.profile-summary { min-width: 0; display: grid; gap: .25rem; }
+.profile-summary code, .profile-summary small { overflow-wrap: anywhere; }
+.form-grid { display: grid; gap: .8rem; }
 .form-grid label { display: grid; gap: .35rem; font-weight: 600; }
-.form-grid .wide { grid-column: 1 / -1; }
-.checkbox { display: flex !important; grid-auto-flow: column; justify-content: start; align-items: center; }
-.warning { padding: .7rem; background: color-mix(in srgb, var(--p-yellow-500, #eab308) 14%, transparent); border-radius: 4px; }
+.checkbox { display: flex !important; align-items: center; justify-content: start; }
+.path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
 .error { color: var(--p-red-600, #c00); white-space: pre-wrap; }
-.notice { white-space: pre-wrap; }
-.path-row { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
-@media (max-width: 680px) { .form-grid { grid-template-columns: 1fr; } .form-grid .wide { grid-column: auto; } }
+.loading { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 8rem; }
+.description-grid { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: .45rem; }
+.description-grid dt { color: var(--p-text-muted-color); }
+.description-grid dd { margin: 0; overflow-wrap: anywhere; }
+.capability-list { display: grid; gap: .35rem; padding: 0; list-style: none; }
+.capability-list li { display: grid; grid-template-columns: auto minmax(12rem, auto) 1fr; align-items: center; gap: .5rem; }
+.diagnostic { margin-top: .5rem; padding: .65rem; border-radius: 6px; background: var(--p-surface-100); }
+@media (max-width: 680px) { header, .profile-card { align-items: stretch; flex-direction: column; } .actions { flex-wrap: wrap; } .path-row { grid-template-columns: 1fr; } }
 </style>
