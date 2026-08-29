@@ -43,6 +43,6 @@ bioimageflow-platform/
 ## Related architecture references
 
 - [Workspace, Storage, and Demos](workspace-storage-and-demos.md) describes application-owned files and result views.
-- [Distributed execution runtime wiring](../distributed_execution_runtime_wiring.md) describes remote preparation, submission, progress, and result retrieval.
+- [Managed distributed execution runtime wiring](../distributed_execution_runtime_wiring.md) describes the public cluster boundary, durable attachment, structured observation, retry, result retrieval, and cleanup.
 - [Platform specifications v1](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/platform_specs_v1.md) define the implemented application base.
 - [Platform specifications v3](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/platform_specs_v3.md) are a future proposal and do not describe current behavior unless explicitly inherited from v1 or v2.

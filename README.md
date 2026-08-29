@@ -101,8 +101,9 @@ Open <http://127.0.0.1:8000/> and press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop the
 ## Contributor references
 
 - [Platform Architecture](docs/developer/architecture.md) describes the backend, frontend, desktop shell, and workflow editing model.
+- [Managed Distributed Execution](docs/user/distributed-execution.md) explains trusted cluster profiles, durable reconnection, result download, and cleanup.
 - [Workspace, Storage, and Demos](docs/developer/workspace-storage-and-demos.md) documents filesystem ownership, latest-output views, exports, and bundled workflow maintenance.
 - [Release Process](docs/developer/releases.md) is the application and launcher release checklist.
 - [Backend README](backend/README.md) covers the server, desktop entry point, API, and Python package.
 - [Frontend README](frontend/README.md) covers the editor application, build commands, and frontend structure.
-- [Platform specifications](platform_specs_v1.md) define the implemented base; [recursive workflow behavior](platform_specs_v2.md) extends it, while [v3](platform_specs_v3.md) is a future proposal.
+- [Platform specifications](platform_specs_v1.md) define the implemented base; [recursive workflow behavior](platform_specs_v2.md) and [managed distributed execution](platform_specs_distributed_execution.md) extend it, while [v3](platform_specs_v3.md) is a future proposal.

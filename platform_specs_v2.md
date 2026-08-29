@@ -34,6 +34,10 @@ The platform does not use a sentinel tool, a second child graph language, duplic
 
 `schema_version`, `name`, `display_name`, `interface`, and `config` are required at every depth.
 The graph owns layout, collapsed state, enabled state, parameter values, resource overrides, and output templates exactly once.
+Processing-tool resources are typed portable per-node overrides for CPU, GPU, memory, GPU memory, and maximum concurrency.
+They describe worker requirements rather than guaranteed limits, inherit the tool declaration when absent, and do not affect cache identity.
+`GraphState.config.execution` owns sequential or parallel scheduling; application settings only choose the default for a new workflow.
+Execution target profiles and durable remote-run state never enter `GraphState`.
 
 The workspace `workflow.json` is a `WorkflowDocument` envelope containing a platform document version, the canonical graph, workspace metadata, the artifact hash, optional Python authoring provenance, and owned workflow-local source identifiers.
 Runtime translation to the BioImageFlow library happens in memory from the accepted graph snapshot.
@@ -142,6 +146,7 @@ During execution, root and nested editors are mutation-locked uniformly.
 All accepted root drafts, nested snapshots, execution requests, cache operations, import, and export use the same recursive graph translator and library compiler.
 
 Validation covers recursive graph structure, discriminator correctness, unique node/edge/interface IDs, field and DataFrame interface targets, binding and edge compatibility, recursive tool availability, workflow-local source ownership, workspace containment, source-update preconditions, and execution mutation locking.
+It also validates ProcessingTool-only resource overrides, tool-declared resource floors, concurrency caps, exact execution intent, target availability, and invocation-only remote path choices.
 Errors use scoped paths such as `segment_and_measure/cellpose_segmenter`.
 
 The stateless graph endpoint validates the same canonical graph shape but does not retain editor state.
@@ -157,6 +162,23 @@ The platform does not prune or rebuild a partial graph before compilation.
 
 A workflow node projects aggregate status from its descendants while preserving the failing or cancelled scoped path.
 Detached internal failures still make the workflow node fail and block its downstream consumers.
+
+The target selector beside Run offers the built-in **Local** target and available managed remote profiles.
+Local execution preserves Direct and Wetlands behavior.
+Managed remote execution uses the public `bioimageflow.cluster.RemoteCluster` lifecycle and follows `describe cluster → build workflow → submit → save run ID → reconnect → download result`.
+Changing the target is application state and never changes the workflow graph.
+
+The Execution panel is the engine-neutral authority for current and retained runs.
+An `ExecutionSnapshot` identifies the workflow and accepted draft, target, engine and scheduling policy, normalized and backend states, timestamps, job counts, backend allocation when available, scoped job snapshots, structured diagnostics, action availability, retry relationships, result state, and a monotonically increasing revision.
+Direct, Wetlands, and managed remote runs use the same snapshot presentation.
+Each job is one compiled scoped node attempt; a scheduler allocation or Parsl worker task is not presented as a workflow job.
+
+Managed runs are monitored only through public snapshots, sequence-based progress, and structured diagnostics.
+They do not expose a managed-run log action.
+Cancellation, retry planning and start, result download, and cleanup delegate to the public run or cluster methods, and UI availability is derived from capability and diagnostic reports.
+
+A managed run persists the durable run ID plus host, cluster root, and progress sequence so restart attachment does not require the original workflow or trusted configuration files.
+Retry recovery persists the exact public retry plan and planned child ID, attempts child attachment first, and repeats `start_retry()` only after the public API definitively reports that the child is absent.
 
 ## 10. Saved-Source Provenance
 
@@ -215,6 +237,11 @@ Remote draft changes are resolved explicitly before destructive or execution ope
 Workflow identities are path-derived and carry durable identity generations.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves update drafts, retained snapshots, and provenance references atomically.
+
+The platform keeps an atomic, revisioned execution registry separate from graphs and cache storage.
+The registry is an index and presentation cache rather than authority for managed run state.
+It stores only non-secret profile attribution, accepted snapshot identity, durable run identity, managed attachment tuple, progress cursor, retry journal, and normalized presentation state.
+On restart, managed entries attach through `RemoteCluster(host=..., root=...).attach(run_id)` and converge from public run observations without importing the original cluster script or resubmitting.
 
 Every named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`.
 This path is not configurable or persisted in `GraphState` or workspace metadata.
@@ -285,6 +312,10 @@ Thumbnail requests are initiated only when their rendered row enters the visible
 
 The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; trusted Python-source preview using the same apply route; and explicit workflow and result exports.
 
+Execution APIs include strict profile and target models, cluster description, exact run preflight, plural execution snapshots, refresh, ID-specific cancellation, persisted retry preview and confirmation, managed result download, and plan-based cleanup.
+Managed profile records select a trusted desktop Python script whose top level defines `cluster = RemoteCluster(...)`; their persistence contains only identity, revision, name, enabled state, script path, and observed digest.
+Version-1 low-level Parsl and transport profiles are dropped without archive or conversion.
+
 The export routes are:
 
 - `POST /api/v1/workflows/{name}/export` for the portable workflow-only archive;
@@ -304,6 +335,11 @@ Generated discriminated graph, interface, edge, provenance, and source-operation
 Application-wide integration settings are platform-owned and are not contributed by installed tool packages through schemas, HTML, Vue components, or other executable frontend extensions.
 An integration that needs global configuration is added to the platform core with its storage, validation, secret handling, UI, tests, and compatibility behavior.
 
+Managed remote profiles are platform-owned integration settings.
+Desktop users select and explicitly trust a local configuration script, while webapp profiles are provisioned out of band and remain read-only without introducing a new administrator role.
+SSH host, scheduler, project or account, queue, writable root, and optional Modules or Spack initialization remain genuine site facts in the selected script and reusable templates rather than duplicated platform form state.
+Resolved secrets are never stored or returned.
+
 OMERO remains a platform-owned integration consumed by dedicated tool packages.
 The OMERO settings UI renders each named server instance as a separate responsive form card with individually labelled fields and card-local Save, Duplicate, and Remove actions.
 Cards use multiple field columns when space permits, collapse to one column in narrow windows, and do not require horizontal scrolling to reach fields or actions.
@@ -317,6 +353,10 @@ In a root tab it saves the workspace workflow; in a nested tab it applies the ac
 
 The workflow-node context actions are **Open workflow**, source actions when provenance exists, Rename, Enable/Disable, and Delete.
 The selection action is **Group into workflow**.
+
+The Run toolbar includes an execution-target selector whose visible value applies to every run command.
+**View → Execution** opens the retained run monitor.
+Run actions address one execution ID for cancellation, retry, result download, refresh, and cleanup; managed retry confirmation always names its captured target and planned child run.
 
 ## 16. Files Source Selection
 

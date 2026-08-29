@@ -28,7 +28,7 @@ Nested workflow steps remain grouped under their workflow name.
 Use **Stop** to cancel.
 A running tool may need a short time to respond before execution fully stops.
 
-For clusters and other configured targets, see [Distributed Execution](distributed-execution.md).
+For managed cluster targets, durable reconnection, retry, and result download, see [Managed Cluster Execution](distributed-execution.md).
 
 ## Read logs and errors
 

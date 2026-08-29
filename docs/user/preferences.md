@@ -28,9 +28,13 @@ In Node Data, use the Fiji button beside Napari to open an image; before setup, 
 ## Execution
 
 Choose the default execution target and how new workflows schedule independent nodes.
-You can add and edit distributed profiles for configured remote systems.
+**Local** preserves workstation execution through Direct and Wetlands.
+In desktop mode, a managed remote profile stores a name and the path to one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
+Use **Describe cluster** to record its observed digest and show its destination, scheduler request, connection observation, capabilities, and structured diagnostics.
+Download the reusable Slurm example to start with `cluster.py`, `parsl.py`, and optional `setup.sh` files that keep genuine site facts together.
+In webapp mode, managed profiles are provisioned out of band and appear read-only.
 
-See [Distributed Execution](distributed-execution.md) before adding a remote target or startup script.
+See [Managed Cluster Execution](distributed-execution.md) before selecting or trusting a cluster script.
 
 ## Display
 

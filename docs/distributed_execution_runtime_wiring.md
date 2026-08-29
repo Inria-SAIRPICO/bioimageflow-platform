@@ -1,77 +1,88 @@
----
-orphan: true
----
+# Managed Distributed Execution Runtime Wiring
 
-# Distributed execution runtime wiring
+This reference describes how the platform consumes BioImageFlow's public managed cluster API.
+The normative platform behavior is in [`platform_specs_distributed_execution.md`](../platform_specs_distributed_execution.md).
 
-The retained runtime is deliberately independent of settings/profile persistence and the existing compatibility `ExecutionManager`.
+## Ownership boundary
 
-## Application lifecycle
+The platform owns profile selection, accepted workflow identity, explicit path choices, durable presentation state, API transport, and UI actions.
+BioImageFlow owns remote deployment, gateway and storage layout, validation, Parsl configuration, PSI/J scheduler submission, run authority, progress, diagnostics, retry, verified result transfer, and cleanup.
 
-At application construction, create `ExecutionRegistry` with the workspace root, not a workflow storage root.
+The integration imports managed values from `bioimageflow.cluster`.
+It does not construct the superseded transport, cluster-agent, staging-path, `ParslConfigRef`, `PSIJLaunchConfig`, or `PreLaunchScript` values.
 
-Create one `PreparedSubmissionTokenManager` and one `ExecutionCoordinator` per application process.
+## Profile loading
 
-In the FastAPI lifespan startup, call `ExecutionCoordinator.start()` after profile and workspace stores are available.
+A managed profile stores only ID, revision, name, enabled state, trusted script path, and observed SHA-256 digest.
+The script is freshly imported for describe and submit operations and must expose a top-level `cluster` value that is a `RemoteCluster`.
 
-Startup reconnects submitted runs from their public reconnect tuple and never resubmits them.
+The profile store never serializes that live object or its executable source bytes.
+It never resolves or persists passwords, private keys, tokens, or environment-variable values.
 
-In lifespan shutdown, call `ExecutionCoordinator.close()` and then `PreparedSubmissionTokenManager.close()` so polling tasks stop and abandoned immutable preparations are removed.
+Desktop profile mutation is a trusted local capability.
+Webapp profiles are read-only values provisioned out of band, and ordinary browser users cannot choose a server Python path.
 
-Include both `bioimageflow_server.routers.executions.router` and `preflight_router` under `/api/v1` and override their four dependencies with the application-owned coordinator, preflight service, prepared-run registrar, and download-destination resolver.
+## Description and target availability
 
-The route shapes are `POST /api/v1/execution/preflight`, `POST /api/v1/executions`, `GET /api/v1/executions`, `GET /api/v1/executions/{execution_id}`, and ID-specific `cancel`, `retry`, `logs`, and `result` routes.
+The describe service loads the trusted script, reads the public capability report, and runs only public non-workflow cluster checks.
+It returns sanitized target details, connection observation, capabilities, and structured diagnostics.
 
-Keep `/api/v1/execution/run`, `/status`, `/stop`, and `/clear` wired to the existing `ExecutionManager` during migration.
+The execution-target service combines the built-in Local target with enabled managed profiles.
+Target availability and disabled reasons come from capability and diagnostic reports rather than package or exception-text heuristics.
+Missing cluster support never prevents Local Direct or Wetlands execution.
 
-## Profile and workflow boundaries
+## Admission and submission
 
-The profile layer implements `ExecutionProfileResolver.resolve_target()` and returns the immutable revision selected for that target.
+Remote admission uses the same exact accepted graph or draft snapshot and recursive translator as Local execution.
+Preflight validates the graph and returns any unresolved remote path inputs.
+It does not create a library deployment, prepared invocation, plan, run, or scheduler job.
 
-Its `planning_arguments()` contains only public `plan_distributed_execution()` keyword values.
+The user resolves each remote path as a `LocalUpload` or normalized absolute cluster `Path`.
+The run service reloads the captured profile revision, verifies the current script and digest, creates a storage-independent library workflow, and calls `cluster.submit()` directly with the supported `inputs`, `targets`, or `node_input_overrides` shape.
 
-Its `submission_arguments()` contains only public `prepare_remote_submission()` keyword values, including the selected `PreLaunchScript` produced with `from_text()`, `from_local_file()`, or `from_cluster_file()`.
+The platform does not retain a second deploy, prepare, validate, or plan token.
+The library's convenience operation owns all remote mutation and returns a `RemoteWorkflowRun` only after the run identity is durable.
 
-The returned remote profile exposes its public `SSHSubmissionTransport` as `transport`.
+The service immediately records the returned run ID and the non-secret host/root attachment tuple.
+The direct call necessarily leaves a short process-crash window after remote durable allocation but before the platform receives the returned identity.
+The service never compensates by searching private state or resubmitting.
 
-The workflow resolver compiles or loads the exact accepted draft revision and returns the materialized BioImageFlow workflow.
+## Registry and attachment
 
-The upload resolver is the authority boundary between a user choice and a backend-readable path.
+The execution registry stores graph and draft attribution, sanitized profile attribution, host, root, run ID, progress sequence, retry journal, and normalized `ExecutionSnapshot` state.
+It is an atomic presentation index, not remote run authority.
 
-It authorizes a path selected through the native picker and rejects arbitrary paths outside that boundary.
+Startup recovery creates an attach-only `RemoteCluster(host=..., root=...)`, calls `attach(run_id)`, refreshes the public snapshot, consumes `progress(after_sequence=...)`, and persists the converged projection.
+It never imports the original profile script or bootstraps a missing gateway.
 
-Do not persist the decoded `LocalUpload` values or apply node overrides to the editable workflow.
+## Snapshot reduction and diagnostics
 
-## Run registration and reconnection
+The remote adapter uses `snapshot()`, `refresh()`, `progress(after_sequence=...)`, and `diagnostics()`.
+Progress is reduced idempotently by global sequence and scoped node path.
+The stored cursor advances only with a durable registry snapshot.
 
-The prepared-run registrar receives the `RemoteWorkflowRun` returned by consuming the exact live prepared object.
+Library diagnostics remain structured through the API and UI, including phase, category, sanitized message, allocation state, retry safety, next action, and related identities.
+The adapter does not parse logs or tracebacks to decide actions.
+Managed remote runs deliberately have no log-fetch adapter.
 
-It creates an `ExecutionSnapshot` with the canonical public run ID and reconnect data `{storage_path, run_id}`, wraps the handle in `SubmittedRunAdapter`, and calls `ExecutionCoordinator.register()`.
+## Control operations
 
-Submitted-local registration follows the same path with `WorkflowRun`.
+Cancellation delegates to the attached run's idempotent `cancel()`.
 
-Direct, Wetlands, and attached Parsl registration uses `AttachedRunAdapter` with a compute closure, the run-specific `WorkflowExecutionContext.request_cancel`, and the platform result exporter.
+Retry preview delegates to `plan_retry()` and durably stores the exact plan, digest, and child run ID before confirmation.
+Confirmation delegates to `start_retry(plan)`.
+On recovery the coordinator attaches to the child first, repeats the exact start only after definitive child absence, and otherwise preserves uncertain state without replay.
 
-The attached compute closure installs the supplied progress callback on the materialized run snapshot and owns the `ParslEngine.from_config_ref()` context when the selected target is attached Parsl.
+Result retrieval delegates to `download_result(destination)`.
+Desktop mode supplies a user-selected local destination, while browser delivery uses a server-owned completed artifact rather than an arbitrary client-supplied server path.
 
-The coordinator reconnector must use `open_public_submitted_run()` for submitted modes and must never try to reconnect an attached run after process restart.
+Cleanup delegates to `plan_cleanup()` and `apply_cleanup(plan)`.
+The apply route accepts only the exact stored public plan and never a recursive path.
 
-Profile revisions referenced by non-terminal remote runs must remain resolvable until the runs reach terminal state.
+## OpenAPI and events
 
-## Publication and downloads
+Backend models represent public reports without dropping fields needed for action gating.
+OpenAPI is the sole source of frontend types.
 
-Adapt `ConnectionManager` to `ExecutionSnapshotPublisher` by broadcasting `ExecutionUpdate(type="execution_snapshot", ...)` for initial registration and `ExecutionUpdate(type="execution_update", ...)` for later revisions.
-
-Snapshots are full replacements keyed by their monotonic revision, so clients discard duplicate or older messages.
-
-The download-destination resolver must confine outputs to an application-owned export directory.
-
-It must not accept an arbitrary client-supplied filesystem path.
-
-## Current boundary
-
-Remote preflight returns a single-use token only after `prepare_remote_submission()` succeeds.
-
-Consuming that token submits the exact prepared object and closes it on success or failure.
-
-Attached and submitted-local preflight returns the public distributed plan without a token; their existing admission path should register an adapter only after the accepted draft/profile authority checks complete.
+Execution WebSocket events accelerate delivery of versioned presentation snapshots.
+Reconnect always establishes a full snapshot before later revisions are applied, so events are not the recovery authority.

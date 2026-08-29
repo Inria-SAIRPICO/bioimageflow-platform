@@ -119,12 +119,16 @@ Recursive graphs compile to scoped jobs while workflow nodes project aggregate d
 Caching and result attribution remain per internal tool node, and failures preserve their scoped path through nested workflow boundaries.
 
 The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
-Local execution resolves to the appropriate supported local engine; distributed targets are platform-owned profiles and must not be persisted in portable `GraphState`.
+Local execution preserves Direct and Wetlands through the existing local path.
+Managed remote execution delegates deployment, validation, Parsl orchestration, scheduler submission, attachment, progress, diagnostics, cancellation, retry, result transfer, and cleanup to the public `bioimageflow.cluster` API.
+Execution targets and retained run state are platform-owned and must not be persisted in portable `GraphState`.
 Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.
 
-The distributed-execution implementation and its design specification have evolved at different times.
-For work in this area, read the code and focused tests together with `platform_specs_distributed_execution.md`, verify which increments are implemented, and update the normative specs when implemented behavior is promoted.
-Do not infer that every proposed remote or multi-user capability exists merely because a model or UI component is present.
+Managed remote profiles select one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
+Profiles persist only non-secret identity, name, enabled state, script path, and observed digest; a managed run separately persists host, root, durable run ID, and progress cursor so restart attachment does not need the original script.
+The platform does not retain attached-Parsl, submitted-local, low-level SSH transport, cluster-agent, importable factory, staging-root, or manual remote-directory workflows.
+The public capability report and structured diagnostics determine UI state, and managed runs do not expose logs.
+Retry recovery is attach-first and may replay only the exact persisted public retry plan after definitive child absence.
 
 Each saved workflow owns runtime storage at `<workflow-directory>/results`.
 The `outputs/latest` view is a disposable per-node projection and may combine the latest successful outputs from different runs.
@@ -210,7 +214,7 @@ Use this authority order:
 1. `bioimageflow/docs/source/specs.md` is authoritative for BioImageFlow library contracts.
 2. `platform_specs_v1.md` is the implemented platform baseline.
 3. `platform_specs_v2.md` is a cumulative implemented platform delta and overrides v1 where it explicitly changes the same behavior.
-4. `platform_specs_distributed_execution.md` is a proposed delta whose implemented portions must be reconciled with current code and tests and promoted into the normative platform specification when appropriate.
+4. `platform_specs_distributed_execution.md` is the implemented normative delta for managed distributed execution and overrides v2 where it explicitly changes the same behavior.
 5. `platform_specs_v3.md` is a future webapp and multi-user proposal, not evidence that a feature is implemented.
 
 Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.
@@ -226,11 +230,11 @@ Read this file first, then use the following routing table instead of loading ev
 | Nested workflows, provenance, source update, or recursive local sources | v2 Sections 1–12 and library Section 14 |
 | Tool definitions, type compatibility, DataFrame semantics, resources, packages, or tool loading | Relevant library Sections 2–4, 7, and 10, plus v1 tool and node-panel sections and applicable v2 overrides |
 | Execution, caching, cancellation, progress, or result storage | Relevant library Sections 4–7 and 10–13, v1 execution/data-flow sections, and v2 Sections 8, 9, 12, and 14 |
-| Execution targets, profiles, preflight, retained runs, Parsl, PSI/J, or remote data | `platform_specs_distributed_execution.md`, relevant library distributed-execution sections, and the current execution models/services/tests; also check v2 for already promoted behavior |
+| Execution targets, profiles, preflight, retained runs, managed clusters, Parsl, PSI/J, or remote data | `platform_specs_distributed_execution.md`, the library remote-cluster specifications and how-to, relevant library execution sections, and the current execution models/services/tests |
 | Import, export, latest outputs, result bundles, or Python authoring | v2 Sections 6, 8, and 10–14 plus library archive, file-management, and recursive-workflow sections |
 | Datasets, browser mode, authentication, security, or multi-user behavior | Implemented v1/v2 sections first; consult v3 only for work explicitly targeting the proposal and distinguish inherited behavior from proposed behavior |
 | MCP workspace operations or coding-agent user features | Root `AGENTS.md`, `docs/agents/`, `backend/src/bioimageflow_server/data/agent_workspace_instructions.md`, and the corresponding backend MCP/services tests |
-| Broad cross-stack architecture or library compatibility | All of v1 and v2 plus relevant library sections; add the distributed or v3 proposal only when the task includes that scope |
+| Broad cross-stack architecture or library compatibility | All of v1 and v2 plus relevant library sections; add the managed distributed specification or v3 proposal only when the task includes that scope |
 
 Follow links into additional specification sections when the selected material explicitly makes them prerequisites.
 For ambiguous behavior, search all specification documents for the concept and check for a later explicit override before implementing.
