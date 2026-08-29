@@ -105,13 +105,17 @@ async def test_execution_snapshot_websocket_redacts_durable_reconnect_data() -> 
     snapshot = ExecutionSnapshot(
         execution_id="run-public",
         workflow_id="workflow",
-        backend="submitted_remote",
+        backend="managed_remote",
         target_id="cluster",
         target_snapshot={
             "name": "GPU cluster",
-            "profile": {"transport": {"host": "secret.example"}},
+            "mode": "managed_remote",
         },
-        reconnect={"storage_path": "/secret/storage", "run_id": "private-run"},
+        reconnect={
+            "host": "secret.example",
+            "root": "/secret/storage",
+            "run_id": "private-run",
+        },
         backend_metadata={
             "scheduler_job_id": "slurm-123",
             "private_submission": "secret",
@@ -126,7 +130,7 @@ async def test_execution_snapshot_websocket_redacts_durable_reconnect_data() -> 
     payload = ws.sent[0]
     assert payload["type"] == "execution_snapshot"
     assert payload["snapshot"]["target_label"] == "GPU cluster"
-    assert payload["snapshot"]["target_mode"] == "submitted_remote"
+    assert payload["snapshot"]["target_mode"] == "managed_remote"
     assert payload["snapshot"]["scheduler_job_id"] == "slurm-123"
     assert {
         "reconnect",

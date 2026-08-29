@@ -44,7 +44,11 @@ async def test_lifespan_loads_pre_existing_settings(tmp_path: Path) -> None:
         )
     )
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store, disable_hot_reload=True)
+    config = AppConfig(
+        settings_store=store,
+        workspace_path=tmp_path / "workspace",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
@@ -109,6 +113,7 @@ async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refre
 
     config = AppConfig(
         settings_store=store,
+        workspace_path=tmp_path / "workspace",
         package_catalog=_RecordingCatalog(),  # type: ignore[arg-type]
         disable_hot_reload=True,
     )
@@ -275,7 +280,11 @@ async def test_lifespan_calls_flush_on_shutdown(tmp_path: Path) -> None:
     store = SettingsStore(path=path)
     flush_mock = AsyncMock()
     store.flush = flush_mock  # type: ignore[method-assign]
-    config = AppConfig(settings_store=store, disable_hot_reload=True)
+    config = AppConfig(
+        settings_store=store,
+        workspace_path=tmp_path / "workspace",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         flush_mock.assert_not_awaited()
@@ -286,7 +295,11 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     assert not path.exists()
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store, disable_hot_reload=True)
+    config = AppConfig(
+        settings_store=store,
+        workspace_path=tmp_path / "workspace",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         pass
@@ -298,7 +311,11 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
 async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store, disable_hot_reload=True)
+    config = AppConfig(
+        settings_store=store,
+        workspace_path=tmp_path / "workspace",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(

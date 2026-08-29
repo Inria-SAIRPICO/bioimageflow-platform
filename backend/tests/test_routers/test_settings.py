@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.models.workflow import WorkflowCreate
 from bioimageflow_server.services.omero_credentials import OmeroCredentialError, OmeroCredentialKey
@@ -30,9 +32,23 @@ def anyio_backend() -> str:
 @pytest.fixture
 async def settings_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "settings_version": 2,
+                "deployment_mode": "desktop",
+                "workspace_path": str(tmp_path / "workspace"),
+            }
+        ),
+        encoding="utf-8",
+    )
     store = SettingsStore(path=settings_path)
     config = AppConfig(
         settings_store=store,
+        settings=Settings(
+            deployment_mode="desktop",
+            workspace_path=str(tmp_path / "workspace"),
+        ),
         deployment_mode="desktop",
         disable_hot_reload=True,
     )
@@ -71,10 +87,24 @@ async def omero_settings_client(
     tmp_path: Path,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, SettingsStore, FakeOmeroCredentials, Path]]:
     settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "settings_version": 2,
+                "deployment_mode": "desktop",
+                "workspace_path": str(tmp_path / "workspace"),
+            }
+        ),
+        encoding="utf-8",
+    )
     credentials = FakeOmeroCredentials()
     store = SettingsStore(path=settings_path, omero_credentials=credentials)
     config = AppConfig(
         settings_store=store,
+        settings=Settings(
+            deployment_mode="desktop",
+            workspace_path=str(tmp_path / "workspace"),
+        ),
         deployment_mode="desktop",
         disable_hot_reload=True,
     )
@@ -261,35 +291,6 @@ class TestPatchSettings:
         assert response.status_code == 422
         assert "settings file" in response.json()["detail"]
 
-    async def test_webapp_trusted_factories_are_administrator_managed(
-        self, tmp_path: Path
-    ) -> None:
-        store = SettingsStore(
-            path=tmp_path / "settings.json",
-            deployment_mode="webapp",
-        )
-        app = create_app(
-            AppConfig(
-                settings_store=store,
-                deployment_mode="webapp",
-                workspace_path=tmp_path / "workspace",
-                workspaces_root=tmp_path / "users",
-                user_id="test-user",
-                disable_hot_reload=True,
-            )
-        )
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                response = await client.patch(
-                    "/api/v1/settings",
-                    json={"trusted_parsl_factories": ["site.parsl:make_config"]},
-                )
-
-        assert response.status_code == 403
-        assert "administrator-managed" in response.json()["detail"]
-
     async def test_webapp_fiji_configuration_is_rejected(self, tmp_path: Path) -> None:
         store = SettingsStore(
             path=tmp_path / "settings.json",
@@ -372,7 +373,9 @@ class TestPatchSettings:
         assert instance["password_stored"] is True
         assert "password" not in instance
         assert credentials.passwords == {"omero.example.com:4064:admin": "secret"}
-        assert "password" not in path.read_text()
+        persisted = path.read_text()
+        assert '"password"' not in persisted
+        assert "secret" not in persisted
 
     async def test_patch_omero_duplicate_names_return_422(
         self,

@@ -9,7 +9,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -315,10 +315,18 @@ class DistributedPreflightService:
         if leaf.source == "none":
             return None
         if leaf.source == "cluster":
-            value = Path(leaf.value or "")
-            if not value.is_absolute():
-                raise ValueError("Cluster paths must be absolute")
-            return value
+            text = leaf.value or ""
+            value = PurePosixPath(text)
+            if (
+                not text
+                or any(character in text for character in ("\x00", "\n", "\r"))
+                or not value.is_absolute()
+                or text.startswith("//")
+                or str(value) != text
+                or any(part in {"", ".", ".."} for part in value.parts[1:])
+            ):
+                raise ValueError("Cluster paths must be normalized absolute POSIX paths")
+            return Path(text)
         cluster_api = importlib.import_module("bioimageflow.cluster")
 
         return cluster_api.LocalUpload(self._uploads.resolve_upload(leaf.value or ""))

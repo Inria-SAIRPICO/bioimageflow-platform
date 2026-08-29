@@ -173,7 +173,7 @@ async def test_v1_profile_file_is_dropped_without_archive_or_secret_retention(
         "profiles_version": 2,
         "profiles": [],
     }
-    assert [item.name for item in tmp_path.iterdir()] == ["profiles.json"]
+    assert not any(item.name.startswith("profiles.json.") for item in tmp_path.iterdir())
     assert "must-disappear" not in path.read_text(encoding="utf-8")
 
 

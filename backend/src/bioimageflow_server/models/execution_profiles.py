@@ -102,24 +102,3 @@ class ExecutionTargetValue(ProfileValue):
 class ExecutionTargetsValue(ProfileValue):
     capabilities: ExecutionCapabilitiesValue
     targets: list[ExecutionTargetValue]
-
-
-class ClusterCleanupPlanRequest(ProfileValue):
-    namespace: str | None = None
-    run_ids: list[str] = Field(default_factory=list)
-    older_than_seconds: int = Field(default=86_400, ge=0)
-
-
-class ClusterCleanupPresentation(ProfileValue):
-    profile_id: str
-    plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    plan: dict[str, Any]
-
-
-class ClusterCleanupConfirmation(ProfileValue):
-    plan_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-
-
-class ClusterCleanupReportValue(ProfileValue):
-    profile_id: str
-    report: dict[str, Any]

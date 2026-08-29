@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager, nullcontext
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -196,6 +197,11 @@ from bioimageflow_server.ws import (
     attach_ws_log_handler,
     register_ws,
 )
+
+try:
+    APPLICATION_VERSION = version("bioimageflow-server")
+except PackageNotFoundError:  # pragma: no cover - source tree without installed metadata
+    APPLICATION_VERSION = "0.0.0"
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -664,7 +670,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             if _owns_pypi:
                 await pypi.aclose()
 
-    app = FastAPI(title="BioImageFlow Server", version="0.1.0", lifespan=_lifespan)
+    app = FastAPI(
+        title="BioImageFlow Server",
+        version=APPLICATION_VERSION,
+        lifespan=_lifespan,
+    )
 
     workspace_mutation_request_lock = asyncio.Lock()
 

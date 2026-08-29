@@ -7,6 +7,7 @@ Covers both:
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -70,6 +71,21 @@ class _FakePypi(PyPIVersionService):
 
     async def aclose(self) -> None:
         pass
+
+
+async def test_openapi_version_matches_installed_server_package(
+    empty_tool_store: Path,
+) -> None:
+    app = create_app(
+        AppConfig(
+            tool_registry=ToolRegistryService(),
+            pypi_versions=_FakePypi(),
+            disable_hot_reload=True,
+        )
+    )
+
+    assert app.version == version("bioimageflow-server")
+    assert app.openapi()["info"]["version"] == version("bioimageflow-server")
 
 
 async def test_create_app_creates_missing_tool_store(

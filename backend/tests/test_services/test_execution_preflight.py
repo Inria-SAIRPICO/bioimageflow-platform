@@ -106,7 +106,24 @@ async def test_preflight_resolves_paths_then_directly_submits(monkeypatch: pytes
 
 
 @pytest.mark.anyio
-async def test_cluster_path_must_be_absolute(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [
+        "relative",
+        "//cluster/path",
+        "/cluster//path",
+        "/cluster/./path",
+        "/cluster/../path",
+        "/cluster/path/",
+        "/cluster/path\x00suffix",
+        "/cluster/path\nsuffix",
+        "/cluster/path\rsuffix",
+    ],
+)
+async def test_cluster_path_must_be_exact_normalized_absolute_posix(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
     item = SimpleNamespace(scoped_node_path="files", input_name="path", value_shape="path")
     plan = SimpleNamespace(inputs=(item,), to_dict=lambda: {"inputs": []})
     monkeypatch.setattr(bioimageflow, "inspect_remote_node_paths", lambda _workflow: plan)
@@ -127,7 +144,23 @@ async def test_cluster_path_must_be_absolute(monkeypatch: pytest.MonkeyPatch) ->
         draft_revision=0,
         target_id="cluster",
         profile_revision=1,
-        node_path_choices={"files": {"path": {"source": "cluster", "value": "relative"}}},
+        node_path_choices={"files": {"path": {"source": "cluster", "value": value}}},
     )
-    with pytest.raises(ValueError, match="absolute"):
+    with pytest.raises(ValueError, match="normalized absolute POSIX"):
         await service.preflight(request)
+
+
+def test_cluster_path_decoder_returns_exact_path() -> None:
+    service = DistributedPreflightService(
+        workflows=SimpleNamespace(),
+        profiles=SimpleNamespace(),
+        uploads=SimpleNamespace(),
+        tokens=PreparedSubmissionTokenManager(),
+    )
+
+    decoded = service._decode_value(
+        {"source": "cluster", "value": "/shared/project/input.tif"}
+    )
+
+    assert decoded == Path("/shared/project/input.tif")
+    assert isinstance(decoded, Path)

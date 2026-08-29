@@ -40,18 +40,19 @@ async def test_plural_execution_listing_and_id_specific_inspection(tmp_path: Pat
             ExecutionSnapshot(
                 execution_id=f"run_{index:032x}",
                 workflow_id="demo",
-                backend="submitted_local",
-                target_id="local-parsl",
+                backend="managed_remote",
+                target_id="cluster",
                 profile_id="profile_" + "1" * 32,
                 profile_revision=3,
                 target_snapshot={
-                    "name": "Local Parsl",
-                    "profile": {
-                        "transport": {"host": "secret-cluster"},
-                        "parsl_config": {"factory": "private.factory"},
-                    },
+                    "name": "Managed cluster",
+                    "mode": "managed_remote",
                 },
-                reconnect={"storage_path": "/secret/run", "run_id": "private-run"},
+                reconnect={
+                    "host": "secret-cluster",
+                    "root": "/secret/run",
+                    "run_id": "private-run",
+                },
                 backend_metadata={
                     "scheduler_job_id": "scheduler-42",
                     "retry_plan_digest": "sha256:" + "f" * 64,
@@ -82,9 +83,10 @@ async def test_plural_execution_listing_and_id_specific_inspection(tmp_path: Pat
         "retry",
         "recompute",
         "download_results",
+        "cleanup",
     }
-    assert listing.json()["items"][0]["target_label"] == "Local Parsl"
-    assert listing.json()["items"][0]["target_mode"] == "submitted_local"
+    assert listing.json()["items"][0]["target_label"] == "Managed cluster"
+    assert listing.json()["items"][0]["target_mode"] == "managed_remote"
     assert listing.json()["items"][0]["scheduler_job_id"] == "scheduler-42"
     assert detail.status_code == 200
     assert detail.json()["revision"] == 0
@@ -122,6 +124,8 @@ def test_execution_openapi_uses_public_presentation_without_durable_fields(
         "profile_id",
         "profile_revision",
     }.isdisjoint(properties)
+    assert "logs" not in properties
+    assert not any(path.endswith("/logs") for path in schema["paths"])
     listing_schema = schema["paths"]["/api/v1/executions"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]
@@ -136,7 +140,7 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
     parent = ExecutionSnapshot(
         execution_id=parent_id,
         workflow_id="demo",
-        backend="submitted_local",
+        backend="managed_remote",
         target_id="profile",
         state="failed",
     )
@@ -154,7 +158,7 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
                 parent_execution_id=parent_id,
                 child_execution_id="run_abcdef0123456789abcdef0123456789",
                 mode="recompute" if recompute is not None else "retry",
-                target={"id": "profile", "label": "Cluster", "mode": "submitted_local"},
+                target={"id": "profile", "label": "Cluster", "mode": "managed_remote"},
                 recompute=recompute,
                 invalidations=[],
                 conflicting_run_ids=[],

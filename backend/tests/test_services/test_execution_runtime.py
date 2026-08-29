@@ -12,7 +12,6 @@ import pytest
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.settings import Settings
-from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
 from bioimageflow_server.services.execution_progress import reduce_progress_events
 from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.services.execution_registry import (
@@ -30,17 +29,20 @@ from bioimageflow_server.services.execution_runtime import (
     open_public_submitted_run,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.test_services.test_execution_profiles import profile_fields
 
 
 def _snapshot(**updates: Any) -> ExecutionSnapshot:
     values = {
         "execution_id": "run_0123456789abcdef0123456789abcdef",
         "workflow_id": "demo",
-        "backend": "submitted_remote",
+        "backend": "managed_remote",
         "target_id": "cluster",
         "state": "prepared",
-        "reconnect": {"storage_path": "/cluster/workflow", "run_id": "run_remote"},
+        "reconnect": {
+            "host": "cluster.example",
+            "root": "/cluster/workflow",
+            "run_id": "run_remote",
+        },
     }
     values.update(updates)
     return ExecutionSnapshot(**values)
@@ -140,67 +142,35 @@ def test_reducer_accepts_public_bioimageflow_diagnostic_value() -> None:
     assert reduced.jobs["nested/tool"].diagnostic.attempt_id == "attempt-1"
 
 
-def test_remote_reconnect_uses_retained_profile_revision_after_profile_edit(
+def test_remote_reconnect_uses_only_durable_host_root_and_run_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fields = profile_fields(
-        mode="submitted_remote",
-        launch={
-            "backend": "psij",
-            "executor": "slurm",
-            "walltime_seconds": 3600,
-            "cpu_cores": 1,
-        },
-        transport={
-            "host": "confirmed-cluster",
-            "staging_root": "/cluster/staging",
-            "remote_executable": "/usr/bin/bioimageflow-cluster-agent",
-            "connect_timeout": 15.0,
-        },
-        remote_workflow_root="/cluster/workflows",
-    )
-    record = DistributedExecutionProfile(
-        **fields.model_dump(mode="python"),
-        id="profile_" + "1" * 32,
-        revision=4,
-    )
     opened: dict[str, Any] = {}
 
-    class _RemoteRun:
-        @staticmethod
-        def open(transport: Any, storage_path: str, run_id: str) -> _FakeHandle:
-            opened.update(
-                transport=transport,
-                storage_path=storage_path,
-                run_id=run_id,
-            )
+    class _RemoteCluster:
+        def __init__(self, *, host: str, root: str) -> None:
+            opened.update(host=host, root=root)
+
+        def attach(self, run_id: str) -> _FakeHandle:
+            opened["run_id"] = run_id
             return _FakeHandle()
 
-    monkeypatch.setattr(bioimageflow, "RemoteWorkflowRun", _RemoteRun)
-    snapshot = _snapshot(
-        profile_id=record.id,
-        profile_revision=record.revision,
-        target_snapshot={
-            "name": record.name,
-            "mode": record.mode,
-            "profile": record.model_copy(update={"pre_launch": None}).model_dump(mode="json"),
-        },
-    )
-    adapter = open_public_submitted_run(snapshot)
+    import bioimageflow.cluster as cluster_api
+
+    monkeypatch.setattr(cluster_api, "RemoteCluster", _RemoteCluster)
+    adapter = open_public_submitted_run(_snapshot())
 
     assert isinstance(adapter, SubmittedRunAdapter)
-    assert opened["storage_path"] == "/cluster/workflow"
+    assert opened["host"] == "cluster.example"
+    assert opened["root"] == "/cluster/workflow"
     assert opened["run_id"] == "run_remote"
-    assert opened["transport"].host == "confirmed-cluster"
 
 
-def test_remote_reconnect_requires_embedded_profile_snapshot() -> None:
-    with pytest.raises(ValueError, match="profile snapshot is missing"):
+def test_remote_reconnect_rejects_incomplete_attachment_identity() -> None:
+    with pytest.raises(ValueError, match="metadata is incomplete"):
         open_public_submitted_run(
             _snapshot(
-                profile_id="profile_" + "1" * 32,
-                profile_revision=4,
-                target_snapshot={"name": "Cluster", "mode": "submitted_remote"},
+                reconnect={"host": "cluster.example", "run_id": "run_remote"},
             )
         )
 
@@ -218,14 +188,14 @@ class _FakeHandle:
     def progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
         return []
 
+    def snapshot(self) -> dict[str, Any]:
+        return {"state": self.status}
+
     def cancel(self) -> None:
         self.cancelled = True
         self.status = "cancel_requested"
 
-    def logs(self) -> str:
-        return "output"
-
-    def export_result(self, destination: Path) -> None:
+    def download_result(self, destination: Path) -> None:
         destination.mkdir(parents=True, exist_ok=True)
         (destination / "result.txt").write_text("result")
 
@@ -319,6 +289,26 @@ class _RetryStartError(RuntimeError):
         self.details = {"remote_code": code, "retryable": False}
 
 
+class _RunNotFound(RuntimeError):
+    class _Diagnostic:
+        category = "run-not-found"
+
+        @staticmethod
+        def to_dict() -> dict[str, Any]:
+            return {
+                "schema": "bioimageflow.cluster_diagnostic.v1",
+                "phase": "run-observation",
+                "category": "run-not-found",
+                "message": "The exact child run does not exist.",
+                "allocation_state": "none",
+                "retry_safety": "safe",
+                "next_action": "replay-exact-plan",
+                "identities": {},
+            }
+
+    diagnostic = _Diagnostic()
+
+
 class _FailingRetryHandle(_RetryHandle):
     def __init__(self, plan: Any, code: str) -> None:
         super().__init__(plan)
@@ -352,16 +342,22 @@ async def test_retry_plan_is_durable_and_confirmation_recovers_exact_child(
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
     handle = _RetryHandle(plan)
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        if snapshot.execution_id == child_id:
+            raise _RunNotFound
+        return SubmittedRunAdapter(handle)
+
     coordinator = ExecutionCoordinator(
         registry,
-        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        reconnector=reconnect,
         poll_interval=60,
     )
 
@@ -400,16 +396,22 @@ async def test_retry_confirmation_refreshes_parent_after_waiting_for_run_lock(
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
     handle = _RetryHandle(plan)
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        if snapshot.execution_id == child_id:
+            raise _RunNotFound
+        return SubmittedRunAdapter(handle)
+
     coordinator = ExecutionCoordinator(
         registry,
-        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        reconnector=reconnect,
         poll_interval=60,
     )
     presentation = await coordinator.plan_retry(parent_id)
@@ -452,18 +454,24 @@ async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
     registry.save_retry_plan(plan.to_dict())
     registry.confirm_retry_plan(parent_id, plan.digest)
     handle = _RetryHandle(plan)
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        if snapshot.execution_id == child_id:
+            raise _RunNotFound
+        return SubmittedRunAdapter(handle)
+
     coordinator = ExecutionCoordinator(
         registry,
-        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        reconnector=reconnect,
         poll_interval=60,
     )
 
@@ -484,22 +492,27 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
-    parent_handle = _FailingRetryHandle(plan, "psij-submission-uncertain")
+    parent_handle = _FailingRetryHandle(plan, "remote-retry-submission-uncertain")
     child_handle = _FakeHandle()
     child_handle.status = "queued"
     reconnects: list[str] = []
+    child_attach_attempts = 0
 
     def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        nonlocal child_attach_attempts
         reconnects.append(snapshot.execution_id)
-        return SubmittedRunAdapter(
-            parent_handle if snapshot.execution_id == parent_id else child_handle
-        )
+        if snapshot.execution_id == child_id:
+            child_attach_attempts += 1
+            if child_attach_attempts == 1:
+                raise _RunNotFound
+            return SubmittedRunAdapter(child_handle)
+        return SubmittedRunAdapter(parent_handle)
 
     publisher = _RecordingPublisher()
     coordinator = ExecutionCoordinator(
@@ -532,14 +545,14 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
     await restarted.start()
     await restarted.close()
 
-    assert raised.value.code == "psij-submission-uncertain"
+    assert raised.value.code == "remote-retry-submission-uncertain"
     assert repeated.execution_id == child_id
     assert len(parent_handle.started) == 1
     assert reconnects.count(parent_id) == 2
-    assert reconnects.count(child_id) == 1
+    assert reconnects.count(child_id) == 2
     assert reconnects[-1] == child_id
     assert restart_reconnects == [child_id]
-    assert registry.retry_plan_state(parent_id, plan.digest) == "uncertain"
+    assert registry.retry_plan_state(parent_id, plan.digest) == "started"
     assert registry.get(parent_id).child_execution_ids == [child_id]
     assert any(
         snapshot.execution_id == parent_id
@@ -553,23 +566,31 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
 
 
 @pytest.mark.anyio
-async def test_definite_retry_start_failure_has_no_ghost_child(tmp_path: Path) -> None:
+async def test_definite_retry_start_failure_retains_terminal_exact_child(
+    tmp_path: Path,
+) -> None:
     parent_id = f"run_{uuid4().hex}"
     child_id = f"run_{uuid4().hex}"
     registry = ExecutionRegistry(tmp_path)
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     plan = _retry_plan(parent_id, child_id, tmp_path)
     handle = _FailingRetryHandle(plan, "workflow-run-retry-error")
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        if snapshot.execution_id == child_id:
+            raise _RunNotFound
+        return SubmittedRunAdapter(handle)
+
     coordinator = ExecutionCoordinator(
         registry,
-        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        reconnector=reconnect,
         poll_interval=60,
     )
     presentation = await coordinator.plan_retry(parent_id)
@@ -579,9 +600,12 @@ async def test_definite_retry_start_failure_has_no_ghost_child(tmp_path: Path) -
     await coordinator.close()
 
     assert registry.retry_plan_state(parent_id, plan.digest) == "failed"
-    assert registry.get(parent_id).child_execution_ids == []
-    with pytest.raises(ExecutionNotFoundError):
-        registry.get(child_id)
+    assert registry.get(parent_id).child_execution_ids == [child_id]
+    child = registry.get(child_id)
+    assert child.state == "failed"
+    assert child.backend_metadata["retry_start_failed"]["code"] == (
+        "workflow-run-retry-error"
+    )
 
 
 @pytest.mark.anyio
@@ -594,9 +618,9 @@ async def test_recompute_presentation_normalizes_library_tuple_to_json_list(
     registry.save(
         _snapshot(
             execution_id=parent_id,
-            backend="submitted_local",
+            backend="managed_remote",
             state="failed",
-            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+            reconnect={"host": "cluster", "root": "/shared", "run_id": parent_id},
         )
     )
     recompute = bioimageflow.RecomputeRequest(("preprocessing/masks",), cascade=False)
@@ -639,7 +663,7 @@ async def test_attached_export_failure_preserves_success_and_disables_download(
     await coordinator.register(
         _snapshot(
             execution_id="run_" + "e" * 32,
-            backend="attached_parsl",
+            backend="direct",
             state="starting",
             reconnect={"result_bundle": str(tmp_path / "bundle")},
         ),
@@ -665,7 +689,7 @@ async def test_attached_completion_sidecar_recovers_before_coordinator_poll(
     registry.save(
         _snapshot(
             execution_id=execution_id,
-            backend="attached_parsl",
+            backend="direct",
             state="running",
             reconnect={"result_bundle": str(bundle)},
         )
@@ -814,7 +838,7 @@ async def test_startup_lost_conversion_rederives_and_publishes_actions(tmp_path:
     registry.save(
         _snapshot(
             execution_id=execution_id,
-            backend="attached_parsl",
+            backend="direct",
             state="running",
             reconnect={"result_bundle": str(tmp_path / execution_id)},
         )
@@ -836,25 +860,26 @@ async def test_startup_lost_conversion_rederives_and_publishes_actions(tmp_path:
 
 
 @pytest.mark.anyio
-async def test_queued_execution_cannot_be_cancelled(tmp_path: Path) -> None:
+async def test_managed_queued_execution_can_be_cancelled(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     handle = _FakeHandle()
     handle.status = "queued"
-    saved = registry.save(_snapshot(backend="submitted_local", state="queued"))
+    saved = registry.save(_snapshot(backend="managed_remote", state="queued"))
     coordinator = ExecutionCoordinator(
         registry,
         reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
     )
 
-    with pytest.raises(RuntimeError, match="cannot be cancelled while queued"):
-        await coordinator.cancel(saved.execution_id)
+    cancelled = await coordinator.cancel(saved.execution_id)
+    await coordinator.close()
 
-    assert not handle.cancelled
+    assert handle.cancelled
+    assert cancelled.state == "cancel_requested"
 
 
 def test_submitted_export_transient_failure_remains_pending(tmp_path: Path) -> None:
     class _ExportFailureHandle(_FakeHandle):
-        def export_result(self, destination: Path) -> None:
+        def download_result(self, destination: Path) -> None:
             raise _RetryStartError("workflow-result-export-error")
 
     adapter = SubmittedRunAdapter(_ExportFailureHandle())
@@ -868,7 +893,7 @@ def test_submitted_export_transient_failure_remains_pending(tmp_path: Path) -> N
 
 def test_submitted_export_unavailable_failure_is_terminal(tmp_path: Path) -> None:
     class _ExportFailureHandle(_FakeHandle):
-        def export_result(self, destination: Path) -> None:
+        def download_result(self, destination: Path) -> None:
             raise _RetryStartError("workflow-run-result-unavailable")
 
     adapter = SubmittedRunAdapter(_ExportFailureHandle())
@@ -891,9 +916,73 @@ def test_operation_error_prefers_public_code_and_retains_remote_detail() -> None
 
 
 @pytest.mark.anyio
+async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow.cluster import (
+        ClusterCleanupCandidate,
+        ClusterCleanupPlan,
+        ClusterCleanupReport,
+    )
+    import bioimageflow.cluster as cluster_api
+
+    execution_id = f"run_{uuid4().hex}"
+    planned: list[dict[str, Any]] = []
+    applied: list[ClusterCleanupPlan] = []
+
+    class _Cluster:
+        def __init__(self, *, host: str, root: str) -> None:
+            assert (host, root) == ("cluster", "/shared")
+
+        def plan_cleanup(self, **kwargs: Any) -> ClusterCleanupPlan:
+            planned.append(kwargs)
+            return ClusterCleanupPlan(
+                plan_id="cleanup-1",
+                root_revision=7,
+                candidates=(
+                    ClusterCleanupCandidate(
+                        namespace="runs",
+                        identity=execution_id,
+                        path=f"runs/{execution_id}",
+                        size=42,
+                    ),
+                ),
+            )
+
+        def apply_cleanup(self, plan: ClusterCleanupPlan) -> ClusterCleanupReport:
+            applied.append(plan)
+            return ClusterCleanupReport(plan_id=plan.plan_id, removed=(execution_id,))
+
+    monkeypatch.setattr(cluster_api, "RemoteCluster", _Cluster)
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            state="succeeded",
+            reconnect={"host": "cluster", "root": "/shared", "run_id": execution_id},
+        )
+    )
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(_FakeHandle()),
+    )
+
+    digest, plan = await coordinator.plan_cleanup(execution_id, older_than_seconds=123)
+    report = await coordinator.apply_cleanup(execution_id, plan_digest=digest)
+
+    assert planned == [
+        {"namespace": "runs", "run_ids": (execution_id,), "older_than_seconds": 123}
+    ]
+    assert plan["candidates"][0]["identity"] == execution_id
+    assert applied[0].candidates[0].identity == execution_id
+    assert report["removed"] == [execution_id]
+
+
+@pytest.mark.anyio
 async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> None:
     capabilities = {
-        "submitted_local_parsl": {"supported": True, "reason": None},
+        "remote_cluster_bootstrap": {"supported": True, "reason": None},
         "submitted_run_retry": {"supported": False, "reason": "retry disabled"},
         "submitted_recompute": {"supported": True, "reason": None},
         "submitted_result_export": {"supported": True, "reason": None},
@@ -901,7 +990,7 @@ async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> No
     registry = ExecutionRegistry(tmp_path)
     saved = registry.save(
         _snapshot(
-            backend="submitted_local",
+            backend="managed_remote",
             state="succeeded",
         )
     )

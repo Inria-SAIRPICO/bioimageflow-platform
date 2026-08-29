@@ -32,7 +32,6 @@ class ExecutionPreflightRequest(BaseModel):
     requested_nodes: list[str] | None = None
     root_inputs: dict[str, Any] = Field(default_factory=dict)
     node_path_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    node_routes: dict[str, str] = Field(default_factory=dict)
 
 
 class ResolutionRequiredPreflight(BaseModel):

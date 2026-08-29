@@ -52,7 +52,7 @@ def load_cluster_config(
 
     expanded = Path(path).expanduser()
     if expanded.is_symlink():
-        raise ValueError("Cluster configuration must not be a symbolic link")
+        raise ValueError("Cluster configuration must not be a symlink (symbolic link)")
     resolved = expanded.resolve(strict=True)
     before = expanded.stat(follow_symlinks=False)
     if not stat.S_ISREG(before.st_mode) or resolved.suffix != ".py":
@@ -76,7 +76,9 @@ def load_cluster_config(
     exact_bytes = bytes(content)
     digest = f"sha256:{hashlib.sha256(exact_bytes).hexdigest()}"
     if expected_digest is not None and digest != expected_digest:
-        raise ValueError("Cluster configuration changed; save the profile again before use")
+        raise ValueError(
+            "Cluster configuration digest changed; save the profile again before use"
+        )
     module_name = f"_bioimageflow_cluster_{uuid4().hex}"
     values: dict[str, Any] = {
         "__builtins__": __builtins__,
@@ -87,7 +89,9 @@ def load_cluster_config(
     exec(compile(exact_bytes, str(resolved), "exec"), values, values)
     cluster = values.get("cluster")
     if type(cluster) is not cluster_api.RemoteCluster:
-        raise ValueError("Cluster configuration must define top-level cluster = RemoteCluster(...)")
+        raise ValueError(
+            "Cluster configuration must define top-level cluster as an exact RemoteCluster"
+        )
     return LoadedClusterConfig(path=resolved, digest=digest, cluster=cluster)
 
 
@@ -105,7 +109,6 @@ class ExecutionProfileStore:
         self.path = path
         self.editable = editable
         self._profiles: dict[str, DistributedExecutionProfile] | None = None
-        self._cleanup_plans: dict[str, tuple[str, dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
         self._reference_checker: Callable[[str], bool] = lambda _profile_id: False
 
@@ -209,25 +212,6 @@ class ExecutionProfileStore:
 
     async def flush(self) -> None:
         return None
-
-    def retain_cleanup_plan(self, profile_id: str, plan: Any) -> str:
-        payload = plan.to_dict()
-        digest = "sha256:" + hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        self._cleanup_plans[digest] = (profile_id, payload)
-        return digest
-
-    def cleanup_plan(self, profile_id: str, digest: str) -> Any:
-        try:
-            bound_profile, payload = self._cleanup_plans[digest]
-        except KeyError as exc:
-            raise ExecutionProfileNotFoundError("cleanup plan") from exc
-        if bound_profile != profile_id:
-            raise ExecutionProfileNotFoundError("cleanup plan")
-        cluster_api = importlib.import_module("bioimageflow.cluster")
-
-        return cluster_api.ClusterCleanupPlan.from_dict(payload)
 
     def _require_loaded(self) -> dict[str, DistributedExecutionProfile]:
         if self._profiles is None:

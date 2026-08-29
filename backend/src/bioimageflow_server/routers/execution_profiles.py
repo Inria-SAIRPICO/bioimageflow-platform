@@ -12,10 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from bioimageflow_server.models.execution_profiles import (
-    ClusterCleanupConfirmation,
-    ClusterCleanupPlanRequest,
-    ClusterCleanupPresentation,
-    ClusterCleanupReportValue,
     ClusterDiagnosticValue,
     DistributedExecutionProfile,
     ExecutionCapabilitiesValue,
@@ -321,67 +317,3 @@ async def describe_execution_profile(
         return await _describe(_profile(store, profile_id), check_connection=check_connection)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         raise _cluster_failure(exc) from exc
-
-
-@router.post("/profiles/{profile_id}/test", response_model=ExecutionProfileDescription)
-async def test_execution_profile(
-    profile_id: str,
-    store: ExecutionProfileStore = Depends(get_execution_profile_store),
-) -> ExecutionProfileDescription:
-    return await describe_execution_profile(profile_id, False, store)
-
-
-@router.post("/profiles/{profile_id}/test-connection", response_model=ExecutionProfileDescription)
-async def test_execution_profile_connection(
-    profile_id: str,
-    store: ExecutionProfileStore = Depends(get_execution_profile_store),
-) -> ExecutionProfileDescription:
-    return await describe_execution_profile(profile_id, True, store)
-
-
-@router.post(
-    "/profiles/{profile_id}/cleanup/plan",
-    response_model=ClusterCleanupPresentation,
-)
-async def plan_cluster_cleanup(
-    profile_id: str,
-    body: ClusterCleanupPlanRequest,
-    store: ExecutionProfileStore = Depends(get_execution_profile_store),
-) -> ClusterCleanupPresentation:
-    profile = _profile(store, profile_id)
-    try:
-        loaded = await asyncio.to_thread(
-            load_cluster_config,
-            profile.config_path,
-            expected_digest=profile.config_digest,
-        )
-        plan = await asyncio.to_thread(
-            loaded.cluster.plan_cleanup,
-            namespace=body.namespace,
-            run_ids=tuple(body.run_ids),
-            older_than_seconds=body.older_than_seconds,
-        )
-    except Exception as exc:
-        raise _cluster_failure(exc) from exc
-    digest = store.retain_cleanup_plan(profile_id, plan)
-    return ClusterCleanupPresentation(profile_id=profile_id, plan_digest=digest, plan=plan.to_dict())
-
-
-@router.post("/profiles/{profile_id}/cleanup", response_model=ClusterCleanupReportValue)
-async def apply_cluster_cleanup(
-    profile_id: str,
-    body: ClusterCleanupConfirmation,
-    store: ExecutionProfileStore = Depends(get_execution_profile_store),
-) -> ClusterCleanupReportValue:
-    profile = _profile(store, profile_id)
-    try:
-        plan = store.cleanup_plan(profile_id, body.plan_digest)
-        loaded = await asyncio.to_thread(
-            load_cluster_config,
-            profile.config_path,
-            expected_digest=profile.config_digest,
-        )
-        report = await asyncio.to_thread(loaded.cluster.apply_cleanup, plan)
-    except Exception as exc:
-        raise _cluster_failure(exc) from exc
-    return ClusterCleanupReportValue(profile_id=profile_id, report=report.to_dict())

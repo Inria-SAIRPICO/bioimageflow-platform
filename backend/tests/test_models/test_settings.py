@@ -63,7 +63,6 @@ class TestSettings:
         assert s.execution_engine == "sequential"
         assert s.new_workflow_execution == "sequential"
         assert s.default_execution_target_id == "local"
-        assert s.trusted_parsl_factories == []
         assert s.node_data_page_size == 250
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
@@ -110,18 +109,6 @@ class TestSettings:
     def test_new_workflow_execution_synchronizes_compatibility_field(self):
         s = Settings(deployment_mode="desktop", new_workflow_execution="parallel")
         assert s.execution_engine == "parallel"
-
-    def test_trusted_parsl_factories_use_public_reference_grammar(self):
-        s = Settings(
-            deployment_mode="desktop",
-            trusted_parsl_factories=["site.parsl:make_config"],
-        )
-        assert s.trusted_parsl_factories == ["site.parsl:make_config"]
-        with pytest.raises(ValidationError):
-            Settings(
-                deployment_mode="desktop",
-                trusted_parsl_factories=["not an import"],
-            )
 
     def test_with_omero_instances(self):
         s = Settings(

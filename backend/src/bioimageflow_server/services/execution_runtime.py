@@ -226,7 +226,7 @@ class SubmittedRunAdapter:
 
     def export_result(self, destination: Path) -> Path:
         try:
-            self.handle.export_result(destination)
+            self.handle.download_result(destination)
         except Exception as exc:
             error = _operation_error(exc, fallback="workflow-result-export-error")
             unavailable = error.code in {
@@ -722,8 +722,10 @@ class ExecutionCoordinator:
                     ) from exc
                 if plan_state == "started":
                     return self._with_actions(child)
+                attached = self._adapters.get(child.execution_id)
                 try:
-                    attached = await asyncio.to_thread(self._reconnector, child)
+                    if attached is None:
+                        attached = await asyncio.to_thread(self._reconnector, child)
                 except Exception as exc:
                     diagnostic = getattr(exc, "diagnostic", None)
                     if getattr(diagnostic, "category", None) != "run-not-found":
@@ -757,7 +759,12 @@ class ExecutionCoordinator:
                         execution_id,
                         plan_digest,
                     )
-                    await self.attach(persisted.execution_id, attached, publish_initial=True)
+                    if persisted.execution_id not in self._adapters:
+                        await self.attach(
+                            persisted.execution_id,
+                            attached,
+                            publish_initial=True,
+                        )
                     return persisted
             await asyncio.to_thread(
                 self.registry.confirm_retry_plan,
@@ -858,6 +865,28 @@ class ExecutionCoordinator:
                             "message": str(error),
                             "details": error.details,
                         },
+                    )
+                    failed_child = child.model_copy(
+                        update={
+                            "state": "failed",
+                            "finished_at": utc_now(),
+                            "backend_metadata": {
+                                **child.backend_metadata,
+                                "retry_start_failed": {
+                                    "code": error.code,
+                                    "message": str(error),
+                                },
+                            },
+                        }
+                    )
+                    failed_child = await asyncio.to_thread(
+                        self.registry.save,
+                        self._with_actions(failed_child),
+                        expected_revision=child.revision,
+                    )
+                    await self._publisher.publish_execution_snapshot(
+                        failed_child,
+                        initial=True,
                     )
                 raise error from exc
             started = child.model_copy(
@@ -1141,6 +1170,9 @@ class ExecutionCoordinator:
                 and reduced.jobs == snapshot.jobs
                 and reduced.progress_cursor == snapshot.progress_cursor
                 and reduced.result_export == snapshot.result_export
+                and reduced.backend_metadata == snapshot.backend_metadata
+                and reduced.diagnostics == snapshot.diagnostics
+                and reduced.finished_at == snapshot.finished_at
                 and snapshot.observation.reachable
             ):
                 return snapshot
