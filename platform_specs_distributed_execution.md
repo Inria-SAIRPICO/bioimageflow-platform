@@ -288,6 +288,7 @@ Every managed failure retains the structured library phase and category.
 The platform preserves `allocation_state`, `retry_safety`, and `next_action` so the UI can distinguish safe retry, same-attempt recovery, unsafe replay, and non-applicable actions.
 Public diagnostic identities are copied only as string pairs and remain available in structured operation errors for exact run, attempt, and allocation attribution.
 The platform uses the public diagnostic message when one exists and otherwise records a fixed sanitized observation message instead of persisting `str(exception)`.
+Describe-time connection failures use the same provenance rule: only diagnostics carried by a genuine public `ClusterOperationError` are presented, while unexpected or diagnostic-shaped arbitrary exceptions produce a generic sanitized operation failure.
 
 Execution operation categories map to HTTP status as follows:
 

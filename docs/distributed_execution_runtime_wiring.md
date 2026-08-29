@@ -35,6 +35,7 @@ It returns sanitized target details, connection observation, capabilities, and s
 The execution-target service combines the built-in Local target with enabled managed profiles.
 Target availability and disabled reasons come from saved enabled state and the public capability report rather than script execution, package heuristics, or exception text.
 Explicit describe and run operations use their structured diagnostics for action details.
+The describe connection-check boundary accepts diagnostic details only from a genuine public `ClusterOperationError`; unexpected or diagnostic-shaped arbitrary exceptions return a generic sanitized operation failure.
 Missing cluster support never prevents Local Direct or Wetlands execution.
 
 ## Admission and submission

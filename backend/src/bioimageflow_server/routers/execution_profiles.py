@@ -31,7 +31,11 @@ from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileStore,
     load_cluster_config,
 )
-from bioimageflow_server.services.execution_runtime import _operation_error
+from bioimageflow_server.services.execution_runtime import (
+    ExecutionOperationError,
+    _cluster_diagnostic_value,
+    _operation_error,
+)
 
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -61,8 +65,9 @@ def _profile(store: ExecutionProfileStore, profile_id: str) -> DistributedExecut
 
 
 def _cluster_failure(exc: Exception) -> HTTPException:
-    diagnostic = getattr(exc, "diagnostic", None)
-    if diagnostic is None:
+    if isinstance(exc, ExecutionOperationError):
+        return _execution_http_error(exc)
+    if _cluster_diagnostic_value(exc) is None:
         return HTTPException(status_code=422, detail=str(exc))
     return _execution_http_error(_operation_error(exc, fallback="cluster-profile-operation-failed"))
 
@@ -267,10 +272,17 @@ async def _describe(
         try:
             report = await asyncio.to_thread(loaded.cluster.check_connection)
         except Exception as exc:
-            diagnostic = getattr(exc, "diagnostic", None)
+            diagnostic = _cluster_diagnostic_value(exc)
             if diagnostic is None:
-                raise
-            diagnostics.append(ClusterDiagnosticValue.model_validate(diagnostic.to_dict()))
+                raise _operation_error(
+                    exc,
+                    fallback="cluster-connection-check-failed",
+                ) from exc
+            diagnostics.append(
+                ClusterDiagnosticValue.model_validate(
+                    diagnostic.model_dump(mode="json", by_alias=True)
+                )
+            )
         else:
             connection = report.to_dict()
             diagnostics.extend(

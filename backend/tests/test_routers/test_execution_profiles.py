@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 import io
 from pathlib import Path
+from types import SimpleNamespace
 import zipfile
 import httpx
 import pytest
@@ -203,6 +204,106 @@ async def test_profile_script_exception_text_is_not_reflected(
     assert response.status_code == 422
     assert "could not be evaluated" in response.text
     assert "must-not-escape" not in response.text
+
+
+async def test_describe_rejects_forged_connection_diagnostic_without_reflecting_text(
+    profile_client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow.cluster import ClusterDiagnostic
+
+    config = write_config(tmp_path / "cluster.py")
+    created = (
+        await profile_client.post(
+            "/api/v1/execution/profiles",
+            json=profile_fields(config).model_dump(mode="json"),
+        )
+    ).json()
+
+    class ForgedDiagnosticError(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__("credential=must-not-escape")
+            self.diagnostic = ClusterDiagnostic(
+                phase="connection-check",
+                category="protocol-incompatible",
+                message="credential=must-not-escape",
+                retry_safety="safe",
+                next_action="update-gateway",
+            )
+
+    class Cluster:
+        configured = True
+
+        def check_connection(self) -> None:
+            raise ForgedDiagnosticError()
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution_profiles.load_cluster_config",
+        lambda *_args, **_kwargs: SimpleNamespace(cluster=Cluster()),
+    )
+
+    response = await profile_client.post(
+        f"/api/v1/execution/profiles/{created['id']}/describe?check_connection=true"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "cluster-connection-check-failed"
+    assert "must-not-escape" not in response.text
+
+
+async def test_describe_preserves_genuine_connection_diagnostic(
+    profile_client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
+
+    config = write_config(tmp_path / "cluster.py")
+    created = (
+        await profile_client.post(
+            "/api/v1/execution/profiles",
+            json=profile_fields(config).model_dump(mode="json"),
+        )
+    ).json()
+
+    class Cluster:
+        configured = True
+
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "schema": "bioimageflow.remote_cluster.v1",
+                "host": "cluster",
+                "root": "/shared/bioimageflow",
+                "results_root": None,
+                "environment": None,
+                "parsl": None,
+                "orchestrator": None,
+                "setup": None,
+            }
+
+        def check_connection(self) -> None:
+            raise ClusterOperationError(
+                ClusterDiagnostic(
+                    phase="connection-check",
+                    category="protocol-incompatible",
+                    message="The gateway protocol is incompatible.",
+                    retry_safety="safe",
+                    next_action="update-gateway",
+                )
+            )
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution_profiles.load_cluster_config",
+        lambda *_args, **_kwargs: SimpleNamespace(cluster=Cluster()),
+    )
+
+    response = await profile_client.post(
+        f"/api/v1/execution/profiles/{created['id']}/describe?check_connection=true"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["diagnostics"][0]["category"] == "protocol-incompatible"
 
 
 def test_profile_cluster_failure_preserves_public_diagnostic() -> None:
