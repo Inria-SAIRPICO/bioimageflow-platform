@@ -13,6 +13,7 @@ and tool class indexing. This service wraps it with:
 from __future__ import annotations
 
 import inspect
+import hashlib
 import importlib.util
 import logging
 import sys
@@ -319,13 +320,20 @@ class ToolRegistryService:
         """Load one custom tool source file and register its metadata."""
         resolved = path.resolve()
         self._custom_roots.add(resolved.parent)
-        module_name = f"bioimageflow_custom_{resolved.stem}_{resolved.stat().st_mtime_ns}"
+        source = resolved.read_bytes()
+        digest = hashlib.sha256(str(resolved).encode() + b"\0" + source).hexdigest()
+        module_name = f"bioimageflow_custom_{digest}"
         spec = importlib.util.spec_from_file_location(module_name, resolved)
         if spec is None or spec.loader is None:
             raise ImportError(f"Cannot load custom tool source: {resolved}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        try:
+            # Timestamp-based .pyc validation misses same-size rapid editor saves.
+            exec(compile(source, str(resolved), "exec", dont_inherit=True), module.__dict__)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
         tool_cls = getattr(module, class_name, None)
         if not isinstance(tool_cls, type):
             raise ImportError(f"Tool class '{class_name}' not found in {resolved}")
@@ -406,7 +414,7 @@ class ToolRegistryService:
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         try:
-            spec.loader.exec_module(module)
+            exec(compile(resolved.read_bytes(), str(resolved), "exec", dont_inherit=True), module.__dict__)
             from bioimageflow import DataFrameTool
             from bioimageflow_core import ProcessingTool
 
@@ -423,31 +431,46 @@ class ToolRegistryService:
             sys.modules.pop(module_name, None)
 
     def reload_custom_tool(self, class_name: str) -> dict[str, ToolMetadata]:
+        """Stage every class in one source before publishing a successful edit."""
         source = self._sources.get(class_name)
         if source is None:
-            raise FileNotFoundError(class_name)
-        if not source.exists():
-            self.unregister_custom_tool(class_name)
-            raise FileNotFoundError(source)
-        prior_metadata = self._tools.get(class_name)
-        prior_source = self._sources.get(class_name)
-        prior_class = self._lib_registry.get_class(class_name)
-        prior_package = self._packages.get("__custom__")
-        prior_package = prior_package.model_copy(deep=True) if prior_package is not None else None
-        self.unregister_custom_tool(class_name)
-        try:
-            metadata = self.register_custom_tool_file(source, class_name)
-        except Exception:
-            if prior_metadata is not None:
-                self._tools[class_name] = prior_metadata
-            if prior_source is not None:
-                self._sources[class_name] = prior_source
-            if prior_package is not None:
-                self._packages["__custom__"] = prior_package
-            if prior_class is not None and prior_metadata is not None:
-                self._register_lib_class(class_name, prior_metadata, prior_class)
-            raise
-        return {class_name: metadata}
+            candidate = Path(class_name)
+            if not candidate.is_absolute() or not self._is_under_custom_root(candidate):
+                raise FileNotFoundError(class_name)
+            source = candidate
+        prior = {name for name, path in self._sources.items() if path == source}
+        staged = ToolRegistryService()
+        if source.exists():
+            for name in self._discover_tool_class_names(source):
+                staged.register_custom_tool_file(source, name)
+        current = {meta.name: meta for meta in staged.list_tools()}
+        for name in prior - current.keys():
+            self.unregister_custom_tool(name)
+        for name, metadata in current.items():
+            self._lib_registry.forget(name, package="__custom__", version="local")
+            self.register_tool(name, metadata, staged.get_tool_class(name))
+            self._sources[name] = source
+        if current:
+            package = self._packages.get("__custom__")
+            if package is None:
+                package = staged.get_package("__custom__")
+                assert package is not None
+                self._packages["__custom__"] = package
+            package.tools["local"] = sorted(self.snapshot("__custom__", "local"))
+        return current
+
+    def custom_source_fingerprints(self) -> dict[Path, str]:
+        """Inspect only editable source directories, never workflow results."""
+        fingerprints: dict[Path, str] = {}
+        for root in tuple(self._custom_roots):
+            for path in root.glob("*.py"):
+                if path.name.startswith(".") or path.is_symlink():
+                    continue
+                try:
+                    fingerprints[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+                except FileNotFoundError:
+                    continue
+        return fingerprints
 
     def resolve_tool_source(self, class_name: str) -> Path | None:
         source = self._sources.get(class_name)
@@ -553,7 +576,11 @@ class ToolRegistryService:
             meta = self._tools.get(version)
             if meta is not None and meta.source_kind == "custom":
                 return {version: meta}
-            return {}
+            source = Path(version)
+            return {
+                name: meta for name, meta in self._tools.items()
+                if meta.source_kind == "custom" and self._sources.get(name) == source
+            }
         return {
             name: meta
             for name, meta in self._tools.items()
@@ -570,9 +597,9 @@ class ToolRegistryService:
         (e.g. a stray README directly under ``<store>/<pkg>``) is treated
         as out-of-scope.
         """
-        custom_class = self.resolve_custom_tool_for_path(path)
-        if custom_class is not None:
-            return "__custom__", custom_class
+        resolved = Path(path).resolve()
+        if resolved.suffix == ".py" and self._is_under_custom_root(resolved):
+            return "__custom__", str(resolved)
         if self._store_path is None:
             return None
         try:
@@ -622,6 +649,17 @@ class ToolRegistryService:
         pkg_info = self._packages.get(package)
         active_version = pkg_info.active_version if pkg_info is not None else None
 
+        package_root = self._store_path / package / version / package
+        prior_modules = {
+            name: module for name, module in list(sys.modules.items())
+            if isinstance(getattr(module, "__file__", None), str)
+            and Path(module.__file__).is_relative_to(package_root)
+        }
+        version_path = str(package_root.parent)
+        had_version_path = version_path in sys.path
+        for source in package_root.rglob("*.py"):
+            Path(importlib.util.cache_from_source(str(source))).unlink(missing_ok=True)
+        importlib.invalidate_caches()
         unload_versioned_package(package, version)
 
         try:
@@ -649,10 +687,17 @@ class ToolRegistryService:
                     package,
                     version,
                 )
+            tool_names = sorted(meta.class_name for meta in lib_metas)
         except Exception:
             # Restore prior state — hold the prior class objects strongly
             # so callers don't see "tools vanished" because of a bad edit.
-            self._tools.clear()
+            unload_versioned_package(package, version)
+            sys.modules.update(prior_modules)
+            if had_version_path and version_path not in sys.path:
+                sys.path.insert(0, version_path)
+            for class_name, meta in list(self._tools.items()):
+                if meta.package == package and meta.package_version == version:
+                    self._tools.pop(class_name, None)
             self._tools.update(prior_snapshot)
             for class_name, cls in prior_classes.items():
                 metadata = prior_snapshot.get(class_name)
@@ -677,7 +722,13 @@ class ToolRegistryService:
                         package=package,
                         version=active_version,
                     )
-                self._lib_registry.register_package(package, active_version)
+                active_metas = self._lib_registry.register_package(package, active_version)
+                for meta in active_metas:
+                    tool_cls = self._lib_registry.get_class(meta.class_name)
+                    if tool_cls is not None:
+                        self._register_tool_from_class(
+                            tool_cls, meta.class_name, package, active_version,
+                        )
             except FileNotFoundError:
                 logger.warning(
                     "reload_package: could not restore active version "
@@ -688,7 +739,6 @@ class ToolRegistryService:
                 )
 
         current = self.snapshot(package, version)
-        tool_names = sorted(current)
         if pkg_info is None:
             self._packages[package] = PackageInfo(
                 name=package,

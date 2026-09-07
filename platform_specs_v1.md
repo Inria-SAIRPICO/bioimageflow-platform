@@ -947,6 +947,11 @@ The backend watches tool source directories for file changes (via `watchdog`). O
    - Executed nodes transition to "Out-of-date" (cache invalidated by code change)
 
 Changes are applied automatically — no manual reload action required from the user.
+Workflow-local source changes are detected through native file events and a periodic content check of registered editable tool directories, without scanning workflow results or datasets.
+Reload reads current source bytes even for same-size saves with unchanged timestamps, and reload operations are serialized.
+Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving the previous usable tools and unrelated registry entries.
+Implementation-only edits emit `tool_reload` even when the metadata is unchanged, and canvases retain this notification through field-focus deferral and execution locks.
+Reloading an inactive package version preserves both the active class bindings and their displayed metadata.
 
 **Hot-reload during editing:** If the user is editing a parameter field (field has focus) when a `tool_reload` message arrives, the update is buffered until the field loses focus (blur event). This prevents data loss from mid-edit schema changes. If the field being edited was removed in the new schema, a warning toast is shown after blur: "Field '{name}' was removed by the tool update."
 

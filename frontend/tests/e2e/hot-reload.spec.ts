@@ -26,6 +26,54 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
 test.describe('hot-reload', () => {
+  test('custom DataFrame tool display name refreshes after an editor save', async ({ page }) => {
+    // Editor installation belongs to desktop manual QA; the save below still
+    // exercises the real filesystem watcher, registry, WebSocket, and canvas.
+    await page.route('**/api/v1/editor/open', route => route.fulfill({
+      json: { opened: true, method: 'external', path: route.request().postDataJSON().path },
+    }))
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    const workflowName = `custom_reload_${Date.now()}`
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New', exact: true }).click()
+    await page.getByTestId('workflow-display-name-input').fill(workflowName)
+    await page.getByTestId('workflow-dialog-submit').click()
+    await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+    await page.getByTestId('create-tool-btn').click()
+    await page.getByTestId('tool-name-input').fill('QaManualEdit')
+    await page.getByTestId('tool-type-select').click()
+    await page.getByRole('option', { name: 'DataFrame Tool', exact: true }).click()
+    const created = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/tools')
+    await page.getByTestId('create-tool-submit').click()
+    const response = await created
+    expect(response.ok()).toBeTruthy()
+    const { path } = await response.json()
+    const tool = page.getByTestId('tool-item-QaManualEdit')
+    await expect(tool).toContainText('Qa Manual Edit')
+    try {
+      writeFileSync(path, readFileSync(path, 'utf8').replace(
+        'display_name = "Qa Manual Edit"', 'display_name = "Qa Manual Edit 2"',
+      ))
+      await expect(tool).toContainText('Qa Manual Edit 2', { timeout: 8000 })
+      await tool.dragTo(page.locator('.vue-flow'), { targetPosition: { x: 260, y: 180 } })
+      const node = page.locator('.vue-flow__node').first()
+      await expect(node).toBeVisible()
+      const badge = node.locator('.updated-badge')
+      if (await badge.isVisible()) await badge.click()
+      await expect(badge).toHaveCount(0)
+      writeFileSync(path, readFileSync(path, 'utf8').replace('df.copy()', 'df.copy(deep=True)'))
+      await expect(badge).toBeVisible({ timeout: 8000 })
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/tools/QaManualEdit`, {
+        params: { workflow_name: workflowName },
+      }).catch(() => undefined)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+    }
+  })
+
   test('file edit broadcasts tool_reload and surfaces updated badge', async ({ page }) => {
     const fixturePath = process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE
     test.skip(

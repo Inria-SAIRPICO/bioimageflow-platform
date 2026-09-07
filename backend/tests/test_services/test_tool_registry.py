@@ -543,6 +543,8 @@ def test_active_version_preserved_across_inactive_reload(
     # The lib registry's class binding still points at v1.0.0 — the
     # active version is preserved.
     assert active_class_after._bif_package_version == "1.0.0"
+    assert reg.get_tool("GaussianSmooth").package_version == "1.0.0"
+    assert "truncate" not in reg.get_tool("GaussianSmooth").inputs
 
 
 def test_active_version_preserved_when_reloading_active(
@@ -569,6 +571,11 @@ def test_reload_failure_rolls_back_to_prior_snapshot(
     reg = _scan(tmp_path)
     prior_class = reg._lib_registry.get_class("GaussianSmooth")
     prior_meta = reg.get_tool("GaussianSmooth")
+    unrelated = ToolMetadata(
+        name="Unrelated", display_name="Unrelated", package="other", package_version="1",
+        tool_type="DataFrameTool", row_consumption=None,
+    )
+    reg.register_tool("Unrelated", unrelated)
     assert prior_class is not None
     assert prior_meta is not None
 
@@ -587,6 +594,13 @@ def test_reload_failure_rolls_back_to_prior_snapshot(
     after = reg.get_tool("GaussianSmooth")
     assert after is not None
     assert after.inputs == prior_meta.inputs
+    assert reg.get_tool("Unrelated") == unrelated
+    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
+
+    load_versioned_package(DUMMY_PKG, "1.0.0", tmp_path)
+    assert resolve_tool_class(
+        DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth",
+    ) is prior_class
 
 
 def test_resolve_package_for_path_inside_store(tmp_path):

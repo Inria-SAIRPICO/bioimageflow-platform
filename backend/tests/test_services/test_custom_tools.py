@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import os
 
 import pytest
 
@@ -124,7 +125,7 @@ def test_registry_reloads_custom_tool_source(tmp_path: Path):
     path = service.create("ReloadMe", "ProcessingTool")
     original = registry.get_tool("ReloadMe")
     assert original is not None
-    assert registry.resolve_package_for_path(path) == ("__custom__", "ReloadMe")
+    assert registry.resolve_package_for_path(path) == ("__custom__", str(path))
 
     path.write_text(
         path.read_text().replace(
@@ -153,7 +154,7 @@ def test_registry_scans_existing_custom_tool_sources(tmp_path: Path):
     assert list(registered) == ["ExistingTool"]
     assert registry.get_tool("ExistingTool") is not None
     assert registry.resolve_tool_source("ExistingTool") == path
-    assert registry.resolve_package_for_path(path) == ("__custom__", "ExistingTool")
+    assert registry.resolve_package_for_path(path) == ("__custom__", str(path))
 
 
 def test_rename_uses_registered_custom_source_path(tmp_path: Path):
@@ -192,3 +193,15 @@ def test_delete_rejects_package_tool(tmp_path: Path):
 
     with pytest.raises(PermissionError):
         service.delete("PackageTool")
+def test_reload_reads_same_size_edit_with_unchanged_timestamp(tmp_path: Path):
+    registry = ToolRegistryService()
+    service = CustomToolService(tmp_path, registry)
+    path = service.create("QaManualEdit", "DataFrameTool")
+    before = path.stat()
+    path.write_text(path.read_text().replace('"Qa Manual Edit"', '"Qa Manual New!"'))
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    registry.reload_custom_tool("QaManualEdit")
+
+    assert registry.get_tool("QaManualEdit").display_name == "Qa Manual New!"
+    assert registry.get_tool_class("QaManualEdit").display_name == "Qa Manual New!"

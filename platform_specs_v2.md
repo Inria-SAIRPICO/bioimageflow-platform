@@ -124,6 +124,8 @@ The node records workspace provenance with the saved workflow ID and artifact ha
 Embedding copies workflow-local sources into destination-owned content-addressed storage.
 Package tools remain versioned package dependencies.
 Same-named local tools with different content must coexist without registry shadowing.
+Hot reload observes editable workflow-local source files; it does not mutate content-addressed source bundles already captured by embedded workflows.
+Editor saves update the live tool metadata and trigger canvas validation even when only implementation code changes, with invalid source edits retaining the last usable registry state.
 
 The backend rejects direct or transitive containment cycles on embed, paste, import, duplicate, source update, save, and move.
 Frontend cycle checks are advisory only.

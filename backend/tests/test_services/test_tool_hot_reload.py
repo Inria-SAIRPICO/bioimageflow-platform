@@ -349,7 +349,7 @@ async def test_snapshot_diff_added_changed_removed(tmp_path):
     assert removed_names == ["B"]
 
 
-async def test_no_op_change_emits_nothing(tmp_path):
+async def test_code_only_change_emits_updated_metadata(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
     pkg, ver = "dummy", "1.0.0"
@@ -373,7 +373,7 @@ async def test_no_op_change_emits_nothing(tmp_path):
         lambda: reg.reload_calls.count((pkg, ver)) == 1, timeout=1.0
     )
     await asyncio.sleep(0.05)
-    cm.broadcast_tool_reload.assert_not_awaited()
+    cm.broadcast_tool_reload.assert_awaited_once()
     cm.broadcast_tool_removed.assert_not_awaited()
 
 
@@ -459,6 +459,47 @@ async def test_full_package_removal_emits_tool_removed_per_class(tmp_path):
     assert removed == ["A", "B"]
     cm.broadcast_system_error.assert_not_awaited()
     assert (pkg, ver) in reg.forget_calls or (pkg, None) in reg.forget_calls
+
+
+@pytest.mark.integration
+async def test_polling_recovers_missed_custom_tool_save(tmp_path: Path, monkeypatch):
+    from bioimageflow_server.services import tool_hot_reload
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    monkeypatch.setattr(tool_hot_reload, "Observer", MagicMock())
+    registry = ToolRegistryService()
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry, cm, debounce_ms=30)
+    await svc.start(tmp_path / "tool-store")
+    svc.add_watch_root(tmp_path / "workflows")
+    try:
+        custom = CustomToolService(tmp_path / "workflows" / "disposable", registry)
+        path = custom.create("QaManualEdit", "DataFrameTool")
+        path.write_text(path.read_text().replace(
+            'display_name = "Qa Manual Edit"', 'display_name = "Qa Manual Edit 2"',
+        ))
+        assert await _wait_for(
+            lambda: getattr(registry.get_tool("QaManualEdit"), "display_name", None) == "Qa Manual Edit 2",
+            timeout=5,
+        )
+        assert await _wait_for(lambda: cm.broadcast_tool_reload.await_count >= 1)
+        cm.broadcast_system_error.assert_not_awaited()
+        valid_source = path.read_text()
+        path.write_text("not valid Python:\n")
+        assert await _wait_for(lambda: cm.broadcast_system_error.await_count == 1, timeout=5)
+        assert registry.get_tool("QaManualEdit").display_name == "Qa Manual Edit 2"
+        path.write_text(valid_source.replace("QaManualEdit", "RenamedTool"))
+        assert await _wait_for(lambda: registry.get_tool("RenamedTool") is not None, timeout=5)
+        assert registry.get_tool("QaManualEdit") is None
+        assert await _wait_for(lambda: cm.broadcast_tool_removed.await_count == 1)
+        path.unlink()
+        assert await _wait_for(lambda: registry.get_tool("RenamedTool") is None, timeout=5)
+        assert await _wait_for(lambda: cm.broadcast_tool_removed.await_count == 2)
+    finally:
+        await svc.stop()
 
 
 async def test_custom_tool_edit_emits_tool_reload_with_updated_metadata(tmp_path: Path):
@@ -548,6 +589,30 @@ async def test_custom_tool_delete_emits_tool_removed(tmp_path: Path):
     cm.broadcast_tool_reload.assert_not_awaited()
     cm.broadcast_system_error.assert_not_awaited()
     assert registry.get_tool("DeleteMe") is None
+
+
+async def test_moved_custom_source_does_not_remove_its_reloaded_tool(tmp_path: Path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = ToolRegistryService()
+    path = CustomToolService(tmp_path, registry).create("MovedTool", "DataFrameTool")
+    old_pair = registry.resolve_package_for_path(path)
+    prior = registry.snapshot(*old_pair)
+    destination = path.with_name("renamed_source.py")
+    path.rename(destination)
+    new_pair = registry.resolve_package_for_path(destination)
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    svc = ToolHotReloadService(registry, cm)
+
+    # Watchers may deliver destination creation before source removal.
+    await svc._do_reload(new_pair, {})
+    await svc._do_reload(old_pair, prior)
+
+    assert registry.get_tool("MovedTool") is not None
+    assert registry.resolve_tool_source("MovedTool") == destination
+    cm.broadcast_tool_removed.assert_not_awaited()
 
 
 async def test_custom_tool_reload_failure_preserves_previous_metadata(tmp_path: Path):

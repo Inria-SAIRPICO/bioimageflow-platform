@@ -1101,6 +1101,7 @@ function registrySignatures(tools: ToolMetadata[]): Map<string, string> {
 
 let previousToolRegistry = registrySignatures(toolRegistryStore.tools)
 const pendingToolNames = new Set<string>()
+const pendingToolReloads = new Set<string>()
 const pendingToolRenames = new Map<string, string>()
 const registeredFocusDeferrals = new Set<string>()
 const removedFocusedFields = new Set<string>()
@@ -1231,6 +1232,7 @@ function reconcilePendingToolState(): void {
       ? node.data.tool !== null || !sameJson(node.data.missingTool ?? null, missingTool)
       : node.data.missingTool != null
     const needsReconciliation = renameChanged
+      || pendingToolReloads.has(resolvedName)
       || metadataChanged
       || missingStateChanged
       || parametersChanged
@@ -1256,7 +1258,7 @@ function reconcilePendingToolState(): void {
       node.data.toolName = resolvedName
       serializedChanged = true
     }
-    if (metadataChanged || missingStateChanged || renameChanged) {
+    if (metadataChanged || missingStateChanged || renameChanged || pendingToolReloads.has(resolvedName)) {
       node.data.tool = freshTool
       node.data.missingTool = null
       node.data.updatedBadge = true
@@ -1273,7 +1275,10 @@ function reconcilePendingToolState(): void {
   }
 
   for (const name of [...pendingToolNames]) {
-    if (!deferredNames.has(name)) pendingToolNames.delete(name)
+    if (!deferredNames.has(name)) {
+      pendingToolNames.delete(name)
+      pendingToolReloads.delete(name)
+    }
   }
 
   // A focused A -> B -> C rename retains A as the pending node identity.
@@ -1385,6 +1390,18 @@ function handleToolDeletedEvent(event: Event) {
   pendingToolNames.add(detail.tool_name)
   requestToolReconciliation()
 }
+
+watch(
+  () => toolRegistryStore.toolReloadRevisions,
+  (current, previous) => {
+    for (const [name, revision] of Object.entries(current ?? {})) {
+      if (revision === previous?.[name]) continue
+      pendingToolReloads.add(name)
+      pendingToolNames.add(name)
+    }
+    requestToolReconciliation()
+  },
+)
 
 watch(
   () => toolRegistryStore.tools,

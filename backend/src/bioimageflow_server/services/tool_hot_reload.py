@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import hashlib
 import os
 import threading
 from pathlib import Path
@@ -87,6 +88,9 @@ class ToolHotReloadService:
         self._pre_suppress_snapshots: dict[tuple[str, str], dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._stopped = False
+        self._custom_poll_task: asyncio.Task[None] | None = None
+        self._custom_fingerprints: dict[Path, str] = {}
+        self._reload_lock = asyncio.Lock()
 
     # -- public lifecycle ------------------------------------------------
 
@@ -111,6 +115,22 @@ class ToolHotReloadService:
         observer.start()
         self._observer = observer
         self._handler = handler
+        self._custom_poll_task = asyncio.create_task(self._poll_custom_sources())
+
+    async def _poll_custom_sources(self) -> None:
+        """Recover dropped native events without traversing datasets or results."""
+        scan = getattr(self._registry, "custom_source_fingerprints", None)
+        if scan is None:
+            return
+        while not self._stopped:
+            await asyncio.sleep(0.5)
+            try:
+                current = await asyncio.to_thread(scan)
+                for path in current.keys() | self._custom_fingerprints.keys():
+                    if current.get(path) != self._custom_fingerprints.get(path):
+                        await self._handle_event(path)
+            except Exception:
+                logger.exception("Could not check custom tool source changes")
 
     def add_watch_root(self, watch_root: Path) -> None:
         """Add another root to the running observer."""
@@ -122,6 +142,10 @@ class ToolHotReloadService:
     async def stop(self) -> None:
         """Cancel timers and stop the observer."""
         self._stopped = True
+        if self._custom_poll_task is not None:
+            self._custom_poll_task.cancel()
+            await asyncio.gather(self._custom_poll_task, return_exceptions=True)
+            self._custom_poll_task = None
         with self._lock:
             for handle in self._timers.values():
                 handle.cancel()
@@ -177,11 +201,18 @@ class ToolHotReloadService:
         """
         with self._lock:
             self._suppressed.set()
+            for pair, handle in self._timers.items():
+                handle.cancel()
+                self._pending.add(pair)
+                self._pre_suppress_snapshots.setdefault(pair, self._registry.snapshot(*pair))
+            self._timers.clear()
             # Refresh the pre-suppress baseline with whatever the
             # registry currently knows about. We snapshot lazily — the
             # registry's package list is the source of truth.
             packages = getattr(self._registry, "_packages", {})
             for pkg_name, info in list(packages.items()):
+                if pkg_name == "__custom__":
+                    continue
                 versions = getattr(info, "installed_versions", []) or []
                 for ver in versions:
                     key = (pkg_name, ver)
@@ -214,6 +245,8 @@ class ToolHotReloadService:
         # (empty for a brand-new package) to surface the new tools.
         packages = getattr(self._registry, "_packages", {})
         for pkg_name, info in list(packages.items()):
+            if pkg_name == "__custom__":
+                continue
             versions = getattr(info, "installed_versions", []) or []
             for ver in versions:
                 pending.add((pkg_name, ver))
@@ -256,7 +289,7 @@ class ToolHotReloadService:
     # -- watchdog callback (worker thread) -------------------------------
 
     def _on_any_event(self, event: FileSystemEvent) -> None:
-        if event.is_directory:
+        if event.is_directory or event.event_type not in {"created", "modified", "deleted", "moved"}:
             return
         if self._loop is None or self._stopped:
             return
@@ -297,10 +330,23 @@ class ToolHotReloadService:
             return
         if path_str.endswith(".pyc") or path_str.endswith("~"):
             return
+        if path.suffix != ".py" or path.name.startswith("."):
+            return
 
         pair = self._registry.resolve_package_for_path(path)
         if pair is None:
             return
+        if pair[0] == "__custom__":
+            try:
+                fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+            except FileNotFoundError:
+                fingerprint = None
+            if fingerprint is not None and self._custom_fingerprints.get(path) == fingerprint:
+                return
+            if fingerprint is None:
+                self._custom_fingerprints.pop(path, None)
+            else:
+                self._custom_fingerprints[path] = fingerprint
 
         # If suppressed, accumulate; resume() will reload + broadcast.
         if self._suppressed.is_set():
@@ -329,7 +375,7 @@ class ToolHotReloadService:
         if self._stopped:
             return
         prior = self._registry.snapshot(*pair)
-        asyncio.create_task(self._do_reload(pair, prior))
+        asyncio.create_task(self._do_reload(pair, prior, notify_unchanged=True))
 
     def _fire_with_prior(self, pair: tuple[str, str], prior: dict[str, Any]) -> None:
         """Resume()'s scheduled fire — uses the pre-suppress snapshot."""
@@ -337,7 +383,17 @@ class ToolHotReloadService:
             return
         asyncio.create_task(self._do_reload(pair, prior))
 
-    async def _do_reload(self, pair: tuple[str, str], prior: dict[str, Any]) -> None:
+    async def _do_reload(
+        self, pair: tuple[str, str], prior: dict[str, Any], *, notify_unchanged: bool = False,
+    ) -> None:
+        async with self._reload_lock:
+            if self._stopped:
+                return
+            await self._reload_and_broadcast(pair, prior, notify_unchanged=notify_unchanged)
+
+    async def _reload_and_broadcast(
+        self, pair: tuple[str, str], prior: dict[str, Any], *, notify_unchanged: bool,
+    ) -> None:
         """Run reload + diff + broadcast for a single ``(pkg, ver)`` pair."""
         pkg, ver = pair
         try:
@@ -379,11 +435,16 @@ class ToolHotReloadService:
 
         # Diff prior vs. current and emit one event per change.
         for name, meta in current.items():
-            if prior.get(name) != meta:
+            # A successful source reload also matters when only implementation
+            # code changed: clients must revalidate cached node results.
+            if prior.get(name) != meta or notify_unchanged:
                 payload = meta.model_dump() if hasattr(meta, "model_dump") else dict(meta)
                 await self._cm.broadcast_tool_reload(name, payload)
         for name in prior:
             if name not in current:
+                if pkg == "__custom__" and self._registry.get_tool(name) is not None:
+                    # A move's destination may already have re-registered it.
+                    continue
                 await self._cm.broadcast_tool_removed(name)
 
 
