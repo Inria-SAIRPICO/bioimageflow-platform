@@ -39,6 +39,7 @@ A thick border identifies a workflow nested inside another workflow.
 
 Search and browse tools by category.
 Drag a tool onto the canvas or use its add action.
+Selecting a tool node on the canvas reveals and highlights its tool in this list, expanding its category and clearing a search if needed.
 Click **Manage tools** for package versions and environments, or **Create Tool** for workflow-local Python code.
 
 ### Workflows
@@ -50,6 +51,8 @@ Drag a saved workflow onto the canvas to reuse it inside the active workflow.
 ### Nodes
 
 Select one canvas node to edit its name, enabled state, parameters, resources, input pins, public workflow ports, output paths, and node logs.
+
+Use **Open tool script** to open the selected tool’s source in the embedded or configured external editor when source access is available.
 
 ### Node Data
 

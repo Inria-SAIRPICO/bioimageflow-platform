@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import TreeTable from 'primevue/treetable'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
@@ -187,6 +187,27 @@ const categoryGroups = computed<CategoryGroup[]>(() => {
  * we track collapse state instead of expand state — that way newly arriving
  * categories appear open. */
 const collapsedCategories = ref(new Set<string>())
+const toolList = ref<HTMLElement | null>(null)
+const selectedToolName = computed(() => {
+  if (!uiStore.isSingleSelection) return null
+  const node = uiStore.graphNodes.find((node) => node.id === uiStore.selectedNodeIds[0])
+  return node?.data.toolName || null
+})
+const selectedTool = computed(() => toolRegistry.tools.find((tool) => tool.name === selectedToolName.value))
+
+watch(selectedTool, async (tool) => {
+  if (!tool) return
+  if (!filteredTools.value.some((entry) => entry.name === tool.name)) searchQuery.value = ''
+  const expanded = new Set(collapsedCategories.value)
+  expanded.delete(tool.categories[0] ?? 'Uncategorized')
+  collapsedCategories.value = expanded
+  await nextTick()
+  if (selectedTool.value !== tool) return
+  toolList.value?.querySelector<HTMLElement>('.tool-list-item--selected')?.scrollIntoView?.({
+    block: 'nearest', inline: 'nearest',
+  })
+}, { immediate: true })
+
 
 function isCategoryCollapsed(category: string): boolean {
   // Every rendered group contains a search match, so keep it open while the
@@ -795,7 +816,7 @@ defineExpose({
     <!-- Tool list grouped by category. Categories are expanded by default and
          can be collapsed individually; the structure mirrors the package tree
          in the Manage Tools dialog. -->
-    <div class="tool-list" data-testid="tool-list">
+    <div ref="toolList" class="tool-list" data-testid="tool-list">
       <div
         v-for="group in categoryGroups"
         :key="group.category"
@@ -821,6 +842,8 @@ defineExpose({
             v-for="tool in group.tools"
             :key="tool.name"
             class="tool-list-item"
+            :class="{ 'tool-list-item--selected': tool.name === selectedToolName }"
+            :aria-current="tool.name === selectedToolName ? 'true' : undefined"
             :data-testid="`tool-item-${tool.name}`"
             draggable="true"
             @dragstart="onToolDragStart($event, tool)"
@@ -1340,6 +1363,11 @@ defineExpose({
 .tool-list-item:hover,
 .tool-list-item:focus-within {
   background-color: color-mix(in srgb, var(--p-primary-color) 14%, var(--bif-surface));
+}
+
+.tool-list-item.tool-list-item--selected {
+  background-color: color-mix(in srgb, var(--p-primary-color) 18%, var(--bif-surface));
+  box-shadow: inset 3px 0 var(--p-primary-color);
 }
 
 .tool-list-item-row {

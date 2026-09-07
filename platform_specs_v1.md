@@ -1134,6 +1134,9 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
 
    **Important:** Environments are per-tool, not per-package. Each tool row shows its own environment indicator and start/stop toggle, even if multiple tools share the same underlying environment.
 
+Selecting a single tool node reveals its corresponding row in the Tools panel: expand its category, clear a search only if it hides the tool, scroll the row into view, and highlight it while selected.
+Multi-selection, workflow-node selection, and clearing selection remove the highlight.
+
 3. **"Manage tools" button** in the panel header: Opens a PrimeVue **Dialog** (modal) containing the full tool management interface (see below).
 
 4. **"Create tool" button** at the bottom of the panel (with margins): Opens the tool creation workflow.
@@ -1182,7 +1185,8 @@ Displays details and parameters for the currently selected node(s).
 #### 3.5.1 Header Section
 
 - **Node name** (editable inline field). This is the human-readable display name (`NodeState.name`) — allows spaces and special characters. Must be unique within the workflow. The `NodeState.id` (URL-safe, used in API and edges) is auto-generated from the name on creation and remains stable when the name is renamed. Validated on blur — if duplicate, a red inline error is shown and the previous name is preserved until a valid name is entered.
-- **Tool name** (read-only, links to source)
+- **Tool name** (read-only), with an **Open tool script** button that opens the source through the configured editor after the active canvas persistence barrier.
+The button follows the same deployment-mode restrictions as source opening in Tools and is unavailable for workflow nodes.
 - **Package + version** (read-only, e.g., "bioimageflow-cellpose 1.2.0")
 - **Enable/Disable** toggle button
 

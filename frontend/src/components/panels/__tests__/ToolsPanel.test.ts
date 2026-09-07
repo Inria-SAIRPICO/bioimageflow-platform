@@ -227,6 +227,33 @@ function mountPanel(options: {
 }
 
 describe('ToolsPanel', () => {
+  it('reveals a selected node tool through collapsed categories and search, then clears its highlight', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="category-toggle-Image Processing"]').trigger('click')
+    const vm = wrapper.vm as unknown as { searchQuery: string }
+    vm.searchQuery = 'gaussian'
+    await flushPromises()
+    const scroll = vi.fn()
+    const originalScroll = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scroll
+    try {
+      const ui = useUIStore()
+      ui.setGraphNodes([{ id: 'selected', data: { toolName: 'threshold' } }])
+      ui.setSelectedNodes(['selected'])
+      await flushPromises()
+      expect(vm.searchQuery).toBe('')
+      expect(wrapper.get('[data-testid="tool-item-threshold"]').attributes('aria-current')).toBe('true')
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      ui.setSelectedNodes([])
+      await flushPromises()
+      expect(wrapper.find('.tool-list-item--selected').exists()).toBe(false)
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScroll
+      wrapper.unmount()
+    }
+  })
+
   beforeEach(() => {
     _resetCanvasPersistenceForTest()
     setActivePinia(createPinia())

@@ -105,6 +105,7 @@ Embedded editor startup remains a single locked launch operation, while side-eff
 Editor lifecycle records use the streamed BioImageFlow logger so users can inspect setup details without the Logger panel opening automatically.
 The workspace root remains the integrated-terminal working directory, installed package sources are read-only in that editor, and focusing either a workflow-local or package tool must not replace the editor project.
 Configured external editors retain their command-defined project behavior.
+The Nodes panel opens the selected tool script through the same persistence barrier and deployment restrictions as Tools; single tool-node selection also reveals and highlights the corresponding Tools row.
 
 Trusted `workflow.py` files are authoring inputs only.
 Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.

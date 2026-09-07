@@ -1,5 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { openToolWithEditor } from '@/api/editor'
+import { useSettingsStore } from '@/stores/settings'
+vi.mock('@/api/editor', () => ({ openToolWithEditor: vi.fn().mockResolvedValue({}) }))
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
@@ -107,6 +110,20 @@ function mountWithErrors(validationResult: ValidationResult | null) {
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('opens the selected tool script and hides the action for restricted webapps', async () => {
+    const wrapper = mountWithErrors(null)
+    await wrapper.get('[data-testid="open-tool-script"]').trigger('click')
+    await flushPromises()
+    expect(openToolWithEditor).toHaveBeenCalledWith('gaussian_blur', null, null, {
+      showEmbeddedLoading: true,
+    })
+    const settings = useSettingsStore()
+    settings.settings = { ...settings.settings, deployment_mode: 'webapp', enable_unsafe_webapp_features: false } as NonNullable<typeof settings.settings>
+    await flushPromises()
+    expect(wrapper.find('[data-testid="open-tool-script"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     _resetGraphSyncForTest()

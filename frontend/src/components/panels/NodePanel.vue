@@ -8,6 +8,9 @@ import ToggleButton from 'primevue/togglebutton'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
+import { openToolWithEditor } from '@/api/editor'
+import { useSettingsStore } from '@/stores/settings'
+import { useWorkflowStore } from '@/stores/workflow'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
@@ -106,6 +109,34 @@ const selectedNode = computed(() => {
 })
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
+const settingsStore = useSettingsStore()
+const workflowStore = useWorkflowStore()
+const openingToolScript = ref(false)
+const toolScriptError = ref('')
+const canOpenToolScript = computed(() => !!nodeData.value?.toolName && (
+  settingsStore.settings?.deployment_mode !== 'webapp'
+  || settingsStore.settings?.enable_unsafe_webapp_features === true
+))
+watch(selectedNode, () => { toolScriptError.value = '' })
+
+async function openToolScript() {
+  if (!canOpenToolScript.value || openingToolScript.value) return
+  const node = selectedNode.value
+  openingToolScript.value = true
+  toolScriptError.value = ''
+  try {
+    await openToolWithEditor(node!.data.toolName, workflowStore.currentName, null, {
+      showEmbeddedLoading: !settingsStore.settings?.external_editor?.trim(),
+    })
+  } catch (error) {
+    if (selectedNode.value === node) {
+      toolScriptError.value = error instanceof Error ? error.message : String(error)
+    }
+  } finally {
+    openingToolScript.value = false
+  }
+}
+
 const interfaceNameError = ref<string | null>(null)
 const listInputErrors = ref<Record<string, string>>({})
 
@@ -586,6 +617,19 @@ async function pickFiles(key: string) {
         <div v-if="nodeData.tool" class="package-info">
           {{ nodeData.tool.package }} v{{ nodeData.tool.package_version }}
         </div>
+        <Button
+          v-if="canOpenToolScript"
+          label="Open tool script"
+          icon="pi pi-code"
+          severity="secondary"
+          text
+          size="small"
+          :loading="openingToolScript"
+          :disabled="openingToolScript"
+          data-testid="open-tool-script"
+          @click="openToolScript"
+        />
+        <p v-if="toolScriptError" role="alert">{{ toolScriptError }}</p>
       </div>
 
       <div class="node-tabs" role="tablist" aria-label="Node details">
