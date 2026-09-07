@@ -117,6 +117,9 @@ Building from Python materializes a canonical graph and its allowed source bundl
 
 ### Execution and results
 
+Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
+They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
+
 Execution operates on one exact accepted graph or draft snapshot.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
 Do not rebuild an ad hoc partial graph for Run Selected; the selected structural boundary and its enabled completion dependencies are resolved by the normal recursive compiler.

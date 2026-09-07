@@ -256,6 +256,7 @@ If installing the local package is blocked by build-environment downloads, recor
 - Use **Recompute Workflow** and confirm every enabled node runs while disabled nodes remain untouched.
 - Inspect current and previous executions, nested node hierarchy, progress, duration, logs, node status, and cancellation feedback.
 - Select one and several completed nodes, inspect combined and separate tables, filter columns, paginate, and change page size.
+- In combined and separate Node Data tables, test long headers, narrow numeric columns, paths, and delayed thumbnails; sort/filter controls must never overlap text. Check visible resize separators in light and dark themes, drag and keyboard resizing, double-click/Enter auto-sizing, and **Reset column widths**. Confirm narrow panels scroll horizontally, neighboring columns do not resize, and manual widths survive reload without leaking into another workflow. Hide the panel while loading results, reopen it, and verify that zero/narrow hidden measurements were not saved.
 - Confirm the deterministic reference values are `1–3` and `2–4` as appropriate.
 - Create an image-producing pass-through tool using `qa-gradient.tif`, run it, and inspect the thumbnail and path actions.
 - Reveal and copy a result path, open the image in Napari and Fiji when installed, and open a supported image in Avivator.

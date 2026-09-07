@@ -316,6 +316,8 @@ Related selected nodes and requested upstream context use the consolidated proje
 Filtering, sorting, pagination, totals, and CSV export operate on the same immutable result snapshot and scoped node identities.
 Filtering precedes sorting and pagination, and CSV applies the same active filter and sort contract.
 The default page size is the persisted user preference, initially 250, while infinite scrolling is not part of the platform interaction model.
+Individual and merged tables share the column-sizing contract in v1 Section 3.6: bounded initial content sizing, stable widths across data-page updates, independent resizing through visible separators, and one **Reset column widths** action.
+Width persistence stores only explicit user choices by workflow/table and stable column identity, not measured component-update snapshots.
 
 Node Data is a read-only inspection surface during execution.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.

@@ -47,6 +47,12 @@ Open an entry for details or use **Go to node** when it is available.
 When selected nodes have compatible rows, BioImageFlow can combine their fields in one table.
 Otherwise it shows separate tables.
 
+Columns start at readable widths based on their headers and loaded values; wide tables scroll horizontally.
+Drag a visible header separator to resize just that column, or double-click it to auto-size it.
+You can also focus a separator with Tab and use Left/Right to resize or Enter to auto-size.
+Manual widths are remembered for the workflow and table; **Reset column widths** restores automatic sizing using the current data.
+Widths stay stable while changing pages or loading thumbnails, and hovering truncated header or text-cell content reveals the full text.
+
 ![Completed node results with an image preview and path actions in Node Data.](images/results-inspection.png)
 
 ## Inspect images and paths

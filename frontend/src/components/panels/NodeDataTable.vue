@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import { useTableColumnWidths } from '@/composables/useTableColumnWidths'
+import NodeDataColumnResizer from './NodeDataColumnResizer.vue'
+import './nodeDataTable.css'
 import Button from 'primevue/button'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -27,8 +30,6 @@ const loading = computed(() => store.isLoading(props.nodeId))
 const pending = computed(() => store.isPending(props.nodeId))
 const error = computed(() => store.getError(props.nodeId))
 const pageState = computed(() => store.getPageState(props.nodeId))
-const widthMode = ref<'auto' | 'fit'>('auto')
-const tableRenderKey = ref(0)
 
 const rowModels = computed(() => {
   const response = data.value
@@ -64,12 +65,11 @@ function hasImageBehavior(col: string, value: unknown): boolean {
 const columnLabels = computed(() => Object.fromEntries(
   visibleColumns.value.map(column => [column, displayColumnName(column)]),
 ))
-const tableStateKey = computed(() => {
-  const signature = visibleColumns.value
-    .map(column => `${column}:${data.value?.column_types[column] ?? 'str'}`)
-    .join('|')
-  return `bif-node-data-widths-v1:${props.nodeId}:${signature}`
-})
+const sizingColumns = computed(() => visibleColumns.value.map(id => ({
+  id, label: displayColumnName(id), type: data.value?.column_types[id] ?? 'str',
+})))
+const sizingScope = computed(() => JSON.stringify([props.workflowName, 'node', props.nodeId]))
+const { root, width, tableStyle, columnStyle, resize, autoSize, cancelResize } = useTableColumnWidths(sizingScope, sizingColumns, rowModels)
 
 function setSort(column: string | null, order: 'asc' | 'desc') {
   void store.setSort(props.nodeId, column, order, {
@@ -107,42 +107,18 @@ function onPage(page: number): void {
   })
 }
 
-function defaultColumnWidth(column: string): string {
-  const type = data.value?.column_types[column] ?? 'str'
-  if (/^(bool|boolean)$/i.test(type)) return '96px'
-  if (/^(u?int|float|double|number|decimal)/i.test(type)) return '120px'
-  if (isImageColumn(column) || isPathColumn(column)) return '320px'
-  return '180px'
-}
-
-function resetColumnWidths(): void {
-  window.localStorage.removeItem(tableStateKey.value)
-  widthMode.value = 'auto'
-  tableRenderKey.value += 1
-}
-
-function autoSizeColumns(): void {
-  window.localStorage.removeItem(tableStateKey.value)
-  widthMode.value = 'auto'
-  tableRenderKey.value += 1
-}
-
-function fitColumns(): void {
-  widthMode.value = 'fit'
-}
 </script>
 
 <template>
   <section
+    ref="root"
     class="node-data-table"
     :class="{ 'node-data-table--disabled': disabled }"
     :data-testid="`node-data-table-${nodeId}`"
   >
     <div class="node-data-table__toolbar">
       <slot name="toolbar-actions" />
-      <Button icon="pi pi-arrows-h" label="Fit" size="small" text title="Fit columns to panel" @click="fitColumns" />
-      <Button icon="pi pi-sparkles" label="Auto" size="small" text title="Use compact automatic widths" @click="autoSizeColumns" />
-      <Button icon="pi pi-refresh" label="Reset" size="small" text title="Reset saved column widths" @click="resetColumnWidths" />
+      <Button icon="pi pi-refresh" label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
       <Button
         icon="pi pi-download"
         label="CSV"
@@ -183,53 +159,51 @@ function fitColumns(): void {
         @change="setFilters"
       />
       <DataTable
-        :key="`${tableStateKey}:${tableRenderKey}`"
         :value="rowModels"
         data-key="__absoluteRow"
         size="small"
         scrollable
         scroll-height="flex"
         :loading="loading"
-        resizable-columns
-        :column-resize-mode="widthMode === 'fit' ? 'fit' : 'expand'"
-        state-storage="local"
-        :state-key="tableStateKey"
-        class="node-data-table__grid"
-        :class="{ 'node-data-table__grid--fit': widthMode === 'fit' }"
+        :table-style="tableStyle"
+        class="node-data-table__grid node-data-sized-grid"
       >
         <Column
-          v-for="col in visibleColumns"
-          :key="col"
-          :field="col"
-          :style="{ width: defaultColumnWidth(col), minWidth: '72px', maxWidth: '480px' }"
+          v-for="column in sizingColumns"
+          :key="column.id"
+          :field="column.id"
+          :style="columnStyle(column)"
         >
           <template #header>
             <NodeDataColumnHeader
-              :column="col"
-              :label="displayColumnName(col)"
-              :type="data.column_types[col] ?? 'str'"
+              :column="column.id"
+              :label="column.label"
+              :type="column.type"
               :page-state="pageState"
               @sort="setSort"
               @filters="setFilters"
             />
+            <NodeDataColumnResizer :label="column.label" :get-width="() => width(column)"
+              @resize="(value, commit) => resize(column, value, commit)"
+              @cancel="cancelResize" @autosize="autoSize(column)" />
           </template>
           <template #body="slotProps">
             <div
-              v-if="isImageColumn(col) || isPathColumn(col)"
+              v-if="isImageColumn(column.id) || isPathColumn(column.id)"
               class="node-data-table__image-path"
             >
               <ImageCell
                 :node-id="nodeId"
                 :workflow-name="workflowName"
                 :row="slotProps.data.__absoluteRow"
-                :col="col"
-                :value="String(slotProps.data[col] ?? '')"
-                :show-path="isPathColumn(col)"
-                :show-image-actions="hasImageBehavior(col, slotProps.data[col])"
-                :thumbnail-enabled="hasImageBehavior(col, slotProps.data[col])"
+                :col="column.id"
+                :value="String(slotProps.data[column.id] ?? '')"
+                :show-path="isPathColumn(column.id)"
+                :show-image-actions="hasImageBehavior(column.id, slotProps.data[column.id])"
+                :thumbnail-enabled="hasImageBehavior(column.id, slotProps.data[column.id])"
               />
             </div>
-            <span v-else>{{ slotProps.data[col] }}</span>
+            <span v-else class="node-data-cell-text" :title="String(slotProps.data[column.id] ?? '')">{{ slotProps.data[column.id] }}</span>
           </template>
         </Column>
       </DataTable>
@@ -277,16 +251,6 @@ function fitColumns(): void {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
-}
-
-.node-data-table__grid :deep(.p-datatable-table) {
-  width: max-content;
-  min-width: 0;
-}
-
-.node-data-table__grid--fit :deep(.p-datatable-table) {
-  width: 100%;
-  table-layout: fixed;
 }
 
 .node-data-table__image-path {

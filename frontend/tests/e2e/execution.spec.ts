@@ -157,7 +157,7 @@ test.describe('execution lifecycle', () => {
     const paginator = page.locator('[data-testid="node-data-paginator"]')
     await expect(nodeDataPanel).toBeVisible()
     await expect(paginator).toBeVisible()
-    await expect(page.locator('[data-p-resizable-column="true"]').first()).toBeVisible()
+    await expect(page.getByRole('separator', { name: /^Resize / }).first()).toBeVisible()
     const panelBox = await nodeDataPanel.boundingBox()
     const paginatorBox = await paginator.boundingBox()
     expect(panelBox).toBeTruthy()

@@ -1,0 +1,21 @@
+.node-data-sized-grid .p-datatable-table {
+  table-layout: fixed;
+  min-width: 0;
+}
+.node-data-sized-grid .p-datatable-header-cell {
+  position: relative;
+  padding-inline-end: 14px;
+}
+.node-data-sized-grid .p-datatable-column-header-content {
+  min-width: 0;
+  width: 100%;
+}
+.node-data-sized-grid .p-datatable-tbody > tr > td {
+  overflow: hidden;
+}
+.node-data-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

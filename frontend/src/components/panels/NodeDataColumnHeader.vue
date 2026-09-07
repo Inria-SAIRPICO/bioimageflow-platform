@@ -122,8 +122,8 @@ function clearFilter(): void {
       @click="toggleSort"
     >
       <span class="node-data-column-header__labels">
-        <span>{{ label }}</span>
-        <span class="node-data-column-header__type">{{ type }}</span>
+        <span :title="label">{{ label }}</span>
+        <span class="node-data-column-header__type" :title="type">{{ type }}</span>
       </span>
       <i :class="sortIcon" aria-hidden="true" />
     </button>
@@ -206,12 +206,15 @@ function clearFilter(): void {
 
 .node-data-column-header {
   min-width: 0;
+  width: 100%;
+  flex: 1 1 0;
   justify-content: space-between;
   gap: 0.25rem;
 }
 
 .node-data-column-header__sort {
   min-width: 0;
+  flex: 1 1 0;
   gap: 0.375rem;
   border: 0;
   background: transparent;
@@ -223,9 +226,22 @@ function clearFilter(): void {
 
 .node-data-column-header__labels {
   min-width: 0;
+  flex: 1 1 0;
   flex-direction: column;
   align-items: flex-start;
   line-height: 1.15;
+}
+
+.node-data-column-header__labels > span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.node-data-column-header__sort > i,
+.node-data-column-header > :deep(.p-button) {
+  flex-shrink: 0;
 }
 
 .node-data-column-header__type {

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import { useTableColumnWidths } from '@/composables/useTableColumnWidths'
+import NodeDataColumnResizer from './NodeDataColumnResizer.vue'
+import './nodeDataTable.css'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -18,8 +21,6 @@ const props = defineProps<{
 const store = useDataTableStore()
 const data = computed(() => store.projection?.mode === 'merged' ? store.projection : null)
 const pageState = computed(() => store.projectionPage)
-const widthMode = ref<'auto' | 'fit'>('auto')
-const tableRenderKey = ref(0)
 const rowModels = computed(() => (data.value?.rows ?? []).map((row) => ({
   ...row.values,
   __index: row.index,
@@ -41,12 +42,9 @@ function hasImageBehavior(type: string, value: unknown): boolean {
 const columnLabels = computed(() => Object.fromEntries(
   (data.value?.columns ?? []).map(column => [column.id, column.label]),
 ))
-const tableStateKey = computed(() => {
-  const signature = (data.value?.columns ?? [])
-    .map(column => `${column.id}:${column.type}`)
-    .join('|')
-  return `bif-node-data-widths-v1:merged:${signature}`
-})
+const sizingColumns = computed(() => data.value?.columns ?? [])
+const sizingScope = computed(() => JSON.stringify([props.workflowId, 'merged', (data.value?.sources ?? []).map(source => source.node_id).sort()]))
+const { root, width, tableStyle, columnStyle, resize, autoSize, cancelResize } = useTableColumnWidths(sizingScope, sizingColumns, rowModels)
 
 function setSort(columnId: string | null, order: 'asc' | 'desc'): void {
   void store.setProjectionSort(columnId, order)
@@ -56,28 +54,11 @@ function setFilters(filters: DataTableFilter[]): void {
   void store.setProjectionFilters(filters)
 }
 
-function defaultColumnWidth(type: string): string {
-  if (/^(bool|boolean)$/i.test(type)) return '96px'
-  if (/^(u?int|float|double|number|decimal)/i.test(type)) return '120px'
-  if (isTypedImage(type) || isPathType(type)) return '320px'
-  return '180px'
-}
-
-function resetColumnWidths(): void {
-  window.localStorage.removeItem(tableStateKey.value)
-  widthMode.value = 'auto'
-  tableRenderKey.value += 1
-}
-
-function autoSizeColumns(): void {
-  window.localStorage.removeItem(tableStateKey.value)
-  widthMode.value = 'auto'
-  tableRenderKey.value += 1
-}
 </script>
 
 <template>
   <section
+    ref="root"
     v-if="data"
     class="merged-data-table"
     data-testid="merged-data-table"
@@ -86,9 +67,7 @@ function autoSizeColumns(): void {
       <span>{{ data.sources.map((source) => source.label).join(' → ') }}</span>
       <div class="merged-data-table__toolbar-actions">
         <slot name="toolbar-actions" />
-        <Button icon="pi pi-arrows-h" label="Fit" size="small" text title="Fit columns to panel" @click="widthMode = 'fit'" />
-        <Button icon="pi pi-sparkles" label="Auto" size="small" text title="Use compact automatic widths" @click="autoSizeColumns" />
-        <Button icon="pi pi-refresh" label="Reset" size="small" text title="Reset saved column widths" @click="resetColumnWidths" />
+        <Button icon="pi pi-refresh" label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
         <Button
           icon="pi pi-download"
           label="CSV"
@@ -104,25 +83,20 @@ function autoSizeColumns(): void {
       @change="setFilters"
     />
     <DataTable
-      :key="`${tableStateKey}:${tableRenderKey}`"
       :value="rowModels"
       data-key="__index"
       size="small"
       scrollable
       scroll-height="flex"
       :loading="store.projectionLoading"
-      resizable-columns
-      :column-resize-mode="widthMode === 'fit' ? 'fit' : 'expand'"
-      state-storage="local"
-      :state-key="tableStateKey"
-      class="merged-data-table__grid"
-      :class="{ 'merged-data-table__grid--fit': widthMode === 'fit' }"
+      :table-style="tableStyle"
+      class="merged-data-table__grid node-data-sized-grid"
     >
       <Column
         v-for="column in data.columns"
         :key="column.id"
         :field="column.id"
-        :style="{ width: defaultColumnWidth(column.type), minWidth: '72px', maxWidth: '480px' }"
+        :style="columnStyle(column)"
       >
         <template #header>
           <NodeDataColumnHeader
@@ -133,6 +107,9 @@ function autoSizeColumns(): void {
             @sort="setSort"
             @filters="setFilters"
           />
+          <NodeDataColumnResizer :label="column.label" :get-width="() => width(column)"
+            @resize="(value, commit) => resize(column, value, commit)"
+            @cancel="cancelResize" @autosize="autoSize(column)" />
         </template>
         <template #body="slotProps">
           <ImageCell
@@ -146,7 +123,7 @@ function autoSizeColumns(): void {
             :show-image-actions="hasImageBehavior(column.type, slotProps.data[column.id])"
             :thumbnail-enabled="hasImageBehavior(column.type, slotProps.data[column.id])"
           />
-          <span v-else>{{ slotProps.data[column.id] }}</span>
+          <span v-else class="node-data-cell-text" :title="String(slotProps.data[column.id] ?? '')">{{ slotProps.data[column.id] }}</span>
         </template>
       </Column>
     </DataTable>
@@ -193,13 +170,4 @@ function autoSizeColumns(): void {
   min-width: 0;
 }
 
-.merged-data-table__grid :deep(.p-datatable-table) {
-  width: max-content;
-  min-width: 0;
-}
-
-.merged-data-table__grid--fit :deep(.p-datatable-table) {
-  width: 100%;
-  table-layout: fixed;
-}
 </style>
