@@ -97,6 +97,14 @@ Workflow inputs are either field inputs with one or more internal targets or Dat
 Workflow outputs map a stable port ID to an internal node and output.
 
 The Node Panel uses **Expose as workflow input**, **Expose as workflow output**, **Workflow input name**, and **Workflow output name**.
+For a `DataFrameTool` with `accepts_upstream=true`, the Nodes panel has a separate **Published DataFrame inputs** section with **Publish DataFrame input**.
+Each click directly publishes the next unoccupied positional DataFrame slot, with no separate add-input step and no UI-imposed maximum.
+Each row contains an editable **Workflow input name**, its one-based target label (for example, **DataFrame 1**), and **Unpublish**.
+Publications reserve slots alongside internal DataFrame connections; the canvas shows those slots plus the next free slot and prevents an internal edge from also targeting a published slot.
+Removing a publication or an internal connection compacts the remaining positional targets and edges together without changing surviving public port IDs or names.
+Source tools that do not accept upstream DataFrames do not offer positional publication.
+For a selected workflow node, the same section can publish each unconnected child DataFrame port through the enclosing interface, targeting the child's stable port ID rather than inventing positional inputs on the workflow node.
+These actions use the ordinary graph mutation lock, undo/redo, draft persistence, and nested-save reconciliation paths.
 Renaming a port changes its label while preserving its ID and parent connections.
 Removing or changing a connected port requires explicit confirmation and atomically removes affected bindings and edges.
 

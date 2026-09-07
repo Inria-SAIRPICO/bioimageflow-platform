@@ -6,6 +6,7 @@ import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
 import ColumnEdge from './ColumnEdge.vue'
 import DataFrameEdge from './DataFrameEdge.vue'
+import { dataframePositions, nextDataframePosition, isPublishedDataframe } from '@/utils/dataframeInputs'
 import CanvasErrorBanner from './CanvasErrorBanner.vue'
 import CanvasPersistenceFeedback from './CanvasPersistenceFeedback.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
@@ -1752,6 +1753,7 @@ function clearExistingIncomingEdge(nodeId: string, targetHandle: string) {
 onConnect((connection) => {
   if (isLocked.value) return
   const targetHandle = connection.targetHandle ?? ''
+  if (isPublishedDataframe(connection.target, targetHandle, currentInterfaceContext()?.inputs ?? [])) return
 
   // Reject positional edges into source DataFrameTools (accepts_upstream=false).
   if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
@@ -2032,6 +2034,23 @@ function reindexPositionalInputs(
   node: any,
   ci: Record<string, string>,
 ) {
+  const context = currentInterfaceContext()
+  const positions = dataframePositions(node.id, ci, context?.inputs ?? [])
+  const indices = new Map(positions.map((position, index) => [position, index]))
+  if (context) {
+    replaceWorkflowInputs(context.inputs.map(input => ({
+      ...input,
+      targets: input.targets.map(target => (
+        target.node === node.id && target.port.kind === 'positional'
+          ? { ...target, port: { kind: 'positional', index: indices.get(target.port.index)! } }
+          : target
+      )),
+    })))
+  }
+  // Capture edges before renumbering, so moving one cannot shadow another.
+  const edgesByHandle = new Map(getEdges.value
+    .filter(edge => edge.target === node.id)
+    .map(edge => [edge.targetHandle, edge]))
   // Collect currently connected positional entries, sorted by old index
   const positionalEntries = Object.entries(ci)
     .filter(([handle]) => decodeEndpointHandle(handle).kind === 'dataframe-position')
@@ -2051,15 +2070,16 @@ function reindexPositionalInputs(
   }
 
   // Re-insert with compact indices and update edges
-  positionalEntries.forEach(([oldKey, label], newIndex) => {
+  positionalEntries.forEach(([oldKey, label]) => {
+    const endpoint = decodeEndpointHandle(oldKey)
+    if (endpoint.kind !== 'dataframe-position') return
+    const newIndex = indices.get(endpoint.index)!
     const newKey = encodeEndpointHandle({ kind: 'dataframe-position', index: newIndex })
     ci[newKey] = label
 
     if (oldKey !== newKey) {
       // Update the corresponding edge's targetHandle
-      const edge = getEdges.value.find(
-        (e: any) => e.target === node.id && e.targetHandle === oldKey,
-      )
+      const edge = edgesByHandle.get(oldKey)
       if (edge) {
         edge.targetHandle = newKey
         edge.id = `e-${edge.source}-${edge.sourceHandle}-${edge.target}-${newKey}`
@@ -2068,6 +2088,7 @@ function reindexPositionalInputs(
   })
 
   node.data.connectedInputs = ci
+  return indices
 }
 
 // --- Validation ---
@@ -2194,6 +2215,7 @@ function isValidConnection(connection: {
 
   // 1b. Reject positional edges into source DataFrameTools
   const th = connection.targetHandle ?? ''
+  if (isPublishedDataframe(connection.target, th, currentInterfaceContext()?.inputs ?? [])) return false
   if (decodeEndpointHandle(th).kind === 'dataframe-position'
     && targetTool?.accepts_upstream === false) {
     return false
@@ -3298,9 +3320,14 @@ function workflowInterfaceRejected(
     : { status: 'rejected', reason, name }
 }
 
-function emitInterfaceChanged(): void {
+function emitInterfaceChanged(positionMaps = new Map<string, Map<number, number>>()): void {
   const state = currentVueFlowState()
   const graph = graphWithAuthoritativeEdges(state)
+  for (const edge of graph.edges) {
+    if (edge.type === 'dataframe' && edge.target_position != null) {
+      edge.target_position = positionMaps.get(edge.target_node)?.get(edge.target_position) ?? edge.target_position
+    }
+  }
   emitGraphChanged({
     state: {
       ...state,
@@ -3312,11 +3339,12 @@ function emitInterfaceChanged(): void {
 function workflowInputIndex(
   context: InterfaceContext,
   nodeId: string,
-  input: string,
+  input: string | number,
 ): number {
   return context.inputs.findIndex(item => item.targets.some(target => (
     target.node === nodeId
-    && ((target.port.kind === 'field' && target.port.name === input)
+    && ((target.port.kind === 'positional' && target.port.index === input)
+      || (target.port.kind === 'field' && target.port.name === input)
       || (target.port.kind === 'workflow' && target.port.id === input))
   )))
 }
@@ -3345,7 +3373,7 @@ function exposedNameIsUsed(
 
 function toggleWorkflowInput(
   nodeId: string,
-  input: string,
+  input: string | number,
 ): CanvasInterfaceCommandResult {
   if (isLocked.value) return workflowInterfaceRejected('locked')
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
@@ -3354,10 +3382,54 @@ function toggleWorkflowInput(
   if (!context) return workflowInterfaceRejected('unavailable')
   const existingIndex = workflowInputIndex(context, nodeId, input)
   if (existingIndex >= 0) {
+    const removed = context.inputs[existingIndex]!
     const nextInputs = context.inputs.filter(
       (_item, index) => index !== existingIndex,
     )
     if (!replaceWorkflowInputs(nextInputs)) return workflowInterfaceRejected('unavailable')
+    const positionMaps = new Map<string, Map<number, number>>()
+    for (const target of removed.targets) {
+      if (target.port.kind !== 'positional' || positionMaps.has(target.node)) continue
+      const targetNode = getNodes.value.find(candidate => candidate.id === target.node)
+      if (targetNode) positionMaps.set(target.node, reindexPositionalInputs(targetNode, { ...targetNode.data.connectedInputs }))
+    }
+    emitInterfaceChanged(positionMaps)
+    return { status: 'changed' }
+  }
+
+  if (typeof input === 'number') {
+    const tool = toolForNode(node)
+    if (tool?.tool_type !== 'DataFrameTool' || !tool.accepts_upstream) {
+      return workflowInterfaceRejected('not_exposable')
+    }
+    const positions = dataframePositions(nodeId, node.data.connectedInputs ?? {}, context.inputs)
+    if (input !== nextDataframePosition(positions)) return workflowInterfaceRejected('not_exposable')
+    const baseName = `${node.data.name ?? nodeId} DataFrame ${input + 1}`
+    let name = baseName
+    let suffix = 2
+    while (exposedNameIsUsed(context, name)) name = `${baseName} (${suffix++})`
+    if (!replaceWorkflowInputs([...context.inputs, {
+      id: `input-${crypto.randomUUID()}`, name, kind: 'dataframe',
+      schema: { type: 'DataFrame' },
+      targets: [{ node: nodeId, port: { kind: 'positional', index: input } }],
+    }])) return workflowInterfaceRejected('unavailable')
+    emitInterfaceChanged()
+    return { status: 'changed' }
+  }
+
+  const childInput = node.data.workflow?.interface.inputs.find(
+    (port: WorkflowInput) => port.id === input && port.kind === 'dataframe',
+  )
+  if (childInput) {
+    const handle = encodeEndpointHandle({ kind: 'workflow-input', id: input })
+    if (handle in node.data.connectedInputs) return workflowInterfaceRejected('not_exposable')
+    const name = `${node.data.name ?? nodeId}.${childInput.name}`
+    if (exposedNameIsUsed(context, name)) return workflowInterfaceRejected('duplicate_name', name)
+    if (!replaceWorkflowInputs([...context.inputs, {
+      id: `input-${crypto.randomUUID()}`, name, kind: 'dataframe',
+      schema: { type: 'DataFrame' },
+      targets: [{ node: nodeId, port: { kind: 'workflow', id: input } }],
+    }])) return workflowInterfaceRejected('unavailable')
     emitInterfaceChanged()
     return { status: 'changed' }
   }
@@ -3421,7 +3493,7 @@ function toggleWorkflowOutput(
 
 function renameWorkflowInput(
   nodeId: string,
-  input: string,
+  input: string | number,
   name: string,
 ): CanvasInterfaceCommandResult {
   if (isLocked.value) return workflowInterfaceRejected('locked')

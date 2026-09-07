@@ -5,12 +5,14 @@ import type {
   MissingTool,
   NodeOutputSchemaResponse,
   ToolMetadata,
+  WorkflowInput,
 } from '@/api/types'
+import { dataframePositions, nextDataframePosition, isPublishedDataframe } from '@/utils/dataframeInputs'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
 import { fieldDisplayName } from '@/utils/displayNames'
-import { decodeEndpointHandle, encodeEndpointHandle } from '@/utils/endpointHandles'
+import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 export interface NodeData {
   nodeType: 'tool' | 'workflow'
@@ -27,6 +29,7 @@ export interface NodeData {
   pinnedInputs: Record<string, boolean>
   output_templates: Record<string, string>
   workflow?: GraphState
+  workflowInterfaceContext?: { inputs: WorkflowInput[] }
   // Marks refreshed tool metadata; cleared when the user clicks the badge.
   updatedBadge?: boolean
 }
@@ -102,17 +105,12 @@ const showsHeaderOutputPin = computed(() => {
   return props.data.tool.dataframe_output !== false
 })
 
-const positionalInputCount = computed(() => {
-  // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
-  if (!showsPositionalPins.value) return 0
-  const connected = Object.keys(props.data.connectedInputs).filter((handle) => {
-    try {
-      return decodeEndpointHandle(handle).kind === 'dataframe-position'
-    } catch {
-      return false
-    }
-  }).length
-  return connected + 1
+const positionalInputs = computed(() => {
+  if (!showsPositionalPins.value) return []
+  const positions = dataframePositions(
+    props.id, props.data.connectedInputs, props.data.workflowInterfaceContext?.inputs ?? [],
+  )
+  return [...positions, nextDataframePosition(positions)].sort((a, b) => a - b)
 })
 
 const headerInputs = computed(() => {
@@ -125,7 +123,7 @@ const headerInputs = computed(() => {
         index: undefined,
       }))
   }
-  return Array.from({ length: positionalInputCount.value }, (_, index) => ({
+  return positionalInputs.value.map(index => ({
     handle: encodeEndpointHandle({ kind: 'dataframe-position', index }),
     label: String(index + 1),
     index,
@@ -262,6 +260,7 @@ function onDismissBadge(event: MouseEvent) {
           :key="input.handle"
           :node-id="id"
           :field-name="input.handle"
+          :published="isPublishedDataframe(id, input.handle, data.workflowInterfaceContext?.inputs ?? [])"
           :display-name="input.label"
           field-type="DataFrame"
           :connected="input.handle in data.connectedInputs"

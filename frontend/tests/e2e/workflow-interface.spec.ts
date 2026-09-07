@@ -139,6 +139,107 @@ test.describe('workflow interface and grouping', () => {
     expect(saved.nodes[0].workflow.nodes[0]).toMatchObject({ id: 'blur_1', type: 'tool' })
   })
 
+  test('publishes multiple DataFrames and compacts slots without changing surviving IDs or edges', async ({ page }) => {
+    const name = workflowName('dataframe_interface')
+    const displayName = `DataFrames ${name}`
+    await createWorkflow(page, name, displayName)
+    const initial = graph(name, displayName)
+    initial.nodes = [{
+      type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers',
+      position: [400, 160], parameters: { number: 1 },
+    }, {
+      type: 'tool', id: 'seed', name: 'Seed', tool_name: 'SeedNumbers',
+      position: [50, 160], parameters: {},
+    }]
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="increment"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    for (let index = 0; index < 3; index++) {
+      await page.getByTestId('publish-dataframe-input').click()
+      await expect(page.getByTestId(`dataframe-input-name-${index}`)).toBeVisible()
+    }
+    await page.getByTestId('dataframe-input-name-2').fill('Last table')
+    await saveWorkflow(page, name)
+    const first = await savedGraph(page, name)
+    expect(first.interface.inputs.map(input => input.targets[0]?.port)).toEqual([
+      { kind: 'positional', index: 0 }, { kind: 'positional', index: 1 }, { kind: 'positional', index: 2 },
+    ])
+    expect(first.interface.inputs.every(input => input.kind === 'dataframe')).toBe(true)
+
+    // A connected slot after the publications must move with them on unpublish.
+    const source = await page.locator('.vue-flow__node[data-id="seed"] [data-handleid="bif:v1:dataframe-output"]').boundingBox()
+    const target = await page.locator('.vue-flow__node[data-id="increment"] [data-handleid="bif:v1:dataframe-position:3"]').boundingBox()
+    if (!source || !target) throw new Error('Expected DataFrame handles')
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
+    await page.mouse.up()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expect(page.getByTestId('dataframe-input-name-2')).toHaveValue('Last table')
+    await page.getByTestId('unpublish-dataframe-1').click()
+    await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
+    await expect(page.getByTestId('dataframe-input-name-2')).toHaveCount(0)
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Undo', exact: true }).click()
+    await expect(page.getByTestId('dataframe-input-name-2')).toHaveValue('Last table')
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Redo', exact: true }).click()
+    await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
+    await saveWorkflow(page, name)
+    const saved = await savedGraph(page, name)
+    expect(saved.interface.inputs.map(input => input.id)).toEqual([first.interface.inputs[0]!.id, first.interface.inputs[2]!.id])
+    expect(saved.interface.inputs[1]).toMatchObject({ name: 'Last table', targets: [{ node: 'increment', port: { kind: 'positional', index: 1 } }] })
+    expect(saved.edges[0]).toMatchObject({ type: 'dataframe', target_node: 'increment', target_position: 2 })
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="increment"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
+  })
+
+  test('publishes an existing child DataFrame port through the parent interface', async ({ page }) => {
+    const name = workflowName('forward_dataframe')
+    const displayName = `Forward ${name}`
+    await createWorkflow(page, name, displayName)
+    const child = graph('child', 'Child')
+    child.nodes = [{ type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers', position: [180, 160], parameters: { number: 1 } }]
+    const parent = graph(name, displayName)
+    parent.nodes = [{ type: 'workflow', id: 'child', name: 'Child', position: [180, 160], workflow: child, bindings: {} }]
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: parent } })
+    expect(setup.ok(), await setup.text()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await page.getByTestId('publish-dataframe-input').click()
+    await page.getByTestId('dataframe-input-name-0').fill('Source table')
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    await page.locator('.dv-tab').getByText(displayName, { exact: true }).click()
+    await saveWorkflow(page, name)
+    const savedChild = (await savedGraph(page, name)).nodes[0]!
+    if (savedChild.type !== 'workflow') throw new Error('Expected child workflow')
+    const childPortId = savedChild.workflow.interface.inputs[0]!.id
+    await page.locator('.vue-flow__node[data-id="child"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await page.getByRole('button', { name: 'Publish DataFrame input: Source table', exact: true }).click()
+    await page.getByTestId(`dataframe-input-name-${childPortId}`).fill('Parent table')
+    await saveWorkflow(page, name)
+    expect((await savedGraph(page, name)).interface.inputs[0]).toMatchObject({
+      kind: 'dataframe', name: 'Parent table', targets: [{ node: 'child', port: { kind: 'workflow', id: childPortId } }],
+    })
+    await page.getByTestId(`unpublish-dataframe-${childPortId}`).click()
+    await expect(page.getByRole('button', { name: 'Publish DataFrame input: Source table', exact: true })).toBeVisible()
+    await saveWorkflow(page, name)
+    expect((await savedGraph(page, name)).interface.inputs).toEqual([])
+  })
+
   test('deleting an exposed node removes its interface references before autosave', async ({
     page,
   }) => {

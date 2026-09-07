@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   sourceLabel?: string
   positional?: boolean
   positionalIndex?: number
+  published?: boolean
   variant?: 'header' | 'body'
 }>(), {
   variant: 'body',
@@ -79,11 +80,12 @@ function onPointerDown(event: PointerEvent) {
 </script>
 
 <template>
-  <div class="input-pin" :class="{ 'input-pin--any': fieldType === 'any', 'input-pin--header': variant === 'header' }" :title="fieldType === 'any' ? '? (runtime-typed)' : fieldType" @pointerdown.capture="onPointerDown">
+  <div class="input-pin" :class="{ 'input-pin--any': fieldType === 'any', 'input-pin--header': variant === 'header' }" :title="published ? 'Published workflow input' : fieldType === 'any' ? '? (runtime-typed)' : fieldType" @pointerdown.capture="onPointerDown">
     <Handle
       type="target"
       :position="Position.Left"
       :id="fieldName"
+      :connectable="published ? false : undefined"
       class="pin-handle"
       :class="{ connected, 'pin-handle--header': variant === 'header' }"
       :style="variant === 'header' ? { backgroundColor: connected ? '#7A7A80' : 'transparent', borderColor: '#7A7A80' } : { backgroundColor: connected ? color : 'transparent', borderColor: color }"

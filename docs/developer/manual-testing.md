@@ -199,6 +199,11 @@ Prepare a fresh QA root rather than reusing the lightweight session.
 
 ### C5. Nested workflows and provenance
 
+- Recreate `QA Nested Child` in the editor: start a workflow with `QaIncrement`, select it in **Nodes**, choose **Published DataFrame inputs → Publish DataFrame input**, name the publication, expose its incremented output, and save.
+- Recreate `QA Nested Parent` by embedding that saved child and connecting the source tool's whole DataFrame output to the child's published DataFrame input; run and compare with the supplied fixture.
+- On a disposable copy, publish several DataFrame inputs, rename them, unpublish the middle one, undo/redo, and save/reload; confirm surviving names and IDs remain stable and positional labels and internal DataFrame connections compact together.
+- Select an embedded child and publish its DataFrame input through the parent's interface; confirm it targets the existing child port and cannot also receive an internal edge.
+- Confirm source DataFrame Tools with `accepts_upstream=False` have no **Publish DataFrame input** action, and publication controls are disabled while execution locks editing.
 - Group one node and several connected nodes, confirming outside connections become stable workflow interface ports.
 - Drag `QA Nested Child` into a new parent and confirm its saved graph, interface, source provenance, and local tools are copied.
 - Edit an embedded copy and confirm the saved source does not change.

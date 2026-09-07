@@ -1202,6 +1202,11 @@ The button follows the same deployment-mode restrictions as source opening in To
 
 #### 3.5.3 Input Parameters
 
+DataFrame publication is separate from parameter editing.
+For a DataFrame Tool that accepts upstream DataFrames, **Published DataFrame inputs → Publish DataFrame input** publishes successive positional inputs directly, each with an editable workflow input name, target position, and **Unpublish** action.
+The number of published DataFrames is not limited by the tool's declared `Inputs` fields.
+The recursive interface and positional compaction rules are defined in v2 Section 5.
+
 Each input field from the tool's `Inputs` is rendered as a parameter row. Fields are grouped by category (if the tool defines categories via `GUIMeta.group`; otherwise all in one group).
 
 **Each parameter row contains:**

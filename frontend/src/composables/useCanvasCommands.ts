@@ -37,7 +37,7 @@ export interface CanvasScopedCommandsOptions {
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
   toggleWorkflowInput: (
     nodeId: string,
-    input: string,
+    input: string | number,
   ) => CanvasInterfaceCommandResult
   toggleWorkflowOutput: (
     nodeId: string,
@@ -45,7 +45,7 @@ export interface CanvasScopedCommandsOptions {
   ) => CanvasInterfaceCommandResult
   renameWorkflowInput: (
     nodeId: string,
-    input: string,
+    input: string | number,
     name: string,
   ) => CanvasInterfaceCommandResult
   renameWorkflowOutput: (
@@ -68,11 +68,11 @@ export interface CanvasCommandsApi {
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
-  toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
+  toggleWorkflowInput(nodeId: string, input: string | number): CanvasInterfaceCommandResult
   toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
   renameWorkflowInput(
     nodeId: string,
-    input: string,
+    input: string | number,
     name: string,
   ): CanvasInterfaceCommandResult
   renameWorkflowOutput(
@@ -93,11 +93,11 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
-  toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
+  toggleWorkflowInput(nodeId: string, input: string | number): CanvasInterfaceCommandResult
   toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
   renameWorkflowInput(
     nodeId: string,
-    input: string,
+    input: string | number,
     name: string,
   ): CanvasInterfaceCommandResult
   renameWorkflowOutput(

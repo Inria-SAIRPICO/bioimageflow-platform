@@ -42,6 +42,8 @@ import type {
 } from '@/api/types'
 import { fieldDisplayName } from '@/utils/displayNames'
 import { IMAGE_PATH_GLOBS } from '@/utils/imagePaths'
+import { dataframePositions, nextDataframePosition } from '@/utils/dataframeInputs'
+import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -447,13 +449,14 @@ function selectedInternalNodeId(): string {
   return selectedNode.value?.id ?? ''
 }
 
-function workflowInputIndex(fieldName: string): number {
+function workflowInputIndex(fieldName: string | number): number {
   const ctx = workflowInterfaceContext.value
   if (!ctx) return -1
   return (ctx.inputs ?? []).findIndex((item: WorkflowInput) => item.targets.some(target => (
     target.node === selectedInternalNodeId()
-    && target.port.kind === 'field'
-    && target.port.name === fieldName
+    && ((target.port.kind === 'field' && target.port.name === fieldName)
+      || (target.port.kind === 'positional' && target.port.index === fieldName)
+      || (target.port.kind === 'workflow' && target.port.id === fieldName))
   )))
 }
 
@@ -485,18 +488,52 @@ function applyInterfaceResult(result: CanvasInterfaceCommandResult): void {
   if (result.status !== 'rejected') interfaceNameError.value = null
 }
 
-function toggleWorkflowInputExposure(fieldName: string) {
+function toggleWorkflowInputExposure(fieldName: string | number) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   applyInterfaceResult(canvasCommands.toggleWorkflowInput(nodeId, fieldName))
 }
 
-function updateWorkflowInputName(fieldName: string, value: string) {
+function updateWorkflowInputName(fieldName: string | number, value: string) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   applyInterfaceResult(
     canvasCommands.renameWorkflowInput(nodeId, fieldName, value),
   )
+}
+
+const acceptsDataframes = computed(() => (
+  nodeData.value?.tool?.tool_type === 'DataFrameTool'
+  && nodeData.value?.tool?.accepts_upstream === true
+))
+const publishedDataframes = computed(() => (
+  (workflowInterfaceContext.value?.inputs ?? []).flatMap((input: WorkflowInput) => (
+    input.kind !== 'dataframe' ? [] : input.targets.flatMap(target => {
+      if (target.node !== selectedInternalNodeId()) return []
+      if (target.port.kind === 'positional') {
+        return [{ input, endpoint: target.port.index as string | number, label: `DataFrame ${target.port.index + 1}` }]
+      }
+      if (target.port.kind === 'workflow') {
+        const portId = target.port.id
+        const child = nodeData.value?.workflow?.interface.inputs.find((port: WorkflowInput) => port.id === portId)
+        return [{ input, endpoint: portId as string | number, label: child?.name ?? portId }]
+      }
+      return []
+    })
+  ))
+))
+const availableChildDataframes = computed(() => (
+  (nodeData.value?.workflow?.interface.inputs ?? []).filter((input: WorkflowInput) => (
+    input.kind === 'dataframe' && workflowInputIndex(input.id) < 0
+    && !(encodeEndpointHandle({ kind: 'workflow-input', id: input.id }) in (nodeData.value?.connectedInputs ?? {}))
+  ))
+))
+function publishDataframe() {
+  const index = nextDataframePosition(dataframePositions(
+    selectedInternalNodeId(), nodeData.value?.connectedInputs ?? {},
+    workflowInterfaceContext.value?.inputs ?? [],
+  ))
+  toggleWorkflowInputExposure(index)
 }
 
 function toggleWorkflowOutputExposure(outputName: string) {
@@ -663,6 +700,36 @@ async function pickFiles(key: string) {
         <div v-show="!docCollapsed" class="doc-panel-body">
           <p class="doc-text">{{ nodeData.tool.documentation }}</p>
         </div>
+      </section>
+
+      <section
+        v-if="workflowInterfaceContext && (acceptsDataframes || publishedDataframes.length || availableChildDataframes.length)"
+        class="parameters-section"
+        data-testid="published-dataframe-inputs"
+      >
+        <h4>Published DataFrame inputs</h4>
+        <div v-for="row in publishedDataframes" :key="`${row.input.id}-${row.endpoint}`" class="param-row">
+          <label :for="`dataframe-input-name-${row.input.id}`">Workflow input name</label>
+          <InputText
+            :id="`dataframe-input-name-${row.input.id}`"
+            :model-value="row.input.name"
+            :disabled="isNodeEditingDisabled"
+            :data-testid="`dataframe-input-name-${row.endpoint}`"
+            @update:model-value="updateWorkflowInputName(row.endpoint, $event as string)"
+          />
+          <div class="param-header">
+            <span>→ {{ row.label }}</span>
+            <Button label="Unpublish" class="p-button-text p-button-sm"
+              :disabled="isNodeEditingDisabled" :data-testid="`unpublish-dataframe-${row.endpoint}`"
+              @click="toggleWorkflowInputExposure(row.endpoint)" />
+          </div>
+        </div>
+        <Button v-if="acceptsDataframes" label="Publish DataFrame input" icon="pi pi-plus"
+          :disabled="isNodeEditingDisabled" data-testid="publish-dataframe-input" @click="publishDataframe" />
+        <Button v-for="input in availableChildDataframes" :key="input.id"
+          :label="`Publish DataFrame input: ${input.name}`" icon="pi pi-plus"
+          :disabled="isNodeEditingDisabled" @click="toggleWorkflowInputExposure(input.id)" />
+        <small v-if="interfaceNameError" class="interface-name-error" role="alert">{{ interfaceNameError }}</small>
       </section>
 
       <!-- Parameters section -->

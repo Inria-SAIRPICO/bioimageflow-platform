@@ -22,12 +22,19 @@ Its handles come from the inputs and outputs exposed inside it.
 
 1. Double-click the workflow node to open its graph.
 2. Select an internal tool.
-3. Use **Expose as workflow input** on a parameter or **Expose as workflow output** on a result.
+3. In **Nodes**, use **Publish DataFrame input** under **Published DataFrame inputs** to receive a whole upstream table, **Expose as workflow input** on a parameter, or **Expose as workflow output** on a result.
 4. Give the exposed port a clear name.
 5. Save the nested tab into its parent.
 
 Renaming an exposed port keeps compatible parent connections.
 Removing or changing a connected port asks for confirmation before removing an incompatible connection.
+
+For a DataFrame Tool that accepts upstream tables, each click on **Publish DataFrame input** publishes another positional input.
+Give each publication a clear name; **DataFrame 1**, **DataFrame 2**, and so on indicate the table order passed to the tool.
+Publish only as many tables as the tool's implementation supports.
+These inputs are separate from the tool's scalar parameters: do not declare a parameter merely to carry a column from an upstream table.
+Use **Unpublish** to remove a public input; remaining table positions shift together while their public IDs and names stay stable.
+You can also select a child workflow node and publish one of its unconnected DataFrame inputs through the enclosing workflow.
 
 ## Edit nested content
 

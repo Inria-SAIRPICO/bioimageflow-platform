@@ -8,7 +8,7 @@ let mockEdges: any[] = []
 vi.mock('@vue-flow/core', () => ({
   Handle: defineComponent({
     name: 'Handle',
-    props: ['type', 'position', 'id'],
+    props: ['type', 'position', 'id', 'connectable'],
     template: '<div class="mock-handle vue-flow__handle" />',
   }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -51,6 +51,14 @@ describe('InputPin', () => {
   it('shows field type in tooltip (title attribute)', () => {
     const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     expect(w.find('.input-pin').attributes('title')).toBe('ImageFile')
+  })
+
+  it('reserves a published input instead of allowing an internal connection', async () => {
+    const w = factory({ fieldName: 'bif:v1:dataframe-position:0', fieldType: 'DataFrame', connected: false, published: true })
+    expect(w.findComponent({ name: 'Handle' }).props('connectable')).toBe(false)
+    expect(w.attributes('title')).toBe('Published workflow input')
+    await w.setProps({ published: false })
+    expect(w.findComponent({ name: 'Handle' }).props('connectable')).toBeUndefined()
   })
 
   it('adds .connected class when connected', () => {
