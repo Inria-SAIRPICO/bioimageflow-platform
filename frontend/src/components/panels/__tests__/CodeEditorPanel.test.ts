@@ -139,7 +139,7 @@ describe('CodeEditorPanel', () => {
       'Preparing the code editor',
     )
     expect(wrapper.find('[data-testid="code-editor-loading-detail"]').text()).toBe(
-      'First-time setup may take several minutes.',
+      'Checking the code editor. Setup runs only when needed.',
     )
     expect(wrapper.find('[data-testid="code-editor-progress"]').exists()).toBe(true)
     expect(mockedGetEditorStatus).toHaveBeenCalledWith()

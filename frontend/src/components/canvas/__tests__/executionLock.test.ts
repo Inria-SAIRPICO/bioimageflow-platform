@@ -35,6 +35,7 @@ vi.mock('@vue-flow/core', () => {
   return {
     VueFlow,
     useVueFlow: () => ({
+      dimensions: computed(() => ({ width: 800, height: 600 })),
       project: (pos: { x: number; y: number }) => pos,
       addNodes: (nodes: any[]) => {
         mockNodes.push(...nodes)
@@ -87,8 +88,8 @@ vi.mock('@vue-flow/core', () => {
   }
 })
 
-vi.mock('@vue-flow/background', () => ({
-  Background: defineComponent({ name: 'Background', template: '<div />' }),
+vi.mock('../CanvasBackground.vue', () => ({
+  default: defineComponent({ name: 'Background', template: '<div />' }),
 }))
 
 vi.mock('@vue-flow/controls', () => ({

@@ -43,7 +43,7 @@ const loadingHeadline = computed(() => ({
 const loadingDetail = computed(() => {
   if (startupStatus.value?.launch_message) return startupStatus.value.launch_message
   if (launchPhase.value === 'idle' || launchPhase.value === 'preparing') {
-    return 'First-time setup may take several minutes.'
+    return 'Checking the code editor. Setup runs only when needed.'
   }
   return null
 })

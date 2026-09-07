@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, markRaw, nextTick, onMounted, onBeforeUnmount, provide } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
-import { Background } from '@vue-flow/background'
+import CanvasBackground from './CanvasBackground.vue'
 import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
 import ColumnEdge from './ColumnEdge.vue'
@@ -188,6 +188,7 @@ const {
   onNodeDragStart,
   onNodeDragStop,
   fitView,
+  dimensions: canvasDimensions,
 } = useVueFlow(canvasPanelId)
 
 function canvasConnectionSourceLabel(
@@ -554,11 +555,25 @@ function reopenCanvasPersistenceConflict(issueId: string): void {
 
 const isResolvingRemoteDraftConflict = computed(() => remoteDraftAction.value !== null)
 
-const shouldFitViewOnInit = computed(() => {
-  const params = dockviewParams()
-  if (Array.isArray(params?.graph?.nodes)) return params.graph.nodes.length > 0
-  return false
-})
+const shouldFitViewOnInit = (
+  initialNestedSession?.draft.nodes.length ?? initialCanvasParams?.graph?.nodes.length ?? 0
+) > 0
+
+let initialViewFitted = false
+const initialViewReady = computed(() => (
+  shouldFitViewOnInit
+  && canvasDimensions.value.width > 0
+  && canvasDimensions.value.height > 0
+  && getNodes.value.length > 0
+  && getNodes.value.every((node) => node.dimensions.width > 0 && node.dimensions.height > 0)
+))
+async function fitInitialView() {
+  if (initialViewFitted || !initialViewReady.value) return
+  initialViewFitted = true
+  if (!await fitView({ minZoom: 0.05, maxZoom: 1 })) initialViewFitted = false
+}
+// Nodes without handles can be measured without emitting nodes-initialized.
+watch(initialViewReady, (ready) => { if (ready) void fitInitialView() }, { flush: 'post' })
 
 interface NestedWorkflowApplyPayload {
   graph: GraphState
@@ -3727,12 +3742,13 @@ defineExpose({
       :is-valid-connection="isValidConnection"
       :nodes-draggable="!isLocked"
       :edges-updatable="!isLocked"
-      :fit-view-on-init="shouldFitViewOnInit"
+      :min-zoom="0.05"
+      @pane-ready="fitInitialView"
       multi-selection-key-code="Shift"
       @node-context-menu="onNodeContextMenu"
       @node-double-click="onNodeDoubleClick"
     >
-      <Background :variant="'dots'" :gap="16" :size="1" />
+      <CanvasBackground />
       <Controls />
     </VueFlow>
     <NodeContextMenu

@@ -16,6 +16,7 @@ Panels around it let you find tools and workflows, edit the selected node, inspe
 The active workflow name appears on the right of the menu bar.
 Use the pencil to change its display name.
 The error indicator opens error history, the theme button selects the appearance, and **Run Workflow** starts execution or opens additional run actions.
+**Run Selected** is directly available beside it and becomes enabled when selected nodes can be run.
 
 ## Canvas and tabs
 
@@ -30,6 +31,9 @@ On the canvas you can:
 - Shift-click to select several nodes;
 - right-click a node for actions such as rename, disable, group, open source, and delete;
 - use the canvas controls to zoom and fit the graph.
+
+Opening a workflow centers its nodes and fits them in view without zooming above 100%.
+You can zoom out to 5% to view larger workflows.
 
 A thick border identifies a workflow nested inside another workflow.
 

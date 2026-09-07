@@ -798,6 +798,10 @@ Embedded code-server instead uses the generated project `<workspace>/.bioimagefl
 Plain status probes remain side-effect free. `GET /editor/status?launch=true&workspace=true` lazily creates or refreshes the generated file atomically and returns a code-server URL with the encoded `workspace` query parameter. Generation failure returns an embedded-editor diagnostic without replacing an existing valid file. Changing the active BioImageFlow workspace changes the generated project and may reload the workbench; selecting another tool within the same active workspace does not.
 
 `EditorStatus` also exposes the current embedded launch phase (`idle`, `preparing`, `installing_extensions`, `starting`, `waiting`, `ready`, or `failed`), a short message, launch start time, and optional current/total extension-installation steps. The launch request remains synchronous and protected by the existing launch lock; concurrent plain status probes report this shared snapshot without starting another launch. During launch, the Code Editor panel polls that side-effect-free status, shows an indeterminate progress bar, phase text, extension step count when available, and elapsed time after five seconds. An **Open Logger** action activates the existing Logger panel, where embedded-editor lifecycle records are streamed as ordinary framework logs. The Logger never opens automatically.
+Startup reuses a matching managed code-server environment and checks the installed extension list before installing anything.
+Only missing extensions are installed; the bundled BioImageFlow integration is updated when its content digest changes or it is absent.
+A successful integration installation records its digest in the managed environment, so reuse survives platform restarts.
+Preparation messages describe environment and extension checks; extension progress counts only the installations actually being performed.
 
 #### 2.4.10 Dataset Management
 
@@ -1109,8 +1113,10 @@ For tools with `dynamic_outputs === true`, the body output pin set is computed b
 #### 3.3.4 Canvas Controls
 
 - **Pan:** Middle-click drag, or scroll wheel + Shift
-- **Zoom:** Scroll wheel, or pinch gesture
+- **Zoom:** Scroll wheel, or pinch gesture; minimum zoom is 5% to support large workflows.
 - **Fit view:** Button or shortcut to fit all nodes in view
+- **Initial workflow view:** Center all nodes and fit them within the canvas, capped at 100% zoom so small workflows retain their normal node size.
+- **Background:** Each canvas has a subtle dot grid that follows its viewport and uses a unique SVG-safe pattern identity independent of encoded workflow paths.
 - **Initial empty canvas:** Adding the first node to a new empty workflow must not change the current viewport or zoom.
 - **Undo/Redo:** Ctrl+Z / Ctrl+Shift+Z (client-side, instant). See [Section 4.6](#46-undoredo).
 
@@ -1408,7 +1414,7 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 
 **Buttons:**
 - **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" Pending validation or draft persistence is a command barrier rather than a disabled state: Run flushes the owning canvas, checks draft revision freshness, waits for accepted validation, and then submits that exact graph and revision. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
-- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected stable node IDs. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
+- **Run Selected:** Always visible as a separate toolbar button, disabled when no nodes are selected or execution is unavailable; it does not require opening the Run dropdown. Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected stable node IDs. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
 **During execution — Non-Modal Execution Banner:**

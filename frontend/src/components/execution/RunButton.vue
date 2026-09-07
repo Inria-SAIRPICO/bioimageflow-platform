@@ -122,13 +122,6 @@ const recomputeAvailable = computed(() => (
 ))
 const runMenuItems = computed<MenuItem[]>(() => [
   {
-    label: 'Run Selected',
-    icon: 'pi pi-forward',
-    disabled: runSelectedDisabled.value,
-    command: () => void onRunSelected(),
-  },
-  { separator: true },
-  {
     label: 'Retry Failed Execution',
     icon: 'pi pi-refresh',
     disabled: !retryAvailable.value,
@@ -563,6 +556,14 @@ defineExpose({
       :button-props="primaryButtonProps"
       :model="runMenuItems"
       @click="onRun"
+    />
+    <Button
+      label="Run Selected"
+      icon="pi pi-forward"
+      :disabled="runSelectedDisabled"
+      severity="secondary"
+      data-testid="run-selected-button"
+      @click="onRunSelected"
     />
     <Button
       v-if="exec.isRunning"

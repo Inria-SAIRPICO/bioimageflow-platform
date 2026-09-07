@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shlex
@@ -74,7 +75,7 @@ def _default_process_launcher(args: list[str]) -> subprocess.Popen[Any]:
 
 
 def _default_command_runner(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, check=True, text=True)
+    return subprocess.run(args, check=True, text=True, capture_output=True)
 
 
 def _default_url_probe(url: str) -> bool:
@@ -179,7 +180,9 @@ class EmbeddedCodeServerManager:
     ) -> None:
         """Publish a pollable embedded-editor launch phase."""
         with self._launch_status_lock:
-            if phase == EditorLaunchPhase.PREPARING:
+            if phase == EditorLaunchPhase.PREPARING and self._launch_phase in {
+                EditorLaunchPhase.IDLE, EditorLaunchPhase.READY, EditorLaunchPhase.FAILED
+            }:
                 self._launch_started_at = time.time()
             elif phase not in {EditorLaunchPhase.IDLE, EditorLaunchPhase.READY}:
                 self._launch_started_at = self._launch_started_at or time.time()
@@ -234,7 +237,7 @@ class EmbeddedCodeServerManager:
 
     def install_commands(self) -> list[list[str]]:
         return [
-            [self.code_server_binary, "--install-extension", str(self.vsix_path)],
+            [self.code_server_binary, "--force", "--install-extension", str(self.vsix_path)],
             [self.code_server_binary, "--install-extension", "ms-python.python"],
             [self.code_server_binary, "--install-extension", "ms-python.vscode-python-envs"],
             [self.code_server_binary, "--install-extension", "ms-python.debugpy"],
@@ -263,7 +266,7 @@ class EmbeddedCodeServerManager:
     ) -> None:
         self.set_launch_phase(
             EditorLaunchPhase.PREPARING,
-            "Preparing the code editor. First-time setup may take several minutes.",
+            "Checking the code editor environment.",
         )
         logger.info(
             "Launching embedded code-server: editor_url=%s control_url=%s",
@@ -278,7 +281,6 @@ class EmbeddedCodeServerManager:
                 return
             install_runner = install_runner or _default_command_runner
             process_launcher = process_launcher or _default_process_launcher
-            self._uninstall_legacy_opener(install_runner)
             self._install_extensions(install_runner)
             command = self.launch_command()
             self.set_launch_phase(EditorLaunchPhase.STARTING, "Starting code-server.")
@@ -288,8 +290,29 @@ class EmbeddedCodeServerManager:
             self.set_launch_phase(EditorLaunchPhase.FAILED, _exception_summary(exc))
             raise
 
-    def _install_extensions(self, runner: CommandRunner) -> None:
-        commands = self.install_commands()
+    def _install_extensions(
+        self, runner: CommandRunner, *, integration_stamp: Path | None = None
+    ) -> None:
+        self.set_launch_phase(
+            EditorLaunchPhase.PREPARING, "Checking installed editor extensions."
+        )
+        result = runner([self.code_server_binary, "--list-extensions"])
+        output = getattr(result, "stdout", "")
+        installed = set(output.lower().splitlines()) if isinstance(output, str) else set()
+        if "sairpico.opener" in installed:
+            self._uninstall_legacy_opener(runner)
+        integration_digest = hashlib.sha256(self.vsix_path.read_bytes()).hexdigest()
+        integration_current = False
+        if integration_stamp is not None and integration_stamp.is_file():
+            integration_current = integration_stamp.read_text() == integration_digest
+        commands = [
+            command for command in self.install_commands()
+            if (
+                not integration_current or "bioimageflow.bioimageflow-opener" not in installed
+                if command[-1] == str(self.vsix_path)
+                else command[-1].lower() not in installed
+            )
+        ]
         total = len(commands)
         for current, command in enumerate(commands, start=1):
             extension = command[-1]
@@ -308,6 +331,8 @@ class EmbeddedCodeServerManager:
             )
             logger.info("Installing code-server extension: %s", shlex.join(command))
             runner(command)
+            if command[-1] == str(self.vsix_path) and integration_stamp is not None:
+                integration_stamp.write_text(integration_digest)
 
     def _uninstall_legacy_opener(self, install_runner: CommandRunner) -> None:
         command = self.legacy_uninstall_command()
@@ -331,13 +356,10 @@ class EmbeddedCodeServerManager:
             ),
             replace_existing=True,
         ).wait_for()
-        legacy_result = environment.run(self.legacy_uninstall_command(), check=False)
-        if legacy_result.returncode != 0:
-            logger.info(
-                "Legacy code-server opener removal skipped or failed: %s",
-                legacy_result.stderr.strip(),
-            )
-        self._install_extensions(environment.run)
+        self._install_extensions(
+            environment.run,
+            integration_stamp=environment.path / ".bioimageflow-opener.sha256",
+        )
         command = self.launch_command()
         self.set_launch_phase(EditorLaunchPhase.STARTING, "Starting code-server.")
         logger.info("Starting managed code-server process: %s", shlex.join(command))

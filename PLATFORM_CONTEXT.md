@@ -105,6 +105,8 @@ Recursive embedding, copying, import, export, and source update must preserve al
 
 The embedded code editor uses a platform-generated multi-root VS Code workspace with the active BioImageFlow workspace first and the installed tool store second.
 Embedded editor startup remains a single locked launch operation, while side-effect-free status probes expose its current preparation, extension-installation, process-start, readiness, or failure phase to the Code Editor panel.
+Startup reuses a matching code-server environment and installed extensions; a digest in the managed environment tracks bundled integration updates across platform restarts.
+Progress messages describe actual checks and missing or changed extension installations.
 Editor lifecycle records use the streamed BioImageFlow logger so users can inspect setup details without the Logger panel opening automatically.
 The workspace root remains the integrated-terminal working directory, installed package sources are read-only in that editor, and focusing either a workflow-local or package tool must not replace the editor project.
 Configured external editors retain their command-defined project behavior.
@@ -199,6 +201,9 @@ For persistence changes, identify every coordinator participating in saved workf
 - `frontend/src/utils/` contains graph operations and codecs such as grouping, clipboard handling, endpoint handles, output templates, and selection logic.
 - `frontend/src/App.vue` integrates the application shell, docks, menus, canvas lifecycle, and top-level actions.
 - Unit tests live beside or near their source; browser tests live under `frontend/tests/e2e/`.
+
+Canvas views support zoom down to 5%; initial framing centers and fits nodes without exceeding 100%, and SVG grid identities are independent of encoded workflow paths.
+Run Selected remains directly visible in the execution toolbar.
 
 For a canvas change, trace ownership through the relevant session coordinator and store before changing component-local state.
 For an API change, trace the backend model and service, router, generated type, API client, store/session consumer, UI, and tests as one contract.

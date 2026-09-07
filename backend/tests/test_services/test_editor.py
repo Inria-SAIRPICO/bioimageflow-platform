@@ -136,7 +136,7 @@ class _EnvironmentManager:
         self.provisioned: list[tuple[str, object, bool]] = []
         self.environment = MagicMock()
         self.environment.run.side_effect = [
-            SimpleNamespace(returncode=0, stderr=""),
+            SimpleNamespace(returncode=0, stderr="", stdout=""),
             *[SimpleNamespace(returncode=0, stderr="") for _ in range(5)],
         ]
         self.process = object()
@@ -862,7 +862,7 @@ def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> Non
 
     assert manager.editor_url == "http://127.0.0.1:32344"
     assert manager.control_url == "http://127.0.0.1:60351"
-    assert calls[0] == ["code-server", "--uninstall-extension", "sairpico.opener"]
+    assert calls[0] == ["code-server", "--list-extensions"]
     assert calls[1][-2:] == ["--install-extension", str(vsix)]
     assert calls[-1] == [
         "code-server",
@@ -974,7 +974,7 @@ def test_embedded_manager_ignores_missing_legacy_opener_uninstall(
     manager = EmbeddedCodeServerManager(vsix_path=vsix)
     manager.launch(install_runner=runner, process_launcher=runner)
 
-    assert calls[0] == ["code-server", "--uninstall-extension", "sairpico.opener"]
+    assert calls[0] == ["code-server", "--list-extensions"]
     assert calls[1][-2:] == ["--install-extension", str(vsix)]
     assert calls[-1][0] == "code-server"
 
@@ -983,6 +983,7 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_manager = _EnvironmentManager()
+    env_manager.environment.path = tmp_path
 
     manager = EmbeddedCodeServerManager(
         vsix_path=vsix,
@@ -1003,11 +1004,10 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     run_calls = env_manager.environment.run.call_args_list
     assert run_calls[0].args[0] == [
         "code-server",
-        "--uninstall-extension",
-        "sairpico.opener",
+        "--list-extensions",
     ]
-    assert run_calls[0].kwargs == {"check": False}
-    assert run_calls[1].args[0] == ["code-server", "--install-extension", str(vsix)]
+    assert run_calls[0].kwargs == {}
+    assert run_calls[1].args[0] == ["code-server", "--force", "--install-extension", str(vsix)]
     launch_call = env_manager.environment.spawn.call_args
     assert launch_call.args[0][-2:] == ["--bind-addr", "127.0.0.1:32344"]
     assert launch_call.kwargs == {"output_limit": 16 * 1024 * 1024}
@@ -1143,3 +1143,41 @@ def test_embedded_manager_open_path_can_focus_file_inside_workspace(tmp_path: Pa
     assert response.project_path == str(workspace_file)
     assert f"workspace={str(workspace_file).replace('/', '%2F')}" in str(response.url)
     assert "folder=" not in str(response.url)
+
+
+def test_editor_reuses_extensions_across_launches_and_repairs_missing_or_changed_content(tmp_path: Path) -> None:
+    vsix = tmp_path / "integration.vsix"
+    vsix.write_bytes(b"first")
+    stamp = tmp_path / "integration.sha256"
+    installed: set[str] = set()
+    calls: list[list[str]] = []
+
+    def runner(args: list[str]) -> object:
+        calls.append(args)
+        if "--list-extensions" in args:
+            return SimpleNamespace(stdout="\n".join(installed))
+        installed.add("bioimageflow.bioimageflow-opener" if args[-1] == str(vsix) else args[-1])
+        return SimpleNamespace(returncode=0)
+
+    def prepare() -> EmbeddedCodeServerManager:
+        # A new manager represents a new platform process; the environment stamp persists.
+        manager = EmbeddedCodeServerManager(vsix_path=vsix)
+        manager._install_extensions(runner, integration_stamp=stamp)
+        return manager
+
+    prepare()
+    assert len(calls) == 6
+    calls.clear()
+    manager = prepare()
+    assert calls == [["code-server", "--list-extensions"]]
+    assert manager.status(url_probe=lambda _: False).launch_phase == EditorLaunchPhase.PREPARING
+
+    installed.remove("ms-python.python")
+    calls.clear()
+    prepare()
+    assert calls[1:] == [["code-server", "--install-extension", "ms-python.python"]]
+
+    vsix.write_bytes(b"updated integration, same version")
+    calls.clear()
+    prepare()
+    assert calls[1:] == [["code-server", "--force", "--install-extension", str(vsix)]]

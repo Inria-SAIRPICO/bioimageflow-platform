@@ -249,6 +249,7 @@ describe('RunButton', () => {
     const { wrapper } = mountButton()
     const exposed = wrapper.vm as unknown as { runSelectedDisabled: boolean }
     expect(exposed.runSelectedDisabled).toBe(true)
+    expect(wrapper.get('[data-testid="run-selected-button"]').attributes('disabled')).toBeDefined()
   })
 
   it('Run Selected passes selected node IDs to run', async () => {
@@ -258,7 +259,7 @@ describe('RunButton', () => {
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
     ui.setSelectedNodes(['n1', 'n2'])
     await nextTick()
-    await (wrapper.vm as unknown as { onRunSelected(): Promise<void> }).onRunSelected()
+    await wrapper.get('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a', {
       canvasId: persistenceMocks.canvasId,
