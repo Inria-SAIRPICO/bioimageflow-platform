@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -14,6 +16,47 @@ from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from tests.manual_qa import MARKER_NAME, MARKER_SCHEMA, clean, prepare, verify
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("nested", [False, True])
+def test_imported_qa_workflow_runs_after_reopening(tmp_path: Path, nested: bool) -> None:
+    root = tmp_path / "manual-qa"
+    prepare(root)
+    workflows = root / "workspace" / "workflows"
+    registry = ToolRegistryService()
+    registry.register_custom_tools_directory(workflows / "QA" / "Reference Workflow" / "tools")
+    store = WorkflowStoreService(workflows, registry)
+    if nested:
+        archive = (root / "imports" / "qa-nested-parent.bioimageflow.zip").read_bytes()
+    else:
+        _, archive = store.export_workflow_archive("QA/Reference Workflow")
+    store.import_workflow_archive(archive, name_override="imported")
+
+    # Use a fresh process to prove restart independence and keep execution-engine
+    # initialization out of the parent test process's global state.
+    reopened = subprocess.run(
+        [sys.executable, "-c", """
+from pathlib import Path
+import sys
+from bioimageflow_server.services.graph_validator import GraphValidationService
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+registry = ToolRegistryService()
+store = WorkflowStoreService(Path(sys.argv[1]), registry)
+graph = store.get_workflow("imported").graph
+validated = GraphValidationService(registry).validate_with_compilation(
+    graph, storage_path=store.get_storage_path("imported"),
+)
+assert validated.validation.valid, validated.validation.errors
+assert validated.compilation.workflow.compute(dev_mode=True)[sys.argv[2]].tolist() == [2, 3, 4]
+""", str(workflows), "Nested result" if nested else "Incremented number"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert reopened.returncode == 0, reopened.stdout + reopened.stderr
 
 
 def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:

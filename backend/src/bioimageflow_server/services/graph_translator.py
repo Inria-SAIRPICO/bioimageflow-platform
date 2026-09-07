@@ -48,6 +48,15 @@ def _tool_library_identity(
 ) -> tuple[str, str, str | None, str | None]:
     """Resolve one tool without inspecting private library state."""
 
+    if node.source_module is not None and node.tool_module and node.tool_class:
+        # Owned source identity takes precedence over a same-named live tool.
+        return (
+            node.tool_module,
+            node.tool_class,
+            node.tool_package,
+            node.tool_package_version,
+        )
+
     metadata = registry.get_tool(node.tool_name)
     tool_class = registry.get_tool_class(node.tool_name)
     if tool_class is not None:

@@ -22,6 +22,7 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
@@ -54,9 +55,21 @@ def build_workflow(
         graph, registry, settings=settings,
     )
     errors: list[GraphValidationError] = list(translation.errors)
+    # Named workflows own their sources beside their results directory. Nested
+    # graphs use that same root storage context and archive-level source table.
+    sources = OwnedWorkflowSources(storage_path.parent).collect_for_graph(graph)
+    payload = (
+        {
+            "archive_version": 1,
+            "workflow": translation.lib_dict,
+            "custom_sources": sources,
+        }
+        if sources
+        else translation.lib_dict
+    )
 
     result = Workflow.from_dict(
-        translation.lib_dict,
+        payload,
         storage_path=storage_path,
         validate_only=True,
         partial=True,

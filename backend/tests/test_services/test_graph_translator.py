@@ -417,6 +417,27 @@ def test_custom_tools_are_local_references_not_installable_packages() -> None:
     assert rebound["nodes"][0]["tool_package_version"] == "local"
 
 
+def test_owned_tool_identity_takes_precedence_over_same_named_registry_tool() -> None:
+    library = _graph("root")
+    library["nodes"] = [
+        {
+            "name": "custom",
+            "type": "tool",
+            "tool_module": "tools.owned_example",
+            "tool_class": "ExampleTool",
+            "tool_package": "__custom__",
+            "tool_package_version": "local",
+            "source_module": "owned-source",
+            "constants": {},
+        }
+    ]
+    translated = graph_state_to_lib_dict(lib_dict_to_graph_state(library), _registry())
+
+    assert translated.errors == []
+    for key in ("tool_module", "tool_class", "tool_package", "tool_package_version", "source_module"):
+        assert translated.lib_dict["nodes"][0][key] == library["nodes"][0][key]
+
+
 def test_unavailable_custom_tool_is_not_labeled_as_a_package_dependency() -> None:
     library = _graph("root")
     library["nodes"] = [
