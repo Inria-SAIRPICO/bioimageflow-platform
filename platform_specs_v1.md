@@ -1303,6 +1303,8 @@ A collapsible section at the bottom of the Node Panel that shows the tool's docu
 
 ### 3.6 Node Data (Bottom Panel, Tab 1)
 
+The "No output data for node" message is an informational empty state, styled blue in individual and consolidated tables.
+
 Displays the output DataFrames of selected nodes in a tabular view.
 
 **Behavior:**

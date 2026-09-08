@@ -320,7 +320,12 @@ onBeforeUnmount(() => {
           data-testid="upstream-depth"
         />
       </div>
-      <div v-if="dataTableStore.projectionError" class="data-table-panel__error">
+      <div
+        v-if="dataTableStore.projectionError"
+        :class="dataTableStore.projectionError.startsWith('No output data for node ')
+          ? 'data-table-panel__info'
+          : 'data-table-panel__error'"
+      >
         {{ dataTableStore.projectionError }}
       </div>
       <div

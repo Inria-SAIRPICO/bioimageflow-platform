@@ -131,6 +131,7 @@ function onPage(page: number): void {
     <div
       v-if="error && !data"
       class="node-data-table__message"
+      :class="{ 'node-data-table__message--info': error.startsWith('No output data for node ') }"
     >
       {{ error }}
     </div>
@@ -245,6 +246,11 @@ function onPage(page: number): void {
 .node-data-table__message {
   color: var(--p-text-muted-color);
   padding: 1rem 0.5rem;
+}
+
+.node-data-table__message--info {
+  background: var(--p-blue-50);
+  color: var(--p-blue-800);
 }
 
 .node-data-table__grid {
