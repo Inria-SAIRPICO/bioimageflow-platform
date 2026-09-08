@@ -260,6 +260,10 @@ Run, nest, copy, reopen, and export operations use only the materialized graph a
 
 ## 12. Persistence, Drafts, And Lifecycle
 
+Opening an existing workflow with a missing owned-source manifest or Python file returns HTTP 409 with the stable code `workflow_source_missing` and actionable workflow-relative file details.
+When an older `.bioimageflow/dependencies/<source-id>/source.json` record exists, the message identifies the unsupported layout and directs the user to reimport an archive or manually convert the records; opening does not perform conversion.
+HTTP 404 remains reserved for an absent workflow on this read path.
+
 Root drafts use revision compare-and-swap, a saved-artifact baseline, validation, dirty state, and writer metadata.
 Nested snapshots use their own revision compare-and-swap and ownership chain.
 Save and Run operate on exact accepted snapshots.

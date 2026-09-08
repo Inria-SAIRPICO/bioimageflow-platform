@@ -65,6 +65,7 @@ from bioimageflow_server.services.workflow_sources import (
     WorkflowSourceConflict,
     WorkflowSourceService,
 )
+from bioimageflow_server.services.workflow_artifacts import WorkflowSourceMissingError
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 logger = logging.getLogger(__name__)
@@ -523,6 +524,11 @@ async def get_workflow(
 ) -> WorkflowFile:
     try:
         return store.get_workflow(name)
+    except WorkflowSourceMissingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "workflow_source_missing", "detail": str(exc)},
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 

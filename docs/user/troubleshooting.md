@@ -44,6 +44,47 @@ Correct its missing parameter, invalid path, incompatible connection, or unavail
 For a path such as `outer_workflow/inner_workflow/tool`, open each workflow node in order.
 A cycle error means one workflow would contain itself; change how the workflows are grouped or reused.
 
+## An existing workflow cannot open because custom-tool files are missing
+
+The message identifies the missing file relative to the workflow's folder.
+If it also identifies an older source record under `.bioimageflow/dependencies/<source-id>/source.json`, the workflow was saved with the former custom-tool storage layout.
+The current platform requires editable files under `tools/<source-id>/` and does not automatically convert those older records.
+
+If you have the original `.bioimageflow.zip` archive, choose **Workflow → Import** and use a new workflow name when prompted about a collision.
+The import creates the current tool-file layout.
+It restores the archive's saved definition; edits and results made since that export remain in the old workflow.
+Keep the old workflow until you have checked the imported copy.
+
+For single-file tools, you can instead convert the old records manually while preserving the existing workflow, drafts, and results:
+
+1. Quit BioImageFlow and back up the complete workflow folder, including its hidden `.bioimageflow` directory.
+2. For each `.bioimageflow/dependencies/<source-id>/source.json`, inspect its `id`, `module`, `filename`, `source`, and `source_hash` fields.
+   These instructions apply to single-file records; if a record contains `root_package` or `files`, reimport its archive instead.
+3. Create `tools/<source-id>/` within the workflow folder.
+   If that destination already contains files, preserve them and use an archive or backup to resolve the conflict instead of overwriting edits.
+4. Decode the JSON `source` string and save its exact text as UTF-8 in `tools/<source-id>/<filename>`.
+   JSON escapes such as `\n` must become actual newlines; do not copy the quoted JSON string directly into the Python file.
+5. In the same directory, create `module.json` by copying the record's metadata and removing `source` and `source_hash`.
+   Preserve `id`, `module`, and `filename` exactly.
+6. Repeat for every referenced source, including sources used by nested workflows, then restart BioImageFlow and reopen the workflow.
+
+For example, a record with `id: "owned_custom"`, `module: "custom"`, and `filename: "custom.py"` becomes:
+
+```text
+tools/owned_custom/
+  module.json
+  custom.py
+```
+
+Its `module.json` contains:
+
+```json
+{"id": "owned_custom", "module": "custom", "filename": "custom.py"}
+```
+
+Keep `workflow.json`, drafts, results, and the old source records unchanged.
+If no older record exists, restore the missing files from a backup or reimport an archive that contains them.
+
 ## Changes could not be saved
 
 A red save message means the canvas changes are still visible but synchronization failed.

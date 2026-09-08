@@ -53,7 +53,9 @@ Import materializes archive sources in `tools/<source-id>/` as regular Python fi
 Working source IDs bind nodes independently of class names; separate workflow owners can therefore use different implementations of the same class.
 Source text is never executed from persisted JSON bundles.
 Compilation and export capture current file contents into the library's portable source representation, using content-derived runtime identities to prevent stale Python package imports.
-The former `.bioimageflow/dependencies/*/source.json` representation is unsupported; reimport its workflow archive to create the current layout.
+The former `.bioimageflow/dependencies/*/source.json` representation is unsupported; reimport its workflow archive or manually convert single-file records as described in [Troubleshooting](../user/troubleshooting.md#an-existing-workflow-cannot-open-because-custom-tool-files-are-missing) to create the current layout.
+Opening an existing workflow whose referenced source manifest or Python file is missing returns HTTP 409 with `workflow_source_missing`, naming the source and missing workflow-relative file and identifying an older source record when one exists.
+An absent workflow still returns HTTP 404.
 Reusable tools belong in separately versioned tool packages instead.
 The embedded editor opens a generated multi-root VS Code workspace containing the writable BioImageFlow workspace and the read-only installed tool store.
 

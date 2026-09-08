@@ -203,6 +203,75 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True, "identity_generation": 2}
 
 
+@pytest.mark.parametrize("missing", ["manifest", "python", "legacy"])
+@pytest.mark.parametrize("nested", [False, True])
+async def test_open_workflow_reports_missing_owned_source(
+    client: httpx.AsyncClient, tmp_path: Path, missing: str, nested: bool,
+) -> None:
+    created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
+    assert created.status_code == 201
+    workflow_dir = tmp_path / "workflows/folder/wf"
+    document_path = workflow_dir / "workflow.json"
+    document = json.loads(document_path.read_text())
+    graph = graph_document(nodes=[{
+        "type": "tool", "id": "custom", "name": "Custom", "tool_name": "Custom",
+        "tool_class": "Custom", "tool_module": "custom", "source_module": "owned_custom",
+        "position": [0, 0], "parameters": {},
+    }])
+    if nested:
+        graph = graph_document(nodes=[{
+            "type": "workflow", "id": "child", "name": "Child", "position": [0, 0],
+            "workflow": graph, "bindings": {},
+        }])
+    document["graph"] = graph
+    document["owned_source_ids"] = ["owned_custom"]
+    document_path.write_text(json.dumps(document))
+    manifest = {"id": "owned_custom", "module": "custom", "filename": "custom.py"}
+    source_dir = workflow_dir / "tools/owned_custom"
+    if missing == "python":
+        source_dir.mkdir()
+        (source_dir / "module.json").write_text(json.dumps(manifest))
+    legacy_path = workflow_dir / ".bioimageflow/dependencies/owned_custom/source.json"
+    if missing == "legacy":
+        legacy_path.parent.mkdir(parents=True)
+        legacy_path.write_text(json.dumps({**manifest, "source": "# Custom tool source\n"}))
+
+    listing = await client.get("/api/v1/workflows")
+    assert listing.status_code == 200
+    assert listing.json()[0]["id"] == "folder/wf"
+    response = await client.get("/api/v1/workflows/folder/wf")
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error"] == "workflow_source_missing"
+    assert "workflow exists" in body["detail"]
+    assert "owned_custom" in body["detail"]
+    filename = "custom.py" if missing == "python" else "module.json"
+    assert f"tools/owned_custom/{filename}" in body["detail"]
+    assert str(tmp_path) not in body["detail"]
+    assert "reimport" in body["detail"].lower()
+    assert ("unsupported older storage format" in body["detail"]) == (missing == "legacy")
+    assert document_path.read_text() == json.dumps(document)
+    if missing == "legacy":
+        assert ".bioimageflow/dependencies/owned_custom/source.json" in body["detail"]
+        assert not source_dir.exists()
+        # Manual conversion preserves the source ID and graph and extracts source text.
+        record = json.loads(legacy_path.read_text())
+        source_dir.mkdir()
+        (source_dir / record["filename"]).write_text(record.pop("source"))
+        (source_dir / "module.json").write_text(json.dumps(record))
+        reopened = await client.get("/api/v1/workflows/folder/wf")
+        assert reopened.status_code == 200
+        assert reopened.json()["graph"] == graph
+
+
+async def test_open_unknown_workflow_remains_not_found(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/v1/workflows/unknown")
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+    assert response.json()["detail"] == "Workflow not found"
+
+
 async def test_reveal_latest_outputs_opens_the_workflow_projection(
     client: httpx.AsyncClient,
     tmp_path: Path,

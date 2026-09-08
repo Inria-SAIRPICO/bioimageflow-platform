@@ -196,6 +196,28 @@ def rewrite_workspace_source_ids(graph: GraphState, mapping: dict[str, str]) -> 
     return graph.model_copy(update={"nodes": nodes})
 
 
+class WorkflowSourceMissingError(FileNotFoundError):
+    """An existing workflow references an unavailable owned source file."""
+
+    def __init__(self, source_id: str, missing_path: str, legacy_path: str | None) -> None:
+        self.source_id = source_id
+        self.missing_path = missing_path
+        self.legacy_path = legacy_path
+        detail = (
+            f"The workflow exists, but custom-tool source '{source_id}' is missing "
+            f"the required file '{missing_path}' (relative to its workflow folder). "
+        )
+        if legacy_path is not None:
+            detail += (
+                f"A source record exists in the unsupported older storage format at '{legacy_path}'. "
+                "Reimport the original workflow archive under a new name, or convert the old "
+                "source records to editable files as described in Troubleshooting."
+            )
+        else:
+            detail += "Restore the missing source files from a backup or reimport the workflow archive under a new name."
+        super().__init__(detail)
+
+
 class OwnedWorkflowSources:
     """Editable source directories owned by a workflow.
 
@@ -254,6 +276,18 @@ class OwnedWorkflowSources:
         return target
 
     def read(self, source_id: str) -> dict[str, Any]:
+        try:
+            return self._read(source_id)
+        except FileNotFoundError as exc:
+            missing_path = Path(exc.filename or exc.args[0]).relative_to(self.root.parent).as_posix()
+            legacy_path = f".bioimageflow/dependencies/{source_id}/source.json"
+            raise WorkflowSourceMissingError(
+                source_id,
+                missing_path,
+                legacy_path if (self.root.parent / legacy_path).is_file() else None,
+            ) from exc
+
+    def _read(self, source_id: str) -> dict[str, Any]:
         path = self._path(source_id)
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("id") != source_id:

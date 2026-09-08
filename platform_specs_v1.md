@@ -341,6 +341,10 @@ Saved workflows are organized under `workspace/workflows/` as folders. Each work
 
 Workflow identifiers are derived from their slash-separated directory paths relative to `workspace/workflows/`, for example `segmentation/nuclei`; they are not independent metadata. `WorkflowInfo.name` remains the required compatibility field and `WorkflowInfo.id` is an optional preferred path-derived identity, so clients fall back to `name` when `id` is absent. `WorkflowInfo.identity_generation` is a non-negative, workspace-durable incarnation counter that advances before an identity is created, deleted, duplicated into, imported into, or moved. The atomic workspace ledger retains tombstones for removed and moved-away IDs, so clients compare generations across WebSocket reconnects and backend restarts and replace a mounted presentation only when that durable generation actually changes. Each folder or workflow path segment may contain letters, numbers, spaces, underscores, and hyphens. Empty segments, path traversal, and leading/trailing whitespace are rejected.
 
+Opening an existing saved workflow with a missing referenced custom-source manifest or Python file returns HTTP 409 with `workflow_source_missing`, rather than reporting that the workflow does not exist.
+The detail names the source identity and missing workflow-relative file, identifies an older `.bioimageflow/dependencies/<source-id>/source.json` record when present, and provides recovery guidance.
+Opening an absent workflow retains HTTP 404.
+
 Renaming or moving a workflow or containing folder changes every affected path-derived workflow id. If an affected workflow already has a draft, the backend validates it before the move and atomically rewrites only its embedded `workflow_id` after the move; workflows without drafts do not gain one. A defensive draft read repairs a valid legacy identity mismatch to the requested route without discarding unknown JSON fields.
 
 | Method | Endpoint | Description |
