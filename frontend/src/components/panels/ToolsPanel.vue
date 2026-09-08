@@ -16,10 +16,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import type { ToolCreateResponse, ToolMetadata } from '@/api/types'
 import { api } from '@/api/client'
-import {
-  openPathWithEditor,
-  openToolWithEditor,
-} from '@/api/editor'
+import { openToolWithEditor } from '@/api/editor'
 
 const emit = defineEmits<{
   'add-tool': [toolName: string]
@@ -331,7 +328,7 @@ async function onToolCreated(response: ToolCreateResponse) {
   showCreateDialog.value = false
   if (response.path) {
     try {
-      await openPathWithEditor(response.path, toast, {
+      await openToolWithEditor(response.name, workflowStore.currentName, toast, {
         showEmbeddedLoading: shouldShowEmbeddedEditorLoading(),
       })
     } catch (e: unknown) {

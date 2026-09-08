@@ -639,6 +639,43 @@ def test_embedded_tool_open_uses_managed_workspace(tmp_path: Path) -> None:
     assert response.path == str(tool)
 
 
+def test_cold_tool_open_returns_workspace_before_opener_activation(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (tmp_path / "tool_packages").mkdir()
+    tool = workspace / "new_tool.py"
+    tool.write_text("print('new tool')")
+    manager = EmbeddedCodeServerManager()
+    launched = False
+
+    def launch() -> None:
+        nonlocal launched
+        launched = True
+
+    # The extension cannot activate until a browser loads the workbench.
+    manager.launch = launch
+    manager.status = lambda: EditorStatus(
+        available=launched,
+        url=manager.editor_url if launched else None,
+        control_available=False,
+    )
+    service = _service(
+        embedded=manager,
+        workspace_path_provider=lambda: workspace,
+        tool_store_path_provider=lambda: tmp_path / "tool_packages",
+    )
+
+    response = service.open_path(str(workspace), str(tool), workspace=True)
+
+    assert launched
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.opened
+    assert response.error_code is None
+    assert response.path == str(tool)
+    assert response.project_path == str(workspace / ".bioimageflow" / "BioImageFlow.code-workspace")
+    assert "workspace=" in response.url
+
+
 def test_external_tool_open_does_not_generate_managed_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     tool_store = tmp_path / "tool_packages"

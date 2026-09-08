@@ -112,6 +112,7 @@ Progress messages describe actual checks and missing or changed extension instal
 Editor lifecycle records use the streamed BioImageFlow logger so users can inspect setup details without the Logger panel opening automatically.
 The workspace root remains the integrated-terminal working directory, installed package sources are read-only in that editor, and focusing either a workflow-local or package tool must not replace the editor project.
 Configured external editors retain their command-defined project behavior.
+Newly created tools use the same tool-opening route: return the managed workspace URL as soon as code-server responds, then focus the source after the workbench loads and activates the opener extension.
 The Nodes panel opens the selected tool script through the same persistence barrier and deployment restrictions as Tools; single tool-node selection also reveals and highlights the corresponding Tools row.
 
 Trusted `workflow.py` files are authoring inputs only.

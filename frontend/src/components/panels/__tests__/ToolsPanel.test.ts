@@ -22,6 +22,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useWorkflowStore } from '@/stores/workflow'
 import {
   _resetCanvasPersistenceForTest,
   useCanvasPersistence,
@@ -998,6 +999,43 @@ describe('ToolsPanel', () => {
     // Toggle off
     vm.toggleDocumentation('MyCustomTool')
     expect(vm.activeDoc).toBeNull()
+  })
+
+  it('opens a newly created tool through the managed workspace before file focus', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    useWorkflowStore().current = {
+      name: 'tools-panel-workflow', folder: '', display_name: 'Tools panel workflow',
+      path: '/workspace', results_path: '/workspace/results',
+      last_modified: '', identity_generation: 0,
+    }
+    const workspaceFile = '/workspace/.bioimageflow/BioImageFlow.code-workspace'
+    const path = '/workspace/tools/new_tool.py'
+    const url = `http://127.0.0.1:32344/?workspace=${encodeURIComponent(workspaceFile)}`
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        opened: true, method: 'embedded', url, path,
+        project_path: workspaceFile, message: null,
+      },
+    })
+    const onOpen = vi.fn()
+    window.addEventListener('bif:open-code-editor', onOpen)
+    try {
+      wrapper.findComponent({ name: 'CreateToolDialog' }).vm.$emit('created', {
+        name: 'NewTool', tool_type: 'ProcessingTool', path,
+      })
+      await flushPromises()
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
+        tool_name: 'NewTool', workflow_id: 'tools-panel-workflow',
+      })
+      expect(mockedApi.post).not.toHaveBeenCalledWith('/api/v1/editor/open', expect.anything())
+      expect(onOpen).toHaveBeenCalledOnce()
+      expect((onOpen.mock.calls[0]![0] as CustomEvent).detail).toMatchObject({ url, path })
+    } finally {
+      window.removeEventListener('bif:open-code-editor', onOpen)
+      wrapper.unmount()
+    }
   })
 
   it('openInEditor calls tool-specific editor API in desktop mode', async () => {
