@@ -250,6 +250,9 @@ function dispatch(raw: unknown) {
       }
       break
     }
+    case 'tool_source_changed':
+      useToolRegistryStore().applyToolSourceChanged(msg as unknown as { tool_names: string[] })
+      break
     case 'tool_reload':
       callIfExists(
         useToolRegistryStore() as unknown as Record<string, unknown>,

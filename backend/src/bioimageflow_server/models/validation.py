@@ -2,7 +2,8 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from bioimageflow_server.models.tools import ToolMetadata
 
 
 NodeStatusValue = Literal[
@@ -53,3 +54,4 @@ class ValidationResult(BaseModel):
     valid: bool
     node_statuses: dict[str, NodeStatus] = {}
     errors: list[GraphValidationError] = []
+    node_tools: dict[str, ToolMetadata] = Field(default_factory=dict)

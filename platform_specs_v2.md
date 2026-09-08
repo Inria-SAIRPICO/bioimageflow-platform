@@ -120,12 +120,24 @@ Selections with no interface remain valid, and detached or otherwise unexposed i
 
 Dragging a saved workflow from the Workflows panel embeds its exact saved graph and all required workflow-local tool sources.
 The node records workspace provenance with the saved workflow ID and artifact hash.
+`POST /api/v1/workflows/{destination}/prepare-embedding` captures the source graph and saved files under source/destination identity locks, checks the destination generation and containment, and materializes fresh destination-owned source identities before returning the insertable graph.
+The canvas then inserts that graph through its normal draft persistence flow; the preparation operation does not modify the destination graph.
+Preparation only adds fresh, unreferenced files, so it does not take an execution mutation lease; the eventual graph insertion remains execution-guarded.
 
-Embedding copies workflow-local sources into destination-owned content-addressed storage.
+Workflow-local sources are ordinary editable files in destination-owned `tools/<source-id>/` directories.
+Each directory contains a `module.json` identity/layout manifest, with no executable source text, and the original Python files and package assets.
+Source identifiers bind nodes to working directories and remain stable across source saves; they are not mutable content hashes.
 Package tools remain versioned package dependencies.
 Same-named local tools with different content must coexist without registry shadowing.
-Hot reload observes editable workflow-local source files; it does not mutate content-addressed source bundles already captured by embedded workflows.
-Editor saves update the live tool metadata and trigger canvas validation even when only implementation code changes, with invalid source edits retaining the last usable registry state.
+Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
+Validation includes `node_tools`, keyed by scoped node identity, so an imported node's schemas come from its bound source rather than a same-named catalog entry.
+Invalid edits remain visible on disk and invalidate execution; keeping previous catalog metadata must never cause Run to execute old code.
+
+Portable archives are transport artifacts only.
+Import validates and unpacks all custom source files, stages the ordinary workspace document and files together, and publishes the workflow directory only after preparation succeeds.
+There is no special opened-bundle workflow mode and no reader or migration for the previous `.bioimageflow/dependencies/*/source.json` storage layout.
+Previously imported workflows using that layout must be imported again from their portable archives.
+Export captures the current editable files, including package helpers and assets, and packages them through the public library archive API.
 
 The backend rejects direct or transitive containment cycles on embed, paste, import, duplicate, source update, save, and move.
 Frontend cycle checks are advisory only.
@@ -145,6 +157,9 @@ A deeper snapshot is owned by its parent snapshot session UUID.
 The nested editor uses the standard canvas and panels.
 Edits remain private until Save explicitly applies the accepted snapshot to the parent workflow node.
 Closing a dirty nested tab requires discard confirmation.
+Opening a custom node source in a nested editor creates and binds a private editable copy of that source under a new identity, using the snapshot revision guard.
+All references to that source within the private graph share the copy; other workflow instances retain their existing files.
+Reopening the source returns the same working file, and applying the graph preserves its new source binding.
 
 Saving preserves compatible parent bindings and edges by stable port ID.
 Removed or incompatible connected ports require confirmation.
@@ -166,6 +181,10 @@ The stateless graph endpoint validates the same canonical graph shape but does n
 Execution compiles the accepted recursive graph to one flat plan.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
+Each compilation captures current source bytes before loading the library workflow, without waiting for filesystem notifications.
+Source-bound nodes select the worker-capable engine without consulting a same-named global catalog class.
+The captured library payload assigns content-derived source-module identities, including helper and asset contents, to isolate Python imports between source versions.
+An execution retains its captured code while later source saves affect subsequent runs.
 
 Selecting a workflow node for Run Selected targets that workflow boundary and schedules its enabled internal completion dependencies.
 The platform does not prune or rebuild a partial graph before compilation.
@@ -351,6 +370,9 @@ Expected export failures use stable status categories for missing workflows, for
 
 OpenAPI is the sole frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
+`POST /api/v1/editor/open-node` identifies the workflow ID and identity generation, the accepted revision, the node ID, and an optional nested session UUID.
+It resolves the addressed node's actual source and rejects stale or missing identities instead of falling back to the global registry for bound local sources.
+Nested source preparation returns the updated accepted snapshot along with the editor response.
 
 ### 14.1 Platform-Owned Integration Settings
 

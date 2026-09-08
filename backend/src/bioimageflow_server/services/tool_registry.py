@@ -58,6 +58,7 @@ class ToolRegistryService:
         self._packages: dict[str, PackageInfo] = {}
         self._sources: dict[str, Path] = {}
         self._custom_roots: set[Path] = set()
+        self._owned_source_roots: dict[Path, set[str]] = {}
         # Tracked from the most recent ``scan_tool_store`` call. Used by
         # ``resolve_package_for_path`` to map watchdog file events back to
         # ``(package, version)`` pairs.
@@ -470,7 +471,38 @@ class ToolRegistryService:
                     fingerprints[path] = hashlib.sha256(path.read_bytes()).hexdigest()
                 except FileNotFoundError:
                     continue
+        for root in tuple(self._owned_source_roots):
+            for path in root.rglob("*"):
+                if not path.is_file() or path.is_symlink() or "__pycache__" in path.parts or path.name.startswith("."):
+                    continue
+                try:
+                    fingerprints[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+                except FileNotFoundError:
+                    continue
         return fingerprints
+
+    def watch_owned_sources(self, workflow_dir: Path, graph: Any) -> None:
+        from bioimageflow_server.models.graph import WorkflowNodeState
+        from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
+
+        for node in graph.nodes:
+            if isinstance(node, WorkflowNodeState):
+                self.watch_owned_sources(workflow_dir, node.workflow)
+            elif node.source_module:
+                root = OwnedWorkflowSources(workflow_dir)._path(node.source_module).parent
+                self._owned_source_roots.setdefault(root, set()).add(node.tool_name)
+
+    def owned_source_tools(self, path: Path) -> set[str]:
+        return set().union(*(names for root, names in self._owned_source_roots.items() if path.is_relative_to(root)))
+
+    @classmethod
+    def metadata_for_class(cls, tool_class: type) -> ToolMetadata:
+        """Describe a resolved node without modifying the workspace registry."""
+        registry = cls()
+        registry._register_tool_from_class(tool_class, tool_class.__name__, "__custom__", "local", source_kind="custom", editable=True)
+        metadata = registry.get_tool(tool_class.__name__)
+        assert metadata is not None
+        return metadata
 
     def resolve_tool_source(self, class_name: str) -> Path | None:
         source = self._sources.get(class_name)

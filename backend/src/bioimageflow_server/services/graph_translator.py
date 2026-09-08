@@ -230,6 +230,10 @@ def graph_requires_wetlands(
             if graph_requires_wetlands(node.workflow, registry):
                 return True
             continue
+        # Owned source bytes are resolved during compilation, not by the global
+        # catalog. Use the worker-capable engine rather than a same-named class.
+        if node.source_module:
+            return True
         tool_class = registry.get_tool_class(node.tool_name)
         if tool_class is None or issubclass(tool_class, ProcessingTool):
             return True

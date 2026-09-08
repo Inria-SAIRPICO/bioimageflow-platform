@@ -133,10 +133,26 @@ def _validation_from_compilation(
             NodeStatus(node_id=node.id, status="unexecuted", cached=False),
         )
 
+    node_tools = {}
+    if workflow is not None:
+        from bioimageflow_server.models.graph import WorkflowNodeState
+
+        def collect(current: Any, definition: GraphState, scope: tuple[str, ...] = ()) -> None:
+            for item in definition.nodes:
+                node = current.nodes.get(item.id)
+                if node is None:
+                    continue
+                if isinstance(item, WorkflowNodeState):
+                    collect(node.workflow, item.workflow, (*scope, item.id))
+                elif item.source_module:
+                    node_tools["/".join((*scope, item.id))] = ToolRegistryService.metadata_for_class(type(node.tool))
+        collect(workflow, graph)
+
     return ValidationResult(
         valid=not errors,
         node_statuses=node_statuses,
         errors=errors,
+        node_tools=node_tools,
     )
 
 

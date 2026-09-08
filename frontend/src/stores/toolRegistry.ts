@@ -53,6 +53,11 @@ function apiErrorMessage(error: unknown): string {
 export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
   const toolReloadRevisions = ref<Record<string, number>>({})
+  function applyToolSourceChanged(payload: { tool_names: string[] }): void {
+    const revisions = { ...toolReloadRevisions.value }
+    for (const name of payload.tool_names) revisions[name] = (revisions[name] ?? 0) + 1
+    toolReloadRevisions.value = revisions
+  }
   const packages = ref<PackageInfo[]>([])
   const environmentStatuses = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
@@ -404,6 +409,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     applyEnvironmentStatus,
     applyToolReload,
     toolReloadRevisions,
+    applyToolSourceChanged,
     applyToolRemoved,
   }
 })

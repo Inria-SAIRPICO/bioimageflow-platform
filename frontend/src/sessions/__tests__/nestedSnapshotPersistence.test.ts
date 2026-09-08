@@ -73,6 +73,26 @@ function response(
 }
 
 describe('nested snapshot persistence', () => {
+  it('accepts an editor source binding without discarding subsequent local edits', () => {
+    const accepted = vi.fn()
+    const resource = createNestedSnapshotPersistence({
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
+      initialSnapshot: response(1, graph('initial')),
+      transport: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
+      debounceMs: 60_000,
+      onAccepted: accepted,
+    })
+    const sourceEdit = response(2, graph('owned-source'))
+    resource.acceptSnapshot(sourceEdit)
+    expect(accepted).toHaveBeenLastCalledWith(sourceEdit)
+    expect(resource.currentGraph.value).toEqual(sourceEdit.graph)
+    resource.queue(graph('local-edit'))
+    expect(() => resource.acceptSnapshot(response(3, graph('remote-edit'))))
+      .toThrow('edited while its source was opening')
+    expect(resource.currentGraph.value).toEqual(graph('local-edit'))
+    resource.coordinator.dispose()
+  })
+
   it('joins an in-flight write and returns the newest exact accepted document', async () => {
     const first = deferred<NestedWorkflowSnapshotResponse>()
     const second = deferred<NestedWorkflowSnapshotResponse>()

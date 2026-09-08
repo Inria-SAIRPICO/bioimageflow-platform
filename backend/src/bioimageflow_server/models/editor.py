@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from bioimageflow_server.models.nested_workflow_snapshot import NestedWorkflowSnapshotResponse
 
 
 class EditorOpenMethod(StrEnum):
@@ -83,3 +85,17 @@ class EditorOpenResponse(BaseModel):
     message: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
+
+
+class EditorOpenNodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str = Field(min_length=1)
+    identity_generation: int = Field(ge=0)
+    node_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=0)
+    session_id: UUID | None = None
+
+
+class EditorOpenNodeResponse(EditorOpenResponse):
+    snapshot: NestedWorkflowSnapshotResponse | None = None

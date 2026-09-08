@@ -1205,7 +1205,9 @@ function reconcilePendingToolState(): void {
 
     const resolvedName = resolveRenamedToolName(originalName)
     const renameChanged = resolvedName !== originalName
-    const freshTool = toolRegistryStore.getToolByName(resolvedName) ?? null
+    const freshTool = validationResult.value?.node_tools?.[node.id]
+      ?? (node.data?.sourceModule ? node.data.tool : toolRegistryStore.getToolByName(resolvedName))
+      ?? null
     if (renameChanged && freshTool === null) {
       deferredNames.add(originalName)
       continue
@@ -1406,6 +1408,14 @@ watch(
     requestToolReconciliation()
   },
 )
+
+watch(() => validationResult.value?.node_tools, (tools) => {
+  for (const [nodeId, tool] of Object.entries(tools ?? {})) {
+    const node = (getNodes.value as any[]).find(node => node.id === nodeId)
+    if (node && !sameJson(node.data.tool, tool)) pendingToolNames.add(node.data.toolName)
+  }
+  requestToolReconciliation()
+})
 
 watch(
   () => toolRegistryStore.tools,
@@ -1660,7 +1670,15 @@ async function handleReplaceRootGraphEvent(event: CustomEvent<{
   await applyGraphState(detail.draft.graph, [], false, false)
 }
 
+async function handleNestedSourceEdit(event: Event) {
+  const snapshot = (event as CustomEvent<import('@/api/types').NestedWorkflowSnapshotResponse>).detail
+  if (snapshot.session_id !== props.nestedWorkflowSessionId) return
+  nestedWorkflowSessionsStore.updateDraft(snapshot.session_id, snapshot.graph)
+  await applyGraphState(snapshot.graph, [], false, false)
+}
+
 onMounted(async () => {
+  window.addEventListener('bioimageflow:nested-source-edit', handleNestedSourceEdit)
   window.addEventListener(
     'bioimageflow:apply-nested-workflow-session',
     handleApplyNestedWorkflowSessionEvent as EventListener,
@@ -1722,6 +1740,7 @@ onBeforeUnmount(() => {
     'bioimageflow:replace-root-graph',
     handleReplaceRootGraphEvent as unknown as EventListener,
   )
+  window.removeEventListener('bioimageflow:nested-source-edit', handleNestedSourceEdit)
   window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
@@ -2457,7 +2476,17 @@ async function onAddWorkflowNode({
 }) {
   if (isLocked.value) return
   try {
-    const { data } = await api.get(`/api/v1/workflows/${workflowName}`)
+    const destination = owningWorkflowId()
+    const generation = destination ? workflowStore.workflowServerIdentityGeneration(destination) : null
+    if (!destination || generation === null) throw new Error('Save this workflow before embedding another workflow')
+    await flushNow()
+    if (owningWorkflowId() !== destination || isLocked.value) return
+    const { data } = await api.post(`/api/v1/workflows/${workflowUrl(destination)}/prepare-embedding`, {
+      source_workflow_id: workflowName,
+      identity_generation: generation,
+    } satisfies import('@/api/types').WorkflowEmbeddingRequest)
+    if (owningWorkflowId() !== destination || isLocked.value
+      || workflowStore.workflowServerIdentityGeneration(destination) !== generation) return
     const graph = data.graph as GraphState
     if (wouldCreateWorkflowContainmentCycle(workflowName, graph)) {
       showWorkflowContainmentError(workflowName)

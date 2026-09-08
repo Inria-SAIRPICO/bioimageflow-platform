@@ -18,6 +18,13 @@ Use a reusable tool package when several workflows or people need the same versi
 The dialog shows the Python class name generated from your entry and prevents a name collision with an existing tool.
 When you save the source, BioImageFlow reloads its tool information.
 Nodes can be marked out of date if that information changes.
+For a tool already on the canvas, select its node and click **Open tool script** in **Nodes**.
+This opens the source used by that node, including custom tools from imported workflows.
+Save your code before running; Run reads the saved file even if the automatic update notification has not yet arrived.
+An invalid edit blocks execution until corrected, while a run already in progress keeps the code it started with.
+
+Inside a nested workflow editor, opening a custom source prepares a private editable copy and makes the nested draft dirty.
+Save the nested workflow to apply that source binding to its parent, or discard the nested draft to leave the parent unchanged.
 
 Open **Manage tools** to open, rename, or delete editable workflow-local tools.
 Before deletion, BioImageFlow identifies saved workflows that still use the tool.

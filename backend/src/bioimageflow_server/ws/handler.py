@@ -286,6 +286,9 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
+    async def broadcast_tool_source_changed(self, tool_names: list[str]) -> None:
+        self._enqueue_all({"type": "tool_source_changed", "tool_names": tool_names})
+
     async def broadcast_tool_removed(self, tool_name: str) -> None:
         payload = {
             "type": "tool_removed",

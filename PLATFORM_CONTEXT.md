@@ -95,7 +95,8 @@ When an API model changes, update the backend model and schema first, regenerate
 ### Tools and sources
 
 BioImageFlow distinguishes processing tools, which process rows and can write templated outputs, from DataFrame tools, which create or transform DataFrames.
-Tool metadata from the registry is authoritative for tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
+Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
+The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound tools, without replacing same-named registry entries.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain the previous usable registry entries.
 Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
@@ -103,8 +104,16 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
-Workflow-local tools are owned source content that travels with the workflow when required.
+Workflow-local tools are editable source files owned by a workflow and travel with its exports.
+Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
+There is no opened-bundle execution mode or persisted JSON source-text fallback.
+Compilation and export capture current file bytes and assign content-derived runtime module identities, independently of watcher delivery, so package helper imports cannot reuse older code.
+Source-bound nodes use the worker-capable engine without inferring their class from the global catalog.
+Invalid edits prevent the affected workflow from executing with silently retained code.
+Node script opening addresses an accepted root draft or nested session by workflow generation, revision, and node ID; it resolves the same source binding used for execution.
+Opening a local source in a nested editor first forks that source into the private session; applying the session carries the binding to the parent.
 Recursive embedding, copying, import, export, and source update must preserve all required local sources without registry shadowing when same-named sources have different content.
+Canvas embedding prepares a destination-owned copy of the source graph and files on the backend before inserting the returned graph; it must not insert another workflow's source identifiers directly.
 
 The embedded code editor uses a platform-generated multi-root VS Code workspace with the active BioImageFlow workspace first and the installed tool store second.
 Embedded editor startup remains a single locked launch operation, while side-effect-free status probes expose its current preparation, extension-installation, process-start, readiness, or failure phase to the Code Editor panel.
@@ -114,7 +123,9 @@ Editor lifecycle records use the streamed BioImageFlow logger so users can inspe
 The workspace root remains the integrated-terminal working directory, installed package sources are read-only in that editor, and focusing either a workflow-local or package tool must not replace the editor project.
 Configured external editors retain their command-defined project behavior.
 Newly created tools use the same tool-opening route: return the managed workspace URL as soon as code-server responds, then focus the source after the workbench loads and activates the opener extension.
-The Nodes panel opens the selected tool script through the same persistence barrier and deployment restrictions as Tools; single tool-node selection also reveals and highlights the corresponding Tools row.
+The Nodes panel opens the selected tool script through the node-addressed editor route after the canvas persistence barrier and deployment checks.
+Tool catalog rows and newly created tools use the separate catalog tool-opening route; catalog names never override an explicitly bound node source.
+Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 
 Trusted `workflow.py` files are authoring inputs only.
 Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.

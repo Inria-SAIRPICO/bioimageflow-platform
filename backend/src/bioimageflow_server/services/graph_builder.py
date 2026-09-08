@@ -22,7 +22,7 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
+from bioimageflow_server.services.workflow_artifacts import capture_working_graph, capture_library_sources
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
@@ -44,6 +44,23 @@ def build_workflow(
     on_progress: Callable[[Any], None] | None = None,
     settings: "Settings | None" = None,
 ) -> BuildOutput:
+    try:
+        return _build_workflow(graph, registry, storage_path=storage_path,
+                               on_progress=on_progress, settings=settings)
+    except (SyntaxError, ImportError, OSError) as exc:
+        return BuildOutput(None, [GraphValidationError(
+            type="missing_tool", detail=f"Cannot load workflow tool source: {exc}",
+        )], set())
+
+
+def _build_workflow(
+    graph: GraphState,
+    registry: ToolRegistryService,
+    *,
+    storage_path: Path,
+    on_progress: Callable[[Any], None] | None = None,
+    settings: "Settings | None" = None,
+) -> BuildOutput:
     """Translate ``graph`` into a library :class:`Workflow`.
 
     Returns a ``(workflow, errors, disabled_node_ids)`` tuple. The
@@ -51,22 +68,15 @@ def build_workflow(
     """
     from bioimageflow.workflow import Workflow
 
+    graph, sources = capture_working_graph(graph, storage_path.parent, registry)
+    registry.watch_owned_sources(storage_path.parent, graph)
     translation = graph_state_to_lib_dict(
         graph, registry, settings=settings,
     )
     errors: list[GraphValidationError] = list(translation.errors)
     # Named workflows own their sources beside their results directory. Nested
     # graphs use that same root storage context and archive-level source table.
-    sources = OwnedWorkflowSources(storage_path.parent).collect_for_graph(graph)
-    payload = (
-        {
-            "archive_version": 1,
-            "workflow": translation.lib_dict,
-            "custom_sources": sources,
-        }
-        if sources
-        else translation.lib_dict
-    )
+    payload = capture_library_sources(translation.lib_dict, sources)
 
     result = Workflow.from_dict(
         payload,

@@ -22,6 +22,7 @@ from bioimageflow_server.models.graph import (
 from bioimageflow_server.models.workflow import (
     PythonAuthoringProvenance,
     WorkflowDocument,
+    WorkflowFile,
 )
 from bioimageflow_server.models.workflow_sources import (
     SourceDestructiveEffect,
@@ -32,6 +33,8 @@ from bioimageflow_server.models.workflow_sources import (
 from bioimageflow_server.services.graph_translator import lib_dict_to_graph_state
 from bioimageflow_server.services.workflow_artifacts import (
     OwnedWorkflowSources,
+    fork_workflow_sources,
+    capture_working_graph,
     artifact_hash,
     canonical_json_bytes,
     referenced_source_ids,
@@ -73,6 +76,32 @@ class WorkflowSourceService:
         self._prepared: dict[UUID, _PreparedSourceOperation] = {}
         self._lock = threading.RLock()
 
+    def prepare_embedding(
+        self, workflow_id: str, source_workflow_id: str, *, identity_generation: int,
+    ) -> WorkflowFile:
+        """Capture an independent graph and source files for a canvas insertion."""
+        store = self._store_provider()
+        with store.workflow_mutations([workflow_id, source_workflow_id]):
+            store.ensure_workflow_mutations_available()
+            store.get_workflow(workflow_id)
+            if store.workflow_generation(workflow_id) != identity_generation:
+                raise WorkflowSourceConflict("Destination workflow identity changed")
+            if workflow_id == source_workflow_id:
+                raise ValueError("A workflow cannot contain itself")
+            source = store.get_workflow(source_workflow_id)
+            store.validate_containment(workflow_id, source.graph)
+            graph, records = capture_working_graph(
+                source.graph, store.workflow_dir(source_workflow_id), store.tool_registry,
+            )
+            graph, records = fork_workflow_sources(graph, records)
+            owned = OwnedWorkflowSources(store.workflow_dir(workflow_id))
+            staged = owned.stage(records)
+            try:
+                owned.publish(staged)
+            finally:
+                owned.discard(staged)
+            return source.model_copy(update={"graph": graph})
+
     def preview_source_update(
         self,
         workflow_id: str,
@@ -88,12 +117,11 @@ class WorkflowSourceService:
         if target.source is None:
             raise ValueError("Workflow node has no workspace source provenance")
         source = store.get_workflow(target.source.workflow_id)
-        source_records = OwnedWorkflowSources(
-            store.workflow_dir(target.source.workflow_id)
-        ).collect_for_graph(source.graph)
+        source_graph, source_records = capture_working_graph(source.graph, store.workflow_dir(target.source.workflow_id), store.tool_registry)
+        source_graph, source_records = fork_workflow_sources(source_graph, source_records)
         effects = _destructive_effects(parent.graph, workflow_path, source.graph)
         current_ids = referenced_source_ids(parent.graph)
-        replacement_ids = referenced_source_ids(source.graph)
+        replacement_ids = referenced_source_ids(source_graph)
         preview = WorkflowSourcePreview(
             token=uuid4(),
             operation="source_update",
@@ -104,7 +132,7 @@ class WorkflowSourceService:
             destructive_effects=effects,
             custom_source_ids_added=sorted(replacement_ids - current_ids),
             custom_source_ids_removed=sorted(current_ids - replacement_ids),
-            replacement=source.graph,
+            replacement=source_graph,
         )
         prepared = _PreparedSourceOperation(
             preview=preview,
@@ -132,6 +160,7 @@ class WorkflowSourceService:
             manifest,
             storage_path=store.get_storage_path(workflow_id),
         )
+        graph, sources = fork_workflow_sources(graph, sources)
         preview = WorkflowSourcePreview(
             token=uuid4(),
             operation="python_rebuild",

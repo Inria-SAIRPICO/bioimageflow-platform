@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { openToolWithEditor } from '@/api/editor'
+import { openNodeWithEditor } from '@/api/editor'
 import { useSettingsStore } from '@/stores/settings'
-vi.mock('@/api/editor', () => ({ openToolWithEditor: vi.fn().mockResolvedValue({}) }))
+vi.mock('@/api/editor', () => ({ openNodeWithEditor: vi.fn().mockResolvedValue({}) }))
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
@@ -114,7 +114,7 @@ describe('NodePanel — parameter error wiring', () => {
     const wrapper = mountWithErrors(null)
     await wrapper.get('[data-testid="open-tool-script"]').trigger('click')
     await flushPromises()
-    expect(openToolWithEditor).toHaveBeenCalledWith('gaussian_blur', null, null, {
+    expect(openNodeWithEditor).toHaveBeenCalledWith('node-1', {
       showEmbeddedLoading: true,
     })
     const settings = useSettingsStore()

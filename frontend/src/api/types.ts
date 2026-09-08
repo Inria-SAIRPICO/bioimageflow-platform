@@ -281,6 +281,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/editor/open-node": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Node Script */
+        post: operations["open_node_script_api_v1_editor_open_node_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/editor/status": {
         parameters: {
             query?: never;
@@ -1170,6 +1187,23 @@ export interface paths {
         put?: never;
         /** Export Workflow Run Bundle */
         post: operations["export_workflow_run_bundle_api_v1_workflows__name__exports_workflow_run_bundle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/prepare-embedding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Workflow Embedding */
+        post: operations["prepare_workflow_embedding_api_v1_workflows__name__prepare_embedding_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2118,6 +2152,38 @@ export interface components {
          * @enum {string}
          */
         EditorOpenMethod: "external" | "embedded" | "clipboard";
+        /** EditorOpenNodeRequest */
+        EditorOpenNodeRequest: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Node Id */
+            node_id: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Session Id */
+            session_id?: string | null;
+        };
+        /** EditorOpenNodeResponse */
+        EditorOpenNodeResponse: {
+            /** Opened */
+            opened: boolean;
+            method: components["schemas"]["EditorOpenMethod"];
+            /** Url */
+            url?: string | null;
+            /** Path */
+            path: string;
+            /** Project Path */
+            project_path?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Detail */
+            error_detail?: string | null;
+            snapshot?: components["schemas"]["NestedWorkflowSnapshotResponse"] | null;
+        };
         /** EditorOpenRequest */
         EditorOpenRequest: {
             /** Path */
@@ -3864,6 +3930,10 @@ export interface components {
              * @default []
              */
             errors: components["schemas"]["GraphValidationError"][];
+            /** Node Tools */
+            node_tools?: {
+                [key: string]: components["schemas"]["ToolMetadata"];
+            };
         };
         /** WorkflowConfig */
         WorkflowConfig: {
@@ -4049,6 +4119,13 @@ export interface components {
             dirty_against_saved: boolean;
             graph: components["schemas"]["GraphState"];
             validation: components["schemas"]["ValidationResult"];
+        };
+        /** WorkflowEmbeddingRequest */
+        WorkflowEmbeddingRequest: {
+            /** Source Workflow Id */
+            source_workflow_id: string;
+            /** Identity Generation */
+            identity_generation: number;
         };
         /**
          * WorkflowFile
@@ -4518,6 +4595,8 @@ export type DistributedExecutionProfile = components['schemas']['DistributedExec
 export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
 export type EditorLaunchPhase = components['schemas']['EditorLaunchPhase'];
 export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
+export type EditorOpenNodeRequest = components['schemas']['EditorOpenNodeRequest'];
+export type EditorOpenNodeResponse = components['schemas']['EditorOpenNodeResponse'];
 export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
 export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
 export type EditorOpenToolRequest = components['schemas']['EditorOpenToolRequest'];
@@ -4629,6 +4708,7 @@ export type WorkflowDraftOperationsRequest = components['schemas']['WorkflowDraf
 export type WorkflowDraftPutRequest = components['schemas']['WorkflowDraftPutRequest'];
 export type WorkflowDraftResetRequest = components['schemas']['WorkflowDraftResetRequest'];
 export type WorkflowDraftResponse = components['schemas']['WorkflowDraftResponse'];
+export type WorkflowEmbeddingRequest = components['schemas']['WorkflowEmbeddingRequest'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
 export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate'];
 export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
@@ -5219,6 +5299,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_node_script_api_v1_editor_open_node_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditorOpenNodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOpenNodeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7299,6 +7412,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_workflow_embedding_api_v1_workflows__name__prepare_embedding_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowEmbeddingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFile"];
                 };
             };
             /** @description Validation Error */

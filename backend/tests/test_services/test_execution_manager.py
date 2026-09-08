@@ -204,6 +204,7 @@ class _FakeWorkflow:
         self.on_progress = on_progress
         self.events = events or []
         self.errors: list = []
+        self.nodes: dict = {}
         self.validation_errors = validation_errors or []
         self.raise_exc: BaseException | None = None
         self.compute_calls = 0

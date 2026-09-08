@@ -795,7 +795,10 @@ Fiji is a desktop-only, user-owned integration. BioImageFlow stores the selected
 
 The user specifies an external editor command in Settings (Section 3.12.1). The command may use `{workspace_path}` for the project folder and `{file_path}` for the focused file. For VS Code the recommended command is `code {workspace_path} --goto {file_path}`. If no external editor is configured, BioImageFlow uses embedded code-server when available and otherwise copies the relevant path to the clipboard with a toast.
 
-`/editor/open-tool` is used by tool rows and node source links. A configured external editor retains the existing project selection: a workflow-local custom tool uses the current workspace, while an installed package tool uses the installed tool-store root when available and otherwise the source file's parent directory.
+`/editor/open-tool` is used by catalog tool rows and newly created tools.
+Node source links use `/editor/open-node`, addressing the exact accepted node by workflow generation, draft or nested-session revision, and node identity.
+Bound workflow-local sources are resolved directly from that binding, never from another same-named tool or a filename guessed from the class name.
+A configured external editor retains the project selection: a workflow-local custom tool uses the current workspace, while an installed package tool uses the installed tool-store root when available and otherwise the source file's parent directory.
 Newly created tools also use `/editor/open-tool`, with their tool name and workflow identity.
 The embedded response returns the managed workspace URL without waiting for the opener extension; the panel loads the workbench first and then requests file focus, allowing the extension to activate without a circular startup wait.
 
@@ -953,6 +956,9 @@ The backend watches tool source directories for file changes (via `watchdog`). O
    - Executed nodes transition to "Out-of-date" (cache invalidated by code change)
 
 Changes are applied automatically — no manual reload action required from the user.
+Imported custom tools are unpacked as editable workspace files, and node source links open those exact files.
+Run captures saved source bytes before compilation, independently of watcher timing; invalid edits block execution instead of using previous code.
+Workflow-owned source changes emit `tool_source_changed` with affected tool names for canvas revalidation, without overwriting global catalog metadata.
 Workflow-local source changes are detected through native file events and a periodic content check of registered editable tool directories, without scanning workflow results or datasets.
 Reload reads current source bytes even for same-size saves with unchanged timestamps, and reload operations are serialized.
 Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving the previous usable tools and unrelated registry entries.
@@ -1202,7 +1208,7 @@ Displays details and parameters for the currently selected node(s).
 #### 3.5.1 Header Section
 
 - **Node name** (editable inline field). This is the human-readable display name (`NodeState.name`) — allows spaces and special characters. Must be unique within the workflow. The `NodeState.id` (URL-safe, used in API and edges) is auto-generated from the name on creation and remains stable when the name is renamed. Validated on blur — if duplicate, a red inline error is shown and the previous name is preserved until a valid name is entered.
-- **Tool name** (read-only), with an **Open tool script** button that opens the source through the configured editor after the active canvas persistence barrier.
+- **Tool name** (read-only), with an **Open tool script** button that opens the selected node's executable source through the configured editor after the active canvas persistence barrier and identity/revision checks.
 The button follows the same deployment-mode restrictions as source opening in Tools and is unavailable for workflow nodes.
 - **Package + version** (read-only, e.g., "bioimageflow-cellpose 1.2.0")
 - **Enable/Disable** toggle button
@@ -1784,7 +1790,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
 | 37 | `POST` | `/api/v1/fiji/open` | "Open in Fiji" button in Node Data |
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
-| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links after the active canvas persistence barrier |
+| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" for catalog tools and newly created tools after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |
 | 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
 | 41 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |

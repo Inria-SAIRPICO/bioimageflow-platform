@@ -320,6 +320,19 @@ class ToolHotReloadService:
         """Process a single file event — debounce by (pkg, ver)."""
         if self._stopped:
             return
+        owned_tools = self._registry.owned_source_tools(path)
+        if owned_tools:
+            try:
+                fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+            except FileNotFoundError:
+                fingerprint = None
+            if self._custom_fingerprints.get(path) != fingerprint:
+                if fingerprint is None:
+                    self._custom_fingerprints.pop(path, None)
+                else:
+                    self._custom_fingerprints[path] = fingerprint
+                await self._cm.broadcast_tool_source_changed(sorted(owned_tools))
+            return
         # Capture the running loop on first event so suppress/resume have
         # a target even if start() was never called (covers unit tests).
         if self._loop is None:

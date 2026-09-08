@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 from io import BytesIO
@@ -144,7 +145,7 @@ def test_duplicate_assigns_new_definition_identity_atomically(tmp_path: Path) ->
 def test_duplicate_copies_destination_owned_runtime_sources(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source"))
-    source_record = {"id": "embedded-tool-sha256", "source": "class Tool: pass\n"}
+    source_record = {"id": "embedded-tool-sha256", "module": "custom_tool", "filename": "custom_tool.py", "source": "class Tool: pass\n", "source_hash": hashlib.sha256(b"class Tool: pass\n").hexdigest()}
     sources = OwnedWorkflowSources(store.workflow_dir("source"))
     staged = sources.stage([source_record])
     sources.publish(staged)
@@ -178,7 +179,7 @@ def test_duplicate_copies_destination_owned_runtime_sources(tmp_path: Path) -> N
 def test_duplicate_agent_snapshot_copies_unsaved_sources(tmp_path: Path, keep_canvas_first: bool) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source"))
-    source_record = {"id": "embedded-tool-sha256", "source": "class Tool: pass\n"}
+    source_record = {"id": "embedded-tool-sha256", "module": "custom_tool", "filename": "custom_tool.py", "source": "class Tool: pass\n", "source_hash": hashlib.sha256(b"class Tool: pass\n").hexdigest()}
     sources = OwnedWorkflowSources(store.workflow_dir("source"))
     staged = sources.stage([source_record])
     sources.publish(staged)

@@ -183,6 +183,13 @@ interface NestedSnapshotPersistenceLease {
 
 const retainedNestedSnapshotResources = new Map<string, NestedSnapshotPersistence>()
 
+export function acceptNestedSourceEdit(snapshot: NestedWorkflowSnapshotResponse): void {
+  const resource = retainedNestedSnapshotResources.get(snapshot.session_id)
+  if (!resource) throw new Error('Nested editor closed while opening its source')
+  resource.acceptSnapshot(snapshot)
+  window.dispatchEvent(new CustomEvent('bioimageflow:nested-source-edit', { detail: snapshot }))
+}
+
 // Shell panels use this state-free adapter to follow Dockview activation.
 // It delegates exclusively to a registered canvas resource.
 let activeFacade: GraphSyncApi | null = null

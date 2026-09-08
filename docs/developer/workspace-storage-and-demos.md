@@ -49,6 +49,11 @@ The same recursive editor is used for workflow nodes created by dragging a saved
 BioImageFlow prevents direct and indirect self-containment.
 
 The workflow-local `tools/` directory owns custom tool source that must travel with the workflow archive.
+Import materializes archive sources in `tools/<source-id>/` as regular Python files and assets, with `module.json` containing only identity and module-layout metadata.
+Working source IDs bind nodes independently of class names; separate workflow owners can therefore use different implementations of the same class.
+Source text is never executed from persisted JSON bundles.
+Compilation and export capture current file contents into the library's portable source representation, using content-derived runtime identities to prevent stale Python package imports.
+The former `.bioimageflow/dependencies/*/source.json` representation is unsupported; reimport its workflow archive to create the current layout.
 Reusable tools belong in separately versioned tool packages instead.
 The embedded editor opens a generated multi-root VS Code workspace containing the writable BioImageFlow workspace and the read-only installed tool store.
 

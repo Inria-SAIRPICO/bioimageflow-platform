@@ -51,6 +51,7 @@ export interface NestedSnapshotPersistence extends DisposableCanvasResource {
   resolveConflictKeepingLocal(): Promise<AcceptedNestedSnapshot>
   resolveConflictUsingRemote(): Promise<AcceptedNestedSnapshot>
   deleteLatest(): Promise<void>
+  acceptSnapshot(snapshot: NestedWorkflowSnapshotResponse): void
 }
 
 export interface CreateNestedSnapshotPersistenceOptions {
@@ -249,6 +250,15 @@ export function createNestedSnapshotPersistence(
     })
   }
 
+  function acceptSnapshot(snapshot: NestedWorkflowSnapshotResponse): void {
+    if (snapshot.session_id !== latestAccepted.session_id) throw new Error('Nested editor identity changed')
+    if (snapshot.snapshot_revision < latestAccepted.snapshot_revision) throw new Error('Nested editor revision changed')
+    if (coordinator.isPending.value) throw new Error('The nested graph was edited while its source was opening; resolve the draft conflict before continuing')
+    coordinator.acceptAuthoritativeSnapshot(snapshot.graph, snapshot.validation)
+    latestAccepted = cloneJson(snapshot)
+    options.onAccepted?.(cloneJson(snapshot))
+  }
+
   async function deleteLatest(): Promise<void> {
     const accepted = await flushLatest()
     const controller = new AbortController()
@@ -268,6 +278,7 @@ export function createNestedSnapshotPersistence(
     resolveConflictKeepingLocal,
     resolveConflictUsingRemote,
     deleteLatest,
+    acceptSnapshot,
     dispose: coordinator.dispose,
   }
 }

@@ -49,8 +49,13 @@ Exporting a workflow saves its current changes first.
 A results-only export does not change the workflow.
 
 Choose **Workflow → Import** to add a workflow archive.
+BioImageFlow unpacks it into an ordinary editable workspace workflow, including its custom Python tools.
+You do not need to unzip a workflow archive yourself.
+The imported workflow owns its files independently of the archive and other imported copies.
 If its name already exists, enter another name.
 After import, BioImageFlow shows missing tools and offers compatible versions already installed on your system.
+Select a tool node and click **Open tool script** to edit the code that node uses.
+Saving the script affects the next run; exporting the workflow includes the edited code.
 
 A **Workflow with results** bundle is not directly importable.
 Extract it and import the `.bioimageflow.zip` file inside its `workflow/` folder.

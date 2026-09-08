@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { api } from '@/api/client'
-import { getEditorStatus, openPathWithEditor, openToolWithEditor } from '@/api/editor'
+import { getEditorStatus, openPathWithEditor, openToolWithEditor, openNodeWithEditor } from '@/api/editor'
+import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useUIStore } from '@/stores/ui'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import {
@@ -69,6 +71,30 @@ describe('editor api helpers', () => {
 
     await expect(getEditorStatus()).resolves.toMatchObject({ available: true })
     expect(mockedGet).toHaveBeenCalledWith('/api/v1/editor/status')
+  })
+
+  it('opens the exact node and accepted revision in its owning workflow', async () => {
+    vi.spyOn(useWorkflowStore(), 'workflowServerIdentityGeneration').mockReturnValue(7)
+    useWorkflowDraftStore().currentDraftRevision = 12
+    mockedPost.mockResolvedValueOnce({ data: {
+      method: 'external', opened: true, path: '/workflow/tools/owned/source.py',
+    } })
+    await openNodeWithEditor('node-one')
+    expect(barrierMocks.ensureRootFresh).toHaveBeenCalledOnce()
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open-node', {
+      workflow_id: 'root', identity_generation: 7, node_id: 'node-one',
+      expected_revision: 12, session_id: null,
+    })
+  })
+
+  it('does not open a node after the active canvas changes during persistence', async () => {
+    vi.spyOn(useWorkflowStore(), 'workflowServerIdentityGeneration').mockReturnValue(7)
+    barrierMocks.ensureRootFresh.mockImplementationOnce(async () => {
+      registerRootCanvas('other')
+      return true
+    })
+    await expect(openNodeWithEditor('node-one')).rejects.toThrow('selected workflow changed')
+    expect(mockedPost).not.toHaveBeenCalled()
   })
 
   it('returns editor status diagnostics', async () => {

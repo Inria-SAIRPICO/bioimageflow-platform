@@ -24,7 +24,7 @@ from bioimageflow_server.models.tools import (
     ToolSourceResponse,
     ToolUsageResponse,
 )
-from bioimageflow_server.services.custom_tools import CustomToolService, name_to_snake
+from bioimageflow_server.services.custom_tools import CustomToolService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -126,8 +126,9 @@ def resolve_tool_source_response(
         workflow_store=workflow_store,
     )
     if service is not None:
-        custom_source = service.root / f"{name_to_snake(tool_name)}.py"
-        if custom_source.exists():
+        from bioimageflow_server.services.workflow_artifacts import resolve_local_source
+        custom_source = resolve_local_source(service.root.parent, tool_name, registry)
+        if custom_source is not None:
             return ToolSourceResponse(
                 tool_name=tool_name,
                 path=str(custom_source.resolve()),

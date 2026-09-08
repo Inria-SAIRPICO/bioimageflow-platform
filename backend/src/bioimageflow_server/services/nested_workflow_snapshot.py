@@ -209,6 +209,55 @@ class NestedWorkflowSnapshotService:
         with self._lock:
             return self._read(self._store(), session_id)
 
+    def prepare_source_edit(
+        self, session_id: UUID, workflow_id: str, node_id: str, expected_revision: int,
+    ) -> NestedWorkflowSnapshotResponse:
+        """Fork the addressed source into this private editor before opening it."""
+        from bioimageflow_server.models.graph import ToolNodeState, WorkflowNodeState
+        from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources, capture_working_graph
+
+        with self._lock:
+            store = self._store()
+            store.ensure_workflow_mutations_available()
+            current = self._read(store, session_id)
+            self._ensure_revision(current, expected_revision)
+            if self._root_workflow_id(store, current.owner) != workflow_id:
+                raise ValueError("Nested editor does not belong to this workflow")
+            target = next((n for n in current.graph.nodes if n.id == node_id), None)
+            if not isinstance(target, ToolNodeState):
+                raise ValueError("The selected node is not a tool")
+            prefix = f"edit_{session_id.hex}_"
+            if target.source_module and target.source_module.startswith(prefix):
+                return current
+            sources = OwnedWorkflowSources(store.workflow_dir(workflow_id))
+            captured_graph, records = capture_working_graph(current.graph, store.workflow_dir(workflow_id), store.tool_registry)
+            captured_target = next(n for n in captured_graph.nodes if n.id == node_id)
+            assert isinstance(captured_target, ToolNodeState)
+            original = captured_target.source_module
+            if original is None:
+                return current
+            record = next(record for record in records if record["id"] == original)
+            replacement = prefix + uuid.uuid4().hex
+            record["id"] = replacement
+            staged = sources.stage([record])
+            sources.publish(staged)
+            graph = current.graph.model_copy(deep=True)
+
+            def rewrite(graph: GraphState, captured: GraphState) -> None:
+                for node, resolved in zip(graph.nodes, captured.nodes, strict=True):
+                    if isinstance(node, WorkflowNodeState):
+                        assert isinstance(resolved, WorkflowNodeState)
+                        rewrite(node.workflow, resolved.workflow)
+                    elif isinstance(resolved, ToolNodeState) and resolved.source_module == original:
+                        node.source_module = replacement
+                        node.tool_module = resolved.tool_module
+                        node.tool_class = resolved.tool_class
+                        node.tool_package = None
+                        node.tool_package_version = None
+
+            rewrite(graph, captured_graph)
+            return self.put_snapshot(session_id, graph=graph, expected_revision=expected_revision)
+
     async def get_snapshot_async(
         self,
         session_id: UUID,

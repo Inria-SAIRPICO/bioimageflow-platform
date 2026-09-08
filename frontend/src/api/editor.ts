@@ -1,6 +1,10 @@
 import { api } from '@/api/client'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
-import { useGraphSync } from '@/composables/useGraphSync'
+import { useGraphSync, acceptNestedSourceEdit } from '@/composables/useGraphSync'
+import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
+import type { components } from '@/api/types'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { useUIStore } from '@/stores/ui'
 
@@ -29,16 +33,7 @@ export interface EditorStatus {
   error_detail?: string | null
 }
 
-export interface EditorOpenResponse {
-  opened: boolean
-  method: EditorOpenMethod
-  url: string | null
-  path: string
-  project_path?: string | null
-  message: string | null
-  error_code?: string | null
-  error_detail?: string | null
-}
+export type EditorOpenResponse = components['schemas']['EditorOpenResponse']
 
 type Toast = {
   add: (message: {
@@ -186,6 +181,11 @@ export async function openToolWithEditor(
   toast?: Toast | null,
   options?: OpenPathWithEditorOptions,
 ): Promise<EditorOpenResponse> {
+  const ui = useUIStore()
+  if (ui.selectedNodeIds.length === 1) {
+    const selected = ui.graphNodes.find(node => node.id === ui.selectedNodeIds[0])
+    if (selected?.data?.toolName === toolName) return openNodeWithEditor(selected.id, options)
+  }
   const showEmbeddedLoading = options?.showEmbeddedLoading === true
   const requestId = beginEditorOpenRequest()
   if (showEmbeddedLoading) {
@@ -200,6 +200,49 @@ export async function openToolWithEditor(
     if (showEmbeddedLoading) {
       finishCodeEditorLoading('', requestId)
     }
+  }
+}
+
+export async function openNodeWithEditor(
+  nodeId: string, options?: OpenPathWithEditorOptions,
+): Promise<EditorOpenResponse> {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  const session = canvasId ? canvasSessionRegistry.get(canvasId) : null
+  if (!session) throw new Error('Select a workflow before opening its tool script')
+  const descriptor = session.descriptor
+  const workflow = useWorkflowStore()
+  const workflowId = descriptor.kind === 'root' ? descriptor.workflowId
+    : useNestedWorkflowSessionsStore().sessionById(descriptor.sessionId)?.parentWorkflowName
+  if (!workflowId) throw new Error('Save the workflow before opening its tool script')
+  const generation = workflow.workflowServerIdentityGeneration(workflowId)
+  if (generation === null) throw new Error('The workflow identity is unavailable')
+  const requestId = beginEditorOpenRequest()
+  if (options?.showEmbeddedLoading) showCodeEditorLoading('', requestId)
+  try {
+    await flushDraftIfAvailable()
+    if (canvasSessionRegistry.activeCanvasId.value !== canvasId
+      || canvasSessionRegistry.get(canvasId!)?.registrationToken !== session.registrationToken) {
+      throw new Error('The selected workflow changed while opening its tool script')
+    }
+    const revision = descriptor.kind === 'root'
+      ? useWorkflowDraftStore().currentDraftRevision
+      : useNestedWorkflowSessionsStore().snapshotForSession(descriptor.sessionId).snapshot_revision
+    if (revision === null) throw new Error('The workflow draft is unavailable')
+    const body: components['schemas']['EditorOpenNodeRequest'] = {
+      workflow_id: workflowId,
+      identity_generation: generation,
+      node_id: nodeId,
+      expected_revision: revision,
+      session_id: descriptor.kind === 'nested' ? descriptor.sessionId : null,
+    }
+    const { data } = await api.post<components['schemas']['EditorOpenNodeResponse']>(
+      '/api/v1/editor/open-node', body,
+    )
+    if (data.snapshot) acceptNestedSourceEdit(data.snapshot)
+    await handleEditorOpenResponse(data, null, requestId)
+    return data
+  } finally {
+    if (options?.showEmbeddedLoading) finishCodeEditorLoading('', requestId)
   }
 }
 

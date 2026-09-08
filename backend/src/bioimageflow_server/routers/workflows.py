@@ -37,6 +37,7 @@ from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
 from bioimageflow_server.models.workflow_sources import (
     PythonSourcePreviewRequest,
+    WorkflowEmbeddingRequest,
     WorkflowSourceApplyRequest,
     WorkflowSourceApplyResponse,
     WorkflowSourcePreview,
@@ -633,6 +634,30 @@ async def export_workflow_run_bundle(
             detail={"error": "results_export_failed", "detail": str(exc)},
         ) from exc
     return _download_response(prepared)
+
+
+@router.post(
+    "/{name:path}/prepare-embedding",
+    response_model=WorkflowFile,
+)
+async def prepare_workflow_embedding(
+    name: str,
+    body: WorkflowEmbeddingRequest,
+    service: WorkflowSourceService = Depends(get_workflow_source_service),
+) -> WorkflowFile:
+    # Only fresh, unreferenced source files are added here. The subsequent
+    # canvas insertion uses the ordinary revision- and execution-guarded draft API.
+    try:
+        return await asyncio.to_thread(
+            service.prepare_embedding, name, body.source_workflow_id,
+            identity_generation=body.identity_generation,
+        )
+    except WorkflowSourceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, SyntaxError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

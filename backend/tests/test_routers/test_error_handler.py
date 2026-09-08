@@ -117,6 +117,9 @@ async def test_expected_forbidden_http_exception_is_not_warning_logged(
     async def _test_feature_gate() -> None:
         raise HTTPException(status_code=403, detail="Feature disabled")
 
+    # App construction can warn when a prior execution initialized Wetlands.
+    # This assertion concerns only logging caused by the forbidden request.
+    caplog.clear()
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:

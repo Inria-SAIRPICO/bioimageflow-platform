@@ -61,6 +61,8 @@ from bioimageflow_server.services.graph_translator import (
 )
 from bioimageflow_server.services.workflow_artifacts import (
     OwnedWorkflowSources,
+    capture_library_sources,
+    capture_working_graph,
     artifact_hash,
     referenced_source_ids,
     rewrite_workspace_source_ids,
@@ -1528,26 +1530,16 @@ class WorkflowStoreService:
     def export_workflow_archive(self, name: str) -> tuple[str, bytes]:
         self._existing_path_for(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
+        export_graph, sources = capture_working_graph(document.graph, self._workflow_dir(name), self.tool_registry)
         translation = graph_state_to_lib_dict(
-            document.graph,
+            export_graph,
             self.tool_registry,
         )
         if translation.errors:
             raise WorkflowArchiveError(
                 "; ".join(error.detail for error in translation.errors)
             )
-        sources = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
-            document.graph
-        )
-        payload = (
-            {
-                "archive_version": 1,
-                "workflow": translation.lib_dict,
-                "custom_sources": sources,
-            }
-            if sources
-            else translation.lib_dict
-        )
+        payload = capture_library_sources(translation.lib_dict, sources)
         filename = f"{safe_workflow_export_stem(self._validate_name(name))}.bioimageflow.zip"
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / filename
@@ -1611,22 +1603,16 @@ class WorkflowStoreService:
         imported_name: str,
     ) -> WorkflowImportResponse:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            archive_path = Path(tmp_dir) / (filename or f"{imported_name}.bioimageflow.zip")
+            archive_path = Path(tmp_dir) / "workflow.bioimageflow.zip"
             archive_path.write_bytes(raw_archive)
             try:
                 library = self.archive_adapter.read_archive(
                     archive_path,
-                    storage_path=self._workflow_dir(imported_name) / "results",
+                    storage_path=Path(tmp_dir) / "results",
                 )
             except Exception as exc:
-                workflow_dir = self._workflow_dir(imported_name)
-                if workflow_dir.exists():
-                    shutil.rmtree(workflow_dir)
                 raise WorkflowArchiveError(str(exc)) from exc
             if not isinstance(library, dict):
-                workflow_dir = self._workflow_dir(imported_name)
-                if workflow_dir.exists():
-                    shutil.rmtree(workflow_dir)
                 raise WorkflowArchiveError("Workflow archive did not contain a workflow object")
             graph = lib_dict_to_graph_state(library)
             self.validate_containment(imported_name, graph)
@@ -1637,8 +1623,10 @@ class WorkflowStoreService:
             )
             if not isinstance(source_records, list):
                 raise WorkflowArchiveError("Workflow archive sources must be an array")
-            sources = OwnedWorkflowSources(self._workflow_dir(imported_name))
-            staged = sources.stage(cast(list[dict[str, Any]], source_records))
+            destination = self._workflow_dir(imported_name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix=".workflow-import-", dir=destination.parent))
+            sources = OwnedWorkflowSources(staging)
             document = WorkflowDocument(
                 graph=graph,
                 metadata=WorkspaceWorkflowMetadata(
@@ -1650,23 +1638,24 @@ class WorkflowStoreService:
                 ),
             )
             try:
-                self._write_raw(
-                    imported_name,
-                    document.model_dump(mode="json", by_alias=True, exclude_none=True),
-                )
+                staged = sources.stage(cast(list[dict[str, Any]], source_records))
                 sources.publish(staged)
+                sources.collect_for_graph(graph)
+                with (staging / "workflow.json").open("w", encoding="utf-8") as handle:
+                    json.dump(document.model_dump(mode="json", by_alias=True, exclude_none=True), handle, indent=2)
+                    handle.write("\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(staging, destination)
+                self._fsync_directory(destination.parent)
                 loaded = self.get_workflow(imported_name)
                 return WorkflowImportResponse(
                     info=loaded.info,
                     missing_packages=loaded.missing_packages,
                     missing_tools=loaded.missing_tools,
                 )
-            except Exception:
-                sources.discard(staged)
-                workflow_dir = self._workflow_dir(imported_name)
-                if workflow_dir.exists():
-                    shutil.rmtree(workflow_dir)
-                raise
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
 
     def list_workflows(self) -> list[WorkflowInfo]:
         if not self.root_dir.exists():
@@ -2139,6 +2128,7 @@ class WorkflowStoreService:
     def get_workflow(self, name: str) -> WorkflowFile:
         path = self._existing_path_for(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
+        self.tool_registry.watch_owned_sources(self._workflow_dir(name), document.graph)
         translation = graph_state_to_lib_dict(
             document.graph,
             self.tool_registry,
@@ -2150,7 +2140,7 @@ class WorkflowStoreService:
                 path,
             ),
             graph=document.graph,
-            artifact_hash=document.artifact_hash,
+            artifact_hash=artifact_hash(document.graph, OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(document.graph)),
             authoring_source=document.authoring_source,
             missing_packages=_detect_missing_packages(
                 translation.lib_dict,
@@ -2333,7 +2323,7 @@ class WorkflowStoreService:
                 destination_sources.publish(destination_sources.stage(source_records))
                 old_tools = self._workflow_tools_dir(name)
                 if old_tools.exists():
-                    shutil.copytree(old_tools, staging / "tools")
+                    shutil.copytree(old_tools, staging / "tools", dirs_exist_ok=True)
                 with (staging / "workflow.json").open("w", encoding="utf-8") as handle:
                     json.dump(duplicate, handle, indent=2, sort_keys=True)
                     handle.write("\n")

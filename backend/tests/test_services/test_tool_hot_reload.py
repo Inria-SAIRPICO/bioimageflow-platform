@@ -74,6 +74,9 @@ class FakeRegistry:
     def snapshot(self, pkg: str, ver: str) -> dict[str, ToolMetadata]:
         return dict(self._state.get((pkg, ver), {}))
 
+    def owned_source_tools(self, path: Path) -> set[str]:
+        return set()
+
     def reload_package(self, pkg: str, ver: str) -> dict[str, ToolMetadata]:
         self.reload_calls.append((pkg, ver))
         outcome = self._next_reload.pop((pkg, ver), None)

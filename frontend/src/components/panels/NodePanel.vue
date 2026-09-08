@@ -8,7 +8,7 @@ import ToggleButton from 'primevue/togglebutton'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
-import { openToolWithEditor } from '@/api/editor'
+import { openNodeWithEditor } from '@/api/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUIStore } from '@/stores/ui'
@@ -127,7 +127,7 @@ async function openToolScript() {
   openingToolScript.value = true
   toolScriptError.value = ''
   try {
-    await openToolWithEditor(node!.data.toolName, workflowStore.currentName, null, {
+    await openNodeWithEditor(node!.id, {
       showEmbeddedLoading: !settingsStore.settings?.external_editor?.trim(),
     })
   } catch (error) {

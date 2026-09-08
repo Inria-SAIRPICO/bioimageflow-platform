@@ -14,6 +14,11 @@ class SourceOperationModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class WorkflowEmbeddingRequest(SourceOperationModel):
+    source_workflow_id: str = Field(min_length=1)
+    identity_generation: int = Field(ge=0, strict=True)
+
+
 class WorkflowSourceUpdatePreviewRequest(SourceOperationModel):
     workflow_path: list[str] = Field(min_length=1)
     expected_artifact_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
