@@ -43,7 +43,7 @@ async function createWorkflow(page: Page, name: string, displayName: string) {
 async function openWorkflowFromPanel(page: Page, name: string, displayName: string) {
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(displayName)
-  const row = page.getByTestId(`workflow-row-${name}`)
+  const row = page.getByTestId(`workflow-row-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`)
   await expect(row).toBeVisible()
   await row.dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
@@ -83,6 +83,41 @@ test.describe('workflow CRUD dialogs', () => {
     ).toBe(true)
 
     await deleteWorkflowIfExists(page, name)
+  })
+
+  test('import collision rename persists the chosen visible name', { tag: '@critical' }, async ({ page }) => {
+    const originalLabel = uniqueName('Original Import', page)
+    const original = deriveWorkflowId(originalLabel)
+    const renamed = uniqueName('Renamed Import', page)
+    try {
+      await createWorkflow(page, original, originalLabel)
+      const exported = await page.request.post(`${API_BASE}/api/v1/workflows/${original}/export`)
+      expect(exported.ok(), await exported.text()).toBeTruthy()
+      const chooserPromise = page.waitForEvent('filechooser')
+      await chooseWorkflowItem(page, 'Import')
+      await (await chooserPromise).setFiles({
+        name: `${original}.bioimageflow.zip`,
+        mimeType: 'application/zip',
+        buffer: await exported.body(),
+      })
+      await expect(page.getByTestId('import-rename-dialog')).toBeVisible()
+      await page.getByTestId('import-rename-input').fill(renamed)
+      await page.getByTestId('import-rename-submit').click()
+      await expect(page.getByTestId('import-rename-dialog')).not.toBeVisible()
+      await expect(page.getByTestId('workflow-title')).toHaveText(renamed)
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: renamed })).toBeVisible()
+      await openWorkflowFromPanel(page, renamed, renamed)
+      await expect(page.getByTestId(`workflow-row-${renamed.replace(/[^a-zA-Z0-9_-]/g, '_')}`)).toContainText(renamed)
+
+      await page.reload()
+      await openWorkflowFromPanel(page, renamed, renamed)
+      const originalResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${original}`)
+      expect((await originalResponse.json()).info.display_name).toBe(originalLabel)
+    } finally {
+      await page.goto('about:blank')
+      await deleteWorkflowIfExists(page, renamed)
+      await deleteWorkflowIfExists(page, original)
+    }
   })
 
   test('save-as creates a copy and open dialog can switch workflows', async ({ page }) => {

@@ -345,6 +345,9 @@ Opening an existing saved workflow with a missing referenced custom-source manif
 The detail names the source identity and missing workflow-relative file, identifies an older `.bioimageflow/dependencies/<source-id>/source.json` record when present, and provides recovery guidance.
 Opening an absent workflow retains HTTP 404.
 
+An explicit `name_override` on workflow archive import sets the destination workflow ID to the override and the root graph's `name` and `display_name` to its leaf name, so the import rename dialog changes the name shown in the tree and canvas tabs.
+Without an override, import preserves the archive's graph names; nested workflow names are preserved in either case.
+
 Renaming or moving a workflow or containing folder changes every affected path-derived workflow id. If an affected workflow already has a draft, the backend validates it before the move and atomically rewrites only its embedded `workflow_id` after the move; workflows without drafts do not gain one. A defensive draft read repairs a valid legacy identity mismatch to the requested route without discarding unknown JSON fields.
 
 | Method | Endpoint | Description |

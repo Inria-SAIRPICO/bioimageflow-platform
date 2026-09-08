@@ -47,7 +47,7 @@ class ${toolName}(DataFrameTool):
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(original)
+    await page.getByTestId('workflow-search').fill(imported)
     await page.getByTestId(`workflow-row-${imported}`).dblclick()
     const node = page.locator('.vue-flow__node[data-id="increment"]')
     await expect(node).toBeVisible()
@@ -93,7 +93,7 @@ class ${toolName}(DataFrameTool):
     await expect(page.getByTestId('workflow-title')).toContainText(parent)
     await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
     await expect(page.locator('.vue-flow')).toBeVisible()
-    await page.getByTestId('workflow-search').fill(original)
+    await page.getByTestId('workflow-search').fill(imported)
     const embedding = page.waitForResponse(response => response.url().endsWith('/prepare-embedding'), { timeout: 10_000 })
     const transfer = await page.evaluateHandle((id) => {
       const transfer = new DataTransfer()

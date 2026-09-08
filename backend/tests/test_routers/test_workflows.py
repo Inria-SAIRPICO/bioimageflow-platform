@@ -1258,10 +1258,14 @@ async def test_import_rejects_renamed_results_bundle_before_archive_adapter(
     assert archive_adapter.import_payload is None
 
 
+@pytest.mark.parametrize("new_id", ["Renamed Workflow", "QA/Renamed Workflow"])
 async def test_import_workflow_archive_conflict_and_name_override(
-    tmp_path: Path,
+    tmp_path: Path, new_id: str,
 ) -> None:
-    archive_adapter = _FakeArchiveAdapter()
+    child = {**_library_graph(), "name": "child", "display_name": "Nested Child"}
+    archive_adapter = _FakeArchiveAdapter(library=_library_graph(nodes=[{
+        "type": "workflow", "name": "child_node", "workflow": child, "bindings": {},
+    }]))
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
         assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
         conflict = await client.post(
@@ -1274,12 +1278,30 @@ async def test_import_workflow_archive_conflict_and_name_override(
 
         renamed = await client.post(
             "/api/v1/workflows/import",
-            data={"name_override": "wf_2"},
+            data={"name_override": new_id},
             files={"file": ("wf.bioimageflow.zip", b"fake zip", "application/zip")},
         )
 
-    assert renamed.status_code == 201
-    assert renamed.json()["info"]["name"] == "wf_2"
+        assert renamed.status_code == 201
+        assert renamed.json()["info"]["id"] == new_id
+        assert renamed.json()["info"]["display_name"] == "Renamed Workflow"
+        reopened = await client.get(f"/api/v1/workflows/{new_id}")
+        assert reopened.status_code == 200
+        assert reopened.json()["graph"]["name"] == "Renamed Workflow"
+        assert reopened.json()["graph"]["display_name"] == "Renamed Workflow"
+        assert reopened.json()["info"]["display_name"] == "Renamed Workflow"
+        nested = reopened.json()["graph"]["nodes"][0]["workflow"]
+        assert nested["name"] == "child"
+        assert nested["display_name"] == "Nested Child"
+        original = await client.get("/api/v1/workflows/wf")
+        assert original.json()["info"]["display_name"] == "wf"
+        # The portable archive remains the authority when no rename is requested.
+        unchanged = await client.post(
+            "/api/v1/workflows/import",
+            files={"file": ("another.bioimageflow.zip", b"fake zip", "application/zip")},
+        )
+        assert unchanged.status_code == 201
+        assert unchanged.json()["info"]["display_name"] == "Imported"
 
 
 async def test_import_workflow_invalid_archive_payload(

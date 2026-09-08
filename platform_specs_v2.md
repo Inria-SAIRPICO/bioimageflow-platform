@@ -135,6 +135,8 @@ Invalid edits remain visible on disk and invalidate execution; keeping previous 
 
 Portable archives are transport artifacts only.
 Import validates and unpacks all custom source files, stages the ordinary workspace document and files together, and publishes the workflow directory only after preparation succeeds.
+When import receives an explicit `name_override`, it uses the destination path as the workspace ID and its leaf name as both root graph `name` and `display_name`, before calculating the artifact hash and persisting the document.
+Imports without an override preserve the archive's graph names, and renaming an import does not rename embedded workflows or alter the existing workflow that caused a collision.
 There is no special opened-bundle workflow mode and no reader or migration for the previous `.bioimageflow/dependencies/*/source.json` storage layout.
 Previously imported workflows using that layout must be imported again from their portable archives.
 Export captures the current editable files, including package helpers and assets, and packages them through the public library archive API.

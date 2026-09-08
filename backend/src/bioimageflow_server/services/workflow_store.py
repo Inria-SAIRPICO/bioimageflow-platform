@@ -1593,6 +1593,7 @@ class WorkflowStoreService:
                 raw_archive,
                 filename=filename,
                 imported_name=imported_name,
+                rename_graph=bool(name_override),
             )
 
     def _import_workflow_archive_locked(
@@ -1601,6 +1602,7 @@ class WorkflowStoreService:
         *,
         filename: str | None,
         imported_name: str,
+        rename_graph: bool,
     ) -> WorkflowImportResponse:
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / "workflow.bioimageflow.zip"
@@ -1615,6 +1617,11 @@ class WorkflowStoreService:
             if not isinstance(library, dict):
                 raise WorkflowArchiveError("Workflow archive did not contain a workflow object")
             graph = lib_dict_to_graph_state(library)
+            if rename_graph:
+                graph = graph.model_copy(update={
+                    "name": self._leaf_name(imported_name),
+                    "display_name": self._leaf_name(imported_name),
+                })
             self.validate_containment(imported_name, graph)
             source_records = (
                 library.get("custom_sources", [])

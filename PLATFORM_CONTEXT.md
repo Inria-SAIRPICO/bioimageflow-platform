@@ -106,6 +106,7 @@ Do not infer structural names from UI labels or filenames.
 Installed package tools are versioned dependencies resolved through the tool store.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
+An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
 There is no opened-bundle execution mode or persisted JSON source-text fallback.
 Opening a saved workflow with missing owned-source files reports `workflow_source_missing` (HTTP 409), with workflow-relative file and recovery details; older JSON source records are identified but are not automatically converted.
 Compilation and export capture current file bytes and assign content-derived runtime module identities, independently of watcher delivery, so package helper imports cannot reuse older code.
