@@ -876,6 +876,8 @@ async def patch_workflow(
             identity_generation=info.identity_generation,
         )
         return info
+    except WorkflowIdentityGenerationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except FileExistsError as exc:

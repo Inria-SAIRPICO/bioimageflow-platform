@@ -361,6 +361,10 @@ Renaming or moving a workflow or containing folder changes every affected path-d
 | `POST` | `/workflows/{id}/activate` | Publish the external active-workflow context and return the workflow; this does not select graph meaning for validation or execution. |
 
 Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow ids use the same slash-separated path rules as workflow endpoints.
+`PATCH /workflows/{id}` with `action: "duplicate"` optionally accepts `graph` to copy a captured draft instead of the saved graph, and `expected_identity_generation` to reject a recreated source identity.
+The backend copies all sources referenced by that graph plus editable local tools, stages the complete destination, and publishes it atomically without copying runtime results or mutating the original draft.
+The conflict action **Save agent version as copy** uses this operation; it does not create an empty workflow followed by a graph-only save.
+The optional `graph` field is rejected for `action: "update"`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

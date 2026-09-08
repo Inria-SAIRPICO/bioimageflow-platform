@@ -6,7 +6,7 @@ import re
 import unicodedata
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from bioimageflow_server.models.graph import GraphState
 
@@ -109,6 +109,14 @@ class WorkflowUpdate(BaseModel):
     new_name: str | None = None
     folder: str | None = None
     new_id: str | None = None
+    graph: GraphState | None = None
+    expected_identity_generation: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def graph_requires_duplicate(self) -> "WorkflowUpdate":
+        if self.graph is not None and self.action != "duplicate":
+            raise ValueError("graph is only supported when duplicating a workflow")
+        return self
 
 
 class WorkflowFolderCreate(BaseModel):

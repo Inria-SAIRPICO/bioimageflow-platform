@@ -4368,6 +4368,9 @@ export interface components {
             folder?: string | null;
             /** New Id */
             new_id?: string | null;
+            graph?: components["schemas"]["GraphState"] | null;
+            /** Expected Identity Generation */
+            expected_identity_generation?: number | null;
         };
         /** WorkspaceInfo */
         WorkspaceInfo: {

@@ -29,8 +29,8 @@ test.describe('hot-reload', () => {
   test('custom DataFrame tool display name refreshes after an editor save', async ({ page }) => {
     // Editor installation belongs to desktop manual QA; the save below still
     // exercises the real filesystem watcher, registry, WebSocket, and canvas.
-    await page.route('**/api/v1/editor/open', route => route.fulfill({
-      json: { opened: true, method: 'external', path: route.request().postDataJSON().path },
+    await page.route('**/api/v1/editor/open-tool', route => route.fulfill({
+      json: { opened: true, method: 'external', path: '/mock-editor/tool.py' },
     }))
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()

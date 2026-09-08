@@ -1062,21 +1062,25 @@ function rememberCreatedWorkflow(info: WorkflowInfo): void {
 async function saveAgentDraftAsCopy(): Promise<void> {
   const workflowName = currentWorkflowName()
   if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  const sourceGeneration = workflowStore.workflowServerIdentityGeneration(workflowName)
   remoteDraftAction.value = 'copy'
   remoteDraftActionError.value = null
   remoteDraftResolutionMessage.value = null
   try {
     const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName)
     const copyName = nextAgentCopyWorkflowName(workflowName)
-    const { data } = await api.post<WorkflowInfo>('/api/v1/workflows', {
-      name: copyName,
-      display_name: copyName,
-    })
-    rememberCreatedWorkflow(data)
-    await api.put<WorkflowInfo>(
-      `/api/v1/workflows/${workflowUrl(workflowInfoId(data))}`,
-      { graph: remoteDraft.graph },
+    const { data } = await api.patch<WorkflowInfo>(
+      `/api/v1/workflows/${workflowUrl(workflowName)}`,
+      {
+        action: 'duplicate',
+        new_name: copyName,
+        display_name: copyName,
+        graph: remoteDraft.graph,
+        expected_identity_generation: sourceGeneration,
+      },
     )
+    rememberCreatedWorkflow(data)
+    if (isCanvasUnmounted || currentWorkflowName() !== workflowName) return
     remoteDraftResolutionMessage.value = `Agent version saved as ${workflowInfoId(data)}.`
     clipboardToast?.add({
       severity: 'success',

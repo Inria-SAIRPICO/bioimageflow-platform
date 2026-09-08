@@ -2287,6 +2287,13 @@ class WorkflowStoreService:
         new_name: str,
     ) -> WorkflowInfo:
         path = self._existing_path_for(name)
+        if (
+            patch.expected_identity_generation is not None
+            and self.workflow_generation(name) != patch.expected_identity_generation
+        ):
+            raise WorkflowIdentityGenerationConflictError(
+                name, patch.expected_identity_generation, self.workflow_generation(name)
+            )
         raw = self._read_raw(name)
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
@@ -2301,7 +2308,7 @@ class WorkflowStoreService:
             if isinstance(duplicate_metadata, dict):
                 if patch.description is not None:
                     duplicate_metadata["description"] = patch.description
-            duplicate_graph = GraphState.model_validate(duplicate["graph"])
+            duplicate_graph = patch.graph or GraphState.model_validate(duplicate["graph"])
             duplicate_graph = duplicate_graph.model_copy(
                 update={
                     "name": self._leaf_name(new_name),
@@ -2309,26 +2316,35 @@ class WorkflowStoreService:
                 }
             )
             self.validate_containment(new_name, duplicate_graph)
-            source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
-                duplicate_graph
-            )
-            duplicate["graph"] = duplicate_graph.model_dump(mode="json", by_alias=True)
-            duplicate["artifact_hash"] = artifact_hash(duplicate_graph, source_records)
-            destination_sources = OwnedWorkflowSources(self._workflow_dir(new_name))
-            staged_sources = destination_sources.stage(source_records)
-            self._reserve_workflow_generations([new_name])
             try:
-                destination_sources.publish(staged_sources)
-                self._write_raw(new_name, duplicate)
-            except Exception:
-                destination_sources.discard(staged_sources)
-                raise
-            old_tools = self._workflow_tools_dir(name)
-            new_tools = self._workflow_tools_dir(new_name)
-            if old_tools.exists():
-                if new_tools.exists():
-                    shutil.rmtree(new_tools)
-                shutil.copytree(old_tools, new_tools)
+                source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
+                    duplicate_graph
+                )
+            except FileNotFoundError as exc:
+                raise ValueError("A workflow-local source required by the copy is missing") from exc
+            duplicate["graph"] = duplicate_graph.model_dump(mode="json", by_alias=True)
+            duplicate["owned_source_ids"] = sorted(referenced_source_ids(duplicate_graph))
+            duplicate["artifact_hash"] = artifact_hash(duplicate_graph, source_records)
+            destination = self._workflow_dir(new_name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix=".workflow-copy-", dir=destination.parent))
+            try:
+                destination_sources = OwnedWorkflowSources(staging)
+                destination_sources.publish(destination_sources.stage(source_records))
+                old_tools = self._workflow_tools_dir(name)
+                if old_tools.exists():
+                    shutil.copytree(old_tools, staging / "tools")
+                with (staging / "workflow.json").open("w", encoding="utf-8") as handle:
+                    json.dump(duplicate, handle, indent=2, sort_keys=True)
+                    handle.write("\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                self._fsync_directory(staging)
+                self._reserve_workflow_generations([new_name])
+                os.replace(staging, destination)
+                self._fsync_directory(destination.parent)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
             return self._metadata_from_raw(new_name, self._read_raw(new_name), new_path)
 
         if new_name != name and self._has_name_collision(new_name):

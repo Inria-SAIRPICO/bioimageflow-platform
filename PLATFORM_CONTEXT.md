@@ -72,6 +72,7 @@ Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
 
 Workflow IDs are workspace-relative paths and carry identity generations.
+Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
 Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
 
 The artifact hash is a deterministic identity for canonical recursive graph content and referenced owned sources.

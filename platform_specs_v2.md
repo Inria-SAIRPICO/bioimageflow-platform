@@ -245,6 +245,10 @@ Root drafts use revision compare-and-swap, a saved-artifact baseline, validation
 Nested snapshots use their own revision compare-and-swap and ownership chain.
 Save and Run operate on exact accepted snapshots.
 Remote draft changes are resolved explicitly before destructive or execution operations.
+**Save agent version as copy** preserves the fetched agent graph and all recursively referenced workflow-local sources, including sources absent from the saved baseline.
+It copies editable `tools/` files, excludes results and draft/runtime state, and leaves both the original saved workflow and its current draft unchanged.
+The destination becomes visible only after its graph and sources are prepared successfully; failures do not leave an empty workflow.
+The copy request carries the captured source identity generation to reject a deleted and recreated source.
 
 Workflow identities are path-derived and carry durable identity generations.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.

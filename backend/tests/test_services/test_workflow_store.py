@@ -174,6 +174,62 @@ def test_duplicate_copies_destination_owned_runtime_sources(tmp_path: Path) -> N
     ) == source_record
 
 
+@pytest.mark.parametrize("keep_canvas_first", [False, True])
+def test_duplicate_agent_snapshot_copies_unsaved_sources(tmp_path: Path, keep_canvas_first: bool) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="source"))
+    source_record = {"id": "embedded-tool-sha256", "source": "class Tool: pass\n"}
+    sources = OwnedWorkflowSources(store.workflow_dir("source"))
+    staged = sources.stage([source_record])
+    sources.publish(staged)
+    graph_payload = _graph("definition").model_dump(mode="json", by_alias=True)
+    graph_payload["nodes"] = [
+        {
+            "type": "tool",
+            "id": "tool",
+            "name": "tool",
+            "tool_name": "Tool",
+            "position": (0.0, 0.0),
+            "parameters": {},
+            "source_module": source_record["id"],
+        }
+    ]
+    graph = GraphState.model_validate(graph_payload)
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
+    drafts = WorkflowDraftService(lambda: store)
+    agent = drafts.put_draft("source", graph=graph, expected_revision=0, updated_by="agent")
+    if keep_canvas_first:
+        kept = drafts.put_draft(
+            "source", graph=_graph("source"), expected_revision=agent.draft_revision,
+            updated_by="frontend",
+        )
+        agent = drafts.put_draft(
+            "source", graph=graph, expected_revision=kept.draft_revision, updated_by="agent",
+        )
+    original = store.get_workflow("source")
+    # This was the old frontend sequence: a graph-only save in an empty workflow.
+    store.create_workflow(WorkflowCreate(name="broken_copy"))
+    with pytest.raises(FileNotFoundError):
+        store.save_workflow("broken_copy", WorkflowSaveBody(graph=agent.graph))
+
+    store.patch_workflow(
+        "source",
+        WorkflowUpdate(action="duplicate", new_name="copy", graph=agent.graph),
+    )
+
+    assert store.get_workflow("copy").graph.nodes[0].source_module == source_record["id"]  # type: ignore[union-attr]
+    assert OwnedWorkflowSources(store.workflow_dir("copy")).read(
+        source_record["id"]
+    ) == source_record
+
+
+    assert store.get_workflow("source").graph == original.graph
+    assert drafts.get_draft_snapshot("source").draft_revision == agent.draft_revision
+    raw_copy = json.loads((store.workflow_dir("copy") / "workflow.json").read_text())
+    assert raw_copy["owned_source_ids"] == [source_record["id"]]
+
+
 def test_move_changes_workspace_identity_not_definition_name_or_hash(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source"))
@@ -406,3 +462,40 @@ def test_archive_import_persists_canonical_graph_only(tmp_path: Path) -> None:
     assert raw["graph"]["name"] == "portable"
     assert "derived" not in raw
     assert "secondary_projection" not in raw
+
+
+def test_duplicate_failure_does_not_publish_partial_copy(tmp_path: Path, monkeypatch) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="source"))
+    tools = store.workflow_dir("source") / "tools"
+    tools.mkdir(exist_ok=True)
+    (tools / "tool.py").write_text("# editable tool")
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("copy failed")
+
+    monkeypatch.setattr("bioimageflow_server.services.workflow_store.shutil.copytree", fail_copy)
+    with pytest.raises(OSError, match="copy failed"):
+        store.patch_workflow("source", WorkflowUpdate(action="duplicate", new_name="copy"))
+    assert not (store.root_dir / "copy").exists()
+    assert not list(store.root_dir.glob(".workflow-copy-*"))
+
+
+def test_duplicate_rejects_recreated_source_identity(tmp_path: Path) -> None:
+    from bioimageflow_server.services.workflow_store import WorkflowIdentityGenerationConflictError
+
+    store = _store(tmp_path)
+    original = store.create_workflow(WorkflowCreate(name="source"))
+    store.delete_workflow("source")
+    store.create_workflow(WorkflowCreate(name="source"))
+    with pytest.raises(WorkflowIdentityGenerationConflictError):
+        store.patch_workflow("source", WorkflowUpdate(
+            action="duplicate", new_name="copy", graph=_graph("snapshot"),
+            expected_identity_generation=original.identity_generation,
+        ))
+    assert not (store.root_dir / "copy").exists()
+
+
+def test_update_rejects_duplicate_only_graph() -> None:
+    with pytest.raises(ValidationError, match="only supported when duplicating"):
+        WorkflowUpdate(action="update", graph=_graph("snapshot"))
