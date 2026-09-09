@@ -12,10 +12,17 @@ const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?
 
 type ToolMetadata = {
   name: string
+  package: string
+  package_version: string
+  tool_type: string
+  accepts_upstream: boolean
+  dataframe_output: boolean
   inputs: Record<string, { type: string; connectable?: string | boolean }>
   outputs: Record<string, { type: string }>
   [k: string]: unknown
 }
+
+const RECOVERY_EDGE_ID = 'e-seed_numbers-increment_numbers-dataframe-0'
 
 type GraphState = {
   schema_version: 1
@@ -48,27 +55,41 @@ async function deleteWorkflowIfExists(page: Page, name: string) {
   await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
 }
 
-async function fetchAnyTool(page: Page): Promise<{
-  tool: ToolMetadata
-  outputName: string
-  inputName: string
+async function fetchRecoveryTools(page: Page): Promise<{
+  source: ToolMetadata
+  target: ToolMetadata
 }> {
+  const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+  expect(seed.ok()).toBeTruthy()
   const response = await page.request.get(`${API_BASE}/api/v1/tools`)
   expect(response.ok()).toBeTruthy()
   const tools = (await response.json()) as ToolMetadata[]
-  const tool = tools.find(
-    (candidate) =>
-      Object.keys(candidate.outputs).length > 0 &&
-      Object.values(candidate.inputs).some((field) => field.connectable !== 'never'),
-  )
-  if (!tool) {
-    throw new Error('No tool found with both a connectable input and an output')
-  }
-  const [outputName] = Object.keys(tool.outputs)
-  const inputEntry = Object.entries(tool.inputs).find(
-    ([, field]) => field.connectable !== 'never',
-  )!
-  return { tool, outputName, inputName: inputEntry[0] }
+  const source = tools.find(candidate => candidate.name === 'SeedNumbers')
+  const target = tools.find(candidate => candidate.name === 'IncrementNumbers')
+
+  expect(source, 'dev seed must register SeedNumbers').toBeTruthy()
+  expect(source).toMatchObject({
+    package: 'bioimageflow-dev-seed',
+    package_version: '0.1.0',
+    tool_type: 'DataFrameTool',
+    accepts_upstream: false,
+    dataframe_output: true,
+    inputs: {},
+    outputs: { number: { type: 'int' }, label: { type: 'str' } },
+  })
+  expect(target, 'dev seed must register IncrementNumbers').toBeTruthy()
+  expect(target).toMatchObject({
+    package: 'bioimageflow-dev-seed',
+    package_version: '0.1.0',
+    tool_type: 'DataFrameTool',
+    accepts_upstream: true,
+    dataframe_output: true,
+    inputs: {
+      number: { type: 'int', connectable: 'by_default' },
+    },
+    outputs: { number_plus_one: { type: 'int' } },
+  })
+  return { source: source!, target: target! }
 }
 
 async function createServerWorkflow(page: Page, name: string, graph: GraphState) {
@@ -116,37 +137,40 @@ async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState)
   )
 }
 
-function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string): GraphState {
+function recoveryGraph(
+  workflowName: string,
+  source: ToolMetadata,
+  target: ToolMetadata,
+): GraphState {
   return {
     schema_version: 1,
-    name: 'recovered_workflow',
-    display_name: 'Recovered workflow',
+    name: workflowName,
+    display_name: workflowName,
     nodes: [
       {
         type: 'tool',
         id: 'src_node',
-        name: 'Source',
-        tool_name: tool.name,
+        name: 'Seed Numbers',
+        tool_name: source.name,
         position: [100, 100],
         parameters: {},
       },
       {
         type: 'tool',
         id: 'tgt_node',
-        name: 'Target',
-        tool_name: tool.name,
+        name: 'Increment Numbers',
+        tool_name: target.name,
         position: [500, 100],
-        parameters: {},
+        parameters: { number: 1 },
       },
     ],
     edges: [
       {
-        type: 'column',
-        id: `e-src_node-${outputName}-tgt_node-${inputName}`,
+        type: 'dataframe',
+        id: RECOVERY_EDGE_ID,
         source_node: 'src_node',
         target_node: 'tgt_node',
-        source_output: outputName,
-        target_input: inputName,
+        target_position: 0,
       },
     ],
     interface: { inputs: [], outputs: [] },
@@ -159,23 +183,33 @@ test.describe('workflow-scoped graph recovery', () => {
     const workflowName = uniqueName('autosave_graph')
     await deleteWorkflowIfExists(page, workflowName)
 
-    const { tool, outputName, inputName } = await fetchAnyTool(page)
+    const { source, target } = await fetchRecoveryTools(page)
+    const recovered = recoveryGraph(workflowName, source, target)
+    const validation = await page.request.put(`${API_BASE}/api/v1/graph`, {
+      data: recovered,
+    })
+    expect(validation.ok()).toBeTruthy()
+    expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
     await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
 
     await page.goto('/')
-    await seedWorkflowAutoSave(
-      page,
-      workflowName,
-      graphWithEdge(tool, outputName, inputName),
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await seedWorkflowAutoSave(page, workflowName, recovered)
+    const toolsReady = page.waitForResponse(
+      response => response.url().includes('/api/v1/tools') && response.status() === 200,
     )
     await page.reload()
+    await toolsReady
 
-    await expect(page.locator('[data-testid="workflow-title"]')).toContainText('*')
-    await expect(page.locator('.vue-flow__node[data-id="src_node"]')).toBeVisible()
-    await expect(page.locator('.vue-flow__node[data-id="tgt_node"]')).toBeVisible()
+    await expect(page.locator('[data-testid="workflow-title"]')).toHaveText(`${workflowName} *`)
+    await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+    await expect(page.locator('.vue-flow__node[data-id="src_node"] .node-name')).toHaveText('Seed Numbers')
+    await expect(page.locator('.vue-flow__node[data-id="tgt_node"] .node-name')).toHaveText('Increment Numbers')
+    const recoveredEdge = page.locator(`.vue-flow__edge[data-id="${RECOVERY_EDGE_ID}"]`)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1, { timeout: 5000 })
+    await expect(recoveredEdge).toHaveCount(1)
 
-    const edgePath = page.locator('.vue-flow__edge path.vue-flow__edge-path').first()
+    const edgePath = recoveredEdge.locator('path.vue-flow__edge-path')
     const d = await edgePath.getAttribute('d')
     expect(d).toBeTruthy()
     expect(d!.length).toBeGreaterThan(10)
