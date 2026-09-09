@@ -40,6 +40,7 @@ Continue from the next action in the progress file, initially the queued Astra a
 That issue is an unconfirmed code-inspection concern, not an established bug or an approved redesign.
 Use disposable state for its reproduction; do not change test expectations to manufacture a pass.
 Keep writes disjoint and use at most two ordinary workers alongside the master, leaving a slot for Astra.
+When more than one agent may write in parallel, give each agent a dedicated worktree under `.worktrees/<task_name>`; never let parallel agents share one writable checkout.
 Pass fresh, bounded task packets with explicit model/reasoning overrides rather than full-history forks.
 
 Exclude parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines from platform certification.
@@ -47,7 +48,8 @@ Keep Direct and test real Wetlands workers sequentially with one worker.
 Comprehensive Chromium/Firefox GUI acceptance is opt-in after large changes, not part of every development edit.
 Use scripts/test and its documented focused/completion gates with audited per-case exclusions.
 Make clean changes without backward-compatibility shims; update affected specifications, documentation, fixtures, and tests.
-Commit each coherent validated task separately, including its durable progress update, without staging unrelated files.
+Commit each coherent validated task as soon as its issue or bounded task is resolved, including its durable progress update, without staging unrelated files.
+Do not begin another writable task in that checkout until the completed task is committed; keep restart points clean so the campaign can be interrupted safely.
 Maintain the progress file, issue decisions, and feature inventories so another fresh session can continue without this conversation.
 Proceed until the campaign is complete or an escalation genuinely requires my decision.
 ```

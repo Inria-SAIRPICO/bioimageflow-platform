@@ -30,10 +30,13 @@ The master and ordinary implementation/review workers use `gpt-5.6-sol` with `me
 A specialist uses `gpt-6-astra` with `high` reasoning only for escalations.
 Assign independent agents bounded ownership of backend feature families, frontend feature families, browser journeys, and any necessary library work.
 Keep write ownership disjoint, pass exact file paths and contract expectations, and request concise findings rather than duplicating every investigation in the master's context.
+Whenever multiple agents may write in parallel, create a dedicated worktree under `.worktrees/<task_name>` for each writable task and keep its dependencies, runtime state, and commit isolated as required by `AGENTS.md`.
+Agents may share the primary checkout only for read-only investigations; a task that becomes writable must move to its own worktree before editing.
 An agent reports an ambiguous defect immediately so the master can freeze affected work and send a focused escalation.
 Use at most two ordinary workers alongside the master by default, leaving a fourth slot available for Astra; use fewer when tasks overlap.
 
 Commit each coherent, independently validated change as soon as it is ready.
+Treat resolution of an issue or bounded task as an immediate commit boundary: update its durable records, validate it, commit it, and restore a clean task checkout before starting the next writable task.
 Separate dependency updates, library releases, platform behavior fixes, fixture corrections, browser fixes, and testing infrastructure when their dependencies allow it.
 Review the staged diff and leave unrelated changes and temporary notes unstaged.
 Do not delay a finished independent commit merely because another issue remains open, or commit an unfinished runner profile as working infrastructure.
