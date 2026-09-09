@@ -49,6 +49,7 @@ class WorkflowSourceConflict(ValueError):
 @dataclass(frozen=True)
 class _PreparedSourceOperation:
     preview: WorkflowSourcePreview
+    destination_generation: int
     source_records: tuple[dict[str, Any], ...]
     old_source_hash: str | None
     python_manifest: tuple[tuple[str, bytes], ...] = ()
@@ -110,12 +111,14 @@ class WorkflowSourceService:
         expected_artifact_hash: str,
     ) -> WorkflowSourcePreview:
         store = self._store_provider()
-        parent = store.get_workflow(workflow_id)
-        if parent.artifact_hash != expected_artifact_hash:
-            raise WorkflowSourceConflict("Parent workflow artifact changed")
-        target = _workflow_node_at(parent.graph, workflow_path)
-        if target.source is None:
-            raise ValueError("Workflow node has no workspace source provenance")
+        with store.workflow_mutation(workflow_id):
+            parent = store.get_workflow(workflow_id)
+            destination_generation = store.workflow_generation(workflow_id)
+            if parent.artifact_hash != expected_artifact_hash:
+                raise WorkflowSourceConflict("Parent workflow artifact changed")
+            target = _workflow_node_at(parent.graph, workflow_path)
+            if target.source is None:
+                raise ValueError("Workflow node has no workspace source provenance")
         source = store.get_workflow(target.source.workflow_id)
         source_graph, source_records = capture_working_graph(source.graph, store.workflow_dir(target.source.workflow_id), store.tool_registry)
         source_graph, source_records = fork_workflow_sources(source_graph, source_records)
@@ -136,6 +139,7 @@ class WorkflowSourceService:
         )
         prepared = _PreparedSourceOperation(
             preview=preview,
+            destination_generation=destination_generation,
             source_records=tuple(source_records),
             old_source_hash=target.source.artifact_hash,
         )
@@ -151,9 +155,11 @@ class WorkflowSourceService:
     ) -> WorkflowSourcePreview:
         self._require_trusted_mode()
         store = self._store_provider()
-        current = store.get_workflow(workflow_id)
-        if current.artifact_hash != expected_artifact_hash:
-            raise WorkflowSourceConflict("Workflow artifact changed")
+        with store.workflow_mutation(workflow_id):
+            current = store.get_workflow(workflow_id)
+            destination_generation = store.workflow_generation(workflow_id)
+            if current.artifact_hash != expected_artifact_hash:
+                raise WorkflowSourceConflict("Workflow artifact changed")
         root = store.workflow_dir(workflow_id)
         manifest = _capture_python_manifest(root)
         graph, sources = _materialize_python_manifest(
@@ -179,6 +185,7 @@ class WorkflowSourceService:
         with self._lock:
             self._prepared[preview.token] = _PreparedSourceOperation(
                 preview=preview,
+                destination_generation=destination_generation,
                 source_records=tuple(sources),
                 old_source_hash=None,
                 python_manifest=tuple(manifest),
@@ -210,6 +217,8 @@ class WorkflowSourceService:
         if self._has_open_nested_editor(preview.workflow_id, preview.workflow_path):
             raise WorkflowSourceConflict("A target or descendant workflow editor is open")
         with store.workflow_mutation(preview.workflow_id):
+            if store.workflow_generation(preview.workflow_id) != prepared.destination_generation:
+                raise WorkflowSourceConflict("Destination workflow identity changed")
             parent = store.get_workflow(preview.workflow_id)
             if parent.artifact_hash != preview.parent_artifact_hash:
                 raise WorkflowSourceConflict("Parent workflow artifact changed")
@@ -249,6 +258,8 @@ class WorkflowSourceService:
         if _manifest_hash(live_manifest) != preview.source_artifact_hash:
             raise WorkflowSourceConflict("Python authoring source changed after preview")
         with store.workflow_mutation(preview.workflow_id):
+            if store.workflow_generation(preview.workflow_id) != prepared.destination_generation:
+                raise WorkflowSourceConflict("Destination workflow identity changed")
             current = store.get_workflow(preview.workflow_id)
             if current.artifact_hash != preview.parent_artifact_hash:
                 raise WorkflowSourceConflict("Workflow artifact changed")

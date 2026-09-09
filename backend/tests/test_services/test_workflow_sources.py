@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -117,6 +119,104 @@ def test_source_refresh_conflicts_when_parent_changes_after_preview(tmp_path: Pa
     )
 
     with pytest.raises(WorkflowSourceConflict, match="Parent workflow artifact changed"):
+        service.apply(
+            WorkflowSourceApplyRequest(
+                token=preview.token,
+                confirm_effects=preview.destructive_effects,
+            )
+        )
+
+
+def test_source_refresh_conflicts_when_destination_is_recreated_with_same_artifact(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="child"))
+    child = store.get_workflow("child")
+    store.create_workflow(WorkflowCreate(name="parent"))
+    parent_graph = _parent_graph(child.graph, child.artifact_hash)
+    store.save_workflow("parent", WorkflowSaveBody(graph=parent_graph))
+    service = WorkflowSourceService(lambda: store)
+    original = store.get_workflow("parent")
+    preview = service.preview_source_update(
+        "parent", ["child"], expected_artifact_hash=original.artifact_hash
+    )
+
+    store.delete_workflow("parent")
+    recreated = store.create_workflow(WorkflowCreate(name="parent"))
+    assert recreated.identity_generation == 3
+    store.save_workflow("parent", WorkflowSaveBody(graph=parent_graph))
+    before = store.get_workflow("parent")
+    before_files = {
+        path.relative_to(store.workflow_dir("parent")).as_posix(): path.read_bytes()
+        for path in store.workflow_dir("parent").rglob("*")
+        if path.is_file()
+    }
+    assert before.artifact_hash == original.artifact_hash
+
+    with pytest.raises(WorkflowSourceConflict, match="Destination workflow identity changed"):
+        service.apply(
+            WorkflowSourceApplyRequest(
+                token=preview.token,
+                confirm_effects=preview.destructive_effects,
+            )
+        )
+
+    after = store.get_workflow("parent")
+    after_files = {
+        path.relative_to(store.workflow_dir("parent")).as_posix(): path.read_bytes()
+        for path in store.workflow_dir("parent").rglob("*")
+        if path.is_file()
+    }
+    assert after.graph == before.graph
+    assert after.artifact_hash == before.artifact_hash
+    assert store.workflow_generation("parent") == recreated.identity_generation
+    assert after_files == before_files
+
+
+def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="child"))
+    child = store.get_workflow("child")
+    store.create_workflow(WorkflowCreate(name="parent"))
+    store.save_workflow(
+        "parent", WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash))
+    )
+    parent = store.get_workflow("parent")
+    service = WorkflowSourceService(lambda: store)
+    parent_read = threading.Event()
+    allow_preview_to_continue = threading.Event()
+    original_get_workflow = store.get_workflow
+
+    def paused_get_workflow(workflow_id: str):
+        result = original_get_workflow(workflow_id)
+        if workflow_id == "parent" and not parent_read.is_set():
+            parent_read.set()
+            assert allow_preview_to_continue.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(store, "get_workflow", paused_get_workflow)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        preview_future = pool.submit(
+            service.preview_source_update,
+            "parent",
+            ["child"],
+            expected_artifact_hash=parent.artifact_hash,
+        )
+        assert parent_read.wait(timeout=5)
+        delete_future = pool.submit(store.delete_workflow, "parent")
+        assert not delete_future.done()
+        allow_preview_to_continue.set()
+        preview = preview_future.result(timeout=5)
+        assert delete_future.result(timeout=5) == 2
+
+    store.create_workflow(WorkflowCreate(name="parent"))
+    store.save_workflow(
+        "parent", WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash))
+    )
+    with pytest.raises(WorkflowSourceConflict, match="Destination workflow identity changed"):
         service.apply(
             WorkflowSourceApplyRequest(
                 token=preview.token,

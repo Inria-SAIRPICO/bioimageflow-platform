@@ -11,37 +11,17 @@ Owner decisions and product intent take precedence over an agent's proposed fix.
 
 ## ISSUE-001 — Source-update preview and replaced workflow identity
 
-Status: open, queued for Astra/high in the next session.
-Observed evidence: source inspection only at platform `fcb4408`; no reproduction or product/test edit performed.
-The earlier immediate-owner pause is superseded by the revised protocol; bounded Astra investigation is the next authorized action, not an assumed repair.
-Dependent work: source-update/Python rebuild acceptance and any fix relying on preview ownership; unrelated audits can continue only if demonstrably independent.
+Status: resolved after GPT-6 Astra/high `safe-to-fix` assessment and bounded Sol/medium repair.
+At platform `353b425` with BioImageFlow 0.7.1, core 0.3.1, and Wetlands 2.4.1, a disposable supported-lifecycle reproduction showed an old generation-1 preview successfully mutating an exactly recreated generation-3 destination whose original and recreated artifact hashes were both `sha256:9256f7d81e082034f47aa62edbd9892a3687f944782dc4c49e3fcee66da25061`.
+No existing lifecycle invalidation removed prepared tokens, and Apply captured only the current generation after the preview boundary.
+The specialist found v2 §§10 and 12, v1 §2.4.2, and `PLATFORM_CONTEXT.md` decisive: the delayed operation must conflict without mutation, and a private captured-generation comparison inside the existing mutation lock is sufficient.
 
-The v2 specification's Source Updates section requires preview to capture destination identity and Apply to recheck captured values; its identity section defines durable generations for same-ID recreation.
-See `platform_specs_v2.md` around lines 237–240 and 282–284, `backend/src/bioimageflow_server/services/workflow_sources.py` (`_PreparedSourceOperation`, `preview_source_update`, `_apply_source`), and `workflow_store.py::workflow_mutations`.
-The prepared operation appears to store paths and content hashes without destination generation.
-Apply's mutation lock captures generation at Apply entry, not at Preview time.
-Hypothesis: deleting and recreating the parent at the same path with the original graph may let an old preview modify the replacement because its content hash still matches.
-This hypothesis is not a confirmed failure and must not be turned into a passing test by asserting the observed outcome.
-
-### Bounded Astra task
-
-Read the source-update and identity specifications and the existing `backend/tests/test_services/test_workflow_sources.py::test_source_refresh_is_previewed_and_applied_explicitly` fixture.
-Use a disposable store, no tools or workflow execution:
-
-1. Save a parent embedding a saved child; change the child's label and obtain a source-update preview.
-2. Preserve the parent's graph, hash, and generation.
-3. Delete/recreate that parent through supported lifecycle APIs at the same path; restore its exact original graph.
-4. Apply the old token and record the response, generations, hashes, and before/after graph.
-
-Determine whether other lifecycle invalidation already prevents the hypothesis.
-If it reproduces, assess whether existing specifications unambiguously require rejection and whether a bounded generation check under the existing locking protocol is sufficient.
-Consider related source identity, workspace identity, and Python rebuild only as necessary to establish the repair boundary; these are not already established defects.
-Return `safe-to-fix`, `not-a-defect`, or `needs-owner` with evidence, exact selectors, and implementation/validation boundaries.
-Recommended intent for assessment: reject an old preview for a deleted/recreated destination with a conflict and no mutation, even when content matches.
-No repair has been attempted and no new semantics are authorized; an Astra `safe-to-fix` disposition permits a bounded repair preserving the established contract without another owner approval.
-
-Disposition / reproduction / artifacts / specialist / fix commit: pending.
-Resume condition: Astra establishes the safe contract and repair, disproves the concern, or the owner answers the remaining question after `needs-owner`.
+The repair stores the destination generation for both source-refresh and Python-rebuild previews, captures it atomically with the destination document, and compares it inside Apply's mutation lock before reads, staging, or writes.
+It raises the existing `WorkflowSourceConflict`, preserving HTTP 409 and leaving artifact hashing and public schemas unchanged.
+Regressions prove exact same-artifact recreation rejection with unchanged graph, hash, generation, and owned files, plus lifecycle serialization during preview.
+Focused source tests passed and `scripts/test check backend` passed in 82s at `6d42c05` plus the settled backend diff: 1,577 deterministic tests passed, 9 deselected, and 7 logging-order tests passed; external package certification was intentionally not run by this lane.
+The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_server/services/workflow_sources.py`.
+Workspace switching and source-workflow recreation were not reproduced and are not claimed as resolved defects.
 
 ## ISSUE-002 — Logging specification versus contextual-log tests
 

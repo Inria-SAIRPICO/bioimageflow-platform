@@ -59,7 +59,7 @@ Specification references are to repository-root `platform_specs_v2.md`, with `pl
 
 | Behavior and specification | Implementation owner | Inspected selectors and assertions | Negative coverage and remaining gap |
 | --- | --- | --- | --- |
-| Source update is explicit, preview is nonmutating (§10) | `workflow_sources.py` | `test_services/test_workflow_sources.py::test_source_refresh_is_previewed_and_applied_explicitly` saves a new source label, checks parent remains old after preview, then apply replaces child label and provenance hash. | `::test_source_refresh_conflicts_when_parent_changes_after_preview` checks hash-changing parent edit rejects apply; same-content identity recreation is untested and queued for Astra as ISSUE-001 below. |
+| Source update is explicit, preview is identity-bound and nonmutating (§10, §12) | `workflow_sources.py` | `test_services/test_workflow_sources.py::test_source_refresh_is_previewed_and_applied_explicitly` saves a new source label, checks parent remains old after preview, then apply replaces child label and provenance hash; `::test_source_refresh_conflicts_when_destination_is_recreated_with_same_artifact` proves an old token rejects an exactly recreated same-ID destination without changing its graph, hash, generation, or files. | `::test_source_refresh_conflicts_when_parent_changes_after_preview` checks hash-changing parent edits; `::test_source_refresh_preview_captures_parent_and_generation_under_one_lock` proves lifecycle mutation cannot interleave the captured document and generation. Workspace switching and source-workflow recreation remain separate unconfirmed boundaries. |
 | Detach only changes provenance (§10) | Semantic graph operations | `test_services/test_workflow_draft_operations.py::test_detach_source_changes_only_provenance` compares embedded graph before/after and checks source becomes null. | Open nested editor exclusion, UI context action, and detached source deletion journey remain gaps. |
 | Owned source imports materialize editable files (§6.2) | `workflow_artifacts.py`, `workflow_store.py`, graph builder | `test_services/test_editable_workflow_sources.py::test_import_materializes_editable_file_and_immediate_run_uses_saved_bytes` checks source path, manifest excludes executable text, old storage absent, and exact values change from 2/3/4 to 21/22/23. | Archive adapter is fake; compute uses DataFrameTool with `dev_mode=True`, so this is not worker isolation certification. |
 | Captured code and independent import remain stable (§9) | Graph compilation and owned-source loader | `test_services/test_editable_workflow_sources.py::test_execution_snapshot_and_other_import_remain_independent` builds before editing, computes captured old values, then fresh edited values, then unchanged second import values. | Explicit local DataFrame execution; no worker PID assertions. |
@@ -70,33 +70,15 @@ Specification references are to repository-root `platform_specs_v2.md`, with `pl
 | Portable export and results bundle distinction (§12) | Workflow store and archive adapter | `test_services/test_workflow_store.py::test_portable_export_is_generated_from_the_accepted_graph` checks library-shaped data delivered to fake adapter; `::test_results_bundle_is_rejected_before_archive_adapter_read` constructs marker ZIP and checks rejection with no destination. | This row excludes results materialization, pinned-run semantics, and folder replacement, which need the execution/results inventory. |
 | Trusted Python authoring uses fresh helper manifest (§11) | `workflow_sources.py` | `test_services/test_workflow_sources.py::test_python_materialization_uses_workflow_local_factory_and_fresh_helpers` writes entry/helper, previews/applies, checks definition and authoring provenance, edits helper, checks new manifest hash and replacement label. | `::test_python_materialization_is_disabled_in_webapp_mode` checks permission failure; changed-after-preview manifest, exactly-once call counter, symlink rejection, and ordinary Run never importing authoring source require dedicated assertions. |
 
-## Unconfirmed identity concern (ISSUE-001)
+## Resolved identity concern (ISSUE-001)
 
-This is a source-inspection concern, not a reproduced failure.
-No reproduction or behavior change was attempted after identifying it.
-
-The v2 specification lines 237–240 require a source-update preview to capture destination identity and apply to recheck every captured value.
-Lines 282–284 define durable generations and protect recreated same-ID workflows from delayed operations.
-`backend/src/bioimageflow_server/services/workflow_sources.py:49` defines `_PreparedSourceOperation` with the preview, source records, old source hash, and optional Python manifest, but no captured destination generation.
-The preview at line 105 stores destination path and artifact hashes.
-`_apply_source` at line 209 takes the current path's mutation lock and checks graph hashes and old source provenance.
-`backend/src/bioimageflow_server/services/workflow_store.py:321` captures generations when entering `workflow_mutations`, which fences lock-wait races but does not retain the generation from an earlier preview request.
-Artifact hashes deliberately exclude workspace identity and can match across a deleted and recreated workflow.
-
-Under the revised escalation protocol, Astra may run a minimal isolated reproduction extending the existing source-refresh fixture without introducing any tools or execution:
-
-1. Save a parent embedding a saved child, change the saved child's label, and obtain a source-update preview for the parent.
-2. Capture the parent's original graph and identity generation.
-3. Delete the parent and recreate the same workflow ID; restore exactly the original parent graph so its content hash matches the preview baseline while its generation is newer.
-4. Apply the old token and observe whether it is rejected or modifies the recreated parent.
-5. Preserve old/new generations, baseline hashes, apply response, and recreated parent's before/after graph.
-
-The expected identity-safe outcome follows the specification, but actual behavior and the safe implementation approach remain unconfirmed; Astra must assess them before any repair.
-Related source recreation, workspace switching, and Python-rebuild tokens deserve separate review after that assessment; they have not been established as defects here.
+GPT-6 Astra/high reproduced an old generation-1 source-update token mutating an exactly recreated generation-3 destination whose graph and artifact hash matched the preview baseline.
+The specialist established that v2 §§10 and 12 unambiguously require rejection, and classified a destination-generation check under the existing mutation lock as `safe-to-fix`.
+Prepared source-refresh and Python-rebuild operations now capture the destination generation atomically with the previewed document and reject any generation change before staging or writes.
+The new regressions cover same-content recreation and deterministic lifecycle serialization; workspace switching and source-workflow recreation were not reproduced and are not claimed as fixed defects.
 
 ## Priority after resumption
 
-Resolve the identity concern before expanding source-update acceptance.
-Then prioritize nested private-edit reload/discard and stale-parent application with connected stable ports; source-update destructive confirmation and conflict journeys; recursive source copying through the agent-copy UI; and replacing arbitrary graph-recovery tool selection with a declared compatible fixture.
+Prioritize nested private-edit reload/discard and stale-parent application with connected stable ports; source-update destructive confirmation and conflict journeys; recursive source copying through the agent-copy UI; and replacing arbitrary graph-recovery tool selection with a declared compatible fixture.
 Refactor overstated test names or add the missing assertions for nested binding deletion and incoming DataFrame grouping.
 Keep real desktop dialogs, external editor interaction, operating-system drag-and-drop, and application crash/restart acceptance explicitly separate from headless browser and in-process service checks.
