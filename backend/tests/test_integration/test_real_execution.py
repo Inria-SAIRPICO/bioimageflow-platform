@@ -13,92 +13,19 @@ import httpx
 import pandas as pd
 import pytest
 from tests.graph_factory import graph_state
-from bioimageflow import DataFrameTool
+from tests.platform_fixtures import dataframe_chain, local_registry
 from bioimageflow.cache import cache_load
-from bioimageflow_core.tool import IOModel
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import ExecutionContext
-from bioimageflow_server.models.graph import GraphState, ToolNodeState, DataFrameEdge
+from bioimageflow_server.models.graph import ColumnEdge, GraphState, ToolNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.execution import ExecutionManager
 from bioimageflow_server.services.graph_validator import validate_graph
-from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
-
-
-class _NoInputs(IOModel):
-    pass
-
-
-class _SourceInputs(IOModel):
-    start: int = 1
-    count: int = 3
-
-
-class _OffsetInputs(IOModel):
-    offset: int = 10
-
-
-class _FailureInputs(IOModel):
-    message: str = "deterministic failure"
-
-
-class _NumberOutputs(IOModel):
-    value: int
-
-
-class _ShiftedOutputs(IOModel):
-    value: int
-    shifted: int
-
-
-class SourceNumbers(DataFrameTool):
-    """Deterministic source DataFrameTool that needs no external services."""
-
-    accepts_upstream = False
-    Inputs = _SourceInputs
-    Outputs = _NumberOutputs
-
-    def transform(self, df: Any, arguments: Any) -> pd.DataFrame:
-        values = list(range(arguments.start, arguments.start + arguments.count))
-        return pd.DataFrame(
-            {"value": values},
-            index=[f"row{i}" for i in range(arguments.count)],
-        )
-
-
-class AddOffset(DataFrameTool):
-    """Deterministic transform DataFrameTool using one positional upstream."""
-
-    Inputs = _OffsetInputs
-    Outputs = _ShiftedOutputs
-
-    def transform(self, df: pd.DataFrame, arguments: Any) -> pd.DataFrame:
-        out = df[["value"]].copy()
-        out["shifted"] = out["value"] + arguments.offset
-        return out
-
-
-class EmptySource(DataFrameTool):
-    accepts_upstream = False
-    Inputs = _NoInputs
-    Outputs = _NumberOutputs
-
-    def transform(self, df: Any, arguments: Any) -> pd.DataFrame:
-        return pd.DataFrame({"value": [1]}, index=["row0"])
-
-
-class ExplodingNumbers(DataFrameTool):
-    accepts_upstream = False
-    Inputs = _FailureInputs
-    Outputs = _NumberOutputs
-
-    def transform(self, df: Any, arguments: Any) -> pd.DataFrame:
-        raise RuntimeError(arguments.message)
 
 
 class RecordingEventBus:
@@ -189,44 +116,9 @@ def _settings() -> Settings:
     )
 
 
-def _registry() -> ToolRegistryService:
-    registry = ToolRegistryService()
-    for cls in (SourceNumbers, AddOffset, EmptySource, ExplodingNumbers):
-        registry._register_tool_from_class(cls, cls.__name__, "test-tools", "1.0.0")
-    return registry
-
-
-def _real_graph() -> GraphState:
-    return graph_state(
-        nodes=[
-            ToolNodeState(type="tool",
-                id="source",
-                name="source",
-                tool_name="SourceNumbers",
-                position=(0, 0),
-                parameters={"start": 2, "count": 3},
-            ),
-            ToolNodeState(type="tool",
-                id="offset",
-                name="offset",
-                tool_name="AddOffset",
-                position=(200, 0),
-                parameters={"offset": 5},
-            ),
-        ],
-        edges=[
-            DataFrameEdge(type="dataframe",
-                id="source_to_offset",
-                source_node="source",
-                target_node="offset",
-                target_position=0,
-            ),
-        ],
-    )
-
-
 def _failure_graph(message: str = "deterministic failure from test") -> GraphState:
     return graph_state(
+        config={"engine": "wetlands", "execution": "sequential"},
         nodes=[
             ToolNodeState(type="tool",
                 id="boom",
@@ -292,8 +184,8 @@ def _assert_shifted_cache(storage_path: Path) -> None:
 async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     tmp_path: Path,
 ) -> None:
-    graph = _real_graph()
-    registry = _registry()
+    graph = dataframe_chain()
+    registry = local_registry()
     bus = RecordingEventBus()
     manager = ExecutionManager(
         bus,
@@ -345,7 +237,7 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
 async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     tmp_path: Path,
 ) -> None:
-    registry = _registry()
+    registry = local_registry()
     bus = RecordingEventBus()
     manager = ExecutionManager(
         bus,
@@ -353,8 +245,9 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
         _settings(),
         storage_path=tmp_path,
     )
-    original = _real_graph()
+    original = dataframe_chain()
     modified = graph_state(
+        config={"engine": "wetlands", "execution": "sequential"},
         nodes=[
             ToolNodeState(type="tool",
                 id="source",
@@ -404,8 +297,8 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
 
 
 async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path) -> None:
-    registry = _registry()
-    graph = _real_graph()
+    registry = local_registry()
+    graph = dataframe_chain()
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
     app = create_app(
@@ -472,7 +365,7 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
 async def test_api_real_dataframe_tool_failure_propagates_node_error(
     tmp_path: Path,
 ) -> None:
-    registry = _registry()
+    registry = local_registry()
     graph = _failure_graph()
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
@@ -510,3 +403,32 @@ async def test_api_real_dataframe_tool_failure_propagates_node_error(
         assert node_status["cached"] is False
         assert "deterministic failure from test" in node_status["error"]
         assert "transform" in node_status["traceback"]
+
+
+async def test_api_rejects_column_binding_to_dataframe_constant(tmp_path: Path) -> None:
+    graph = dataframe_chain()
+    # Retain the valid whole-DataFrame input, so only the column binding is invalid.
+    graph.nodes[1].parameters = {}
+    graph.edges.append(ColumnEdge(
+        type="column", id="column_into_constant", source_node="source",
+        source_output="value", target_node="offset", target_input="offset",
+    ))
+    app = create_app(AppConfig(
+        storage_path=tmp_path,
+        tool_registry=local_registry(),
+        settings=_settings(),
+        disable_hot_reload=True,
+    ))
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test",
+    ) as client:
+        response = await client.put("/api/v1/graph", json=graph.model_dump(mode="json"))
+        assert response.status_code == 200, response.text
+        validation = response.json()
+        assert validation["valid"] is False
+        assert len(validation["errors"]) == 1
+        error = validation["errors"][0]
+        assert (error["type"], error["node"], error["field"], error["edge_id"]) == (
+            "type_incompatible", "offset", "offset", "column_into_constant",
+        )
+        assert "requires a constant" in error["detail"]

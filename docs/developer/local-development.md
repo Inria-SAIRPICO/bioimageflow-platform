@@ -113,6 +113,22 @@ uv run uvicorn bioimageflow_server.app:create_app --factory \
 
 ## Use local BioImageFlow source in workers
 
+When validating unpublished changes to the sibling BioImageFlow library, first install its orchestrator and core into this checkout's backend environment:
+
+```bash
+cd backend
+uv pip install --python .venv/bin/python --no-deps \
+  --editable ../../bioimageflow/packages/bioimageflow-core \
+  --editable ../../bioimageflow/packages/bioimageflow
+cd ..
+UV_NO_SYNC=1 scripts/test focus backend tests/test_integration/test_platform_fixture_contracts.py
+UV_NO_SYNC=1 scripts/test focus e2e tests/e2e/canvas-interactions.spec.ts --grep 'new dynamic tools connect cleanly'
+```
+
+`UV_NO_SYNC=1` keeps nested `uv run` calls, including the Playwright backend server, from replacing those editable sources with the published lockfile versions.
+Record both repository revisions with test evidence; this validates local source, not a published package release.
+Restore the ordinary published environment with `cd backend && uv sync --group dev --frozen` when local-library validation is finished.
+
 Wetlands tool environments install `bioimageflow-core` separately from the backend environment.
 They use a pinned published version by default so user and runtime environments remain reproducible.
 

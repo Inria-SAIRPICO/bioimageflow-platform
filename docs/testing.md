@@ -139,6 +139,9 @@ That boundary requires a future platform-specific smoke or manual release check 
 
 The eight current external tests certify one integration package rather than representing eight general tool-package unit tests.
 They cover graph schemas and registry discovery against the actual published package surface.
+The additional real Wetlands worker fixture is marked `external`, `integration`, `serial`, and `slow` because it changes process-wide manager state and creating its isolated worker environment can download dependencies.
+It runs in `full`, and can be selected explicitly with `scripts/test focus backend tests/test_integration/test_platform_fixture_contracts.py --run-external`.
+It verifies actual worker process identity, transformed values, and output files; a DataFrame-only graph selecting Direct is not worker certification.
 Other package installation and discovery behavior remains covered by repository-owned fixtures in the deterministic lane.
 Additional published tool packages should receive an external lane only when the platform declares a compatibility contract with them; test count alone is not a reason to duplicate this certification.
 
@@ -148,7 +151,8 @@ Additional published tool packages should receive an external lane only when the
 scripts/test certification
 ```
 
-This command installs the version declared in `scripts/ci/test_versions.env` from the package index into a new empty store, then runs only tests marked `external` with `--run-external`.
+This command installs the version declared in `scripts/ci/test_versions.env` from the package index into a new empty store, then runs tests marked both `external` and `common_tools` with `--run-external`.
+It does not run the separate real Wetlands worker fixture.
 The installer places only the tool package in that store; runtime dependencies remain owned by the pinned backend environment so they cannot shadow the platform's editable source dependencies.
 It requires network access and an existing `backend/.venv`.
 The temporary store is deleted when the command exits.

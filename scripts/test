@@ -469,7 +469,7 @@ certification_lane() (
   trap 'rm -rf -- "$certification_root"' EXIT
   create_certification_store "$certification_root"
   phase 'External common-tools tests' bash -c \
-    'cd "$1" && uv run --frozen pytest --run-external -m external --durations=10' \
+    'cd "$1" && uv run --frozen pytest --run-external -m "external and common_tools" --durations=10' \
     _ "$backend_dir"
   printf '\nExternal certification passed with bioimageflow-common-tools %s.\n' \
     "$BIOIMAGEFLOW_COMMON_TOOLS_VERSION"
