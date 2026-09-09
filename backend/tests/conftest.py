@@ -8,6 +8,7 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
+from tests.campaign_scope import audit_backend_collection, load_backend_exclusions
 
 
 class _OfflinePyPIVersionService:
@@ -40,6 +41,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="alias for --run-external retained for common-tools certification",
+    )
+
+    parser.addoption(
+        "--campaign-local",
+        action="store_true",
+        default=False,
+        help="run the strictly audited local-platform campaign selection",
     )
 
 
@@ -76,13 +84,23 @@ def pytest_collection_modifyitems(
         if relative_path in serial_paths or item.name in serial_tests:
             item.add_marker("serial")
 
-    if config.getoption("--run-external") or config.getoption("--run-common-tools"):
-        return
+    if not (
+        config.getoption("--run-external") or config.getoption("--run-common-tools")
+    ):
+        skip = pytest.mark.skip(reason="external certification requires --run-external")
+        for item in items:
+            if item.get_closest_marker("external") is not None:
+                item.add_marker(skip)
 
-    skip = pytest.mark.skip(reason="external certification requires --run-external")
-    for item in items:
-        if item.get_closest_marker("external") is not None:
-            item.add_marker(skip)
+    if config.getoption("--campaign-local"):
+        try:
+            selected, excluded = audit_backend_collection(
+                items, load_backend_exclusions()
+            )
+        except ValueError as error:
+            raise pytest.UsageError(str(error)) from error
+        config.hook.pytest_deselected(items=excluded)
+        items[:] = selected
 
 
 @pytest.fixture(scope="session")

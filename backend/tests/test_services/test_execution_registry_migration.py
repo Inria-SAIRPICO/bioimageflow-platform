@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 from bioimageflow_server.services.execution_registry import ExecutionRegistry
 
 
-def test_migration_preserves_local_v1_and_erases_legacy_distributed_bytes(
-    tmp_path: Path,
-) -> None:
+def test_migration_preserves_local_v1(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     registry.root.mkdir(parents=True)
     local = ExecutionSnapshot(
@@ -24,6 +24,15 @@ def test_migration_preserves_local_v1_and_erases_legacy_distributed_bytes(
     local_path = registry.root / f"{local['execution_id']}.json"
     local_path.write_text(json.dumps(local), encoding="utf-8")
 
+    assert registry.migrate() == (1, 0)
+    assert registry.get(local["execution_id"]).backend == "direct"
+    assert json.loads(local_path.read_text(encoding="utf-8"))["schema_version"] == 2
+
+
+@pytest.mark.campaign_excluded(reason="distributed-engine")
+def test_migration_erases_legacy_distributed_bytes(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    registry.root.mkdir(parents=True)
     legacy_id = "run_" + "2" * 32
     legacy_path = registry.root / f"{legacy_id}.json"
     legacy_path.write_text(
@@ -48,9 +57,7 @@ def test_migration_preserves_local_v1_and_erases_legacy_distributed_bytes(
         encoding="utf-8",
     )
 
-    assert registry.migrate() == (1, 1)
-    assert registry.get(local["execution_id"]).backend == "direct"
-    assert json.loads(local_path.read_text(encoding="utf-8"))["schema_version"] == 2
+    assert registry.migrate() == (0, 1)
     assert not legacy_path.exists()
     assert not retry.exists()
     assert "must-disappear" not in "".join(

@@ -16,7 +16,10 @@ from bioimageflow_server.services.execution_profiles import (
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.campaign_excluded(reason="managed-remote"),
+]
 
 
 @pytest.fixture

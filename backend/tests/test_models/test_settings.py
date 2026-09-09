@@ -97,15 +97,18 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings(deployment_mode="desktop", execution_engine="dask")
 
+    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     def test_execution_engine_parallel_is_valid(self):
         s = Settings(deployment_mode="desktop", execution_engine="parallel")
         assert s.execution_engine == "parallel"
 
+    @pytest.mark.campaign_excluded(reason="parsl")
     def test_legacy_execution_engine_parsl_migrates_to_parallel(self):
         s = Settings(deployment_mode="desktop", execution_engine="parsl")
         assert s.execution_engine == "parallel"
         assert s.new_workflow_execution == "parallel"
 
+    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     def test_new_workflow_execution_synchronizes_compatibility_field(self):
         s = Settings(deployment_mode="desktop", new_workflow_execution="parallel")
         assert s.execution_engine == "parallel"

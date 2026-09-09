@@ -33,6 +33,9 @@ from bioimageflow_server.services.execution_runtime import (
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
+pytestmark = pytest.mark.campaign_excluded(reason="distributed-engine")
+
+
 def _snapshot(**updates: Any) -> ExecutionSnapshot:
     values = {
         "execution_id": "run_0123456789abcdef0123456789abcdef",

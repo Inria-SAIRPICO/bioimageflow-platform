@@ -170,6 +170,11 @@ Backend markers describe execution requirements rather than product ownership:
 Pytest marker validation is strict, so misspelled or unregistered categories fail collection.
 The external marker is the lane selector; `common_tools` identifies which external dependency supplies those cases.
 
+The backend foundation for the local-platform campaign uses `campaign_excluded(reason=...)` together with the exact checked-in manifest at `tests/campaign-local-scope.json`.
+Run it directly with `scripts/test focus backend --campaign-local`.
+Collection fails if a marker or manifest entry is missing, duplicated, stale, or uses a reason outside `parallel-scheduling`, `parsl`, `managed-remote`, and `distributed-engine`.
+This backend-only selector is not the complete campaign profile: frontend-unit and browser scope selection must be added and audited before a repository-wide campaign command is exposed.
+
 ## CI mapping
 
 Pull-request jobs run the selected deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.

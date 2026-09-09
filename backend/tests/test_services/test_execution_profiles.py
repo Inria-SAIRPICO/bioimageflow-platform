@@ -15,7 +15,10 @@ from bioimageflow_server.services.execution_profiles import (
 )
 
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.campaign_excluded(reason="managed-remote"),
+]
 
 
 def write_config(path: Path, *, host: str = "cluster") -> Path:

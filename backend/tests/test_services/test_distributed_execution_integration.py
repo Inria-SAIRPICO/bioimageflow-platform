@@ -18,7 +18,10 @@ from bioimageflow_server.services.execution_profiles import ExecutionProfileStor
 from bioimageflow_server.services.execution_runtime import SubmittedRunAdapter
 
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.campaign_excluded(reason="distributed-engine"),
+]
 
 
 def write_config(path: Path, host: str = "cluster") -> Path:

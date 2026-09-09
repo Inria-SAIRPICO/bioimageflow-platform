@@ -162,7 +162,8 @@ Keep comprehensive Chromium and Firefox acceptance opt-in after large changes, b
 It must not run on every development edit; focused browser tests and a small critical smoke remain available for relevant changes.
 First audit and implement explicit per-test scope selection so the campaign excludes managed-remote and parallel features without dropping unrelated coverage.
 Validate selection by inspecting collected tests, including mixed files and parameterized cases, and fail if expected exclusions do not match.
-Local-platform profile selection and per-case evidence tooling remain pending and must not be exposed as working commands until their selection behavior is validated.
+The backend foundation is available as `scripts/test focus backend --campaign-local` and cross-checks exact markers against `tests/campaign-local-scope.json`.
+Frontend-unit and browser selection plus repository-wide per-case evidence tooling remain pending and must not be exposed as a complete working campaign command until all three selections are validated.
 Do not use broad name filters or project-level exclusion assumptions as evidence of complete local-platform coverage.
 
 ## 6. Certification and handoff

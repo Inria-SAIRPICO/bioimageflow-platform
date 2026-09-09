@@ -23,7 +23,10 @@ from bioimageflow_server.services.execution_profiles import ExecutionProfileStor
 from tests.test_services.test_execution_profiles import profile_fields, write_config
 
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.campaign_excluded(reason="managed-remote"),
+]
 
 
 @pytest.fixture

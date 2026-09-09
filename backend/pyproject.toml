@@ -61,6 +61,7 @@ filterwarnings = [
     "error::pytest.PytestUnraisableExceptionWarning",
 ]
 markers = [
+    "campaign_excluded(reason): case excluded from the local-platform campaign for one audited reason.",
     "integration: tests that cross application, service, filesystem, or execution boundaries.",
     "serial: tests that mutate process-global state and must not run concurrently.",
     "slow: measured slow tests excluded from the inner coding loop.",

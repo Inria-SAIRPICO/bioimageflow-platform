@@ -29,6 +29,9 @@ from bioimageflow_server.services.execution_runtime import (
 )
 
 
+pytestmark = pytest.mark.campaign_excluded(reason="distributed-engine")
+
+
 def _app(coordinator: ExecutionCoordinator) -> FastAPI:
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")

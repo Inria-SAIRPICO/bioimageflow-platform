@@ -17,6 +17,9 @@ from bioimageflow_server.services.execution_preflight import (
 )
 
 
+pytestmark = pytest.mark.campaign_excluded(reason="distributed-engine")
+
+
 class _Intent:
     def __init__(self) -> None:
         self.closed = False
