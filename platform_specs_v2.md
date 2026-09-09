@@ -169,6 +169,7 @@ Saving preserves compatible parent bindings and edges by stable port ID.
 Removed or incompatible connected ports require confirmation.
 If the parent node changed or disappeared since the editor opened, apply reports a conflict and changes nothing.
 During execution, root and nested editors are mutation-locked uniformly.
+Outside execution, ordinary root, draft, and nested mutations serialize through the same execution-admission gate: an admitted mutation blocks Run, concurrent mutations wait, and only an actually starting or running execution rejects a mutation as locked.
 
 ## 8. Validation And Translation
 

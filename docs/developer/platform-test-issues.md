@@ -51,13 +51,16 @@ The fix commit is discoverable with `git log -1 -- frontend/src/components/panel
 
 ## ISSUE-004 — Ordinary mutation contention reported as execution lock
 
-Status: `safe-to-fix`; Sol/medium implementation active.
+Status: resolved.
 Two Chromium completion runs passed 54 or 55 preceding cases, then the child-port workflow-interface save received HTTP 423 claiming execution was in progress; the exact case passed in a fresh runtime.
 GPT-6 Astra/high disproved an execution lifecycle leak and reproduced the exact 423 with no execution ever started by holding an ordinary draft validation while issuing Save.
 `ExecutionManager.is_running` includes the ordinary idle-mutation reservation even while status is `idle` with no execution identity, and Save immediately rejects that aggregate flag.
 The established repair boundary is to queue ordinary Save behind an admitted mutation while retaining Run exclusion during mutations and mutation rejection during actual starting/running execution.
 No arbitrary browser wait, forced unlock, or early execution ownership release is authorized.
-Implementation, deterministic regressions, documentation clarification, and completion evidence are pending.
+The repair distinguishes actual execution activity from idle mutation reservations, queues root Save through the existing admission lease, and preserves Run exclusion while a mutation owns that lease.
+Deterministic manager and router regressions prove that ordinary mutations serialize, Save waits and succeeds after held draft validation, Run remains excluded, and actual execution still rejects mutation.
+`scripts/test check app` passed in 140s with 1,590 backend tests and 9 deselected, 1,260 frontend units, and 10 critical Chromium journeys; the full Chromium lane then passed all 57 tests in 106s, including the formerly suite-order-dependent child-port case at position 56.
+The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_server/services/execution.py`.
 
 ## New issue record template
 

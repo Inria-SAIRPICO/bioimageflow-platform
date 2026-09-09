@@ -142,6 +142,7 @@ They measure only visible, font-ready content and persist deliberate user widths
 
 Execution operates on one exact accepted graph or draft snapshot.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
+Ordinary accepted graph mutations serialize through the same admission gate: a mutation reservation blocks Run, concurrent mutations wait their turn, and only an actually starting or running execution makes a mutation fail as execution-locked.
 Do not rebuild an ad hoc partial graph for Run Selected; the selected structural boundary and its enabled completion dependencies are resolved by the normal recursive compiler.
 
 Recursive graphs compile to scoped jobs while workflow nodes project aggregate descendant status.

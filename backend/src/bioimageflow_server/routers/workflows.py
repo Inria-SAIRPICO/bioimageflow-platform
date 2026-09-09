@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-from contextlib import nullcontext
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Never
 from uuid import UUID
@@ -66,6 +67,7 @@ from bioimageflow_server.services.workflow_sources import (
     WorkflowSourceService,
 )
 from bioimageflow_server.services.workflow_artifacts import WorkflowSourceMissingError
+from bioimageflow_server.services.execution import ExecutionConflictError
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 logger = logging.getLogger(__name__)
@@ -103,6 +105,24 @@ def _ensure_unlocked(execution_manager: Any | None) -> None:
             status_code=423,
             detail="Workflow editing is locked while execution is in progress",
         )
+
+
+@asynccontextmanager
+async def _idle_mutation_lease(
+    execution_manager: Any | None,
+) -> AsyncIterator[None]:
+    """Serialize an ordinary workflow mutation with execution admission."""
+
+    if execution_manager is None:
+        yield
+        return
+    lease = getattr(execution_manager, "exclusive_idle_mutation", None)
+    if lease is None:
+        _ensure_unlocked(execution_manager)
+        yield
+        return
+    async with lease():
+        yield
 
 
 def _publish_workflow_tree_changed(
@@ -796,9 +816,14 @@ async def save_workflow(
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> WorkflowInfo:
-    _ensure_unlocked(execution_manager)
     try:
-        return store.save_workflow(name, body)
+        async with _idle_mutation_lease(execution_manager):
+            return store.save_workflow(name, body)
+    except ExecutionConflictError as exc:
+        raise HTTPException(
+            status_code=423,
+            detail="Workflow editing is locked while execution is in progress",
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 

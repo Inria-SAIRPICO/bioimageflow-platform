@@ -320,7 +320,7 @@ Ordinary HTTP errors and request-body validation failures use the normalized res
 | 404 | Not Found | Unknown node ID, unknown tool name, unknown workflow |
 | 409 | Conflict | Workflow name already exists, execution already running |
 | 422 | Validation Error | Invalid JSON/request schema, missing required fields, parameter type mismatch, or rejected graph |
-| 423 | Locked | Graph mutation attempted during execution |
+| 423 | Locked | Graph mutation attempted while an execution is starting or running |
 
 #### 2.4.2 Workflow Management
 
@@ -693,6 +693,7 @@ Normal root-canvas runs verify the submitted graph against the accepted draft re
 If `draft_revision` is present, the backend loads that workflow's accepted draft, rejects a stale revision with `draft_revision_conflict`, rejects a different submitted graph with `draft_graph_mismatch`, and compiles the backend-loaded accepted graph after equality is proven. Omitting `draft_revision` retains the request-local execution contract for explicit compatibility callers; it does not authorize the backend to infer graph meaning from request history.
 
 Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
+Ordinary accepted workflow and draft mutations serialize through the execution-admission gate instead of reporting one another as running execution: a mutation already holding the gate blocks Run, a concurrent mutation waits, and an actually starting or running execution rejects the mutation with HTTP 423.
 
 A second `POST /execution/run` while one is already running returns HTTP 409 Conflict.
 
@@ -1458,7 +1459,7 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 - **Allowed interactions during execution:** Selecting nodes, viewing the Node Panel (read-only), browsing Node Data (completed nodes show their output), scrolling the Logger Panel, panning/zooming the canvas, opening images in Napari.
 - **Stop button:** Cancels execution. The banner updates to "Execution stopped" and disappears after 3 seconds (or on click).
 - **On completion:** The banner shows "Execution complete" (green) or "Execution failed" (red, with error summary) and disappears after 5 seconds (or on click). On failure, the failed node is auto-selected so its error is visible in the Node Panel.
-- **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation, draft mutations, workflow mutations, and cache clearing during execution with HTTP 423 Locked.
+- **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation, draft mutations, workflow mutations, and cache clearing while an execution is starting or running with HTTP 423 Locked. Ordinary admitted mutations serialize with one another and exclude Run; they are not themselves reported as a running execution.
 
 ### 3.10 Image Viewer
 

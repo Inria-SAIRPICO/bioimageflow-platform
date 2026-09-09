@@ -253,6 +253,12 @@ class ExecutionManager:
     def is_running(self) -> bool:
         return self.state == "running" or self._starting or self._idle_operation_active
 
+    @property
+    def is_execution_active(self) -> bool:
+        """Whether an execution has been admitted, excluding mutation reservations."""
+
+        return self.state == "running" or self._starting
+
     def get_status(self) -> ExecutionStatus:
         if self._starting:
             assert self._pending_context is not None
@@ -695,12 +701,12 @@ class ExecutionManager:
     async def exclusive_idle_mutation(self) -> AsyncIterator[None]:
         """Lease the idle engine across a complete graph mutation."""
 
-        if self.is_running:
+        if self.is_execution_active:
             raise ExecutionConflictError(
                 "An execution is already running; stop it before editing the workflow"
             )
         async with self._preparation_lock:
-            if self.is_running:
+            if self.is_execution_active:
                 raise ExecutionConflictError(
                     "An execution is already running; stop it before editing the workflow"
                 )

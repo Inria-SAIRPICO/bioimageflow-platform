@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import threading
 from typing import Any
 import zipfile
 
@@ -14,7 +16,18 @@ import pytest
 from unittest.mock import MagicMock
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.workflow import WorkflowCreate
+from bioimageflow_server.routers.execution import (
+    get_workflow_draft_service as execution_get_workflow_draft_service,
+)
+from bioimageflow_server.routers.workflow_drafts import (
+    get_workflow_draft_service as drafts_get_workflow_draft_service,
+)
+from bioimageflow_server.services import workflow_draft as workflow_draft_service
+from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
     RootWorkflowSnapshotMove,
@@ -26,7 +39,7 @@ from bioimageflow_server.services.workflow_exports import (
     PreparedDownload,
     WorkflowExportError,
 )
-from tests.graph_factory import graph_document
+from tests.graph_factory import graph_document, graph_state
 
 pytestmark = pytest.mark.anyio
 
@@ -1411,6 +1424,95 @@ async def test_mutations_return_423_while_execution_running(
         response = await locked_client.delete(path)
 
     assert response.status_code == 423
+
+
+async def test_save_waits_for_admitted_draft_validation_then_succeeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=registry,
+    )
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    manager = ExecutionManager(
+        NullEventBus(),
+        registry,
+        Settings(deployment_mode="desktop"),
+    )
+    draft_graph = graph_state(name="draft")
+    saved_graph = graph_document(name="saved")
+    validation_entered = threading.Event()
+    release_validation = threading.Event()
+
+    def blocking_validate(
+        _store: WorkflowStoreService,
+        _workflow_id: str,
+        graph: GraphState,
+    ) -> Any:
+        if graph == draft_graph:
+            validation_entered.set()
+            assert release_validation.wait(timeout=2)
+        return drafts._default_validation(graph)
+
+    monkeypatch.setattr(drafts, "_validate", blocking_validate)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=manager,
+            settings=manager.settings,
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    app.dependency_overrides[execution_get_workflow_draft_service] = lambda: drafts
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        draft_write = asyncio.create_task(
+            client.put(
+                "/api/v1/workflow-drafts/wf",
+                json={
+                    "graph": draft_graph.model_dump(mode="json"),
+                    "expected_revision": 0,
+                    "updated_by": "frontend",
+                },
+            )
+        )
+        try:
+            async with asyncio.timeout(2):
+                while not validation_entered.is_set():
+                    await asyncio.sleep(0)
+
+            save = asyncio.create_task(
+                client.put("/api/v1/workflows/wf", json={"graph": saved_graph})
+            )
+            await asyncio.sleep(0)
+            run = await client.post(
+                "/api/v1/execution/run",
+                json={
+                    "graph": saved_graph,
+                    "workflow_name": "wf",
+                    "draft_revision": 0,
+                },
+            )
+
+            assert save.done() is False
+            assert run.status_code == 409
+            assert manager.get_status().state == "idle"
+            assert manager.context is None
+        finally:
+            release_validation.set()
+
+        committed_draft, committed_save = await asyncio.gather(draft_write, save)
+
+    assert committed_draft.status_code == 200
+    assert committed_save.status_code == 200
+    assert manager.is_running is False
 
 
 async def test_import_returns_423_while_execution_running(

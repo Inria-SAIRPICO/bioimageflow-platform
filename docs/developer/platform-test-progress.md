@@ -5,16 +5,14 @@ orphan: true
 # Platform test campaign checkpoint
 
 Last updated: 2026-09-09.
-Status: ready for a fresh Sol/medium session; first action is Astra/high assessment of ISSUE-001.
-The owner replaced immediate escalation to the owner with the [Sol → Astra → owner protocol](platform-test-plan.md).
-This checkpoint records a documentation handoff, not resumed feature implementation or completed certification.
+Status: campaign active; ISSUE-004 is resolved and T05 backend local-scope infrastructure is the next commit boundary.
+The owner requires every resolved issue or bounded task to be committed immediately, with dedicated worktrees for parallel writable agents; the [plan](platform-test-plan.md) and [restart prompt](platform-test-start.md) now make this explicit.
 
 ## Resume here
 
-1. Follow [Restart instructions](platform-test-start.md), reconcile Git, and verify package versions.
-2. Assign ISSUE-001 from [Campaign issues](platform-test-issues.md) to Astra/high with fresh context for a bounded isolated reproduction and contract assessment.
-3. If safe to fix, implement its prescribed bounded repair and regressions; if not a defect, record the evidence; if intent remains unresolved, pause the entire campaign for the owner.
-4. Continue tasks T03–T06 below using the partial inventories, without repeating their completed inspection work blindly.
+1. Follow [Restart instructions](platform-test-start.md), reconcile Git, and verify that ISSUE-004 and the T05 backend scope batch are committed independently.
+2. Finish T05's audited frontend-unit and browser per-case local-scope selection in a dedicated worktree, then commit it before starting another writable task.
+3. Continue tasks T03–T06 using the partial inventories, without repeating completed inspection or validation work blindly.
 
 No worker or test process remains active from the audit.
 The preceding audit changed only the three coverage Markdown inventories; those were authored by campaign agents, not unrelated user edits, and are included in this requested durable handoff.
@@ -28,13 +26,14 @@ The handoff documentation is committed separately; find its revision with `git l
 | T01 | Complete | Wetlands 2.4.1; published BioImageFlow 0.7.1/core 0.3.1; platform constraints and specifications updated. | No release work unless a new issue requires it. |
 | T02 | Complete | Generate drag readiness fixed; genuine metadata, whole-DataFrame edge, accepted validation, exact rows, and separate real sequential worker regression. | Preserve these fixtures and assertions. |
 | T03 | Partial audit | [Workflow inventory](coverage-workflows.md), [GUI inventory](coverage-gui.md), [Runtime inventory](coverage-runtime.md); inspected bodies, not new passing results. | Sol workers finish missing feature/boundary rows; master owns integration. |
-| T04 | In progress | Hot-reload fixture enforcement, sequential cache/output repairs, and valid browser fallback recovery are committed. ISSUE-003 repaired ToolsPanel click creation and exact click/drag journeys pass cross-browser; completion is blocked only by ISSUE-004 ordinary-mutation contention. | Commit ISSUE-003 independently, then resolve ISSUE-004 and rerun its invalidated gates. |
-| T05 | Pending | Explicit per-case local scope selection and dedicated complete GUI journeys, including nested edits, source updates, results, actual failure/cancellation, and persistence. | Audit selection before broad execution; no working local-profile command exists yet. |
+| T04 | Complete | Hot-reload fixture enforcement, sequential cache/output repairs, valid browser fallback recovery, ToolsPanel click creation, and ISSUE-004 mutation serialization are repaired and independently validated. | Preserve the repaired fixtures and contracts while extending acceptance coverage. |
+| T05 | In progress | Backend explicit per-case campaign-local selection is implemented and locally audited; frontend-unit/browser selection and dedicated complete GUI journeys remain. | Validate and commit the backend scope batch, then use a dedicated worktree for the frontend/browser batch. |
 | T06 | Pending | Comprehensive in-scope backend/frontend/browser certification, real sequential worker, common-tools compatibility, manual boundary reconciliation. | Master schedules once large changes are ready; do not run full on every increment. |
 | ISSUE-001 | Resolved | Astra/high reproduced the same-artifact replacement defect and established the contract; Sol/medium added atomic destination-generation capture/checks and no-mutation regressions. | Backend completion passed; fix commit is path-discoverable. |
 | ISSUE-002 | Resolved documentation discrepancy | Commit `a8d9533` and v2 §1.8 establish contextual execution logs and global background logs; the stale v1 WebSocket row is reconciled. | `scripts/test check docs` passed in 2s; resolution commit is path-discoverable. |
+| ISSUE-004 | Resolved | Ordinary mutations serialize through execution admission; only actual starting/running execution produces the 423 lock. | `scripts/test check app` passed in 140s and all 57 Chromium tests passed in 106s; fix commit is path-discoverable. |
 
-Active write owners: `/root/issue_004_fix`, GPT-5.6 Sol/medium, owns `execution.py`, the root workflow Save router, and their focused backend tests; `/root/t05_backend_scope`, GPT-5.6 Sol/medium, owns the disjoint backend campaign marker/manifest/conftest files and audited excluded test files. Both started from `dfd5917`; ISSUE-004 depends on Astra's safe-to-fix disposition, while T05 is independent.
+Active write owner: the master is integrating the already-finished T05 backend campaign marker/manifest/conftest batch in the primary checkout; no other writable task may start until that batch is committed.
 
 ## Current-session completion evidence
 
@@ -43,6 +42,7 @@ Active write owners: `/root/issue_004_fix`, GPT-5.6 Sol/medium, owns `execution.
 - Sequential cache/output fixtures: the shared-downstream exact selector passed in 2s and its full 13-test file passed in 3s; the cache-parity and output-template files passed 10 tests in 5s. The settled `scripts/test check backend` result above covers all three files. The task commit is discoverable with `git log -1 -- backend/tests/test_services/test_cache_clearer.py`.
 - Valid fallback recovery graph: the exact journey passed in Chromium in 14s and Firefox in 17s at `87fe704` plus its one-file diff. The settled frontend completion passed lint, type checking, 1,257 tests, and build in 30s before later unrelated T04 test edits. A subsequent settled-tree frontend completion passed lint, 1,260 tests, and build but exposed only ISSUE-003 test-mock type errors; the corrected exact type-check passed. The Chromium completion run passed the changed recovery journey before later failing from ISSUE-004 lock contamination; exact failed and fail-fast-deselected workflow-interface cases passed separately. `scripts/test check docs` passed in 2s. The task commit is discoverable with `git log -1 -- frontend/tests/e2e/graph-persistence.spec.ts`.
 - ISSUE-003 ToolsPanel click: the focused unit files passed 96 tests in 6s; exact Chromium click/drag passed in 15s/16s and Firefox in 14s/17s, with no skips. The frontend completion passed lint, 1,260 tests, and build; its test-only type errors were corrected and the exact type-check passed. The Chromium completion passed both changed cases among 55 successes before ISSUE-004 stopped the lane. `scripts/test check docs` passed in 3s. The task commit is discoverable with `git log -1 -- frontend/src/components/panels/ToolsPanel.vue`.
+- ISSUE-004 ordinary mutation contention: three exact deterministic regressions passed in 3s. `scripts/test check app` passed in 140s: backend lint, 1,590 deterministic tests with 9 deselected, 7 logging-order tests, frontend lint/type-check/build, 1,260 unit tests, and 10 critical Chromium journeys. `scripts/test check browser` then passed all 57 Chromium tests in 106s, including the formerly failing workflow-interface case at position 56. The task commit is discoverable with `git log -1 -- backend/src/bioimageflow_server/services/execution.py`.
 
 ## Completed revisions
 

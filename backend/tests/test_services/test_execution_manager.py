@@ -632,6 +632,43 @@ class TestExecutionManagerLifecycle:
 
         assert em.is_running is False
 
+    async def test_idle_mutation_leases_serialize_without_execution_conflict(self) -> None:
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        second_entered = asyncio.Event()
+
+        async def first_mutation() -> None:
+            async with em.exclusive_idle_mutation():
+                first_entered.set()
+                await release_first.wait()
+
+        async def second_mutation() -> None:
+            async with em.exclusive_idle_mutation():
+                second_entered.set()
+
+        first = asyncio.create_task(first_mutation())
+        await first_entered.wait()
+        second = asyncio.create_task(second_mutation())
+        await asyncio.sleep(0)
+
+        assert second_entered.is_set() is False
+        assert second.done() is False
+
+        release_first.set()
+        await asyncio.gather(first, second)
+
+        assert second_entered.is_set() is True
+        assert em.is_running is False
+
+    async def test_idle_mutation_lease_rejects_an_actual_execution(self) -> None:
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em.state = "running"
+
+        with pytest.raises(ExecutionConflictError):
+            async with em.exclusive_idle_mutation():
+                pytest.fail("mutation must not be admitted")
+
     async def test_run_selected_compiles_the_accepted_graph_without_pruning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
