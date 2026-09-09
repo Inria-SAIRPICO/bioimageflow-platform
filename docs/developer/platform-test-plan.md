@@ -39,6 +39,7 @@ Do not delay a finished independent commit merely because another issue remains 
 The dedicated library agent reviews and validates the three approved contracts: reject column bindings to DataFrameTool constant parameters, resolve postponed annotations with metadata and inheritance intact, and retain Direct while testing real sequential workers separately.
 It commits the completed library fixes with their specifications and regression tests, prepares the appropriate package version bumps and release notes, and follows the library's documented release process.
 Publishing the necessary library release is authorized for this task; use the configured GitHub and package-publishing workflow, and report missing credentials or failed release checks rather than claiming publication.
+Library publication must satisfy that repository's required CI, including existing worker-backend checks; owner-approved repairs to those release checks do not expand the platform campaign's execution scope.
 Record the library commit, release tag, package versions, workflow result, and package-index availability.
 
 Commit the finished Wetlands 2.4.1 dependency update independently once its targeted cleanup regression is verified.
