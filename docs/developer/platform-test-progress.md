@@ -27,13 +27,13 @@ The handoff documentation is committed separately; find its revision with `git l
 | T02 | Complete | Generate drag readiness fixed; genuine metadata, whole-DataFrame edge, accepted validation, exact rows, and separate real sequential worker regression. | Preserve these fixtures and assertions. |
 | T03 | Partial audit | [Workflow inventory](coverage-workflows.md), [GUI inventory](coverage-gui.md), [Runtime inventory](coverage-runtime.md); inspected bodies, not new passing results. | Sol workers finish missing feature/boundary rows; master owns integration. |
 | T04 | Complete | Hot-reload fixture enforcement, sequential cache/output repairs, valid browser fallback recovery, ToolsPanel click creation, and ISSUE-004 mutation serialization are repaired and independently validated. | Preserve the repaired fixtures and contracts while extending acceptance coverage. |
-| T05 | In progress | Backend explicit per-case campaign-local selection is implemented and audited: 1,599 collected, 110 exact exclusions, and 1,489 selected; frontend-unit/browser selection and dedicated complete GUI journeys remain. | Commit the backend scope batch, then use a dedicated worktree for the frontend/browser batch. |
+| T05 | In progress | Backend explicit per-case campaign-local selection is committed and audited: 1,599 collected, 110 exact exclusions, and 1,489 selected; frontend-unit/browser selection and dedicated complete GUI journeys remain. | Finish and commit frontend/browser selection in its dedicated worktree. |
 | T06 | Pending | Comprehensive in-scope backend/frontend/browser certification, real sequential worker, common-tools compatibility, manual boundary reconciliation. | Master schedules once large changes are ready; do not run full on every increment. |
 | ISSUE-001 | Resolved | Astra/high reproduced the same-artifact replacement defect and established the contract; Sol/medium added atomic destination-generation capture/checks and no-mutation regressions. | Backend completion passed; fix commit is path-discoverable. |
 | ISSUE-002 | Resolved documentation discrepancy | Commit `a8d9533` and v2 §1.8 establish contextual execution logs and global background logs; the stale v1 WebSocket row is reconciled. | `scripts/test check docs` passed in 2s; resolution commit is path-discoverable. |
 | ISSUE-004 | Resolved | Ordinary mutations serialize through execution admission; only actual starting/running execution produces the 423 lock. | `scripts/test check app` passed in 140s and all 57 Chromium tests passed in 106s; fix commit is path-discoverable. |
 
-Active write owner: the master is integrating the already-finished T05 backend campaign marker/manifest/conftest batch in the primary checkout; no other writable task may start until that batch is committed.
+Active write owner: `/root/t05_frontend_scope`, Sol/medium, owns frontend-unit/browser campaign-scope selection in `.worktrees/t05_frontend_scope` on `campaign/t05-frontend-scope`; the primary checkout is clean and the master is limited to shared checkpoint integration.
 
 ## Current-session completion evidence
 
