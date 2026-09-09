@@ -105,7 +105,7 @@ def registry_with_cellpose() -> ToolRegistryService:
     return reg
 
 
-def test_cellpose_sam_wire_format_snapshot(registry_with_cellpose: ToolRegistryService):
+def test_local_tool_wire_format_snapshot(registry_with_cellpose: ToolRegistryService):
     meta = registry_with_cellpose.get_tool("SnapshotCellpose")
     assert meta is not None
 
@@ -115,14 +115,14 @@ def test_cellpose_sam_wire_format_snapshot(registry_with_cellpose: ToolRegistryS
 
     actual = json.dumps(serialized, indent=2, sort_keys=True)
 
-    FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if not FIXTURE_PATH.exists():
-        FIXTURE_PATH.write_text(actual + "\n")
-        pytest.skip(f"Wrote new snapshot fixture to {FIXTURE_PATH}; re-run to verify.")
+    assert FIXTURE_PATH.is_file(), (
+        f"Missing reviewed metadata snapshot: {FIXTURE_PATH}. "
+        "Restore it or create and review an explicit fixture update."
+    )
 
     expected = FIXTURE_PATH.read_text().rstrip("\n")
     assert actual == expected, (
-        "Wire format for CellposeSAM drifted. Update "
+        "Wire format for SnapshotCellpose drifted. Update "
         f"{FIXTURE_PATH.relative_to(Path.cwd())} intentionally and coordinate "
         "with frontend types + platform_specs_v1.md."
     )

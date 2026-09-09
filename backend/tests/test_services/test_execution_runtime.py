@@ -166,10 +166,7 @@ def test_progress_reducer_is_idempotent_and_keeps_parallel_diagnostics() -> None
 
 
 def test_reducer_accepts_public_bioimageflow_diagnostic_value() -> None:
-    diagnostic_type = getattr(bioimageflow, "NodeFailureDiagnostic", None)
-    if diagnostic_type is None:
-        pytest.skip("BioImageFlow 0.4 public diagnostic value is not installed in this worktree")
-    diagnostic = diagnostic_type(
+    diagnostic = bioimageflow.NodeFailureDiagnostic(
         scoped_node_path="nested/tool",
         category="execution",
         exception_type="RuntimeError",
