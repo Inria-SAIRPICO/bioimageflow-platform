@@ -117,6 +117,7 @@ def _chain_graph() -> GraphState:
                 target_position=0,
             ),
         ],
+        config={"engine": "direct", "execution": "sequential"},
     )
 
 
@@ -169,6 +170,7 @@ def test_constant_change_invalidates_downstream(
                       parameters={"scale": 2.0}),
         ],
         edges=graph.edges,
+        config=graph.config,
     )
 
     result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)
@@ -196,6 +198,7 @@ def test_unrelated_node_stays_cached(
                       parameters={"scale": 99.0}),
         ],
         edges=graph.edges,
+        config=graph.config,
     )
 
     result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)

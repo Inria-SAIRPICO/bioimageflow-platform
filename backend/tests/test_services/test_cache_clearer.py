@@ -67,6 +67,22 @@ class DstTool(ProcessingTool):
         return {}
 
 
+class _TwoInputDstInputs(IOModel):
+    left_mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    right_mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+
+
+class TwoInputDstTool(ProcessingTool):
+
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(name="test", dependencies={})
+    Inputs = _TwoInputDstInputs
+    Outputs = _DstOutputs
+
+    def process_row(self, arguments: Any) -> Any:
+        return {}
+
+
 class _DFInputs(IOModel):
     threshold: float = 0.5
 
@@ -78,7 +94,11 @@ class DFTool(DataFrameTool):
 @pytest.fixture
 def registry() -> ToolRegistryService:
     reg = ToolRegistryService()
-    for name, cls in [("SrcTool", SrcTool), ("DstTool", DstTool)]:
+    for name, cls in [
+        ("SrcTool", SrcTool),
+        ("DstTool", DstTool),
+        ("TwoInputDstTool", TwoInputDstTool),
+    ]:
         reg.register_tool(
             name,
             ToolMetadata(
@@ -201,22 +221,35 @@ def test_clear_multiple_nodes_shared_downstream(
     tmp_path: Path, registry: ToolRegistryService,
 ) -> None:
     # a -> c, b -> c
-    graph = _make_graph(
-        [("a", "SrcTool"), ("b", "SrcTool"), ("c", "DstTool")],
-        [("a", "c"), ("b", "c")],
-    )
-    # DstTool has only one input (mask_input), so two edges to the same
-    # field won't both resolve in the library. Use a simpler topology.
-    # Actually, both edges map to the same field so the second one
-    # overwrites — the library handles this gracefully. Test the core
-    # multi-clear behavior with a diamond instead.
     graph = graph_state(
-        nodes=[_node("a", "SrcTool"), _node("b", "SrcTool")],
-        edges=[],
+        nodes=[
+            _node("a", "SrcTool"),
+            _node("b", "SrcTool"),
+            _node("c", "TwoInputDstTool"),
+        ],
+        edges=[
+            ColumnEdge(type="column",
+                id="a->c-left",
+                source_node="a",
+                target_node="c",
+                source_output="mask",
+                target_input="left_mask",
+            ),
+            ColumnEdge(type="column",
+                id="b->c-right",
+                source_node="b",
+                target_node="c",
+                source_output="mask",
+                target_input="right_mask",
+            ),
+        ],
     )
     result = clear_node_cache(["a", "b"], graph, registry, tmp_path)
-    assert result["a"].status == "unexecuted"
-    assert result["b"].status == "unexecuted"
+    assert {node_id: status.status for node_id, status in result.items()} == {
+        "a": "unexecuted",
+        "b": "unexecuted",
+        "c": "out_of_date",
+    }
 
 
 def test_non_existent_node_id_is_skipped(

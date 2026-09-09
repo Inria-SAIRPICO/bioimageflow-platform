@@ -57,7 +57,7 @@ def _workflow_dict(template: str) -> dict[str, Any]:
         "edges": [],
         "config": {
             "engine": "direct",
-            "execution": "parallel",
+            "execution": "sequential",
         },
     }
 
