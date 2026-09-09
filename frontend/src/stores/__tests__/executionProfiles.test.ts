@@ -22,6 +22,9 @@ import {
   type ExecutionProfile,
 } from '@/api/executionProfiles'
 import { useExecutionProfilesStore } from '../executionProfiles'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
+
+const excluded = campaignExcluded('managed-remote')
 
 const profile: ExecutionProfile = {
   schema: 'bioimageflow.platform.execution-profile.v2',
@@ -42,7 +45,7 @@ describe('execution profiles store', () => {
     vi.resetAllMocks()
   })
 
-  it('loads, revises, describes, and removes profiles by immutable identity', async () => {
+  excluded('loads, revises, describes, and removes profiles by immutable identity', async () => {
     vi.mocked(listExecutionProfiles).mockResolvedValue([profile])
     vi.mocked(updateExecutionProfile).mockResolvedValue({ ...profile, revision: 2 })
     vi.mocked(describeExecutionProfile).mockResolvedValue({
@@ -78,7 +81,7 @@ describe('execution profiles store', () => {
     expect(store.profiles).toEqual([])
   })
 
-  it('adds a profile returned by the server', async () => {
+  excluded('adds a profile returned by the server', async () => {
     vi.mocked(createExecutionProfile).mockResolvedValue(profile)
     const store = useExecutionProfilesStore()
     const draft = { name: profile.name, enabled: profile.enabled, config_path: profile.config_path }

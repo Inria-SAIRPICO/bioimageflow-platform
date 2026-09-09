@@ -19,9 +19,11 @@ Usage: scripts/test <command> [arguments]
 
 Coding-loop commands:
   focus backend [PYTEST_ARGS...]  Run an exact backend selection.
-  focus unit [VITEST_ARGS...]     Run an exact frontend unit selection.
+  focus unit [--campaign-local] [VITEST_ARGS...]
+                                  Run an exact frontend unit selection.
   focus related FILE...           Run Vitest tests related to source files.
-  focus e2e [PLAYWRIGHT_ARGS...]  Run an exact browser selection; defaults to Chromium.
+  focus e2e [--campaign-local] [PLAYWRIGHT_ARGS...]
+                                  Run an exact browser selection; defaults to Chromium.
   quick                            Run fast, repository-owned checks in parallel.
 
 Completion commands:
@@ -45,10 +47,12 @@ Examples:
   scripts/test focus backend -k 'dataset and delete'
   scripts/test focus unit src/stores/__tests__/workflow.test.ts
   scripts/test focus unit src/stores/__tests__/workflow.test.ts -t 'deletes workflow'
+  scripts/test focus unit --campaign-local
   scripts/test focus related frontend/src/stores/workflow.ts
   scripts/test focus e2e tests/e2e/execution.spec.ts:111
   scripts/test focus e2e --project=firefox tests/e2e/hot-reload.spec.ts
   scripts/test focus e2e --grep 'executes a source tool'
+  scripts/test focus e2e --campaign-local --list
 
 The full lane installs bioimageflow-common-tools from the package index into a
 fresh temporary store. It requires network access and never silently omits the
@@ -513,6 +517,14 @@ focus_lane() {
       ;;
     unit)
       require_command bun
+      if [[ "${1:-}" == "--campaign-local" ]]; then
+        export BIOIMAGEFLOW_CAMPAIGN_LOCAL=1
+        shift
+        if (( $# > 0 )); then
+          printf 'focus unit --campaign-local requires the complete Vitest collection and accepts no selectors\n' >&2
+          return 2
+        fi
+      fi
       cd "$frontend_dir"
       bun run test:unit -- "$@"
       ;;
@@ -531,6 +543,21 @@ focus_lane() {
       bun run vitest related "${related_files[@]}" --run
       ;;
     e2e)
+      if [[ "${1:-}" == "--campaign-local" ]]; then
+        export BIOIMAGEFLOW_CAMPAIGN_LOCAL=1
+        shift
+        local campaign_argument
+        for campaign_argument in "$@"; do
+          case "$campaign_argument" in
+            --list|--project=chromium|--project=firefox)
+              ;;
+            *)
+              printf 'focus e2e --campaign-local supports only complete project collections with --list and/or --project=chromium|firefox\n' >&2
+              return 2
+              ;;
+          esac
+        done
+      fi
       run_focused_e2e "$@"
       ;;
     *)

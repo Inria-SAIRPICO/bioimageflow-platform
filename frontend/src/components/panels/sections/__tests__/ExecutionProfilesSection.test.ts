@@ -13,6 +13,9 @@ vi.mock('@/utils/nativeDialogs', () => ({
 
 import { api } from '@/api/client'
 import ExecutionProfilesSection from '../ExecutionProfilesSection.vue'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
+
+const excluded = campaignExcluded('managed-remote')
 
 const profile = {
   schema: 'bioimageflow.platform.execution-profile.v2',
@@ -30,7 +33,7 @@ describe('ExecutionProfilesSection', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { editable: true, profiles: [profile] } })
   })
 
-  it('shows only the trusted config script and capability-driven Describe report', async () => {
+  excluded('shows only the trusted config script and capability-driven Describe report', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     vi.mocked(api.post).mockResolvedValueOnce({ data: {

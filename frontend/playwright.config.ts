@@ -22,6 +22,9 @@ process.env.BIOIMAGEFLOW_E2E_ROOT = e2eRoot;
 process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE = hotReloadFixture;
 
 export default defineConfig({
+  ...(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1'
+    ? { reporter: [['list'] as const, ['./tests/campaignPlaywrightReporter.ts'] as const] }
+    : {}),
   testDir: './tests/e2e',
   outputDir: artifactSuffix ? join('test-results', artifactSuffix) : 'test-results',
   fullyParallel: false,

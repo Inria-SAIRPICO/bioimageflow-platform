@@ -11,6 +11,7 @@ import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
 import * as workspaceApi from '@/api/workspace'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
@@ -166,7 +167,7 @@ describe('ImageViewersSection', () => {
 })
 
 describe('ExecutionSection', () => {
-  it('summarizes direct/sequential execution and exposes managed-cluster controls', () => {
+  it('summarizes direct/sequential execution', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: {
@@ -186,13 +187,21 @@ describe('ExecutionSection', () => {
     expect(
       wrapper.find('[data-testid="cache-max-age-input"]').exists(),
     ).toBe(false)
-    expect(wrapper.text()).toContain('Managed remote clusters')
-    expect(wrapper.text()).toContain('cluster = RemoteCluster(...)')
-    expect(wrapper.text()).not.toContain('Trusted Parsl configuration factories')
     expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
-  it('maps current parallel scheduling setting to parallel wording', () => {
+  campaignExcluded('managed-remote')('exposes managed-cluster controls without legacy factories', () => {
+    const wrapper = mount(ExecutionSection, {
+      ...globalOpts,
+      props: { modelValue: baseSettings },
+    })
+
+    expect(wrapper.text()).toContain('Managed remote clusters')
+    expect(wrapper.text()).toContain('cluster = RemoteCluster(...)')
+    expect(wrapper.text()).not.toContain('Trusted Parsl configuration factories')
+  })
+
+  campaignExcluded('parallel-scheduling')('maps current parallel scheduling setting to parallel wording', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: { modelValue: { ...baseSettings, execution_engine: 'parallel' } },

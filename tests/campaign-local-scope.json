@@ -446,6 +446,64 @@
           "reason": "managed-remote"
         }
       ]
+    },
+    "frontend-unit": {
+      "runner": "vitest",
+      "root": "frontend",
+      "excluded": [
+        { "nodeid": "src/components/execution/__tests__/ExecutionRetryDialog.test.ts::ExecutionRetryDialog > previews scoped recomputation with downstream cascade enabled by default", "reason": "distributed-engine" },
+        { "nodeid": "src/components/execution/__tests__/ExecutionRetryDialog.test.ts::ExecutionRetryDialog > shows invalidations and prevents confirmation while conflicts exist", "reason": "distributed-engine" },
+        { "nodeid": "src/components/execution/__tests__/ExecutionRetryDialog.test.ts::ExecutionRetryDialog > disables an unavailable mode using the exact server reason", "reason": "distributed-engine" },
+        { "nodeid": "src/components/execution/__tests__/ExecutionRetryDialog.test.ts::ExecutionRetryDialog > prevents confirmation when the planned action becomes unavailable", "reason": "distributed-engine" },
+        { "nodeid": "src/components/execution/__tests__/ExecutionTargetSelector.test.ts::ExecutionTargetSelector > keeps the direct-submit acknowledgement warning visible for managed targets", "reason": "managed-remote" },
+        { "nodeid": "src/components/execution/__tests__/ExecutionTargetSelector.test.ts::ExecutionTargetSelector > omits unavailable managed profiles from the Run selector", "reason": "managed-remote" },
+        { "nodeid": "src/components/execution/__tests__/RemoteExecutionDialog.test.ts::RemoteExecutionDialog > requires an explicit source for every path leaf and preserves list order", "reason": "managed-remote" },
+        { "nodeid": "src/components/execution/__tests__/RemoteExecutionDialog.test.ts::RemoteExecutionDialog > submits directly after explicit path resolution without a preparation confirmation", "reason": "managed-remote" },
+        { "nodeid": "src/components/execution/__tests__/RunButton.test.ts::RunButton > routes distributed recompute to the retained execution panel", "reason": "distributed-engine" },
+        { "nodeid": "src/components/execution/__tests__/RunButton.test.ts::RunButton > submits a ready managed run directly without a preparation confirmation", "reason": "managed-remote" },
+        { "nodeid": "src/components/layout/__tests__/MenuBar.test.ts::MenuBar > Execution menu > routes distributed recompute to retained execution from the menu", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > renders hierarchical jobs and structured diagnostics from a normalized snapshot", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > previews and confirms the server-persisted retry plan digest", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > previews and applies cleanup for the exact managed run identity", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > requires an explicit new preview for retry-plan-integrity-error", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > requires an explicit new preview for retry-child-conflict", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > observes the exact confirmed child after an uncertain submission", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > does not replan an unrelated conflict response", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/__tests__/ExecutionPanel.test.ts::ExecutionPanel > uses structured diagnostics instead of retained logs for managed runs", "reason": "distributed-engine" },
+        { "nodeid": "src/components/panels/sections/__tests__/ExecutionProfilesSection.test.ts::ExecutionProfilesSection > shows only the trusted config script and capability-driven Describe report", "reason": "managed-remote" },
+        { "nodeid": "src/composables/__tests__/useWebSocket.test.ts::useWebSocket workflow draft dispatch > reduces revisioned distributed execution snapshots independently", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionProfiles.test.ts::execution profiles store > loads, revises, describes, and removes profiles by immutable identity", "reason": "managed-remote" },
+        { "nodeid": "src/stores/__tests__/executionProfiles.test.ts::execution profiles store > adds a profile returned by the server", "reason": "managed-remote" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > surfaces capability discovery failures without a legacy target fallback", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > applies only monotonically newer snapshots", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > keeps cancellation and persisted retry plans scoped to the parent run", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > loads retained history with backend offset pagination", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > keeps live snapshots inside the loaded workflow scope", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > accepts live snapshots from every workflow in workspace scope", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > buffers live snapshots against the destination scope during a scope switch", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > reconciles live snapshots received during a same-scope refresh", "reason": "distributed-engine" },
+        { "nodeid": "src/stores/__tests__/executionRegistry.test.ts::execution registry store > ignores an older load that resolves after a newer scope request", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executionProfiles.test.ts::managed execution profile API > keeps the persisted profile to one trusted script and non-secret identities", "reason": "managed-remote" },
+        { "nodeid": "tests/unit/api/executionProfiles.test.ts::managed execution profile API > describes capabilities and downloads the example archive", "reason": "managed-remote" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > maps the public BioImageFlow path plan into explicit UI choices", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > sends scoped invocation-only choices and normalizes retained snapshots", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > retains execution capabilities and uses offset pagination", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > plans and starts the exact server-persisted digest and downloads with no request body", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > plans and applies cleanup from the retained run identity", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > decodes structured errors returned through the result download blob channel", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > normalizes FastAPI nested structured errors for safe uncertain-run recovery", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > flattens public ClusterDiagnostic identities from operation details", "reason": "distributed-engine" },
+        { "nodeid": "tests/unit/components/SettingsSections.test.ts::ExecutionSection > exposes managed-cluster controls without legacy factories", "reason": "managed-remote" },
+        { "nodeid": "tests/unit/components/SettingsSections.test.ts::ExecutionSection > maps current parallel scheduling setting to parallel wording", "reason": "parallel-scheduling" }
+      ]
+    },
+    "browser": {
+      "runner": "playwright",
+      "root": "frontend",
+      "excluded": [
+        { "nodeid": "tests/e2e/managed-execution.spec.ts::managed execution resolves paths, retains its run, downloads results, and cleans up", "reason": "managed-remote" },
+        { "nodeid": "tests/e2e/settings.spec.ts::Settings Panel > execution settings show managed-cluster controls", "reason": "managed-remote" }
+      ]
     }
   }
 }

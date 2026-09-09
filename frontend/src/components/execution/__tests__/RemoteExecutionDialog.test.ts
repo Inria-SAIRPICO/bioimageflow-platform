@@ -11,9 +11,12 @@ vi.mock('@/utils/nativeDialogs', () => ({
 }))
 
 import RemoteExecutionDialog from '../RemoteExecutionDialog.vue'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
+
+const excluded = campaignExcluded('managed-remote')
 
 describe('RemoteExecutionDialog', () => {
-  it('requires an explicit source for every path leaf and preserves list order', async () => {
+  excluded('requires an explicit source for every path leaf and preserves list order', async () => {
     const wrapper = mount(RemoteExecutionDialog, {
       props: {
         visible: true,
@@ -45,7 +48,7 @@ describe('RemoteExecutionDialog', () => {
     wrapper.unmount()
   })
 
-  it('submits directly after explicit path resolution without a preparation confirmation', async () => {
+  excluded('submits directly after explicit path resolution without a preparation confirmation', async () => {
     const wrapper = mount(RemoteExecutionDialog, {
       props: {
         visible: true,

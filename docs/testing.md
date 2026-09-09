@@ -170,10 +170,12 @@ Backend markers describe execution requirements rather than product ownership:
 Pytest marker validation is strict, so misspelled or unregistered categories fail collection.
 The external marker is the lane selector; `common_tools` identifies which external dependency supplies those cases.
 
-The backend foundation for the local-platform campaign uses `campaign_excluded(reason=...)` together with the exact checked-in manifest at `tests/campaign-local-scope.json`.
-Run it directly with `scripts/test focus backend --campaign-local`.
-Collection fails if a marker or manifest entry is missing, duplicated, stale, or uses a reason outside `parallel-scheduling`, `parsl`, `managed-remote`, and `distributed-engine`.
-This backend-only selector is not the complete campaign profile: frontend-unit and browser scope selection must be added and audited before a repository-wide campaign command is exposed.
+The local-platform campaign uses per-test markers or annotations together with the exact checked-in manifest at `tests/campaign-local-scope.json`.
+Run each complete audited selection directly with `scripts/test focus backend --campaign-local`, `scripts/test focus unit --campaign-local`, or `scripts/test focus e2e --campaign-local`.
+The browser selector defaults to Chromium; `--list`, `--project=chromium`, and `--project=firefox` are the only additional campaign arguments, and both project flags may be passed when both browser engines are required.
+Frontend-unit and browser campaign selectors reject test-file, title, line, and grep filters up front because a partial collection cannot prove that every manifest identity is still present.
+Collection fails if an annotation or manifest entry is missing, duplicated, stale, or uses a reason outside `parallel-scheduling`, `parsl`, `managed-remote`, and `distributed-engine`.
+These are intentionally separate scope selectors; a repository-wide campaign command remains unavailable until their combined orchestration and evidence reporting are validated.
 
 ## CI mapping
 

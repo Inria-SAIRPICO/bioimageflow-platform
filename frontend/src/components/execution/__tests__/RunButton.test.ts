@@ -33,6 +33,7 @@ import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import type { ValidationResult } from '@/api/types'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -860,7 +861,7 @@ describe('RunButton', () => {
     })
   })
 
-  it('routes distributed recompute to the retained execution panel', async () => {
+  campaignExcluded('distributed-engine')('routes distributed recompute to the retained execution panel', async () => {
     const { wrapper } = mountButton()
     const ui = useUIStore()
     const registry = useExecutionRegistryStore()
@@ -902,7 +903,7 @@ describe('RunButton', () => {
     expect(wrapper.find('[data-testid="advanced-run-confirm"]').exists()).toBe(false)
   })
 
-  it('submits a ready managed run directly without a preparation confirmation', async () => {
+  campaignExcluded('managed-remote')('submits a ready managed run directly without a preparation confirmation', async () => {
     const registry = useExecutionRegistryStore()
     registry.runs = []
     registry.selectedRunId = null

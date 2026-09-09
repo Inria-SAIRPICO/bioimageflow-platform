@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page, Route } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { CAMPAIGN_ANNOTATION } from '../../src/test-utils/campaignScope'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const RUN_ID = 'run_0123456789abcdef0123456789abcdef'
@@ -142,7 +143,11 @@ async function fulfillJson(route: Route, json: unknown, status = 200): Promise<v
   await route.fulfill({ status, contentType: 'application/json', json })
 }
 
-test('managed execution resolves paths, retains its run, downloads results, and cleans up', { tag: '@critical' }, async ({ page }) => {
+test('managed execution resolves paths, retains its run, downloads results, and cleans up', {
+  tag: '@critical',
+  annotation: { type: CAMPAIGN_ANNOTATION, description: 'managed-remote' },
+}, async ({ page }) => {
+  test.skip(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1', 'Excluded from the local-platform campaign')
   const displayName = uniqueDisplayName()
   const workflowId = deriveWorkflowId(displayName)
   const source = await seedSourceTool(page)

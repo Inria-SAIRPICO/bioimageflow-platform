@@ -8,6 +8,9 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import type { ExecutionSnapshot } from '@/api/executions'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
+
+const excluded = campaignExcluded('distributed-engine')
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -66,7 +69,7 @@ describe('execution registry store', () => {
     vi.mocked(api.post).mockReset()
   })
 
-  it('surfaces capability discovery failures without a legacy target fallback', async () => {
+  excluded('surfaces capability discovery failures without a legacy target fallback', async () => {
     vi.mocked(api.get).mockRejectedValueOnce(new Error('capability discovery failed'))
     const store = useExecutionRegistryStore()
 
@@ -77,7 +80,7 @@ describe('execution registry store', () => {
     expect(store.error).toBe('capability discovery failed')
   })
 
-  it('applies only monotonically newer snapshots', () => {
+  excluded('applies only monotonically newer snapshots', () => {
     const store = useExecutionRegistryStore()
     store.applySnapshot(snapshot(4, 'running'))
     store.applySnapshot(snapshot(3, 'failed'))
@@ -90,7 +93,7 @@ describe('execution registry store', () => {
     expect(store.activeRuns).toHaveLength(0)
   })
 
-  it('keeps cancellation and persisted retry plans scoped to the parent run', async () => {
+  excluded('keeps cancellation and persisted retry plans scoped to the parent run', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       data: snapshotWire(2, 'cancel_requested'),
     })
@@ -122,7 +125,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-2')
   })
 
-  it('loads retained history with backend offset pagination', async () => {
+  excluded('loads retained history with backend offset pagination', async () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: {
         items: [snapshotWire(1, 'succeeded', 'run-1')], total: 3, offset: 0, limit: 1,
@@ -145,7 +148,7 @@ describe('execution registry store', () => {
     expect(store.hasMoreRuns).toBe(true)
   })
 
-  it('keeps live snapshots inside the loaded workflow scope', async () => {
+  excluded('keeps live snapshots inside the loaded workflow scope', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1,
@@ -176,7 +179,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  it('accepts live snapshots from every workflow in workspace scope', async () => {
+  excluded('accepts live snapshots from every workflow in workspace scope', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1,
@@ -202,7 +205,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  it('buffers live snapshots against the destination scope during a scope switch', async () => {
+  excluded('buffers live snapshots against the destination scope during a scope switch', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1, offset: 0, limit: 50,
@@ -235,7 +238,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-b-live')
   })
 
-  it('reconciles live snapshots received during a same-scope refresh', async () => {
+  excluded('reconciles live snapshots received during a same-scope refresh', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1, offset: 0, limit: 50,
@@ -272,7 +275,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  it('ignores an older load that resolves after a newer scope request', async () => {
+  excluded('ignores an older load that resolves after a newer scope request', async () => {
     const pageA = deferred<{ data: {
       items: ReturnType<typeof snapshotWire>[]
       total: number

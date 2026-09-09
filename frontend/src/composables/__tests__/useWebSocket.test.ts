@@ -9,6 +9,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useNapariStore } from '@/stores/napari'
 import { api } from '@/api/client'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
 
 const EXECUTION_CONTEXT = {
   execution_id: 'exec-websocket',
@@ -155,7 +156,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     expect(execution.nodeStatuses['node-1']?.status).toBe('executed')
   })
 
-  it('reduces revisioned distributed execution snapshots independently', () => {
+  campaignExcluded('distributed-engine')('reduces revisioned distributed execution snapshots independently', () => {
     const registry = useExecutionRegistryStore()
     const ws = useWebSocket()
     ws.connect('ws://example.test/ws')

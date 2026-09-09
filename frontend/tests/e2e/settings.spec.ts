@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { CAMPAIGN_ANNOTATION } from '../../src/test-utils/campaignScope'
 
 test.describe('Settings Panel', () => {
   test.describe.configure({ mode: 'serial' })
@@ -66,7 +67,7 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
   })
 
-  test('execution settings show runtime summary and managed-cluster controls', async ({
+  test('execution settings show the local runtime summary', async ({
     page,
   }) => {
     await page.goto('/')
@@ -78,15 +79,26 @@ test.describe('Settings Panel', () => {
 
     await expect(dialog.locator('[data-testid="execution-backend-value"]')).toBeVisible()
     await expect(dialog.locator('[data-testid="execution-scheduling-value"]')).toBeVisible()
-    await expect(dialog).toContainText('Managed remote clusters')
-    await expect(dialog).toContainText('Secrets are never saved')
-    await expect(dialog.getByRole('button', { name: 'Slurm example' })).toBeVisible()
-    await expect(dialog).not.toContainText('Trusted Parsl configuration factories')
     await expect(dialog.locator('[data-testid="cache-unlimited-checkbox"]')).toHaveCount(0)
     await expect(
       dialog.locator('[data-testid="cache-max-executions-input"]'),
     ).toHaveCount(0)
     await expect(dialog.locator('[data-testid="cache-max-age-input"]')).toHaveCount(0)
+  })
+
+  test('execution settings show managed-cluster controls', {
+    annotation: { type: CAMPAIGN_ANNOTATION, description: 'managed-remote' },
+  }, async ({ page }) => {
+    test.skip(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1', 'Excluded from the local-platform campaign')
+    await page.goto('/')
+    await openSettings(page)
+    const dialog = page.locator('[data-testid="settings-panel"]')
+    await dialog.getByText('Execution', { exact: true }).click()
+
+    await expect(dialog).toContainText('Managed remote clusters')
+    await expect(dialog).toContainText('Secrets are never saved')
+    await expect(dialog.getByRole('button', { name: 'Slurm example' })).toBeVisible()
+    await expect(dialog).not.toContainText('Trusted Parsl configuration factories')
   })
 
   test('OMERO instance cards keep fields and actions visible without horizontal scrolling', async ({

@@ -26,6 +26,9 @@ import {
   startExecutionRetry,
   type ManagedExecutionIntent,
 } from '@/api/executions'
+import { campaignExcluded } from '@/test-utils/campaignVitest'
+
+const excluded = campaignExcluded('distributed-engine')
 
 const request: ManagedExecutionIntent = {
   workflow_id: 'demo',
@@ -41,7 +44,7 @@ describe('distributed execution API adapter', () => {
     vi.mocked(api.post).mockReset()
   })
 
-  it('maps the public BioImageFlow path plan into explicit UI choices', async () => {
+  excluded('maps the public BioImageFlow path plan into explicit UI choices', async () => {
     const pathPlan = {
       kind: 'resolution_required',
       unresolved: [{ scoped_node_path: 'files', input_name: 'path' }],
@@ -80,7 +83,7 @@ describe('distributed execution API adapter', () => {
     })
   })
 
-  it('sends scoped invocation-only choices and normalizes retained snapshots', async () => {
+  excluded('sends scoped invocation-only choices and normalizes retained snapshots', async () => {
     vi.mocked(api.post)
       .mockResolvedValueOnce({
         data: {
@@ -156,7 +159,7 @@ describe('distributed execution API adapter', () => {
     })
   })
 
-  it('retains execution capabilities and uses offset pagination', async () => {
+  excluded('retains execution capabilities and uses offset pagination', async () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: {
         capabilities: {
@@ -181,7 +184,7 @@ describe('distributed execution API adapter', () => {
     expect(page).toEqual({ items: [], total: 75, offset: 50, limit: 25 })
   })
 
-  it('plans and starts the exact server-persisted digest and downloads with no request body', async () => {
+  excluded('plans and starts the exact server-persisted digest and downloads with no request body', async () => {
     const plan = {
       plan_digest: 'sha256:plan', parent_execution_id: 'run-parent',
       child_execution_id: 'run-child', mode: 'recompute' as const,
@@ -225,7 +228,7 @@ describe('distributed execution API adapter', () => {
     expect(downloaded).toBe(blob)
   })
 
-  it('plans and applies cleanup from the retained run identity', async () => {
+  excluded('plans and applies cleanup from the retained run identity', async () => {
     const cleanupPlan = {
       execution_id: 'run/remote',
       plan_digest: 'sha256:cleanup',
@@ -265,7 +268,7 @@ describe('distributed execution API adapter', () => {
     ])
   })
 
-  it('decodes structured errors returned through the result download blob channel', async () => {
+  excluded('decodes structured errors returned through the result download blob channel', async () => {
     const cause = Object.assign(new Error('Request failed'), {
       response: {
         data: new Blob([JSON.stringify({
@@ -283,7 +286,7 @@ describe('distributed execution API adapter', () => {
     )
   })
 
-  it('normalizes FastAPI nested structured errors for safe uncertain-run recovery', () => {
+  excluded('normalizes FastAPI nested structured errors for safe uncertain-run recovery', () => {
     const cause = Object.assign(new Error('Request failed'), {
       response: { data: { detail: {
         error: 'submission-uncertain',
@@ -302,7 +305,7 @@ describe('distributed execution API adapter', () => {
     )
   })
 
-  it('flattens public ClusterDiagnostic identities from operation details', () => {
+  excluded('flattens public ClusterDiagnostic identities from operation details', () => {
     const cause = Object.assign(new Error('Request failed'), {
       response: { data: { detail: {
         error: 'submission-uncertain',
