@@ -76,11 +76,15 @@ test.describe('hot-reload', () => {
 
   test('file edit broadcasts tool_reload and surfaces updated badge', async ({ page }) => {
     const fixturePath = process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE
-    test.skip(
-      !fixturePath || !existsSync(fixturePath),
-      "Set BIOIMAGEFLOW_HOT_RELOAD_FIXTURE to an absolute path of a mutable fixture *.py file that exports a Files tool with path: str = ''.",
-    )
+    expect(
+      fixturePath,
+      'Playwright must set BIOIMAGEFLOW_HOT_RELOAD_FIXTURE to its isolated mutable Files-tool fixture.',
+    ).toBeTruthy()
     const filePath = fixturePath as string
+    expect(
+      existsSync(filePath),
+      `The Playwright backend did not provision the hot-reload fixture at ${filePath}.`,
+    ).toBe(true)
     const original = readFileSync(filePath, 'utf-8')
 
     await page.goto('/')
