@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from bioimageflow_server.app import create_app as create_platform_app
 from bioimageflow_server.models.execution import ExecutionContext
-from bioimageflow_server.models.tools import AppConfig, InputFieldSchema, ToolMetadata
+from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -117,42 +117,10 @@ def create_app() -> FastAPI:
     # the generated tool-store fixture explicitly so browser tests exercise
     # Files-node creation and hot reload against the real package loader.
     registry.scan_tool_store(tool_store)
-    registry.register_tool(
-        "Generate",
-        ToolMetadata(
-            name="Generate",
-            display_name="Generate",
-            package="bioimageflow-e2e-dynamic",
-            package_version="1.0.0",
-            tool_type="DataFrameTool",
-            row_consumption=None,
-            accepts_upstream=False,
-            dynamic_outputs=True,
-            inputs={
-                "column_name": InputFieldSchema(
-                    type="str", required=True, connectable="never"
-                ),
-                "values": InputFieldSchema(
-                    type="list", required=True, connectable="never"
-                ),
-            },
-        ),
-        tool_class=Generate,
-    )
-    registry.register_tool(
-        "CrossJoin",
-        ToolMetadata(
-            name="CrossJoin",
-            display_name="Cross Join",
-            package="bioimageflow-e2e-dynamic",
-            package_version="1.0.0",
-            tool_type="DataFrameTool",
-            row_consumption=None,
-            accepts_upstream=True,
-            dynamic_outputs=True,
-        ),
-        tool_class=CrossJoin,
-    )
+    for tool_class in (Generate, CrossJoin):
+        registry._register_tool_from_class(
+            tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
+        )
     app = create_platform_app(
         AppConfig(
             tool_registry=registry,

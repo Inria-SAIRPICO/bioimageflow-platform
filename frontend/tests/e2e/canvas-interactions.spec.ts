@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
+import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -187,6 +188,21 @@ test.describe('Canvas interactions', () => {
   })
 
   test('new dynamic tools connect cleanly and expose their resolved columns', async ({ page }) => {
+    // Execution policy is fixture setup; the journey below creates the nodes and edge in the GUI.
+    await page.goto('about:blank')
+    const initialResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+    expect(initialResponse.ok()).toBeTruthy()
+    const initial: WorkflowDraftResponse = await initialResponse.json()
+    const configured = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`, {
+      data: {
+        expected_revision: initial.draft_revision,
+        updated_by: 'frontend',
+        graph: { ...initial.graph, config: { ...initial.graph.config, engine: 'wetlands', execution: 'sequential' } },
+      },
+    })
+    expect(configured.ok()).toBeTruthy()
+    await page.goto('/')
+    await expect(page.getByTestId('workflow-title')).toContainText(initial.graph.display_name)
     const generate = await addToolNode(page, 'Generate', { x: 220, y: 180 })
     const crossJoin = await addToolNode(page, 'CrossJoin', { x: 520, y: 180 })
 
@@ -198,6 +214,7 @@ test.describe('Canvas interactions', () => {
     await nodePanel.getByTestId('list-input-values').fill('[0.1, 0.2]')
     await nodePanel.getByTestId('list-input-values').press('Tab')
     await expect(nodePanel.locator('.list-input-error')).toHaveCount(0)
+    await expect(generate.locator('.body-inputs .vue-flow__handle')).toHaveCount(0)
 
     await connectDataFrames(page, generate, crossJoin)
 
@@ -206,7 +223,41 @@ test.describe('Canvas interactions', () => {
     await expect(crossJoin.locator('.body-outputs .pin-label')).toContainText('sensitivity', {
       timeout: 5000,
     })
-    await expect(nodePanel.locator('.list-input-error')).toHaveCount(0)
+
+    const sourceId = await generate.getAttribute('data-id')
+    const targetId = await crossJoin.getAttribute('data-id')
+    expect(sourceId).toBeTruthy()
+    expect(targetId).toBeTruthy()
+    await expect.poll(async () => {
+      const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+      expect(response.ok()).toBeTruthy()
+      const draft: WorkflowDraftResponse = await response.json()
+      return {
+        validation: draft.validation,
+        config: { engine: draft.graph.config.engine, execution: draft.graph.config.execution },
+        edges: draft.graph.edges.map(({ id: _id, ...edge }) => edge),
+      }
+    }).toMatchObject({
+      validation: { valid: true, errors: [] },
+      config: { engine: 'wetlands', execution: 'sequential' },
+      edges: [{ type: 'dataframe', source_node: sourceId, target_node: targetId, target_position: 0 }],
+    })
+
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+    const result = await page.request.post(`${API_BASE}/api/v1/nodes/${targetId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(result.ok()).toBeTruthy()
+    expect(await result.json()).toMatchObject({
+      columns: ['sensitivity'],
+      rows: [{ sensitivity: 0.1 }, { sensitivity: 0.2 }],
+      total_rows: 2,
+    })
   })
 
   test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
