@@ -7,9 +7,12 @@ const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?
 type ToolMetadata = {
   name: string
   display_name: string
+  package: string
+  package_version: string
   tool_type: string
   accepts_upstream?: boolean
-  inputs: Record<string, { required?: boolean }>
+  inputs: Record<string, { type: string; required?: boolean; connectable?: string }>
+  outputs: Record<string, { type: string }>
 }
 
 async function seedTools(page: Page) {
@@ -17,15 +20,25 @@ async function seedTools(page: Page) {
   expect(response.ok()).toBeTruthy()
 }
 
-async function panelTool(page: Page): Promise<ToolMetadata> {
+async function seedNumbersTool(page: Page): Promise<ToolMetadata> {
   const response = await page.request.get(`${API_BASE}/api/v1/tools`)
   expect(response.ok()).toBeTruthy()
   const tools = (await response.json()) as ToolMetadata[]
-  const tool =
-    tools.find((candidate) => candidate.name === 'SeedNumbers') ??
-    tools.find((candidate) => candidate.name === 'GaussianBlur') ??
-    tools[0]
-  expect(tool, 'expected at least one tool in the backend registry').toBeTruthy()
+  const tool = tools.find((candidate) => candidate.name === 'SeedNumbers')
+  expect(tool, 'expected the named SeedNumbers development tool').toBeTruthy()
+  expect(tool).toMatchObject({
+    name: 'SeedNumbers',
+    display_name: 'Seed Numbers',
+    package: 'bioimageflow-dev-seed',
+    package_version: '0.1.0',
+    tool_type: 'DataFrameTool',
+    accepts_upstream: false,
+    inputs: {},
+    outputs: {
+      number: { type: 'int' },
+      label: { type: 'str' },
+    },
+  })
   return tool
 }
 
@@ -59,25 +72,14 @@ async function createEditableWorkflow(page: Page): Promise<string> {
   return deriveWorkflowId(displayName)
 }
 
-async function addSeedNumbersNode(page: Page) {
-  const source = await panelTool(page)
+async function seedNumbersRow(page: Page) {
+  const source = await seedNumbersTool(page)
   await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
   await page.locator('[data-testid="tool-search"]').fill(source.name)
   const tool = page.getByTestId(`tool-item-${source.name}`)
   await expect(tool).toBeVisible({ timeout: 5000 })
-  const draftResponse = page.waitForResponse(
-    (resp) =>
-      resp.url().includes('/api/v1/workflow-drafts/') &&
-      resp.request().method() === 'PUT' &&
-      resp.status() === 200,
-  )
-  await tool.dragTo(page.locator('.vue-flow'), {
-    targetPosition: { x: 260, y: 180 },
-  })
-  const response = await draftResponse
-  const node = page.locator('.vue-flow__node').first()
-  await expect(node).toBeVisible({ timeout: 5000 })
-  return { node, tool: source, response }
+  await expect(tool.locator('.tool-list-name')).toHaveText(source.display_name)
+  return tool
 }
 
 async function addToolNode(
@@ -169,22 +171,96 @@ test.describe('Canvas interactions', () => {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
-  test('loads a tool and persists an interactive node with panel and pins', { tag: '@critical' }, async ({ page }) => {
-    const { node, tool, response } = await addSeedNumbersNode(page)
-    expect(response.status()).toBe(200)
-    await expect(
-      page.getByTestId(`tool-item-${tool.name}`).locator('.tool-list-name'),
-    ).toContainText(tool.display_name)
+  test('clicks a named catalog tool and persists an interactive node with panel and pins', { tag: '@critical' }, async ({ page }) => {
+    const tool = await seedNumbersRow(page)
+    await expect(page.locator('.vue-flow')).toBeVisible()
+    const transformationPane = page.locator('.vue-flow__transformationpane')
+    const initialTransform = await transformationPane.evaluate(
+      element => window.getComputedStyle(element).transform,
+    )
+    const draftResponse = page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/v1/workflow-drafts/') &&
+        resp.request().method() === 'PUT' &&
+        resp.status() === 200,
+    )
+    await tool.click()
+    expect((await draftResponse).status()).toBe(200)
+
+    const node = page.locator('.vue-flow__node')
+    await expect(node).toHaveCount(1)
+    await expect(node).toBeVisible({ timeout: 5000 })
+    await expect.poll(() => transformationPane.evaluate(
+      element => window.getComputedStyle(element).transform,
+    )).toBe(initialTransform)
+    await expect(node.locator('.header-inputs .vue-flow__handle')).toHaveCount(0)
+    await expect(node.locator('.header-outputs .vue-flow__handle')).toHaveCount(1)
+    await expect(node.locator('.header-outputs .pin-label')).toHaveText('DataFrame')
+    await expect(node.locator('.body-inputs .vue-flow__handle')).toHaveCount(0)
+    await expect(node.locator('.body-outputs .pin-label')).toHaveText(['number', 'label'])
 
     await node.click()
     await expect(node).toHaveClass(/selected/)
-    await expect(node.locator('.pin-dot')).toHaveCount(0)
-    expect(await node.locator('.pin-handle').count()).toBeGreaterThan(0)
 
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     const nodePanel = page.locator('[data-testid="panel-nodePanel"]')
     await expect(nodePanel).toBeVisible()
-    await expect(nodePanel.locator('.node-name')).toBeVisible({ timeout: 3000 })
+    await expect(nodePanel.locator('.node-name')).toHaveText('Seed Numbers 1')
+    await expect(nodePanel.locator('.tool-name')).toHaveText('SeedNumbers')
+    await expect(nodePanel.locator('.package-info')).toHaveText('bioimageflow-dev-seed v0.1.0')
+
+    await expect.poll(async () => {
+      const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+      expect(response.ok()).toBeTruthy()
+      const draft: WorkflowDraftResponse = await response.json()
+      return {
+        validation: draft.validation,
+        nodes: draft.graph.nodes.map(node => ({
+          type: node.type,
+          name: node.name,
+          tool_name: node.type === 'tool' ? node.tool_name : undefined,
+          parameters: node.type === 'tool' ? node.parameters : undefined,
+        })),
+      }
+    }).toMatchObject({
+      validation: { valid: true, errors: [] },
+      nodes: [{ type: 'tool', name: 'Seed Numbers 1', tool_name: 'SeedNumbers', parameters: {} }],
+    })
+  })
+
+  test('drags a named catalog tool to the requested canvas position', async ({ page }) => {
+    const tool = await seedNumbersRow(page)
+    const draftResponse = page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/v1/workflow-drafts/') &&
+        resp.request().method() === 'PUT' &&
+        resp.status() === 200,
+    )
+    await tool.dragTo(page.locator('.vue-flow'), {
+      targetPosition: { x: 260, y: 180 },
+    })
+    expect((await draftResponse).status()).toBe(200)
+
+    const node = page.locator('.vue-flow__node')
+    await expect(node).toHaveCount(1)
+    await expect(node).toBeVisible({ timeout: 5000 })
+    await expect.poll(async () => {
+      const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+      expect(response.ok()).toBeTruthy()
+      const draft: WorkflowDraftResponse = await response.json()
+      const created = draft.graph.nodes[0]
+      return {
+        validation: draft.validation,
+        nodeCount: draft.graph.nodes.length,
+        toolName: created?.type === 'tool' ? created.tool_name : undefined,
+        position: created?.position,
+      }
+    }).toMatchObject({
+      validation: { valid: true, errors: [] },
+      nodeCount: 1,
+      toolName: 'SeedNumbers',
+      position: [260, 180],
+    })
   })
 
   test('new dynamic tools connect cleanly and expose their resolved columns', async ({ page }) => {

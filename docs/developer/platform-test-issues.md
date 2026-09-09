@@ -34,6 +34,31 @@ Affected files: `platform_specs_v1.md`, `PLATFORM_CONTEXT.md`, and the runtime c
 Validation: `scripts/test check docs` passed in 2s at `353b425` plus the ISSUE-002 documentation diff; an initial sandboxed attempt was externally blocked fetching `furo` and is not counted as a test failure.
 The resolution commit is discoverable with `git log -1 -- docs/developer/platform-test-issues.md`.
 
+## ISSUE-003 — Tools Panel row click did not create a node
+
+Status: resolved after GPT-6 Astra/high `safe-to-fix` assessment and bounded Sol/medium repair.
+At `87fe704`, the named `SeedNumbers` browser journey clicked the rendered catalog row but observed zero nodes.
+Static and reproduced evidence showed `ToolsPanel.vue` emitted `add-tool`, while its raw Dockview registration had no listener and Vue component events do not bubble.
+V1 §§3.3.1 and 3.4 explicitly require click creation, and the existing state-free active-canvas command facade already owns synchronous root/nested routing, viewport projection, execution locks, undo, and persistence.
+
+The repair calls `addToolNode(toolName)` once through that facade and retains the existing local event contract; App, canvas sessions, APIs, and backend remain unchanged.
+Unit regressions cover a real rendered row, non-creating secondary actions, active nested/root routing, missing ownership, and disposed resources.
+Distinct real click and drag journeys assert named metadata/schema, unchanged first-click viewport, exact pins/panel content, accepted persistence, and requested drag position in Chromium and Firefox.
+The focused unit files passed 96 tests in 6s; Chromium click/drag passed in 15s/16s and Firefox in 14s/17s.
+Frontend lint, all 1,260 unit tests, and build passed in the completion run; its only failure was new test-mock type declarations, whose exact type-check passed after correction.
+The Chromium completion run passed both changed journeys before later failing from independent ISSUE-004 mutation contention.
+The fix commit is discoverable with `git log -1 -- frontend/src/components/panels/ToolsPanel.vue`.
+
+## ISSUE-004 — Ordinary mutation contention reported as execution lock
+
+Status: `safe-to-fix`; Sol/medium implementation active.
+Two Chromium completion runs passed 54 or 55 preceding cases, then the child-port workflow-interface save received HTTP 423 claiming execution was in progress; the exact case passed in a fresh runtime.
+GPT-6 Astra/high disproved an execution lifecycle leak and reproduced the exact 423 with no execution ever started by holding an ordinary draft validation while issuing Save.
+`ExecutionManager.is_running` includes the ordinary idle-mutation reservation even while status is `idle` with no execution identity, and Save immediately rejects that aggregate flag.
+The established repair boundary is to queue ordinary Save behind an admitted mutation while retaining Run exclusion during mutations and mutation rejection during actual starting/running execution.
+No arbitrary browser wait, forced unlock, or early execution ownership release is authorized.
+Implementation, deterministic regressions, documentation clarification, and completion evidence are pending.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.

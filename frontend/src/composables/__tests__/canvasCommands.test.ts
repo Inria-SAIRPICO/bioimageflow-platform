@@ -107,6 +107,67 @@ describe('active canvas commands', () => {
     expect(addToolNode).toHaveBeenCalledWith('Files', { files: ['/data/a.tif'] })
   })
 
+  it('routes tool creation only to the active nested canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const nestedId = canvasIdFromPanelId('nested-workflow:nested')
+    const addRootTool = vi.fn(() => 'root_tool_1')
+    const addNestedTool = vi.fn(() => 'nested_tool_1')
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      addToolNode: addRootTool,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+    useCanvasCommands({
+      descriptor: {
+        kind: 'nested',
+        canvasId: nestedId,
+        sessionId: 'nested',
+        parentCanvasId: rootId,
+      },
+      save: vi.fn(),
+      addToolNode: addNestedTool,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+
+    graphSyncCanvasSessions.activate(nestedId)
+
+    expect(useCanvasCommands().addToolNode('SeedNumbers')).toBe('nested_tool_1')
+    expect(addNestedTool).toHaveBeenCalledWith('SeedNumbers', undefined)
+    expect(addRootTool).not.toHaveBeenCalled()
+  })
+
+  it('does not infer tool-creation ownership without an active canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const addToolNode = vi.fn(() => 'seed_numbers_1')
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      addToolNode,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+
+    expect(useCanvasCommands().addToolNode('SeedNumbers')).toBeNull()
+    expect(addToolNode).not.toHaveBeenCalled()
+  })
+
+  it('rejects late tool creation through a disposed fixed-canvas resource', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const addToolNode = vi.fn(() => 'seed_numbers_1')
+    const fixed = useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      addToolNode,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+
+    fixed.dispose()
+
+    expect(() => fixed.addToolNode('SeedNumbers')).toThrow('Canvas commands have been disposed')
+    expect(addToolNode).not.toHaveBeenCalled()
+  })
+
   it('routes Save to the active nested canvas command', async () => {
     const rootId = canvasIdFromPanelId('workflow:root')
     const nestedId = canvasIdFromPanelId('nested-workflow:nested')

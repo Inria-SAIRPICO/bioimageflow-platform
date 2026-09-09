@@ -14,6 +14,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import type { ToolCreateResponse, ToolMetadata } from '@/api/types'
 import { api } from '@/api/client'
 import { openToolWithEditor } from '@/api/editor'
@@ -27,6 +28,7 @@ const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
 const executionStore = useExecutionStore()
 const uiStore = useUIStore()
+const canvasCommands = useCanvasCommands()
 
 const searchQuery = ref('')
 const isSearchActive = computed(() => searchQuery.value.trim().length > 0)
@@ -321,6 +323,7 @@ function onToolDragStart(event: DragEvent, tool: ToolMetadata) {
 }
 
 function onToolClick(toolName: string) {
+  canvasCommands.addToolNode(toolName)
   emit('add-tool', toolName)
 }
 

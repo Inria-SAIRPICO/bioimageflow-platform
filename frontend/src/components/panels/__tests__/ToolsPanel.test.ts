@@ -27,6 +27,10 @@ import {
   _resetCanvasPersistenceForTest,
   useCanvasPersistence,
 } from '@/composables/useCanvasPersistence'
+import {
+  _resetCanvasCommandsForTest,
+  useCanvasCommands,
+} from '@/composables/useCanvasCommands'
 import { registerRootCanvas } from '@/test-utils/canvasFixtures'
 import {
   createInMemoryCanvasPersistence,
@@ -41,6 +45,10 @@ const mockedApi = api as unknown as {
   patch: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
 }
+const addToolNodeMock = vi.fn<(
+  toolName: string,
+  parameters?: Record<string, unknown>,
+) => string | null>(() => 'threshold_1')
 
 const mockTools: ToolMetadata[] = [
   {
@@ -206,6 +214,19 @@ function mountPanel(options: {
     transports: persistence.transports,
   })
   canvasPersistence.initializeFromDraft(draft)
+  useCanvasCommands({
+    descriptor: canvas.descriptor,
+    addToolNode: addToolNodeMock,
+    renameNode: vi.fn(() => true),
+    setNodeEnabled: vi.fn(() => true),
+    setInputPinned: vi.fn(() => true),
+    setOutputTemplate: vi.fn(() => true),
+    toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    toggleWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
+    updateParameter: vi.fn(() => true),
+  })
   const settingsStore = useSettingsStore()
   settingsStore.settings = options.settings === undefined
     ? makeSettings({ deployment_mode: 'desktop' })
@@ -257,6 +278,7 @@ describe('ToolsPanel', () => {
 
   beforeEach(() => {
     _resetCanvasPersistenceForTest()
+    _resetCanvasCommandsForTest()
     setActivePinia(createPinia())
     vi.clearAllMocks()
     requireMock.mockReset()
@@ -265,6 +287,7 @@ describe('ToolsPanel', () => {
 
   afterEach(() => {
     _resetCanvasPersistenceForTest()
+    _resetCanvasCommandsForTest()
   })
 
   // --- Task 12: Basic component tests ---
@@ -435,18 +458,18 @@ describe('ToolsPanel', () => {
     expect(nodes[0].key).toBe('bioimageflow-cellpose')
   })
 
-  it('click on tool row emits add-tool', async () => {
+  it('click on a rendered tool row creates exactly one node and emits add-tool once', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
       expect(store.tools.length).toBeGreaterThan(0)
     })
 
-    // Test via exposed method since TreeTable is stubbed
-    const vm = wrapper.vm as unknown as { onToolClick?: (name: string) => void }
-    // Directly verify the emit mechanism works by calling internal handler
-    wrapper.vm.$emit('add-tool', 'threshold')
-    expect(wrapper.emitted('add-tool')).toBeTruthy()
+    await wrapper.get('[data-testid="tool-item-threshold"]').trigger('click')
+
+    expect(addToolNodeMock).toHaveBeenCalledOnce()
+    expect(addToolNodeMock.mock.calls[0]?.[0]).toBe('threshold')
+    expect(wrapper.emitted('add-tool')).toHaveLength(1)
     expect(wrapper.emitted('add-tool')![0]).toEqual(['threshold'])
   })
 
@@ -1203,6 +1226,7 @@ describe('ToolsPanel', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
       tool_name: 'MyCustomTool',
     })
+    expect(addToolNodeMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('add-tool')).toBeUndefined()
   })
 
@@ -1229,6 +1253,7 @@ describe('ToolsPanel', () => {
     expect(mockedApi.patch).toHaveBeenCalledWith('/api/v1/tools/MyCustomTool', {
       new_name: 'RenamedTool',
     })
+    expect(addToolNodeMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('add-tool')).toBeUndefined()
     promptSpy.mockRestore()
   })
@@ -1250,6 +1275,7 @@ describe('ToolsPanel', () => {
     expect(requireMock).toHaveBeenCalledWith(expect.objectContaining({
       header: 'Delete Custom Tool',
     }))
+    expect(addToolNodeMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('add-tool')).toBeUndefined()
   })
 
