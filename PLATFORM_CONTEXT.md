@@ -95,6 +95,9 @@ When an API model changes, update the backend model and schema first, regenerate
 ### Tools and sources
 
 BioImageFlow distinguishes processing tools, which process rows and can write templated outputs, from DataFrame tools, which create or transform DataFrames.
+DataFrameTool parameter fields accept constants, including constant-valued published workflow inputs; their metadata reports no column pin.
+Complete upstream DataFrames connect positionally, and the library rejects column or node-shorthand bindings to DataFrameTool parameters, including through recursive workflow interfaces.
+Tool annotation introspection resolves postponed and inherited annotations while preserving GUI and image metadata, so registry schemas and execution validation describe the same declared types.
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound tools, without replacing same-named registry entries.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
@@ -146,6 +149,9 @@ Caching and result attribution remain per internal tool node, and failures prese
 
 The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
 Local execution preserves Direct and Wetlands through the existing local path.
+The platform selects Direct for ordinary DataFrame-only graphs and Wetlands when enabled recursive processing or source-bound nodes require it; the graph's engine field is not proof that a worker ran.
+DataFrameTool execution stays in the orchestrator in either case, while platform worker acceptance tests use a real ProcessingTool and verify process identity and outputs.
+Direct remains useful for focused library tests and does not certify worker serialization, isolation, or lifecycle behavior.
 Managed remote execution delegates deployment, validation, Parsl orchestration, scheduler submission, attachment, progress, diagnostics, cancellation, retry, result transfer, and cleanup to the public `bioimageflow.cluster` API.
 Execution targets and retained run state are platform-owned and must not be persisted in portable `GraphState`.
 Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.

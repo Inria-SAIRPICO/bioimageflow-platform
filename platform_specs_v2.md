@@ -83,6 +83,8 @@ Double-clicking a workflow node or selecting **Open workflow** opens its graph i
 Edges are discriminated as `column` or `dataframe`.
 A column edge connects one named output field to one named tool input or stable workflow input ID.
 A DataFrame edge connects a whole DataFrame to either a positional input or a named DataFrame input.
+DataFrameTool keyword parameters accept constants, not column edges or node shorthand, and their serialized input metadata reports `connectable="never"`.
+Published field ports may supply constant values to these parameters; a column binding through a workflow field port is rejected when its ultimate target is a DataFrameTool parameter.
 
 The frontend uses a versioned endpoint-handle codec.
 Handles distinguish DataFrame output, tool input, tool output, DataFrame position, named DataFrame input, workflow input ID, and workflow output ID.
@@ -196,6 +198,8 @@ Detached internal failures still make the workflow node fail and block its downs
 
 The target selector beside Run offers the built-in **Local** target and available managed remote profiles.
 Local execution preserves Direct and Wetlands behavior.
+The current platform compiler selects Direct for ordinary DataFrame-only graphs and Wetlands for enabled ProcessingTools, source-bound tools, or recursive graphs requiring those capabilities.
+DataFrameTools run in the orchestrator with either backend; worker acceptance requires executing an actual ProcessingTool and checking its process identity and outputs.
 Managed remote execution uses the public `bioimageflow.cluster.RemoteCluster` lifecycle and follows `describe cluster → build workflow → submit → save run ID → reconnect → download result`.
 Changing the target is application state and never changes the workflow graph.
 

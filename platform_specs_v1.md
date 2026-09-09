@@ -397,6 +397,10 @@ The graph has two kinds of edges, each with a distinct purpose:
 - **`ColumnEdge`**: Binds a specific output column of one node to a specific input field of another. Used for `ProcessingTool` keyword bindings.
 - **`DataFrameEdge`**: Connects a node as a positional upstream argument to a `DataFrameTool`. The `target_position` determines order in `merge_dataframes(dfs)`.
 
+DataFrameTool keyword parameters are constant-only and never expose column input pins, irrespective of an individual field's GUI metadata.
+The library's shared validation rejects column references and node shorthand for those parameters, including bindings through recursive workflow interfaces.
+Tool schemas resolve postponed and inherited Python annotations in their defining namespaces while retaining `Annotated` GUI/image metadata; validation and wire serialization use the same resolved declarations.
+
 These are modeled as a **discriminated union** (discriminator: `type` field) rather than a single model with optional fields. This eliminates invalid states (e.g., `source_output` set simultaneously with `target_position`), produces cleaner TypeScript types from OpenAPI, and makes each edge self-documenting.
 
 **NodeStatus separation:**
@@ -1669,7 +1673,7 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 | `ColumnEdge` (output pin to input pin) | `ColumnRef` (keyword arg) |
 | `DataFrameEdge` (node to DataFrameTool positional pin) | Positional argument in `DataFrameTool.__call__` |
 | Parameter value in Node Panel | Constant keyword argument |
-| Pin visibility on a node | Determined by `GUIMeta.connectable` field metadata (set by tool author) |
+| Pin visibility on a node | ProcessingTool input pins follow `GUIMeta.connectable`; DataFrameTool parameters never expose column input pins. |
 | "Run" button | `workflow.compute(node)` |
 | Node position, collapsed state | GUI-only state (stored in workflow file under `gui` section) |
 | Package version in Tools Panel | `tool_package_version` in library serialization format |
