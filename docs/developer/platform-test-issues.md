@@ -45,13 +45,14 @@ Resume condition: Astra establishes the safe contract and repair, disproves the 
 
 ## ISSUE-002 — Logging specification versus contextual-log tests
 
-Status: open audit discrepancy; no product change or validation performed.
+Status: resolved as a stale specification row; no product behavior changed.
 At `fcb4408`, the v1 WebSocket log-event table around line 910 describes logs as intentionally unscoped without execution/canvas context.
-The audit reports deliberate contextual execution-log behavior in the logging bridge and `frontend/tests/e2e/error-handling.spec.ts`, while environment logs remain global.
-Read the actual bridge, payload models, tests, and later authoritative specification sections before deciding which statement is stale.
-Do not change the specification merely to bless existing implementation or rewrite test expectations merely to match old prose.
-Sol may reconcile demonstrably stale wording if authoritative intent is established; otherwise send one focused packet to Astra/high.
-Disposition / decisive references / affected files / validation / commit: pending.
+The audit reported deliberate contextual execution-log behavior in the logging bridge and `frontend/tests/e2e/error-handling.spec.ts`, while environment logs remain global.
+Commit `a8d9533` intentionally introduced that behavior together with the v2 §1.8 normative requirement, typed WebSocket validation, source-time provenance safeguards, frontend filtering, and regression coverage.
+The older v1 §2.5 table row was therefore stale and has been aligned with the established contract: execution-attributed BioImageFlow and Wetlands records carry the complete immutable execution context, while non-execution tool, environment, thumbnail, and platform logs omit it.
+Affected files: `platform_specs_v1.md`, `PLATFORM_CONTEXT.md`, and the runtime coverage inventory.
+Validation: `scripts/test check docs` passed in 2s at `353b425` plus the ISSUE-002 documentation diff; an initial sandboxed attempt was externally blocked fetching `furo` and is not counted as a test failure.
+The resolution commit is discoverable with `git log -1 -- docs/developer/platform-test-issues.md`.
 
 ## New issue record template
 

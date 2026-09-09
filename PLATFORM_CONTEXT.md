@@ -176,6 +176,7 @@ These artifacts have different import, export, mutation, and availability semant
 Platform HTTP endpoints use the `/api/v1/` prefix.
 Routers should remain thin transport boundaries over models and services, with stable structured errors for expected failures.
 WebSocket events carry logs, execution progress, status, and workspace changes that the frontend uses for live projection and recovery.
+Execution-attributed BioImageFlow and Wetlands logs carry the immutable execution context used by progress and terminal events, while non-execution tool, environment, thumbnail, and platform logs remain contextless and global.
 
 The MCP server in `backend/src/bioimageflow_server/agent_mcp.py` is a separate control surface for agents operating the active user workspace.
 The material under `docs/agents/` documents that workflow-operation contract; it is not the development architecture guide.

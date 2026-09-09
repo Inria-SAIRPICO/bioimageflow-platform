@@ -907,7 +907,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 |------|---------|-------------|
 | `progress` | `{node_id, status, row, total_rows, timestamp, execution_id, workflow_id, result_key?, record_id?, draft_revision?}` | Progress for one accepted execution context |
 | `node_state` | `{node_id, status, cached, execution_id, workflow_id, error?, traceback?, result_key?, record_id?, draft_revision?}` | Node state change for one accepted execution context; status fields use the shared `NodeStatus` schema |
-| `log` | `{level, message, node_id?, timestamp}` | Unscoped log message from the BioImageFlow logger and worker forwarding; log payloads intentionally do not carry execution or canvas context |
+| `log` | `{level, message, node_id?, timestamp, execution_id?, workflow_id?, draft_revision?}` | BioImageFlow and Wetlands records attributable to an execution carry that execution's immutable context; non-execution tool, environment, thumbnail, and platform logs omit it and remain global |
 | `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], execution_id, workflow_id, errors?: [...], draft_revision?}` | Workflow execution finished with final statuses for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
@@ -920,7 +920,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
-Progress, node-state, and completion messages always carry `execution_id` and `workflow_id`; `draft_revision` remains nullable for inline compatibility executions. An idle `status_snapshot` may omit execution context before any execution has been accepted.
+Progress, node-state, and completion messages always carry `execution_id` and `workflow_id`; `draft_revision` remains nullable for inline compatibility executions. Execution-attributed log messages carry the same three fields together, while global log messages omit all three. An idle `status_snapshot` may omit execution context before any execution has been accepted.
 
 `workflow_tree_changed` and `active_workflow_changed` are current runtime compatibility notifications emitted by the connection manager, but they are not yet members of the backend's typed `ServerMessage` union or generated frontend API types. Consumers must narrow them by their literal `type` until that schema gap is closed.
 

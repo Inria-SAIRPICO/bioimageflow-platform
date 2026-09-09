@@ -28,14 +28,13 @@ The handoff documentation is committed separately; find its revision with `git l
 | T01 | Complete | Wetlands 2.4.1; published BioImageFlow 0.7.1/core 0.3.1; platform constraints and specifications updated. | No release work unless a new issue requires it. |
 | T02 | Complete | Generate drag readiness fixed; genuine metadata, whole-DataFrame edge, accepted validation, exact rows, and separate real sequential worker regression. | Preserve these fixtures and assertions. |
 | T03 | Partial audit | [Workflow inventory](coverage-workflows.md), [GUI inventory](coverage-gui.md), [Runtime inventory](coverage-runtime.md); inspected bodies, not new passing results. | Sol workers finish missing feature/boundary rows; master owns integration. |
-| T04 | Pending | Remove misleading tests and fill priority gaps: valid recovery graph, actual ToolsPanel click, required hot-reload fixture, shared-downstream cache graph, sequential cache/output fixtures. | Assign disjoint files after resolving relevant issue dependencies. |
+| T04 | In progress | Shared-downstream cache graph and required hot-reload fixture repairs are implemented and focused checks passed; integration commits are pending. Remaining priority gaps include valid recovery graph, actual ToolsPanel click, and sequential cache/output fixtures. | Master reviews and commits the two completed disjoint repairs separately. |
 | T05 | Pending | Explicit per-case local scope selection and dedicated complete GUI journeys, including nested edits, source updates, results, actual failure/cancellation, and persistence. | Audit selection before broad execution; no working local-profile command exists yet. |
 | T06 | Pending | Comprehensive in-scope backend/frontend/browser certification, real sequential worker, common-tools compatibility, manual boundary reconciliation. | Master schedules once large changes are ready; do not run full on every increment. |
-| ISSUE-001 | Queued for Astra | Possible preview surviving destination deletion/recreation with identical content. | No repair yet; see issue packet. |
-| ISSUE-002 | Open audit discrepancy | Logging spec says unscoped while tests exercise contextual execution logs. | Establish normative intent; Astra if uncertain. |
+| ISSUE-001 | Safe to fix; Sol implementing | Astra/high reproduced an old generation-1 preview mutating an exactly recreated generation-3 workflow and established the existing identity contract. | `/root/issue_001_fix` owns `workflow_sources.py` and its service tests; run exact regressions then `check backend`. |
+| ISSUE-002 | Resolved documentation discrepancy | Commit `a8d9533` and v2 §1.8 establish contextual execution logs and global background logs; the stale v1 WebSocket row is reconciled. | `scripts/test check docs` passed in 2s; resolution commit is path-discoverable. |
 
-At dispatch, record each active task's agent/model, owned paths, dependency, current revision, and exact acceptance command here.
-No active write owners are carried into the new session.
+Active write owner: `/root/issue_001_fix`, GPT-5.6 Sol/medium, based on `353b425`, owns `backend/src/bioimageflow_server/services/workflow_sources.py` and `backend/tests/test_services/test_workflow_sources.py`; it depends on Astra's ISSUE-001 disposition and must pass the new exact regressions, the existing successful refresh selector, and the whole service test file before master integration.
 
 ## Completed revisions
 
