@@ -88,8 +88,12 @@ async function addToolNode(
   await page.getByTestId('tool-search').fill(toolName)
   const tool = page.getByTestId(`tool-item-${toolName}`)
   await expect(tool).toBeVisible({ timeout: 5000 })
+  const canvas = page.locator('.vue-flow')
+  // dragTo presses on the source before waiting for its destination.
+  // Startup can still be mounting the canvas while the tool list is visible.
+  await expect(canvas).toBeVisible()
   const nodeCount = await page.locator('.vue-flow__node').count()
-  await tool.dragTo(page.locator('.vue-flow'), { targetPosition: position })
+  await tool.dragTo(canvas, { targetPosition: position })
   const node = page.locator('.vue-flow__node').nth(nodeCount)
   await expect(node).toBeVisible({ timeout: 5000 })
   return node
@@ -150,7 +154,17 @@ test.describe('Canvas interactions', () => {
     workflowName = await createEditableWorkflow(page)
   })
 
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await testInfo.attach('canvas-before-cleanup', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      })
+      await testInfo.attach('page-before-cleanup', {
+        body: await page.locator('body').ariaSnapshot(),
+        contentType: 'text/plain',
+      })
+    }
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
