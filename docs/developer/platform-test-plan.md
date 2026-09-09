@@ -16,23 +16,81 @@ Preserve Direct execution for focused tests and ordinary DataFrame-only workflow
 Exercise real local Wetlands workers sequentially with an explicit single-worker limit, and verify process identity, exact results, generated files, and cleanup.
 Tests must distinguish serialized configuration, mocked orchestration, Direct execution, and actual worker execution in their assertions and coverage claims.
 
-If unexpected behavior has an unclear cause or repair, pause the entire campaign and report it to the owner with reproduction steps and preserved evidence.
+Use the Sol → Astra → owner escalation protocol below when unexpected behavior has an unclear cause or repair.
+This replaces the earlier rule that sent every ambiguous finding directly to the owner.
 Do not alter expected results, weaken assertions, suppress warnings, invent workflow conversions, or change library semantics to obtain a pass.
-Resume the affected investigation or implementation only with the owner's direction.
+Do not implement a speculative repair while the issue is under review.
 For example, Generate supplies its complete DataFrame to a downstream positional DataFrame input; an output-column pin is not interchangeable with that input.
-Implement approved fixes cleanly and update affected code, tests, fixtures, workflows, tools, specifications, and documentation together without backward-compatibility shims.
+Implement contract-established or owner-approved fixes cleanly and update affected code, tests, fixtures, workflows, tools, specifications, and documentation together without backward-compatibility shims.
 
 ## Coordination and commits
 
 The master agent owns scope, dependency order, the feature inventory, validation evidence, integration, and communication with the owner.
-Assign independent agents bounded ownership of library release work, backend feature families, frontend feature families, and browser journeys as needed.
+The master and ordinary implementation/review workers use `gpt-5.6-sol` with `medium` reasoning.
+A specialist uses `gpt-6-astra` with `high` reasoning only for escalations.
+Assign independent agents bounded ownership of backend feature families, frontend feature families, browser journeys, and any necessary library work.
 Keep write ownership disjoint, pass exact file paths and contract expectations, and request concise findings rather than duplicating every investigation in the master's context.
-An agent reports an ambiguous defect immediately so the master can stop all dependent work.
+An agent reports an ambiguous defect immediately so the master can freeze affected work and send a focused escalation.
+Use at most two ordinary workers alongside the master by default, leaving a fourth slot available for Astra; use fewer when tasks overlap.
 
 Commit each coherent, independently validated change as soon as it is ready.
 Separate dependency updates, library releases, platform behavior fixes, fixture corrections, browser fixes, and testing infrastructure when their dependencies allow it.
 Review the staged diff and leave unrelated changes and temporary notes unstaged.
 Do not delay a finished independent commit merely because another issue remains open, or commit an unfinished runner profile as working infrastructure.
+
+## Autonomous execution and escalation
+
+Sol may fix a routine defect without asking when the intended behavior is explicit in the specifications or an existing owner decision, the cause is understood, the change is bounded, and meaningful regression assertions can be written without changing that intent.
+A failing test alone does not justify changing production behavior or its expected result.
+Reproduce the exact failure and inspect the relevant contract before editing; do not repeatedly guess at fixes.
+Escalate immediately for conflicting specifications, unintuitive library contracts, unclear fixture validity, identity/data-loss risks, or a repair that would require inventing semantics.
+Also escalate after one unsuccessful bounded repair attempt if the remaining cause is unclear; this is a cost-control default, not permission for the first attempt to be speculative.
+
+The master records an issue ID in [Campaign issues](platform-test-issues.md), freezes dependent edits and tests, and spawns one Astra specialist with a fresh context and a compact issue packet.
+Unrelated work may continue only when the master can establish independence; freeze the whole campaign if the suspect fixture, contract, or state is shared widely.
+Astra may inspect source/specifications and run a bounded reproduction in a disposable workspace without asking the owner first.
+Astra returns one of these explicit dispositions:
+
+- `safe-to-fix`: established intended behavior, reproduced cause or decisive code evidence, bounded implementation instructions, affected specifications, and required regressions; Sol implements and validates autonomously.
+- `not-a-defect`: evidence that the behavior is correct and the test/audit assumption was wrong; Sol corrects the test or inventory only when the proper contract is established.
+- `needs-owner`: unresolved design intent, contradictory specifications, questionable test oracle, unsafe workaround, or remaining uncertainty about a safe contract-preserving repair after bounded investigation; the master pauses the entire campaign and asks the owner one concrete question with the evidence, options, and recommendation.
+
+A merely slow implementation or unavailable external dependency is not evidence of flawed intent.
+Record unavailable services or credentials as `externally-blocked` with the exact recovery action; do not ask the owner to invent semantics to bypass an environmental block.
+Astra is not permission to redesign the platform or silently choose among conflicting product contracts.
+If Astra remains uncertain, it must return `needs-owner`; do not launch repeated higher-cost reviews to avoid asking.
+A missing required model or escalation capability is a configuration blocker: report it rather than silently substituting another model or claiming review happened.
+Owner decisions are recorded verbatim or faithfully summarized with scope in the issue record before resuming.
+The currently unconfirmed source-update identity issue is queued for Astra under this protocol; no repair has been approved or executed by this documentation change.
+
+### Focused delegation
+
+Use explicit `model` and `reasoning_effort` arguments when the runtime exposes them.
+For the current collaboration interface, use `fork_turns="none"` with these overrides and supply a self-contained task; a full-history fork inherits the parent's model and cannot change it.
+Ordinary worker settings are `model="gpt-5.6-sol", reasoning_effort="medium"`; escalation settings are `model="gpt-6-astra", reasoning_effort="high"`.
+Do not make the worker reread the entire conversation or all inventories.
+
+Every worker packet contains the task/issue ID, objective, relevant file/specification paths, acceptance criteria, owned write paths, dependency constraints, exact focused checks, and escalation rules.
+An Astra packet additionally contains observed versus expected behavior, exact selector/browser/revision/package versions, minimal reproduction or explicitly unconfirmed hypothesis, evidence paths, attempted changes, and the unresolved decision.
+Ask for concise findings and a disposition, not a transcript.
+The master owns shared progress/issue records, staging, commits, and completion checks; workers return file lists, evidence, and status without staging another worker's work.
+Release idle workers or reuse them only for closely related bounded work; do not create agents for trivial edits or redundant audits.
+
+### Durable state and restart
+
+[Campaign progress](platform-test-progress.md) is the authoritative live checkpoint, [Campaign issues](platform-test-issues.md) owns escalation decisions, and the three linked coverage inventories own feature-to-test evidence.
+These are requested project deliverables and should be committed; raw traces, large logs, scratch plans, and transient agent notes are not.
+Update progress after each coherent task, escalation, commit, and before ending or replacing a session.
+Record task status, owner and write paths, source revision, exact validation commands/results/durations/exclusions, commit IDs, and the next concrete action.
+A completed code task needs its required validation and commit; a read-only audit must remain labeled inspected, not passed.
+For a checkpoint's own commit, use `git log -1 -- <checkpoint-path>` rather than recursively editing its own hash into the file.
+
+Keep the checkpoint short: active work, unresolved issues, completed milestone references, and the next queue.
+Keep closed issues as concise decisions with commit references; do not carry obsolete investigation transcripts into each restart.
+Before a restart, stop or hand off all workers, record dirty-file ownership and running processes, and preserve necessary evidence in stable ignored artifact paths with reconstruction steps.
+Temporary `/private/tmp` logs are historical conveniences, not restart dependencies.
+A new master reads [Restart instructions](platform-test-start.md), reconciles Git and the checkpoint, and resumes the first runnable task without replaying finished releases or baseline tests.
+A prompt cannot change the current master model; select Sol/medium when starting the new session and verify the runtime settings rather than claiming the prose configured them.
 
 ## 1. Complete the library and dependency gate
 
@@ -55,7 +113,7 @@ Trace inspection identified that the test begins its mouse drag before the canva
 The later “No workflow is open” screenshot is misleading because cleanup has already deleted the workflow; it is not evidence of an application restoration failure.
 Fix test readiness by waiting for both the specific workflow title and its mounted canvas before dragging, and preserve failure evidence before cleanup.
 Keep the application unchanged unless subsequent evidence demonstrates a separate product defect.
-The owner has authorized investigation; report any further ambiguous product decision before implementing it.
+The owner has authorized investigation; route further ambiguous product decisions through Astra before implementing them.
 
 After an approved repair, run the exact failing Chromium test once.
 Use five repetitions only if the diagnosis identifies a timing or race defect, then verify the same journey in Firefox and the smallest relevant browser completion scope.
