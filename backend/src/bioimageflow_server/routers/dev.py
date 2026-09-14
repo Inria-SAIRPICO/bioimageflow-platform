@@ -67,6 +67,36 @@ class SeedNumbers(DataFrameTool):
         )
 
 
+class ResultTableFixtureOutputs(IOModel):
+    source_row: int
+    label: str
+    score: int
+
+
+class ResultTableFixture(DataFrameTool):
+    """Larger deterministic source used to exercise Node Data projections."""
+
+    display_name = "Result Table Fixture"
+    documentation = "Create deterministic rows for Node Data browser tests."
+    tags = ["source", "e2e"]
+    accepts_upstream = False
+    Inputs = SeedNumberInputs
+    Outputs = ResultTableFixtureOutputs
+
+    def transform(self, df: Any, arguments: Any) -> Any:
+        source_rows = list(range(60))
+        return pd.DataFrame(
+            {
+                "source_row": source_rows,
+                "label": [
+                    f"{'keep' if row % 2 == 0 else 'drop'}-{row:02d}"
+                    for row in source_rows
+                ],
+                "score": [(row * 17) % 61 for row in source_rows],
+            },
+        )
+
+
 class IncrementNumberInputs(IOModel):
     number: int
 
@@ -150,6 +180,23 @@ _SEED_TOOLS: list[ToolMetadata] = [
         outputs={
             "number": OutputFieldSchema(type="int"),
             "label": OutputFieldSchema(type="str"),
+        },
+    ),
+    ToolMetadata(
+        name="ResultTableFixture",
+        display_name="Result Table Fixture",
+        package="bioimageflow-dev-seed",
+        package_version="0.1.0",
+        tool_type="DataFrameTool",
+        row_consumption=None,
+        accepts_upstream=False,
+        documentation=ResultTableFixture.documentation,
+        tags=ResultTableFixture.tags,
+        categories=["Utilities"],
+        outputs={
+            "source_row": OutputFieldSchema(type="int"),
+            "label": OutputFieldSchema(type="str"),
+            "score": OutputFieldSchema(type="int"),
         },
     ),
     ToolMetadata(
@@ -303,7 +350,12 @@ _SEED_PACKAGES: list[PackageInfo] = [
         available_versions=["0.1.0"],
         active_version="0.1.0",
         tools={
-            "0.1.0": ["SeedNumbers", "IncrementNumbers", "IncrementAgainNumbers"]
+            "0.1.0": [
+                "SeedNumbers",
+                "ResultTableFixture",
+                "IncrementNumbers",
+                "IncrementAgainNumbers",
+            ]
         },
         environment_status="stopped",
     ),
@@ -332,6 +384,7 @@ async def seed_tools(
     for tool in _SEED_TOOLS:
         tool_class = {
             "SeedNumbers": SeedNumbers,
+            "ResultTableFixture": ResultTableFixture,
             "IncrementNumbers": IncrementNumbers,
             "IncrementAgainNumbers": IncrementAgainNumbers,
             "GaussianBlur": GaussianBlur,

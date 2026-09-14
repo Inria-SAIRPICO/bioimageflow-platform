@@ -34,7 +34,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     resp = await client.post("/api/v1/dev/seed")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["tools"] == 6
+    assert data["tools"] == 7
     assert data["packages"] == 3
 
     # Now tools and packages are populated
@@ -43,6 +43,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     tool_names = {t["name"] for t in tools}
     assert tool_names.issuperset(initial_tool_names)
     assert "SeedNumbers" in tool_names
+    assert "ResultTableFixture" in tool_names
     assert "IncrementNumbers" in tool_names
     assert "IncrementAgainNumbers" in tool_names
     assert "CellposeSegmenter" in tool_names
@@ -53,6 +54,14 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert seed_tool["outputs"] == {
         "number": {"type": "int", "default": None, "image_spec": None},
         "label": {"type": "str", "default": None, "image_spec": None},
+    }
+    result_table_tool = next(t for t in tools if t["name"] == "ResultTableFixture")
+    assert result_table_tool["tool_type"] == "DataFrameTool"
+    assert result_table_tool["accepts_upstream"] is False
+    assert result_table_tool["outputs"] == {
+        "source_row": {"type": "int", "default": None, "image_spec": None},
+        "label": {"type": "str", "default": None, "image_spec": None},
+        "score": {"type": "int", "default": None, "image_spec": None},
     }
     increment_tool = next(t for t in tools if t["name"] == "IncrementNumbers")
     assert increment_tool["tool_type"] == "DataFrameTool"
