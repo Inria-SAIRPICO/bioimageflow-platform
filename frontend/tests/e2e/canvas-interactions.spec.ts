@@ -10,6 +10,7 @@ type ToolMetadata = {
   package: string
   package_version: string
   tool_type: string
+  documentation?: string
   accepts_upstream?: boolean
   inputs: Record<string, { type: string; required?: boolean; connectable?: string }>
   outputs: Record<string, { type: string }>
@@ -32,6 +33,7 @@ async function seedNumbersTool(page: Page): Promise<ToolMetadata> {
     package: 'bioimageflow-dev-seed',
     package_version: '0.1.0',
     tool_type: 'DataFrameTool',
+    documentation: 'Create a deterministic three-row dataframe for development tests.',
     accepts_upstream: false,
     inputs: {},
     outputs: {
@@ -171,20 +173,34 @@ test.describe('Canvas interactions', () => {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
-  test('clicks a named catalog tool and persists an interactive node with panel and pins', { tag: '@critical' }, async ({ page }) => {
+  test('single click toggles tool information and double click persists an interactive node', { tag: '@critical' }, async ({ page }) => {
     const tool = await seedNumbersRow(page)
     await expect(page.locator('.vue-flow')).toBeVisible()
     const transformationPane = page.locator('.vue-flow__transformationpane')
     const initialTransform = await transformationPane.evaluate(
       element => window.getComputedStyle(element).transform,
     )
+    await tool.click()
+    const documentation = page.getByTestId('tool-doc-SeedNumbers')
+    await expect(documentation).toBeVisible()
+    await expect(documentation.locator('h4')).toHaveText('Seed Numbers')
+    await expect(documentation.locator('p')).toHaveText(
+      'Create a deterministic three-row dataframe for development tests.',
+    )
+    await expect(page.getByTestId('tool-info-SeedNumbers')).toHaveCount(0)
+    await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+
+    await tool.click()
+    await expect(documentation).toHaveCount(0)
+    await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+
     const draftResponse = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/v1/workflow-drafts/') &&
         resp.request().method() === 'PUT' &&
         resp.status() === 200,
     )
-    await tool.click()
+    await tool.dblclick()
     expect((await draftResponse).status()).toBe(200)
 
     const node = page.locator('.vue-flow__node')

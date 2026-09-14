@@ -7,8 +7,8 @@ Each installed package can provide several tools and one or more versions.
 
 1. Enter a name or technique in **Search tools...**.
 2. Expand a matching category.
-3. Open the tool information and read its inputs, outputs, and documentation.
-4. Drag the tool onto the canvas or use its add action.
+3. Click a tool row to show its information at the bottom of the panel; click the row again to hide it.
+4. Double-click the row to add the tool at the default canvas position, or drag it to a chosen position.
 
 An available tool may still need an environment to be prepared before its first run.
 

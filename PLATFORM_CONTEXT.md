@@ -130,6 +130,7 @@ Configured external editors retain their command-defined project behavior.
 Newly created tools use the same tool-opening route: return the managed workspace URL as soon as code-server responds, then focus the source after the workbench loads and activates the opener extension.
 The Nodes panel opens the selected tool script through the node-addressed editor route after the canvas persistence barrier and deployment checks.
 Tool catalog rows and newly created tools use the separate catalog tool-opening route; catalog names never override an explicitly bound node source.
+In the main tool catalog, single-click toggles the bottom documentation panel and double-click creates a node through the active-canvas command facade; catalog secondary actions remain isolated from both row gestures.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 
 Trusted `workflow.py` files are authoring inputs only.

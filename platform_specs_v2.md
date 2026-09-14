@@ -403,6 +403,9 @@ Fiji is also a platform-owned desktop integration, but the Fiji application rema
 
 ## 15. Keyboard And Context Actions
 
+In the main Tools catalog, a single row click toggles the tool documentation panel, a double-click adds the tool to the active canvas at its default position, and drag-and-drop adds it at the requested position.
+The catalog has no separate information button, and its script, rename, delete, and environment actions do not trigger either row interaction.
+
 Ctrl/Cmd+S saves the active persistence context.
 In a root tab it saves the workspace workflow; in a nested tab it applies the accepted nested snapshot to its parent.
 

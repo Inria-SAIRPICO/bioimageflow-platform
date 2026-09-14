@@ -1057,7 +1057,7 @@ Per-tool-type header pin rules:
 
 **Node creation:**
 - Drag a tool from the Tools Panel onto the canvas
-- Or click a tool in the Tools Panel (creates the node at a default position)
+- Or double-click a tool in the Tools Panel (creates the node at a default position)
 - The frontend assigns a unique node name (e.g., `cellpose_segmenter_1`)
 
 **Node states and visual encoding:**
@@ -1161,8 +1161,7 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
 
    | Element | Description |
    |---------|-------------|
-   | **Tool display_name** | Primary label. The row is **draggable** onto the canvas and **clickable** to create a node at a default position. |
-   | **Info icon-button** | Opens detailed documentation for the tool (modal). |
+   | **Tool display_name** | Primary label. A single click toggles that tool's documentation panel at the bottom of the Tools panel; a double-click creates a node at a default canvas position; the row is also draggable onto the canvas. |
    | **Env status dot** | Colored indicator for the tool's environment state: stopped (gray), creating (yellow), running (green). |
    | **Category label** | Shown below the tool name. |
    | **Tags labels** | Shown below the tool name, next to category. |
@@ -1171,6 +1170,8 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
 
 Selecting a single tool node reveals its corresponding row in the Tools panel: expand its category, clear a search only if it hides the tool, scroll the row into view, and highlight it while selected.
 Multi-selection, workflow-node selection, and clearing selection remove the highlight.
+Only one catalog documentation panel is open at a time; clicking its active row again or its close action hides it.
+Catalog secondary actions do not toggle documentation or create a node.
 
 3. **"Manage tools" button** in the panel header: Opens a PrimeVue **Dialog** (modal) containing the full tool management interface (see below).
 

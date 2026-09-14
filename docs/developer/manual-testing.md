@@ -16,7 +16,7 @@ Keep the supplied workflows available for later groups.
 For destructive experiments, select the saved fixture in **Workflows**, click **Duplicate workflow**, and open the new copy before editing it.
 If that duplicate's name already exists, open a clean fixture and use **Workflow → Save As** with a unique **Name**, then click **Save copy**.
 Record the copy's name in the evidence.
-Creating a tool adds it to the Tools list; it does not add a node until you click the tool row or drag it onto the canvas.
+Creating a tool adds it to the Tools list; it does not add a node until you double-click the tool row or drag it onto the canvas.
 
 ## Prepare a disposable QA environment
 
@@ -294,7 +294,7 @@ Stop the browser-session servers and return to the packaged desktop application 
 
 ### C6. Tools, packages, and environments
 
-- Use **Search tools...** for names and tags and browse category groups; click **Tool information** for documentation.
+- Use **Search tools...** for names and tags and browse category groups; single-click a row to toggle its documentation and double-click it to add a node at the default canvas position.
   Inspect package/version information in **Manage tools**, and input, output, resource, and execution information in **Nodes** after adding a node.
 - Click **Manage tools** in **Tools**; in the **Install tool package** area, click **Select .zip archive**, choose `packages/qa-manual-tools.zip`, then click **Install**.
   Close the dialog, add **QA Packaged Numbers** to a disposable workflow, run it, select it, and verify `1`, `2`, and `3` in **Node Data**.

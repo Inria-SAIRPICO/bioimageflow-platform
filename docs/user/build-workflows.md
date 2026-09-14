@@ -16,8 +16,8 @@ BioImageFlow keeps accepted canvas changes available for recovery, but it update
 ## Add a tool
 
 1. Search in **Tools**.
-2. Read the tool information to confirm its purpose and inputs.
-3. Drag it onto the canvas or use its add action.
+2. Click its row to read the tool information at the bottom of the panel.
+3. Double-click the row to add it at the default position, or drag it onto the canvas.
 4. Select the new node to edit it in **Nodes**.
 
 Double-click the displayed node name to rename that step without changing the tool it uses.

@@ -322,7 +322,7 @@ function onToolDragStart(event: DragEvent, tool: ToolMetadata) {
   event.dataTransfer?.setData('application/bioimageflow-tool', tool.name)
 }
 
-function onToolClick(toolName: string) {
+function onToolDoubleClick(toolName: string) {
   canvasCommands.addToolNode(toolName)
   emit('add-tool', toolName)
 }
@@ -847,21 +847,13 @@ defineExpose({
             :data-testid="`tool-item-${tool.name}`"
             draggable="true"
             @dragstart="onToolDragStart($event, tool)"
-            @click="onToolClick(tool.name)"
+            @click="toggleDocumentation(tool.name)"
+            @dblclick="onToolDoubleClick(tool.name)"
           >
             <div class="tool-list-item-row">
               <span class="tool-list-name">{{ tool.display_name }}</span>
-              <span class="tool-list-right">
+              <span class="tool-list-right" @dblclick.stop>
                 <span class="tool-list-secondary-actions">
-                  <Button
-                    icon="pi pi-info-circle"
-                    text
-                    size="small"
-                    class="tool-list-info-btn"
-                    title="Tool information"
-                    :data-testid="`tool-info-${tool.name}`"
-                    @click.stop="toggleDocumentation(tool.name)"
-                  />
                   <Button
                     v-if="localToolActionsAvailable"
                     icon="pi pi-code"
@@ -1411,7 +1403,6 @@ defineExpose({
   opacity: 1;
 }
 
-.tool-list-info-btn,
 .tool-list-action-btn,
 .tool-list-power-btn {
   width: 24px;
@@ -1422,7 +1413,6 @@ defineExpose({
   line-height: 1;
 }
 
-.tool-list-info-btn :deep(.p-button-icon),
 .tool-list-action-btn :deep(.p-button-icon),
 .tool-list-power-btn :deep(.p-button-icon) {
   line-height: 1;

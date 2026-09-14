@@ -48,6 +48,7 @@ The focused unit files passed 96 tests in 6s; Chromium click/drag passed in 15s/
 Frontend lint, all 1,260 unit tests, and build passed in the completion run; its only failure was new test-mock type declarations, whose exact type-check passed after correction.
 The Chromium completion run passed both changed journeys before later failing from independent ISSUE-004 mutation contention.
 The fix commit is discoverable with `git log -1 -- frontend/src/components/panels/ToolsPanel.vue`.
+The owner later changed the interaction contract: single-click now toggles catalog information and double-click creates the node; the original event-routing defect remains relevant to the double-click creation path.
 
 ## ISSUE-004 — Ordinary mutation contention reported as execution lock
 

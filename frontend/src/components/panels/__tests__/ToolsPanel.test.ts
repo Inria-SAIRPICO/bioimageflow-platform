@@ -458,7 +458,7 @@ describe('ToolsPanel', () => {
     expect(nodes[0].key).toBe('bioimageflow-cellpose')
   })
 
-  it('click on a rendered tool row creates exactly one node and emits add-tool once', async () => {
+  it('single click on a rendered tool row toggles documentation without creating a node', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -467,10 +467,45 @@ describe('ToolsPanel', () => {
 
     await wrapper.get('[data-testid="tool-item-threshold"]').trigger('click')
 
+    expect(wrapper.get('[data-testid="tool-doc-threshold"]')).toBeTruthy()
+    expect(wrapper.get('.tool-documentation-header h4').text()).toBe('Threshold')
+    expect(wrapper.get('.tool-documentation p').text()).toBe('Apply threshold to an image')
+    expect(wrapper.find('[data-testid="tool-info-threshold"]').exists()).toBe(false)
+    expect(addToolNodeMock).not.toHaveBeenCalled()
+    expect(wrapper.emitted('add-tool')).toBeUndefined()
+
+    await wrapper.get('[data-testid="tool-item-threshold"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="tool-doc-threshold"]').exists()).toBe(false)
+    expect(addToolNodeMock).not.toHaveBeenCalled()
+  })
+
+  it('double click on a rendered tool row creates exactly one node and emits add-tool once', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    await wrapper.get('[data-testid="tool-item-threshold"]').trigger('dblclick')
+
     expect(addToolNodeMock).toHaveBeenCalledOnce()
     expect(addToolNodeMock.mock.calls[0]?.[0]).toBe('threshold')
     expect(wrapper.emitted('add-tool')).toHaveLength(1)
     expect(wrapper.emitted('add-tool')![0]).toEqual(['threshold'])
+  })
+
+  it('double click on catalog row actions does not create a node', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    await wrapper.get('[data-testid="tool-item-MyCustomTool"] .tool-list-right').trigger('dblclick')
+
+    expect(addToolNodeMock).not.toHaveBeenCalled()
+    expect(wrapper.emitted('add-tool')).toBeUndefined()
   })
 
   // --- Task 14: Version management tests ---
