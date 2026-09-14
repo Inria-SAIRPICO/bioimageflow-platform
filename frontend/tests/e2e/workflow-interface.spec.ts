@@ -521,6 +521,11 @@ test.describe('workflow interface and grouping', () => {
     await installChangedParent('Latest parent version', 'Latest parent seed')
     await expect.poll(async () => childInputName(childNode(await draftGraph(page, name)).workflow))
       .toBe('Latest parent version')
+    const parentBeforeRefusalResponse = await page.request.get(
+      `${API_BASE}/api/v1/workflow-drafts/${name}`,
+    )
+    expect(parentBeforeRefusalResponse.ok()).toBeTruthy()
+    const parentBeforeRefusal = (await parentBeforeRefusalResponse.json()) as WorkflowDraftResponse
 
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
@@ -533,7 +538,8 @@ test.describe('workflow interface and grouping', () => {
     const parentAfterRefusal = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
     expect(parentAfterRefusal.ok()).toBeTruthy()
     const refusedParent = (await parentAfterRefusal.json()) as WorkflowDraftResponse
-    expect(refusedParent.draft_revision).toBeGreaterThan(0)
+    expect(refusedParent.draft_revision).toBe(parentBeforeRefusal.draft_revision)
+    expect(refusedParent.graph).toEqual(parentBeforeRefusal.graph)
     expect(childInputName(childNode(refusedParent.graph).workflow)).toBe('Latest parent version')
     expect(childNode(refusedParent.graph).workflow.nodes[0]?.name).toBe('Increment')
     expect(refusedParent.graph.nodes.find(node => node.id === 'seed')?.name).toBe('Latest parent seed')
