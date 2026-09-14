@@ -91,6 +91,27 @@ function ownedSourcePath(workflow: Record<string, any>, sourceId: string): strin
   return join(root, manifest.filename)
 }
 
+async function expectOwnedValues(
+  page: Page,
+  canvasNodeId: string,
+  scopedNodeId: string,
+  values: string[],
+) {
+  const projection = page.waitForRequest(request => (
+    request.url().endsWith('/api/v1/data-table/query') && request.method() === 'POST'
+  ), { timeout: 10_000 })
+  await page.locator(`.vue-flow__node[data-id="${canvasNodeId}"]`).click()
+  await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+  expect((await projection).postDataJSON()).toMatchObject({
+    sources: [expect.objectContaining({ node_id: scopedNodeId })],
+  })
+  const rows = page.getByTestId('data-table-panel').locator('.p-datatable-tbody tr')
+  await expect(rows).toHaveCount(values.length)
+  for (let index = 0; index < values.length; index += 1) {
+    await expect(rows.nth(index).locator('td').last()).toHaveText(values[index]!)
+  }
+}
+
 async function rememberLastOpenedWorkflow(page: Page, name: string) {
   await page.evaluate(async (workflowName) => {
     const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
@@ -437,19 +458,24 @@ test('copies an agent graph with recursively owned unsaved sources without alias
       'Execution complete', { timeout: 30_000 },
     )
 
-    const projection = page.waitForRequest(request => (
-      request.url().endsWith('/api/v1/data-table/query') && request.method() === 'POST'
-    ), { timeout: 10_000 })
-    await page.locator('.vue-flow__node[data-id="embedded_child"]').click()
-    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
-    expect((await projection).postDataJSON()).toMatchObject({
-      sources: [expect.objectContaining({ node_id: 'embedded_child/owned_numbers' })],
-    })
-    const rows = page.getByTestId('data-table-panel').locator('.p-datatable-tbody tr')
-    await expect(rows).toHaveCount(3)
-    await expect(rows.nth(0).locator('td').last()).toHaveText('41')
-    await expect(rows.nth(1).locator('td').last()).toHaveText('42')
-    await expect(rows.nth(2).locator('td').last()).toHaveText('43')
+    await expectOwnedValues(page, 'owned_numbers', 'owned_numbers', ['2', '3', '4'])
+    await expectOwnedValues(
+      page,
+      'embedded_child',
+      'embedded_child/owned_numbers',
+      ['41', '42', '43'],
+    )
+
+    const originalSavedAfterRun = await (
+      await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)
+    ).json()
+    const originalDraftAfterRun = await (
+      await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    ).json()
+    expect(originalSavedAfterRun.graph).toEqual(savedRoot.graph)
+    expect(readFileSync(originalDocumentPath)).toEqual(originalDocumentBytes)
+    expect(originalDraftAfterRun.draft_revision).toBe(agent.draft_revision)
+    expect(originalDraftAfterRun.graph).toEqual(agent.graph)
     expect(readFileSync(originalRootPath, 'utf8')).toBe(rootBytes)
     expect(readFileSync(originalChildPath, 'utf8')).toBe(childBytes)
     expect(existsSync(join(savedRoot.info.results_path, 'outputs', 'latest'))).toBe(false)
