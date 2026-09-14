@@ -12,9 +12,9 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Complete the active Wave 3 bulk Delete/Clear and remaining selection/persistence batch.
-2. Continue Wave 4 with recursive owned-source transport and execution ownership boundaries.
-3. Begin Wave 5 failure, cancellation, correction/rerun, and cache/result lifecycle journeys, then continue the ordered feature waves without dropping lower-priority coverage.
+1. Complete the active Wave 4 recursive owned-source copy/transport and execution-ownership batch.
+2. Close the remaining Wave 3 root discard/recovery and bounded persistence obligations.
+3. Begin Wave 5 failure, cancellation, correction/rerun, and remaining cache/result lifecycle journeys, then continue the ordered feature waves without dropping lower-priority coverage.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -31,7 +31,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
-| Wave 3 / editing | In progress | Commits through `1261326` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, and the representative typed parameter matrix. Bulk Delete/Clear and bounded selection/persistence gaps remain. |
+| Wave 3 / editing | In progress | Commits through `30faeb6` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, and accepted root output Clear/refusal. Root discard/recovery and bounded persistence gaps remain. |
 | Wave 4 / nested workflows | In progress | Commits through `fd96f8f` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, and real nested Direct execution with scoped durable results in both browsers. Recursive source ownership and later recovery boundaries remain. |
 | Waves 5–6 / lifecycle and remaining features | Gaps | Failure/cancellation/rerun/cache/results plus settings, datasets, authoring, integrations, and remaining user actions. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
@@ -45,7 +45,7 @@ The ISSUE-005 implementation and old failing reproduction worktrees were archive
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The destructive nested-interface worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `b2e1152`, `f59419b`, and `cf794fb`.
-`/root/bulk_delete_clear` owns `.worktrees/bulk-delete-clear` on `campaign/bulk-delete-clear`.
+The bulk-delete/output-clear worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `5aaac41` and `30faeb6`.
 `/root/recursive_source_ownership` owns `.worktrees/recursive-source-ownership` on `campaign/recursive-source-ownership`.
 The nested-execution worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `fd96f8f`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.
