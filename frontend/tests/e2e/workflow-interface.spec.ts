@@ -218,6 +218,12 @@ function responseCarriesNestedInputCount(response: Response, count: number): boo
   return body?.graph?.interface.inputs.length === count
 }
 
+function responseCarriesEmptyNestedInterface(response: Response): boolean {
+  if (!responseCarriesNestedInputCount(response, 0)) return false
+  const body = response.request().postDataJSON() as { graph?: GraphState } | null
+  return body?.graph?.interface.outputs.length === 0
+}
+
 function childInputName(graph: GraphState | undefined): string | undefined {
   return graph?.interface.inputs.find(input => input.id === 'child-table-input')?.name
 }
@@ -604,6 +610,36 @@ test.describe('workflow interface and grouping', () => {
     const name = workflowName('nested_destructive_ports')
     const displayName = `Nested destructive ports ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
+    const initialChild = childNode(initial)
+    initialChild.workflow.nodes.push({
+      type: 'tool', id: 'child_blur', name: 'Child blur', tool_name: 'GaussianBlur',
+      position: [600, 180], parameters: { input_image: '/tmp/child-input.tif' },
+    })
+    initialChild.workflow.interface.inputs.push({
+      id: 'child-image-input', name: 'Child image', kind: 'field',
+      schema: { type: 'ImageFile' }, default: null,
+      targets: [{ node: 'child_blur', port: { kind: 'field', name: 'input_image' } }],
+    })
+    initialChild.workflow.interface.outputs.push({
+      id: 'child-image-output', name: 'Child output', schema: { type: 'ImageFile' },
+      source: { node: 'child_blur', column: 'output_image' },
+    })
+    initial.nodes.push({
+      type: 'tool', id: 'parent_blur', name: 'Parent blur', tool_name: 'GaussianBlur',
+      position: [780, 360], parameters: { input_image: '/tmp/parent-input.tif' },
+    })
+    initial.interface.inputs.push({
+      id: 'parent-forwarded-image', name: 'Forwarded image', kind: 'field',
+      schema: { type: 'ImageFile' }, default: null,
+      targets: [
+        { node: 'child', port: { kind: 'workflow', id: 'child-image-input' } },
+        { node: 'parent_blur', port: { kind: 'field', name: 'input_image' } },
+      ],
+    })
+    initial.interface.outputs.push({
+      id: 'parent-forwarded-output', name: 'Forwarded output', schema: { type: 'ImageFile' },
+      source: { node: 'child', column: 'child-image-output' },
+    })
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
     expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
       data: { name, display_name: displayName },
@@ -617,7 +653,7 @@ test.describe('workflow interface and grouping', () => {
     const beforeResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
     const before = (await beforeResponse.json()) as WorkflowDraftResponse
     expect(childNode(before.graph).workflow.interface.inputs.map(input => input.id)).toEqual([
-      'child-table-input', 'child-number-input',
+      'child-table-input', 'child-number-input', 'child-image-input',
     ])
     expectStableParentRoutes(before.graph)
     await page.locator('.vue-flow__node[data-id="child"]').dblclick()
@@ -625,18 +661,29 @@ test.describe('workflow interface and grouping', () => {
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
 
     await page.getByTestId('unpublish-dataframe-0').click()
-    const privateRemoval = page.waitForResponse(response => (
-      responseCarriesNestedInputCount(response, 0)
-    ))
     await page.getByTestId('interface-input-toggle-number').click()
+    await page.locator('.vue-flow__node[data-id="child_blur"]:visible').click()
+    await page.getByTestId('interface-input-toggle-input_image').click()
+    const privateRemoval = page.waitForResponse(response => (
+      responseCarriesEmptyNestedInterface(response)
+    ))
+    await page.getByTestId('interface-output-toggle-output_image').click()
     const privateSnapshot = await (await privateRemoval).json() as {
       session_id: string
       snapshot_revision: number
       graph: GraphState
     }
     expect(privateSnapshot.graph.interface.inputs).toEqual([])
+    expect(privateSnapshot.graph.interface.outputs).toEqual([])
     expect((await draftGraph(page, name))).toEqual(before.graph)
 
+    let parentWriteCount = 0
+    page.on('request', (request) => {
+      if (
+        request.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+        && request.method() === 'PUT'
+      ) parentWriteCount += 1
+    })
     let cancelledMessage = ''
     page.once('dialog', async (dialog) => {
       cancelledMessage = dialog.message()
@@ -644,12 +691,16 @@ test.describe('workflow interface and grouping', () => {
     })
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
-    expect(cancelledMessage).toContain('remove 1 parent connection and 1 parent binding')
+    expect(cancelledMessage).toContain(
+      'remove 1 parent connection, 1 parent binding, and 2 enclosing interface references',
+    )
     const afterCancelResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
     const afterCancel = (await afterCancelResponse.json()) as WorkflowDraftResponse
     expect(afterCancel.draft_revision).toBe(before.draft_revision)
     expect(afterCancel.graph).toEqual(before.graph)
+    expect(parentWriteCount).toBe(0)
     expectStableParentRoutes(afterCancel.graph)
+    expect(afterCancel.graph.interface).toEqual(before.graph.interface)
     await expect(page.getByTestId('workflow-title')).toContainText('*')
     const durablePrivateResponse = await page.request.get(
       `${API_BASE}/api/v1/nested-workflow-snapshots/${privateSnapshot.session_id}`,
@@ -660,11 +711,33 @@ test.describe('workflow interface and grouping', () => {
     }
     expect(durablePrivate.snapshot_revision).toBeGreaterThanOrEqual(privateSnapshot.snapshot_revision)
     expect(durablePrivate.graph.interface.inputs).toEqual([])
+    expect(durablePrivate.graph.interface.outputs).toEqual([])
 
-    const acceptedParentWrite = page.waitForResponse(response => (
+    let releaseRetry!: () => void
+    const retryRelease = new Promise<void>((resolve) => { releaseRetry = resolve })
+    let retryStarted!: () => void
+    const retryStart = new Promise<void>((resolve) => { retryStarted = resolve })
+    let routedParentWrites = 0
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      if (route.request().method() !== 'PUT') {
+        await route.continue()
+        return
+      }
+      routedParentWrites += 1
+      if (routedParentWrites === 1) {
+        await route.fulfill({ status: 500, json: { detail: 'forced parent persistence failure' } })
+        return
+      }
+      if (routedParentWrites === 2) {
+        retryStarted()
+        await retryRelease
+      }
+      await route.continue()
+    })
+    const failedParentWrite = page.waitForResponse(response => (
       response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
       && response.request().method() === 'PUT'
-      && response.status() === 200
+      && response.status() === 500
     ))
     let confirmedMessage = ''
     page.once('dialog', async (dialog) => {
@@ -673,19 +746,80 @@ test.describe('workflow interface and grouping', () => {
     })
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
-    expect(confirmedMessage).toContain('remove 1 parent connection and 1 parent binding')
+    expect(confirmedMessage).toContain(
+      'remove 1 parent connection, 1 parent binding, and 2 enclosing interface references',
+    )
+    await failedParentWrite
+    expect(parentWriteCount).toBe(1)
+    const afterFailure = await draftGraph(page, name)
+    expect(afterFailure).toEqual(before.graph)
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+
+    const acceptedParentWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await retryStart
+    const privateEditB = page.waitForResponse(response => (
+      response.url().includes('/api/v1/nested-workflow-snapshots/')
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+      && (response.request().postDataJSON() as { graph?: GraphState } | null)
+        ?.graph?.interface.outputs.length === 1
+    ))
+    await page.getByTestId('interface-output-toggle-output_image').click()
+    const privateSnapshotB = await (await privateEditB).json() as {
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(privateSnapshotB.snapshot_revision).toBeGreaterThan(privateSnapshot.snapshot_revision)
+    releaseRetry()
     const acceptedResponse = await acceptedParentWrite
+    expect(parentWriteCount).toBe(2)
     const accepted = (await acceptedResponse.json()) as WorkflowDraftResponse
     expect(accepted.draft_revision).toBe(before.draft_revision + 1)
     expect(accepted.graph.edges).toEqual([])
     expect(childNode(accepted.graph).bindings).toEqual({})
     expect(childNode(accepted.graph).workflow.interface.inputs).toEqual([])
-    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    expect(childNode(accepted.graph).workflow.interface.outputs).toEqual([])
+    expect(accepted.graph.interface.inputs).toEqual([{
+      ...before.graph.interface.inputs[0]!,
+      targets: [{ node: 'parent_blur', port: { kind: 'field', name: 'input_image' } }],
+    }])
+    expect(accepted.graph.interface.outputs).toEqual([])
+    expect(privateSnapshotB.graph.interface.outputs).toHaveLength(1)
+    expect(privateSnapshotB.graph.interface.outputs[0]).toMatchObject({
+      source: { node: 'child_blur', column: 'output_image' },
+      schema: { type: 'ImageFile' },
+    })
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
 
     const finalResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
     const final = (await finalResponse.json()) as WorkflowDraftResponse
     expect(final.draft_revision).toBe(accepted.draft_revision)
     expect(final.graph).toEqual(accepted.graph)
+
+    const acceptedBWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    const acceptedB = (await acceptedBWrite).json() as Promise<WorkflowDraftResponse>
+    const finalB = await acceptedB
+    expect(parentWriteCount).toBe(3)
+    expect(childNode(finalB.graph).workflow).toEqual(privateSnapshotB.graph)
+    expect(finalB.draft_revision).toBe(accepted.draft_revision + 1)
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    await saveWorkflow(page, name)
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    expect(await draftGraph(page, name)).toEqual(finalB.graph)
   })
 
   test('deleting an exposed node removes its interface references before autosave', async ({

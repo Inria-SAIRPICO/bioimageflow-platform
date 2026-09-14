@@ -166,6 +166,24 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
     session.acceptedSnapshot = deepClone(accepted)
   }
 
+  function acknowledgeApplied(
+    id: string,
+    graph: GraphState,
+    snapshotRevision: number,
+    validation: ValidationResult,
+  ): void {
+    const session = sessionById(id)
+    if (!session) return
+    const applied = completeGraph(graph)
+    session.savedSnapshot = deepClone(applied)
+    session.parentApplyConflict = null
+    if (snapshotRevision >= session.snapshotRevision) {
+      session.snapshotRevision = snapshotRevision
+      session.validation = deepClone(validation)
+      session.acceptedSnapshot = deepClone(applied)
+    }
+  }
+
   function updateDraft(id: string, graph: GraphState): void {
     const session = sessionById(id)
     if (!session) throw new Error(`nested-workflow session not found: ${id}`)
@@ -226,6 +244,7 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
     openDurableSession,
     openDurableSessionResult,
     markSaved,
+    acknowledgeApplied,
     updateDraft,
     markParentApplyConflict,
     acceptSnapshot,

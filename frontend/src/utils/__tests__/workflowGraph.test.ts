@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolMetadata } from '@/api/types'
-import { emptyGraph } from '@/sessions/graphDocument'
+import { emptyGraph, jsonDocumentsEqual } from '@/sessions/graphDocument'
 import { decodeEndpointHandle } from '../endpointHandles'
 import {
   graphStateToVueFlow,
@@ -26,6 +26,15 @@ const tool: ToolMetadata = {
   outputs: { mask: { type: 'MaskPath' } },
   environment: null,
 }
+
+describe('canonical JSON documents', () => {
+  it('compares schema objects independently of key order', () => {
+    expect(jsonDocumentsEqual(
+      { type: 'array', items: { type: 'integer', minimum: 0 } },
+      { items: { minimum: 0, type: 'integer' }, type: 'array' },
+    )).toBe(true)
+  })
+})
 
 describe('graphStateToVueFlow', () => {
   it('renders tool and workflow nodes from their discriminators', () => {

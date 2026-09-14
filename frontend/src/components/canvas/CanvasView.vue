@@ -77,13 +77,25 @@ import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
 import { loadRootWorkflowPresentation } from '@/services/rootWorkflowPresentation'
 import {
   useNestedWorkflowSessionsStore,
-  type NestedWorkflowParentConflictReason,
 } from '@/stores/nestedWorkflowSessions'
 import {
+  canvasSessionRegistry,
   canvasIdFromPanelId,
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import {
+  changedNestedWorkflowPortIds,
+  enclosingWorkflowInterfaceEffects,
+  reconcileEnclosingWorkflowInterface,
+} from '@/sessions/nestedWorkflowInterfaceReconciliation'
+import {
+  nestedWorkflowApplyCoordinator,
+  nestedWorkflowApplyGuard,
+  type NestedWorkflowApplyCapture,
+  type NestedWorkflowApplyEffects,
+  type NestedWorkflowApplyOutcome,
+} from '@/sessions/nestedWorkflowApplyCoordinator'
 import { isNestedSnapshotPersistenceConflict } from '@/sessions/nestedSnapshotPersistence'
 import { connectionSourceLabel } from '@/utils/displayNames'
 import {
@@ -583,22 +595,11 @@ async function fitInitialView() {
 watch(initialViewReady, (ready) => { if (ready) void fitInitialView() }, { flush: 'post' })
 
 interface NestedWorkflowApplyPayload {
-  graph: GraphState
+  capture: NestedWorkflowApplyCapture
   started?: () => void
 }
 
-type NestedWorkflowParentApplyResult =
-  | { status: 'applied' }
-  | { status: 'cancelled' }
-  | { status: 'conflict'; reason: NestedWorkflowParentConflictReason }
-  | { status: 'rejected'; reason: 'locked' | 'persistence_failed' }
-
-interface NestedWorkflowDestructiveEffects {
-  inputIds: Set<string>
-  outputIds: Set<string>
-  edgeIds: Set<string>
-  bindingIds: Set<string>
-}
+type NestedWorkflowParentApplyResult = NestedWorkflowApplyOutcome
 
 interface InterfaceContext {
   parentNodeId?: string
@@ -2925,20 +2926,12 @@ function nestedWorkflowDestructiveEffects(
   previousOutputs: WorkflowOutput[],
   nextInputs: WorkflowInput[],
   nextOutputs: WorkflowOutput[],
-): NestedWorkflowDestructiveEffects {
-  const nextInputById = new Map(nextInputs.map(input => [input.id, input]))
-  const nextOutputById = new Map(nextOutputs.map(output => [output.id, output]))
-  const inputIds = new Set(previousInputs.filter((input) => {
-    const next = nextInputById.get(input.id)
-    return next === undefined
-      || input.kind !== next.kind
-      || JSON.stringify(input.schema) !== JSON.stringify(next.schema)
-  }).map(input => input.id))
-  const outputIds = new Set(previousOutputs.filter((output) => {
-    const next = nextOutputById.get(output.id)
-    return next === undefined
-      || JSON.stringify(output.schema) !== JSON.stringify(next.schema)
-  }).map(output => output.id))
+): NestedWorkflowApplyEffects {
+  const changedPorts = changedNestedWorkflowPortIds(
+    previousInputs, previousOutputs, nextInputs, nextOutputs,
+  )
+  const inputIds = new Set(changedPorts.inputIds)
+  const outputIds = new Set(changedPorts.outputIds)
   const edgeIds = new Set<string>()
   for (const edge of getEdges.value) {
     if (edge.target === parentNodeId && edge.targetHandle) {
@@ -2954,25 +2947,45 @@ function nestedWorkflowDestructiveEffects(
   const bindingIds = new Set(
     Object.keys(parentNode?.data?.bindings ?? {}).filter(id => inputIds.has(id)),
   )
-  return { inputIds, outputIds, edgeIds, bindingIds }
+  const context = currentInterfaceContext()
+  const enclosing = enclosingWorkflowInterfaceEffects(
+    context?.inputs ?? [], context?.outputs ?? [], parentNodeId,
+    changedPorts.inputIds, changedPorts.outputIds,
+  )
+  return {
+    inputIds: [...inputIds].sort(),
+    outputIds: [...outputIds].sort(),
+    edgeIds: [...edgeIds].sort(),
+    bindingIds: [...bindingIds].sort(),
+    enclosingInputIds: enclosing.enclosingInputIds,
+    enclosingOutputIds: enclosing.enclosingOutputIds,
+  }
 }
 
 function reconcileWorkflowParentState(
   parentNodeId: string,
   nextInputs: WorkflowInput[],
-  effects: NestedWorkflowDestructiveEffects,
-) {
+  effects: NestedWorkflowApplyEffects,
+): boolean {
+  const removedEdgeIds = new Set(effects.edgeIds)
+  const removedBindingIds = new Set(effects.bindingIds)
+  const context = currentInterfaceContext()
+  if (!context) return false
+  const enclosing = reconcileEnclosingWorkflowInterface(
+    context.inputs, context.outputs, parentNodeId, effects,
+  )
+  if (!replaceWorkflowInterface(enclosing.inputs, enclosing.outputs)) return false
   const nextEdges = getEdges.value.filter((edge) => {
-    return !effects.edgeIds.has(edge.id)
+    return !removedEdgeIds.has(edge.id)
   })
   setEdges(nextEdges)
 
   const parentNode = getNodes.value.find((n: any) => n.id === parentNodeId)
-  if (!parentNode?.data) return
+  if (!parentNode?.data) return false
 
   parentNode.data.bindings = Object.fromEntries(
     Object.entries(parentNode.data.bindings ?? {})
-      .filter(([id]) => !effects.bindingIds.has(id)),
+      .filter(([id]) => !removedBindingIds.has(id)),
   )
   parentNode.data.pinnedInputs = Object.fromEntries(
     nextInputs.map(input => [input.id, parentNode.data.pinnedInputs?.[input.id] !== false]),
@@ -2988,12 +3001,13 @@ function reconcileWorkflowParentState(
     )
   }
   parentNode.data.connectedInputs = connectedInputs
+  return true
 }
 
 function applyNestedWorkflowDraftWithEffects(
   parentNodeId: string,
   graph: GraphState,
-  effects?: NestedWorkflowDestructiveEffects,
+  effects?: NestedWorkflowApplyEffects,
 ): boolean {
   if (isLocked.value) return false
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
@@ -3011,11 +3025,11 @@ function applyNestedWorkflowDraftWithEffects(
     nextInputs,
     nextOutputs,
   )
-  reconcileWorkflowParentState(
+  if (!reconcileWorkflowParentState(
     parentNodeId,
     nextInputs,
     destructiveEffects,
-  )
+  )) return false
   node.data.workflow = deepClone(graph)
   canvasStatusProjection.stageCurrentSemanticStatuses()
   if (parentWasExecuted) {
@@ -3040,49 +3054,79 @@ async function saveNestedWorkflowSession(): Promise<void> {
   if (!sessionId) return
   const session = nestedWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
+  const nestedRegistration = canvasSessionRegistry.get(canvasId)
+  if (nestedRegistration?.descriptor.kind !== 'nested') return
   try {
     const accepted = await flushNow()
     if (!accepted) return
     if (
       isCanvasUnmounted
       || nestedWorkflowSessionsStore.sessionById(sessionId) !== session
+      || canvasSessionRegistry.get(canvasId)?.registrationToken
+        !== nestedRegistration.registrationToken
     ) return
-    const result = await new Promise<NestedWorkflowParentApplyResult>((resolve) => {
+    const applied = await nestedWorkflowApplyCoordinator.run({
+      sessionId,
+      sessionIdentity: session,
+      nestedCanvasId: canvasId,
+      nestedRegistrationToken: nestedRegistration.registrationToken,
+      acceptedGraph: accepted.graph,
+      acceptedRevision: accepted.snapshotRevision ?? session.snapshotRevision,
+      acceptedValidation: accepted.validation,
+    }, capture => new Promise<NestedWorkflowParentApplyResult>((resolve) => {
       let started = false
       window.dispatchEvent(new CustomEvent('bioimageflow:apply-nested-workflow-session', {
         detail: {
           sessionId,
           parentCanvasId: session.parentCanvasId,
           parentNodeId: session.parentNodeId,
-          graph: accepted.graph,
+          capture,
           started: () => { started = true },
           complete: resolve,
         },
       }))
       if (!started) resolve({ status: 'conflict', reason: 'parent_missing' })
-    })
+    }))
+    const { capture, outcome: result } = applied
     if (result.status === 'cancelled') return
     if (result.status !== 'applied') {
-      if (result.status === 'conflict') {
+      if (
+        result.status === 'conflict'
+        && nestedWorkflowSessionsStore.sessionById(sessionId) === session
+      ) {
         nestedWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
-        uiStore.markCanvasDirty(canvasId)
+        if (
+          canvasSessionRegistry.get(canvasId)?.registrationToken
+          === nestedRegistration.registrationToken
+        ) uiStore.markCanvasDirty(canvasId)
       }
-      reportError({
+      if (!isCanvasUnmounted) reportError({
         kind: 'graph_sync_error',
         detail: nestedWorkflowParentApplyError(result),
         alwaysToast: true,
       })
       return
     }
-    nestedWorkflowSessionsStore.markSaved(
+    nestedWorkflowSessionsStore.acknowledgeApplied(
       sessionId,
-      accepted.graph,
-      accepted.snapshotRevision,
-      accepted.validation,
+      capture.acceptedGraph,
+      capture.acceptedRevision,
+      capture.acceptedValidation,
     )
-    uiStore.markCanvasClean(canvasId)
+    if (
+      !isCanvasUnmounted
+      && nestedWorkflowSessionsStore.sessionById(sessionId) === session
+      && canvasSessionRegistry.get(canvasId)?.registrationToken
+        === capture.nestedRegistrationToken
+    ) {
+      if (nestedWorkflowSessionsStore.isDirty(sessionId)) {
+        uiStore.markCanvasDirty(canvasId)
+      } else {
+        uiStore.markCanvasClean(canvasId)
+      }
+    }
   } catch (error) {
-    reportError({
+    if (!isCanvasUnmounted) reportError({
       kind: 'graph_sync_error',
       detail: error instanceof Error
         ? error.message
@@ -3118,6 +3162,27 @@ function currentNestedWorkflowDocument(node: any): GraphState | null {
   return deepClone(graph)
 }
 
+function acceptedParentReflectsEffects(
+  graph: GraphState,
+  parentNodeId: string,
+  effects: NestedWorkflowApplyEffects,
+): boolean {
+  const parentNode = graph.nodes.find(node => node.id === parentNodeId)
+  if (parentNode?.type !== 'workflow') return false
+  const removedEdges = new Set(effects.edgeIds)
+  const removedBindings = new Set(effects.bindingIds)
+  const removedInputs = new Set(effects.inputIds)
+  const removedEnclosingOutputs = new Set(effects.enclosingOutputIds)
+  return graph.edges.every(edge => !removedEdges.has(edge.id))
+    && Object.keys(parentNode.bindings).every(id => !removedBindings.has(id))
+    && graph.interface.inputs.every(input => input.targets.every(target => !(
+      target.node === parentNodeId
+      && target.port.kind === 'workflow'
+      && removedInputs.has(target.port.id)
+    )))
+    && graph.interface.outputs.every(output => !removedEnclosingOutputs.has(output.id))
+}
+
 async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
   sessionId?: string
   parentCanvasId?: string
@@ -3130,13 +3195,17 @@ async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     !detail?.sessionId
     || detail.parentCanvasId !== canvasId
     || !detail.parentNodeId
-    || !detail.graph
+    || !detail.capture
   ) return
+  const capture = detail.capture
   const session = nestedWorkflowSessionsStore.sessionById(detail.sessionId)
+  const parentRegistration = canvasSessionRegistry.get(canvasId)
   if (
     !session
+    || session !== capture.sessionIdentity
     || session.parentCanvasId !== canvasId
     || session.parentNodeId !== detail.parentNodeId
+    || !parentRegistration
   ) return
   detail.started?.()
   const parentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
@@ -3145,53 +3214,139 @@ async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     return
   }
   const currentDocument = currentNestedWorkflowDocument(parentNode)
-  if (
-    currentDocument === null
-    || !graphDocumentsEqual(currentDocument, session.savedSnapshot)
-  ) {
-    detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
-    return
-  }
-  const previousInputs = deepClone(parentNode.data.workflow.interface.inputs) as WorkflowInput[]
-  const previousOutputs = deepClone(parentNode.data.workflow.interface.outputs) as WorkflowOutput[]
-  const effects = nestedWorkflowDestructiveEffects(
-    detail.parentNodeId,
-    previousInputs,
-    previousOutputs,
-    detail.graph.interface.inputs,
-    detail.graph.interface.outputs,
-  )
-  const destructiveCount = effects.edgeIds.size + effects.bindingIds.size
-  if (destructiveCount > 0) {
-    const parentBeforeConfirmation = currentSerializedGraph()
-    const connections = `${effects.edgeIds.size} parent connection${effects.edgeIds.size === 1 ? '' : 's'}`
-    const bindings = `${effects.bindingIds.size} parent binding${effects.bindingIds.size === 1 ? '' : 's'}`
-    if (!window.confirm(
-      `Applying these nested-workflow changes will remove ${connections} and ${bindings}. Continue?`,
-    )) {
-      detail.complete?.({ status: 'cancelled' })
+  let effects: NestedWorkflowApplyEffects
+  let alreadyApplied = false
+  if (capture.retrying && capture.parent) {
+    const currentParentGraph = currentSerializedGraph()
+    if (
+      currentDocument
+      && graphDocumentsEqual(currentDocument, capture.acceptedGraph)
+      && capture.parent.graphApplied
+      && graphDocumentsEqual(currentParentGraph, capture.parent.graphApplied)
+    ) {
+      alreadyApplied = true
+      effects = capture.parent.effects
+    } else if (graphDocumentsEqual(currentParentGraph, capture.parent.graphBefore)) {
+      effects = capture.parent.effects
+    } else {
+      detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
       return
     }
-    const currentSession = nestedWorkflowSessionsStore.sessionById(detail.sessionId)
-    const currentParentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
-    const currentParentDocument = currentNestedWorkflowDocument(currentParentNode)
+    capture.parent = {
+      ...capture.parent,
+      registrationToken: parentRegistration.registrationToken,
+    }
+  } else {
     if (
-      currentSession !== session
-      || currentParentDocument === null
-      || !graphDocumentsEqual(currentParentDocument, session.savedSnapshot)
-      || !graphDocumentsEqual(currentSerializedGraph(), parentBeforeConfirmation)
+      currentDocument === null
+      || !graphDocumentsEqual(currentDocument, session.savedSnapshot)
     ) {
       detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
       return
     }
+    const previousInputs = deepClone(parentNode.data.workflow.interface.inputs) as WorkflowInput[]
+    const previousOutputs = deepClone(parentNode.data.workflow.interface.outputs) as WorkflowOutput[]
+    effects = nestedWorkflowDestructiveEffects(
+      detail.parentNodeId,
+      previousInputs,
+      previousOutputs,
+      capture.acceptedGraph.interface.inputs,
+      capture.acceptedGraph.interface.outputs,
+    )
+    const destructiveCount = effects.edgeIds.length
+      + effects.bindingIds.length
+      + effects.enclosingInputIds.length
+      + effects.enclosingOutputIds.length
+    if (destructiveCount > 0) {
+      const parentBeforeConfirmation = currentSerializedGraph()
+      const connections = `${effects.edgeIds.length} parent connection${effects.edgeIds.length === 1 ? '' : 's'}`
+      const bindings = `${effects.bindingIds.length} parent binding${effects.bindingIds.length === 1 ? '' : 's'}`
+      const forwarded = effects.enclosingInputIds.length + effects.enclosingOutputIds.length
+      const interfaceReferences = `${forwarded} enclosing interface reference${forwarded === 1 ? '' : 's'}`
+      const effectDescriptions = [
+        effects.edgeIds.length > 0 ? connections : null,
+        effects.bindingIds.length > 0 ? bindings : null,
+        forwarded > 0 ? interfaceReferences : null,
+      ].filter((description): description is string => description !== null)
+      const describedEffects = effectDescriptions.length === 2
+        ? effectDescriptions.join(' and ')
+        : effectDescriptions.length > 2
+          ? `${effectDescriptions.slice(0, -1).join(', ')}, and ${effectDescriptions[effectDescriptions.length - 1]}`
+          : effectDescriptions[0]
+      if (!window.confirm(
+        `Applying these nested-workflow changes will remove ${describedEffects}. Continue?`,
+      )) {
+        detail.complete?.({ status: 'cancelled' })
+        return
+      }
+      const currentParentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
+      const currentParentDocument = currentNestedWorkflowDocument(currentParentNode)
+      const currentEffects = currentParentDocument
+        ? nestedWorkflowDestructiveEffects(
+            detail.parentNodeId,
+            currentParentDocument.interface.inputs,
+            currentParentDocument.interface.outputs,
+            capture.acceptedGraph.interface.inputs,
+            capture.acceptedGraph.interface.outputs,
+          )
+        : null
+      const guardFailure = nestedWorkflowApplyGuard({
+        expectedSession: session,
+        currentSession: nestedWorkflowSessionsStore.sessionById(detail.sessionId) ?? null,
+        expectedParentRegistrationToken: parentRegistration.registrationToken,
+        currentParentRegistrationToken: canvasSessionRegistry.get(canvasId)?.registrationToken
+          ?? null,
+        expectedNestedRegistrationToken: capture.nestedRegistrationToken,
+        currentNestedRegistrationToken: canvasSessionRegistry.get(capture.nestedCanvasId)
+          ?.registrationToken ?? null,
+        expectedParentGraph: parentBeforeConfirmation,
+        currentParentGraph: currentSerializedGraph(),
+        expectedEffects: effects,
+        currentEffects,
+        locked: isLocked.value,
+      })
+      if (guardFailure) {
+        detail.complete?.(guardFailure)
+        return
+      }
+    }
+    if (
+      nestedWorkflowSessionsStore.sessionById(detail.sessionId) !== session
+      || canvasSessionRegistry.get(canvasId)?.registrationToken
+        !== parentRegistration.registrationToken
+      || canvasSessionRegistry.get(capture.nestedCanvasId)?.registrationToken
+        !== capture.nestedRegistrationToken
+    ) {
+      detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
+      return
+    }
+    capture.parent = {
+      canvasId,
+      registrationToken: parentRegistration.registrationToken,
+      graphBefore: currentSerializedGraph(),
+      graphApplied: null,
+      effects,
+    }
+  }
+  if (!alreadyApplied) {
     if (isLocked.value) {
       detail.complete?.({ status: 'rejected', reason: 'locked' })
       return
     }
+    const applied = applyNestedWorkflowDraftWithEffects(
+      detail.parentNodeId,
+      capture.acceptedGraph,
+      effects,
+    )
+    if (!applied) {
+      detail.complete?.({ status: 'rejected', reason: 'locked' })
+      return
+    }
+    if (capture.parent) capture.parent.graphApplied = currentSerializedGraph()
   }
-  const applied = applyNestedWorkflowDraftWithEffects(detail.parentNodeId, detail.graph, effects)
-  if (!applied) {
-    detail.complete?.({ status: 'rejected', reason: 'locked' })
+  const expectedAppliedParent = capture.parent?.graphApplied
+  if (!expectedAppliedParent) {
+    detail.complete?.({ status: 'rejected', reason: 'persistence_failed' })
     return
   }
   try {
@@ -3200,8 +3355,19 @@ async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     if (
       !acceptedParent
       || nestedWorkflowSessionsStore.sessionById(detail.sessionId) !== session
+      || canvasSessionRegistry.get(canvasId)?.registrationToken
+        !== capture.parent?.registrationToken
+      || canvasSessionRegistry.get(capture.nestedCanvasId)?.registrationToken
+        !== capture.nestedRegistrationToken
+      || isLocked.value
+      || !graphDocumentsEqual(acceptedParent.graph, expectedAppliedParent)
       || acceptedNode?.type !== 'workflow'
-      || !graphDocumentsEqual(acceptedNode.workflow, detail.graph)
+      || !graphDocumentsEqual(acceptedNode.workflow, capture.acceptedGraph)
+      || !acceptedParentReflectsEffects(
+        acceptedParent.graph,
+        detail.parentNodeId,
+        effects,
+      )
     ) {
       detail.complete?.({ status: 'rejected', reason: 'persistence_failed' })
       return

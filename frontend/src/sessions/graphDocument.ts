@@ -26,10 +26,18 @@ function sortJson(value: unknown): unknown {
   )
 }
 
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(sortJson(value))
+}
+
 export function canonicalGraphJson(graph: GraphState): string {
-  return JSON.stringify(sortJson(graph))
+  return canonicalJson(graph)
 }
 
 export function graphDocumentsEqual(left: GraphState, right: GraphState): boolean {
   return canonicalGraphJson(left) === canonicalGraphJson(right)
+}
+
+export function jsonDocumentsEqual(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right)
 }
