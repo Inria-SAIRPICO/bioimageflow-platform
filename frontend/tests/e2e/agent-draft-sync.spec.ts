@@ -203,6 +203,66 @@ test.describe('agent draft sync', () => {
   })
 })
 
+for (const keepCanvasFirst of [false, true]) {
+  test(`saves the agent snapshot as a copy (keep canvas first: ${keepCanvasFirst})`, async ({ page }) => {
+    const name = uniqueName('agent_copy')
+    await createServerWorkflow(page, name, emptyGraph(name))
+    try {
+      await page.goto('/')
+      await expect(page.locator('#bioimageflow-app')).toBeVisible()
+      await rememberLastOpenedWorkflow(page, name)
+      await page.reload()
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+
+      async function agentChange(label: string) {
+        await page.evaluate(async () => {
+          const { useUIStore } = await import('/src/stores/ui.ts')
+          const { canvasSessionRegistry } = await import('/src/sessions/canvasSessionRegistry.ts')
+          const id = canvasSessionRegistry.activeCanvasId.value
+          if (id === null) throw new Error('No active canvas')
+          useUIStore().markCanvasDirty(id)
+        })
+        const latest = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
+        const response = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${name}`, {
+          data: {
+            graph: { ...latest.graph, display_name: label },
+            expected_revision: latest.draft_revision,
+            updated_by: 'agent',
+          },
+        })
+        expect(response.ok()).toBeTruthy()
+        await expect(page.locator('.workflow-draft-conflict')).toBeVisible()
+        return response.json()
+      }
+
+      if (keepCanvasFirst) {
+        await agentChange('Earlier agent change')
+        await page.getByRole('button', { name: 'Keep my canvas', exact: true }).click()
+        await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
+      }
+      const agent = await agentChange('Latest agent change')
+      const copied = page.waitForResponse(response => (
+        response.request().method() === 'PATCH'
+        && response.url().endsWith(`/api/v1/workflows/${name}`)
+      ))
+      await page.getByRole('button', { name: 'Save agent version as copy', exact: true }).click()
+      const response = await copied
+      expect(response.ok()).toBeTruthy()
+      const info = await response.json()
+      await expect(page.locator('.workflow-draft-conflict__success')).toContainText(info.id)
+      const copy = await (await page.request.get(`${API_BASE}/api/v1/workflows/${info.id}`)).json()
+      expect(copy.graph).toEqual({ ...agent.graph, name: info.id, display_name: info.id })
+      const original = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
+      expect(original.draft_revision).toBe(agent.draft_revision)
+      expect(original.graph).toEqual(agent.graph)
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+    } finally {
+      await deleteWorkflowIfExists(page, `${name}_agent_2`)
+      await deleteWorkflowIfExists(page, name)
+    }
+  })
+}
+
 test('copies an agent graph with recursively owned unsaved sources without aliasing', async ({ page }) => {
   test.setTimeout(120_000)
   const name = uniqueName('agent_recursive_copy')
