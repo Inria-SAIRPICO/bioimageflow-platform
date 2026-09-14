@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { nestedWorkflowApplyCoordinator } from '@/sessions/nestedWorkflowApplyCoordinator'
 import {
   deleteNestedWorkflowSnapshot,
   openNestedWorkflowSnapshot,
@@ -227,6 +228,7 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
   }
 
   function closeSession(id: string): void {
+    nestedWorkflowApplyCoordinator.clear(id)
     sessions.value = sessions.value.filter((session) => session.id !== id)
   }
 

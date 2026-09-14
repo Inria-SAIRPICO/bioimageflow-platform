@@ -87,6 +87,7 @@ import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import {
   changedNestedWorkflowPortIds,
   enclosingWorkflowInterfaceEffects,
+  parentGraphReflectsNestedWorkflowEffects,
   reconcileEnclosingWorkflowInterface,
 } from '@/sessions/nestedWorkflowInterfaceReconciliation'
 import {
@@ -1678,8 +1679,19 @@ async function loadNestedWorkflowSessionDraft() {
   if (!sessionId) return
   const session = nestedWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
+  const registrationToken = canvasSessionRegistry.get(canvasId)?.registrationToken
+  if (registrationToken === undefined) return
   await applyGraphState(session.draft)
-  if (isCanvasUnmounted) return
+  if (
+    isCanvasUnmounted
+    || nestedWorkflowSessionsStore.sessionById(sessionId) !== session
+    || canvasSessionRegistry.get(canvasId)?.registrationToken !== registrationToken
+  ) return
+  if (nestedWorkflowSessionsStore.isDirty(sessionId)) {
+    uiStore.markCanvasDirty(canvasId)
+  } else {
+    uiStore.markCanvasClean(canvasId)
+  }
   hasLoadedGraphState.value = true
 }
 
@@ -3162,27 +3174,6 @@ function currentNestedWorkflowDocument(node: any): GraphState | null {
   return deepClone(graph)
 }
 
-function acceptedParentReflectsEffects(
-  graph: GraphState,
-  parentNodeId: string,
-  effects: NestedWorkflowApplyEffects,
-): boolean {
-  const parentNode = graph.nodes.find(node => node.id === parentNodeId)
-  if (parentNode?.type !== 'workflow') return false
-  const removedEdges = new Set(effects.edgeIds)
-  const removedBindings = new Set(effects.bindingIds)
-  const removedInputs = new Set(effects.inputIds)
-  const removedEnclosingOutputs = new Set(effects.enclosingOutputIds)
-  return graph.edges.every(edge => !removedEdges.has(edge.id))
-    && Object.keys(parentNode.bindings).every(id => !removedBindings.has(id))
-    && graph.interface.inputs.every(input => input.targets.every(target => !(
-      target.node === parentNodeId
-      && target.port.kind === 'workflow'
-      && removedInputs.has(target.port.id)
-    )))
-    && graph.interface.outputs.every(output => !removedEnclosingOutputs.has(output.id))
-}
-
 async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
   sessionId?: string
   parentCanvasId?: string
@@ -3221,11 +3212,13 @@ async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     if (
       currentDocument
       && graphDocumentsEqual(currentDocument, capture.acceptedGraph)
-      && capture.parent.graphApplied
-      && graphDocumentsEqual(currentParentGraph, capture.parent.graphApplied)
+      && parentGraphReflectsNestedWorkflowEffects(
+        currentParentGraph, detail.parentNodeId, capture.parent.effects,
+      )
     ) {
       alreadyApplied = true
       effects = capture.parent.effects
+      capture.parent.graphApplied = currentParentGraph
     } else if (graphDocumentsEqual(currentParentGraph, capture.parent.graphBefore)) {
       effects = capture.parent.effects
     } else {
@@ -3363,7 +3356,7 @@ async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
       || !graphDocumentsEqual(acceptedParent.graph, expectedAppliedParent)
       || acceptedNode?.type !== 'workflow'
       || !graphDocumentsEqual(acceptedNode.workflow, capture.acceptedGraph)
-      || !acceptedParentReflectsEffects(
+      || !parentGraphReflectsNestedWorkflowEffects(
         acceptedParent.graph,
         detail.parentNodeId,
         effects,

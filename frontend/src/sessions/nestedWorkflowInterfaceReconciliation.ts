@@ -1,4 +1,4 @@
-import type { WorkflowInput, WorkflowOutput } from '@/api/types'
+import type { GraphState, WorkflowInput, WorkflowOutput } from '@/api/types'
 import { jsonDocumentsEqual } from './graphDocument'
 import type { NestedWorkflowApplyEffects } from './nestedWorkflowApplyCoordinator'
 
@@ -64,4 +64,38 @@ export function reconcileEnclosingWorkflowInterface(
     }),
     outputs: outputs.filter(output => !removedOutputIds.has(output.id)),
   }
+}
+
+export function parentGraphReflectsNestedWorkflowEffects(
+  graph: GraphState,
+  parentNodeId: string,
+  effects: NestedWorkflowApplyEffects,
+): boolean {
+  const parentNode = graph.nodes.find(node => node.id === parentNodeId)
+  if (parentNode?.type !== 'workflow') return false
+  const removedEdges = new Set(effects.edgeIds)
+  const removedBindings = new Set(effects.bindingIds)
+  const removedInputs = new Set(effects.inputIds)
+  const removedOutputs = new Set(effects.outputIds)
+  const removedEnclosingOutputs = new Set(effects.enclosingOutputIds)
+  return graph.edges.every(edge => (
+    !removedEdges.has(edge.id)
+    && !(edge.target_node === parentNodeId && removedInputs.has(edge.target_input ?? ''))
+    && !(
+      edge.source_node === parentNodeId
+      && 'source_output' in edge
+      && removedOutputs.has(edge.source_output)
+    )
+  ))
+    && Object.keys(parentNode.bindings).every(id => !removedBindings.has(id))
+    && Object.keys(parentNode.bindings).every(id => !removedInputs.has(id))
+    && graph.interface.inputs.every(input => input.targets.every(target => !(
+      target.node === parentNodeId
+      && target.port.kind === 'workflow'
+      && removedInputs.has(target.port.id)
+    )))
+    && graph.interface.outputs.every(output => (
+      !removedEnclosingOutputs.has(output.id)
+      && !(output.source.node === parentNodeId && removedOutputs.has(output.source.column))
+    ))
 }

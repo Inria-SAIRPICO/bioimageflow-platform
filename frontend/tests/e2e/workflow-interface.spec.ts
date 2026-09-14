@@ -713,10 +713,6 @@ test.describe('workflow interface and grouping', () => {
     expect(durablePrivate.graph.interface.inputs).toEqual([])
     expect(durablePrivate.graph.interface.outputs).toEqual([])
 
-    let releaseRetry!: () => void
-    const retryRelease = new Promise<void>((resolve) => { releaseRetry = resolve })
-    let retryStarted!: () => void
-    const retryStart = new Promise<void>((resolve) => { retryStarted = resolve })
     let routedParentWrites = 0
     await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
       if (route.request().method() !== 'PUT') {
@@ -727,10 +723,6 @@ test.describe('workflow interface and grouping', () => {
       if (routedParentWrites === 1) {
         await route.fulfill({ status: 500, json: { detail: 'forced parent persistence failure' } })
         return
-      }
-      if (routedParentWrites === 2) {
-        retryStarted()
-        await retryRelease
       }
       await route.continue()
     })
@@ -754,15 +746,30 @@ test.describe('workflow interface and grouping', () => {
     const afterFailure = await draftGraph(page, name)
     expect(afterFailure).toEqual(before.graph)
     await expect(page.getByTestId('workflow-title')).toContainText('*')
-
-    const acceptedParentWrite = page.waitForResponse(response => (
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    await page.getByTestId('canvas-persistence-dismiss').click()
+    await page.locator('.vue-flow__node[data-id="parent_blur"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const siblingWrite = page.waitForResponse(response => (
       response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
+    await page.getByTestId('path-input-input_image').locator('input')
+      .fill('/tmp/unrelated-sibling-edit.tif')
+    const siblingAccepted = (await siblingWrite).json() as Promise<WorkflowDraftResponse>
+    const siblingGraph = await siblingAccepted
+    expect(siblingGraph.graph.nodes.find(node => node.id === 'parent_blur')).toMatchObject({
+      parameters: { input_image: '/tmp/unrelated-sibling-edit.tif' },
+    })
+    expect(childNode(siblingGraph.graph).workflow.interface.inputs).toEqual([])
+    expect(parentWriteCount).toBe(2)
+
+    await page.locator('.dv-tab').filter({ hasText: 'Stable child' }).click()
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
-    await retryStart
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+
     const privateEditB = page.waitForResponse(response => (
       response.url().includes('/api/v1/nested-workflow-snapshots/')
       && response.request().method() === 'PUT'
@@ -776,32 +783,21 @@ test.describe('workflow interface and grouping', () => {
       graph: GraphState
     }
     expect(privateSnapshotB.snapshot_revision).toBeGreaterThan(privateSnapshot.snapshot_revision)
-    releaseRetry()
-    const acceptedResponse = await acceptedParentWrite
-    expect(parentWriteCount).toBe(2)
-    const accepted = (await acceptedResponse.json()) as WorkflowDraftResponse
-    expect(accepted.draft_revision).toBe(before.draft_revision + 1)
-    expect(accepted.graph.edges).toEqual([])
-    expect(childNode(accepted.graph).bindings).toEqual({})
-    expect(childNode(accepted.graph).workflow.interface.inputs).toEqual([])
-    expect(childNode(accepted.graph).workflow.interface.outputs).toEqual([])
-    expect(accepted.graph.interface.inputs).toEqual([{
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+    expect(siblingGraph.graph.edges).toEqual([])
+    expect(childNode(siblingGraph.graph).bindings).toEqual({})
+    expect(childNode(siblingGraph.graph).workflow.interface.inputs).toEqual([])
+    expect(childNode(siblingGraph.graph).workflow.interface.outputs).toEqual([])
+    expect(siblingGraph.graph.interface.inputs).toEqual([{
       ...before.graph.interface.inputs[0]!,
       targets: [{ node: 'parent_blur', port: { kind: 'field', name: 'input_image' } }],
     }])
-    expect(accepted.graph.interface.outputs).toEqual([])
+    expect(siblingGraph.graph.interface.outputs).toEqual([])
     expect(privateSnapshotB.graph.interface.outputs).toHaveLength(1)
     expect(privateSnapshotB.graph.interface.outputs[0]).toMatchObject({
       source: { node: 'child_blur', column: 'output_image' },
       schema: { type: 'ImageFile' },
     })
-    await expect(page.getByTestId('workflow-title')).toContainText('*')
-
-    const finalResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
-    const final = (await finalResponse.json()) as WorkflowDraftResponse
-    expect(final.draft_revision).toBe(accepted.draft_revision)
-    expect(final.graph).toEqual(accepted.graph)
-
     const acceptedBWrite = page.waitForResponse(response => (
       response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
       && response.request().method() === 'PUT'
@@ -813,13 +809,102 @@ test.describe('workflow interface and grouping', () => {
     const finalB = await acceptedB
     expect(parentWriteCount).toBe(3)
     expect(childNode(finalB.graph).workflow).toEqual(privateSnapshotB.graph)
-    expect(finalB.draft_revision).toBe(accepted.draft_revision + 1)
+    expect(finalB.graph.nodes.find(node => node.id === 'parent_blur')).toMatchObject({
+      parameters: { input_image: '/tmp/unrelated-sibling-edit.tif' },
+    })
+    expect(finalB.draft_revision).toBe(siblingGraph.draft_revision + 1)
     await expect(page.getByTestId('workflow-title')).not.toContainText('*')
     await page.locator('.dv-tab').filter({ hasText: displayName }).click()
     await saveWorkflow(page, name)
     await page.reload()
     await openWorkflow(page, name, displayName)
     expect(await draftGraph(page, name)).toEqual(finalB.graph)
+  })
+
+  test('preserves nested dirtiness when remounted during a coalesced parent apply', async ({ page }) => {
+    const name = workflowName('nested_apply_remount')
+    const displayName = `Nested apply remount ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const beforeResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    const before = (await beforeResponse.json()) as WorkflowDraftResponse
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await page.getByTestId('unpublish-dataframe-0').click()
+    const privateRemoval = page.waitForResponse(response => responseCarriesNestedInputCount(response, 0))
+    await page.getByTestId('interface-input-toggle-number').click()
+    const privateSnapshot = await (await privateRemoval).json() as {
+      session_id: string
+      graph: GraphState
+    }
+
+    let releaseParent!: () => void
+    const parentRelease = new Promise<void>((resolve) => { releaseParent = resolve })
+    let parentStarted!: () => void
+    const parentStart = new Promise<void>((resolve) => { parentStarted = resolve })
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        parentStarted()
+        await parentRelease
+      }
+      await route.continue()
+    })
+    const acceptedParentWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await parentStart
+
+    let remountDiscardPrompt = ''
+    page.once('dialog', async (dialog) => {
+      remountDiscardPrompt = dialog.message()
+      await dialog.dismiss()
+    })
+    await page.locator('.dv-tab').filter({ hasText: 'Stable child' })
+      .locator('.dv-default-tab-action').click()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    expect(remountDiscardPrompt).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    releaseParent()
+    const accepted = (await acceptedParentWrite).json() as Promise<WorkflowDraftResponse>
+    const acceptedA = await accepted
+    expect(acceptedA.draft_revision).toBe(before.draft_revision + 1)
+    expect(childNode(acceptedA.graph).workflow).toEqual(privateSnapshot.graph)
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+
+    let retainedDiscardPrompt = ''
+    page.once('dialog', async (dialog) => {
+      retainedDiscardPrompt = dialog.message()
+      await dialog.dismiss()
+    })
+    await page.locator('.dv-tab').filter({ hasText: 'Stable child' })
+      .locator('.dv-default-tab-action').click()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    expect(retainedDiscardPrompt).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    const finalResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    const final = (await finalResponse.json()) as WorkflowDraftResponse
+    expect(final.draft_revision).toBe(acceptedA.draft_revision)
+    expect(final.graph).toEqual(acceptedA.graph)
   })
 
   test('deleting an exposed node removes its interface references before autosave', async ({
