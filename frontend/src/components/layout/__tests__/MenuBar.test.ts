@@ -2200,6 +2200,9 @@ describe('MenuBar', () => {
       registerActiveRootWorkflow()
       const store = useUIStore()
       store.setSelectedNodes(['n1'])
+      const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+      expect(activeCanvasId).not.toBeNull()
+      store.setCanvasHistoryAvailability(activeCanvasId!, { canUndo: true, canRedo: true })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
@@ -2210,6 +2213,16 @@ describe('MenuBar', () => {
       expect(edit.items.find((item: any) => item.label === 'Copy').disabled).toBe(false)
       expect(edit.items.find((item: any) => item.label === 'Paste').disabled).toBe(false)
       expect(edit.items.find((item: any) => item.label === 'Select All').disabled).toBe(false)
+    })
+
+    it('disables unavailable history commands for the active canvas', () => {
+      registerActiveRootWorkflow()
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
+
+      expect(edit.items.find((item: any) => item.label === 'Undo').disabled).toBe(true)
+      expect(edit.items.find((item: any) => item.label === 'Redo').disabled).toBe(true)
     })
 
     it('dispatches canvas edit commands', () => {

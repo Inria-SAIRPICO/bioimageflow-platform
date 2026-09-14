@@ -13,6 +13,8 @@ interface CanvasPresentationContext {
   activeWorkflowId: string | null
   activeWorkflowName: string | null
   hasUnsavedChanges: boolean
+  canUndo: boolean
+  canRedo: boolean
 }
 
 function createPresentationContext(): CanvasPresentationContext {
@@ -22,6 +24,8 @@ function createPresentationContext(): CanvasPresentationContext {
     activeWorkflowId: null,
     activeWorkflowName: null,
     hasUnsavedChanges: false,
+    canUndo: false,
+    canRedo: false,
   }
 }
 
@@ -125,6 +129,8 @@ export const useUIStore = defineStore('ui', () => {
   const hasUnsavedChanges = computed(
     () => activePresentation()?.hasUnsavedChanges ?? false,
   )
+  const canUndo = computed(() => activePresentation()?.canUndo ?? false)
+  const canRedo = computed(() => activePresentation()?.canRedo ?? false)
   const hasSelection = computed(() => selectedNodeIds.value.length > 0)
   const isSingleSelection = computed(() => selectedNodeIds.value.length === 1)
   const isMultiSelection = computed(() => selectedNodeIds.value.length > 1)
@@ -201,6 +207,15 @@ export const useUIStore = defineStore('ui', () => {
     const presentation = canvasPresentation(canvasId)
     presentation.activeWorkflowId = workflowId
     presentation.activeWorkflowName = displayName
+  }
+
+  function setCanvasHistoryAvailability(
+    canvasId: CanvasId,
+    availability: { canUndo: boolean, canRedo: boolean },
+  ) {
+    const presentation = canvasPresentation(canvasId)
+    presentation.canUndo = availability.canUndo
+    presentation.canRedo = availability.canRedo
   }
 
   function canvasWorkflowId(canvasId: CanvasId): string | null {
@@ -308,6 +323,8 @@ export const useUIStore = defineStore('ui', () => {
     activeWorkflowName,
     activeWorkflowId,
     hasUnsavedChanges,
+    canUndo,
+    canRedo,
     isExecutionLocked,
     codeEditorUrl,
     codeEditorPath,
@@ -338,6 +355,7 @@ export const useUIStore = defineStore('ui', () => {
     setCanvasSelectedNodes,
     setCanvasGraphNodes,
     setCanvasWorkflow,
+    setCanvasHistoryAvailability,
     canvasWorkflowId,
     canvasIdsForWorkflow,
     markCanvasDirty,

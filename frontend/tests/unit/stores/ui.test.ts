@@ -84,6 +84,26 @@ describe('UI store', () => {
     expect(store.hasUnsavedChanges).toBe(false)
   })
 
+  it('isolates undo and redo availability by active canvas', () => {
+    const canvasA = registerRootCanvas('history-a', { activate: false }).canvasId
+    const canvasB = registerRootCanvas('history-b', { activate: false }).canvasId
+    const store = useUIStore()
+    store.setCanvasHistoryAvailability(canvasA, { canUndo: true, canRedo: false })
+    store.setCanvasHistoryAvailability(canvasB, { canUndo: false, canRedo: true })
+
+    canvasSessionRegistry.activate(canvasA)
+    expect({ canUndo: store.canUndo, canRedo: store.canRedo }).toEqual({
+      canUndo: true,
+      canRedo: false,
+    })
+
+    canvasSessionRegistry.activate(canvasB)
+    expect({ canUndo: store.canUndo, canRedo: store.canRedo }).toEqual({
+      canUndo: false,
+      canRedo: true,
+    })
+  })
+
   it('isolates presentation state for canvases with identical node ids', () => {
     const root = registerRootCanvas('root', { activate: false })
     const nested = registerNestedCanvas({

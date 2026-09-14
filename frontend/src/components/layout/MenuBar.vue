@@ -898,6 +898,8 @@ function dispatchEditCommand(
 
 function editCommandDisabled(command: 'cut' | 'copy' | 'paste' | 'select-all' | 'undo' | 'redo'): boolean {
   if (executionStore.isMutationLocked) return true
+  if (command === 'undo') return !uiStore.canUndo
+  if (command === 'redo') return !uiStore.canRedo
   if (command === 'cut' || command === 'copy') {
     return uiStore.selectedNodeIds.length === 0
   }

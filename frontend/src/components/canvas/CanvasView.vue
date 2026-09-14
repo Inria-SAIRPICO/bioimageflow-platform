@@ -306,6 +306,11 @@ const rootPersistenceHasConflict = canvasPersistence.hasConflict ?? ref(false)
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<CanvasHistoryState>()
+watch(
+  [undoRedo.canUndo, undoRedo.canRedo],
+  ([canUndo, canRedo]) => uiStore.setCanvasHistoryAvailability(canvasId, { canUndo, canRedo }),
+  { immediate: true },
+)
 const executionLock = useExecutionLock()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const lifecycleOperation = computed(() => canvasLifecycleStore.operationFor(canvasId))

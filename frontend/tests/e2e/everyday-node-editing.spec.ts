@@ -198,12 +198,32 @@ async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> 
 }
 
 async function openWorkflowFromPanel(page: Page, workflowName: string): Promise<void> {
-  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).first().click()
   await page.getByTestId('workflow-search').fill(workflowName)
   const row = page.getByTestId(`workflow-row-${workflowName}`)
   await expect(row).toBeVisible()
   await row.dblclick()
-  await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+  await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+}
+
+async function expectUndoDisabled(page: Page): Promise<void> {
+  await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Undo', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+}
+
+async function closeWorkflowTab(
+  page: Page,
+  workflowName: string,
+  saveChanges = false,
+): Promise<void> {
+  const tab = page.getByTestId('canvas-tab').filter({ hasText: workflowName })
+  await tab.getByTestId('canvas-tab-close').click()
+  if (saveChanges) {
+    await expect(page.getByTestId('root-workflow-close-dialog')).toBeVisible()
+    await page.getByTestId('root-workflow-close-save').click()
+  }
+  await expect(tab).not.toBeVisible()
 }
 
 test.describe('everyday node editing', () => {
@@ -503,6 +523,7 @@ test.describe('everyday node editing', () => {
       )
       const firstEdited = await fetchDraft(page, workflowName)
       expect(firstEdited.graph).not.toEqual(firstBaseline.graph)
+      await closeWorkflowTab(page, workflowName, true)
 
       await openWorkflowFromPanel(page, secondWorkflowName)
       const secondBaseline = await fetchDraft(page, secondWorkflowName)
@@ -521,18 +542,23 @@ test.describe('everyday node editing', () => {
       const secondPanel = await openNodesPanel(page)
       await expect(secondPanel.locator('.param-number input')).toHaveValue('11')
 
+      await expectUndoDisabled(page)
       await pressCanvasShortcut(page, 'Control+z')
-      await page.waitForTimeout(500)
+      await expectUndoDisabled(page)
       const afterSecondUndo = await fetchDraft(page, secondWorkflowName)
       expect(afterSecondUndo.draft_revision).toBe(secondBaseline.draft_revision)
       expect(afterSecondUndo.graph).toEqual(secondBaseline.graph)
 
+      await closeWorkflowTab(page, secondWorkflowName)
       await openWorkflowFromPanel(page, workflowName)
+      const firstReloaded = await fetchDraft(page, workflowName)
+      expect(firstReloaded.graph).toEqual(firstEdited.graph)
+      await expectUndoDisabled(page)
       await pressCanvasShortcut(page, 'Control+z')
-      await page.waitForTimeout(500)
+      await expectUndoDisabled(page)
       const afterFirstReloadUndo = await fetchDraft(page, workflowName)
-      expect(afterFirstReloadUndo.draft_revision).toBe(firstEdited.draft_revision)
-      expect(afterFirstReloadUndo.graph).toEqual(firstEdited.graph)
+      expect(afterFirstReloadUndo.draft_revision).toBe(firstReloaded.draft_revision)
+      expect(afterFirstReloadUndo.graph).toEqual(firstReloaded.graph)
       await page.reload()
       expect((await fetchDraft(page, workflowName)).graph).toEqual(firstEdited.graph)
     } finally {
