@@ -20,6 +20,35 @@ import {
 } from '@/test-utils/persistenceFixtures'
 import type { ToolMetadata, ValidationResult } from '@/api/types'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+  type CanvasSessionDescriptor,
+} from '@/sessions/canvasSessionRegistry'
+
+function registerPanelCommands(
+  descriptor: CanvasSessionDescriptor,
+  canClearNodeOutputs: boolean,
+) {
+  return useCanvasCommands({
+    descriptor,
+    ...(descriptor.kind === 'nested' ? { save: vi.fn() } : {}),
+    renameNode: vi.fn(() => true),
+    setNodeEnabled: vi.fn(() => true),
+    setNodesEnabled: vi.fn(() => true),
+    deleteNodes: vi.fn(() => true),
+    clearNodeOutputs: vi.fn(async () => true),
+    canClearNodeOutputs,
+    setInputPinned: vi.fn(() => true),
+    setOutputTemplate: vi.fn(() => true),
+    toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    toggleWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
+    updateParameter: vi.fn(() => true),
+  })
+}
 
 function makeTool(): ToolMetadata {
   return {
@@ -100,6 +129,7 @@ function mountWithErrors(
     descriptor: canvas.descriptor,
     getWorkflowId: () => workflowId,
   })
+  registerPanelCommands(canvas.descriptor, true)
 
   const uiStore = useUIStore()
   const nodeId = 'node-1'
@@ -129,6 +159,31 @@ describe('NodePanel — parameter error wiring', () => {
 
     expect(wrapper.get('[data-testid="bulk-delete-nodes"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="bulk-clear-node-outputs"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('hides output clearing on an explicitly unsupported nested canvas', async () => {
+    const wrapper = mountWithErrors(null)
+    const rootId = registerRootCanvas('nested-parent').canvasId
+    const nestedCanvasId = canvasIdFromPanelId('nested-workflow:clear-unsupported')
+    registerPanelCommands({
+      kind: 'nested',
+      canvasId: nestedCanvasId,
+      sessionId: 'clear-unsupported',
+      parentCanvasId: rootId,
+    }, false)
+    const ui = useUIStore()
+    ui.setCanvasGraphNodes(nestedCanvasId, [
+      { id: 'node-1', data: makeNodeData() },
+      { id: 'node-2', data: makeNodeData({ name: 'Blur 2' }) },
+    ])
+    ui.setCanvasSelectedNodes(nestedCanvasId, ['node-1', 'node-2'])
+    canvasSessionRegistry.activate(nestedCanvasId)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="bulk-clear-node-outputs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="clear-node-outputs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="bulk-delete-nodes"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

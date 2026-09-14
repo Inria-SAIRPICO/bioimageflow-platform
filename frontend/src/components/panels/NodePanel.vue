@@ -91,6 +91,7 @@ const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 const fieldFocusTracker = useFieldFocusTracker()
 const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
+const canClearNodeOutputs = computed(() => canvasCommands.canClearNodeOutputs())
 const destructiveDialog = ref<{
   action: 'delete' | 'clear'
   nodeIds: string[]
@@ -285,7 +286,12 @@ function setSelectedNodesEnabled(enabled: boolean): void {
 function requestDestructiveAction(action: 'delete' | 'clear'): void {
   const canvasId = statusProjection.canvasId
   const nodeIds = [...uiStore.selectedNodeIds]
-  if (canvasId === null || nodeIds.length === 0 || isNodeEditingDisabled.value) return
+  if (
+    canvasId === null
+    || nodeIds.length === 0
+    || isNodeEditingDisabled.value
+    || (action === 'clear' && !canClearNodeOutputs.value)
+  ) return
   destructiveActionError.value = ''
   destructiveDialog.value = { action, nodeIds, canvasId }
 }
@@ -702,6 +708,7 @@ async function pickFiles(key: string) {
           @click="requestDestructiveAction('delete')"
         />
         <Button
+          v-if="canClearNodeOutputs"
           label="Clear all"
           severity="secondary"
           :disabled="isNodeEditingDisabled"
@@ -797,6 +804,7 @@ async function pickFiles(key: string) {
 
       <div class="node-action-bar">
         <Button
+          v-if="canClearNodeOutputs"
           label="Clear"
           icon="pi pi-eraser"
           severity="secondary"

@@ -157,6 +157,7 @@ vi.mock('@/composables/useCanvasCommands', () => ({
       updateParameter: (nodeId: string, key: string, value: unknown) => (
         canvasCommandMocks.updateParameter?.(nodeId, key, value) ?? false
       ),
+      canClearNodeOutputs: () => true,
       dispose: vi.fn(),
     }
   },

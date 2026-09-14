@@ -13,6 +13,7 @@ function makeCanvasCommandHandlers() {
     setNodesEnabled: vi.fn(() => true),
     deleteNodes: vi.fn(() => true),
     clearNodeOutputs: vi.fn(async () => true),
+    canClearNodeOutputs: true,
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
     toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
@@ -291,6 +292,35 @@ describe('active canvas commands', () => {
     expect(secondHandlers.deleteNodes).not.toHaveBeenCalled()
     expect(firstHandlers.clearNodeOutputs).not.toHaveBeenCalled()
     expect(secondHandlers.clearNodeOutputs).not.toHaveBeenCalled()
+  })
+
+  it('reports output-clear capability only for the active supporting canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const nestedId = canvasIdFromPanelId('nested-workflow:nested')
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      ...makeCanvasCommandHandlers(),
+      canClearNodeOutputs: true,
+      updateParameter: vi.fn(() => true),
+    })
+    useCanvasCommands({
+      descriptor: {
+        kind: 'nested',
+        canvasId: nestedId,
+        sessionId: 'nested',
+        parentCanvasId: rootId,
+      },
+      save: vi.fn(),
+      ...makeCanvasCommandHandlers(),
+      canClearNodeOutputs: false,
+      updateParameter: vi.fn(() => true),
+    })
+    const active = useCanvasCommands()
+
+    graphSyncCanvasSessions.activate(rootId)
+    expect(active.canClearNodeOutputs()).toBe(true)
+    graphSyncCanvasSessions.activate(nestedId)
+    expect(active.canClearNodeOutputs()).toBe(false)
   })
 
   it('routes an atomic parameter update to the active canvas', () => {

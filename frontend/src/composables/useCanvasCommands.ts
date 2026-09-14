@@ -35,6 +35,7 @@ export interface CanvasScopedCommandsOptions {
   setNodesEnabled?: (nodeIds: string[], enabled: boolean) => boolean
   deleteNodes?: (nodeIds: string[]) => boolean
   clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
+  canClearNodeOutputs?: boolean
   setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
@@ -71,6 +72,7 @@ export interface CanvasCommandsApi {
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
   deleteNodes(nodeIds: string[], expectedCanvasId?: CanvasId): boolean
   clearNodeOutputs(nodeIds: string[], expectedCanvasId?: CanvasId): Promise<boolean>
+  canClearNodeOutputs(): boolean
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -99,6 +101,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
   deleteNodes(nodeIds: string[]): boolean
   clearNodeOutputs(nodeIds: string[]): Promise<boolean>
+  canClearNodeOutputs: boolean
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -166,6 +169,7 @@ export function useCanvasCommands(
         ? Promise.resolve(false)
         : resource.clearNodeOutputs(nodeIds)
     ),
+    canClearNodeOutputs: () => resource.canClearNodeOutputs,
     setNodeResources: (nodeId, resources) => (
       resource.setNodeResources(nodeId, resources)
     ),
@@ -244,6 +248,7 @@ function createCommandResource(
       if (disposed) throw new Error('Canvas commands have been disposed')
       return await options.clearNodeOutputs?.(nodeIds) ?? false
     },
+    canClearNodeOutputs: options.canClearNodeOutputs === true,
     setNodeResources: (nodeId, resources) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setNodeResources?.(nodeId, resources) ?? false
@@ -327,6 +332,7 @@ function createActiveFacade(): CanvasCommandsApi {
       if (expectedCanvasId !== undefined && expectedCanvasId !== activeCanvasId) return false
       return await activeCommandResource()?.clearNodeOutputs(nodeIds) ?? false
     },
+    canClearNodeOutputs: () => activeCommandResource()?.canClearNodeOutputs === true,
     setNodeResources: (nodeId, resources) => (
       activeCommandResource()?.setNodeResources(nodeId, resources) ?? false
     ),

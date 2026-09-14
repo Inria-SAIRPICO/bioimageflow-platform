@@ -445,6 +445,54 @@ test.describe('everyday node editing', () => {
     )).status()).toBe(404)
   })
 
+  test('refuses to clear outputs when the pending draft cannot be accepted', async ({ page }) => {
+    const runResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText(
+      'Execution complete',
+      { timeout: 30000 },
+    )
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).ok()).toBeTruthy()
+
+    await node(page, TARGET_ID).click()
+    const panel = await openNodesPanel(page)
+    const baseline = await fetchDraft(page, workflowName)
+    let clearRequests = 0
+    page.on('request', request => {
+      if (
+        request.url().endsWith('/api/v1/execution/clear')
+        && request.method() === 'POST'
+      ) clearRequests += 1
+    })
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+      if (route.request().method() === 'PUT') {
+        await route.fulfill({ status: 500, json: { detail: 'forced draft persistence failure' } })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await panel.locator('.param-number input').fill('2')
+    await panel.getByTestId('clear-node-outputs').click()
+    await page.getByTestId('node-destructive-confirm').click()
+    await expect(page.getByTestId('node-destructive-error')).toBeVisible()
+    expect(clearRequests).toBe(0)
+    const afterRefusal = await fetchDraft(page, workflowName)
+    expect(afterRefusal.draft_revision).toBe(baseline.draft_revision)
+    expect(afterRefusal.graph).toEqual(baseline.graph)
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).ok()).toBeTruthy()
+  })
+
   test('renames without changing node or edge identity and refuses a duplicate name', async ({ page }) => {
     const source = node(page, SOURCE_ID)
     await source.click()

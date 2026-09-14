@@ -280,6 +280,7 @@ const canvasCommands = useCanvasCommands({
   setNodesEnabled,
   deleteNodes,
   clearNodeOutputs,
+  canClearNodeOutputs: !isNestedWorkflowEditor,
   setNodeResources,
   setInputPinned,
   setOutputTemplate,
@@ -2618,12 +2619,12 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   if (isLocked.value || isNestedWorkflowEditor || nodeIds.length === 0) return false
   const workflowName = currentWorkflowName()
   if (workflowName === null) return false
-  await flushNow()
-  if (isLocked.value) return false
-  const existingIds = new Set(getNodes.value.map((node: any) => node.id))
+  const accepted = await flushNow()
+  if (accepted === null || isLocked.value) return false
+  const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  await executionStore.clear(currentSerializedGraph(), requestedIds, workflowName)
+  await executionStore.clear(accepted.graph, requestedIds, workflowName)
   for (const nodeId of requestedIds) dataTableStore.clearCanvasCache(canvasId, nodeId)
   return true
 }
