@@ -584,12 +584,21 @@ watch(initialViewReady, (ready) => { if (ready) void fitInitialView() }, { flush
 
 interface NestedWorkflowApplyPayload {
   graph: GraphState
+  started?: () => void
 }
 
 type NestedWorkflowParentApplyResult =
   | { status: 'applied' }
+  | { status: 'cancelled' }
   | { status: 'conflict'; reason: NestedWorkflowParentConflictReason }
-  | { status: 'rejected'; reason: 'locked' }
+  | { status: 'rejected'; reason: 'locked' | 'persistence_failed' }
+
+interface NestedWorkflowDestructiveEffects {
+  inputIds: Set<string>
+  outputIds: Set<string>
+  edgeIds: Set<string>
+  bindingIds: Set<string>
+}
 
 interface InterfaceContext {
   parentNodeId?: string
@@ -1695,7 +1704,7 @@ onMounted(async () => {
   window.addEventListener('bioimageflow:nested-source-edit', handleNestedSourceEdit)
   window.addEventListener(
     'bioimageflow:apply-nested-workflow-session',
-    handleApplyNestedWorkflowSessionEvent as EventListener,
+    handleApplyNestedWorkflowSessionEvent as unknown as EventListener,
   )
   window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
@@ -1748,7 +1757,7 @@ onBeforeUnmount(() => {
   uiStore.releaseCanvasPresentation(canvasId)
   window.removeEventListener(
     'bioimageflow:apply-nested-workflow-session',
-    handleApplyNestedWorkflowSessionEvent as EventListener,
+    handleApplyNestedWorkflowSessionEvent as unknown as EventListener,
   )
   window.removeEventListener(
     'bioimageflow:replace-root-graph',
@@ -2910,31 +2919,51 @@ async function openNestedWorkflow(nodeId: string) {
   }
 }
 
-function reconcileWorkflowParentState(
+function nestedWorkflowDestructiveEffects(
   parentNodeId: string,
   previousInputs: WorkflowInput[],
   previousOutputs: WorkflowOutput[],
   nextInputs: WorkflowInput[],
   nextOutputs: WorkflowOutput[],
-) {
-  const removedInputs = new Set(
-    previousInputs.filter(input => !nextInputs.some(next => next.id === input.id))
-      .map(input => input.id),
-  )
-  const removedOutputs = new Set(
-    previousOutputs.filter(output => !nextOutputs.some(next => next.id === output.id))
-      .map(output => output.id),
-  )
-  const nextEdges = getEdges.value.filter((edge) => {
+): NestedWorkflowDestructiveEffects {
+  const nextInputById = new Map(nextInputs.map(input => [input.id, input]))
+  const nextOutputById = new Map(nextOutputs.map(output => [output.id, output]))
+  const inputIds = new Set(previousInputs.filter((input) => {
+    const next = nextInputById.get(input.id)
+    return next === undefined
+      || input.kind !== next.kind
+      || JSON.stringify(input.schema) !== JSON.stringify(next.schema)
+  }).map(input => input.id))
+  const outputIds = new Set(previousOutputs.filter((output) => {
+    const next = nextOutputById.get(output.id)
+    return next === undefined
+      || JSON.stringify(output.schema) !== JSON.stringify(next.schema)
+  }).map(output => output.id))
+  const edgeIds = new Set<string>()
+  for (const edge of getEdges.value) {
     if (edge.target === parentNodeId && edge.targetHandle) {
       const target = decodeEndpointHandle(edge.targetHandle)
-      if (target.kind === 'workflow-input' && removedInputs.has(target.id)) return false
+      if (target.kind === 'workflow-input' && inputIds.has(target.id)) edgeIds.add(edge.id)
     }
     if (edge.source === parentNodeId && edge.sourceHandle) {
       const source = decodeEndpointHandle(edge.sourceHandle)
-      if (source.kind === 'workflow-output' && removedOutputs.has(source.id)) return false
+      if (source.kind === 'workflow-output' && outputIds.has(source.id)) edgeIds.add(edge.id)
     }
-    return true
+  }
+  const parentNode = getNodes.value.find((node: any) => node.id === parentNodeId)
+  const bindingIds = new Set(
+    Object.keys(parentNode?.data?.bindings ?? {}).filter(id => inputIds.has(id)),
+  )
+  return { inputIds, outputIds, edgeIds, bindingIds }
+}
+
+function reconcileWorkflowParentState(
+  parentNodeId: string,
+  nextInputs: WorkflowInput[],
+  effects: NestedWorkflowDestructiveEffects,
+) {
+  const nextEdges = getEdges.value.filter((edge) => {
+    return !effects.edgeIds.has(edge.id)
   })
   setEdges(nextEdges)
 
@@ -2943,7 +2972,7 @@ function reconcileWorkflowParentState(
 
   parentNode.data.bindings = Object.fromEntries(
     Object.entries(parentNode.data.bindings ?? {})
-      .filter(([id]) => !removedInputs.has(id)),
+      .filter(([id]) => !effects.bindingIds.has(id)),
   )
   parentNode.data.pinnedInputs = Object.fromEntries(
     nextInputs.map(input => [input.id, parentNode.data.pinnedInputs?.[input.id] !== false]),
@@ -2961,9 +2990,10 @@ function reconcileWorkflowParentState(
   parentNode.data.connectedInputs = connectedInputs
 }
 
-function applyNestedWorkflowDraft(
+function applyNestedWorkflowDraftWithEffects(
   parentNodeId: string,
   graph: GraphState,
+  effects?: NestedWorkflowDestructiveEffects,
 ): boolean {
   if (isLocked.value) return false
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
@@ -2974,12 +3004,17 @@ function applyNestedWorkflowDraft(
   const previousOutputs = deepClone(node.data.workflow.interface.outputs) as WorkflowOutput[]
   const nextInputs = deepClone(graph.interface.inputs)
   const nextOutputs = deepClone(graph.interface.outputs)
-  reconcileWorkflowParentState(
+  const destructiveEffects = effects ?? nestedWorkflowDestructiveEffects(
     parentNodeId,
     previousInputs,
     previousOutputs,
     nextInputs,
     nextOutputs,
+  )
+  reconcileWorkflowParentState(
+    parentNodeId,
+    nextInputs,
+    destructiveEffects,
   )
   node.data.workflow = deepClone(graph)
   canvasStatusProjection.stageCurrentSemanticStatuses()
@@ -2995,6 +3030,10 @@ function applyNestedWorkflowDraft(
   return true
 }
 
+function applyNestedWorkflowDraft(parentNodeId: string, graph: GraphState): boolean {
+  return applyNestedWorkflowDraftWithEffects(parentNodeId, graph)
+}
+
 async function saveNestedWorkflowSession(): Promise<void> {
   if (isLocked.value) return
   const sessionId = props.nestedWorkflowSessionId
@@ -3008,24 +3047,21 @@ async function saveNestedWorkflowSession(): Promise<void> {
       isCanvasUnmounted
       || nestedWorkflowSessionsStore.sessionById(sessionId) !== session
     ) return
-    const outcome: { result: NestedWorkflowParentApplyResult } = {
-      result: {
-        status: 'conflict',
-        reason: 'parent_missing',
-      },
-    }
-    window.dispatchEvent(new CustomEvent('bioimageflow:apply-nested-workflow-session', {
-      detail: {
-        sessionId,
-        parentCanvasId: session.parentCanvasId,
-        parentNodeId: session.parentNodeId,
-        graph: accepted.graph,
-        complete: (nextResult: NestedWorkflowParentApplyResult) => {
-          outcome.result = nextResult
+    const result = await new Promise<NestedWorkflowParentApplyResult>((resolve) => {
+      let started = false
+      window.dispatchEvent(new CustomEvent('bioimageflow:apply-nested-workflow-session', {
+        detail: {
+          sessionId,
+          parentCanvasId: session.parentCanvasId,
+          parentNodeId: session.parentNodeId,
+          graph: accepted.graph,
+          started: () => { started = true },
+          complete: resolve,
         },
-      },
-    }))
-    const result = outcome.result
+      }))
+      if (!started) resolve({ status: 'conflict', reason: 'parent_missing' })
+    })
+    if (result.status === 'cancelled') return
     if (result.status !== 'applied') {
       if (result.status === 'conflict') {
         nestedWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
@@ -3057,9 +3093,12 @@ async function saveNestedWorkflowSession(): Promise<void> {
 
 function nestedWorkflowParentApplyError(result: Exclude<
   NestedWorkflowParentApplyResult,
-  { status: 'applied' }
+  { status: 'applied' | 'cancelled' }
 >): string {
   if (result.status === 'rejected') {
+    if (result.reason === 'persistence_failed') {
+      return 'Cannot save nested-workflow because the reconciled parent graph was not accepted.'
+    }
     return 'Cannot save nested-workflow while execution is active.'
   }
   if (result.reason === 'parent_changed') {
@@ -3079,10 +3118,11 @@ function currentNestedWorkflowDocument(node: any): GraphState | null {
   return deepClone(graph)
 }
 
-function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
+async function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
   sessionId?: string
   parentCanvasId?: string
   parentNodeId?: string
+  started?: () => void
   complete?: (result: NestedWorkflowParentApplyResult) => void
 } & Partial<NestedWorkflowApplyPayload>>) {
   const detail = event.detail
@@ -3098,6 +3138,7 @@ function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     || session.parentCanvasId !== canvasId
     || session.parentNodeId !== detail.parentNodeId
   ) return
+  detail.started?.()
   const parentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
   if (!parentNode?.data) {
     detail.complete?.({ status: 'conflict', reason: 'parent_missing' })
@@ -3111,10 +3152,64 @@ function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
     detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
     return
   }
-  const applied = applyNestedWorkflowDraft(detail.parentNodeId, detail.graph)
-  detail.complete?.(applied
-    ? { status: 'applied' }
-    : { status: 'rejected', reason: 'locked' })
+  const previousInputs = deepClone(parentNode.data.workflow.interface.inputs) as WorkflowInput[]
+  const previousOutputs = deepClone(parentNode.data.workflow.interface.outputs) as WorkflowOutput[]
+  const effects = nestedWorkflowDestructiveEffects(
+    detail.parentNodeId,
+    previousInputs,
+    previousOutputs,
+    detail.graph.interface.inputs,
+    detail.graph.interface.outputs,
+  )
+  const destructiveCount = effects.edgeIds.size + effects.bindingIds.size
+  if (destructiveCount > 0) {
+    const parentBeforeConfirmation = currentSerializedGraph()
+    const connections = `${effects.edgeIds.size} parent connection${effects.edgeIds.size === 1 ? '' : 's'}`
+    const bindings = `${effects.bindingIds.size} parent binding${effects.bindingIds.size === 1 ? '' : 's'}`
+    if (!window.confirm(
+      `Applying these nested-workflow changes will remove ${connections} and ${bindings}. Continue?`,
+    )) {
+      detail.complete?.({ status: 'cancelled' })
+      return
+    }
+    const currentSession = nestedWorkflowSessionsStore.sessionById(detail.sessionId)
+    const currentParentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
+    const currentParentDocument = currentNestedWorkflowDocument(currentParentNode)
+    if (
+      currentSession !== session
+      || currentParentDocument === null
+      || !graphDocumentsEqual(currentParentDocument, session.savedSnapshot)
+      || !graphDocumentsEqual(currentSerializedGraph(), parentBeforeConfirmation)
+    ) {
+      detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
+      return
+    }
+    if (isLocked.value) {
+      detail.complete?.({ status: 'rejected', reason: 'locked' })
+      return
+    }
+  }
+  const applied = applyNestedWorkflowDraftWithEffects(detail.parentNodeId, detail.graph, effects)
+  if (!applied) {
+    detail.complete?.({ status: 'rejected', reason: 'locked' })
+    return
+  }
+  try {
+    const acceptedParent = await flushNow()
+    const acceptedNode = acceptedParent?.graph.nodes.find(node => node.id === detail.parentNodeId)
+    if (
+      !acceptedParent
+      || nestedWorkflowSessionsStore.sessionById(detail.sessionId) !== session
+      || acceptedNode?.type !== 'workflow'
+      || !graphDocumentsEqual(acceptedNode.workflow, detail.graph)
+    ) {
+      detail.complete?.({ status: 'rejected', reason: 'persistence_failed' })
+      return
+    }
+    detail.complete?.({ status: 'applied' })
+  } catch {
+    detail.complete?.({ status: 'rejected', reason: 'persistence_failed' })
+  }
 }
 
 function selectAll() {

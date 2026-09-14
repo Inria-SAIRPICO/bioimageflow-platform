@@ -208,6 +208,16 @@ function responseCarriesNestedInputName(response: Response, name: string): boole
   return childInputName(body?.graph) === name
 }
 
+function responseCarriesNestedInputCount(response: Response, count: number): boolean {
+  if (
+    !response.url().includes('/api/v1/nested-workflow-snapshots/')
+    || response.request().method() !== 'PUT'
+    || response.status() !== 200
+  ) return false
+  const body = response.request().postDataJSON() as { graph?: GraphState } | null
+  return body?.graph?.interface.inputs.length === count
+}
+
 function childInputName(graph: GraphState | undefined): string | undefined {
   return graph?.interface.inputs.find(input => input.id === 'child-table-input')?.name
 }
@@ -588,6 +598,94 @@ test.describe('workflow interface and grouping', () => {
     await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     await expect(page.getByTestId('dataframe-input-name-0')).toHaveValue('Latest parent version')
+  })
+
+  test('confirms before atomically removing connected nested ports from the parent', async ({ page }) => {
+    const name = workflowName('nested_destructive_ports')
+    const displayName = `Nested destructive ports ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const beforeResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    const before = (await beforeResponse.json()) as WorkflowDraftResponse
+    expect(childNode(before.graph).workflow.interface.inputs.map(input => input.id)).toEqual([
+      'child-table-input', 'child-number-input',
+    ])
+    expectStableParentRoutes(before.graph)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+
+    await page.getByTestId('unpublish-dataframe-0').click()
+    const privateRemoval = page.waitForResponse(response => (
+      responseCarriesNestedInputCount(response, 0)
+    ))
+    await page.getByTestId('interface-input-toggle-number').click()
+    const privateSnapshot = await (await privateRemoval).json() as {
+      session_id: string
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(privateSnapshot.graph.interface.inputs).toEqual([])
+    expect((await draftGraph(page, name))).toEqual(before.graph)
+
+    let cancelledMessage = ''
+    page.once('dialog', async (dialog) => {
+      cancelledMessage = dialog.message()
+      await dialog.dismiss()
+    })
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    expect(cancelledMessage).toContain('remove 1 parent connection and 1 parent binding')
+    const afterCancelResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    const afterCancel = (await afterCancelResponse.json()) as WorkflowDraftResponse
+    expect(afterCancel.draft_revision).toBe(before.draft_revision)
+    expect(afterCancel.graph).toEqual(before.graph)
+    expectStableParentRoutes(afterCancel.graph)
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+    const durablePrivateResponse = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${privateSnapshot.session_id}`,
+    )
+    const durablePrivate = await durablePrivateResponse.json() as {
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(durablePrivate.snapshot_revision).toBeGreaterThanOrEqual(privateSnapshot.snapshot_revision)
+    expect(durablePrivate.graph.interface.inputs).toEqual([])
+
+    const acceptedParentWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    let confirmedMessage = ''
+    page.once('dialog', async (dialog) => {
+      confirmedMessage = dialog.message()
+      await dialog.accept()
+    })
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    expect(confirmedMessage).toContain('remove 1 parent connection and 1 parent binding')
+    const acceptedResponse = await acceptedParentWrite
+    const accepted = (await acceptedResponse.json()) as WorkflowDraftResponse
+    expect(accepted.draft_revision).toBe(before.draft_revision + 1)
+    expect(accepted.graph.edges).toEqual([])
+    expect(childNode(accepted.graph).bindings).toEqual({})
+    expect(childNode(accepted.graph).workflow.interface.inputs).toEqual([])
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+
+    const finalResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    const final = (await finalResponse.json()) as WorkflowDraftResponse
+    expect(final.draft_revision).toBe(accepted.draft_revision)
+    expect(final.graph).toEqual(accepted.graph)
   })
 
   test('deleting an exposed node removes its interface references before autosave', async ({
