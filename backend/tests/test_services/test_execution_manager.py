@@ -23,9 +23,9 @@ from bioimageflow_server.models.execution import (
     ExecutionResult,
     ProgressInfo,
 )
-from bioimageflow_server.models.graph import ColumnEdge, GraphState, ToolNodeState
+from bioimageflow_server.models.graph import ColumnEdge, DataFrameEdge, GraphState, ToolNodeState
 from bioimageflow_server.models.settings import Settings
-from bioimageflow_server.models.validation import NodeStatus
+from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionEventBus,
@@ -286,6 +286,88 @@ def _graph_with(nodes: list[tuple[str, bool]] | None = None) -> GraphState:
         ],
         edges=[],
     )
+
+
+def _selected_graph() -> GraphState:
+    def child_graph(node_id: str, *, input_port: bool = False, output_port: bool = False) -> dict:
+        interface: dict[str, list[dict]] = {"inputs": [], "outputs": []}
+        if input_port:
+            interface["inputs"] = [
+                {
+                    "id": "dataframe_in",
+                    "name": "DataFrame in",
+                    "kind": "dataframe",
+                    "targets": [
+                        {"node": "internal", "port": {"kind": "positional", "index": 0}}
+                    ],
+                }
+            ]
+        if output_port:
+            interface["outputs"] = [
+                {
+                    "id": "dataframe_out",
+                    "name": "DataFrame out",
+                    "source": {"node": "internal", "column": "value"},
+                }
+            ]
+        return graph_state(
+            name=f"{node_id}_definition",
+            nodes=[
+                ToolNodeState(
+                    type="tool",
+                    id="internal",
+                    name="internal",
+                    tool_name="tool",
+                    position=(0.0, 0.0),
+                    parameters={},
+                )
+            ],
+            interface=interface,
+        ).model_dump(mode="json", by_alias=True)
+
+    return graph_state(
+        nodes=[
+            {
+                "type": "workflow",
+                "id": "upstream",
+                "name": "upstream",
+                "workflow": child_graph("upstream", output_port=True),
+                "bindings": {},
+                "position": (0.0, 0.0),
+            },
+            {
+                "type": "workflow",
+                "id": "selected",
+                "name": "selected",
+                "workflow": child_graph("selected", input_port=True),
+                "bindings": {},
+                "position": (200.0, 0.0),
+            },
+            {
+                "type": "workflow",
+                "id": "unrelated",
+                "name": "unrelated",
+                "workflow": child_graph("unrelated"),
+                "bindings": {},
+                "position": (100.0, 200.0),
+            },
+        ],
+        edges=[
+            DataFrameEdge(
+                type="dataframe",
+                id="upstream_to_selected",
+                source_node="upstream",
+                target_node="selected",
+                target_input="dataframe_in",
+            )
+        ],
+    )
+
+
+def _compiled_workflow_node() -> Any:
+    workflow = _FakeWorkflow()
+    workflow.nodes = {"internal": object()}
+    return type("CompiledWorkflowNode", (), {"workflow": workflow})()
 
 
 def _install_fake_builder(
@@ -1215,6 +1297,214 @@ class TestExecutionManagerResult:
         assert em.progress is prior_progress
         assert em._node_statuses == {"previous": prior_status}
         assert em.context is prior_context
+
+    async def test_selected_run_ignores_only_unrelated_owned_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        builder = _install_fake_builder(
+            monkeypatch,
+            wf,
+            errors=[
+                GraphValidationError(
+                    type="missing_tool",
+                    detail="unrelated tool is unavailable",
+                    node="unrelated",
+                )
+            ],
+        )
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        await em.start(
+            _selected_graph(),
+            nodes=["selected"],
+            workflow_id="wf-test",
+        )
+        await _drain(em)
+
+        assert wf.compute_calls == 1
+        assert wf.targets_received == (wf.nodes["selected"],)
+        assert {node.id for node in builder.call_args.args[0].nodes} == {
+            "upstream",
+            "selected",
+            "unrelated",
+        }
+
+    @pytest.mark.parametrize("invalid_node", ["selected", "upstream"])
+    async def test_selected_run_rejects_invalid_selected_or_upstream_node_absent_from_workflow(
+        self, monkeypatch: pytest.MonkeyPatch, invalid_node: str
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {"unrelated": _compiled_workflow_node()}
+        error = GraphValidationError(
+            type="missing_tool",
+            detail="required tool is unavailable",
+            node=invalid_node,
+        )
+        _install_fake_builder(monkeypatch, wf, errors=[error])
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                _selected_graph(),
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors == [error]
+        assert wf.compute_calls == 0
+
+    @pytest.mark.parametrize(
+        "requested",
+        [[], ["unknown"], ["selected", "unknown"]],
+    )
+    async def test_selected_run_rejects_empty_unknown_and_mixed_targets(
+        self, monkeypatch: pytest.MonkeyPatch, requested: list[str]
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError, match="Failed to build workflow"):
+            await em.start(
+                _selected_graph(),
+                nodes=requested,
+                workflow_id="wf-test",
+            )
+
+        assert wf.compute_calls == 0
+
+    async def test_selected_run_rejects_requested_target_missing_from_partial_workflow(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {"upstream": _compiled_workflow_node()}
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                _selected_graph(),
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors[0].node == "selected"
+        assert "could not be resolved" in exc_info.value.errors[0].detail
+        assert wf.compute_calls == 0
+
+    @pytest.mark.parametrize("node", ["selected/internal", "upstream/internal"])
+    async def test_selected_run_rejects_errors_inside_selected_workflow_boundaries(
+        self, monkeypatch: pytest.MonkeyPatch, node: str
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        error = GraphValidationError(
+            type="parameter_invalid",
+            detail="invalid workflow descendant",
+            node=node,
+        )
+        _install_fake_builder(monkeypatch, wf, errors=[error])
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                _selected_graph(),
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors == [error]
+        assert wf.compute_calls == 0
+
+    async def test_selected_run_ignores_error_inside_unrelated_workflow_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        _install_fake_builder(
+            monkeypatch,
+            wf,
+            errors=[
+                GraphValidationError(
+                    type="parameter_invalid",
+                    detail="invalid unrelated descendant",
+                    node="unrelated/internal",
+                )
+            ],
+        )
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        await em.start(
+            _selected_graph(),
+            nodes=["selected"],
+            workflow_id="wf-test",
+        )
+        await _drain(em)
+
+        assert wf.compute_calls == 1
+
+    @pytest.mark.parametrize("node", [None, "not-a-root/internal"])
+    async def test_selected_run_rejects_global_and_unowned_errors(
+        self, monkeypatch: pytest.MonkeyPatch, node: str | None
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        error = GraphValidationError(
+            type="parameter_invalid",
+            detail="unattributable error",
+            node=node,
+        )
+        _install_fake_builder(monkeypatch, wf, errors=[error])
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                _selected_graph(),
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors == [error]
+        assert wf.compute_calls == 0
+
+    async def test_selected_run_rejects_missing_compiled_workflow_after_filtering(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_builder(
+            monkeypatch,
+            None,
+            errors=[
+                GraphValidationError(
+                    type="missing_tool",
+                    detail="unrelated tool is unavailable",
+                    node="unrelated",
+                )
+            ],
+        )
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                _selected_graph(),
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors[0].node is None
+        assert "did not produce" in exc_info.value.errors[0].detail
 
     async def test_disabled_nodes_seeded_as_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()

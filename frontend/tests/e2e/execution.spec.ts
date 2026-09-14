@@ -11,6 +11,16 @@ type ToolMetadata = {
   inputs: Record<string, { required?: boolean }>
 }
 
+type GraphState = {
+  schema_version: 1
+  name: string
+  display_name: string
+  nodes: Array<Record<string, unknown>>
+  edges: Array<Record<string, unknown>>
+  interface: { inputs: []; outputs: [] }
+  config: { engine: string; execution: string }
+}
+
 function uniqueDisplayName(prefix: string): string {
   const project = test.info().project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
   return `${prefix} ${project} ${Date.now()} ${Math.floor(Math.random() * 10000)}`
@@ -96,6 +106,74 @@ async function addSourceNode(page: Page, source: ToolMetadata, workflowName: str
   return node
 }
 
+async function replaceWithSelectedRunFixture(
+  page: Page,
+  workflowName: string,
+  displayName: string,
+) {
+  await page.goto('about:blank')
+  const graph: GraphState = {
+    schema_version: 1,
+    name: workflowName,
+    display_name: displayName,
+    nodes: [
+      {
+        type: 'tool', id: 'seed_valid', name: 'Valid seed', tool_name: 'SeedNumbers',
+        position: [120, 140], parameters: {},
+      },
+      {
+        type: 'tool', id: 'increment_valid', name: 'Selected increment', tool_name: 'IncrementNumbers',
+        position: [460, 140], parameters: { number: 1 },
+      },
+      {
+        type: 'tool', id: 'unrelated_invalid', name: 'Unrelated invalid branch', tool_name: 'MissingCampaignTool',
+        position: [280, 390], parameters: {},
+      },
+    ],
+    edges: [{
+      type: 'dataframe',
+      id: 'valid-dataframe-edge',
+      source_node: 'seed_valid',
+      target_node: 'increment_valid',
+      target_position: 0,
+    }],
+    interface: { inputs: [], outputs: [] },
+    config: { engine: 'direct', execution: 'sequential' },
+  }
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+    data: { graph },
+  })
+  expect(saved.ok()).toBeTruthy()
+  const currentDraft = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+  expect(currentDraft.ok()).toBeTruthy()
+  const reset = await page.request.post(
+    `${API_BASE}/api/v1/workflow-drafts/${workflowName}/reset-to-saved`,
+    {
+      data: {
+        expected_revision: (await currentDraft.json()).draft_revision,
+        updated_by: 'frontend',
+      },
+    },
+  )
+  expect(reset.ok()).toBeTruthy()
+  const acceptedDraft = await reset.json()
+  expect(acceptedDraft.validation.valid).toBe(false)
+  expect(acceptedDraft.validation.errors).toEqual(expect.arrayContaining([{
+    type: 'missing_tool',
+    node: 'unrelated_invalid',
+    detail: "Tool 'MissingCampaignTool' not found in registry",
+    edge_id: null,
+    field: null,
+  }]))
+  expect(acceptedDraft.validation.errors.every(
+    (error: { type: string; node: string }) => (
+      error.type === 'missing_tool' && error.node === 'unrelated_invalid'
+    ),
+  )).toBe(true)
+  await page.goto('/')
+  return acceptedDraft.draft_revision as number
+}
+
 async function waitForExecutionComplete(page: Page, nodeId: string) {
   await expect
     .poll(
@@ -165,6 +243,98 @@ test.describe('execution lifecycle', () => {
     expect(paginatorBox!.y + paginatorBox!.height).toBeLessThanOrEqual(
       panelBox!.y + panelBox!.height + 1,
     )
+
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+  })
+
+  test('Run Selected executes a valid branch while an unrelated invalid branch remains unexecuted', async ({
+    page,
+  }) => {
+    const displayName = uniqueDisplayName('Selected Branch Workflow')
+    const workflowName = deriveWorkflowId(displayName)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+
+    await createWorkflowInGui(page, displayName)
+    const draftRevision = await replaceWithSelectedRunFixture(page, workflowName, displayName)
+
+    await expect(page.getByTestId('workflow-title')).toHaveText(displayName)
+    await expect(page.locator('.vue-flow__node')).toHaveCount(3)
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    const source = page.locator('.vue-flow__node[data-id="seed_valid"]')
+    const selected = page.locator('.vue-flow__node[data-id="increment_valid"]')
+    const unrelated = page.locator('.vue-flow__node[data-id="unrelated_invalid"]')
+    await expect(source.locator('.node-name')).toHaveText('Valid seed')
+    await expect(selected.locator('.node-name')).toHaveText('Selected increment')
+    await expect(unrelated.locator('.node-name')).toHaveText('Unrelated invalid branch')
+    const dependencies = page.getByRole('dialog', { name: 'Workflow dependencies' })
+    await expect(dependencies).toContainText('Missing tools')
+    await expect(dependencies).toContainText('MissingCampaignTool')
+    await expect(dependencies).toContainText('Node: unrelated_invalid')
+    await dependencies.getByRole('button', { name: 'Close' }).last().click()
+
+    await unrelated.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
+    await expect(page.getByTestId('node-validation-errors')).toHaveText(
+      /Validation errors\s*Tool 'MissingCampaignTool' not found in registry/,
+    )
+
+    await selected.click()
+    await expect(page.getByTestId('run-selected-button')).toBeEnabled()
+    const runRequest = page.waitForRequest(request => (
+      request.url().endsWith('/api/v1/execution/run') && request.method() === 'POST'
+    ))
+    const runResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-selected-button').click()
+    const request = await runRequest
+    expect(request.postDataJSON()).toMatchObject({
+      workflow_name: workflowName,
+      draft_revision: draftRevision,
+      nodes: ['increment_valid'],
+      graph: {
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ id: 'seed_valid' }),
+          expect.objectContaining({ id: 'increment_valid' }),
+          expect.objectContaining({ id: 'unrelated_invalid', tool_name: 'MissingCampaignTool' }),
+        ]),
+      },
+    })
+    expect((await runResponse).status()).toBe(202)
+
+    await waitForExecutionComplete(page, 'increment_valid')
+    await expect(source.locator('.tool-node')).toHaveClass(/status-executed/)
+    await expect(selected.locator('.tool-node')).toHaveClass(/status-executed/)
+    await expect(unrelated.locator('.tool-node')).toHaveClass(/status-unexecuted/)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete')
+
+    const result = await page.request.post(
+      `${API_BASE}/api/v1/nodes/increment_valid/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    expect(result.ok()).toBeTruthy()
+    expect(await result.json()).toMatchObject({
+      columns: ['number', 'label', 'number_plus_one'],
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      total_rows: 3,
+    })
+
+    const statusResponse = await page.request.get(`${API_BASE}/api/v1/execution/status`)
+    expect(statusResponse.ok()).toBeTruthy()
+    const status = await statusResponse.json()
+    expect(status.node_statuses.seed_valid).toMatchObject({ status: 'executed', cached: false })
+    expect(status.node_statuses.increment_valid).toMatchObject({ status: 'executed', cached: false })
+    expect(status.node_statuses.unrelated_invalid).toBeUndefined()
+
+    const unrelatedResult = await page.request.post(
+      `${API_BASE}/api/v1/nodes/unrelated_invalid/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    expect(unrelatedResult.status()).toBe(404)
 
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })

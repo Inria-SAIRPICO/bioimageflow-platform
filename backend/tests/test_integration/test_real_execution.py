@@ -22,7 +22,7 @@ from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.graph import ColumnEdge, GraphState, ToolNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
-from bioimageflow_server.services.execution import ExecutionManager
+from bioimageflow_server.services.execution import ExecutionManager, WorkflowBuildError
 from bioimageflow_server.services.graph_validator import validate_graph
 
 pytestmark = pytest.mark.anyio
@@ -232,6 +232,53 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     assert validation.node_statuses["source"].cached is True
     assert validation.node_statuses["offset"].status == "executed"
     assert validation.node_statuses["offset"].cached is True
+
+
+async def test_execution_manager_run_selected_executes_valid_branch_with_unrelated_missing_tool(
+    tmp_path: Path,
+) -> None:
+    graph = dataframe_chain()
+    graph.nodes.append(
+        ToolNodeState(
+            type="tool",
+            id="unrelated_invalid",
+            name="unrelated invalid",
+            tool_name="MissingCampaignTool",
+            position=(100, 200),
+            parameters={},
+        )
+    )
+    manager = ExecutionManager(
+        RecordingEventBus(),
+        local_registry(),
+        _settings(),
+        storage_path=tmp_path,
+    )
+
+    with pytest.raises(WorkflowBuildError) as full_error:
+        await manager.start(graph, workflow_id="integration-workflow")
+    assert full_error.value.errors
+    assert {
+        (error.type, error.node) for error in full_error.value.errors
+    } == {("missing_tool", "unrelated_invalid")}
+
+    await manager.start(
+        graph,
+        nodes=["offset"],
+        workflow_id="integration-workflow",
+        draft_revision=7,
+    )
+    await _drain_manager(manager)
+
+    assert manager.last_result is not None
+    assert manager.last_result.success is True
+    assert set(manager.last_result.node_statuses) == {"source", "offset"}
+    assert manager.last_result.node_statuses["source"].status == "executed"
+    assert manager.last_result.node_statuses["offset"].status == "executed"
+    result = _cached_dataframe(tmp_path, "offset")
+    assert result["value"].tolist() == [2, 3, 4]
+    assert result["shifted"].tolist() == [7, 8, 9]
+    assert not (tmp_path / "views" / "latest" / "unrelated_invalid.bioimageflow-link.json").exists()
 
 
 async def test_execution_manager_run_uses_request_graph_when_session_is_stale(

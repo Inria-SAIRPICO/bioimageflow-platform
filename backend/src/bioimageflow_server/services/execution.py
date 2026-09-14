@@ -195,6 +195,60 @@ class WorkflowBuildError(RuntimeError):
         self.errors = errors
 
 
+def _selected_root_scope(graph: GraphState, nodes: list[str]) -> set[str]:
+    """Return requested root nodes and their transitive graph predecessors."""
+
+    root_ids = {node.id for node in graph.nodes}
+    unknown = sorted(set(nodes) - root_ids)
+    if not nodes or unknown:
+        detail = (
+            "Run Selected requires at least one requested execution target"
+            if not nodes
+            else f"Requested execution targets do not exist in the graph: {unknown}"
+        )
+        raise WorkflowBuildError(
+            [
+                GraphValidationError(
+                    type="parameter_invalid",
+                    detail=detail,
+                    node=unknown[0] if len(unknown) == 1 else None,
+                )
+            ]
+        )
+
+    predecessors: dict[str, set[str]] = {node_id: set() for node_id in root_ids}
+    for edge in graph.edges:
+        predecessors[edge.target_node].add(edge.source_node)
+
+    scope = set(nodes)
+    pending = list(nodes)
+    while pending:
+        for predecessor in predecessors[pending.pop()]:
+            if predecessor not in scope:
+                scope.add(predecessor)
+                pending.append(predecessor)
+    return scope
+
+
+def _selected_validation_errors(
+    graph: GraphState,
+    scope: set[str],
+    errors: list[GraphValidationError],
+) -> list[GraphValidationError]:
+    """Keep errors that are not proven to belong to an unrelated root branch."""
+
+    root_ids = {node.id for node in graph.nodes}
+    selected_errors: list[GraphValidationError] = []
+    for error in errors:
+        if error.node is None:
+            selected_errors.append(error)
+            continue
+        owner = error.node.split("/", 1)[0]
+        if owner not in root_ids or owner in scope:
+            selected_errors.append(error)
+    return selected_errors
+
+
 # ---- ExecutionManager -------------------------------------------------------
 
 
@@ -433,8 +487,44 @@ class ExecutionManager:
         if ensure_context_current is not None:
             await ensure_context_current()
 
-        if not validation_output.validation.valid:
-            raise WorkflowBuildError(validation_output.validation.errors)
+        selected_scope = (
+            _selected_root_scope(build_graph, nodes) if nodes is not None else None
+        )
+        validation_errors = validation_output.validation.errors
+        if selected_scope is not None:
+            validation_errors = _selected_validation_errors(
+                build_graph,
+                selected_scope,
+                validation_errors,
+            )
+        if validation_errors:
+            raise WorkflowBuildError(validation_errors)
+
+        workflow = validation_output.compilation.workflow
+        if workflow is None:
+            raise WorkflowBuildError(
+                [
+                    GraphValidationError(
+                        type="parameter_invalid",
+                        detail="Workflow compilation did not produce an executable workflow",
+                    )
+                ]
+            )
+        node_map = dict(workflow.nodes)
+        if nodes is not None:
+            unresolved = sorted(
+                {node_id for node_id in nodes if node_id not in node_map}
+            )
+            if unresolved:
+                raise WorkflowBuildError(
+                    [
+                        GraphValidationError(
+                            type="parameter_invalid",
+                            detail=f"Requested execution targets could not be resolved: {unresolved}",
+                            node=unresolved[0] if len(unresolved) == 1 else None,
+                        )
+                    ]
+                )
 
         self.context = context
         self.state = "running"
@@ -457,14 +547,12 @@ class ExecutionManager:
                     cached=False,
                 )
 
-        workflow = validation_output.compilation.workflow
         # The platform owns the disposable latest-output projection.
         workflow.output_view = None
         self._workflow = workflow
         targets: tuple[Any, ...] = ()
-        if nodes:
-            node_map = dict(workflow.nodes)
-            targets = tuple(node_map[nid] for nid in nodes if nid in node_map)
+        if nodes is not None:
+            targets = tuple(node_map[nid] for nid in nodes)
 
         dev_mode = bool(live_settings.dev_mode)
         import bioimageflow

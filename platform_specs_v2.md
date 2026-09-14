@@ -179,6 +179,8 @@ Validation covers recursive graph structure, discriminator correctness, unique n
 It also validates ProcessingTool-only resource overrides, tool-declared resource floors, concurrency caps, exact execution intent, target availability, and invocation-only remote path choices.
 Errors use scoped paths such as `segment_and_measure/cellpose_segmenter`.
 
+Full Run rejects every diagnostic from complete-graph compilation. Run Selected derives its requested root nodes and transitive upstream root nodes from the accepted graph edges and ignores only diagnostics whose scoped node path proves ownership by an unrelated root node. Descendant diagnostics within a selected or upstream workflow boundary, global or unattributable diagnostics, unknown or unresolved requested targets, and a missing compiled workflow remain blocking.
+
 The stateless graph endpoint validates the same canonical graph shape but does not retain editor state.
 
 ## 9. Execution And Status
@@ -193,6 +195,7 @@ An execution retains its captured code while later source saves affect subsequen
 
 Selecting a workflow node for Run Selected targets that workflow boundary and schedules its enabled internal completion dependencies.
 The platform does not prune or rebuild a partial graph before compilation.
+Run Selected compiles the same complete accepted graph as full Run; only its post-compilation diagnostic acceptance is limited to the selected-plus-upstream root scope. It never turns an empty, unknown, unresolved, or mixed target list into an untargeted computation.
 
 A workflow node projects aggregate status from its descendants while preserving the failing or cancelled scoped path.
 Detached internal failures still make the workflow node fail and block its downstream consumers.
