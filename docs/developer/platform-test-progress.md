@@ -32,8 +32,9 @@ The handoff documentation is committed separately; find its revision with `git l
 | ISSUE-001 | Resolved | Astra/high reproduced the same-artifact replacement defect and established the contract; Sol/medium added atomic destination-generation capture/checks and no-mutation regressions. | Backend completion passed; fix commit is path-discoverable. |
 | ISSUE-002 | Resolved documentation discrepancy | Commit `a8d9533` and v2 §1.8 establish contextual execution logs and global background logs; the stale v1 WebSocket row is reconciled. | `scripts/test check docs` passed in 2s; resolution commit is path-discoverable. |
 | ISSUE-004 | Resolved | Ordinary mutations serialize through execution admission; only actual starting/running execution produces the 423 lock. | `scripts/test check app` passed in 140s and all 57 Chromium tests passed in 106s; fix commit is path-discoverable. |
+| ISSUE-005 | Astra review | Run Selected rejects a valid selected branch because a disconnected node has a missing tool; exact request identity/graph/revision are proven. | Freeze the T05 journey; Astra/high determines contract and safe repair boundary. |
 
-Active write owner: `/root/t05_run_selected`, Sol/medium, owns the in-scope Run Selected browser journey in `.worktrees/t05_run_selected` on `campaign/t05-run-selected`; the primary checkout remains reserved for shared checkpoint integration.
+Active write owner: `/root/t05_run_selected`, Sol/medium, has frozen its test-only Run Selected journey in `.worktrees/t05_run_selected` on `campaign/t05-run-selected`; Astra/high owns the read-only ISSUE-005 contract assessment before any production repair.
 
 ## Current-session completion evidence
 

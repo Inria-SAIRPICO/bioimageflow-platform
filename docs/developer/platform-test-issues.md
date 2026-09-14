@@ -62,6 +62,16 @@ Deterministic manager and router regressions prove that ordinary mutations seria
 `scripts/test check app` passed in 140s with 1,590 backend tests and 9 deselected, 1,260 frontend units, and 10 critical Chromium journeys; the full Chromium lane then passed all 57 tests in 106s, including the formerly suite-order-dependent child-port case at position 56.
 The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_server/services/execution.py`.
 
+## ISSUE-005 — Run Selected rejects an unrelated invalid branch
+
+Status: under Astra/high contract assessment; dependent T05 journey frozen.
+At `b6072f5`, the isolated Run Selected journey builds an accepted three-node graph containing valid `SeedNumbers(seed_valid) -> IncrementNumbers(increment_valid)` DataFrame work and a disconnected `MissingCampaignTool(unrelated_invalid)` node.
+The UI verifies the exact workflow, graph, edge, missing-dependency modal, and validation state, then the public Run Selected action submits `nodes: ["increment_valid"]`, the exact accepted draft revision, and the complete graph.
+Chromium reaches that request but receives HTTP 422 and surfaces only the unrelated missing-tool validation error.
+Inspection points to `ExecutionManager._start_reserved`: it compiles the complete graph as required, then rejects every validation error without limiting acceptance to the selected node plus its upstream dependencies.
+V1 §§2.4.5, 3.9, and 4.1 and v2 §9 appear to require selected-subgraph validation while still compiling the full accepted graph without destructive pruning; the existing router regression mocks the manager and therefore does not cover this boundary.
+The test-only worktree is frozen pending an Astra `safe-to-fix`, `not-a-defect`, or `needs-owner` disposition.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
