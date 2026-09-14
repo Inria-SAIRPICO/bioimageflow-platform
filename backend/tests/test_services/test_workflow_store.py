@@ -175,40 +175,113 @@ def test_duplicate_copies_destination_owned_runtime_sources(tmp_path: Path) -> N
     ) == source_record
 
 
-@pytest.mark.parametrize("keep_canvas_first", [False, True])
-def test_duplicate_agent_snapshot_copies_unsaved_sources(tmp_path: Path, keep_canvas_first: bool) -> None:
-    store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="source"))
-    source_record = {"id": "embedded-tool-sha256", "module": "custom_tool", "filename": "custom_tool.py", "source": "class Tool: pass\n", "source_hash": hashlib.sha256(b"class Tool: pass\n").hexdigest()}
-    sources = OwnedWorkflowSources(store.workflow_dir("source"))
-    staged = sources.stage([source_record])
-    sources.publish(staged)
-    graph_payload = _graph("definition").model_dump(mode="json", by_alias=True)
-    graph_payload["nodes"] = [
+def _agent_owned_source(source_id: str, offset: int) -> dict[str, str]:
+    source = f'''from bioimageflow import DataFrameTool
+from bioimageflow_core import IOModel
+import pandas as pd
+
+class Outputs(IOModel):
+    value: int
+
+class AgentOwnedNumbers(DataFrameTool):
+    accepts_upstream = False
+    Outputs = Outputs
+
+    def transform(self, df, arguments):
+        return pd.DataFrame({{"value": [n + {offset} for n in [1, 2, 3]]}})
+'''
+    return {
+        "id": source_id,
+        "module": f"agent_owned_{offset}",
+        "filename": f"agent_owned_{offset}.py",
+        "source": source,
+        "source_hash": hashlib.sha256(source.encode()).hexdigest(),
+    }
+
+
+def _agent_recursive_graph() -> GraphState:
+    payload = _graph("agent-definition", "Agent recursive definition").model_dump(
+        mode="json", by_alias=True
+    )
+    payload["nodes"] = [
         {
             "type": "tool",
-            "id": "tool",
-            "name": "tool",
-            "tool_name": "Tool",
-            "position": (0.0, 0.0),
+            "id": "root-owned",
+            "name": "Root owned source",
+            "tool_name": "AgentOwnedNumbers",
+            "tool_module": "agent_owned_1",
+            "tool_class": "AgentOwnedNumbers",
+            "source_module": "root-source",
+            "position": (80.0, 140.0),
             "parameters": {},
-            "source_module": source_record["id"],
-        }
+        },
+        {
+            "type": "workflow",
+            "id": "embedded-child",
+            "name": "Embedded child",
+            "position": (420.0, 140.0),
+            "bindings": {},
+            "workflow": {
+                "schema_version": 1,
+                "name": "embedded-definition",
+                "display_name": "Embedded definition",
+                "nodes": [
+                    {
+                        "type": "tool",
+                        "id": "child-owned",
+                        "name": "Child owned source",
+                        "tool_name": "AgentOwnedNumbers",
+                        "tool_module": "agent_owned_20",
+                        "tool_class": "AgentOwnedNumbers",
+                        "source_module": "child-source",
+                        "position": (180.0, 120.0),
+                        "parameters": {},
+                    }
+                ],
+                "edges": [],
+                "interface": {"inputs": [], "outputs": []},
+                "config": {"engine": "direct", "execution": "sequential"},
+            },
+        },
     ]
-    graph = GraphState.model_validate(graph_payload)
+    return GraphState.model_validate(payload)
+
+
+@pytest.mark.parametrize("keep_canvas_first", [False, True])
+def test_duplicate_agent_snapshot_copies_recursive_unsaved_sources(
+    tmp_path: Path, keep_canvas_first: bool
+) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="source"))
+    source_records = [
+        _agent_owned_source("root-source", 1),
+        _agent_owned_source("child-source", 20),
+    ]
+    sources = OwnedWorkflowSources(store.workflow_dir("source"))
+    staged = sources.stage(source_records)
+    sources.publish(staged)
+    graph = _agent_recursive_graph()
     from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 
     drafts = WorkflowDraftService(lambda: store)
     agent = drafts.put_draft("source", graph=graph, expected_revision=0, updated_by="agent")
+    assert agent.validation.valid
     if keep_canvas_first:
         kept = drafts.put_draft(
-            "source", graph=_graph("source"), expected_revision=agent.draft_revision,
+            "source",
+            graph=_graph("source"),
+            expected_revision=agent.draft_revision,
             updated_by="frontend",
         )
         agent = drafts.put_draft(
-            "source", graph=graph, expected_revision=kept.draft_revision, updated_by="agent",
+            "source",
+            graph=graph,
+            expected_revision=kept.draft_revision,
+            updated_by="agent",
         )
+        assert agent.validation.valid
     original = store.get_workflow("source")
+    original_document = (store.workflow_dir("source") / "workflow.json").read_bytes()
     # This was the old frontend sequence: a graph-only save in an empty workflow.
     store.create_workflow(WorkflowCreate(name="broken_copy"))
     with pytest.raises(FileNotFoundError):
@@ -219,16 +292,32 @@ def test_duplicate_agent_snapshot_copies_unsaved_sources(tmp_path: Path, keep_ca
         WorkflowUpdate(action="duplicate", new_name="copy", graph=agent.graph),
     )
 
-    assert store.get_workflow("copy").graph.nodes[0].source_module == source_record["id"]  # type: ignore[union-attr]
-    assert OwnedWorkflowSources(store.workflow_dir("copy")).read(
-        source_record["id"]
-    ) == source_record
+    copy = store.get_workflow("copy")
+    assert copy.graph.name == "copy"
+    assert copy.graph.display_name == "copy"
+    assert copy.graph.nodes[0].source_module == "root-source"  # type: ignore[union-attr]
+    child = copy.graph.nodes[1]
+    assert child.type == "workflow"
+    assert child.workflow.name == "embedded-definition"
+    assert child.workflow.nodes[0].source_module == "child-source"  # type: ignore[union-attr]
+    copy_sources = OwnedWorkflowSources(store.workflow_dir("copy"))
+    for record in source_records:
+        assert copy_sources.read(record["id"]) == record
+        assert copy_sources.source_path(record["id"]) != sources.source_path(record["id"])
 
-
+    copy_child_path = copy_sources.source_path("child-source")
+    copy_child_path.write_text(
+        copy_child_path.read_text().replace("n + 20", "n + 40"),
+        encoding="utf-8",
+    )
+    assert "n + 40" in copy_child_path.read_text(encoding="utf-8")
+    assert sources.read("child-source") == source_records[1]
     assert store.get_workflow("source").graph == original.graph
+    assert (store.workflow_dir("source") / "workflow.json").read_bytes() == original_document
     assert drafts.get_draft_snapshot("source").draft_revision == agent.draft_revision
+    assert drafts.get_draft_snapshot("source").graph == agent.graph
     raw_copy = json.loads((store.workflow_dir("copy") / "workflow.json").read_text())
-    assert raw_copy["owned_source_ids"] == [source_record["id"]]
+    assert raw_copy["owned_source_ids"] == ["child-source", "root-source"]
 
 
 def test_move_changes_workspace_identity_not_definition_name_or_hash(tmp_path: Path) -> None:
