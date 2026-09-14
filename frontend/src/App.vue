@@ -119,6 +119,15 @@ function onPreferencesShortcut(event: KeyboardEvent) {
   useSettingsPanel().open()
 }
 
+function onFocusToolSearch(): void {
+  const panel = dockviewApi.value?.getPanel('tools')
+  if (!panel) return
+  panel.api.setActive()
+  void nextTick(() => {
+    document.querySelector<HTMLInputElement>('[data-testid="tool-search"]')?.focus()
+  })
+}
+
 const desktopRuntime = isPywebview()
 const shortcutEnabled = isMac() || desktopRuntime
 
@@ -153,6 +162,7 @@ useExecutionLock()
 
 onMounted(() => {
   websocket.connect()
+  window.addEventListener('bioimageflow:focus-tool-search', onFocusToolSearch)
   window.addEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
   window.addEventListener(
@@ -200,6 +210,7 @@ onBeforeUnmount(() => {
   rootOpenRequest += 1
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
+  window.removeEventListener('bioimageflow:focus-tool-search', onFocusToolSearch)
   window.removeEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.removeEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
   window.removeEventListener(

@@ -663,7 +663,7 @@ async function pickFiles(key: string) {
             :disabled="isNodeEditingDisabled"
             @input="nameError = null"
             @blur="finishEditName"
-            @keydown.enter="finishEditName"
+            @keydown.enter.exact="finishEditName"
             autofocus
           />
           <span

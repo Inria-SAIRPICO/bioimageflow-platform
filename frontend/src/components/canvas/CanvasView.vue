@@ -20,6 +20,7 @@ import {
   serializeGraphSelection,
   writeClipboardPayload,
 } from '@/utils/clipboard'
+import { isTextEntryTarget } from '@/utils/keyboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { serializeGraph as serializeCanvasGraph, useGraphSync } from '@/composables/useGraphSync'
 import {
@@ -3122,6 +3123,11 @@ function selectAll() {
   }
 }
 
+function clearSelection() {
+  for (const node of getNodes.value) node.selected = false
+  for (const edge of getEdges.value) edge.selected = false
+}
+
 function historyNodesWithCurrentToolRuntime(nodes: any[]): any[] {
   const currentById = new Map(getNodes.value.map((node: any) => [node.id, node]))
   return nodes.map((node) => {
@@ -3232,6 +3238,9 @@ function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
 function handleKeydown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
   const locked = isLocked.value
+  const key = event.key.toLowerCase()
+
+  if (isTextEntryTarget(event.target)) return
 
   if (event.key === 'Delete' || event.key === 'Backspace') {
     if (locked) return
@@ -3239,48 +3248,60 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
 
-  if (meta && event.key === 'c') {
+  if (meta && key === 'c') {
     if (locked) return
     copySelected()
     return
   }
 
-  if (meta && event.key === 'v') {
+  if (meta && key === 'v') {
     if (locked) return
     pasteFromClipboard()
     return
   }
 
-  if (meta && event.key === 'a') {
+  if (meta && key === 'a') {
     if (locked) return
     event.preventDefault()
     selectAll()
     return
   }
 
-  if (meta && event.key === 's') {
-    event.preventDefault()
+  if (meta && key === 's') {
     if (locked) return
     if (isNestedWorkflowEditor) {
+      event.preventDefault()
       void saveNestedWorkflowSession()
     }
     return
   }
 
-  if (meta && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
+  if (meta && event.shiftKey && key === 'z') {
     if (locked) return
     redoGraphChange()
     return
   }
 
-  if (meta && event.key === 'z') {
+  if (meta && key === 'z') {
     if (locked) return
     undoGraphChange()
     return
   }
 
   if (meta && event.key === 'Enter') {
+    event.preventDefault()
     flushNow()
+    return
+  }
+
+  if (meta && key === 'f') {
+    event.preventDefault()
+    window.dispatchEvent(new CustomEvent('bioimageflow:focus-tool-search'))
+    return
+  }
+
+  if (event.key === 'Escape') {
+    clearSelection()
     return
   }
 
@@ -3709,6 +3730,7 @@ defineExpose({
   copySelected,
   pasteFromClipboard,
   selectAll,
+  clearSelection,
   createSelectedNestedWorkflow,
   openNestedWorkflow,
   applyNestedWorkflowDraft,

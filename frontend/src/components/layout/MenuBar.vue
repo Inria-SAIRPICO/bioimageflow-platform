@@ -15,6 +15,7 @@ import Menu from 'primevue/menu'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
+import { isTextEntryTarget } from '@/utils/keyboard'
 import { useUIStore, type ThemePreference } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
@@ -879,8 +880,9 @@ function onDeleteWorkflowDialogVisible(value: boolean): void {
 function onGlobalKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return
   const meta = event.metaKey || event.ctrlKey
-  if (meta && event.key === 's') {
+  if (meta && event.key.toLowerCase() === 's') {
     event.preventDefault()
+    if (isTextEntryTarget(event.target)) return
     if (!executionStore.isMutationLocked) {
       void saveWorkflow()
     }
