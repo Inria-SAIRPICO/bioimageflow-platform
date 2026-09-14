@@ -22,6 +22,7 @@ from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from tests.fixtures.held_worker import HeldWorkerNumbers
 
 
 class Generate(DataFrameTool):
@@ -151,7 +152,7 @@ def create_app() -> FastAPI:
     # the generated tool-store fixture explicitly so browser tests exercise
     # Files-node creation and hot reload against the real package loader.
     registry.scan_tool_store(tool_store)
-    for tool_class in (Generate, CrossJoin, ParameterControls):
+    for tool_class in (Generate, CrossJoin, ParameterControls, HeldWorkerNumbers):
         registry._register_tool_from_class(
             tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
         )
@@ -200,6 +201,11 @@ def create_app() -> FastAPI:
             context=context,
         )
         return {"execution_id": event.execution_id}
+
+    @app.get("/api/v1/dev/e2e/process-id")
+    async def backend_process_id() -> dict[str, int]:
+        """Expose the orchestrator PID for real-worker isolation assertions."""
+        return {"process_id": os.getpid()}
 
     return app
 
