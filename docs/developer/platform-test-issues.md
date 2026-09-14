@@ -65,7 +65,7 @@ The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_serv
 
 ## ISSUE-005 — Run Selected rejects an unrelated invalid branch
 
-Status: `implementation`; GPT-6 Astra/high returned `safe-to-fix`, and `/root/issue_005_fix` owns the bounded Sol/medium repair in `.worktrees/issue_005_fix`.
+Status: resolved in `38e14f2` plus robustness follow-up `8908388`; GPT-6 Astra/high returned `safe-to-fix` and Sol/medium implemented the bounded repair.
 At `b6072f5`, the isolated Run Selected journey builds an accepted three-node graph containing valid `SeedNumbers(seed_valid) -> IncrementNumbers(increment_valid)` DataFrame work and a disconnected `MissingCampaignTool(unrelated_invalid)` node.
 The UI verifies the exact workflow, graph, edge, missing-dependency modal, and validation state, then the public Run Selected action submits `nodes: ["increment_valid"]`, the exact accepted draft revision, and the complete graph.
 Chromium reaches that request but receives HTTP 422 and surfaces only the unrelated missing-tool validation error.
@@ -73,7 +73,8 @@ Inspection points to `ExecutionManager._start_reserved`: it compiles the complet
 V1 §2.4.5 and v2 §§8–9 require selected-plus-upstream admission while still compiling the full accepted graph without destructive pruning; the existing router regression mocks the manager and therefore does not cover this boundary.
 The specialist reproduced exact `(1, one, 2)`, `(2, two, 3)`, and `(3, three, 4)` output through the public library compiler after the manager rejected two `missing_tool` diagnostics scoped only to `unrelated_invalid`.
 The safe boundary derives selected roots and transitive upstream IDs from the accepted graph, filters only diagnostics proven outside that scope, retains unscoped or unresolved diagnostics, blocks invalid or unknown requested targets, and leaves full Run, draft validation, locking, source capture, and public library execution unchanged.
-The original test-only worktree remains frozen as evidence while the fresh implementation worktree reconciles its browser journey to the current catalog gestures and adds the manager/compiler regression matrix.
+Orchestrator review reproduced a pre-integration `KeyError` for dangling edge endpoints; `8908388` makes scope traversal total while preserving compiler-produced global edge diagnostics as blocking.
+Fifteen selected manager cases, the real compiler/manager regression, and the exact Chromium/Firefox GUI journey pass on the integrated revision; `scripts/test check app` passes all cross-stack phases.
 
 ## New issue record template
 
