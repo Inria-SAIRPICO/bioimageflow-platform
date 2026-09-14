@@ -13,8 +13,8 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 ## Next three actions
 
 1. Integrate the active Wave 3 reconnect/disconnect and mixed-edit history batch after exact cross-browser and completion validation.
-2. Integrate the independently active nested private-edit/apply/discard/reopen journey with stable connected parent ports.
-3. Follow with clipboard/shortcuts and the remaining parameter-control/persistence obligations, then continue the ordered feature waves without dropping lower-priority coverage.
+2. Continue Wave 4 with stale-parent conflict, destructive incompatible port removal, nested execution, and recursive source ownership after the active Wave 3 batch reaches a clean boundary.
+3. Follow Wave 3 with clipboard/shortcuts and the remaining parameter-control/persistence obligations, then continue the ordered feature waves without dropping lower-priority coverage.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -32,7 +32,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
 | Wave 3 / editing | In progress | Commits `5412406` and `ec0ca3b` verify the first node-state batch; a dedicated Sol/medium worktree owns reconnect/disconnect, mixed-edit undo/redo, bulk-action history, and workflow-switch isolation. |
-| Wave 4 / nested workflows | In progress | A second dedicated Sol/medium worktree owns the primary private edit/apply/discard/reopen journey with stable connected parent ports. |
+| Wave 4 / nested workflows | Partial | Commit `af58e4e` verifies private edit isolation, compatible stable-port Apply, parent edge/binding preservation, root Save/reload/reopen, and later private Discard; stale conflict, destructive removal, execution, and source ownership remain. |
 | Waves 5–6 / lifecycle and remaining features | Gaps | Failure/cancellation/rerun/cache/results plus settings, datasets, authoring, integrations, and remaining user actions. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
@@ -44,7 +44,8 @@ Ordering is not a reduction in final scope.
 The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
-`/root/connection_history` owns `.worktrees/connection_history` on `campaign/connection-history`; `/root/nested_private_editing` owns `.worktrees/nested_private_editing` on `campaign/nested-private-editing`.
+`/root/connection_history` owns `.worktrees/connection_history` on `campaign/connection-history`.
+The first Wave 4 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 ISSUE-005 is resolved on main; other resolved issue decisions are in [Campaign issues](platform-test-issues.md).
 
 ## Retained evidence and restart discipline
