@@ -18,6 +18,7 @@ import {
   makeWorkflowDraft,
 } from '@/test-utils/persistenceFixtures'
 import type { ToolMetadata, ValidationResult } from '@/api/types'
+import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 function makeTool(): ToolMetadata {
   return {
@@ -75,7 +76,10 @@ function makeNodeData(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mountWithErrors(validationResult: ValidationResult | null) {
+function mountWithErrors(
+  validationResult: ValidationResult | null,
+  nodeDataOverrides: Record<string, unknown> = {},
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   _resetGraphSyncForTest()
@@ -99,7 +103,7 @@ function mountWithErrors(validationResult: ValidationResult | null) {
   const uiStore = useUIStore()
   const nodeId = 'node-1'
   uiStore.setSelectedNodes([nodeId])
-  uiStore.setGraphNodes([{ id: nodeId, data: makeNodeData() }])
+  uiStore.setGraphNodes([{ id: nodeId, data: makeNodeData(nodeDataOverrides) }])
 
   // Seed the active canvas graph-sync validation before NodePanel mounts.
   sync.validationResult.value = validationResult
@@ -157,6 +161,22 @@ describe('NodePanel — parameter error wiring', () => {
       errors: [],
     })
     expect(w.findAll('.parameter-field-error.has-error')).toHaveLength(0)
+  })
+
+  it('replaces a connected parameter widget with its encoded-handle source label', () => {
+    const tool = makeTool()
+    tool.inputs.sigma = { ...tool.inputs.sigma!, connectable: 'by_default' }
+    const handle = encodeEndpointHandle({ kind: 'tool-input', name: 'sigma' })
+    const wrapper = mountWithErrors(null, {
+      tool,
+      connectedInputs: { [handle]: 'number of Seed Numbers 1' },
+    })
+
+    const sigmaRow = wrapper.findAll('.param-row').find(row => row.text().includes('sigma'))
+    expect(sigmaRow).toBeTruthy()
+    expect(sigmaRow!.get('.connected-source').text()).toBe('number of Seed Numbers 1')
+    expect(sigmaRow!.find('input').exists()).toBe(false)
+    expect(sigmaRow!.get('[data-testid="pin-toggle"]').attributes('aria-pressed')).toBe('true')
   })
 
   it('clearing the validation error removes the has-error class', async () => {

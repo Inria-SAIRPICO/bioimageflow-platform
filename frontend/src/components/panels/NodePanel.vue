@@ -413,9 +413,14 @@ function togglePinned(key: string) {
 }
 
 function isPinned(key: string): boolean {
-  if (key in (nodeData.value?.connectedInputs ?? {})) return true
+  if (connectedInputSource(key) !== null) return true
   if (!nodeData.value?.pinnedInputs) return true
   return nodeData.value.pinnedInputs[key] !== false
+}
+
+function connectedInputSource(key: string): string | null {
+  const handle = encodeEndpointHandle({ kind: 'tool-input', name: key })
+  return nodeData.value?.connectedInputs?.[handle] ?? null
 }
 
 function updateOutputTemplate(key: string, value: string) {
@@ -869,8 +874,8 @@ async function pickFiles(key: string) {
           <!-- Input widget (hidden when field is nulled) -->
           <ParameterFieldError v-if="!isFieldNulled(key)" :errors="fieldErrorsFor(key)">
             <!-- Connected input: show source label -->
-            <span v-if="key in nodeData.connectedInputs" class="connected-source">
-              {{ nodeData.connectedInputs[key] }}
+            <span v-if="connectedInputSource(key) !== null" class="connected-source">
+              {{ connectedInputSource(key) }}
             </span>
             <!-- Gap 5: ImageShared/SharedArray — connection-only, no manual input -->
             <span

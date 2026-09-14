@@ -6,11 +6,13 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pandas as pd
 from bioimageflow import DataFrameTool
 from bioimageflow_core import Connectable, GUIMeta, IOModel
+from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow_core.tool import ProcessingTool, RowConsumption
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -70,6 +72,38 @@ class CrossJoin(DataFrameTool):
         return result
 
 
+class ParameterControls(ProcessingTool):
+    """Typed parameter fixture for browser coverage of the real node controls."""
+
+    display_name = "Parameter Controls"
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(name="bioimageflow-e2e", dependencies={})
+
+    class Inputs(IOModel):
+        mode: Annotated[
+            Literal["fast", "precise"],
+            GUIMeta(connectable=Connectable.NEVER),
+        ] = "fast"
+        enabled: Annotated[
+            bool,
+            GUIMeta(connectable=Connectable.NEVER),
+        ] = True
+        labels: Annotated[
+            list[str],
+            GUIMeta(connectable=Connectable.NEVER),
+        ] = ["alpha", "beta"]
+        connected_number: Annotated[
+            int,
+            GUIMeta(connectable=Connectable.BY_DEFAULT),
+        ] = 3
+
+    class Outputs(IOModel):
+        configured_number: int
+
+    def process_row(self, arguments, *, context=None):
+        return self.Outputs(configured_number=arguments.connected_number)
+
+
 class ExecutionFailureEvent(BaseModel):
     """Contextual worker failure emitted by the Playwright WebSocket fixture."""
 
@@ -117,7 +151,7 @@ def create_app() -> FastAPI:
     # the generated tool-store fixture explicitly so browser tests exercise
     # Files-node creation and hot reload against the real package loader.
     registry.scan_tool_store(tool_store)
-    for tool_class in (Generate, CrossJoin):
+    for tool_class in (Generate, CrossJoin, ParameterControls):
         registry._register_tool_from_class(
             tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
         )
