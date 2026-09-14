@@ -78,11 +78,12 @@ Fifteen selected manager cases, the real compiler/manager regression, and the ex
 
 ## ISSUE-006 — Nested stale-parent conflict has no explicit resolution path
 
-Status: `astra-review`; `/root/nested_conflict_astra` owns a bounded read-only GPT-6 Astra/high review and the writable stale-conflict repair is frozen before commit.
+Status: `not-a-defect`; GPT-6 Astra/high confirmed the baseline stale-parent refusal satisfies v2 §7, and the uncommitted overwrite proposal must not be integrated.
 At worktree base `299eebe`, applying an accepted private nested snapshot after the owning parent child graph changes correctly refuses the mutation, but only reports an error and leaves the editor dirty without exposing the v2 §7 choice between latest parent content and the user's private changes.
 The Sol reproduction proposes identity-bound `Use latest parent` and `Keep my changes` actions that recheck the exact conflicting parent child graph before replacing the private snapshot or applying local content.
-Because this is an identity/data-loss boundary and the proposed canvas coordination change is substantial, no safe implementation disposition is assumed.
-Astra must assess the graph/CAS guard, synchronous parent-canvas event completion, ownership and revision handling, second-conflict/unmount/lock behavior, deterministic regressions, and whether destructive connected-port removal is independent.
+The proposed graph comparison did not guard workflow generation, surrounding bindings/edges, newer private edits during awaits, lock/remount state, or a second parent change; its `use-parent` path could label never-applied private edits clean.
+The safe boundary is to retain conflict refusal, durable dirty private state, and the already specified confirmed Discard/reopen workflow; add browser evidence for those existing semantics without overwrite controls.
+Destructive connected-port removal is independent because v2 §§5 and 7 explicitly require confirmation, but it needs captured effects, cancel-as-zero-mutation, post-await identity/content/connection/lock checks, and awaited application.
 
 ## New issue record template
 
