@@ -681,11 +681,17 @@ test.describe('Canvas interactions', () => {
       await expect(cells.nth(scoreColumn)).toHaveText(String(expected.score))
     }
 
-    await projectionQueryAfter(page, async () => {
+    const directPage = await projectionQueryAfter(page, async () => {
       const pageInput = paginator.getByTestId('node-data-page-input').locator('input')
       await pageInput.fill('1')
       await pageInput.press('Enter')
     })
+    expect(directPage.request).toMatchObject({ page: 0, page_size: 25 })
+    expect(directPage.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows.slice(0, 25).map(row => row.sourceRow))
+    await expect(paginator).toContainText('1–25 of 30 (60 unfiltered)')
+    await expect(visibleRows).toHaveCount(25)
+
     const largerPage = await projectionQueryAfter(page, async () => {
       await paginator.getByRole('combobox', { name: 'Rows per page' }).click()
       await page.getByRole('option', { name: '50', exact: true }).click()
