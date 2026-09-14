@@ -76,6 +76,14 @@ The safe boundary derives selected roots and transitive upstream IDs from the ac
 Orchestrator review reproduced a pre-integration `KeyError` for dangling edge endpoints; `8908388` makes scope traversal total while preserving compiler-produced global edge diagnostics as blocking.
 Fifteen selected manager cases, the real compiler/manager regression, and the exact Chromium/Firefox GUI journey pass on the integrated revision; `scripts/test check app` passes all cross-stack phases.
 
+## ISSUE-006 — Nested stale-parent conflict has no explicit resolution path
+
+Status: `astra-review`; `/root/nested_conflict_astra` owns a bounded read-only GPT-6 Astra/high review and the writable stale-conflict repair is frozen before commit.
+At worktree base `299eebe`, applying an accepted private nested snapshot after the owning parent child graph changes correctly refuses the mutation, but only reports an error and leaves the editor dirty without exposing the v2 §7 choice between latest parent content and the user's private changes.
+The Sol reproduction proposes identity-bound `Use latest parent` and `Keep my changes` actions that recheck the exact conflicting parent child graph before replacing the private snapshot or applying local content.
+Because this is an identity/data-loss boundary and the proposed canvas coordination change is substantial, no safe implementation disposition is assumed.
+Astra must assess the graph/CAS guard, synchronous parent-canvas event completion, ownership and revision handling, second-conflict/unmount/lock behavior, deterministic regressions, and whether destructive connected-port removal is independent.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
