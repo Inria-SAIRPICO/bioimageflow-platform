@@ -6,6 +6,7 @@ import json
 import os
 import socket
 from pathlib import Path
+from typing import Any
 
 from bioimageflow_core import (
     Arguments,
@@ -36,16 +37,38 @@ class HeldWorkerNumbers(ProcessingTool):
         process_id: int
         report: Path = Template("held_number_{row_index}.txt")
 
-    def process_row(self, arguments: Arguments) -> Outputs:
+    def process_row(self, arguments: Arguments, *, task: Any = None) -> Outputs | list:
         with socket.create_connection(("127.0.0.1", arguments.control_port)) as control:
             control.sendall(
                 (
-                    json.dumps({"process_id": os.getpid(), "value": arguments.value})
+                    json.dumps(
+                        {
+                            "event": "started",
+                            "process_id": os.getpid(),
+                            "value": arguments.value,
+                        }
+                    )
                     + "\n"
                 ).encode()
             )
-            if control.recv(1) != b"1":
-                raise RuntimeError("Held worker control connection closed before release")
+            control.settimeout(0.1)
+            while True:
+                try:
+                    command = control.recv(1)
+                except TimeoutError:
+                    if task is None or not task.cancel_requested:
+                        continue
+                    control.sendall(
+                        (json.dumps({"event": "cancellation_observed"}) + "\n").encode()
+                    )
+                    task.cancel()
+                    control.sendall(
+                        (json.dumps({"event": "cancellation_acknowledged"}) + "\n").encode()
+                    )
+                    return []
+                if command != b"1":
+                    raise RuntimeError("Held worker control connection closed before release")
+                break
 
         multiplied = arguments.value * 4
         report = Path(arguments.report)
