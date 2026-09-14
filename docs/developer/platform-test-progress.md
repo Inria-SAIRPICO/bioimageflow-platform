@@ -12,8 +12,8 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Await the owner decision on ISSUE-007's required sibling BioImageFlow cancellation repair and release workflow; the campaign is paused at a clean checkpoint.
-2. If authorized, repair active-task cancellation and writer draining in the library, adopt the published version here, then make the exact cooperative Chromium and Firefox GUI journey pass without weakening its contract.
+1. Complete ISSUE-007's authorized sibling BioImageFlow active-task cancellation and writer-draining repair with deterministic real-Wetlands regressions.
+2. Review, validate, release, and adopt the fixed library, then make the exact cooperative Chromium and Firefox platform GUI journey pass without weakening its contract.
 3. Resume failure/correction/rerun and remaining result lifecycle batches, then continue Wave 6 and final systematic closure.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
@@ -33,7 +33,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
-| Waves 5–6 / lifecycle and remaining features | Paused on ISSUE-007 | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey with exact source identities and parsed bytes. The first real cooperative-worker cancellation journey exposes a BioImageFlow 0.7.1 active-task propagation defect; Astra found no safe platform-only fix, so sibling-library authority is required before failure/cancellation/rerun and later waves resume. |
+| Waves 5–6 / lifecycle and remaining features | ISSUE-007 repair active | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey with exact source identities and parsed bytes. The first real cooperative-worker cancellation journey exposes a BioImageFlow 0.7.1 active-task propagation defect; Astra found no safe platform-only fix, and the owner authorized the sibling-library repair/release workflow. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.
@@ -49,6 +49,7 @@ The bulk-delete/output-clear worktree was archived under `/private/tmp`, pruned,
 The recursive-source worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `13a384b`, `9561b25`, `c911eb3`, and `e817d77`.
 The root-discard worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `dd20821`.
 `/root/execution_failure_cancel` owns `.worktrees/execution-failure-cancel` on `campaign/execution-failure-cancel`.
+`/root/library_cancel_repair` owns `.worktrees/bioimageflow-cancel` on sibling-library branch `campaign/cancel-active-wetlands`.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
 The nested-execution worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `fd96f8f`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.

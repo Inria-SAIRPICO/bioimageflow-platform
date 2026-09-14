@@ -87,7 +87,7 @@ Destructive connected-port removal is independent because v2 §§5 and 7 explici
 
 ## ISSUE-007 — Stop does not reach an active cooperative Wetlands task
 
-Status: `needs-owner` after GPT-6 Astra/high established an upstream BioImageFlow defect and found no safe platform-only repair.
+Status: `safe-to-fix` after GPT-6 Astra/high established an upstream BioImageFlow defect, found no safe platform-only repair, and the owner authorized the sibling-library repair and release workflow.
 Scope: platform branch `campaign/execution-failure-cancel` at `cb5b881`, based on platform `9cfa76d`, with installed BioImageFlow 0.7.1, bioimageflow-core 0.3.1, and Wetlands 2.4.1.
 The deterministic GUI journey runs a real sequential Wetlands ProcessingTool in a distinct worker process, uses a socket handshake instead of arbitrary sleeps, and exposes the library-supported injected task cancellation flag.
 Before Stop it proves exact workflow, accepted draft revision, execution identity, completed upstream source, running worker, worker/backend PID isolation, reload/WebSocket recovery of the same running identity, and visibly disabled Save and Clear actions without draft mutation.
@@ -103,8 +103,9 @@ The initial non-cooperative fixture was rejected by Astra and is not evidence fo
 
 A platform workaround that marks the run idle, cancels only the asyncio wrapper, reaches into private task state, or kills an environment could unlock mutation while a worker still writes and is not authorized.
 The required repair belongs in the sibling BioImageFlow library: propagate cancellation to unfinished active tasks, drain every possible writer before returning or reuse, retain the corrected platform regression, run the library's required CI, publish an updated dependency, then adopt it here and run the exact Chromium and Firefox journey plus affected completion lanes.
-No platform semantic-contract decision remains unclear; the owner decision is whether this campaign may expand back into the sibling library and release workflow.
+No platform semantic-contract decision remains unclear; the owner authorized expanding the campaign back into the sibling library and release workflow on 2026-09-14.
 The clean platform worktree remains `.worktrees/execution-failure-cancel` on `campaign/execution-failure-cancel` with commits `4318814`, `7912ab9`, and `cb5b881`; none is integrated while the required GUI regression is red.
+`/root/library_cancel_repair` owns `.worktrees/bioimageflow-cancel` on sibling-library branch `campaign/cancel-active-wetlands` at baseline `bb74097`.
 
 ## New issue record template
 
