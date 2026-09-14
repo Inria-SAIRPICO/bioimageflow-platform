@@ -76,6 +76,47 @@ function gaussianGraph(nodeId: string, sigma: number): GraphState {
   }
 }
 
+function connectedDraftGraph(
+  workflowName: string,
+  displayName: string,
+  sourceId: string,
+  targetId: string,
+  number: number,
+): GraphState {
+  return {
+    schema_version: 1,
+    name: workflowName,
+    display_name: displayName,
+    nodes: [
+      {
+        type: 'tool',
+        id: sourceId,
+        name: 'Seed Numbers',
+        tool_name: 'SeedNumbers',
+        position: [180, 180],
+        parameters: {},
+      },
+      {
+        type: 'tool',
+        id: targetId,
+        name: 'Increment Numbers',
+        tool_name: 'IncrementNumbers',
+        position: [520, 180],
+        parameters: { number },
+      },
+    ],
+    edges: [{
+      type: 'dataframe',
+      id: `${sourceId}-${targetId}-dataframe`,
+      source_node: sourceId,
+      target_node: targetId,
+      target_position: 0,
+    }],
+    interface: { inputs: [], outputs: [] },
+    config: { engine: 'direct', execution: 'sequential' },
+  }
+}
+
 function graphParameter(
   graph: GraphState,
   nodeId: string,
@@ -159,6 +200,37 @@ async function editSigma(input: ReturnType<Page['locator']>, value: number) {
   await input.press('Tab')
 }
 
+async function selectNumberField(page: Page, nodeId: string) {
+  const node = page.locator(`.vue-flow__node[data-id="${nodeId}"]`)
+  await expect(node).toBeVisible({ timeout: 5000 })
+  await node.click()
+  await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+  const row = page.getByTestId('panel-nodePanel').locator('.param-row').filter({
+    hasText: 'Number column to increment',
+  })
+  const input = row.locator('input.p-inputnumber-input')
+  await expect(input).toBeVisible()
+  return input
+}
+
+async function clearWorkflowRecovery(page: Page, workflowName: string): Promise<void> {
+  await page.evaluate((name) => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('bioimageflow-autosave', 1)
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction('workflows', 'readwrite')
+      transaction.objectStore('workflows').delete(name)
+      transaction.oncomplete = () => {
+        db.close()
+        resolve()
+      }
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+    }
+    request.onerror = () => reject(request.error)
+  }), workflowName)
+}
+
 async function fetchDraft(page: Page, workflowName: string): Promise<WorkflowDraft> {
   const response = await page.request.get(
     `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
@@ -173,11 +245,12 @@ async function waitForDraftParameter(
   nodeId: string,
   value: number,
   dirty?: boolean,
+  parameter = 'sigma',
 ): Promise<WorkflowDraft> {
   await expect.poll(async () => {
     const draft = await fetchDraft(page, workflowName)
     return {
-      value: graphParameter(draft.graph, nodeId, 'sigma'),
+      value: graphParameter(draft.graph, nodeId, parameter),
       ...(dirty === undefined ? {} : { dirty: draft.dirty_against_saved }),
     }
   }, { timeout: 10000 }).toEqual({
@@ -281,36 +354,197 @@ test.describe('critical operation race contracts', () => {
     await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
   })
 
-  test('Discard restores the saved graph before closing and reopening a root canvas', async ({ page }) => {
-    const workflowName = uniqueName('discard_close')
-    const displayName = `Discard Close ${workflowName}`
-    const nodeId = 'blur_discard'
-    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+  test('recovers an accepted root draft and makes Cancel, conflict, and Discard lossless', { tag: '@critical' }, async ({ page }) => {
+    const workflowName = uniqueName('discard_recovery')
+    const displayName = `Discard Recovery ${workflowName}`
+    const siblingName = uniqueName('discard_recovery_sibling')
+    const siblingDisplay = `Discard Recovery Sibling ${siblingName}`
+    const sourceId = 'recovery_seed'
+    const targetId = 'recovery_increment'
+    const siblingSourceId = 'sibling_seed'
+    const siblingTargetId = 'sibling_increment'
+    await createWorkflow(
+      page,
+      workflowName,
+      displayName,
+      connectedDraftGraph(workflowName, displayName, sourceId, targetId, 1),
+    )
+    await createWorkflow(
+      page,
+      siblingName,
+      siblingDisplay,
+      connectedDraftGraph(siblingName, siblingDisplay, siblingSourceId, siblingTargetId, 9),
+    )
 
-    await page.goto('/')
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await openWorkflow(page, workflowName, displayName)
-    const sigmaInput = await selectSigmaField(page, nodeId)
-    const draftAccepted = page.waitForResponse((response) => (
-      responseCarriesParameter(response, workflowName, nodeId, 2)
-    ))
-    await editSigma(sigmaInput, 2)
-    await draftAccepted
-    await waitForDraftParameter(page, workflowName, nodeId, 2, true)
+    try {
+      const savedGraph = await loadSavedGraph(page, workflowName)
+      const siblingSavedGraph = await loadSavedGraph(page, siblingName)
+      const implicitWorkflowPosts: string[] = []
+      page.on('request', (request) => {
+        if (
+          request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/v1/workflows'
+        ) implicitWorkflowPosts.push(request.url())
+      })
 
-    const workflowTab = page.getByTestId('canvas-tab').filter({ hasText: displayName })
-    await workflowTab.getByTestId('canvas-tab-close').click()
-    await expect(page.getByTestId('root-workflow-close-dialog')).toBeVisible()
-    await page.getByTestId('root-workflow-close-discard').click()
-    await expect(workflowTab).not.toBeVisible()
+      await page.goto('/')
+      await expect(page.locator('#bioimageflow-app')).toBeVisible()
+      await openWorkflow(page, workflowName, displayName)
+      const numberInput = await selectNumberField(page, targetId)
+      const acceptedWrite = page.waitForResponse((response) => {
+        if (
+          !response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+          || response.request().method() !== 'PUT'
+          || response.status() !== 200
+        ) return false
+        const body = response.request().postDataJSON() as { graph?: GraphState } | null
+        return body?.graph !== undefined
+          && graphParameter(body.graph, targetId, 'number') === 10
+      })
+      await numberInput.fill('10')
+      await numberInput.press('Tab')
+      await acceptedWrite
+      const acceptedBeforeReload = await waitForDraftParameter(
+        page,
+        workflowName,
+        targetId,
+        10,
+        true,
+        'number',
+      )
+      expect(acceptedBeforeReload.validation).toMatchObject({ valid: true, errors: [] })
+      expect(acceptedBeforeReload.graph).toEqual({
+        ...savedGraph,
+        nodes: savedGraph.nodes.map(node => node.id === targetId
+          ? { ...node, parameters: { ...node.parameters, number: 10 } }
+          : node),
+      })
 
-    const discardedDraft = await fetchDraft(page, workflowName)
-    expect(discardedDraft.dirty_against_saved).toBe(false)
-    expect(graphParameter(discardedDraft.graph, nodeId, 'sigma')).toBe(1)
+      // Remove the fallback copy so the reload below can only recover the
+      // already accepted backend draft. Ordering against a newer fallback is
+      // covered by startupWorkflow's focused unit tests.
+      await clearWorkflowRecovery(page, workflowName)
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toHaveText(`${displayName} *`)
+      await expect(page.locator(`.vue-flow__node[data-id="${sourceId}"]`)).toBeVisible()
+      await expect(page.locator(`.vue-flow__node[data-id="${targetId}"]`)).toBeVisible()
+      await expect(page.locator(`.vue-flow__edge[data-id="${sourceId}-${targetId}-dataframe"]`)).toHaveCount(1)
+      const recoveredDraft = await fetchDraft(page, workflowName)
+      expect(recoveredDraft).toMatchObject({
+        draft_revision: acceptedBeforeReload.draft_revision,
+        dirty_against_saved: true,
+        graph: acceptedBeforeReload.graph,
+        validation: { valid: true, errors: [] },
+      })
+      await expect.poll(async () => Number(await (await selectNumberField(page, targetId)).inputValue())).toBe(10)
 
-    await openWorkflow(page, workflowName, displayName)
-    const reopenedSigma = await selectSigmaField(page, nodeId)
-    await expect.poll(async () => Number(await reopenedSigma.inputValue())).toBe(1)
+      await openWorkflow(page, siblingName, siblingDisplay)
+      await activateWorkflow(page, displayName)
+      await expect(page.locator(`.vue-flow__edge[data-id="${sourceId}-${targetId}-dataframe"]`)).toHaveCount(1)
+      expect(await fetchDraft(page, siblingName)).toMatchObject({
+        dirty_against_saved: false,
+        graph: siblingSavedGraph,
+      })
+
+      const workflowTab = page.getByTestId('canvas-tab').filter({ hasText: displayName })
+      await workflowTab.getByTestId('canvas-tab-close').click()
+      await expect(page.getByTestId('root-workflow-close-dialog')).toBeVisible()
+      await page.getByTestId('root-workflow-close-cancel').click()
+      await expect(page.getByTestId('root-workflow-close-dialog')).not.toBeVisible()
+      await expect(workflowTab).toBeVisible()
+      await expect(page.getByTestId('workflow-title')).toHaveText(`${displayName} *`)
+      expect(await fetchDraft(page, workflowName)).toMatchObject({
+        draft_revision: acceptedBeforeReload.draft_revision,
+        dirty_against_saved: true,
+        graph: acceptedBeforeReload.graph,
+      })
+      expect(await loadSavedGraph(page, workflowName)).toEqual(savedGraph)
+
+      const remoteGraph = {
+        ...acceptedBeforeReload.graph,
+        nodes: acceptedBeforeReload.graph.nodes.map(node => node.id === targetId
+          ? { ...node, parameters: { ...node.parameters, number: 7 } }
+          : node),
+      }
+      const remoteResponse = await page.request.put(
+        `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+        {
+          data: {
+            expected_revision: acceptedBeforeReload.draft_revision,
+            updated_by: 'agent',
+            graph: remoteGraph,
+          },
+        },
+      )
+      expect(remoteResponse.ok()).toBeTruthy()
+      const remoteDraft = await remoteResponse.json() as WorkflowDraft
+      expect(remoteDraft.draft_revision).toBe(acceptedBeforeReload.draft_revision + 1)
+
+      await workflowTab.getByTestId('canvas-tab-close').click()
+      await page.getByTestId('root-workflow-close-discard').click()
+      const closeError = page.getByTestId('root-workflow-close-dialog').getByRole('alert')
+      await expect(closeError).toBeVisible()
+      await expect(closeError).toContainText(/409|conflict/i)
+      await expect(workflowTab).toBeVisible()
+      await page.getByTestId('root-workflow-close-cancel').click()
+      await expect(page.locator('.workflow-draft-conflict')).toBeVisible()
+      await expect.poll(async () => Number(await (await selectNumberField(page, targetId)).inputValue())).toBe(10)
+      expect(await fetchDraft(page, workflowName)).toMatchObject({
+        draft_revision: remoteDraft.draft_revision,
+        dirty_against_saved: true,
+        graph: remoteGraph,
+      })
+
+      const keepCanvasAccepted = page.waitForResponse(response => (
+        response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+        && response.request().method() === 'PUT'
+        && response.status() === 200
+      ))
+      await page.getByRole('button', { name: 'Keep my canvas' }).click()
+      await keepCanvasAccepted
+      await expect(page.locator('.workflow-draft-conflict')).not.toBeVisible()
+      const keptDraft = await waitForDraftParameter(
+        page,
+        workflowName,
+        targetId,
+        10,
+        true,
+        'number',
+      )
+      expect(keptDraft.draft_revision).toBe(remoteDraft.draft_revision + 1)
+
+      await workflowTab.getByTestId('canvas-tab-close').click()
+      const resetResponse = page.waitForResponse(response => (
+        response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}/reset-to-saved`)
+        && response.request().method() === 'POST'
+        && response.status() === 200
+      ))
+      await page.getByTestId('root-workflow-close-discard').click()
+      await resetResponse
+      await expect(workflowTab).not.toBeVisible()
+      const discardedDraft = await fetchDraft(page, workflowName)
+      expect(discardedDraft).toMatchObject({
+        draft_revision: keptDraft.draft_revision + 1,
+        dirty_against_saved: false,
+        graph: savedGraph,
+        validation: { valid: true, errors: [] },
+      })
+
+      await openWorkflow(page, workflowName, displayName)
+      await expect(page.getByTestId('workflow-title')).toHaveText(displayName)
+      await expect(page.locator(`.vue-flow__edge[data-id="${sourceId}-${targetId}-dataframe"]`)).toHaveCount(1)
+      const reopenedNumber = await selectNumberField(page, targetId)
+      await expect.poll(async () => Number(await reopenedNumber.inputValue())).toBe(1)
+      expect(await fetchDraft(page, siblingName)).toMatchObject({
+        dirty_against_saved: false,
+        graph: siblingSavedGraph,
+      })
+      expect(implicitWorkflowPosts).toEqual([])
+    } finally {
+      await page.goto('about:blank')
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${siblingName}`).catch(() => undefined)
+    }
   })
 
   test('Run asks again when the accepted graph changes during confirmation', async ({ page }) => {
