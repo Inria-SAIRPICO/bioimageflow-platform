@@ -117,6 +117,17 @@ async function connectDataFrames(page: Page, source: Locator, target: Locator) {
   await page.mouse.up()
 }
 
+async function openWorkflowMenuItem(page: Page, label: string) {
+  await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+  await page.getByRole('menuitem', { name: label, exact: true }).click()
+}
+
+async function currentDraft(page: Page, workflowName: string): Promise<WorkflowDraftResponse> {
+  const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+  expect(response.ok()).toBeTruthy()
+  return response.json()
+}
+
 async function moveNode(page: Page, node: Locator, delta: { x: number; y: number }) {
   const box = await node.boundingBox()
   expect(box).not.toBeNull()
@@ -350,6 +361,136 @@ test.describe('Canvas interactions', () => {
       rows: [{ sensitivity: 0.1 }, { sensitivity: 0.2 }],
       total_rows: 2,
     })
+  })
+
+  test('builds, runs, inspects, saves, and reopens a real workflow through the GUI', { tag: '@critical' }, async ({ page }) => {
+    const seedTool = await seedNumbersRow(page)
+    await seedTool.click()
+    const documentation = page.getByTestId('tool-doc-SeedNumbers')
+    await expect(documentation).toBeVisible()
+    await expect(documentation.locator('h4')).toHaveText('Seed Numbers')
+    await expect(documentation.locator('p')).toHaveText(
+      'Create a deterministic three-row dataframe for development tests.',
+    )
+    await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+
+    await seedTool.dblclick()
+    const seedNode = page.locator('.vue-flow__node').filter({ hasText: 'Seed Numbers 1' })
+    await expect(seedNode).toBeVisible()
+
+    const incrementNode = await addToolNode(page, 'IncrementNumbers', { x: 420, y: 220 })
+    await incrementNode.click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const nodePanel = page.getByTestId('panel-nodePanel')
+    await expect(nodePanel.locator('.tool-name')).toHaveText('IncrementNumbers')
+    const numberRow = nodePanel.locator('.param-row').filter({ hasText: 'Number column to increment' })
+    const numberInput = numberRow.locator('input.p-inputnumber-input')
+    await numberInput.fill('10')
+    await numberInput.press('Tab')
+
+    const seedId = await seedNode.getAttribute('data-id')
+    const incrementId = await incrementNode.getAttribute('data-id')
+    expect(seedId).toBeTruthy()
+    expect(incrementId).toBeTruthy()
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      const increment = draft.graph.nodes.find(node => node.id === incrementId)
+      return increment?.type === 'tool' ? increment.parameters.number : undefined
+    }).toBe(10)
+
+    await connectDataFrames(page, seedNode, incrementNode)
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      return {
+        validation: draft.validation,
+        nodes: draft.graph.nodes.map(node => node.type === 'tool'
+          ? { id: node.id, tool_name: node.tool_name, parameters: node.parameters }
+          : { id: node.id, type: node.type }),
+        edges: draft.graph.edges.map(({ id: _id, ...edge }) => edge),
+      }
+    }).toMatchObject({
+      validation: { valid: true, errors: [] },
+      nodes: [
+        { id: seedId, tool_name: 'SeedNumbers', parameters: {} },
+        { id: incrementId, tool_name: 'IncrementNumbers', parameters: { number: 10 } },
+      ],
+      edges: [{ type: 'dataframe', source_node: seedId, target_node: incrementId, target_position: 0 }],
+    })
+
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    await incrementNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const resultTable = page.getByTestId('data-table-panel').locator('.p-datatable')
+    await expect(resultTable).toBeVisible()
+    const headers = await resultTable.locator('.p-datatable-thead th').allTextContents()
+    const numberColumn = headers.findIndex(header => header.includes('number') && !header.includes('number_plus_one'))
+    const labelColumn = headers.findIndex(header => header.includes('label'))
+    const resultColumn = headers.findIndex(header => header.includes('number_plus_one'))
+    expect(numberColumn).toBeGreaterThanOrEqual(0)
+    expect(labelColumn).toBeGreaterThanOrEqual(0)
+    expect(resultColumn).toBeGreaterThanOrEqual(0)
+    const resultRows = resultTable.locator('.p-datatable-tbody tr')
+    await expect(resultRows).toHaveCount(3)
+    await expect(resultRows.nth(0).locator('td').nth(numberColumn)).toHaveText('1')
+    await expect(resultRows.nth(0).locator('td').nth(labelColumn)).toHaveText('one')
+    await expect(resultRows.nth(0).locator('td').nth(resultColumn)).toHaveText('2')
+    await expect(resultRows.nth(1).locator('td').nth(numberColumn)).toHaveText('2')
+    await expect(resultRows.nth(1).locator('td').nth(labelColumn)).toHaveText('two')
+    await expect(resultRows.nth(1).locator('td').nth(resultColumn)).toHaveText('3')
+    await expect(resultRows.nth(2).locator('td').nth(numberColumn)).toHaveText('3')
+    await expect(resultRows.nth(2).locator('td').nth(labelColumn)).toHaveText('three')
+    await expect(resultRows.nth(2).locator('td').nth(resultColumn)).toHaveText('4')
+
+    const saveResponse = page.waitForResponse(response =>
+      response.url().endsWith(`/api/v1/workflows/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200,
+    )
+    await openWorkflowMenuItem(page, 'Save')
+    await saveResponse
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+
+    const savedResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    expect(savedResponse.ok()).toBeTruthy()
+    const saved = await savedResponse.json()
+    expect(saved.graph).toMatchObject({
+      nodes: [
+        { id: seedId, tool_name: 'SeedNumbers', parameters: {} },
+        { id: incrementId, tool_name: 'IncrementNumbers', parameters: { number: 10 } },
+      ],
+      edges: [{ type: 'dataframe', source_node: seedId, target_node: incrementId, target_position: 0 }],
+    })
+
+    const otherDisplayName = `Journey Switch ${Date.now()} ${Math.floor(Math.random() * 10000)}`
+    const otherWorkflowName = deriveWorkflowId(otherDisplayName)
+    try {
+      await openWorkflowMenuItem(page, 'New')
+      await page.getByTestId('workflow-display-name-input').fill(otherDisplayName)
+      await page.getByTestId('workflow-dialog-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(otherDisplayName)
+
+      await openWorkflowMenuItem(page, 'Open')
+      await page.getByTestId('workflow-open-search').fill(workflowName)
+      await page.getByTestId(`workflow-open-option-${workflowName}`).click()
+      await page.getByTestId('workflow-open-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(saved.graph.display_name)
+      await expect(page.locator(`.vue-flow__node[data-id="${seedId}"]`)).toBeVisible()
+      await expect(page.locator(`.vue-flow__node[data-id="${incrementId}"]`)).toBeVisible()
+      await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+
+      const reopened = await currentDraft(page, workflowName)
+      expect(reopened.validation).toMatchObject({ valid: true, errors: [] })
+      expect(reopened.graph).toEqual(saved.graph)
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${otherWorkflowName}`).catch(() => undefined)
+    }
   })
 
   test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
