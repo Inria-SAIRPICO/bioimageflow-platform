@@ -172,6 +172,31 @@ async function openNodesPanel(page: Page): Promise<Locator> {
   return panel
 }
 
+async function addSeedNodeFromCatalog(page: Page, workflowName: string): Promise<string> {
+  await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+  await page.getByTestId('tool-search').fill('SeedNumbers')
+  const tool = page.getByTestId('tool-item-SeedNumbers')
+  await expect(tool).toBeVisible()
+  const canvas = page.locator('.vue-flow')
+  const canvasBox = await canvas.boundingBox()
+  expect(canvasBox).not.toBeNull()
+  await waitForAcceptedEdit(page, workflowName, () => tool.dragTo(canvas, {
+    targetPosition: { x: canvasBox!.width / 2, y: canvasBox!.height - 60 },
+  }))
+  const draft = await fetchDraft(page, workflowName)
+  const added = draft.graph.nodes.find(graphNode => (
+    graphNode.id !== SOURCE_ID && graphNode.id !== TARGET_ID
+  ))
+  expect(added).toBeDefined()
+  await expect(node(page, added!.id)).toBeVisible()
+  return added!.id
+}
+
+async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> {
+  await page.locator('.vue-flow__pane').click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press(shortcut)
+}
+
 test.describe('everyday node editing', () => {
   let workflowName: string
 
@@ -211,7 +236,7 @@ test.describe('everyday node editing', () => {
       [false, false],
     )
 
-    await waitForAcceptedEdit(page, workflowName, () => page.locator('.canvas-view').press('Control+z'))
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(source.locator('.tool-node')).not.toHaveClass(/disabled/)
     await expect(target.locator('.tool-node')).not.toHaveClass(/disabled/)
     await expectAcceptedDraft(
@@ -221,7 +246,7 @@ test.describe('everyday node editing', () => {
       [true, true],
     )
 
-    await waitForAcceptedEdit(page, workflowName, () => page.locator('.canvas-view').press('Control+Shift+z'))
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
     await expectAcceptedDraft(
       page,
       workflowName,
@@ -362,5 +387,77 @@ test.describe('everyday node editing', () => {
       target_input: null,
       target_position: 0,
     }])
+  })
+
+  test('undoes and redoes mixed node, edge, and parameter edits one action at a time', async ({ page }) => {
+    const baseline = await fetchDraft(page, workflowName)
+    const addedNodeId = await addSeedNodeFromCatalog(page, workflowName)
+
+    await waitForAcceptedEdit(page, workflowName, () => disconnectDataframeToCanvas(page))
+    await node(page, TARGET_ID).click()
+    const panel = await openNodesPanel(page)
+    const numberInput = panel.locator('.param-number input')
+    await expect(numberInput).toHaveValue('1')
+    await waitForAcceptedEdit(page, workflowName, async () => {
+      await numberInput.fill('7')
+      await numberInput.press('Enter')
+    })
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edgeIds: draft.graph.edges.map(edge => edge.id),
+      number: draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
+    }), {
+      nodeIds: [SOURCE_ID, TARGET_ID, addedNodeId],
+      edgeIds: [],
+      number: 7,
+    })
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edgeIds: draft.graph.edges.map(edge => edge.id),
+      number: draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
+    }), {
+      nodeIds: [SOURCE_ID, TARGET_ID, addedNodeId],
+      edgeIds: [],
+      number: 1,
+    })
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await expect(page.locator(`.vue-flow__edge[data-id="${EDGE_ID}"]`)).toHaveCount(1)
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edge: draft.graph.edges[0],
+    }), {
+      nodeIds: [SOURCE_ID, TARGET_ID, addedNodeId],
+      edge: baseline.graph.edges[0],
+    })
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await expect(node(page, addedNodeId)).toHaveCount(0)
+    await expectAcceptedDraft(page, workflowName, draft => draft.graph, baseline.graph)
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await expect(node(page, addedNodeId)).toBeVisible()
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      valid: draft.validation.valid,
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edges: draft.graph.edges,
+      number: draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
+    }), {
+      valid: true,
+      nodeIds: [SOURCE_ID, TARGET_ID, addedNodeId],
+      edges: [],
+      number: 7,
+    })
+
+    const accepted = await fetchDraft(page, workflowName)
+    await page.reload()
+    await expect(node(page, addedNodeId)).toBeVisible()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(accepted.graph)
   })
 })

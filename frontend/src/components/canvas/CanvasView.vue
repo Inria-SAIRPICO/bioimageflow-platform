@@ -3640,12 +3640,17 @@ function updateNodeParameters(
   if (isLocked.value) return false
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   if (!node?.data) return false
+  const currentParameters = node.data.parameters ?? {}
+  const changedValues = Object.fromEntries(Object.entries(values).filter(([key, value]) => (
+    JSON.stringify(currentParameters[key]) !== JSON.stringify(value)
+  )))
+  if (Object.keys(changedValues).length === 0) return false
   const presentationStatus = canvasStatusProjection
     .statusForNode(nodeId)
     ?.presentationStatus
   node.data.parameters = {
-    ...(node.data.parameters ?? {}),
-    ...values,
+    ...currentParameters,
+    ...changedValues,
   }
   canvasStatusProjection.stageCurrentSemanticStatuses()
   canvasStatusProjection.stageSemanticStatus(nodeId, {

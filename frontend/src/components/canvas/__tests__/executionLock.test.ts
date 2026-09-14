@@ -742,6 +742,22 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
+  it('does not record or persist an unchanged parameter value', () => {
+    mockNodes = [
+      {
+        id: 'n1',
+        data: { toolName: 'T', status: 'unexecuted', parameters: { value: 7 } },
+      },
+    ]
+    const w = mountCanvas()
+    graphSyncMocks.syncGraphState.mockClear()
+
+    expect(canvasCommandMocks.updateParameter?.('n1', 'value', 7)).toBe(false)
+    expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+    expect(mockNodes[0].data.parameters).toEqual({ value: 7 })
+    w.unmount()
+  })
+
   it('keeps parameter-edit status invalidation scoped to the edited node', async () => {
     const tool = {
       name: 'files',
