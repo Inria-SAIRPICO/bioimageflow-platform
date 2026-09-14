@@ -13,7 +13,7 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 ## Next three actions
 
 1. Integrate the active Wave 3 clipboard/shortcut and focus-safety batch after exact cross-browser and completion validation.
-2. Complete the corrected ISSUE-006 stale-parent refusal/discard browser evidence without overwrite semantics, then continue the independent destructive connected-port confirmation boundary.
+2. Complete the Astra-bounded destructive connected-port repair: preserve newer private edits, retry failed parent persistence, reconcile enclosing interface references, and guard lifecycle/registration before integration.
 3. Follow Wave 3 with clipboard/shortcuts and the remaining parameter-control/persistence obligations, then continue the ordered feature waves without dropping lower-priority coverage.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
@@ -32,7 +32,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
 | Wave 3 / editing | In progress | Commits through `e0aa123` verify connection/history behavior; a dedicated Sol/medium worktree owns clipboard identity/structure plus active-canvas keyboard and input-focus safety, while remaining controls and bulk Delete/Clear remain. |
-| Wave 4 / nested workflows | In progress | Commit `af58e4e` verifies the primary private-edit journey; Astra classified ISSUE-006 baseline refusal as `not-a-defect`, so the worker is correcting the browser evidence before separately testing destructive connected-port confirmation. |
+| Wave 4 / nested workflows | In progress | Commits `b149daf` and `f920c9b` verify ISSUE-006 stale-parent refusal/discard in both browsers. Astra found the first destructive-port implementation unsafe as-is; its bounded concurrency/retry/recursive-interface repair is active and unintegrated. |
 | Waves 5–6 / lifecycle and remaining features | Gaps | Failure/cancellation/rerun/cache/results plus settings, datasets, authoring, integrations, and remaining user actions. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
