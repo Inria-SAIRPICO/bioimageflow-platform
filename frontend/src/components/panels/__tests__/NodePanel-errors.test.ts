@@ -7,6 +7,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
+import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import {
   _resetCanvasPersistenceForTest,
@@ -114,6 +115,23 @@ function mountWithErrors(
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('disables bulk destructive controls while execution owns the mutation lock', async () => {
+    const wrapper = mountWithErrors(null)
+    const ui = useUIStore()
+    ui.setSelectedNodes(['node-1', 'node-2'])
+    ui.setGraphNodes([
+      { id: 'node-1', data: makeNodeData() },
+      { id: 'node-2', data: makeNodeData({ name: 'Blur 2' }) },
+    ])
+    const execution = useExecutionStore()
+    execution.state = 'running'
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="bulk-delete-nodes"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="bulk-clear-node-outputs"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
   it('opens the selected tool script and hides the action for restricted webapps', async () => {
     const wrapper = mountWithErrors(null)
     await wrapper.get('[data-testid="open-tool-script"]').trigger('click')

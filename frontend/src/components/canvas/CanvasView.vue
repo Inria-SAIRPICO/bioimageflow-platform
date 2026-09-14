@@ -278,6 +278,8 @@ const canvasCommands = useCanvasCommands({
   renameNode,
   setNodeEnabled,
   setNodesEnabled,
+  deleteNodes,
+  clearNodeOutputs,
   setNodeResources,
   setInputPinned,
   setOutputTemplate,
@@ -2576,6 +2578,56 @@ async function onAddWorkflowNode({
 
 // --- Selection + Keyboard ---
 
+function deleteNodes(nodeIds: string[]): boolean {
+  if (isLocked.value) return false
+  const requestedIds = new Set(nodeIds)
+  const selectedNodes = getNodes.value.filter((n: any) => requestedIds.has(n.id))
+  if (selectedNodes.length === 0) return false
+  const selectedNodeIds = new Set(selectedNodes.map((n: any) => n.id))
+
+  const interfaceContext = currentInterfaceContext()
+  if (interfaceContext !== null) {
+    const nextInterface = removeNodesFromWorkflowInterface(
+      interfaceContext,
+      selectedNodeIds,
+    )
+    replaceWorkflowInterface(nextInterface.inputs, nextInterface.outputs)
+  }
+
+  const edgesToRemove = getEdges.value.filter(
+    (e: any) => selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target),
+  )
+  const survivingPositionalTargets = new Set<string>()
+  for (const edge of edgesToRemove) {
+    if (!selectedNodeIds.has(edge.target)) {
+      cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+      if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
+        survivingPositionalTargets.add(edge.target)
+      }
+    }
+  }
+
+  removeEdges(edgesToRemove.map((e: any) => e.id))
+  removeNodes(selectedNodes.map((n: any) => n.id))
+  for (const id of survivingPositionalTargets) refreshIfDynamicOutputs(id)
+  emitGraphChanged()
+  return true
+}
+
+async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
+  if (isLocked.value || isNestedWorkflowEditor || nodeIds.length === 0) return false
+  const workflowName = currentWorkflowName()
+  if (workflowName === null) return false
+  await flushNow()
+  if (isLocked.value) return false
+  const existingIds = new Set(getNodes.value.map((node: any) => node.id))
+  const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
+  if (requestedIds.length === 0) return false
+  await executionStore.clear(currentSerializedGraph(), requestedIds, workflowName)
+  for (const nodeId of requestedIds) dataTableStore.clearCanvasCache(canvasId, nodeId)
+  return true
+}
+
 function deleteSelected() {
   if (isLocked.value) return
   const selectedNodes = getNodes.value.filter((n: any) => n.selected)
@@ -2599,39 +2651,7 @@ function deleteSelected() {
     return
   }
 
-  const selectedNodeIds = new Set(selectedNodes.map((n: any) => n.id))
-
-  const interfaceContext = currentInterfaceContext()
-  if (interfaceContext !== null) {
-    const nextInterface = removeNodesFromWorkflowInterface(
-      interfaceContext,
-      selectedNodeIds,
-    )
-    replaceWorkflowInterface(nextInterface.inputs, nextInterface.outputs)
-  }
-
-  // Remove edges connected to deleted nodes
-  const edgesToRemove = getEdges.value.filter(
-    (e: any) => selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target),
-  )
-
-  // Clean up connectedInputs on surviving target nodes
-  const survivingPositionalTargets = new Set<string>()
-  for (const edge of edgesToRemove) {
-    if (!selectedNodeIds.has(edge.target)) {
-      cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
-      if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
-        survivingPositionalTargets.add(edge.target)
-      }
-    }
-  }
-
-  removeEdges(edgesToRemove.map((e: any) => e.id))
-  removeNodes(selectedNodes.map((n: any) => n.id))
-  for (const id of survivingPositionalTargets) {
-    refreshIfDynamicOutputs(id)
-  }
-  emitGraphChanged()
+  deleteNodes(selectedNodes.map((node: any) => node.id))
 }
 
 function copySelected() {

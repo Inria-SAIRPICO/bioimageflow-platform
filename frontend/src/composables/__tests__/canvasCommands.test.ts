@@ -11,6 +11,8 @@ function makeCanvasCommandHandlers() {
     renameNode: vi.fn(() => true),
     setNodeEnabled: vi.fn(() => true),
     setNodesEnabled: vi.fn(() => true),
+    deleteNodes: vi.fn(() => true),
+    clearNodeOutputs: vi.fn(async () => true),
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
     toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
@@ -261,6 +263,34 @@ describe('active canvas commands', () => {
     expect(root.updateParameter('shared', 'sigma', 3)).toBe(true)
     expect(updateRoot).toHaveBeenCalledWith('shared', 'sigma', 3)
     expect(updateNested).toHaveBeenCalledOnce()
+  })
+
+  it('refuses a delayed destructive command after another canvas becomes active', async () => {
+    const firstId = canvasIdFromPanelId('workflow:first')
+    const secondId = canvasIdFromPanelId('workflow:second')
+    const firstHandlers = makeCanvasCommandHandlers()
+    const secondHandlers = makeCanvasCommandHandlers()
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: firstId, workflowId: 'first' },
+      ...firstHandlers,
+      updateParameter: vi.fn(() => true),
+    })
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: secondId, workflowId: 'second' },
+      ...secondHandlers,
+      updateParameter: vi.fn(() => true),
+    })
+    const active = useCanvasCommands()
+
+    graphSyncCanvasSessions.activate(firstId)
+    graphSyncCanvasSessions.activate(secondId)
+
+    expect(active.deleteNodes(['shared'], firstId)).toBe(false)
+    await expect(active.clearNodeOutputs(['shared'], firstId)).resolves.toBe(false)
+    expect(firstHandlers.deleteNodes).not.toHaveBeenCalled()
+    expect(secondHandlers.deleteNodes).not.toHaveBeenCalled()
+    expect(firstHandlers.clearNodeOutputs).not.toHaveBeenCalled()
+    expect(secondHandlers.clearNodeOutputs).not.toHaveBeenCalled()
   })
 
   it('routes an atomic parameter update to the active canvas', () => {

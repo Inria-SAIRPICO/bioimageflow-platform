@@ -33,6 +33,8 @@ export interface CanvasScopedCommandsOptions {
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
   setNodesEnabled?: (nodeIds: string[], enabled: boolean) => boolean
+  deleteNodes?: (nodeIds: string[]) => boolean
+  clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
   setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
@@ -67,6 +69,8 @@ export interface CanvasCommandsApi {
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
+  deleteNodes(nodeIds: string[], expectedCanvasId?: CanvasId): boolean
+  clearNodeOutputs(nodeIds: string[], expectedCanvasId?: CanvasId): Promise<boolean>
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -93,6 +97,8 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
+  deleteNodes(nodeIds: string[]): boolean
+  clearNodeOutputs(nodeIds: string[]): Promise<boolean>
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -149,6 +155,16 @@ export function useCanvasCommands(
     ),
     setNodesEnabled: (nodeIds, enabled) => (
       resource.setNodesEnabled(nodeIds, enabled)
+    ),
+    deleteNodes: (nodeIds, expectedCanvasId) => (
+      expectedCanvasId !== undefined && expectedCanvasId !== options.descriptor.canvasId
+        ? false
+        : resource.deleteNodes(nodeIds)
+    ),
+    clearNodeOutputs: (nodeIds, expectedCanvasId) => (
+      expectedCanvasId !== undefined && expectedCanvasId !== options.descriptor.canvasId
+        ? Promise.resolve(false)
+        : resource.clearNodeOutputs(nodeIds)
     ),
     setNodeResources: (nodeId, resources) => (
       resource.setNodeResources(nodeId, resources)
@@ -219,6 +235,14 @@ function createCommandResource(
         if (options.setNodeEnabled(nodeId, enabled)) changed = true
       }
       return changed
+    },
+    deleteNodes: (nodeIds) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.deleteNodes?.(nodeIds) ?? false
+    },
+    clearNodeOutputs: async (nodeIds) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return await options.clearNodeOutputs?.(nodeIds) ?? false
     },
     setNodeResources: (nodeId, resources) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -293,6 +317,16 @@ function createActiveFacade(): CanvasCommandsApi {
     setNodesEnabled: (nodeIds, enabled) => (
       activeCommandResource()?.setNodesEnabled(nodeIds, enabled) ?? false
     ),
+    deleteNodes: (nodeIds, expectedCanvasId) => {
+      const activeCanvasId = graphSyncCanvasSessions.activeCanvasId.value
+      if (expectedCanvasId !== undefined && expectedCanvasId !== activeCanvasId) return false
+      return activeCommandResource()?.deleteNodes(nodeIds) ?? false
+    },
+    clearNodeOutputs: async (nodeIds, expectedCanvasId) => {
+      const activeCanvasId = graphSyncCanvasSessions.activeCanvasId.value
+      if (expectedCanvasId !== undefined && expectedCanvasId !== activeCanvasId) return false
+      return await activeCommandResource()?.clearNodeOutputs(nodeIds) ?? false
+    },
     setNodeResources: (nodeId, resources) => (
       activeCommandResource()?.setNodeResources(nodeId, resources) ?? false
     ),

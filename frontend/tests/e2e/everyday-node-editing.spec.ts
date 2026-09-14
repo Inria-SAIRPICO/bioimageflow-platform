@@ -197,6 +197,28 @@ async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> 
   await page.keyboard.press(shortcut)
 }
 
+async function boxSelectNodes(page: Page, nodeIds: string[]): Promise<void> {
+  const boxes = await Promise.all(nodeIds.map(async id => {
+    const box = await node(page, id).boundingBox()
+    expect(box).not.toBeNull()
+    return box!
+  }))
+  const start = {
+    x: Math.min(...boxes.map(box => box.x)) - 20,
+    y: Math.min(...boxes.map(box => box.y)) - 20,
+  }
+  const end = {
+    x: Math.max(...boxes.map(box => box.x + box.width)) + 20,
+    y: Math.max(...boxes.map(box => box.y + box.height)) + 20,
+  }
+  await page.keyboard.down('Shift')
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y, { steps: 12 })
+  await page.mouse.up()
+  await page.keyboard.up('Shift')
+}
+
 async function openWorkflowFromPanel(page: Page, workflowName: string): Promise<void> {
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).first().click()
   await page.getByTestId('workflow-search').fill(workflowName)
@@ -296,6 +318,131 @@ test.describe('everyday node editing', () => {
     await expect(source).not.toHaveClass(/selected/)
     await expect(target).not.toHaveClass(/selected/)
     await expect(panel).toContainText('Select a node to view its properties')
+  })
+
+  test('box-selects and atomically deletes nodes with their incident edge', async ({ page }) => {
+    const inactiveWorkflowName = `${workflowName}_inactive`
+    const inactiveGraph = editingGraph(inactiveWorkflowName)
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name: inactiveWorkflowName, display_name: inactiveWorkflowName },
+    })
+    expect(created.status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`, {
+      data: { graph: inactiveGraph },
+    })).ok()).toBeTruthy()
+
+    try {
+      const baseline = await fetchDraft(page, workflowName)
+      const inactiveBaseline = await page.request.get(
+        `${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`,
+      )
+      expect(inactiveBaseline.ok()).toBeTruthy()
+      const inactiveDocument = await inactiveBaseline.json()
+
+      await boxSelectNodes(page, [SOURCE_ID, TARGET_ID])
+      await expect(node(page, SOURCE_ID)).toHaveClass(/selected/)
+      await expect(node(page, TARGET_ID)).toHaveClass(/selected/)
+      const panel = await openNodesPanel(page)
+      await expect(panel.locator('.multi-select')).toContainText('2 nodes selected')
+
+      await panel.getByTestId('bulk-delete-nodes').click()
+      await expect(page.getByTestId('node-destructive-dialog')).toBeVisible()
+      await page.getByTestId('node-destructive-cancel').click()
+      await expect(page.getByTestId('node-destructive-dialog')).not.toBeVisible()
+      const afterCancel = await fetchDraft(page, workflowName)
+      expect(afterCancel.draft_revision).toBe(baseline.draft_revision)
+      expect(afterCancel.graph).toEqual(baseline.graph)
+
+      await panel.getByTestId('bulk-delete-nodes').click()
+      await waitForAcceptedEdit(page, workflowName, () => (
+        page.getByTestId('node-destructive-confirm').click()
+      ))
+      await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+      await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+      const deleted = await fetchDraft(page, workflowName)
+      expect(deleted.draft_revision).toBe(baseline.draft_revision + 1)
+      expect(deleted.graph.nodes).toEqual([])
+      expect(deleted.graph.edges).toEqual([])
+      expect(deleted.validation).toMatchObject({ valid: true, errors: [] })
+
+      await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+      const restored = await fetchDraft(page, workflowName)
+      expect(restored.draft_revision).toBe(deleted.draft_revision + 1)
+      expect(restored.graph).toEqual(baseline.graph)
+      await expect(page.locator(`.vue-flow__edge[data-id="${EDGE_ID}"]`)).toHaveCount(1)
+
+      await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+      const redone = await fetchDraft(page, workflowName)
+      expect(redone.draft_revision).toBe(restored.draft_revision + 1)
+      expect(redone.graph.nodes).toEqual([])
+      expect(redone.graph.edges).toEqual([])
+
+      await page.reload()
+      await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+      expect((await fetchDraft(page, workflowName)).graph).toEqual(redone.graph)
+      const inactiveAfter = await page.request.get(
+        `${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`,
+      )
+      expect(await inactiveAfter.json()).toEqual(inactiveDocument)
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`).catch(() => undefined)
+    }
+  })
+
+  test('clears selected outputs only after confirmation without mutating the graph', async ({ page }) => {
+    const runResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText(
+      'Execution complete',
+      { timeout: 30000 },
+    )
+    const resultBefore = await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    expect(resultBefore.ok()).toBeTruthy()
+
+    await node(page, SOURCE_ID).click()
+    await node(page, TARGET_ID).click({ modifiers: ['Shift'] })
+    const panel = await openNodesPanel(page)
+    const baseline = await fetchDraft(page, workflowName)
+
+    await panel.getByTestId('bulk-clear-node-outputs').click()
+    await page.getByTestId('node-destructive-cancel').click()
+    const afterCancel = await fetchDraft(page, workflowName)
+    expect(afterCancel.draft_revision).toBe(baseline.draft_revision)
+    expect(afterCancel.graph).toEqual(baseline.graph)
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).ok()).toBeTruthy()
+
+    const clearResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/clear')
+      && response.request().method() === 'POST'
+    ))
+    await panel.getByTestId('bulk-clear-node-outputs').click()
+    await page.getByTestId('node-destructive-confirm').click()
+    expect((await clearResponse).status()).toBe(200)
+    await expect(page.getByTestId('node-destructive-dialog')).not.toBeVisible()
+    const afterClear = await fetchDraft(page, workflowName)
+    expect(afterClear.draft_revision).toBe(baseline.draft_revision)
+    expect(afterClear.graph).toEqual(baseline.graph)
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).status()).toBe(404)
+
+    await page.reload()
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).status()).toBe(404)
   })
 
   test('renames without changing node or edge identity and refuses a duplicate name', async ({ page }) => {

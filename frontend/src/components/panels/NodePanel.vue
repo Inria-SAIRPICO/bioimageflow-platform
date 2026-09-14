@@ -8,6 +8,7 @@ import ToggleButton from 'primevue/togglebutton'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
+import Dialog from 'primevue/dialog'
 import { openNodeWithEditor } from '@/api/editor'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -90,6 +91,13 @@ const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 const fieldFocusTracker = useFieldFocusTracker()
 const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
+const destructiveDialog = ref<{
+  action: 'delete' | 'clear'
+  nodeIds: string[]
+  canvasId: CanvasId
+} | null>(null)
+const destructiveActionPending = ref(false)
+const destructiveActionError = ref('')
 const focusedParameterRows = new Map<EventTarget, FieldFocusTarget>()
 
 const selectedNodeErrors = computed(() => {
@@ -273,6 +281,57 @@ function finishEditName() {
 function setSelectedNodesEnabled(enabled: boolean): void {
   canvasCommands.setNodesEnabled(uiStore.selectedNodeIds, enabled)
 }
+
+function requestDestructiveAction(action: 'delete' | 'clear'): void {
+  const canvasId = statusProjection.canvasId
+  const nodeIds = [...uiStore.selectedNodeIds]
+  if (canvasId === null || nodeIds.length === 0 || isNodeEditingDisabled.value) return
+  destructiveActionError.value = ''
+  destructiveDialog.value = { action, nodeIds, canvasId }
+}
+
+function closeDestructiveDialog(): void {
+  if (destructiveActionPending.value) return
+  destructiveDialog.value = null
+  destructiveActionError.value = ''
+}
+
+async function confirmDestructiveAction(): Promise<void> {
+  const request = destructiveDialog.value
+  if (request === null || destructiveActionPending.value) return
+  destructiveActionPending.value = true
+  destructiveActionError.value = ''
+  try {
+    const accepted = request.action === 'delete'
+      ? canvasCommands.deleteNodes(request.nodeIds, request.canvasId)
+      : await canvasCommands.clearNodeOutputs(request.nodeIds, request.canvasId)
+    if (!accepted) {
+      destructiveActionError.value = executionStore.isMutationLocked
+        ? 'This action is locked while execution is running.'
+        : 'The selected canvas is no longer active. Review the selection and try again.'
+      return
+    }
+    destructiveDialog.value = null
+  } catch (error) {
+    destructiveActionError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    destructiveActionPending.value = false
+  }
+}
+
+const destructiveDialogTitle = computed(() => (
+  destructiveDialog.value?.action === 'delete' ? 'Delete selected nodes' : 'Clear node outputs'
+))
+
+const destructiveDialogMessage = computed(() => {
+  const request = destructiveDialog.value
+  if (request === null) return ''
+  const count = request.nodeIds.length
+  if (request.action === 'delete') {
+    return `Delete ${count} selected node${count === 1 ? '' : 's'} and their connected edges?`
+  }
+  return `Clear cached outputs for ${count} selected node${count === 1 ? '' : 's'}? This cannot be undone.`
+})
 
 function updateParameter(key: string, value: unknown) {
   const nodeId = selectedNode.value?.id
@@ -635,6 +694,20 @@ async function pickFiles(key: string) {
           data-testid="bulk-disable-nodes"
           @click="setSelectedNodesEnabled(false)"
         />
+        <Button
+          label="Delete all"
+          severity="danger"
+          :disabled="isNodeEditingDisabled"
+          data-testid="bulk-delete-nodes"
+          @click="requestDestructiveAction('delete')"
+        />
+        <Button
+          label="Clear all"
+          severity="secondary"
+          :disabled="isNodeEditingDisabled"
+          data-testid="bulk-clear-node-outputs"
+          @click="requestDestructiveAction('clear')"
+        />
       </div>
     </div>
 
@@ -720,6 +793,17 @@ async function pickFiles(key: string) {
           @click="openToolScript"
         />
         <p v-if="toolScriptError" role="alert">{{ toolScriptError }}</p>
+      </div>
+
+      <div class="node-action-bar">
+        <Button
+          label="Clear"
+          icon="pi pi-eraser"
+          severity="secondary"
+          :disabled="isNodeEditingDisabled"
+          data-testid="clear-node-outputs"
+          @click="requestDestructiveAction('clear')"
+        />
       </div>
 
       <div class="node-tabs" role="tablist" aria-label="Node details">
@@ -1139,6 +1223,37 @@ async function pickFiles(key: string) {
       </div>
 
     </div>
+
+    <Dialog
+      :visible="destructiveDialog !== null"
+      modal
+      :header="destructiveDialogTitle"
+      :closable="!destructiveActionPending"
+      data-testid="node-destructive-dialog"
+      @update:visible="value => { if (!value) closeDestructiveDialog() }"
+    >
+      <p>{{ destructiveDialogMessage }}</p>
+      <p v-if="destructiveActionError" role="alert" data-testid="node-destructive-error">
+        {{ destructiveActionError }}
+      </p>
+      <template #footer>
+        <Button
+          label="Cancel"
+          severity="secondary"
+          :disabled="destructiveActionPending"
+          data-testid="node-destructive-cancel"
+          @click="closeDestructiveDialog"
+        />
+        <Button
+          :label="destructiveDialog?.action === 'delete' ? 'Delete' : 'Clear'"
+          :severity="destructiveDialog?.action === 'delete' ? 'danger' : 'primary'"
+          :loading="destructiveActionPending"
+          :disabled="destructiveActionPending"
+          data-testid="node-destructive-confirm"
+          @click="confirmDestructiveAction"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -1148,6 +1263,12 @@ async function pickFiles(key: string) {
   font-size: 13px;
   height: 100%;
   overflow-y: auto;
+}
+
+.node-action-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
 }
 
 .empty-state,

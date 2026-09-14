@@ -1451,6 +1451,7 @@ class NodeCacheClearPlan:
     workflow: Any
     valid_node_ids: tuple[str, ...]
     downstream_node_ids: frozenset[str]
+    storage_path: Path | None
 
 
 def prepare_node_cache_clear(
@@ -1502,6 +1503,7 @@ def prepare_node_cache_clear(
         workflow=workflow,
         valid_node_ids=valid_ids,
         downstream_node_ids=frozenset(downstream),
+        storage_path=storage_path,
     )
 
 
@@ -1519,6 +1521,11 @@ def commit_node_cache_clear(plan: NodeCacheClearPlan) -> dict[str, NodeStatus]:
     downstream -= directly_cleared
     if downstream:
         plan.workflow.invalidate(list(downstream), cascade=False)
+
+    if plan.storage_path is not None:
+        from bioimageflow_server.services.output_views import remove_latest_node_outputs
+
+        remove_latest_node_outputs(plan.storage_path, list(plan.valid_node_ids))
 
     result: dict[str, NodeStatus] = {}
 

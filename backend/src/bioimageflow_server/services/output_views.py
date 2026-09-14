@@ -3,16 +3,38 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from bioimageflow import Workflow
 from bioimageflow.storage import OutputViewCapability, Storage
+from bioimageflow.storage import validate_relative_posix_path
 
 logger = logging.getLogger(__name__)
 
 MaterializedOutputMode = Literal["pointer", "symlink"]
+
+
+def remove_latest_node_outputs(storage_path: Path, node_ids: list[str]) -> None:
+    """Remove disposable latest projections for explicitly cleared nodes."""
+
+    root = Path(storage_path)
+    for node_id in node_ids:
+        parts = validate_relative_posix_path(node_id).split("/")
+        pointer = root / "views" / "latest" / Path(*parts[:-1]) / (
+            f"{parts[-1]}.bioimageflow-link.json"
+        )
+        legacy_pointer = root / "latest" / Path(*parts[:-1]) / (
+            f"{parts[-1]}.bioimageflow-link.json"
+        )
+        materialized = root / "outputs" / "latest" / Path(*parts)
+        for path in (pointer, legacy_pointer, materialized):
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)
