@@ -10,6 +10,7 @@ function makeCanvasCommandHandlers() {
   return {
     renameNode: vi.fn(() => true),
     setNodeEnabled: vi.fn(() => true),
+    setNodesEnabled: vi.fn(() => true),
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
     toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
@@ -39,6 +40,12 @@ const nodeEditCases: Array<{
     invoke: commands => commands.setNodeEnabled('shared', false),
     spy: handlers => handlers.setNodeEnabled,
     expectedArgs: ['shared', false],
+  },
+  {
+    name: 'bulk enabled state',
+    invoke: commands => commands.setNodesEnabled(['shared', 'other'], false),
+    spy: handlers => handlers.setNodesEnabled,
+    expectedArgs: [['shared', 'other'], false],
   },
   {
     name: 'input-pin visibility',

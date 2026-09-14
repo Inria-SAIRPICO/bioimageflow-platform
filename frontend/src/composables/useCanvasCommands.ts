@@ -32,6 +32,7 @@ export interface CanvasScopedCommandsOptions {
   addToolNode?: (toolName: string, parameters?: Record<string, unknown>) => string | null
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
+  setNodesEnabled?: (nodeIds: string[], enabled: boolean) => boolean
   setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
@@ -65,6 +66,7 @@ export interface CanvasCommandsApi {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
+  setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -90,6 +92,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
+  setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
@@ -143,6 +146,9 @@ export function useCanvasCommands(
     renameNode: (nodeId, name) => resource.renameNode(nodeId, name),
     setNodeEnabled: (nodeId, enabled) => (
       resource.setNodeEnabled(nodeId, enabled)
+    ),
+    setNodesEnabled: (nodeIds, enabled) => (
+      resource.setNodesEnabled(nodeIds, enabled)
     ),
     setNodeResources: (nodeId, resources) => (
       resource.setNodeResources(nodeId, resources)
@@ -204,6 +210,11 @@ function createCommandResource(
     setNodeEnabled: (nodeId, enabled) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setNodeEnabled(nodeId, enabled)
+    },
+    setNodesEnabled: (nodeIds, enabled) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      if (options.setNodesEnabled) return options.setNodesEnabled(nodeIds, enabled)
+      return nodeIds.some(nodeId => options.setNodeEnabled(nodeId, enabled))
     },
     setNodeResources: (nodeId, resources) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -274,6 +285,9 @@ function createActiveFacade(): CanvasCommandsApi {
     ),
     setNodeEnabled: (nodeId, enabled) => (
       activeCommandResource()?.setNodeEnabled(nodeId, enabled) ?? false
+    ),
+    setNodesEnabled: (nodeIds, enabled) => (
+      activeCommandResource()?.setNodesEnabled(nodeIds, enabled) ?? false
     ),
     setNodeResources: (nodeId, resources) => (
       activeCommandResource()?.setNodeResources(nodeId, resources) ?? false

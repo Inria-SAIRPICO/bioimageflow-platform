@@ -263,6 +263,7 @@ const canvasCommands = useCanvasCommands({
   }),
   renameNode,
   setNodeEnabled,
+  setNodesEnabled,
   setNodeResources,
   setInputPinned,
   setOutputTemplate,
@@ -3332,6 +3333,19 @@ function setNodeEnabled(nodeId: string, enabled: boolean): boolean {
   node.data.enabled = enabled
   emitGraphChanged()
   return true
+}
+
+function setNodesEnabled(nodeIds: string[], enabled: boolean): boolean {
+  if (isLocked.value) return false
+  const selectedIds = new Set(nodeIds)
+  let changed = false
+  for (const node of getNodes.value) {
+    if (!selectedIds.has(node.id) || !node.data || node.data.enabled === enabled) continue
+    node.data.enabled = enabled
+    changed = true
+  }
+  if (changed) emitGraphChanged()
+  return changed
 }
 
 function setNodeResources(

@@ -271,9 +271,7 @@ function finishEditName() {
 }
 
 function setSelectedNodesEnabled(enabled: boolean): void {
-  for (const nodeId of uiStore.selectedNodeIds) {
-    canvasCommands.setNodeEnabled(nodeId, enabled)
-  }
+  canvasCommands.setNodesEnabled(uiStore.selectedNodeIds, enabled)
 }
 
 function updateParameter(key: string, value: unknown) {

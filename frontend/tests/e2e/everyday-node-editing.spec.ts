@@ -178,6 +178,24 @@ test.describe('everyday node editing', () => {
       [false, false],
     )
 
+    await waitForAcceptedEdit(page, workflowName, () => page.locator('.canvas-view').press('Control+z'))
+    await expect(source.locator('.tool-node')).not.toHaveClass(/disabled/)
+    await expect(target.locator('.tool-node')).not.toHaveClass(/disabled/)
+    await expectAcceptedDraft(
+      page,
+      workflowName,
+      draft => draft.graph.nodes.map(graphNode => graphNode.enabled),
+      [true, true],
+    )
+
+    await waitForAcceptedEdit(page, workflowName, () => page.locator('.canvas-view').press('Control+Shift+z'))
+    await expectAcceptedDraft(
+      page,
+      workflowName,
+      draft => draft.graph.nodes.map(graphNode => graphNode.enabled),
+      [false, false],
+    )
+
     await page.reload()
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
     await expect(target.locator('.tool-node')).toHaveClass(/disabled/)
