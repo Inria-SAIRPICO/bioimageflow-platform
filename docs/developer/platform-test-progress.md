@@ -45,6 +45,7 @@ The ISSUE-005 implementation and old failing reproduction worktrees were archive
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 `/root/nested_conflict_removal` owns `.worktrees/nested_conflict_removal` on `campaign/nested-conflict-removal`.
+`/root/bulk_delete_clear` owns `.worktrees/bulk-delete-clear` on `campaign/bulk-delete-clear`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.
 The parameter-controls worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `1261326`.
 ISSUE-006 has a `not-a-defect` disposition; no overwrite-control implementation is authorized, and its uncommitted proposal must be discarded.
