@@ -132,6 +132,39 @@ function node(page: Page, id: string): Locator {
   return page.locator(`.vue-flow__node[data-id="${id}"]`)
 }
 
+async function dragPointer(page: Page, source: Locator, target: { x: number, y: number }): Promise<void> {
+  const sourceBox = await source.boundingBox()
+  expect(sourceBox).not.toBeNull()
+  await page.mouse.move(
+    sourceBox!.x + sourceBox!.width / 2,
+    sourceBox!.y + sourceBox!.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await page.mouse.up()
+}
+
+async function connectDataframes(page: Page): Promise<void> {
+  const sourceHandle = node(page, SOURCE_ID).locator('.header-outputs .vue-flow__handle')
+  const targetHandle = node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle').last()
+  const targetBox = await targetHandle.boundingBox()
+  expect(targetBox).not.toBeNull()
+  await dragPointer(page, sourceHandle, {
+    x: targetBox!.x + targetBox!.width / 2,
+    y: targetBox!.y + targetBox!.height / 2,
+  })
+}
+
+async function disconnectDataframeToCanvas(page: Page): Promise<void> {
+  const targetHandle = node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle').first()
+  const canvasBox = await page.locator('.vue-flow').boundingBox()
+  expect(canvasBox).not.toBeNull()
+  await dragPointer(page, targetHandle, {
+    x: canvasBox!.x + 30,
+    y: canvasBox!.y + canvasBox!.height - 30,
+  })
+}
+
 async function openNodesPanel(page: Page): Promise<Locator> {
   await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
   const panel = page.getByTestId('panel-nodePanel')
@@ -277,5 +310,57 @@ test.describe('everyday node editing', () => {
     await expect(source.locator('.tool-node')).toHaveClass(/collapsed/)
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
     await expect(source.locator('.node-body')).toBeHidden()
+  })
+
+  test('disconnects and reconnects a DataFrame edge with pointer gestures and persists the accepted graph', async ({ page }) => {
+    const baseline = await fetchDraft(page, workflowName)
+
+    await waitForAcceptedEdit(page, workflowName, () => disconnectDataframeToCanvas(page))
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      valid: draft.validation.valid,
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edges: draft.graph.edges,
+    }), {
+      valid: true,
+      nodeIds: [SOURCE_ID, TARGET_ID],
+      edges: [],
+    })
+
+    await page.reload()
+    await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+
+    await waitForAcceptedEdit(page, workflowName, () => connectDataframes(page))
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expectAcceptedDraft(page, workflowName, draft => ({
+      valid: draft.validation.valid,
+      nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
+      edge: draft.graph.edges[0],
+    }), {
+      valid: true,
+      nodeIds: [SOURCE_ID, TARGET_ID],
+      edge: {
+        type: 'dataframe',
+        id: `e-${SOURCE_ID}-bif:v1:dataframe-output-${TARGET_ID}-bif:v1:dataframe-position:0`,
+        source_node: SOURCE_ID,
+        target_node: TARGET_ID,
+        target_input: null,
+        target_position: 0,
+      },
+    })
+
+    await page.reload()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    const reloaded = await fetchDraft(page, workflowName)
+    expect(reloaded.graph.nodes).toEqual(baseline.graph.nodes)
+    expect(reloaded.graph.edges).toEqual([{
+      type: 'dataframe',
+      id: `e-${SOURCE_ID}-bif:v1:dataframe-output-${TARGET_ID}-bif:v1:dataframe-position:0`,
+      source_node: SOURCE_ID,
+      target_node: TARGET_ID,
+      target_input: null,
+      target_position: 0,
+    }])
   })
 })
