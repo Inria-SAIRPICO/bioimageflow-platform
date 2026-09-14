@@ -12,9 +12,9 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Begin Wave 5 real failure, cancellation, correction/rerun, and mutation-lock recovery journeys with deterministic synchronization.
-2. Extend result lifecycle coverage through cache reuse/staleness, table operations, and exact exported content.
-3. Continue Wave 6 settings, datasets, authoring, integrations, and remaining user actions without dropping the final systematic inventory obligations.
+1. Await the owner decision on ISSUE-007's required sibling BioImageFlow cancellation repair and release workflow; the campaign is paused at a clean checkpoint.
+2. If authorized, repair active-task cancellation and writer draining in the library, adopt the published version here, then make the exact cooperative Chromium and Firefox GUI journey pass without weakening its contract.
+3. Resume failure/correction/rerun and remaining result lifecycle batches, then continue Wave 6 and final systematic closure.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -33,7 +33,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
-| Waves 5–6 / lifecycle and remaining features | In progress | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey with exact source identities and parsed bytes. Failure/cancellation/rerun, remaining cache/result views, settings, datasets, authoring, integrations, and other user actions remain. |
+| Waves 5–6 / lifecycle and remaining features | Paused on ISSUE-007 | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey with exact source identities and parsed bytes. The first real cooperative-worker cancellation journey exposes a BioImageFlow 0.7.1 active-task propagation defect; Astra found no safe platform-only fix, so sibling-library authority is required before failure/cancellation/rerun and later waves resume. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.

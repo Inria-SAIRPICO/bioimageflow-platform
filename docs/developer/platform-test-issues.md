@@ -85,6 +85,27 @@ The proposed graph comparison did not guard workflow generation, surrounding bin
 The safe boundary is to retain conflict refusal, durable dirty private state, and the already specified confirmed Discard/reopen workflow; add browser evidence for those existing semantics without overwrite controls.
 Destructive connected-port removal is independent because v2 §§5 and 7 explicitly require confirmation, but it needs captured effects, cancel-as-zero-mutation, post-await identity/content/connection/lock checks, and awaited application.
 
+## ISSUE-007 — Stop does not reach an active cooperative Wetlands task
+
+Status: `needs-owner` after GPT-6 Astra/high established an upstream BioImageFlow defect and found no safe platform-only repair.
+Scope: platform branch `campaign/execution-failure-cancel` at `cb5b881`, based on platform `9cfa76d`, with installed BioImageFlow 0.7.1, bioimageflow-core 0.3.1, and Wetlands 2.4.1.
+The deterministic GUI journey runs a real sequential Wetlands ProcessingTool in a distinct worker process, uses a socket handshake instead of arbitrary sleeps, and exposes the library-supported injected task cancellation flag.
+Before Stop it proves exact workflow, accepted draft revision, execution identity, completed upstream source, running worker, worker/backend PID isolation, reload/WebSocket recovery of the same running identity, and visibly disabled Save and Clear actions without draft mutation.
+The GUI Stop request returns HTTP 200, but a 15-second state-based poll receives `{state: running, cancellationAcknowledged: false}` instead of idle plus a worker acknowledgment; the cooperative tool never observes `task.cancel_requested`.
+The final clean Chromium reproduction is `scripts/test focus e2e --project=chromium tests/e2e/execution-cancellation.spec.ts` at `cb5b881`: it fails only at the terminal cancellation assertion in 47s, then explicitly releases the worker, waits for idle, verifies workflow deletion, and closes without worker error or leaked runtime state.
+The focused real-worker fixture contract passes 2 tests in 14s, and frontend E2E lint passes; Firefox and broader lanes were correctly not run while the exact Chromium selector remains red.
+
+V1 §§2.4.5 and 3.5.6 require Stop to cancel the active execution, discard the current node's partial output, retain completed outputs, unlock later mutations, and show the stopped terminal state.
+The platform already follows its public boundary: `ExecutionManager._stop_expected()` calls `Workflow.cancel()`.
+BioImageFlow 0.7.1 sets only its execution-context cancel event; row and batch dispatch check that event before entering Wetlands `task.wait_for()` and do not observe it while the active task is waiting.
+Wetlands task cancellation is cooperative, and the corrected fixture implements that contract by accepting the injected task, polling its cancellation flag through bounded socket timeouts, acknowledging cancellation, and producing no partial output.
+The initial non-cooperative fixture was rejected by Astra and is not evidence for the defect.
+
+A platform workaround that marks the run idle, cancels only the asyncio wrapper, reaches into private task state, or kills an environment could unlock mutation while a worker still writes and is not authorized.
+The required repair belongs in the sibling BioImageFlow library: propagate cancellation to unfinished active tasks, drain every possible writer before returning or reuse, retain the corrected platform regression, run the library's required CI, publish an updated dependency, then adopt it here and run the exact Chromium and Firefox journey plus affected completion lanes.
+No platform semantic-contract decision remains unclear; the owner decision is whether this campaign may expand back into the sibling library and release workflow.
+The clean platform worktree remains `.worktrees/execution-failure-cancel` on `campaign/execution-failure-cancel` with commits `4318814`, `7912ab9`, and `cb5b881`; none is integrated while the required GUI regression is red.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
