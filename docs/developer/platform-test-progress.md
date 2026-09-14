@@ -46,6 +46,7 @@ The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equ
 The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The destructive nested-interface worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `b2e1152`, `f59419b`, and `cf794fb`.
 `/root/bulk_delete_clear` owns `.worktrees/bulk-delete-clear` on `campaign/bulk-delete-clear`.
+`/root/recursive_source_ownership` owns `.worktrees/recursive-source-ownership` on `campaign/recursive-source-ownership`.
 The nested-execution worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `fd96f8f`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.
 The parameter-controls worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `1261326`.
