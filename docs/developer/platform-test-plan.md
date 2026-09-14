@@ -4,176 +4,190 @@ orphan: true
 
 # Platform testing implementation plan
 
-Certify every implemented platform feature within the scope below, improve the existing tests, and maintain a dedicated browser acceptance suite.
-This is an implementation plan, not evidence that certification has passed.
-The authoritative commands and completion requirements are in [Test lanes](../testing.md).
+Test and strengthen the platform by exercising its main GUI features, fixing demonstrated bugs, and delivering a complete, systematic suite for every implemented feature within the campaign scope.
+A finished user journey with correct visible results and durable state is the unit of progress.
+Priorities determine execution order, never permission to omit lower-priority features from final coverage.
+The authoritative validation commands and completion requirements remain in [Test lanes](../testing.md).
 
-## Scope and execution rules
+## Scope and current product contract
 
-Cover desktop and webapp behavior implemented in the current v1/v2 specifications, including recursive workflows and their library contracts.
-Exclude parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines from this campaign.
-Preserve Direct execution for focused tests and ordinary DataFrame-only workflows.
-Exercise real local Wetlands workers sequentially with an explicit single-worker limit, and verify process identity, exact results, generated files, and cleanup.
-Tests must distinguish serialized configuration, mocked orchestration, Direct execution, and actual worker execution in their assertions and coverage claims.
+Cover implemented desktop and webapp behavior from v1/v2 and applicable later implemented specification changes, following the authority order in `PLATFORM_CONTEXT.md`.
+Exclude parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines from campaign certification.
+Record these exclusions explicitly; neither existing out-of-scope regression tests nor future v3 proposals expand campaign scope.
+Keep Direct for ordinary DataFrame-only workflows and use real local Wetlands workers sequentially with one worker when worker behavior is being certified.
+Distinguish mocked orchestration, Direct computation, and actual worker execution; worker claims require process identity, exact results, generated files, and cleanup.
 
-Use the Sol → Astra → owner escalation protocol below when unexpected behavior has an unclear cause or repair.
-This replaces the earlier rule that sent every ambiguous finding directly to the owner.
-Do not alter expected results, weaken assertions, suppress warnings, invent workflow conversions, or change library semantics to obtain a pass.
-Do not implement a speculative repair while the issue is under review.
-For example, Generate supplies its complete DataFrame to a downstream positional DataFrame input; an output-column pin is not interchangeable with that input.
-Implement contract-established or owner-approved fixes cleanly and update affected code, tests, fixtures, workflows, tools, specifications, and documentation together without backward-compatibility shims.
+The owner-approved catalog contract is single-click to open/toggle the bottom tool-information panel and double-click to add exactly one node to the active canvas.
+Drag-and-drop remains a separate creation gesture; secondary row actions must not trigger inspection or creation accidentally.
+Use this contract in all fixtures and acceptance criteria; historical ISSUE-003 single-click creation evidence describes an earlier interaction.
 
-## Coordination and commits
+Preserve assertions and product intent when repairing tests or code.
+Do not weaken expectations, hide skips or warnings, invent graph conversions, or introduce compatibility shims to obtain a pass.
+Update affected code, tests, fixtures, specifications, and documentation together when behavior changes.
 
-The master agent owns scope, dependency order, the feature inventory, validation evidence, integration, and communication with the owner.
-The master and ordinary implementation/review workers use `gpt-5.6-sol` with `medium` reasoning.
-A specialist uses `gpt-6-astra` with `high` reasoning only for escalations.
-Assign independent agents bounded ownership of backend feature families, frontend feature families, browser journeys, and any necessary library work.
-Keep write ownership disjoint, pass exact file paths and contract expectations, and request concise findings rather than duplicating every investigation in the master's context.
-Whenever multiple agents may write in parallel, create a dedicated worktree under `.worktrees/<task_name>` for each writable task and keep its dependencies, runtime state, and commit isolated as required by `AGENTS.md`.
-Agents may share the primary checkout only for read-only investigations; a task that becomes writable must move to its own worktree before editing.
-An agent reports an ambiguous defect immediately so the master can freeze affected work and send a focused escalation.
-Use at most two ordinary workers alongside the master by default, leaving a fourth slot available for Astra; use fewer when tasks overlap.
+## Orchestrator, delegation, and context discipline
 
-Commit each coherent, independently validated change as soon as it is ready.
-Treat resolution of an issue or bounded task as an immediate commit boundary: update its durable records, validate it, commit it, and restore a clean task checkout before starting the next writable task.
-Separate dependency updates, library releases, platform behavior fixes, fixture corrections, browser fixes, and testing infrastructure when their dependencies allow it.
-Review the staged diff and leave unrelated changes and temporary notes unstaged.
-Do not delay a finished independent commit merely because another issue remains open, or commit an unfinished runner profile as working infrastructure.
+The main agent must be **GPT-5.6 Sol with high reasoning**, acting primarily as an orchestrator.
+Ordinary implementation workers use **GPT-5.6 Sol with medium reasoning**; bounded specialist investigations use **GPT-6 Astra with high reasoning**.
+These are requested runtime settings; editing this plan does not change the currently selected model.
+Use [Restart instructions](platform-test-start.md) to start the requested orchestrator and verify the client settings.
 
-## Autonomous execution and escalation
+The orchestrator owns the global feature map, priority and dependency decisions, task assignment, review, integration, validation reuse, and accurate reporting.
+Workers own detailed source investigation, fixture design, implementation, focused tests, and their worktree completion checks.
+The orchestrator may make small integration/documentation edits and inspect relevant code to review a result; it should not duplicate an entire worker investigation.
 
-Sol may fix a routine defect without asking when the intended behavior is explicit in the specifications or an existing owner decision, the cause is understood, the change is bounded, and meaningful regression assertions can be written without changing that intent.
-A failing test alone does not justify changing production behavior or its expected result.
-Reproduce the exact failure and inspect the relevant contract before editing; do not repeatedly guess at fixes.
-Escalate immediately for conflicting specifications, unintuitive library contracts, unclear fixture validity, identity/data-loss risks, or a repair that would require inventing semantics.
-Also escalate after one unsuccessful bounded repair attempt if the remaining cause is unclear; this is a cost-control default, not permission for the first attempt to be speculative.
+Keep the orchestrator's working context to the current objective, a short feature-status table, active tasks, open decisions, and the next three runnable tasks.
+Read the active checkpoint, relevant inventory rows, and changed code as needed; retrieve historical evidence only when a decision depends on it.
+Workers receive fresh bounded packets with `fork_turns="none"`, explicit model/reasoning, a worktree path, feature/issue IDs, current contract, owned paths, acceptance criteria, dependencies, required checks, and escalation conditions.
+Worker handoffs should normally fit in about 30 lines: outcome, bug/cause, commit, changed files, exact commands/results/durations/exclusions, unresolved concerns, and evidence paths.
+Keep raw logs, traces, and exploratory transcripts in ignored task artifacts; return only phase summaries and relevant failure excerpts to the orchestrator.
+Do not repeatedly request unchanged status or ingest complete passing test output.
+While a worker runs, review another independent feature's coverage or prepare the next bounded task; use completion notifications and concise milestone updates.
 
-The master records an issue ID in [Campaign issues](platform-test-issues.md), freezes dependent edits and tests, and spawns one Astra specialist with a fresh context and a compact issue packet.
-Unrelated work may continue only when the master can establish independence; freeze the whole campaign if the suspect fixture, contract, or state is shared widely.
-Astra may inspect source/specifications and run a bounded reproduction in a disposable workspace without asking the owner first.
-Astra returns one of these explicit dispositions:
+Use up to two independent ordinary workers, leaving a slot for Astra.
+Parallel writable tasks require separate worktrees under `.worktrees/<task_name>` with independent dependencies and runtime state as required by `AGENTS.md`.
+Give each task one coherent feature or issue and explicit write ownership; do not split tightly coupled fixes merely to occupy agents.
+Read-only investigations may share the primary checkout.
+A blocked feature does not block independent work unless its fixture, contract, or safety issue affects them too.
 
-- `safe-to-fix`: established intended behavior, reproduced cause or decisive code evidence, bounded implementation instructions, affected specifications, and required regressions; Sol implements and validates autonomously.
-- `not-a-defect`: evidence that the behavior is correct and the test/audit assumption was wrong; Sol corrects the test or inventory only when the proper contract is established.
-- `needs-owner`: unresolved design intent, contradictory specifications, questionable test oracle, unsafe workaround, or remaining uncertainty about a safe contract-preserving repair after bounded investigation; the master pauses the entire campaign and asks the owner one concrete question with the evidence, options, and recommendation.
+### Commit and integration boundaries
 
-A merely slow implementation or unavailable external dependency is not evidence of flawed intent.
-Record unavailable services or credentials as `externally-blocked` with the exact recovery action; do not ask the owner to invent semantics to bypass an environmental block.
-Astra is not permission to redesign the platform or silently choose among conflicting product contracts.
-If Astra remains uncertain, it must return `needs-owner`; do not launch repeated higher-cost reviews to avoid asking.
-A missing required model or escalation capability is a configuration blocker: report it rather than silently substituting another model or claiming review happened.
-Owner decisions are recorded verbatim or faithfully summarized with scope in the issue record before resuming.
-The currently unconfirmed source-update identity issue is queued for Astra under this protocol; no repair has been approved or executed by this documentation change.
+Commit each coherent validated issue or feature immediately when resolved, together with its tests and relevant inventory/specification updates.
+Do not start another writable task in that checkout until the previous completed task is committed.
+Workers review and commit only their own task changes on their branches; the orchestrator reviews the commit, integrates it, and records the resulting revision and evidence.
+Shared progress/issue records belong to the orchestrator; integrate their updates at the same task boundary and commit them promptly if they cannot be included in the implementation commit.
+Do not accumulate resolved independent issues, stage another worker's files, or include temporary plans and raw logs in commits.
+An unfinished failing reproduction remains explicitly unfinished; preserve its owner, worktree, selector, and evidence before interruption without claiming a passing fix.
+After integration, move the clean completed worktree to trash with `mv`, prune its registration, and delete only its integrated branch, following `AGENTS.md`.
+Preserve unrelated user worktrees and changes.
 
-### Focused delegation
+## GUI-first priority queue
 
-Use explicit `model` and `reasoning_effort` arguments when the runtime exposes them.
-For the current collaboration interface, use `fork_turns="none"` with these overrides and supply a self-contained task; a full-history fork inherits the parent's model and cannot change it.
-Ordinary worker settings are `model="gpt-5.6-sol", reasoning_effort="medium"`; escalation settings are `model="gpt-6-astra", reasoning_effort="high"`.
-Do not make the worker reread the entire conversation or all inventories.
+Completed dependency releases, fixture repairs, and audited scope selection are retained prerequisites, not tasks to restart.
+Use the current checkpoint to select the first unfinished item below.
+Default to a main GUI journey over additional testing infrastructure or speculative rare cases.
+Interrupt that order for a reproduced data-loss, security, wrong-result, or core-feature blocker; record why its impact justifies the interruption.
 
-Every worker packet contains the task/issue ID, objective, relevant file/specification paths, acceptance criteria, owned write paths, dependency constraints, exact focused checks, and escalation rules.
-An Astra packet additionally contains observed versus expected behavior, exact selector/browser/revision/package versions, minimal reproduction or explicitly unconfirmed hypothesis, evidence paths, attempted changes, and the unresolved decision.
-Ask for concise findings and a disposition, not a transcript.
-The master owns shared progress/issue records, staging, commits, and completion checks; workers return file lists, evidence, and status without staging another worker's work.
-Release idle workers or reuse them only for closely related bounded work; do not create agents for trivial edits or redundant audits.
+| Order | Feature batch | Required observable outcome |
+| --- | --- | --- |
+| 1 | Resolve the already reproduced Run Selected issue (ISSUE-005) | Selected valid work and its required upstream nodes execute with exact output; an unrelated invalid branch does not incorrectly block the specified selected execution. Establish the contract and add a focused backend regression plus browser journey. |
+| 2 | Main workflow journey | Create/open a workflow, inspect tool information, add tools by double-click/drag, connect compatible pins, edit parameters, run real computation, inspect exact GUI results, save, and reopen the same graph. |
+| 3 | Everyday editing and persistence | Select/multiselect, rename, reconnect/disconnect, enable/disable, copy/paste, delete, undo/redo, keyboard actions, save/discard/recovery, and workflow switching preserve the correct graph and active context. |
+| 4 | Nested workflows | Group/embed, publish/connect stable ports, edit privately, apply/save, discard, reopen, and execute nested work while preserving parent connections and source ownership. |
+| 5 | Execution and results lifecycle | Run/Run Selected, progress, actual failure, cancellation, correction/rerun, cache reuse/clear, result tables/images/files, and output export show correct state and data. |
+| 6 | Remaining user features | Complete workflow/file management, settings/layout, datasets, catalog search, package/custom-tool management, source updates, editor/Python authoring, viewers, errors/logging, and agent control. |
+| 7 | Systematic gap closure and final certification | Close every remaining in-scope inventory obligation, including negative/boundary and deployment/integration cases, then certify the complete suite and manual boundaries. |
 
-### Durable state and restart
+Build small independent journeys around these batches instead of one long test whose early failure hides later features.
+Each family needs a representative successful user path before expanding its unusual scenarios, except when a known high-impact failure must be fixed first.
+Reuse existing adequate journeys and strengthen missing assertions; do not recreate coverage merely to add test counts.
+Limit runner/manifest work to enabling a required check, correcting a proven selection defect, or supplying missing final evidence.
+A new combined campaign command is optional; the existing audited selectors can support final certification without another infrastructure project.
 
-[Campaign progress](platform-test-progress.md) is the authoritative live checkpoint, [Campaign issues](platform-test-issues.md) owns escalation decisions, and the three linked coverage inventories own feature-to-test evidence.
-These are requested project deliverables and should be committed; raw traces, large logs, scratch plans, and transient agent notes are not.
-Update progress after each coherent task, escalation, commit, and before ending or replacing a session.
-Record task status, owner and write paths, source revision, exact validation commands/results/durations/exclusions, commit IDs, and the next concrete action.
-A completed code task needs its required validation and commit; a read-only audit must remain labeled inspected, not passed.
-For a checkpoint's own commit, use `git log -1 -- <checkpoint-path>` rather than recursively editing its own hash into the file.
+## Complete and systematic feature coverage
 
-Keep the checkpoint short: active work, unresolved issues, completed milestone references, and the next queue.
-Keep closed issues as concise decisions with commit references; do not carry obsolete investigation transcripts into each restart.
-Before a restart, stop or hand off all workers, record dirty-file ownership and running processes, and preserve necessary evidence in stable ignored artifact paths with reconstruction steps.
-Temporary `/private/tmp` logs are historical conveniences, not restart dependencies.
-A new master reads [Restart instructions](platform-test-start.md), reconciles Git and the checkpoint, and resumes the first runnable task without replaying finished releases or baseline tests.
-A prompt cannot change the current master model; select Sol/medium when starting the new session and verify the runtime settings rather than claiming the prose configured them.
+Priority is separate from coverage status: every in-scope feature remains mandatory.
+Maintain stable feature IDs in the existing [GUI](coverage-gui.md), [Workflow](coverage-workflows.md), and [Runtime](coverage-runtime.md) inventories; assign IDs as rows are reconciled and use them in worker packets and handoffs.
+Each row records authority, actual implementation, user outcome, priority, applicable scenarios, exact selectors, required levels, deployment/browser variants, owner/status, and evidence revision.
+Use explicit states: `unassessed`, `gap`, `in-progress`, `blocked`, `verified`, or `out-of-scope`.
+For each applicable scenario, record the assertion or gap; record a reason for any `not-applicable` decision.
+Historical inspection or a passing mock is not proof of an untested real integration.
 
-## 1. Complete the library and dependency gate
+The inventories must cover at least these families, expanding them when specification or UI inspection finds more implemented features:
 
-The dedicated library agent reviews and validates the three approved contracts: reject column bindings to DataFrameTool constant parameters, resolve postponed annotations with metadata and inheritance intact, and retain Direct while testing real sequential workers separately.
-It commits the completed library fixes with their specifications and regression tests, prepares the appropriate package version bumps and release notes, and follows the library's documented release process.
-Publishing the necessary library release is authorized for this task; use the configured GitHub and package-publishing workflow, and report missing credentials or failed release checks rather than claiming publication.
-Library publication must satisfy that repository's required CI, including existing worker-backend checks; owner-approved repairs to those release checks do not expand the platform campaign's execution scope.
-Record the library commit, release tag, package versions, workflow result, and package-index availability.
+| Feature family | Mandatory coverage dimensions |
+| --- | --- |
+| Startup, modes, workspace, and layout | Empty/nonempty startup, workspace switching, restore/reopen, tabs/docks/panels, settings load/save/reset, persisted layout/preferences, desktop versus webapp availability. |
+| Workflow lifecycle | Create/open/save/save-as, draft recovery/discard/conflict, rename/move/folders, duplicate/delete, import/export, independent graph/source copies, identity-safe lifecycle changes. |
+| Catalog and canvas editing | Search/filter/information, single/double-click/drag behavior, metadata/pins, node/edge types, connect/reconnect/disconnect, parameter control types/defaults/reset, rename, selection, collapse/enable, clipboard, undo/redo, shortcuts/focus, pan/zoom/fit, validation feedback. |
+| Recursive workflows and sources | Group/embed, interfaces/bindings/stable IDs, private nested edits, apply/discard/reopen, parent conflicts and destructive confirmation, provenance/detach/update, recursive owned-source transport. |
+| Tools, packages, and authoring | Package discovery/version/install/uninstall/error paths, custom creation/rename/delete, valid/invalid hot reload and recovery, catalog versus bound source opening, editor lifecycle, Python preview/apply/cancel, materialized graph reopen. |
+| Local execution | Real Direct and sequential worker paths, accepted snapshot/Run Selected, enablement/dependencies, progress/status/log attribution, mutation lock, failure/cancel/retry, cached versus recomputed output, reconnect and recovery. |
+| Results and data | Exact table values, columns/row lineage, merged/stacked results, selection/navigation, pagination/width preferences, images/thumbnails/viewers, output templates/files, exports/bundles and readiness/error states. |
+| Datasets and integrations | Upload/select/organize/move/delete/download, partial failure and path boundaries, implemented OMERO controls, filesystem dialogs, editor/viewer actions and actual external capabilities. |
+| Cross-cutting contracts | REST/schema validation, WebSocket delivery/reconnect, error history and navigation, MCP operations to accepted draft/GUI, ownership and persistence, permissions/path safety, native packaging and crash/restart boundaries. |
 
-Commit the finished Wetlands 2.4.1 dependency update independently once its targeted cleanup regression is verified.
-After the patched BioImageFlow packages are published, update the platform constraints and lockfile, synchronize from the package index, and verify imported package versions and locations.
-Rerun the contract and worker regressions against the published packages without an editable-install override before committing the platform dependency integration.
-Keep local-source validation explicitly labeled until that gate passes.
+For every feature assess: normal success; invalid input/refused action; cancel/failure/recovery; persistence/reload; and applicable identity, concurrency, ownership, and permission boundaries.
+Choose meaningful representative cases and lower-level tests for larger state spaces instead of requiring every possible Cartesian combination.
+Every user-visible in-scope action needs behavioral UI evidence on its supported surface, plus lower-level assertions for the important contracts it depends on.
+Every primary GUI journey must pass in Chromium and Firefox at final acceptance.
+Test desktop/webapp differences explicitly rather than assuming one browser project proves both deployment modes.
+Assign genuine native/external boundaries reproducible manual or integration acceptance steps; mocks certify only the controlled boundary.
 
-## 2. Resolve the GUI test startup race
+At the end of each feature batch, reconcile its rows against actual assertions.
+At the end of each priority wave, scan implemented specification sections and visible menus/panels/routes for features absent from the inventories.
+Final closure requires that this reconciliation covers all implemented in-scope features, not merely the initial shortlist.
 
-Preserve the failing Generate browser test, browser project, trace or screenshot, backend logs, accepted workflow identity, and draft revision.
-Give the owner manual steps and identify which setup is test-only, especially seeded workflows and API changes made before navigation.
-Trace inspection identified that the test begins its mouse drag before the canvas mounts.
-The later “No workflow is open” screenshot is misleading because cleanup has already deleted the workflow; it is not evidence of an application restoration failure.
-Fix test readiness by waiting for both the specific workflow title and its mounted canvas before dragging, and preserve failure evidence before cleanup.
-Keep the application unchanged unless subsequent evidence demonstrates a separate product defect.
-The owner has authorized investigation; route further ambiguous product decisions through Astra before implementing them.
+## Per-feature testing and repair loop
 
-After an approved repair, run the exact failing Chromium test once.
-Use five repetitions only if the diagnosis identifies a timing or race defect, then verify the same journey in Firefox and the smallest relevant browser completion scope.
-Keep the real Generate metadata, complete DataFrame edge, accepted-draft validation, and exact output-row assertions in the test.
+1. Pick the highest-priority runnable feature and inspect its contract, current implementation, and existing assertions.
+2. Prepare a realistic small fixture with known tool metadata, required parameters, compatible bindings, expected data, and intended validation state; anticipate ordinary dialogs before a browser run.
+3. Exercise actual UI controls through the real frontend/backend and assert visible results plus accepted/persisted state.
+4. If it fails, preserve the exact selector/browser/revision, first relevant error, trace, and state before cleanup; distinguish fixture, product, environment, and specification failures.
+5. Fix a demonstrated defect with a small regression at the lowest useful layer, then prove the affected UI outcome.
+6. Run the required focused and completion checks, update the feature evidence, commit immediately, and integrate.
 
-## 3. Build a feature-to-test inventory
+API setup is acceptable for a prerequisite not being certified in that test; verify the exact opened workflow and accepted graph before interaction.
+Do not claim GUI creation/editing coverage when the operation under test was performed through an API, internal store, handler call, or direct file edit.
+Do not claim real execution from an intercepted Run request, nor readable image/result correctness from placeholder bytes.
+Use exact expected data, independent file/output oracles where appropriate, and state-based readiness; avoid arbitrary sleeps and snapshots that merely echo current implementation.
 
-Read the implemented specifications and inspect routes, services, stores, panels, commands, fixtures, and existing tests.
-Create an inventory with one row per user-visible behavior or developer contract: specification reference, implementation owner, positive and negative cases, existing selectors, gaps, required test level, exclusions, and completion evidence.
-Audit test bodies and fixtures rather than relying on filenames, test counts, or coverage percentages.
+Use `scripts/test focus` without campaign-wide selection flags for exact failing selectors.
+After a fix, run the exact test once; use `--repeat-each=5` only for a suspected timing/race defect.
+Run the applicable completion lane from `docs/testing.md` before declaring the batch complete.
+Reuse successful unchanged phases after a late failure and state their source revision; rerun only checks invalidated by subsequent edits.
+Do not stack quick, scoped, and full checks when the later scheduled command subsumes the earlier work.
+Run comprehensive browser acceptance at substantial milestones and final certification, not after every edit.
 
-Cover these feature families:
+## Autonomous repair and escalation
 
-- Startup, deployment modes, settings, workspace selection, application layout, and durable restoration.
-- Workflow creation, save, draft recovery, rename, move, duplicate, delete, import/export, and identity conflicts.
-- Canvas editing, pins and edge types, parameters, metadata, selection, clipboard, undo/redo, keyboard actions, and validation feedback.
-- Nested workflows, published interfaces, draft isolation, application to parents, provenance, and recursive local-source ownership.
-- Tool catalog, packages, editable sources, hot reload, Python authoring, and code-editor integration.
-- Local execution, Run Selected, progress, failure reporting, cancellation, caching, results, tables, output templates, and result bundles.
-- Datasets, filesystem boundaries, thumbnails and images, viewer integrations, WebSockets, logging, error history, and MCP operations.
-- Desktop packaging and external integrations that require separate manual or release acceptance.
+Sol workers may repair routine, bounded defects autonomously when the intended behavior is explicit, the cause is reproduced or decisive, and regressions preserve the contract.
+Use Astra/high for conflicting specifications, unclear library semantics or fixture validity, identity/data-loss risk, a proposed semantic redesign, or one unsuccessful bounded repair whose cause remains unclear.
+A production failure alone does not require specialist escalation if those conditions are absent.
 
-Classify each boundary as repository-owned deterministic testing, a real isolated local integration, explicit external certification, or human acceptance.
-Record unavailable external services or unsupported environments as blocked, never as covered by mocks.
+The orchestrator records an issue and freezes dependent changes, then sends one bounded fresh-context investigation to Astra.
+Only describe an issue as `astra-review` after a specialist is actually assigned; otherwise it is `open` with a queued next action.
+Astra returns `safe-to-fix` with contract/cause/repair/regressions, `not-a-defect` with supporting evidence, or `needs-owner` with one concrete unresolved decision.
+For `safe-to-fix`, Sol implements and validates; for `not-a-defect`, correct the test/inventory without inventing new behavior.
+If Astra cannot establish a safe contract and returns `needs-owner`, pause the campaign and ask the owner one concrete question with the evidence.
+Independent features may continue while a bounded specialist investigation runs unless the concern affects shared foundations.
+Record unavailable services/credentials as `externally-blocked` with recovery steps; neither slowness nor infrastructure failure establishes a product defect.
+Missing required model capability is a configuration blocker; never silently substitute or claim a review occurred.
 
-## 4. Refactor and fill gaps systematically
+## Final certification and completion gate
 
-For each feature family, remove stale tests only when the behavior is obsolete or its intended replacement coverage is identified.
-Replace permissive snapshots, silent skips, fabricated metadata, obsolete APIs, and unrealistic workflows with reviewed fixtures using current public contracts.
-Share a fixture only when tests depend on the same semantics; keep expected values readable and independent of the implementation.
-Add missing success, invalid-input, persistence, failure, and boundary cases at the lowest useful level, then add cross-layer journeys for behavior that isolated tests cannot prove.
-Prioritize silent data corruption, incorrect bindings, workflow loss, ownership violations, and misleading execution status before cosmetic gaps.
-Commit each completed family after its focused regressions and applicable scoped completion check pass.
+Use the existing per-case audited selectors in `docs/testing.md` and `tests/campaign-local-scope.json`.
+Frontend-unit/browser campaign selectors require complete collections; use ordinary focused commands for individual cases.
+Audit exact exclusions and ensure newly added tests are selected; collection-only output proves selection, not successful execution.
+Scope exclusions must not drop local assertions from mixed tests; split such tests when necessary.
+Preserve out-of-scope tests in the normal regression suite.
 
-## 5. Maintain the dedicated GUI acceptance suite
+Final certification must cover the complete in-scope backend and frontend suites, every in-scope Chromium and Firefox journey, backend logging-order checks, lint/type checks/build/docs, published common-tools compatibility, and real sequential-worker acceptance.
+Use `scripts/test` with documented commands; record the actual scoped commands when an unmodified broad lane would include excluded campaign features.
+External package and worker checks must actually run for their respective certification claims, using the published locked dependencies and independent runtime state.
+Retain completed release evidence; reopen library release work only for a new necessary library fix, following its documented release/CI requirements.
+The existing release authorization and library-required CI do not expand platform campaign scope.
 
-Use the existing Playwright suite with real frontend and backend processes in disposable workspaces.
-Exercise complete user journeys across the inventory, including reopening state, nested workflows, actual graph connections, execution and exact data inspection, failures, settings, and tool editing.
-Prefer visible UI actions; when backend setup is necessary, explicitly verify that the UI has opened the intended accepted workflow before interacting.
-Use stable semantic selectors and state-based readiness assertions, and capture useful failure evidence.
+The orchestrator must verify all of the following before claiming completion:
 
-Keep comprehensive Chromium and Firefox acceptance opt-in after large changes, before releases, and at the end of this campaign.
-It must not run on every development edit; focused browser tests and a small critical smoke remain available for relevant changes.
-First audit and implement explicit per-test scope selection so the campaign excludes managed-remote and parallel features without dropping unrelated coverage.
-Validate selection by inspecting collected tests, including mixed files and parameterized cases, and fail if expected exclusions do not match.
-The backend, frontend-unit, and browser foundations are available separately through their `scripts/test focus ... --campaign-local` selectors and cross-check exact per-case annotations against `tests/campaign-local-scope.json`.
-Repository-wide campaign orchestration and combined per-case evidence tooling remain pending and must not be exposed as a complete working campaign command until the integrated profile is validated.
-Do not use broad name filters or project-level exclusion assumptions as evidence of complete local-platform coverage.
+- Every implemented in-scope feature has inventory rows and all applicable scenarios are verified, with justified test levels and exact evidence.
+- Every primary GUI journey passes on both browsers, with correct data and persistence; no primary action is represented only by rendering or mocks.
+- Demonstrated bugs are resolved and committed with regressions; no unresolved in-scope defect or silently skipped/flaky test is counted as passing.
+- Collected/selected/excluded/skipped/failed counts reconcile for every suite; each exclusion has its explicit scope reason.
+- Manual/native/external obligations have recorded outcomes using [Manual Platform Testing](manual-testing.md); any unavailable obligation remains blocked.
+- Every completion record identifies command, revision or diff, duration, results, retries/exclusions, packages, and limitations; the relevant integrated revision is validated.
+- Task worktrees are integrated/cleaned up, shared records agree, and the checkout is clean apart from explicitly identified unrelated user work.
 
-## 6. Certification and handoff
+If a required manual or external check remains unavailable, report automated coverage achieved and the outstanding obligation; the campaign is incomplete unless the owner explicitly accepts the limitation.
+Owner-accepted limitations remain visible as limitations, never reclassified as passed tests.
+Test counts, line coverage, or completion of only the high-priority wave do not establish comprehensive coverage.
 
-Use `scripts/test focus` during localized work, then the smallest applicable completion check documented in the test lanes.
-For cross-stack dependencies and runtime changes, cover the `check app` phases with explicitly audited exclusions; record a scoped campaign result rather than claiming an unmodified lane passed when phases were selected separately.
-After the large campaign, run comprehensive backend, frontend, and Chromium/Firefox acceptance within the approved scope, plus published-package and sequential-worker certification.
-Do not broaden a browser run while its exact failing test is unresolved or rerun unchanged successful phases after an unrelated late failure.
-Record every completion command, result, duration, source revision, installed library versions, and skipped, deselected, flaky, or externally blocked cases.
+## Durable state and restart
 
-Use [Manual Platform Testing](manual-testing.md) for packaged desktop windows, operating-system dialogs, physical drag-and-drop, real editors/viewers, and other integrations that headless automation cannot certify.
-Reconcile the completed inventory against all implemented in-scope features, update affected specifications and developer guidance, and remove superseded fixtures or instructions.
-Conclude only with the actual coverage achieved, remaining blockers accepted by the owner, commit and release identities, and commands for routine checks and occasional complete GUI acceptance.
+[Campaign progress](platform-test-progress.md) owns the short current objective, prioritized feature summary, active ownership/worktrees, open decisions, and next three actions.
+[Campaign issues](platform-test-issues.md) owns defect decisions, the coverage inventories own detailed feature obligations, and [Campaign evidence](platform-test-evidence.md) retains completed validation and release history.
+Keep each fact in its owning record and link to it; remove obsolete next actions when a task is integrated.
+Record historical product contracts as historical, including superseded catalog single-click creation.
+Update durable records at every completed task, escalation, and interruption; do not create administrative commits solely for unchanged status.
+Status questions steer the ongoing campaign: answer briefly, then continue unless the user asks to pause or change the objective.
+Before restart, preserve unfinished work/evidence and reconcile actual Git/worker/process state; never rely on a prior conversation or temporary logs to identify the next task.

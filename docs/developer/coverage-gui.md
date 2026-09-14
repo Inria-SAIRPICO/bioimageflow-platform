@@ -5,7 +5,8 @@ orphan: true
 # GUI editing and authoring coverage inventory
 
 This partial inventory records inspected assertions, not a claim that every listed test passed in the current campaign.
-The campaign paused during audit for a separate workflow source-update identity issue; the maintenance and missing-journey items below have not yet been implemented or validated.
+Rows combine historical inspection with subsequent campaign repairs; use each row's evidence and the current checkpoint to distinguish completed work from remaining gaps.
+The [campaign plan](platform-test-plan.md) owns priority order and the systematic per-feature completion requirements; all in-scope gaps remain obligations after the main GUI paths.
 It covers local GUI editing and authoring; workflow lifecycle, recursive interfaces, results, integrations, and execution have complementary campaign inventories.
 HPC, Parsl, distributed engines, remote execution, and parallel execution behavior are excluded.
 Browser automation remains an opt-in lane called after substantial changes, using the authoritative commands in [Testing](../testing.md).
@@ -22,7 +23,7 @@ An API-seeded browser fixture proves the browser behavior asserted after setup; 
 | Default docks and menu, v1 §3.2 | `App.vue`, `components/layout/AppShell.vue` | Browser `app-shell.spec.ts`: `renders Dockview layout with menu bar and panels`; `View menu toggles panel visibility` | Dock resize, drag/reorder, close/reopen, and layout persistence need a browser journey. |
 | Empty workspace never creates a special workflow, v1 §4.3 | `services/startupWorkflow.ts`, `App.vue` | Browser `workflow-creation.spec.ts`: `shows a non-persistent chooser when no workflow exists`; unit `services/__tests__/startupWorkflow.test.ts`: `returns null instead of creating a special startup workflow when none can load` | Assert no workflow POST and unchanged server list as well as empty UI. |
 | Recovery preference and obsolete identities, v1 §4.3; v2 §12 | `services/startupWorkflow.ts`, recovery persistence coordinator | Unit startup tests: `prefers a fresh recovery graph over the last-opened workflow`, `clears a recovery entry that is older than the saved workflow or durable draft`, `clears recovery for an obsolete workflow name and opens the known last workflow` | Browser restoration should distinguish accepted backend draft from newer IndexedDB fallback and prove exact workflow identity, graph, and valid binding. |
-| Recovered edges have real geometry, v1 §3.3, §4.3 | `components/canvas/CanvasView.vue` | Browser `graph-persistence.spec.ts`: `auto-saved graph restores nodes and edges after reload` asserts two nodes, one edge, finite SVG path | Existing fixture selects any tool input/output without proving compatibility, and manually injects IndexedDB. Replace with deterministic schema-compatible fixtures and assert accepted validation. |
+| Recovered edges have real geometry, v1 §3.3, §4.3 | `components/canvas/CanvasView.vue` | Browser `graph-persistence.spec.ts`: `auto-saved graph restores nodes and edges after reload` verifies seeded SeedNumbers/IncrementNumbers metadata, compatible whole-DataFrame wiring, backend validation, exact recovered identity and edge geometry. | The fixture manually seeds IndexedDB; a complete user-edit/save/reopen journey and accepted backend-draft recovery remain separate obligations. |
 | Preferences loading and desktop availability, v1 §3.12 | `components/panels/SettingsPanel.vue`, settings store | Browser `settings.spec.ts`: `opens via Edit > Preferences... and shows the settings tabs`; `workflow-creation.spec.ts`: `desktop shell shows Create Tool even when settings are unavailable` | Add settings load-error retry and close/reopen behavior. |
 | Persisted page-size choice, v1 §3.12.4 | Display settings section, settings store | Browser `settings.spec.ts`: `Display exposes the persisted Node Data page-size preference`; backend `test_routers/test_settings.py`: `test_patch_node_data_page_size` | Browser currently reads 250 only; change selection, verify PATCH, reload, and inspect a newly opened table. |
 | OMERO cards and secret handling, v1 §3.12.6; v2 §14.1 | OMERO settings section, settings router/store | Browser `settings.spec.ts`: `OMERO instance cards keep fields and actions visible without horizontal scrolling`; backend `test_routers/test_settings.py`: `test_patch_omero_password_persists_metadata_only`, `test_patch_omero_duplicate_names_return_422`, `test_patch_omero_keyring_failure_returns_error_without_persisting` | Responsive rendering is covered; Add/Save/Duplicate/Remove and failure feedback need browser coverage with a controlled keyring boundary. Actual OS credential-store integration remains manual. |
@@ -59,12 +60,14 @@ An API-seeded browser fixture proves the browser behavior asserted after setup; 
 
 ## Prioritized maintenance and added journeys
 
-1. Replace test-owned ambiguous graph wiring and permissive environmental skips first, then verify exact tests in Chromium and Firefox.
-2. Keep the rendered catalog-row regression aligned with the interaction contract: single-click toggles documentation without mutation, while double-click emits exactly one add-tool event naming that row.
-3. Treat the import-truthiness tests in `CanvasView.test.ts`, `AppShell.test.ts`, and `NodePanel.test.ts` as build smoke only; remove them when behavioral replacements and existing build/type checks subsume them.
-4. Add a core editing browser journey with explicit compatible fixtures: create nodes, wire, edit, rename, copy/paste, undo/redo, save and reload, asserting exact accepted graph after meaningful transitions.
-5. Add separate negative interaction tests for forbidden pin regions, malformed parameters/clipboard, duplicate names, and text-field keyboard isolation.
-6. Add persisted display settings and package/custom-tool management journeys, then editor and Python-authoring journeys using controlled integration boundaries.
+1. Complete the main workflow journey using actual controls: create/open, inspect information by single-click, create by double-click/drag, connect, edit parameters, run, inspect exact GUI data, save and reopen.
+2. Complete everyday editing through coherent small journeys: rename, select, reconnect, copy/paste, enable/disable, undo/redo, shortcuts, and persistent state.
+3. Follow the plan's nested-workflow and execution-lifecycle waves, then complete settings/layout, datasets, packages/custom tools, editor and Python-authoring features.
+4. Close each remaining row's applicable invalid-input, failure/recovery, persistence, and boundary scenarios; lower priority does not waive final coverage.
+5. Repair weak fixtures and assertion gaps when they prevent trustworthy feature validation; retain build-only smoke labels for import-truthiness tests until behavioral replacements justify removal.
+
+The revised catalog regression must assert visible documentation and exactly one persisted node from the appropriate gesture; observing an emitted event alone is insufficient.
+Assign stable feature IDs and record scenario status, deployment/browser obligations, exact selectors, and evidence revisions as rows are completed.
 
 Every new graph fixture must have a stated tool/input contract, deterministic identities and parameters, and an accepted-validation assertion before it is used as positive evidence.
 Retain focused unit tests for state-space cases that would make browser coverage repetitive; browser assertions must exercise actual controls rather than invoking component handlers or installing final state for the behavior being claimed.

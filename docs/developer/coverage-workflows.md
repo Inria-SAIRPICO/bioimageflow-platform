@@ -10,7 +10,8 @@ No tests were executed for this audit.
 Parallel scheduling, HPC, Parsl, and distributed execution are excluded.
 Serialized `execution: parallel` values in persistence-only fixtures do not demonstrate parallel execution and should not cause unrelated lifecycle tests to be excluded automatically.
 
-The unconfirmed identity concern below is queued for Astra review under the revised [campaign protocol](platform-test-plan.md); current status is tracked in [Campaign issues](platform-test-issues.md).
+The source-update identity concern below was resolved as ISSUE-001; current open decisions are tracked in [Campaign issues](platform-test-issues.md).
+The [campaign plan](platform-test-plan.md) owns global priorities and systematic per-feature completion requirements; every remaining in-scope row is mandatory.
 Remaining gaps are proposed work, not implemented coverage.
 
 ## Selector conventions
@@ -79,6 +80,7 @@ The new regressions cover same-content recreation and deterministic lifecycle se
 
 ## Priority after resumption
 
+Schedule these workflow gaps within the plan's main-journey, everyday-editing, nested-workflow, and remaining-feature waves; this family-specific list does not override that global order.
 Prioritize nested private-edit reload/discard and stale-parent application with connected stable ports; source-update destructive confirmation and conflict journeys; and recursive source copying through the agent-copy UI.
 Refactor overstated test names or add the missing assertions for nested binding deletion and incoming DataFrame grouping.
 Keep real desktop dialogs, external editor interaction, operating-system drag-and-drop, and application crash/restart acceptance explicitly separate from headless browser and in-process service checks.

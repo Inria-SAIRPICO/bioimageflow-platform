@@ -65,7 +65,8 @@ The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_serv
 
 ## ISSUE-005 — Run Selected rejects an unrelated invalid branch
 
-Status: under Astra/high contract assessment; dependent T05 journey frozen.
+Status: `open`; Astra/high contract assessment is queued and the dependent T05 journey is frozen.
+No specialist disposition has been recorded; reconcile actual worker state before assigning the review.
 At `b6072f5`, the isolated Run Selected journey builds an accepted three-node graph containing valid `SeedNumbers(seed_valid) -> IncrementNumbers(increment_valid)` DataFrame work and a disconnected `MissingCampaignTool(unrelated_invalid)` node.
 The UI verifies the exact workflow, graph, edge, missing-dependency modal, and validation state, then the public Run Selected action submits `nodes: ["increment_valid"]`, the exact accepted draft revision, and the complete graph.
 Chromium reaches that request but receives HTTP 422 and surfaces only the unrelated missing-tool validation error.

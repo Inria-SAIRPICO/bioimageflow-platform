@@ -60,6 +60,8 @@ An in-process Direct computation and a mocked worker lifecycle are distinct from
 
 ## Priorities after the campaign resumes
 
+Follow the [campaign plan](platform-test-plan.md) for global ordering: resolve the reproduced Run Selected issue and prove ordinary execution/results through the main GUI journey before expanding lifecycle and integration scenarios.
+The gaps below remain mandatory final-coverage obligations; assign stable feature IDs and record applicable scenario, browser/deployment, and evidence status as they are completed.
 1. Build a held real sequential processing fixture for cancellation, failure, mutation-lock and WebSocket recovery acceptance, with explicit synchronization and independent output/file oracles.
 2. Extend the browser result journey to exact rows, filters, sorted source identity, full CSV content, merged/stacked views and durable column widths.
 3. Verify a real two-run result bundle and GUI archive download, then cover a valid image in the browser viewer.
