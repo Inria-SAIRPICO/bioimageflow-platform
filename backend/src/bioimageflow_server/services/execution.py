@@ -218,7 +218,8 @@ def _selected_root_scope(graph: GraphState, nodes: list[str]) -> set[str]:
 
     predecessors: dict[str, set[str]] = {node_id: set() for node_id in root_ids}
     for edge in graph.edges:
-        predecessors[edge.target_node].add(edge.source_node)
+        if edge.source_node in root_ids and edge.target_node in root_ids:
+            predecessors[edge.target_node].add(edge.source_node)
 
     scope = set(nodes)
     pending = list(nodes)

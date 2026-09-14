@@ -1480,6 +1480,42 @@ class TestExecutionManagerResult:
         assert exc_info.value.errors == [error]
         assert wf.compute_calls == 0
 
+    @pytest.mark.parametrize("dangling_endpoint", ["source", "target"])
+    async def test_selected_run_preserves_dangling_edge_validation_error(
+        self, monkeypatch: pytest.MonkeyPatch, dangling_endpoint: str
+    ) -> None:
+        graph = _selected_graph()
+        edge = DataFrameEdge.model_construct(
+            type="dataframe",
+            id=f"dangling_{dangling_endpoint}",
+            source_node="missing" if dangling_endpoint == "source" else "upstream",
+            target_node="missing" if dangling_endpoint == "target" else "selected",
+            target_position=0,
+            target_input=None,
+        )
+        graph.edges.append(edge)
+        wf = _FakeWorkflow()
+        wf.nodes = {
+            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
+        }
+        error = GraphValidationError(
+            type="invalid_edge_id",
+            detail=f"Edge has an unknown {dangling_endpoint} endpoint",
+            edge_id=edge.id,
+        )
+        _install_fake_builder(monkeypatch, wf, errors=[error])
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(
+                graph,
+                nodes=["selected"],
+                workflow_id="wf-test",
+            )
+
+        assert exc_info.value.errors == [error]
+        assert wf.compute_calls == 0
+
     async def test_selected_run_rejects_missing_compiled_workflow_after_filtering(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
