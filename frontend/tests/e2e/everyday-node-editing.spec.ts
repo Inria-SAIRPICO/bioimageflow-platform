@@ -197,6 +197,15 @@ async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> 
   await page.keyboard.press(shortcut)
 }
 
+async function openWorkflowFromPanel(page: Page, workflowName: string): Promise<void> {
+  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  await page.getByTestId('workflow-search').fill(workflowName)
+  const row = page.getByTestId(`workflow-row-${workflowName}`)
+  await expect(row).toBeVisible()
+  await row.dblclick()
+  await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+}
+
 test.describe('everyday node editing', () => {
   let workflowName: string
 
@@ -459,5 +468,75 @@ test.describe('everyday node editing', () => {
     await expect(node(page, addedNodeId)).toBeVisible()
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
     expect((await fetchDraft(page, workflowName)).graph).toEqual(accepted.graph)
+  })
+
+  test('keeps undo history isolated when switching between workflows', async ({ page }) => {
+    const secondWorkflowName = `${workflowName}_second`
+    const secondGraph = editingGraph(secondWorkflowName)
+    const secondTarget = secondGraph.nodes.find(graphNode => graphNode.id === TARGET_ID)
+    expect(secondTarget?.type).toBe('tool')
+    if (secondTarget?.type === 'tool') secondTarget.parameters.number = 11
+
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name: secondWorkflowName, display_name: secondWorkflowName },
+    })
+    expect(created.status()).toBe(201)
+    const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${secondWorkflowName}`, {
+      data: { graph: secondGraph },
+    })
+    expect(saved.ok()).toBeTruthy()
+
+    try {
+      const firstBaseline = await fetchDraft(page, workflowName)
+      await node(page, TARGET_ID).click()
+      const firstPanel = await openNodesPanel(page)
+      const firstNumberInput = firstPanel.locator('.param-number input')
+      await waitForAcceptedEdit(page, workflowName, async () => {
+        await firstNumberInput.fill('7')
+        await firstNumberInput.press('Enter')
+      })
+      await expectAcceptedDraft(
+        page,
+        workflowName,
+        draft => draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
+        7,
+      )
+      const firstEdited = await fetchDraft(page, workflowName)
+      expect(firstEdited.graph).not.toEqual(firstBaseline.graph)
+
+      await openWorkflowFromPanel(page, secondWorkflowName)
+      const secondBaseline = await fetchDraft(page, secondWorkflowName)
+      expect({
+        valid: secondBaseline.validation.valid,
+        nodeIds: secondBaseline.graph.nodes.map(graphNode => graphNode.id),
+        edgeIds: secondBaseline.graph.edges.map(edge => edge.id),
+        number: secondBaseline.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
+      }).toEqual({
+        valid: true,
+        nodeIds: [SOURCE_ID, TARGET_ID],
+        edgeIds: [EDGE_ID],
+        number: 11,
+      })
+      await node(page, TARGET_ID).click()
+      const secondPanel = await openNodesPanel(page)
+      await expect(secondPanel.locator('.param-number input')).toHaveValue('11')
+
+      await pressCanvasShortcut(page, 'Control+z')
+      await page.waitForTimeout(500)
+      const afterSecondUndo = await fetchDraft(page, secondWorkflowName)
+      expect(afterSecondUndo.draft_revision).toBe(secondBaseline.draft_revision)
+      expect(afterSecondUndo.graph).toEqual(secondBaseline.graph)
+
+      await openWorkflowFromPanel(page, workflowName)
+      await pressCanvasShortcut(page, 'Control+z')
+      await page.waitForTimeout(500)
+      const afterFirstReloadUndo = await fetchDraft(page, workflowName)
+      expect(afterFirstReloadUndo.draft_revision).toBe(firstEdited.draft_revision)
+      expect(afterFirstReloadUndo.graph).toEqual(firstEdited.graph)
+      await page.reload()
+      expect((await fetchDraft(page, workflowName)).graph).toEqual(firstEdited.graph)
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${secondWorkflowName}`).catch(() => undefined)
+    }
   })
 })
