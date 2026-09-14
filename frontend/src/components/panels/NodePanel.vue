@@ -145,6 +145,7 @@ const listInputErrors = ref<Record<string, string>>({})
 const editingName = ref(false)
 const activeTab = ref<'parameters' | 'resources' | 'execution'>('parameters')
 const nameInput = ref('')
+const nameError = ref<string | null>(null)
 
 /** Track which optional fields have been set to null by the user */
 const nulledFields = ref<Record<string, boolean>>({})
@@ -244,13 +245,35 @@ function formatLogTimestamp(seconds: number): string {
 function startEditName() {
   if (!nodeData.value || isNodeEditingDisabled.value) return
   nameInput.value = nodeData.value.name
+  nameError.value = null
   editingName.value = true
 }
 
 function finishEditName() {
   const nodeId = selectedNode.value?.id
-  if (nodeId) canvasCommands.renameNode(nodeId, nameInput.value)
+  if (!nodeId || !nodeData.value) return
+  const trimmedName = nameInput.value.trim()
+  if (!trimmedName) {
+    nameError.value = 'Node name is required.'
+    return
+  }
+  if (uiStore.graphNodes.some((node: any) => (
+    node.id !== nodeId && node.data?.name === trimmedName
+  ))) {
+    nameError.value = `A node named “${trimmedName}” already exists.`
+    return
+  }
+  if (trimmedName !== nodeData.value.name && !canvasCommands.renameNode(nodeId, trimmedName)) {
+    return
+  }
+  nameError.value = null
   editingName.value = false
+}
+
+function setSelectedNodesEnabled(enabled: boolean): void {
+  for (const nodeId of uiStore.selectedNodeIds) {
+    canvasCommands.setNodeEnabled(nodeId, enabled)
+  }
 }
 
 function updateParameter(key: string, value: unknown) {
@@ -293,6 +316,8 @@ function updateListParameter(key: string, event: Event) {
 
 watch(() => selectedNode.value?.id, () => {
   listInputErrors.value = {}
+  nameError.value = null
+  editingName.value = false
   activeTab.value = 'parameters'
 })
 
@@ -593,6 +618,21 @@ async function pickFiles(key: string) {
 
     <div v-else-if="uiStore.isMultiSelection" class="multi-select">
       <p>{{ uiStore.selectedNodeIds.length }} nodes selected</p>
+      <div class="multi-select-actions">
+        <Button
+          label="Enable all"
+          :disabled="isNodeEditingDisabled"
+          data-testid="bulk-enable-nodes"
+          @click="setSelectedNodesEnabled(true)"
+        />
+        <Button
+          label="Disable all"
+          severity="secondary"
+          :disabled="isNodeEditingDisabled"
+          data-testid="bulk-disable-nodes"
+          @click="setSelectedNodesEnabled(false)"
+        />
+      </div>
     </div>
 
     <div v-else-if="nodeData" class="node-details">
@@ -621,7 +661,9 @@ async function pickFiles(key: string) {
             v-if="editingName"
             v-model="nameInput"
             class="name-input"
+            :invalid="nameError !== null"
             :disabled="isNodeEditingDisabled"
+            @input="nameError = null"
             @blur="finishEditName"
             @keydown.enter="finishEditName"
             autofocus
@@ -643,6 +685,14 @@ async function pickFiles(key: string) {
             data-testid="node-enabled-toggle"
           />
         </div>
+        <small
+          v-if="nameError"
+          class="node-name-error"
+          data-testid="node-name-error"
+          role="alert"
+        >
+          {{ nameError }}
+        </small>
         <div class="tool-info">
           <span class="tool-name">{{ nodeData.toolName }}</span>
           <span class="status-badge" :class="selectedNodeStatusClass">
@@ -1104,6 +1154,12 @@ async function pickFiles(key: string) {
   padding: 40px 20px;
 }
 
+.multi-select-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
 .node-validation-errors {
   background: color-mix(in srgb, var(--p-red-500, #dc2626) 10%, transparent);
   border: 1px solid var(--p-red-500, #dc2626);
@@ -1178,6 +1234,12 @@ async function pickFiles(key: string) {
   font-weight: 700;
   flex: 1;
   margin-right: 8px;
+}
+
+.node-name-error {
+  display: block;
+  color: var(--p-red-500, #dc2626);
+  margin-bottom: 4px;
 }
 
 .enabled-toggle {

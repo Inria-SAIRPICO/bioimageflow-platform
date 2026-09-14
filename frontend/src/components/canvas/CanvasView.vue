@@ -1587,8 +1587,15 @@ function detachContextWorkflowSource() {
 
 function onNodeDoubleClick(payload: any) {
   const node = payload.node
-  if (!node?.data?.workflow) return
-  openNestedWorkflow(node.id)
+  if (!node?.data) return
+  if (node.data.workflow) {
+    openNestedWorkflow(node.id)
+    return
+  }
+  const target = payload.event?.target
+  if (isLocked.value || !(target instanceof Element) || !target.closest('.node-header')) return
+  node.data.collapsed = node.data.collapsed !== true
+  emitGraphChanged()
 }
 
 function runContextNestedWorkflowAction() {
