@@ -52,7 +52,7 @@ function editingGraph(workflowName: string): GraphState {
       target_position: 0,
     }],
     interface: { inputs: [], outputs: [] },
-    config: { engine: 'direct', execution: 'parallel' },
+    config: { engine: 'direct', execution: 'sequential' },
   }
 }
 
