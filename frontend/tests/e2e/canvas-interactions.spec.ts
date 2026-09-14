@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
@@ -158,6 +159,71 @@ async function expectNodeNear(
       && Math.abs(box.x - expected.x) <= 10
       && Math.abs(box.y - expected.y) <= 10
   }).toBe(true)
+}
+
+function expectedResultTableRows() {
+  return Array.from({ length: 60 }, (_, sourceRow) => ({
+    sourceRow,
+    label: `${sourceRow % 2 === 0 ? 'keep' : 'drop'}-${String(sourceRow).padStart(2, '0')}`,
+    score: (sourceRow * 17) % 61,
+  }))
+    .filter(row => row.label.startsWith('keep-'))
+    .sort((left, right) => right.score - left.score)
+}
+
+function parseCsv(csv: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index]
+    if (quoted) {
+      if (character === '"' && csv[index + 1] === '"') {
+        field += '"'
+        index += 1
+      } else if (character === '"') {
+        quoted = false
+      } else {
+        field += character
+      }
+    } else if (character === '"') {
+      quoted = true
+    } else if (character === ',') {
+      row.push(field)
+      field = ''
+    } else if (character === '\n') {
+      row.push(field.endsWith('\r') ? field.slice(0, -1) : field)
+      rows.push(row)
+      row = []
+      field = ''
+    } else {
+      field += character
+    }
+  }
+  if (field || row.length) {
+    row.push(field)
+    rows.push(row)
+  }
+  return rows
+}
+
+async function projectionQueryAfter(
+  page: Page,
+  action: () => Promise<void>,
+) {
+  const responsePromise = page.waitForResponse(response =>
+    response.url().endsWith('/api/v1/data-table/query')
+    && response.request().method() === 'POST'
+    && response.status() === 200,
+  )
+  await action()
+  const response = await responsePromise
+  return {
+    request: response.request().postDataJSON(),
+    result: await response.json(),
+  }
 }
 
 test.describe('Canvas interactions', () => {
@@ -491,6 +557,161 @@ test.describe('Canvas interactions', () => {
     } finally {
       await page.request.delete(`${API_BASE}/api/v1/workflows/${otherWorkflowName}`).catch(() => undefined)
     }
+  })
+
+  test('filters, sorts, pages, and exports an exact real execution result', { tag: '@critical' }, async ({ page }) => {
+    const toolsResponse = await page.request.get(`${API_BASE}/api/v1/tools`)
+    expect(toolsResponse.ok()).toBeTruthy()
+    const tools = await toolsResponse.json() as ToolMetadata[]
+    expect(tools.find(tool => tool.name === 'ResultTableFixture')).toMatchObject({
+      tool_type: 'DataFrameTool',
+      accepts_upstream: false,
+      outputs: {
+        source_row: { type: 'int' },
+        label: { type: 'str' },
+        score: { type: 'int' },
+      },
+    })
+    const resultNode = await addToolNode(page, 'ResultTableFixture', { x: 280, y: 180 })
+    const nodeId = await resultNode.getAttribute('data-id')
+    expect(nodeId).toBeTruthy()
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      return {
+        valid: draft.validation.valid,
+        toolName: draft.graph.nodes[0]?.type === 'tool'
+          ? draft.graph.nodes[0].tool_name
+          : null,
+      }
+    }).toEqual({ valid: true, toolName: 'ResultTableFixture' })
+
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    await resultNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const nodeTable = page.getByTestId('merged-data-table')
+    const dataTable = nodeTable.locator('.p-datatable')
+    const paginator = nodeTable.getByTestId('node-data-paginator')
+    await expect(dataTable).toBeVisible()
+    await expect(paginator).toContainText('1–60 of 60')
+
+    const filtered = await projectionQueryAfter(page, async () => {
+      await dataTable.getByRole('button', { name: 'Filter label' }).click()
+      await page.getByRole('combobox', { name: 'Filter operator' }).click()
+      await page.getByRole('option', { name: 'Starts with' }).click()
+      await page.getByRole('textbox', { name: 'Filter value' }).fill('keep-')
+      await page.getByRole('button', { name: 'Apply' }).click()
+    })
+    expect(filtered.request).toMatchObject({
+      page: 0,
+      page_size: 250,
+      sort_by: null,
+      filters: [{ column: 's0:label', operator: 'starts_with', value: 'keep-' }],
+    })
+    expect(filtered.result).toMatchObject({ total_rows: 30, unfiltered_total_rows: 60 })
+    await expect(nodeTable.getByTestId('node-data-active-filters')).toContainText('label: starts with keep-')
+    await expect(paginator).toContainText('1–30 of 30 (60 unfiltered)')
+
+    await projectionQueryAfter(page, async () => {
+      await dataTable.getByRole('button', { name: 'Sort score' }).click()
+    })
+    const sorted = await projectionQueryAfter(page, async () => {
+      await dataTable.getByRole('button', { name: 'Sort score' }).click()
+    })
+    expect(sorted.request).toMatchObject({
+      page: 0,
+      sort_by: 's0:score',
+      sort_order: 'desc',
+      filters: [{ column: 's0:label', operator: 'starts_with', value: 'keep-' }],
+    })
+
+    const expectedRows = expectedResultTableRows()
+    expect(sorted.result.rows).toEqual(expectedRows.map(row => ({
+      index: String(row.sourceRow),
+      source_rows: { [nodeId!]: row.sourceRow },
+      values: {
+        's0:source_row': row.sourceRow,
+        's0:label': row.label,
+        's0:score': row.score,
+      },
+    })))
+    await expect(dataTable.getByRole('button', { name: 'Sort score' }).locator('i')).toHaveClass(/pi-sort-amount-down/)
+
+    const headers = await dataTable.locator('.p-datatable-thead th').allTextContents()
+    const sourceRowColumn = headers.findIndex(header => header.includes('source_row'))
+    const labelColumn = headers.findIndex(header => header.includes('label'))
+    const scoreColumn = headers.findIndex(header => header.includes('score'))
+    expect([sourceRowColumn, labelColumn, scoreColumn].every(index => index >= 0)).toBe(true)
+    const visibleRows = dataTable.locator('.p-datatable-tbody tr')
+    await expect(visibleRows).toHaveCount(30)
+    for (const [index, expected] of expectedRows.entries()) {
+      const cells = visibleRows.nth(index).locator('td')
+      await expect(cells.nth(sourceRowColumn)).toHaveText(String(expected.sourceRow))
+      await expect(cells.nth(labelColumn)).toHaveText(expected.label)
+      await expect(cells.nth(scoreColumn)).toHaveText(String(expected.score))
+    }
+
+    const firstPage = await projectionQueryAfter(page, async () => {
+      await paginator.getByRole('combobox', { name: 'Rows per page' }).click()
+      await page.getByRole('option', { name: '25', exact: true }).click()
+    })
+    expect(firstPage.request).toMatchObject({ page: 0, page_size: 25 })
+    expect(firstPage.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows.slice(0, 25).map(row => row.sourceRow))
+    await expect(paginator).toContainText('1–25 of 30 (60 unfiltered)')
+    await expect(visibleRows).toHaveCount(25)
+
+    const secondPage = await projectionQueryAfter(page, async () => {
+      await paginator.getByRole('button', { name: 'Next page' }).click()
+    })
+    expect(secondPage.request).toMatchObject({ page: 1, page_size: 25 })
+    expect(secondPage.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows.slice(25).map(row => row.sourceRow))
+    await expect(paginator).toContainText('26–30 of 30 (60 unfiltered)')
+    await expect(visibleRows).toHaveCount(5)
+    for (const [index, expected] of expectedRows.slice(25).entries()) {
+      const cells = visibleRows.nth(index).locator('td')
+      await expect(cells.nth(sourceRowColumn)).toHaveText(String(expected.sourceRow))
+      await expect(cells.nth(labelColumn)).toHaveText(expected.label)
+      await expect(cells.nth(scoreColumn)).toHaveText(String(expected.score))
+    }
+
+    await projectionQueryAfter(page, async () => {
+      const pageInput = paginator.getByTestId('node-data-page-input').locator('input')
+      await pageInput.fill('1')
+      await pageInput.press('Enter')
+    })
+    const largerPage = await projectionQueryAfter(page, async () => {
+      await paginator.getByRole('combobox', { name: 'Rows per page' }).click()
+      await page.getByRole('option', { name: '50', exact: true }).click()
+    })
+    expect(largerPage.request).toMatchObject({ page: 0, page_size: 50 })
+    expect(largerPage.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows.map(row => row.sourceRow))
+    await expect(paginator).toContainText('1–30 of 30 (60 unfiltered)')
+    await expect(visibleRows).toHaveCount(30)
+
+    const downloadPromise = page.waitForEvent('download')
+    await nodeTable.getByTestId('download-merged-csv').click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('data-table.csv')
+    const downloadPath = await download.path()
+    expect(downloadPath).not.toBeNull()
+    const parsedCsv = parseCsv(await readFile(downloadPath!, 'utf8'))
+    expect(parsedCsv).toEqual([
+      ['', 'source_row', 'label', 'score'],
+      ...expectedRows.map(row => [
+        String(row.sourceRow),
+        String(row.sourceRow),
+        row.label,
+        String(row.score),
+      ]),
+    ])
   })
 
   test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
