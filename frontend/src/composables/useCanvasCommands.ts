@@ -214,7 +214,11 @@ function createCommandResource(
     setNodesEnabled: (nodeIds, enabled) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       if (options.setNodesEnabled) return options.setNodesEnabled(nodeIds, enabled)
-      return nodeIds.some(nodeId => options.setNodeEnabled(nodeId, enabled))
+      let changed = false
+      for (const nodeId of nodeIds) {
+        if (options.setNodeEnabled(nodeId, enabled)) changed = true
+      }
+      return changed
     },
     setNodeResources: (nodeId, resources) => {
       if (disposed) throw new Error('Canvas commands have been disposed')

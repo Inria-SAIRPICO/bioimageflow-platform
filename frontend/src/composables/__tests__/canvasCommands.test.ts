@@ -288,6 +288,28 @@ describe('active canvas commands', () => {
     })
   })
 
+  it('attempts every node in the bulk-enabled fallback and aggregates changes', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const handlers = makeCanvasCommandHandlers()
+    const { setNodesEnabled: _setNodesEnabled, ...fallbackHandlers } = handlers
+    fallbackHandlers.setNodeEnabled
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const commands = useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      ...fallbackHandlers,
+      updateParameter: vi.fn(() => true),
+    })
+
+    expect(commands.setNodesEnabled(['first', 'second', 'third'], false)).toBe(true)
+    expect(fallbackHandlers.setNodeEnabled.mock.calls).toEqual([
+      ['first', false],
+      ['second', false],
+      ['third', false],
+    ])
+  })
+
   it.each(nodeEditCases)(
     'routes $name only to the explicitly active canvas with shared node ids',
     ({ invoke, spy, expectedArgs }) => {
