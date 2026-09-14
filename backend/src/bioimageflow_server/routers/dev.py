@@ -90,6 +90,29 @@ class IncrementNumbers(DataFrameTool):
         return result
 
 
+class IncrementAgainInputs(IOModel):
+    number_plus_one: int
+
+
+class IncrementAgainOutputs(IOModel):
+    number_plus_two: int
+
+
+class IncrementAgainNumbers(DataFrameTool):
+    """Second deterministic transform for recursive E2E execution tests."""
+
+    display_name = "Increment Again"
+    documentation = "Add one to an upstream number_plus_one column for development tests."
+    tags = ["transform", "e2e"]
+    Inputs = IncrementAgainInputs
+    Outputs = IncrementAgainOutputs
+
+    def transform(self, df: Any, arguments: Any) -> Any:
+        result = df.copy()
+        result["number_plus_two"] = result["number_plus_one"] + 1
+        return result
+
+
 class GaussianBlurInputs(IOModel):
     input_image: Annotated[Path, ImageSpec()]
     sigma: float = 1.0
@@ -149,6 +172,28 @@ _SEED_TOOLS: list[ToolMetadata] = [
         },
         outputs={
             "number_plus_one": OutputFieldSchema(type="int"),
+        },
+    ),
+    ToolMetadata(
+        name="IncrementAgainNumbers",
+        display_name="Increment Again",
+        package="bioimageflow-dev-seed",
+        package_version="0.1.0",
+        tool_type="DataFrameTool",
+        row_consumption=None,
+        documentation=IncrementAgainNumbers.documentation,
+        tags=IncrementAgainNumbers.tags,
+        categories=["Utilities"],
+        inputs={
+            "number_plus_one": InputFieldSchema(
+                type="int",
+                required=True,
+                connectable="by_default",
+                description="Incremented number column to increment again",
+            ),
+        },
+        outputs={
+            "number_plus_two": OutputFieldSchema(type="int"),
         },
     ),
     ToolMetadata(
@@ -257,7 +302,9 @@ _SEED_PACKAGES: list[PackageInfo] = [
         installed_versions=["0.1.0"],
         available_versions=["0.1.0"],
         active_version="0.1.0",
-        tools={"0.1.0": ["SeedNumbers", "IncrementNumbers"]},
+        tools={
+            "0.1.0": ["SeedNumbers", "IncrementNumbers", "IncrementAgainNumbers"]
+        },
         environment_status="stopped",
     ),
     PackageInfo(
@@ -286,6 +333,7 @@ async def seed_tools(
         tool_class = {
             "SeedNumbers": SeedNumbers,
             "IncrementNumbers": IncrementNumbers,
+            "IncrementAgainNumbers": IncrementAgainNumbers,
             "GaussianBlur": GaussianBlur,
         }.get(tool.name)
         registry.register_tool(tool.name, tool, tool_class=tool_class)

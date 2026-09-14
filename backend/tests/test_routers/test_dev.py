@@ -34,7 +34,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     resp = await client.post("/api/v1/dev/seed")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["tools"] == 5
+    assert data["tools"] == 6
     assert data["packages"] == 3
 
     # Now tools and packages are populated
@@ -44,6 +44,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert tool_names.issuperset(initial_tool_names)
     assert "SeedNumbers" in tool_names
     assert "IncrementNumbers" in tool_names
+    assert "IncrementAgainNumbers" in tool_names
     assert "CellposeSegmenter" in tool_names
     assert "GaussianBlur" in tool_names
     seed_tool = next(t for t in tools if t["name"] == "SeedNumbers")
@@ -65,6 +66,11 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     )
     assert increment_tool["outputs"] == {
         "number_plus_one": {"type": "int", "default": None, "image_spec": None},
+    }
+    increment_again = next(t for t in tools if t["name"] == "IncrementAgainNumbers")
+    assert increment_again["inputs"]["number_plus_one"]["type"] == "int"
+    assert increment_again["outputs"] == {
+        "number_plus_two": {"type": "int", "default": None, "image_spec": None},
     }
 
     resp = await client.get("/api/v1/tools/packages")
