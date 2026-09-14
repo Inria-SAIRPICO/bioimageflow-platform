@@ -12,7 +12,7 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Receive the bounded Astra/high disposition for ISSUE-005, then resume its preserved Run Selected work only within the established repair boundary.
+1. Integrate the active ISSUE-005 Sol repair after its focused manager/compiler matrix, exact Chromium/Firefox journey, and `scripts/test check app` pass within the Astra-established boundary.
 2. Integrate the independently active main GUI create/open → inspect tool → add/connect → edit → run → inspect exact results → save/reopen journey after focused cross-browser validation.
 3. Integrate the active everyday node-state batch, then continue the remaining editing/persistence obligations followed by nested workflow editing; use the plan's ordered feature waves and keep all remaining feature obligations in the inventories.
 
@@ -29,7 +29,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | T03 systematic inventory | Partial | [GUI](coverage-gui.md), [Workflow](coverage-workflows.md), and [Runtime](coverage-runtime.md) inventories need stable feature IDs and completion of all applicable scenario obligations. |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
-| Wave 1 / ISSUE-005 | Astra review | Exact Run Selected request received unrelated missing-tool errors; read-only specialist assessment active, test-only work preserved. |
+| Wave 1 / ISSUE-005 | Implementation | Astra/high returned `safe-to-fix`; a fresh Sol/medium worktree owns the bounded admission repair and regression matrix while the old failing test remains preserved. |
 | Wave 2 / main workflow | In progress | Sol/medium worker owns a dedicated worktree and is auditing/strengthening the complete GUI path and exact result/persistence assertions. |
 | Wave 3 / editing | In progress | A second Sol/medium worker owns selection, rename, collapse, and enable/disable; reconnect, parameter controls, clipboard, undo/redo, shortcuts, persistence, and switching remain to reconcile and cover. |
 | Wave 4 / nested workflows | Gaps | Private edit/apply/discard/reopen and connected-parent behavior need complete journeys. |
@@ -43,10 +43,9 @@ Ordering is not a reduction in final scope.
 
 The preserved `campaign/t05-run-selected` worktree is at `.worktrees/t05_run_selected`, based on `b6072f5`, with an unfinished change to `frontend/tests/e2e/execution.spec.ts`.
 Its prior Sol/medium worker reported a reproducible HTTP 422 in Chromium; Firefox and completion gates were not run because the product issue remained unresolved.
-`/root/issue_005_astra` owns the read-only contract assessment; `/root/main_gui_journey` owns `.worktrees/main_gui_journey` on `campaign/main-gui-journey` for the independent Wave 2 browser batch; `/root/everyday_node_editing` owns `.worktrees/everyday_node_editing` on `campaign/everyday-node-editing` for the bounded Wave 3 node-state batch.
+`/root/issue_005_fix` owns `.worktrees/issue_005_fix` on `campaign/issue-005-fix` within the completed Astra boundary; `/root/main_gui_journey` owns `.worktrees/main_gui_journey` on `campaign/main-gui-journey` for the independent Wave 2 browser batch; `/root/everyday_node_editing` owns `.worktrees/everyday_node_editing` on `campaign/everyday-node-editing` for the bounded Wave 3 node-state batch.
 The reproduction predates the new catalog gesture contract, so reconcile affected setup before reuse.
-ISSUE-005 is under Astra assessment and has no disposition yet; other resolved issue decisions are in [Campaign issues](platform-test-issues.md).
-No implementation worker is assigned by this documentation update.
+ISSUE-005 is `safe-to-fix` and in implementation; other resolved issue decisions are in [Campaign issues](platform-test-issues.md).
 
 ## Retained evidence and restart discipline
 

@@ -65,14 +65,15 @@ The fix commit is discoverable with `git log -1 -- backend/src/bioimageflow_serv
 
 ## ISSUE-005 — Run Selected rejects an unrelated invalid branch
 
-Status: `astra-review`; `/root/issue_005_astra` owns a bounded read-only GPT-6 Astra/high assessment and the dependent T05 journey remains frozen.
-No specialist disposition has been recorded yet.
+Status: `implementation`; GPT-6 Astra/high returned `safe-to-fix`, and `/root/issue_005_fix` owns the bounded Sol/medium repair in `.worktrees/issue_005_fix`.
 At `b6072f5`, the isolated Run Selected journey builds an accepted three-node graph containing valid `SeedNumbers(seed_valid) -> IncrementNumbers(increment_valid)` DataFrame work and a disconnected `MissingCampaignTool(unrelated_invalid)` node.
 The UI verifies the exact workflow, graph, edge, missing-dependency modal, and validation state, then the public Run Selected action submits `nodes: ["increment_valid"]`, the exact accepted draft revision, and the complete graph.
 Chromium reaches that request but receives HTTP 422 and surfaces only the unrelated missing-tool validation error.
 Inspection points to `ExecutionManager._start_reserved`: it compiles the complete graph as required, then rejects every validation error without limiting acceptance to the selected node plus its upstream dependencies.
-V1 §§2.4.5, 3.9, and 4.1 and v2 §9 appear to require selected-subgraph validation while still compiling the full accepted graph without destructive pruning; the existing router regression mocks the manager and therefore does not cover this boundary.
-The test-only worktree is frozen pending an Astra `safe-to-fix`, `not-a-defect`, or `needs-owner` disposition.
+V1 §2.4.5 and v2 §§8–9 require selected-plus-upstream admission while still compiling the full accepted graph without destructive pruning; the existing router regression mocks the manager and therefore does not cover this boundary.
+The specialist reproduced exact `(1, one, 2)`, `(2, two, 3)`, and `(3, three, 4)` output through the public library compiler after the manager rejected two `missing_tool` diagnostics scoped only to `unrelated_invalid`.
+The safe boundary derives selected roots and transitive upstream IDs from the accepted graph, filters only diagnostics proven outside that scope, retains unscoped or unresolved diagnostics, blocks invalid or unknown requested targets, and leaves full Run, draft validation, locking, source capture, and public library execution unchanged.
+The original test-only worktree remains frozen as evidence while the fresh implementation worktree reconciles its browser journey to the current catalog gestures and adds the manager/compiler regression matrix.
 
 ## New issue record template
 
