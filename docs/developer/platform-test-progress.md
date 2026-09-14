@@ -12,7 +12,7 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Integrate the active Wave 3 reconnect/disconnect and mixed-edit history batch after exact cross-browser and completion validation.
+1. Continue Wave 3 with clipboard/shortcuts plus remaining parameter controls and bulk Delete/Clear after the active Wave 4 boundary reaches a safe committed point.
 2. Complete the corrected ISSUE-006 stale-parent refusal/discard browser evidence without overwrite semantics, then continue the independent destructive connected-port confirmation boundary.
 3. Follow Wave 3 with clipboard/shortcuts and the remaining parameter-control/persistence obligations, then continue the ordered feature waves without dropping lower-priority coverage.
 
@@ -31,7 +31,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
-| Wave 3 / editing | In progress | Commits `5412406` and `ec0ca3b` verify the first node-state batch; a dedicated Sol/medium worktree owns reconnect/disconnect, mixed-edit undo/redo, bulk-action history, and workflow-switch isolation. |
+| Wave 3 / editing | Partial | Commits through `e0aa123` verify pointer disconnect/reconnect, atomic bulk history, mixed node/edge/parameter Undo/Redo, observable command availability, and workflow-switch isolation; clipboard/shortcuts, remaining controls, and bulk Delete/Clear remain. |
 | Wave 4 / nested workflows | In progress | Commit `af58e4e` verifies the primary private-edit journey; Astra classified ISSUE-006 baseline refusal as `not-a-defect`, so the worker is correcting the browser evidence before separately testing destructive connected-port confirmation. |
 | Waves 5–6 / lifecycle and remaining features | Gaps | Failure/cancellation/rerun/cache/results plus settings, datasets, authoring, integrations, and remaining user actions. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
@@ -44,10 +44,10 @@ Ordering is not a reduction in final scope.
 The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
-`/root/connection_history` owns `.worktrees/connection_history` on `campaign/connection-history`.
 `/root/nested_conflict_removal` owns `.worktrees/nested_conflict_removal` on `campaign/nested-conflict-removal`.
 ISSUE-006 has a `not-a-defect` disposition; no overwrite-control implementation is authorized, and its uncommitted proposal must be discarded.
 The first Wave 4 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
+The second Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch was deleted after integrating six commits.
 ISSUE-005 is resolved on main; other resolved issue decisions are in [Campaign issues](platform-test-issues.md).
 
 ## Retained evidence and restart discipline
