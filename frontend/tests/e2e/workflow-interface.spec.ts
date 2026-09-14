@@ -87,6 +87,33 @@ async function draftGraph(page: Page, name: string): Promise<GraphState> {
   return ((await response.json()) as WorkflowDraftResponse).graph
 }
 
+async function replaceDraftChildInputName(
+  page: Page,
+  name: string,
+  inputName: string,
+): Promise<void> {
+  const currentResponse = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+  expect(currentResponse.ok(), await currentResponse.text()).toBeTruthy()
+  const current = (await currentResponse.json()) as WorkflowDraftResponse
+  const nextGraph = structuredClone(current.graph)
+  const input = childNode(nextGraph).workflow.interface.inputs.find(
+    candidate => candidate.id === 'child-table-input',
+  )
+  expect(input).toBeTruthy()
+  input!.name = inputName
+  const response = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${name}`, {
+    data: {
+      graph: nextGraph,
+      expected_revision: current.draft_revision,
+      updated_by: 'agent',
+    },
+  })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  expect(childInputName(childNode(
+    ((await response.json()) as WorkflowDraftResponse).graph,
+  ).workflow)).toBe(inputName)
+}
+
 function nestedInterfaceGraph(name: string, displayName: string): GraphState {
   const child: GraphState = {
     schema_version: 1,
@@ -434,6 +461,127 @@ test.describe('workflow interface and grouping', () => {
       id: 'child-table-input', name: 'Applied source table',
     })
     expectStableParentRoutes(afterDiscard)
+  })
+
+  test('refuses a stale-parent nested save without mutating either graph', async ({ page }) => {
+    const name = workflowName('nested_parent_conflict')
+    const displayName = `Nested parent conflict ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    expectStableParentRoutes(await draftGraph(page, name))
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const inputName = page.getByTestId('dataframe-input-name-0')
+    const rootTab = page.locator('.dv-tab').filter({ hasText: displayName })
+    const nestedTab = page.locator('.dv-tab').filter({ hasText: 'Stable child' })
+
+    async function installChangedParent(nextInputName: string, nextSeedName: string) {
+      await rootTab.click()
+      await page.locator('.vue-flow__node[data-id="seed"]').click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      const panelName = page.locator('.node-panel-header .node-name')
+      await panelName.dblclick()
+      await page.locator('.node-panel-header .name-input').fill(nextSeedName)
+      const localWrite = page.waitForResponse(response => (
+        response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+        && response.request().method() === 'PUT'
+        && response.status() === 200
+      ))
+      await page.locator('.node-panel-header .name-input').press('Enter')
+      await localWrite
+      await replaceDraftChildInputName(page, name, nextInputName)
+      const rootConflict = page.locator('.workflow-draft-conflict')
+      await expect(rootConflict).toBeVisible()
+      await page.getByRole('button', { name: 'Apply agent changes', exact: true }).click()
+      await expect(rootConflict).toHaveCount(0)
+      await expect(page.locator('.vue-flow__node[data-id="seed"] .node-name')).toHaveText(nextSeedName)
+      await nestedTab.click()
+    }
+
+    const privateWrite = page.waitForResponse(response => (
+      responseCarriesNestedInputName(response, 'Durable private version')
+    ))
+    await inputName.fill('Durable private version')
+    const privateSnapshot = await (await privateWrite).json() as {
+      session_id: string
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(childInputName(privateSnapshot.graph)).toBe('Durable private version')
+    await installChangedParent('Latest parent version', 'Latest parent seed')
+    await expect.poll(async () => childInputName(childNode(await draftGraph(page, name)).workflow))
+      .toBe('Latest parent version')
+
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await expect(page.getByText(
+      'Cannot save nested-workflow because its parent node changed after this editor was opened.',
+      { exact: true },
+    )).toBeVisible()
+    await expect(inputName).toHaveValue('Durable private version')
+    await expect(page.getByTestId('workflow-title')).toContainText('*')
+    const parentAfterRefusal = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+    expect(parentAfterRefusal.ok()).toBeTruthy()
+    const refusedParent = (await parentAfterRefusal.json()) as WorkflowDraftResponse
+    expect(refusedParent.draft_revision).toBeGreaterThan(0)
+    expect(childInputName(childNode(refusedParent.graph).workflow)).toBe('Latest parent version')
+    expect(childNode(refusedParent.graph).workflow.nodes[0]?.name).toBe('Increment')
+    expect(refusedParent.graph.nodes.find(node => node.id === 'seed')?.name).toBe('Latest parent seed')
+    expectStableParentRoutes(refusedParent.graph)
+
+    const durableResponse = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${privateSnapshot.session_id}`,
+    )
+    expect(durableResponse.ok(), await durableResponse.text()).toBeTruthy()
+    const durablePrivate = await durableResponse.json() as {
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(durablePrivate.snapshot_revision).toBeGreaterThanOrEqual(privateSnapshot.snapshot_revision)
+    expect(durablePrivate.graph).toEqual(privateSnapshot.graph)
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
+      await dialog.dismiss()
+    })
+    await nestedTab.locator('.dv-default-tab-action').click()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await expect(page.getByTestId('dataframe-input-name-0')).toHaveValue('Durable private version')
+    const afterCancelledClose = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${privateSnapshot.session_id}`,
+    )
+    expect(afterCancelledClose.ok()).toBeTruthy()
+    await expect(afterCancelledClose.json()).resolves.toMatchObject({
+      snapshot_revision: durablePrivate.snapshot_revision,
+      graph: durablePrivate.graph,
+    })
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
+      await dialog.accept()
+    })
+    await nestedTab.locator('.dv-default-tab-action').click()
+    await expect(page.locator('.nested-workflow-editor')).toHaveCount(0)
+    await rootTab.click()
+    const afterDiscard = await draftGraph(page, name)
+    expect(childInputName(childNode(afterDiscard).workflow)).toBe('Latest parent version')
+    expectStableParentRoutes(await draftGraph(page, name))
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await expect(page.getByTestId('dataframe-input-name-0')).toHaveValue('Latest parent version')
   })
 
   test('deleting an exposed node removes its interface references before autosave', async ({
