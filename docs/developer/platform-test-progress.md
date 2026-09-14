@@ -12,9 +12,9 @@ The campaign is incomplete; this checkpoint is a planning update, not a new appl
 
 ## Next three actions
 
-1. Integrate the active everyday node-state batch, then continue reconnect/disconnect, parameter controls, clipboard, undo/redo, shortcuts, persistence, and switching.
-2. Start the nested private-edit/apply/discard/reopen journey with connected stable ports after the next independent Wave 3 batch is assigned.
-3. Continue the ordered feature waves and inventory reconciliation without dropping any lower-priority obligation.
+1. Continue Wave 3 with reconnect/disconnect plus mixed-edit undo/redo, including one-step bulk-action history and workflow-switch isolation.
+2. Start the nested private-edit/apply/discard/reopen journey with connected stable ports in an independent worktree.
+3. Follow with clipboard/shortcuts and the remaining parameter-control/persistence obligations, then continue the ordered feature waves without dropping lower-priority coverage.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -31,7 +31,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
-| Wave 3 / editing | In progress | A second Sol/medium worker owns selection, rename, collapse, and enable/disable; reconnect, parameter controls, clipboard, undo/redo, shortcuts, persistence, and switching remain to reconcile and cover. |
+| Wave 3 / editing | Partial | Commits `5412406` and `ec0ca3b` verify and repair selection, multiselection, rename refusal/identity, collapse, and enable/disable across accepted-draft reload; reconnect, parameter controls, clipboard, undo/redo, shortcuts, bulk Delete/Clear, persistence, and switching remain. |
 | Wave 4 / nested workflows | Gaps | Private edit/apply/discard/reopen and connected-parent behavior need complete journeys. |
 | Waves 5–6 / lifecycle and remaining features | Gaps | Failure/cancellation/rerun/cache/results plus settings, datasets, authoring, integrations, and remaining user actions. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
@@ -41,9 +41,9 @@ Ordering is not a reduction in final scope.
 
 ## Ownership and unresolved decisions
 
-The original `campaign/t05-run-selected` worktree at `.worktrees/t05_run_selected` preserves the now-resolved failing reproduction until its integrated replacement is reconciled and the worktree is archived.
-`/root/everyday_node_editing` owns `.worktrees/everyday_node_editing` on `campaign/everyday-node-editing` for the bounded Wave 3 node-state batch.
+The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
+The first Wave 3 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
 ISSUE-005 is resolved on main; other resolved issue decisions are in [Campaign issues](platform-test-issues.md).
 
 ## Retained evidence and restart discipline
