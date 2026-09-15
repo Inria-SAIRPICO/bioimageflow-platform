@@ -340,19 +340,11 @@ async function onWorkflowDialogSubmit(payload: {
       new_name: payload.name,
       display_name: payload.display_name,
       description: payload.description,
+      graph: target.graph,
     })
     const copiedWorkflowName = workflowId(info)
-    await workflowStore.saveWorkflow(target.graph, {
-      canvasId: target.canvasId,
-      workflowName: copiedWorkflowName,
-    })
-    applyGraph(target.graph, false, {
-      workflowName: copiedWorkflowName,
-      workflowDisplayName: info.display_name,
-      missingTools: target.missingTools,
-      identityGeneration: workflowStore.workflowIdentityGeneration(copiedWorkflowName),
-      serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(copiedWorkflowName),
-    })
+    const loaded = await loadRootWorkflowPresentation(copiedWorkflowName)
+    applyGraph(loaded.graph, loaded.dirty, loaded)
     workflowDialogVisible.value = false
     workflowDialogTarget.value = null
     workflowDialogSuggestedName.value = null

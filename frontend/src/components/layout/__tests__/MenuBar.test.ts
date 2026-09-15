@@ -513,9 +513,21 @@ describe('MenuBar', () => {
       apiMocks.patch.mockResolvedValueOnce({
         data: { name: 'a_copy', display_name: 'Workflow A copy' },
       })
-      apiMocks.put.mockResolvedValueOnce({
-        data: { name: 'a_copy', display_name: 'Workflow A copy' },
+      const copiedGraph = {
+        ...graphA,
+        name: 'a_copy',
+        display_name: 'Workflow A copy',
+      }
+      apiMocks.get.mockResolvedValueOnce({
+        data: {
+          info: { name: 'a_copy', display_name: 'Workflow A copy' },
+          graph: copiedGraph,
+          artifact_hash: 'sha256:copy',
+          missing_packages: [],
+          missing_tools: [],
+        },
       })
+      workflowDraftMocks.loadDraft.mockRejectedValueOnce(new Error('no draft fixture'))
 
       canvasSessionRegistry.activate(canvasB)
       persistenceMocks.canvasId = canvasB
@@ -529,10 +541,11 @@ describe('MenuBar', () => {
       expect(apiMocks.patch).toHaveBeenCalledWith('/api/v1/workflows/a', expect.objectContaining({
         action: 'duplicate',
         new_name: 'a_copy',
-      }))
-      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a_copy', { graph: graphA })
-      expect(applied[applied.length - 1]).toMatchObject({
         graph: graphA,
+      }))
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(applied[applied.length - 1]).toMatchObject({
+        graph: copiedGraph,
         workflowName: 'a_copy',
         workflowDisplayName: 'Workflow A copy',
         identityGeneration: 1,
