@@ -6,6 +6,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 from bioimageflow.worker_origins import resolve_worker_tool_origin
 from bioimageflow_core import Arguments
 from bioimageflow_server.models.graph import ColumnEdge, ToolNodeState
@@ -41,7 +42,9 @@ def test_held_worker_fixture_registers_and_compiles_as_sequential_wetlands(
     metadata = registry.get_tool("HeldWorkerNumbers")
     assert metadata.tool_type == "ProcessingTool"
     assert metadata.row_consumption == "mapped"
-    assert set(metadata.inputs) == {"value", "control_port"}
+    assert set(metadata.inputs) == {"value", "control_port", "multiplier"}
+    assert metadata.inputs["multiplier"].connectable == "never"
+    assert metadata.inputs["multiplier"].default == 4
     assert metadata.outputs["multiplied"]["type"] == "int"
     assert HeldWorkerNumbers.environment.name == "platform-worker-numbers"
     assert HeldWorkerNumbers.environment.dependencies == {"python": "3.12"}
@@ -99,24 +102,54 @@ def test_held_worker_acknowledges_cooperative_cancellation_without_output(
         with ThreadPoolExecutor(max_workers=1) as executor:
             result = executor.submit(
                 HeldWorkerNumbers().process_row,
-                Arguments(value=3, control_port=port, report=report),
+                Arguments(value=3, control_port=port, multiplier=4, report=report),
                 task=task,
             )
             with listener.accept()[0] as control:
-                messages = control.makefile("r")
-                assert json.loads(messages.readline()) == {
-                    "event": "started",
-                    "process_id": os.getpid(),
-                    "value": 3,
-                }
-                task.cancel_requested = True
-                assert json.loads(messages.readline()) == {
-                    "event": "cancellation_observed"
-                }
-                assert json.loads(messages.readline()) == {
-                    "event": "cancellation_acknowledged"
-                }
+                with control.makefile("r") as messages:
+                    assert json.loads(messages.readline()) == {
+                        "event": "started",
+                        "process_id": os.getpid(),
+                        "value": 3,
+                        "multiplier": 4,
+                    }
+                    task.cancel_requested = True
+                    assert json.loads(messages.readline()) == {
+                        "event": "cancellation_observed"
+                    }
+                    assert json.loads(messages.readline()) == {
+                        "event": "cancellation_acknowledged"
+                    }
             assert result.result(timeout=1) == []
 
     assert task.cancel_calls == 1
+    assert not report.exists()
+
+
+def test_held_worker_failure_is_announced_and_publishes_no_output(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "must-not-exist.txt"
+    with socket.create_server(("127.0.0.1", 0)) as listener:
+        port = listener.getsockname()[1]
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(
+                HeldWorkerNumbers().process_row,
+                Arguments(value=3, control_port=port, multiplier=0, report=report),
+            )
+            with listener.accept()[0] as control:
+                with control.makefile("r") as messages:
+                    assert json.loads(messages.readline()) == {
+                        "event": "started",
+                        "process_id": os.getpid(),
+                        "value": 3,
+                        "multiplier": 0,
+                    }
+                    control.sendall(b"1")
+            with pytest.raises(
+                RuntimeError,
+                match="Controlled worker failure: multiplier must not be zero",
+            ):
+                result.result(timeout=1)
+
     assert not report.exists()

@@ -1151,6 +1151,11 @@ class TestExecutionManagerResult:
             if event[0] == "chameau2_1" and event[1] == "failed"
         ]
         assert failed_updates[-1][3] == "Implement Chameau2.process_row"
+        error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
+        assert len(error_logs) == 1
+        assert error_logs[0][2] == "chameau2_1"
+        assert "Implement Chameau2.process_row" in error_logs[0][1]
+        assert "Remote traceback:" in error_logs[0][1]
 
     async def test_failed_execution_is_logged(
         self,

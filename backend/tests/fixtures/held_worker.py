@@ -4,11 +4,13 @@ import json
 import os
 import socket
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from bioimageflow_core import (
     Arguments,
+    Connectable,
     EnvironmentSpec,
+    GUIMeta,
     IOModel,
     ProcessingTool,
     RowConsumption,
@@ -29,11 +31,19 @@ class HeldWorkerNumbers(ProcessingTool):
     class Inputs(IOModel):
         value: int
         control_port: int
+        multiplier: Annotated[
+            int,
+            GUIMeta(
+                display_name="Multiplier",
+                description="Set to zero to exercise the deterministic worker failure path.",
+                connectable=Connectable.NEVER,
+            ),
+        ] = 4
 
     class Outputs(IOModel):
         multiplied: int
         process_id: int
-        report: Path = Template("held_number_{row_index}.txt")
+        report: Path = Template("held_number_{value}.txt")
 
     def process_row(self, arguments: Arguments, *, task: Any = None) -> Outputs | list:
         with socket.create_connection(("127.0.0.1", arguments.control_port)) as control:
@@ -44,6 +54,7 @@ class HeldWorkerNumbers(ProcessingTool):
                             "event": "started",
                             "process_id": os.getpid(),
                             "value": arguments.value,
+                            "multiplier": arguments.multiplier,
                         }
                     )
                     + "\n"
@@ -68,10 +79,15 @@ class HeldWorkerNumbers(ProcessingTool):
                     raise RuntimeError("Held worker control connection closed before release")
                 break
 
-        multiplied = arguments.value * 4
+        if arguments.multiplier == 0:
+            raise RuntimeError(
+                "Controlled worker failure: multiplier must not be zero"
+            )
+
+        multiplied = arguments.value * arguments.multiplier
         report = Path(arguments.report)
         report.write_text(
-            f"{arguments.value} * 4 = {multiplied}\n"
+            f"{arguments.value} * {arguments.multiplier} = {multiplied}\n"
         )
         return self.Outputs(
             multiplied=multiplied,

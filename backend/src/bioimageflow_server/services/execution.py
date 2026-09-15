@@ -1009,13 +1009,18 @@ class ExecutionManager:
                     record_id,
                     context=context,
                 )
-                self.event_bus.publish_log(
-                    "ERROR",
-                    _format_node_failure_message(node_id, message, tb),
-                    node_id,
-                    timestamp or time.time(),
-                    context=context,
-                )
+                # Wetlands can announce terminal task failure before the
+                # worker exception payload is available. Keep the immediate
+                # failed state, but let ``_on_run_done`` publish the single
+                # enriched error log instead of emitting a generic duplicate.
+                if message or tb:
+                    self.event_bus.publish_log(
+                        "ERROR",
+                        _format_node_failure_message(node_id, message, tb),
+                        node_id,
+                        timestamp or time.time(),
+                        context=context,
+                    )
                 return
 
             if status == "cancelled":
