@@ -368,6 +368,7 @@ frontend_check_lane() {
 
 docs_check_lane() {
   require_command uv
+  phase 'Campaign dashboard' uv run --no-project python "$repo_root/scripts/verify-platform-test-dashboard.py"
   phase 'Documentation' uv run --no-project --with-requirements "$repo_root/docs/requirements.txt" -- \
     sphinx-build -W --keep-going "$repo_root/docs" "$repo_root/docs/_build/html"
   printf '\nDocumentation check passed.\n'

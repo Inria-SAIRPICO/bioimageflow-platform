@@ -129,6 +129,8 @@ Scenario obligations are normal success, invalid or refused action, cancellation
 
 Campaign completion percentages must use this dashboard rather than subjective estimates or raw test counts.
 Report both `verified applicable obligations / total applicable obligations` and the same ratio for primary GUI obligations, with blocked and unassessed counts shown separately.
+A dashboard count is provisional until all five dimensions of every inventory row have been reconciled to a concrete source-row scenario contract or a justified `not-applicable` reason and the checked-in dashboard verifier passes.
+Remove the provisional label only after that complete reconciliation; a partial example audit must not be reported as the canonical denominator.
 A feature row is `verified` only when every applicable obligation has exact evidence; a partially covered row remains `in-progress` or `gap`.
 Reconcile the denominator whenever implementation or specification discovery adds or removes an in-scope feature, and record the revision that changed it.
 Do not begin final certification while any inventory row lacks a stable ID, an applicability decision, or a status.
