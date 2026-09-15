@@ -27,12 +27,12 @@ IDs must be unique across the file.
 
 At this baseline, the explicit arithmetic is:
 
-- Overall: **135 V + 321 G + 13 I + 11 B + 5 U = 485 applicable obligations**, so **135 / 485 are verified (27.8%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **120 V + 61 G + 13 I + 0 B + 0 U = 194 applicable obligations**, so **120 / 194 are verified (61.9%)**.
+- Overall: **142 V + 318 G + 9 I + 11 B + 5 U = 485 applicable obligations**, so **142 / 485 are verified (29.3%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **127 V + 58 G + 9 I + 0 B + 0 U = 194 applicable obligations**, so **127 / 194 are verified (65.5%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 5 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
-The active real-worker failure/correction/rerun and image/file/export batches are intentionally `in-progress`; their cells must not become `V` until their integrated evidence revisions are recorded.
+The active image/file/export batch is intentionally `in-progress`; its cells must not become `V` until its integrated evidence revision is recorded.
 
 ## GUI editing and authoring obligations
 
@@ -119,9 +119,9 @@ The active real-worker failure/correction/rerun and image/file/export batches ar
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | G | V | V | in-progress | `4208769` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
-| RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | I | G | V | in-progress | `da2ced2`; active failure/rerun batch |
+| RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
 | RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | I | V | V | in-progress | `da2ced2`; active failure/rerun batch |
+| RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | G | V | V | V | V | in-progress | `30faeb6` |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -142,7 +142,7 @@ The active real-worker failure/correction/rerun and image/file/export batches ar
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | B | U | B | blocked | `fcb4408` inspection pending |
 | RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | I | G | I | G | G | in-progress | `fcb4408`; active failure/rerun batch |
+| RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | G | V | in-progress | `4676ffb` |
 | RT-XCT-004 | Structured HTTP errors and expected-error logging | P1 | REST API/logging | no | G | G | G | N (request-scoped; no persisted user state) | G | gap | `fcb4408` inspection |
 | RT-XCT-005 | MCP typed operations and stable interface IDs | P2 | MCP/API/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-006 | Desktop startup identity, window, and shutdown | P2 | Native desktop/manual | no | G | G | B | N (startup shell has no portable saved state) | B | blocked | `fcb4408` inspection |
