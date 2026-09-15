@@ -47,6 +47,7 @@ const catchAllWarning = computed(() => {
   if (!newCatchAll && (existingCatchAll < 0 || existingCatchAll === napari.filenameRules.length - 1)) return null
   return 'A catch-all * rule wins before every later rule. A global default is usually clearer.'
 })
+const readinessOutputs = computed(() => napari.viewingReadiness?.outputs ?? [])
 
 watch(settingsPanel.napariCreatePrefills, groups => {
   if (groups.length === 0) return
@@ -280,6 +281,26 @@ function stateLabel(state: string): string {
   return state.replace(/_/g, ' ').replace(/^./, (value: string) => value.toUpperCase())
 }
 
+function readinessLabel(status: string): string {
+  if (status === 'covered') return 'Covered'
+  if (status === 'not_covered') return 'Needs viewer setup'
+  return 'Not verified'
+}
+
+function effectiveEnvironmentName(id: string | null | undefined): string {
+  if (!id) return 'None selected'
+  return napari.environments.find(environment => environment.id === id)?.name ?? id
+}
+
+function prepareRequirementGroup(groupId: string | null | undefined) {
+  if (!groupId) return
+  const group = napari.viewingReadiness?.groups?.find(item => item.id === groupId)
+  if (!group) return
+  const groups = settingsPanel.napariCreatePrefills.value
+  settingsPanel.prepareNapariCreate(groups.some(item => item.id === group.id) ? groups : [...groups, group])
+  setupGroupId.value = group.id
+}
+
 function commitFiji() {
   emit('update:field', { field: 'fiji_path', value: fijiPath.value.trim() || null })
 }
@@ -367,6 +388,42 @@ onMounted(() => {
         <ProgressBar :value="operation.progress" />
         <Button v-if="activeOperationStates.has(operation.state)" label="Cancel" text size="small" @click="cancel(operation.environment_id, operation.id)" />
       </div>
+    </section>
+
+    <section class="readiness-report" aria-labelledby="viewing-requirements-heading">
+      <div class="heading">
+        <h3 id="viewing-requirements-heading">Viewing requirements</h3>
+        <Button label="Refresh report" size="small" :loading="napari.viewingReadinessPending" :disabled="!napari.viewingManifest" @click="napari.refreshViewingReadiness()" />
+      </div>
+      <p v-if="napari.viewingReadinessError" class="error" role="status">{{ napari.viewingReadinessError }}</p>
+      <p v-if="!napari.viewingReadiness" class="help-text">Open or import a saved workflow to inspect its passive viewer requirements.</p>
+      <template v-else>
+        <p class="readiness-summary">{{ napari.viewingReadiness.summary.message }}</p>
+        <p v-if="!napari.viewingReadiness.manifest_complete" class="warning">This report is incomplete. Unknown outputs are not treated as compatible.</p>
+        <article v-for="output in readinessOutputs" :key="output.output_identity" class="readiness-output">
+          <div class="heading">
+            <code>{{ output.output_identity }}</code>
+            <strong :class="`readiness-${output.status}`">{{ readinessLabel(output.status) }}</strong>
+          </div>
+          <dl>
+            <dt>Declaration</dt><dd>{{ output.manifest_status === 'known' ? 'Known' : 'Unknown' }}</dd>
+            <dt>Activity</dt><dd>Not reported by the portable manifest</dd>
+            <dt>Reason</dt><dd>{{ output.manifest_reason ?? output.effective_reason }}</dd>
+            <dt>Effective environment</dt><dd>{{ effectiveEnvironmentName(output.effective_environment_id) }}</dd>
+          </dl>
+          <Button v-if="output.status === 'not_covered' && output.group_id" label="Prepare managed environment" size="small" @click="prepareRequirementGroup(output.group_id)" />
+          <details v-if="output.candidates?.length">
+            <summary>Environment compatibility</summary>
+            <div v-for="candidate in output.candidates" :key="candidate.environment_id" class="readiness-candidate">
+              <strong>{{ candidate.name }} — {{ stateLabel(candidate.status) }}</strong>
+              <span>{{ candidate.reason }}</span>
+              <ul v-if="candidate.issues?.length">
+                <li v-for="issue in candidate.issues" :key="`${issue.code}:${issue.distribution ?? ''}`">{{ issue.detail }}</li>
+              </ul>
+            </div>
+          </details>
+        </article>
+      </template>
     </section>
 
     <section class="form">
@@ -496,6 +553,13 @@ onMounted(() => {
 .error { color: var(--p-red-600); }
 .warning { color: var(--p-orange-600); }
 .source-confirmation { display: flex; align-items: flex-start; gap: 0.5rem; }
+.readiness-output { margin: 0.5rem 0; padding: 0.6rem; border: 1px solid var(--bif-border-muted); border-radius: 0.4rem; }
+.readiness-output dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }
+.readiness-output dd { margin: 0; overflow-wrap: anywhere; }
+.readiness-candidate { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.5rem 0; }
+.readiness-covered { color: var(--p-green-600); }
+.readiness-not_covered { color: var(--p-orange-600); }
+.readiness-unknown { color: var(--p-text-muted-color); }
 h3,
 h4,
 p { margin: 0.25rem 0; }

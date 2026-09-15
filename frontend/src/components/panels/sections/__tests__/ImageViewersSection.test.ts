@@ -10,6 +10,7 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import ImageViewersSection from '../ImageViewersSection.vue'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { useNapariStore } from '@/stores/napari'
 
 const environment = {
   id: 'env-a', registration_order: 0, name: 'Tracking', ownership: 'managed', kind: 'conda',
@@ -152,5 +153,43 @@ describe('ImageViewersSection', () => {
     expect(wrapper.find('button[aria-label="Locate environment"]').exists()).toBe(false)
     const launch = wrapper.findAll('button').find(button => button.text() === 'Launch empty viewer')!
     expect(launch.attributes('disabled')).toBeDefined()
+  })
+
+  it('renders an honest non-modal per-output readiness report with candidate issues', async () => {
+    const napari = useNapariStore()
+    napari.viewingManifest = { schema: 'bioimageflow.viewing_requirements.v1', complete: false, outputs: {} }
+    napari.viewingReadiness = {
+      manifest_schema: 'bioimageflow.viewing_requirements.v1',
+      manifest_complete: false,
+      summary: { total_outputs: 1, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 1, outputs_needing_setup: 0, message: '1 output could not be verified' },
+      outputs: [{
+        output_identity: 'nested/segment/image', manifest_status: 'unknown',
+        manifest_reason: 'Tool metadata was unavailable', status: 'unknown',
+        reason: 'manifest_unknown', group_id: null, effective_environment_id: null,
+        effective_reason: 'Choose explicitly after refreshing metadata',
+        candidates: [{
+          environment_id: 'env-a', name: 'Tracking', status: 'unknown',
+          label: 'Not verified', reason: 'Inventory is stale', preference: 'other',
+          issues: [{ code: 'inventory_stale', detail: 'Refresh the environment inventory' }],
+          missing_recommended_packages: [], reader_id: null,
+        }],
+      }],
+      groups: [],
+    }
+    vi.mocked(api.post).mockResolvedValue({ data: napari.viewingReadiness })
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+
+    const report = wrapper.get('[aria-labelledby="viewing-requirements-heading"]')
+    expect(report.text()).toContain('nested/segment/image')
+    expect(report.text()).toContain('Not verified')
+    expect(report.text()).toContain('Activity')
+    expect(report.text()).toContain('Not reported by the portable manifest')
+    expect(report.text()).toContain('Refresh the environment inventory')
+    expect(report.text()).toContain('Unknown outputs are not treated as compatible')
+    expect(wrapper.find('.p-dialog').exists()).toBe(false)
   })
 })

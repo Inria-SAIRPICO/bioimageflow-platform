@@ -37,7 +37,13 @@ export const useNapariStore = defineStore('napari', () => {
   const environmentRequests = reactive<Record<string, EnvironmentRequestState>>({})
   const resolutions = reactive<Record<string, NapariResolveResponse>>({})
   const viewingReadiness = ref<NapariViewingReadinessResponse | null>(null)
+  const viewingManifest = ref<ViewingRequirementsManifestInput | null>(null)
+  const viewingWorkflowId = ref<string | null>(null)
+  const viewingReadinessPending = ref(false)
+  const viewingReadinessError = ref<string | null>(null)
   const operationWatchPromises = new Map<string, Promise<NapariEnvironmentOperation>>()
+  let viewingReadinessRequest = 0
+  let viewingManifestSourceRequest = 0
 
   const phase = computed<LaunchPhase | null>(() => requestPending.value ? launchPhase.value : null)
 
@@ -138,16 +144,19 @@ export const useNapariStore = defineStore('napari', () => {
     applyEnvironmentMutation(await napariApi.registerNapariEnvironment({
       ...request, expected_revision: revision.value,
     }))
+    await refreshViewingReadiness()
   }
 
   async function updateEnvironment(id: string, request: Omit<NapariEnvironmentUpdate, 'expected_revision'>): Promise<void> {
     applyEnvironmentMutation(await napariApi.updateNapariEnvironment(id, {
       ...request, expected_revision: revision.value,
     }))
+    await refreshViewingReadiness()
   }
 
   async function forgetEnvironment(id: string): Promise<void> {
     applySnapshot(await napariApi.forgetNapariEnvironment(id, revision.value))
+    await refreshViewingReadiness()
   }
 
   async function probeEnvironment(id: string): Promise<void> {
@@ -155,6 +164,7 @@ export const useNapariStore = defineStore('napari', () => {
       applyEnvironmentMutation(await napariApi.probeNapariEnvironment(id, {
         expected_revision: revision.value,
       }))
+      await refreshViewingReadiness()
     } catch (error) {
       // Failed probes persist an actionable probe_failed state before returning
       // their error, so refresh the registry without hiding that error.
@@ -178,18 +188,21 @@ export const useNapariStore = defineStore('napari', () => {
     applySnapshot(await napariApi.setDefaultNapariEnvironment({
       environment_id: environmentId, expected_revision: revision.value,
     }))
+    await refreshViewingReadiness()
   }
 
   async function addFilenameRule(request: Omit<NapariFilenameRuleCreate, 'expected_revision'>): Promise<void> {
     applyRuleMutation(await napariApi.addNapariFilenameRule({
       ...request, expected_revision: revision.value,
     }))
+    await refreshViewingReadiness()
   }
 
   async function replaceFilenameRules(rules: NapariFilenameRulesReplace['rules']): Promise<void> {
     applySnapshot(await napariApi.replaceNapariFilenameRules({
       rules, expected_revision: revision.value,
     }))
+    await refreshViewingReadiness()
   }
 
   function previewFilename(filename: string): Promise<NapariFilenamePreview> {
@@ -201,6 +214,7 @@ export const useNapariStore = defineStore('napari', () => {
       ...request, expected_revision: revision.value,
     })
     applyOperationMutation(mutation)
+    await refreshViewingReadiness()
     return mutation.operation
   }
 
@@ -209,6 +223,7 @@ export const useNapariStore = defineStore('napari', () => {
       ...request, expected_revision: revision.value,
     })
     applyOperationMutation(mutation)
+    await refreshViewingReadiness()
     return mutation.operation
   }
 
@@ -217,16 +232,19 @@ export const useNapariStore = defineStore('napari', () => {
       expected_revision: revision.value,
     })
     applyOperationMutation(mutation)
+    await refreshViewingReadiness()
     return mutation.operation
   }
 
   async function cancelManagedOperation(environmentId: string, operationId: string): Promise<void> {
     applyOperationMutation(await napariApi.cancelManagedNapariOperation(environmentId, operationId))
+    await refreshViewingReadiness()
   }
 
   async function deleteManagedEnvironment(id: string): Promise<NapariEnvironmentOperation> {
     const mutation = await napariApi.deleteManagedNapariEnvironment(id, revision.value)
     applyOperationMutation(mutation)
+    await refreshViewingReadiness()
     return mutation.operation
   }
 
@@ -240,13 +258,67 @@ export const useNapariStore = defineStore('napari', () => {
     preferences.value = await napariApi.getViewerPreferences()
   }
 
-  async function evaluateViewingReadiness(manifest: ViewingRequirementsManifestInput): Promise<NapariViewingReadinessResponse> {
-    viewingReadiness.value = await napariApi.getNapariViewingReadiness(manifest)
-    return viewingReadiness.value
+  async function evaluateManifest(
+    manifest: ViewingRequirementsManifestInput,
+    workflowId: string | null,
+  ): Promise<NapariViewingReadinessResponse> {
+    const request = ++viewingReadinessRequest
+    viewingManifest.value = manifest
+    viewingWorkflowId.value = workflowId
+    viewingReadinessPending.value = true
+    try {
+      const response = await napariApi.getNapariViewingReadiness(manifest)
+      if (request === viewingReadinessRequest) {
+        viewingReadiness.value = response
+        viewingReadinessError.value = null
+      }
+      return response
+    } catch (error) {
+      if (request === viewingReadinessRequest) {
+        viewingReadinessError.value = error instanceof Error ? error.message : String(error)
+      }
+      throw error
+    } finally {
+      if (request === viewingReadinessRequest) viewingReadinessPending.value = false
+    }
+  }
+
+  function evaluateViewingReadiness(
+    manifest: ViewingRequirementsManifestInput,
+    workflowId: string | null = null,
+  ): Promise<NapariViewingReadinessResponse> {
+    viewingManifestSourceRequest += 1
+    return evaluateManifest(manifest, workflowId)
   }
 
   async function evaluateWorkflowReadiness(workflowId: string): Promise<NapariViewingReadinessResponse> {
-    return evaluateViewingReadiness(await napariApi.getWorkflowViewingRequirements(workflowId))
+    const request = ++viewingManifestSourceRequest
+    viewingReadinessPending.value = true
+    try {
+      const manifest = await napariApi.getWorkflowViewingRequirements(workflowId)
+      if (request !== viewingManifestSourceRequest) {
+        throw new Error('Viewing requirements request was superseded by a newer workflow')
+      }
+      return await evaluateManifest(manifest, workflowId)
+    } catch (error) {
+      if (request === viewingManifestSourceRequest) {
+        viewingReadinessError.value = error instanceof Error ? error.message : String(error)
+      }
+      throw error
+    } finally {
+      if (request === viewingManifestSourceRequest) viewingReadinessPending.value = false
+    }
+  }
+
+  async function refreshViewingReadiness(): Promise<NapariViewingReadinessResponse | null> {
+    if (!viewingManifest.value) return null
+    try {
+      return viewingWorkflowId.value
+        ? await evaluateWorkflowReadiness(viewingWorkflowId.value)
+        : await evaluateViewingReadiness(viewingManifest.value)
+    } catch {
+      return null
+    }
   }
 
   async function toggleFavorite(request: Omit<ViewerFavoriteToggleRequest, 'expected_revision'>): Promise<void> {
@@ -273,6 +345,7 @@ export const useNapariStore = defineStore('napari', () => {
         operation = await pollOperation(environmentId, operationId)
       }
       await fetchRegistry()
+      await refreshViewingReadiness()
       return operation
     })().finally(() => operationWatchPromises.delete(operationId))
     operationWatchPromises.set(operationId, watcher)
@@ -282,13 +355,15 @@ export const useNapariStore = defineStore('napari', () => {
   return {
     requestPending, phase, loggerActivationRequest, revision, environments,
     defaultEnvironmentId, filenameRules, operations, preferences, environmentRequests,
-    resolutions, viewingReadiness, environmentState, applyEnvironmentStatus, applySnapshot, open,
+    resolutions, viewingReadiness, viewingManifest, viewingWorkflowId, viewingReadinessPending,
+    viewingReadinessError, environmentState, applyEnvironmentStatus, applySnapshot, open,
     registerEnvironment, updateEnvironment, forgetEnvironment, probeEnvironment, launchEmpty,
     refreshEnvironmentStatus,
     setDefaultEnvironment, addFilenameRule, replaceFilenameRules, previewFilename,
     createManagedEnvironment, copyManagedEnvironment, retryManagedEnvironment,
     cancelManagedOperation, deleteManagedEnvironment,
-    fetchRegistry, resolve, fetchPreferences, evaluateViewingReadiness, evaluateWorkflowReadiness, toggleFavorite,
+    fetchRegistry, resolve, fetchPreferences, evaluateViewingReadiness, evaluateWorkflowReadiness,
+    refreshViewingReadiness, toggleFavorite,
     pollOperation, watchOperation,
   }
 })

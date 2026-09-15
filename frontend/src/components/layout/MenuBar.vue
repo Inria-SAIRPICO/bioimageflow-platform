@@ -275,6 +275,11 @@ function showDraftConflictWarning(action: 'saving' | 'running' | 'exporting' = '
   })
 }
 
+function refreshSavedWorkflowViewingRequirements(workflowName: string): void {
+  if (!settingsStore.isDesktop) return
+  void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
+}
+
 function hasMissingImportDependencies(): boolean {
   return installableMissingPackages.value.length > 0 || workflowStore.missingTools.length > 0
 }
@@ -391,6 +396,7 @@ async function onOpenWorkflow(name: string): Promise<void> {
     if (executionStore.isMutationLocked) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)
+    refreshSavedWorkflowViewingRequirements(name)
   } catch (err: unknown) {
     showError('Open workflow failed', err)
   }
@@ -547,6 +553,7 @@ async function buildWorkflowFromPythonSource(): Promise<void> {
     window.dispatchEvent(new CustomEvent('bioimageflow:replace-root-graph', {
       detail: { workflowId: workflowName, draft: accepted },
     }))
+    refreshSavedWorkflowViewingRequirements(workflowName)
     toast?.add({
       severity: 'success',
       summary: 'Workflow built from Python source',
@@ -578,7 +585,10 @@ async function finishImport(file: File, nameOverride?: string): Promise<void> {
   await openImportedWorkflow(workflowId(response.info))
   if (settingsStore.isDesktop && response.viewing_requirements) {
     try {
-      const readiness = await napariStore.evaluateViewingReadiness(response.viewing_requirements)
+      const readiness = await napariStore.evaluateViewingReadiness(
+        response.viewing_requirements,
+        workflowId(response.info),
+      )
       const uncoveredGroupIds = new Set(
         (readiness.outputs ?? [])
           .filter(output => output.status === 'not_covered' && output.group_id)
@@ -803,6 +813,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
     })
     const loaded = await loadRootWorkflowPresentation(workflowId(info))
     applyGraph(loaded.graph, loaded.dirty, loaded)
+    refreshSavedWorkflowViewingRequirements(workflowId(info))
   } catch (err: unknown) {
     showError('Duplicate workflow failed', err)
   }

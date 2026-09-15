@@ -438,7 +438,10 @@ async function resolveAndOpenStartupWorkflow(api: DockviewApi): Promise<void> {
     if (!openRootPanel(api)) showEmptyCanvasState(api)
     return
   }
-  if (startup && openWorkflowCanvasPanel(startup)) return
+  if (startup && openWorkflowCanvasPanel(startup)) {
+    if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(startup.workflowName).catch(() => undefined)
+    return
+  }
   showEmptyCanvasState(api)
 }
 
@@ -1032,7 +1035,10 @@ async function activateWorkflowFallback(
       if (excludedWorkflowNames.has(workflowName)) continue
       try {
         const presentation = await loadRootWorkflowPresentation(workflowName)
-        if (openRootPanel(api) || openWorkflowCanvasPanel(presentation)) return
+        if (openRootPanel(api) || openWorkflowCanvasPanel(presentation)) {
+          if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
+          return
+        }
       } catch {
         // Try the next workflow in stable tree order.
       }
@@ -1126,6 +1132,7 @@ async function replaceMountedWorkflowGeneration(
     if (!openWorkflowCanvasPanel(presentation)) {
       throw new Error(`Workflow '${workflowName}' could not be reopened at its fresh generation.`)
     }
+    if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
   })().catch(async (replacementError) => {
     console.warn(
       `[workflow-generation] Failed to replace '${workflowName}':`,

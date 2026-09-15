@@ -206,4 +206,29 @@ describe('napari store', () => {
 
     expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).includes('/operations/'))).toHaveLength(1)
   })
+
+  it('retains a saved workflow manifest and refetches it after inventory changes', async () => {
+    const manifest = { schema: 'bioimageflow.viewing_requirements.v1' as const, complete: true, outputs: {} }
+    const report = {
+      manifest_schema: manifest.schema, manifest_complete: true,
+      summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No declared requirements' },
+      outputs: [], groups: [],
+    }
+    vi.mocked(api.get).mockResolvedValue({ data: manifest })
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: report })
+      .mockResolvedValueOnce({ data: { revision: 2, environment: { id: 'env-a', name: 'Tracking' } } })
+      .mockResolvedValueOnce({ data: report })
+    const napari = useNapariStore()
+    napari.revision = 1
+
+    await napari.evaluateWorkflowReadiness('folder/workflow')
+    await napari.probeEnvironment('env-a')
+
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(api.get).toHaveBeenCalledWith('/api/v1/workflows/folder/workflow/viewing-readiness')
+    expect(api.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+    expect(napari.viewingWorkflowId).toBe('folder/workflow')
+    expect(napari.viewingReadiness?.summary.message).toBe('No declared requirements')
+  })
 })

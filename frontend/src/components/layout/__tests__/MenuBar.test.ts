@@ -81,6 +81,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useSettingsStore } from '@/stores/settings'
+import { useNapariStore } from '@/stores/napari'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import {
   canvasIdFromPanelId,
@@ -1611,6 +1612,38 @@ describe('MenuBar', () => {
         detail: expect.stringContaining('Workflow execution is unaffected'),
       }))
       expect(useSettingsPanel().napariCreatePrefills.value).toEqual([group])
+      expect(useNapariStore().viewingWorkflowId).toBe('imported')
+    })
+
+    it('passively evaluates viewing requirements when a saved workflow opens', async () => {
+      useSettingsStore().settings = { deployment_mode: 'desktop' } as any
+      const info = {
+        id: 'saved', name: 'saved', display_name: 'Saved',
+        path: '/tmp/saved/workflow.json', results_path: '/tmp/saved/results',
+        last_modified: '2026-09-15T00:00:00Z', identity_generation: 0,
+      }
+      const manifest = { schema: 'bioimageflow.viewing_requirements.v1', complete: true, outputs: {} }
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows/saved/viewing-readiness') return Promise.resolve({ data: manifest })
+        return Promise.resolve({ data: { info, graph: makeGraph(), missing_packages: [], missing_tools: [] } })
+      })
+      apiMocks.post.mockResolvedValue({
+        data: {
+          manifest_schema: manifest.schema, manifest_complete: true,
+          summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No declared requirements' },
+          outputs: [], groups: [],
+        },
+      })
+      mountMenuBar()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'open', name: 'saved' },
+      }))
+      await flushPromises()
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/saved/viewing-readiness')
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+      expect(useWorkflowStore().current?.name).toBe('saved')
     })
 
 

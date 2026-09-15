@@ -252,6 +252,7 @@ function dispatch(raw: unknown) {
     }
     case 'tool_source_changed':
       useToolRegistryStore().applyToolSourceChanged(msg as unknown as { tool_names: string[] })
+      void useNapariStore().refreshViewingReadiness()
       break
     case 'tool_reload':
       callIfExists(
@@ -260,6 +261,7 @@ function dispatch(raw: unknown) {
         msg,
       )
       mirrorToolReloadToLogger(msg)
+      void useNapariStore().refreshViewingReadiness()
       break
     case 'tool_removed':
       callIfExists(
@@ -268,6 +270,7 @@ function dispatch(raw: unknown) {
         msg,
       )
       mirrorToolRemovedToLogger(msg)
+      void useNapariStore().refreshViewingReadiness()
       break
     case 'package_install':
       callIfExists(
@@ -275,6 +278,7 @@ function dispatch(raw: unknown) {
         'applyPackageInstall',
         msg,
       )
+      void useNapariStore().refreshViewingReadiness()
       break
     case 'environment_status':
       callIfExists(
