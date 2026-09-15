@@ -463,7 +463,7 @@ def test_create_app_wraps_legacy_launcher_with_registry_pool(tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-async def test_lifespan_calls_shutdown_before_ws_handler_removal() -> None:
+async def test_lifespan_calls_shutdown_before_ws_handler_removal(tmp_path: Path) -> None:
     """A failing shutdown is swallowed before the WS handler is detached.
 
     We drive the lifespan directly because ASGITransport does not run
@@ -483,6 +483,8 @@ async def test_lifespan_calls_shutdown_before_ws_handler_removal() -> None:
     config = AppConfig(
         napari_launcher=launcher,  # type: ignore[arg-type]
         disable_hot_reload=True,
+        workspace_path=tmp_path / "workspace",
+        storage_path=tmp_path / "runtime",
     )
     app = create_app(config=config)
 
