@@ -139,6 +139,7 @@ class NapariResolverService:
             reader_id = winning_rule.reader_id
         return NapariResolveResponse(
             artifact_identity=request.result_identity,
+            preference_key=key,
             workflow_id=request.workflow_id,
             identity_generation=request.identity_generation,
             node_path=request.node_path,

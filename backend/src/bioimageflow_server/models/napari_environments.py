@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from bioimageflow_server.models.graph import PackageRequirement, ViewerSpec
 from bioimageflow_server.models.results import ResultArtifactIdentity
+from bioimageflow_server.models.viewer_preferences import PersistentOutputPreferenceKey
 
 
 DEFAULT_MANAGED_PYTHON = "==3.12.*"
@@ -547,6 +548,7 @@ class NapariResolveResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     artifact_identity: ResultArtifactIdentity
+    preference_key: PersistentOutputPreferenceKey
     workflow_id: str
     identity_generation: int
     node_path: tuple[str, ...]

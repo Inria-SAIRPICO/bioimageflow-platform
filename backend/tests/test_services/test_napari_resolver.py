@@ -134,6 +134,7 @@ def test_resolution_falls_through_incompatible_favorite_to_filename_rule(tmp_pat
     ]
     assert response.candidates[1].label == "Required packages installed"
     assert response.reader_id == "artifact.reader"
+    assert response.preference_key == favorite_key
 
 
 def test_stale_inventory_is_unknown_not_incompatible(tmp_path) -> None:

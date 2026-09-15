@@ -410,6 +410,7 @@ Apply remaps surviving entries to the accepted parent instance; discard drops th
 After parent persistence succeeds, the client finalizes the child snapshot through an idempotent backend endpoint that derives the destination from the stored owner and verifies that the current parent snapshot or root draft embeds the exact accepted child graph.
 The endpoint remaps into the parent session for nested owners and into the current workflow generation for saved root owners; it rejects unsaved root owners, so the UI must not offer durable output favorites before a workflow has persistent identity.
 Preference writes bind to the captured workspace/generation/session so a delayed request cannot target a replacement workflow or another workspace.
+The resolver returns the exact server-derived persistent preference key for the addressed structural output, including the durable workspace UUID, so a client can create the first favorite without inventing or inferring workspace identity.
 They use revision-checked set/unset actions so a stale toggle cannot accidentally clear a favorite changed in another window.
 Each structural output identity stores zero or one environment ID, with no independent per-environment boolean favorites.
 Preference changes are atomic local UI state and do not acquire a graph execution lock or prevent viewing during execution.
