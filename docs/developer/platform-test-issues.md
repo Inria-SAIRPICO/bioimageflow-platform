@@ -144,6 +144,19 @@ A focused manager regression asserts one contextual ERROR with node provenance a
 The real GUI journey additionally proves the failed node has no partial result, completed upstream output remains, editing unlocks, a GUI parameter correction persists at the next draft revision, and a distinct successful rerun returns exact rows and file bytes.
 It passed Chromium and Firefox, the existing cancellation journey remained green, and `scripts/test check app` passed on the patch-equivalent pre-rebase revision.
 
+## ISSUE-010 — Save As reapplies the source graph identity to the destination
+
+Status: resolved by integrated commit `a25ac17` (task-equivalent `4789238`).
+At the pre-fix Wave 6 revision, the exact Chromium selector `frontend/tests/e2e/workflow-crud.spec.ts`, “save-as creates an independent graph without copying results and switches exactly”, failed in 33s because the destination workflow showed and persisted the source graph's name/display identity instead of the requested destination identity.
+The Save As UI first called the duplicate endpoint, then issued a second destination Save with the source canvas graph and locally applied that same source graph under destination presentation metadata.
+That second write overwrote the duplicate service's canonical destination-owned graph identity and split the displayed workflow identity from the graph authority, contrary to v2 §12 and the `PLATFORM_CONTEXT.md` graph-owned identity invariant.
+
+The repair passes the captured canvas graph in the atomic duplicate request, then loads and applies the destination's canonical workflow presentation; it removes the second destination PUT and does not change backend or public API schemas.
+The focused MenuBar selector “saves a copy from the canvas that opened Save As after activation changes” proves the initiating canvas graph is sent despite later activation changes, no extra PUT occurs, and the loaded destination graph is applied.
+The browser regression proves destination graph-owned name/display name, distinct artifact identity, absent copied results, exact original graph/result retention, independent copy-only rename/save, workflow switching, and both saved/draft graphs after reload.
+It passed Chromium 1/1 in 13s and Firefox 1/1 in 15s; `scripts/test check frontend` passed 1,297 tests plus lint, type checking, and build in 19s; and `scripts/test check browser` passed all 83 Chromium journeys in 222s with no failures, skips, or retries.
+Invalid destination input, duplicate-service failure/rollback, stale identity refusal, and source-owning copy variants were not exercised by this repair and remain separate dashboard gaps.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
