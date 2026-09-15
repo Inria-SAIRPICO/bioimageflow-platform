@@ -1,8 +1,8 @@
 # Multiple napari environments and portable viewer requirements
 
 Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, managed creation/copy/removal lifecycle, environment settings UI, passive readiness report, and exact-result output chooser are implemented; native desktop smoke certification remains incomplete.
-This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
-It does not change their implemented status or the library's current public API.
+This document specifies the delivered extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
+It does not change their implemented status; the portable viewer metadata it relies on is defined and exported by the released `bioimageflow-core` 0.4.0 package.
 The portable workflow and frontend examples below describe implemented behavior unless their implementation status is stated explicitly.
 
 ## 1. Product decisions
@@ -115,9 +115,9 @@ Declare requirements on an output field, alongside existing image/type metadata.
 A node may produce a standard TIFF and a specialized tracks file that need different viewers.
 A single node-wide package requirement would incorrectly apply to both.
 
-Introduce optional library-owned viewer annotation metadata, conceptually `ViewerSpec(napari=...)`, separate from `ImageSpec` and `GUIMeta`.
-This annotation must not import napari into the BioImageFlow library or affect tool input compatibility.
-The exact Python spelling and public exports belong to the library implementation.
+Viewer requirements travel as optional library-owned viewer annotation metadata, `ViewerSpec(napari=...)`, separate from `ImageSpec` and `GUIMeta`.
+The annotation does not import napari into the BioImageFlow library or affect tool input compatibility.
+Its exact Python spelling and public exports are fixed by the library: `bioimageflow-core` exports `ViewerSpec`, `NapariRequirement`, and `PackageRequirement` with the `extract_viewer_spec`, `merge_viewer_specs`, and `coerce_viewer_spec` helpers, and the platform wire models mirror that contract.
 The platform exposes the metadata in output schemas and a readable **Viewing requirements** section in the node's output inspector.
 An explicit napari viewer declaration also enables the open action for addressable file/directory outputs such as tracks or points, even when they are not scalar images; ordinary unannotated path columns do not gain that action automatically.
 
@@ -193,10 +193,10 @@ This manifest is an export snapshot, not a second editable requirement store.
 After dependencies load, compare it with authoritative tool/graph metadata and report unresolved or changed declarations before declaring coverage.
 Missing or unresolvable tool metadata must produce “requirements unknown,” not an empty list and a green report.
 
-This requires a coordinated library schema/API change: today's strict graph/archive models reject unsupported extra fields.
+This required a coordinated library schema/API change: the strict graph/archive models rejected unsupported extra fields before that change.
 Do not hide the feature in unknown graph keys, environment labels, package execution requirements, or a platform-only archive that the library cannot preserve.
 Version the affected wire contracts, define legacy input as having no viewer declaration, and make older readers reject unsupported newer schemas clearly rather than dropping requirements.
-The coordinated library and platform graph contract advances to schema version 2.
+The coordinated library and platform graph contract is schema version 2.
 Loaders accepting schema-v1 graphs recursively normalize them to schema v2 with absent viewer declarations and no instance additions before validation, persistence, or hashing.
 Artifact hashes are computed from the normalized canonical schema-v2 graph and referenced owned sources, include portable viewer declarations and instance additions, and continue to exclude every local environment preference.
 Workspace migration atomically normalizes the saved graph, its saved artifact hash, the durable root draft graph, and that draft's saved-baseline graph/hash; a clean draft remains clean, while an actually divergent draft remains dirty against the migrated baseline.
@@ -496,18 +496,18 @@ If it does not exist, register a setup-needed default recipe; first use presents
 Changing settings alone must not provision it.
 Legacy outputs with no viewer annotations retain normal opening behavior once a healthy default is available.
 
-Implement in independently verifiable increments:
+Delivery advanced in three independently verifiable increments:
 
-1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; preserve existing opening and migrate the singleton.
+1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; existing opening was preserved and the singleton migrated.
 2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
 3. Managed environment creation and Create modified copy using the same requirements report and resolver.
 
-The intended feature is complete only when all three increments are available.
-The implemented Phase B foundation covers the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
-Phase C replaces the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
+The feature is complete only when all three increments are available, and all three are now delivered.
+The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
+Phase C replaced the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
 External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
-The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path during migration, while explicit registered IDs never provision or mutate their environment.
-The implemented Phase C backend advances canonical graphs to schema v2, migrates saved/draft/nested authorities and hashes through a forward journal, captures immutable public run/node/result/record identities for result pages, reads retained viewer metadata through public storage APIs, resolves package-only compatibility, stores favorites in a separate revisioned file, and remaps them through workflow move/delete and nested-session lifecycles.
+The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path, while explicit registered IDs never provision or mutate their environment.
+The Phase C backend advanced canonical graphs to schema v2, migrated saved/draft/nested authorities and hashes through a forward journal, captured immutable public run/node/result/record identities for result pages, read retained viewer metadata through public storage APIs, resolved package-only compatibility, stored favorites in a separate revisioned file, and remapped them through workflow move/delete and nested-session lifecycles.
 The same resolver candidate evaluator powers the passive manifest readiness endpoint and retained-artifact resolution, so required-package co-location, PEP 440 checks, freshness, unavailable-state handling, recommendations, and reader independence cannot drift; passive evaluation reads only the registered inventory snapshot and never probes, installs, launches, reads workflow state, or executes archive content.
 The managed backend uses only public Wetlands 2 environment and operation APIs; it does not install a bridge distribution because the platform launches its standalone helper script inside the selected environment.
 The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation.
@@ -516,7 +516,7 @@ The output split action resolves an exact retained artifact through the backend,
 The passive report evaluates imported or currently saved workflow requirements without provisioning or launching an environment and can prefill managed setup from one normalized requirement group.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
-At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.
+The affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` were updated together with this implementation; further implementation of this feature updates them together as well.
 Native desktop certification is still required before declaring the feature complete: the earlier local attempt did not leave a reliable completion artifact and therefore is not acceptance evidence.
 The existing normative documents continue to govern unaffected implementation.
 
