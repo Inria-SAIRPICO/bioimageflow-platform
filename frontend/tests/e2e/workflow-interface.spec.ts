@@ -359,7 +359,7 @@ test.describe('workflow interface and grouping', () => {
     expect(saved.nodes[0].workflow.nodes[0]).toMatchObject({ id: 'blur_1', type: 'tool' })
   })
 
-  test('groups connected nodes with stable ports as one durable undo transition', async ({ page }) => {
+  test('groups connected nodes with stable ports as one durable undo transition @critical', async ({ page }) => {
     const name = workflowName('group_routes')
     const displayName = `Group routes ${name}`
     await createWorkflow(page, name, displayName)
