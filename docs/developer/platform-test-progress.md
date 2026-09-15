@@ -4,11 +4,14 @@ orphan: true
 
 # Platform test campaign checkpoint
 
-Last updated: 2026-09-14.
+Last updated: 2026-09-15.
 Objective: strengthen the platform through main GUI journeys and bug fixes, then complete systematic coverage of all implemented in-scope features.
 Orchestrator: GPT-5.6 Sol/high with focused context; ordinary workers: Sol/medium; specialist: Astra/high.
 The [plan](platform-test-plan.md) defines priorities, coverage obligations, commit/worktree rules, and the final completion gate.
 The campaign is incomplete; this checkpoint is a planning update, not a new application certification.
+
+The owner approved four campaign-process improvements on 2026-09-15: an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, and reachability-first P1/release-blocker classification.
+The plan and restart prompt contain the normative rules; this checkpoint records their activation without duplicating their detail.
 
 ## Next three actions
 

@@ -61,6 +61,10 @@ Commit each coherent validated task as soon as its issue or bounded task is reso
 Do not begin another writable task in that checkout until the completed task is committed; keep restart points clean so the campaign can be interrupted safely.
 Maintain the progress file, issue decisions, and feature inventories so another fresh session can continue without this conversation.
 Keep completed validation history in platform-test-evidence.md and keep the active checkpoint short and internally consistent.
+Before Wave 6, normalize the inventories into a stable-ID dashboard and report verified applicable obligations over the total, separately for the whole campaign and primary GUI coverage; do not use raw test counts as completion percentages.
+After remote CI, validation, publication, or dependency-availability milestones, update and commit the durable checkpoint/evidence before starting unrelated writable work; after interruption, reconcile the remote state before repeating an operation.
+At each major GUI-wave boundary, run one representative primary Playwright journey headed when a visible display is available, otherwise retain trace/video/screenshots and record that no window was shown.
+Before treating a specialist finding as P1 or release-blocking, prove its reachable platform entry path and user impact; keep artificial, unexposed dependency states as follow-ups without weakening reachable safety findings.
 Do not claim completion until every in-scope feature has verified applicable scenarios, all primary GUI journeys pass Chromium and Firefox, bugs are resolved, and external/manual obligations are completed or explicitly accepted by the owner as limitations.
 Answer status questions briefly and continue the active campaign unless I explicitly pause it or change the objective.
 Proceed until the campaign is complete or an escalation genuinely requires my decision.

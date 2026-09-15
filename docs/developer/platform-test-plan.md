@@ -43,6 +43,8 @@ Worker handoffs should normally fit in about 30 lines: outcome, bug/cause, commi
 Keep raw logs, traces, and exploratory transcripts in ignored task artifacts; return only phase summaries and relevant failure excerpts to the orchestrator.
 Do not repeatedly request unchanged status or ingest complete passing test output.
 While a worker runs, review another independent feature's coverage or prepare the next bounded task; use completion notifications and concise milestone updates.
+For a remote CI, validation, or publication run, record its URL and exact source revision, then poll only for meaningful state changes while continuing independent work.
+Do not repeatedly ingest complete job payloads when the run status and first failing step are sufficient.
 
 Use up to two independent ordinary workers, leaving a slot for Astra.
 Parallel writable tasks require separate worktrees under `.worktrees/<task_name>` with independent dependencies and runtime state as required by `AGENTS.md`.
@@ -118,6 +120,18 @@ At the end of each feature batch, reconcile its rows against actual assertions.
 At the end of each priority wave, scan implemented specification sections and visible menus/panels/routes for features absent from the inventories.
 Final closure requires that this reconciliation covers all implemented in-scope features, not merely the initial shortlist.
 
+### Coverage dashboard and completion denominator
+
+Before Wave 6 expands into the remaining feature families, normalize each inventory into an auditable dashboard.
+Every implemented user action or contract must have a stable feature ID and explicit fields for priority, supported surface, applicable scenario obligations, selectors or manual procedure, browser/deployment variants, status, and evidence revision.
+Scenario obligations are normal success, invalid or refused action, cancellation/failure/recovery, persistence/reload, and applicable identity/concurrency/ownership/permission boundaries; mark a dimension `not-applicable` only with a short reason.
+
+Campaign completion percentages must use this dashboard rather than subjective estimates or raw test counts.
+Report both `verified applicable obligations / total applicable obligations` and the same ratio for primary GUI obligations, with blocked and unassessed counts shown separately.
+A feature row is `verified` only when every applicable obligation has exact evidence; a partially covered row remains `in-progress` or `gap`.
+Reconcile the denominator whenever implementation or specification discovery adds or removes an in-scope feature, and record the revision that changed it.
+Do not begin final certification while any inventory row lacks a stable ID, an applicability decision, or a status.
+
 ## Per-feature testing and repair loop
 
 1. Pick the highest-priority runnable feature and inspect its contract, current implementation, and existing assertions.
@@ -132,6 +146,13 @@ Do not claim GUI creation/editing coverage when the operation under test was per
 Do not claim real execution from an intercepted Run request, nor readable image/result correctness from placeholder bytes.
 Use exact expected data, independent file/output oracles where appropriate, and state-based readiness; avoid arbitrary sleeps and snapshots that merely echo current implementation.
 
+### Visible browser confidence checkpoints
+
+Playwright remains authoritative in headless mode for repeatable automated browser evidence.
+At the end of each major GUI wave, also run one representative primary journey with `--headed` when a visible display is available, so the owner can observe the actual browser interaction.
+Record the selector, browser, revision, and outcome as a confidence checkpoint, but do not substitute visual observation for assertions or count it as separate feature coverage.
+If a visible display is unavailable, retain a Playwright trace, video, or screenshots for that representative journey and record the limitation; do not claim that a browser window was shown.
+
 Use `scripts/test focus` without campaign-wide selection flags for exact failing selectors.
 After a fix, run the exact test once; use `--repeat-each=5` only for a suspected timing/race defect.
 Run the applicable completion lane from `docs/testing.md` before declaring the batch complete.
@@ -144,6 +165,10 @@ Run comprehensive browser acceptance at substantial milestones and final certifi
 Sol workers may repair routine, bounded defects autonomously when the intended behavior is explicit, the cause is reproduced or decisive, and regressions preserve the contract.
 Use Astra/high for conflicting specifications, unclear library semantics or fixture validity, identity/data-loss risk, a proposed semantic redesign, or one unsuccessful bounded repair whose cause remains unclear.
 A production failure alone does not require specialist escalation if those conditions are absent.
+
+Before classifying a finding as release-blocking or P1, record the exact reachable platform entry path, credible trigger, affected user outcome, and smallest reproduction.
+An artificial dependency state that platform code neither installs nor exposes is a dependency follow-up unless it demonstrates a reachable safety or correctness failure.
+Limit the resulting claim to the tested boundary; reachability review must not dismiss a reproduced data-loss, security, wrong-result, or writer-lifecycle risk.
 
 The orchestrator records an issue and freezes dependent changes, then sends one bounded fresh-context investigation to Astra.
 Only describe an issue as `astra-review` after a specialist is actually assigned; otherwise it is `open` with a queued next action.
@@ -189,5 +214,7 @@ Test counts, line coverage, or completion of only the high-priority wave do not 
 Keep each fact in its owning record and link to it; remove obsolete next actions when a task is integrated.
 Record historical product contracts as historical, including superseded catalog single-click creation.
 Update durable records at every completed task, escalation, and interruption; do not create administrative commits solely for unchanged status.
+Remote milestones are completed task boundaries: after a required CI gate passes, a package is published, or a dependency becomes available, update the checkpoint and evidence and commit that durable state before starting another unrelated writable task.
+After an interruption, reconcile remote workflow and package-index state before repeating or resuming release operations.
 Status questions steer the ongoing campaign: answer briefly, then continue unless the user asks to pause or change the objective.
 Before restart, preserve unfinished work/evidence and reconcile actual Git/worker/process state; never rely on a prior conversation or temporary logs to identify the next task.
