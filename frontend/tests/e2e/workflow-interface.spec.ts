@@ -47,6 +47,57 @@ function graphWithExposedOutput(name: string, displayName: string): GraphState {
   return result
 }
 
+function groupingBoundaryGraph(name: string, displayName: string): GraphState {
+  return {
+    schema_version: 1,
+    name,
+    display_name: displayName,
+    nodes: [{
+      type: 'tool', id: 'table_before', name: 'Table before', tool_name: 'SeedNumbers',
+      position: [60, 120], parameters: {},
+    }, {
+      type: 'tool', id: 'table_first', name: 'Table first', tool_name: 'IncrementNumbers',
+      position: [340, 120], parameters: { number: 1 },
+    }, {
+      type: 'tool', id: 'table_second', name: 'Table second', tool_name: 'IncrementAgainNumbers',
+      position: [600, 120], parameters: { number_plus_one: 2 },
+    }, {
+      type: 'tool', id: 'table_after', name: 'Table after', tool_name: 'IncrementAgainNumbers',
+      position: [860, 120], parameters: { number_plus_one: 2 },
+    }, {
+      type: 'tool', id: 'field_before', name: 'Field before', tool_name: 'GaussianBlur',
+      position: [200, 400], parameters: { input_image: '/tmp/group-before.tif', sigma: 1 },
+      output_templates: { output_image: '' },
+    }, {
+      type: 'tool', id: 'field_middle', name: 'Field middle', tool_name: 'GaussianBlur',
+      position: [480, 400], parameters: { sigma: 1 },
+      output_templates: { output_image: '' },
+    }, {
+      type: 'tool', id: 'field_after', name: 'Field after', tool_name: 'GaussianBlur',
+      position: [760, 400], parameters: { sigma: 1 },
+      output_templates: { output_image: '' },
+    }],
+    edges: [{
+      type: 'dataframe', id: 'table-in', source_node: 'table_before',
+      target_node: 'table_first', target_position: 0,
+    }, {
+      type: 'dataframe', id: 'table-internal', source_node: 'table_first',
+      target_node: 'table_second', target_position: 0,
+    }, {
+      type: 'dataframe', id: 'table-out', source_node: 'table_second',
+      target_node: 'table_after', target_position: 0,
+    }, {
+      type: 'column', id: 'field-in', source_node: 'field_before', target_node: 'field_middle',
+      source_output: 'output_image', target_input: 'input_image',
+    }, {
+      type: 'column', id: 'field-out', source_node: 'field_middle', target_node: 'field_after',
+      source_output: 'output_image', target_input: 'input_image',
+    }],
+    interface: { inputs: [], outputs: [] },
+    config: { engine: 'wetlands', execution: 'sequential' },
+  }
+}
+
 async function createWorkflow(page: Page, name: string, displayName: string): Promise<void> {
   await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
   expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
@@ -85,6 +136,27 @@ async function draftGraph(page: Page, name: string): Promise<GraphState> {
   const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
   expect(response.ok()).toBeTruthy()
   return ((await response.json()) as WorkflowDraftResponse).graph
+}
+
+async function draftState(page: Page, name: string): Promise<WorkflowDraftResponse> {
+  const response = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)
+  expect(response.ok(), await response.text()).toBeTruthy()
+  return response.json() as Promise<WorkflowDraftResponse>
+}
+
+async function waitForAcceptedGraph(
+  page: Page,
+  name: string,
+  action: () => Promise<void>,
+): Promise<WorkflowDraftResponse> {
+  const accepted = page.waitForResponse(response => (
+    response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+    && response.request().method() === 'PUT'
+    && response.status() === 200
+  ))
+  await action()
+  await accepted
+  return draftState(page, name)
 }
 
 async function replaceDraftChildInputName(
@@ -285,6 +357,99 @@ test.describe('workflow interface and grouping', () => {
     expect(saved.nodes[0].type).toBe('workflow')
     if (saved.nodes[0].type !== 'workflow') throw new Error('expected workflow node')
     expect(saved.nodes[0].workflow.nodes[0]).toMatchObject({ id: 'blur_1', type: 'tool' })
+  })
+
+  test('groups connected nodes with stable ports as one durable undo transition', async ({ page }) => {
+    const name = workflowName('group_routes')
+    const displayName = `Group routes ${name}`
+    await createWorkflow(page, name, displayName)
+    const fixture = groupingBoundaryGraph(name, displayName)
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: fixture },
+    })
+    expect(setup.ok(), await setup.text()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const original = await draftState(page, name)
+    expect(original.validation).toMatchObject({ valid: true, errors: [] })
+
+    await page.locator('.vue-flow__node[data-id="table_first"]').click()
+    await page.locator('.vue-flow__node[data-id="table_second"]').click({ modifiers: ['Shift'] })
+    await page.locator('.vue-flow__node[data-id="field_middle"]').click({ modifiers: ['Shift'] })
+    await expect(page.locator('.vue-flow__node.selected')).toHaveCount(3)
+    const grouped = await waitForAcceptedGraph(page, name, async () => {
+      await page.locator('.vue-flow__node[data-id="table_first"]').click({ button: 'right' })
+      await page.getByText('Group into workflow', { exact: true }).click()
+    })
+    expect(grouped.validation).toMatchObject({ valid: true, errors: [] })
+    await expect(page.locator('.vue-flow__node')).toHaveCount(5)
+
+    const groupedNode = grouped.graph.nodes.find(node => node.type === 'workflow')
+    expect(groupedNode?.type).toBe('workflow')
+    if (!groupedNode || groupedNode.type !== 'workflow') throw new Error('Expected grouped workflow node')
+    expect(groupedNode).toMatchObject({
+      id: 'workflow_1',
+      name: 'Workflow 1',
+      position: [473.3333333333333, 213.33333333333334],
+      bindings: {},
+      source: null,
+    })
+    expect(groupedNode.workflow.nodes).toEqual(original.graph.nodes.filter(node => (
+      ['table_first', 'table_second', 'field_middle'].includes(node.id)
+    )))
+    expect(groupedNode.workflow.edges).toEqual([original.graph.edges.find(edge => (
+      edge.id === 'table-internal'
+    ))])
+    expect(groupedNode.workflow.interface.inputs).toMatchObject([{
+      id: 'input-table-in',
+      name: 'table_first.table_0',
+      kind: 'dataframe',
+      targets: [{ node: 'table_first', port: { kind: 'positional', index: 0 } }],
+    }, {
+      id: 'input-field-in',
+      name: 'field_middle.input_image',
+      kind: 'field',
+      targets: [{ node: 'field_middle', port: { kind: 'field', name: 'input_image' } }],
+    }])
+    expect(groupedNode.workflow.interface.outputs).toMatchObject([{
+      id: 'output-field-out',
+      name: 'field_middle.output_image',
+      source: { node: 'field_middle', column: 'output_image' },
+    }])
+    expect(grouped.graph.edges).toEqual([{
+      type: 'dataframe', id: 'table-in', source_node: 'table_before', target_node: 'workflow_1',
+      target_position: null, target_input: 'input-table-in',
+    }, {
+      type: 'column', id: 'field-in', source_node: 'field_before', target_node: 'workflow_1',
+      source_output: 'output_image', target_input: 'input-field-in',
+    }, {
+      type: 'dataframe', id: 'table-out', source_node: 'workflow_1', target_node: 'table_after',
+      target_position: 0, target_input: null,
+    }, {
+      type: 'column', id: 'field-out', source_node: 'workflow_1', target_node: 'field_after',
+      source_output: 'output-field-out', target_input: 'input_image',
+    }])
+
+    const restored = await waitForAcceptedGraph(page, name, async () => {
+      await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Undo', exact: true }).click()
+    })
+    expect(restored.graph).toEqual(original.graph)
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Undo', exact: true })).toBeDisabled()
+    await expect(page.getByRole('menuitem', { name: 'Redo', exact: true })).toBeEnabled()
+    const redone = await waitForAcceptedGraph(page, name, async () => {
+      await page.getByRole('menuitem', { name: 'Redo', exact: true }).click()
+    })
+    expect(redone.graph).toEqual(grouped.graph)
+
+    await saveWorkflow(page, name)
+    expect(await savedGraph(page, name)).toEqual(grouped.graph)
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    expect(await draftGraph(page, name)).toEqual(grouped.graph)
+    await expect(page.locator('.vue-flow__node[data-id="workflow_1"]')).toBeVisible()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(4)
   })
 
   test('publishes multiple DataFrames and compacts slots without changing surviving IDs or edges', async ({ page }) => {
