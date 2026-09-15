@@ -29,12 +29,12 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **146 V + 296 G + 9 I + 0 B + 6 U = 457 applicable obligations**, so **146 / 457 are verified (31.9%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **133 V + 78 G + 9 I + 0 B + 0 U = 220 applicable obligations**, so **133 / 220 are verified (60.5%)**.
+- Overall: **157 V + 294 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **157 / 457 are verified (34.4%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **144 V + 76 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **144 / 220 are verified (65.5%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
-The active image/file/export batch is intentionally `in-progress`; its cells must not become `V` until its integrated evidence revision is recorded.
+The integrated image/file/export evidence is credited only for its exact browser, archive-byte, deterministic refusal, rollback, and identity assertions; its remaining recovery, reload, and native-boundary cells stay gaps.
 
 ## GUI editing and authoring obligations
 
@@ -129,15 +129,15 @@ The active image/file/export batch is intentionally `in-progress`; its cells mus
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | I | G | I | I | G | in-progress | `fcb4408`; active image/file/export batch |
-| RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | I | G | I | I | G | in-progress | `fcb4408`; active image/file/export batch |
+| RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | G | in-progress | `7ab16e6` |
+| RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | G | V | V | in-progress | `7ab16e6` |
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `d1072ce` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | G | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | in-progress | `c050207` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `c050207` |
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | I | G | I | I | G | in-progress | `fcb4408`; active image/file/export batch |
+| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | G | G | V | in-progress | `7ab16e6` |
 | RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
