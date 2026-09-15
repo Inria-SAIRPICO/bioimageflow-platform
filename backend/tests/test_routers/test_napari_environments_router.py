@@ -15,6 +15,8 @@ from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.napari_environments import NapariEnvironmentService
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.viewer_preferences import ensure_workspace_identity
+from tests.graph_factory import graph_document
 
 
 pytestmark = pytest.mark.anyio
@@ -175,3 +177,58 @@ async def test_generic_settings_patch_cannot_bypass_registry_invariants(
     async with client:
         response = await client.patch("/api/v1/settings", json={"napari_environments": []})
     assert response.status_code == 422
+
+
+async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -> None:
+    client, _store = await _client(tmp_path, "desktop")
+    async with client:
+        environment = await client.post(
+            "/api/v1/napari/environments",
+            json={
+                "name": "Draft viewer",
+                "path": str(_venv(tmp_path / "draft-viewer")),
+                "expected_revision": 0,
+            },
+        )
+        created = await client.post("/api/v1/workflows", json={"name": "draft-output"})
+        current = await client.get("/api/v1/workflow-drafts/draft-output")
+        graph = graph_document(
+            nodes=[
+                {
+                    "type": "tool",
+                    "id": "new-node",
+                    "name": "New node",
+                    "tool_name": "MissingTool",
+                    "position": [0, 0],
+                    "parameters": {},
+                    "viewer_additions": {"image": {"napari": None}},
+                }
+            ]
+        )
+        updated = await client.put(
+            "/api/v1/workflow-drafts/draft-output",
+            json={
+                "expected_revision": current.json()["draft_revision"],
+                "graph": graph,
+            },
+        )
+        favorite = await client.put(
+            "/api/v1/napari/viewer-preferences/favorite",
+            json={
+                "key": {
+                    "kind": "persistent",
+                    "workspace_id": str(
+                        ensure_workspace_identity(tmp_path)
+                    ),
+                    "workflow_id": "draft-output",
+                    "identity_generation": created.json()["identity_generation"],
+                    "node_path": ["new-node"],
+                    "output_key": "image",
+                },
+                "environment_id": environment.json()["environment"]["id"],
+                "expected_revision": 0,
+            },
+        )
+
+    assert updated.status_code == 200
+    assert favorite.status_code == 200

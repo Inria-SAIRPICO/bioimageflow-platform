@@ -53,23 +53,23 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert seed_tool["tool_type"] == "DataFrameTool"
     assert seed_tool["accepts_upstream"] is False
     assert seed_tool["outputs"] == {
-        "number": {"type": "int", "default": None, "image_spec": None},
-        "label": {"type": "str", "default": None, "image_spec": None},
+        "number": {"type": "int", "default": None, "image_spec": None, "viewer": None},
+        "label": {"type": "str", "default": None, "image_spec": None, "viewer": None},
     }
     result_table_tool = next(t for t in tools if t["name"] == "ResultTableFixture")
     assert result_table_tool["tool_type"] == "DataFrameTool"
     assert result_table_tool["accepts_upstream"] is False
     assert result_table_tool["outputs"] == {
-        "source_row": {"type": "int", "default": None, "image_spec": None},
-        "label": {"type": "str", "default": None, "image_spec": None},
-        "score": {"type": "int", "default": None, "image_spec": None},
+        "source_row": {"type": "int", "default": None, "image_spec": None, "viewer": None},
+        "label": {"type": "str", "default": None, "image_spec": None, "viewer": None},
+        "score": {"type": "int", "default": None, "image_spec": None, "viewer": None},
     }
     image_result_tool = next(t for t in tools if t["name"] == "ImageResultFixture")
     assert image_result_tool["tool_type"] == "DataFrameTool"
     assert image_result_tool["accepts_upstream"] is False
     assert image_result_tool["outputs"] == {
-        "mask": {"type": "ImageFile", "default": None, "image_spec": None},
-        "report": {"type": "Path", "default": None, "image_spec": None},
+        "mask": {"type": "ImageFile", "default": None, "image_spec": None, "viewer": None},
+        "report": {"type": "Path", "default": None, "image_spec": None, "viewer": None},
     }
     increment_tool = next(t for t in tools if t["name"] == "IncrementNumbers")
     assert increment_tool["tool_type"] == "DataFrameTool"
@@ -82,12 +82,12 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
         == "Number column to increment"
     )
     assert increment_tool["outputs"] == {
-        "number_plus_one": {"type": "int", "default": None, "image_spec": None},
+        "number_plus_one": {"type": "int", "default": None, "image_spec": None, "viewer": None},
     }
     increment_again = next(t for t in tools if t["name"] == "IncrementAgainNumbers")
     assert increment_again["inputs"]["number_plus_one"]["type"] == "int"
     assert increment_again["outputs"] == {
-        "number_plus_two": {"type": "int", "default": None, "image_spec": None},
+        "number_plus_two": {"type": "int", "default": None, "image_spec": None, "viewer": None},
     }
 
     resp = await client.get("/api/v1/tools/packages")

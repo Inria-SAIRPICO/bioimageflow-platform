@@ -21,6 +21,7 @@ from bioimageflow_server.models.workflow import (
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
 from bioimageflow_server.services.workflow_store import (
+    WorkflowArchiveError,
     WorkflowResultsBundleImportError,
     WorkflowStoreService,
 )
@@ -481,7 +482,7 @@ def test_portable_export_is_generated_from_the_accepted_graph(tmp_path: Path) ->
     assert filename == "demo.bioimageflow.zip"
     assert content == b"archive"
     assert adapter.exported is not None
-    assert adapter.exported["schema_version"] == 1
+    assert adapter.exported["schema_version"] == 2
     assert "platform_document_version" not in adapter.exported
 
 
@@ -523,7 +524,7 @@ def test_results_bundle_is_rejected_before_archive_adapter_read(tmp_path: Path) 
     assert not (tmp_path / "workflows" / "renamed").exists()
 
 
-def test_archive_import_persists_canonical_graph_only(tmp_path: Path) -> None:
+def test_archive_import_rejects_unknown_graph_fields_without_persisting(tmp_path: Path) -> None:
     library = {
         "schema_version": 1,
         "name": "portable",
@@ -544,15 +545,11 @@ def test_archive_import_persists_canonical_graph_only(tmp_path: Path) -> None:
         archive_adapter=adapter,
     )
 
-    imported = store.import_workflow_archive(
-        b"archive", filename="portable.bioimageflow.zip"
-    )
-    raw = store._read_raw("portable")
-
-    assert imported.info.display_name == "Portable"
-    assert raw["graph"]["name"] == "portable"
-    assert "derived" not in raw
-    assert "secondary_projection" not in raw
+    with pytest.raises(WorkflowArchiveError, match="Unknown workflow config field"):
+        store.import_workflow_archive(
+            b"archive", filename="portable.bioimageflow.zip"
+        )
+    assert not store.workflow_dir("portable").exists()
 
 
 def test_duplicate_failure_does_not_publish_partial_copy(tmp_path: Path, monkeypatch) -> None:

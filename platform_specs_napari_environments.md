@@ -1,6 +1,6 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: Phase A specification complete; Phase B backend environment registry, inventory probe, and settings foundation implemented; Phase C per-environment launcher and lifecycle implemented; remaining phases not implemented.
+Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, and managed-operation contracts are implemented; frontend phases and final managed provisioning integration remain.
 This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
 It does not change their implemented status or the library's current public API.
 The examples below describe proposed schemas, not APIs available today.
@@ -403,7 +403,8 @@ Environment deletion clears references; an incompatible but still registered env
 
 Private nested edits use a session-scoped preference overlay tied to the snapshot UUID.
 Apply remaps surviving entries to the accepted parent instance; discard drops the overlay.
-Unsaved root workflows similarly use temporary session identity until saved.
+After parent persistence succeeds, the client finalizes the child snapshot through an idempotent backend endpoint that derives the destination from the stored owner and verifies that the current parent snapshot or root draft embeds the exact accepted child graph.
+The endpoint remaps into the parent session for nested owners and into the current workflow generation for saved root owners; it rejects unsaved root owners, so the UI must not offer durable output favorites before a workflow has persistent identity.
 Preference writes bind to the captured workspace/generation/session so a delayed request cannot target a replacement workflow or another workspace.
 They use revision-checked set/unset actions so a stale toggle cannot accidentally clear a favorite changed in another window.
 Each structural output identity stores zero or one environment ID, with no independent per-environment boolean favorites.
@@ -489,12 +490,13 @@ The implemented Phase B foundation covers the persistent registry, immutable reg
 Phase C replaces the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
 External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
 The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path during migration, while explicit registered IDs never provision or mutate their environment.
-The frontend settings list and split button, one-time selection, compatibility resolution, output favorites, managed creation/deletion, and graph/library contracts remain unimplemented.
+The implemented Phase C backend advances canonical graphs to schema v2, migrates saved/draft/nested authorities and hashes through a forward journal, captures immutable public run/node/result/record identities for result pages, reads retained viewer metadata through public storage APIs, resolves package-only compatibility, stores favorites in a separate revisioned file, and remaps them through workflow move/delete and nested-session lifecycles.
+The managed-environment API and durable create/copy/retry/cancel/delete operation contracts are also implemented. The frontend settings/output chooser remains pending.
 Before implementation, settle the supported bridge/version matrix, configuration-isolation mechanism, and public Wetlands recipe capabilities with small feasibility checks.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
 At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.
-Until the remaining phases land, this design checkpoint distinguishes its implemented Phase B foundation from future behavior, and the existing normative documents continue to govern unaffected implementation.
+Until the remaining phases land, this design checkpoint distinguishes its implemented backend phases from future UI and managed-environment behavior, and the existing normative documents continue to govern unaffected implementation.
 
 ## 10. Acceptance criteria
 

@@ -26,6 +26,8 @@ from bioimageflow_server.models.napari_environments import (
     NapariResolveResponse,
 )
 from bioimageflow_server.models.viewer_preferences import (
+    PersistentOutputPreferenceKey,
+    SessionOutputPreferenceKey,
     ViewerFavoriteSetRequest,
     ViewerFavoriteToggleRequest,
     ViewerFavoriteUnsetRequest,
@@ -45,9 +47,17 @@ from bioimageflow_server.services.viewer_preferences import (
     ViewerPreferenceTargetConflict,
     ensure_workspace_identity,
 )
-from bioimageflow_server.models.viewer_preferences import PersistentOutputPreferenceKey
+from bioimageflow_server.models.graph import GraphState, ToolNodeState, WorkflowNodeState
+from bioimageflow_server.routers.nested_workflow_snapshots import (
+    get_nested_workflow_snapshot_service,
+)
+from bioimageflow_server.routers.workflow_drafts import get_workflow_draft_service
 from bioimageflow_server.routers.workflows import get_workflow_store
+from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotService,
+)
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 
 
 router = APIRouter(prefix="/napari", tags=["napari-environments"])
@@ -337,19 +347,62 @@ def _preference_error(exc: Exception) -> HTTPException:
     )
 
 
-def _validate_preference_key(key, store: WorkflowStoreService) -> None:
+def _validate_structural_output(
+    graph: GraphState,
+    node_path: tuple[str, ...],
+    output_key: str,
+    store: WorkflowStoreService,
+) -> None:
+    current = graph
+    node = None
+    for index, node_id in enumerate(node_path):
+        node = next((item for item in current.nodes if item.id == node_id), None)
+        if node is None:
+            raise HTTPException(status_code=422, detail="favorite node path does not exist")
+        if index < len(node_path) - 1:
+            if not isinstance(node, WorkflowNodeState):
+                raise HTTPException(status_code=422, detail="favorite node path is not structural")
+            current = node.workflow
+    if isinstance(node, WorkflowNodeState):
+        outputs = {item.id for item in node.workflow.interface.outputs}
+    elif isinstance(node, ToolNodeState):
+        metadata = store.tool_registry.get_tool(node.tool_name)
+        schema = metadata.outputs if metadata is not None else None
+        outputs = set(node.viewer_additions) | set(node.output_templates)
+        if isinstance(schema, dict):
+            outputs.update(key for key in schema if key != "_passthrough")
+    else:  # pragma: no cover - node_path is non-empty and graph nodes are strict
+        outputs = set()
+    if output_key not in outputs:
+        raise HTTPException(status_code=422, detail="favorite output does not exist")
+
+
+def _validate_preference_key(
+    key,
+    store: WorkflowStoreService,
+    snapshots: NestedWorkflowSnapshotService,
+    drafts: WorkflowDraftService,
+) -> None:
     if key.workspace_id != ensure_workspace_identity(store.workspace_dir):
         raise HTTPException(status_code=409, detail="workspace identity changed")
     if isinstance(key, PersistentOutputPreferenceKey):
         try:
-            store.get_workflow(key.workflow_id)
-            store.ensure_workflow_generation(
-                key.workflow_id, key.identity_generation
-            )
+            with store.workflow_mutation(key.workflow_id):
+                store.ensure_workflow_generation(
+                    key.workflow_id, key.identity_generation
+                )
+                graph = drafts.get_draft_authority_snapshot(key.workflow_id).graph
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="workflow identity not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _validate_structural_output(graph, key.node_path, key.output_key, store)
+    elif isinstance(key, SessionOutputPreferenceKey):
+        try:
+            snapshot = snapshots.get_snapshot(UUID(key.session_id))
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="nested editor session not found") from exc
+        _validate_structural_output(snapshot.graph, key.node_path, key.output_key, store)
 
 
 @router.get("/viewer-preferences", response_model=ViewerPreferencesSnapshot)
@@ -368,18 +421,23 @@ def set_viewer_favorite(
     service: NapariEnvironmentService = Depends(_service),
     preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
     workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+    snapshots: NestedWorkflowSnapshotService = Depends(
+        get_nested_workflow_snapshot_service
+    ),
+    drafts: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> ViewerPreferencesSnapshot:
     if request.environment_id not in {
         environment.id for environment in service.snapshot().environments
     }:
         raise HTTPException(status_code=404, detail="napari environment not found")
-    _validate_preference_key(request.key, workflow_store)
     try:
-        return preferences.set(
-            request.key,
-            request.environment_id,
-            expected_revision=request.expected_revision,
-        )
+        with snapshots.snapshot_mutation():
+            _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            return preferences.set(
+                request.key,
+                request.environment_id,
+                expected_revision=request.expected_revision,
+            )
     except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
         raise _preference_error(exc) from exc
 
@@ -390,15 +448,20 @@ def unset_viewer_favorite(
     service: NapariEnvironmentService = Depends(_service),
     preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
     workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+    snapshots: NestedWorkflowSnapshotService = Depends(
+        get_nested_workflow_snapshot_service
+    ),
+    drafts: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> ViewerPreferencesSnapshot:
     del service
-    _validate_preference_key(request.key, workflow_store)
     try:
-        return preferences.unset(
-            request.key,
-            expected_environment_id=request.expected_environment_id,
-            expected_revision=request.expected_revision,
-        )
+        with snapshots.snapshot_mutation():
+            _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            return preferences.unset(
+                request.key,
+                expected_environment_id=request.expected_environment_id,
+                expected_revision=request.expected_revision,
+            )
     except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
         raise _preference_error(exc) from exc
 
@@ -409,18 +472,23 @@ def toggle_viewer_favorite(
     service: NapariEnvironmentService = Depends(_service),
     preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
     workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+    snapshots: NestedWorkflowSnapshotService = Depends(
+        get_nested_workflow_snapshot_service
+    ),
+    drafts: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> ViewerPreferencesSnapshot:
     if request.environment_id not in {
         environment.id for environment in service.snapshot().environments
     }:
         raise HTTPException(status_code=404, detail="napari environment not found")
-    _validate_preference_key(request.key, workflow_store)
     try:
-        return preferences.toggle(
-            request.key,
-            request.environment_id,
-            expected_revision=request.expected_revision,
-        )
+        with snapshots.snapshot_mutation():
+            _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            return preferences.toggle(
+                request.key,
+                request.environment_id,
+                expected_revision=request.expected_revision,
+            )
     except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
         raise _preference_error(exc) from exc
 

@@ -183,3 +183,64 @@ def test_workflow_edge_uses_stable_port_id_and_excludes_a_binding() -> None:
     }
     with pytest.raises(ValidationError, match="both an edge and a binding"):
         GraphState.model_validate(renamed)
+
+
+def test_v1_normalizes_recursively_but_rejects_v2_viewer_fields() -> None:
+    payload = _graph("parent")
+    payload["nodes"] = [
+        {
+            "type": "workflow",
+            "id": "child",
+            "name": "Child",
+            "workflow": _graph("child"),
+            "bindings": {},
+            "position": [0, 0],
+        }
+    ]
+    parsed = GraphState.model_validate(payload)
+    assert parsed.schema_version == 2
+    assert parsed.nodes[0].workflow.schema_version == 2  # type: ignore[union-attr]
+
+    payload["nodes"][0]["viewer_additions"] = {  # type: ignore[index]
+        "image": {"napari": None}
+    }
+    with pytest.raises(ValidationError, match="does not support viewer additions"):
+        GraphState.model_validate(payload)
+
+
+def test_v2_viewer_wire_is_strict_at_node_and_workflow_output() -> None:
+    viewer = {
+        "napari": {
+            "required_packages": [
+                {
+                    "distribution": "example-reader",
+                    "normalized_name": "example-reader",
+                    "version": ">=2",
+                }
+            ],
+            "recommended_packages": [],
+            "napari_version": ">=0.6",
+            "reader_id": "example.reader",
+        }
+    }
+    payload = _graph()
+    payload["schema_version"] = 2
+    payload["nodes"][0]["viewer_additions"] = {"image": viewer}  # type: ignore[index]
+    payload["interface"] = {
+        "inputs": [],
+        "outputs": [
+            {
+                "id": "image",
+                "name": "Image",
+                "schema": {"type": "Path", "viewer": viewer},
+                "source": {"node": "generate", "column": "image"},
+                "viewer_addition": viewer,
+            }
+        ],
+    }
+    assert GraphState.model_validate(payload).schema_version == 2
+
+    invalid = copy.deepcopy(payload)
+    invalid["interface"]["outputs"][0]["schema"]["viewer"]["unknown"] = True  # type: ignore[index]
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        GraphState.model_validate(invalid)

@@ -34,6 +34,8 @@ class WorkflowDraftResetRequest(BaseModel):
 class WorkflowDraftResponse(BaseModel):
     """Live workflow draft returned by the draft API."""
 
+    model_config = ConfigDict(extra="forbid")
+
     draft_version: Literal[1] = 1
     workflow_id: str
     base_saved_revision: str

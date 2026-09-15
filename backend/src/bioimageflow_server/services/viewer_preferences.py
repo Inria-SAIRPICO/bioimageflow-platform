@@ -33,21 +33,29 @@ class ViewerPreferenceTargetConflict(ValueError):
     """The favorite changed since the caller captured its target."""
 
 
+_WORKSPACE_IDENTITY_LOCK = threading.RLock()
+
+
 def ensure_workspace_identity(workspace_dir: Path) -> UUID:
     """Return the durable UUID authority for one local workspace."""
 
-    path = workspace_dir / ".bioimageflow" / "workspace.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_file():
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict) or set(raw) != {"version", "id"} or raw["version"] != 1:
-            raise ValueError(f"Invalid workspace identity: {path}")
-        return UUID(str(raw["id"]))
-    from uuid import uuid4
+    with _WORKSPACE_IDENTITY_LOCK:
+        path = workspace_dir / ".bioimageflow" / "workspace.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(raw, dict)
+                or set(raw) != {"version", "id"}
+                or raw["version"] != 1
+            ):
+                raise ValueError(f"Invalid workspace identity: {path}")
+            return UUID(str(raw["id"]))
+        from uuid import uuid4
 
-    workspace_id = uuid4()
-    _atomic_json(path, {"version": 1, "id": str(workspace_id)})
-    return workspace_id
+        workspace_id = uuid4()
+        _atomic_json(path, {"version": 1, "id": str(workspace_id)})
+        return workspace_id
 
 
 class ViewerPreferenceStore:
@@ -306,6 +314,51 @@ class ViewerPreferenceStore:
                 )
                 retained[persistent] = ViewerFavorite(
                     key=persistent,
+                    environment_id=favorite.environment_id,
+                )
+            favorites = list(retained.values())
+            return current if favorites == current.favorites else self._commit(current, favorites)
+
+    def apply_session_to_session(
+        self,
+        workspace_id: UUID,
+        session_id: str,
+        *,
+        parent_session_id: str,
+        parent_node_path: tuple[str, ...],
+        surviving_outputs: set[tuple[tuple[str, ...], str]],
+    ) -> ViewerPreferencesSnapshot:
+        """Move surviving child favorites into an accepted parent session."""
+
+        with self._lock:
+            current = self._read()
+            retained = {
+                favorite.key: favorite
+                for favorite in current.favorites
+                if not (
+                    isinstance(favorite.key, SessionOutputPreferenceKey)
+                    and favorite.key.workspace_id == workspace_id
+                    and favorite.key.session_id == session_id
+                )
+            }
+            for favorite in current.favorites:
+                key = favorite.key
+                if not (
+                    isinstance(key, SessionOutputPreferenceKey)
+                    and key.workspace_id == workspace_id
+                    and key.session_id == session_id
+                ):
+                    continue
+                if (key.node_path, key.output_key) not in surviving_outputs:
+                    continue
+                parent_key = SessionOutputPreferenceKey(
+                    workspace_id=workspace_id,
+                    session_id=parent_session_id,
+                    node_path=(*parent_node_path, *key.node_path),
+                    output_key=key.output_key,
+                )
+                retained[parent_key] = ViewerFavorite(
+                    key=parent_key,
                     environment_id=favorite.environment_id,
                 )
             favorites = list(retained.values())

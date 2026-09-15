@@ -46,7 +46,7 @@ class NodeDataResponse(BaseModel):
     page_size: int
     column_types: dict[str, str]
     source_identity: ResultArtifactIdentity | None = None
-    identity_status: Literal["captured", "legacy_unpinned"]
+    identity_status: Literal["captured", "legacy_unpinned"] = "legacy_unpinned"
 
     @model_validator(mode="after")
     def _validate_parallel_shapes(self) -> "NodeDataResponse":

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import ValidationResult
@@ -60,8 +60,18 @@ class NestedWorkflowSnapshotPutRequest(BaseModel):
     graph: GraphState
 
 
+class NestedViewerPreferencesFinalizeRequest(BaseModel):
+    """Finalize a child overlay after its parent accepted this snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
 class NestedWorkflowSnapshotResponse(BaseModel):
     """One accepted, validated private nested-workflow document."""
+
+    model_config = ConfigDict(extra="forbid")
 
     snapshot_version: Literal[1] = 1
     session_id: UUID

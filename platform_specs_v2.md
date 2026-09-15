@@ -19,7 +19,7 @@ The platform does not use a sentinel tool, a second child graph language, duplic
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "measure_cells",
   "display_name": "Measure cells",
   "nodes": [],
@@ -41,6 +41,9 @@ Execution target profiles and durable remote-run state never enter `GraphState`.
 
 The workspace `workflow.json` is a `WorkflowDocument` envelope containing a platform document version, the canonical graph, workspace metadata, the artifact hash, optional Python authoring provenance, and owned workflow-local source identifiers.
 Runtime translation to the BioImageFlow library happens in memory from the accepted graph snapshot.
+Canonical platform output is schema version 2 at every recursive depth.
+Schema-version-1 input is accepted only through explicit recursive normalization that adds no viewer declarations; schema-v1 input carrying schema-v2 viewer fields and every unknown field are rejected instead of dropped.
+Portable output schemas use the strict library-owned `ViewerSpec` wire, tool/workflow nodes may carry output-keyed `viewer_additions`, and public workflow outputs may carry a `viewer_addition`.
 
 ## 3. Node Types
 
@@ -58,7 +61,7 @@ A workflow node has `type: "workflow"`, an embedded canonical `GraphState`, pare
   "enabled": true,
   "collapsed": false,
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "name": "segment_and_measure",
     "display_name": "Segment and measure",
     "nodes": [],
@@ -297,6 +300,15 @@ For a succeeded run with a verified retained archive, result access uses the loc
 Every named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`.
 This path is not configurable or persisted in `GraphState` or workspace metadata.
 Moving and deleting a workflow naturally carry or remove its results, while duplication copies only the reusable workflow definition and workflow-local tools.
+
+Every direct or merged result-table response pins each displayed source to the library's public `(run_id, node_key, result_key, record_id)` identity captured before the page or projection is built.
+Pagination and selected-cell viewer requests reuse that exact identity and never resolve `latest` again; displayed row offsets select only a cell within the pinned artifact and never participate in preference identity.
+Legacy retained views without valid provenance remain readable as explicitly unpinned tables, but they cannot use exact selected-cell viewer resolution.
+Effective viewer requirements for retained output come from that run-node result's stored viewer metadata, including cache hits, rather than from a mutable current tool schema.
+
+Per-output napari favorites are local state in the separate atomic `viewer-preferences.json` authority described by `platform_specs_napari_environments.md`.
+They use a durable workspace UUID plus workflow generation, structural node path, and output key; they never enter graph/archive bytes, execution dependencies, or cache identity.
+The workflow move journal advances through artifact, nested-snapshot, and preference rewrite phases before deletion, and preference remapping uses the journaled destination generation.
 Stateless graph services use the private workspace fallback `<workspace>/.bioimageflow/runtime`.
 
 The platform publishes a disposable, human-facing view at `<workflow-directory>/results/outputs/latest`.

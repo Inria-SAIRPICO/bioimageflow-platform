@@ -1635,7 +1635,10 @@ class WorkflowStoreService:
                 raise WorkflowArchiveError(str(exc)) from exc
             if not isinstance(library, dict):
                 raise WorkflowArchiveError("Workflow archive did not contain a workflow object")
-            graph = lib_dict_to_graph_state(library)
+            try:
+                graph = lib_dict_to_graph_state(library)
+            except (TypeError, ValueError, ValidationError) as exc:
+                raise WorkflowArchiveError(str(exc)) from exc
             if rename_graph:
                 graph = graph.model_copy(update={
                     "name": self._leaf_name(imported_name),
@@ -1944,15 +1947,15 @@ class WorkflowStoreService:
                 raise WorkflowMoveRecoveryError(
                     "Schema-v2 migration payload is invalid"
                 )
-            expected_digest = f"sha256:{hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}"
-            if target["digest"] != expected_digest:
-                raise WorkflowMoveRecoveryError(
-                    "Schema-v2 migration target digest does not match its payload"
-                )
             kind = self._schema_v2_target_kind(destination)
             if target["kind"] != kind:
                 raise WorkflowMoveRecoveryError(
                     "Schema-v2 migration target kind does not match its authority"
+                )
+            expected_digest = f"sha256:{hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}"
+            if target["digest"] != expected_digest:
+                raise WorkflowMoveRecoveryError(
+                    "Schema-v2 migration target digest does not match its payload"
                 )
             try:
                 if kind == "saved_workflow":

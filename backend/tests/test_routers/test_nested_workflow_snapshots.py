@@ -5,13 +5,21 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import pytest
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.viewer_preferences import (
+    SessionOutputPreferenceKey,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.viewer_preferences import (
+    ViewerPreferenceStore,
+    ensure_workspace_identity,
+)
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from tests.graph_factory import graph_document
 
@@ -65,21 +73,53 @@ def _graph(
     )
 
 
+def _graph_with_output(node_id: str) -> dict[str, Any]:
+    graph = _graph(node_id)
+    graph["nodes"][0]["viewer_additions"] = {"image": {"napari": None}}
+    return graph
+
+
+def _parent_graph(parent_node_id: str, child: dict[str, Any]) -> dict[str, Any]:
+    return graph_document(
+        name="parent",
+        display_name="Parent",
+        nodes=[
+            {
+                "type": "workflow",
+                "id": parent_node_id,
+                "name": "Child",
+                "position": [0, 0],
+                "workflow": child,
+                "bindings": {},
+            }
+        ],
+    )
+
+
 @pytest.fixture
 async def client_and_manager(
     tmp_path: Path,
-) -> AsyncIterator[tuple[httpx.AsyncClient, _ExecutionManager, WorkflowStoreService]]:
+) -> AsyncIterator[
+    tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ]
+]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
     )
     manager = _ExecutionManager()
+    preferences = ViewerPreferenceStore(tmp_path / "viewer-preferences.json")
     app = create_app(
         AppConfig(
             tool_registry=registry,
             workflow_store=store,
             execution_manager=manager,
+            viewer_preference_store=preferences,
             storage_path=tmp_path / "outputs",
             disable_hot_reload=True,
         )
@@ -92,13 +132,18 @@ async def client_and_manager(
                 json={"name": name, "display_name": name},
             )
             assert response.status_code == 201
-        yield client, manager, store
+        yield client, manager, store, preferences
 
 
 async def test_open_replace_get_and_revision_checked_delete(
-    client_and_manager: tuple[httpx.AsyncClient, _ExecutionManager, WorkflowStoreService],
+    client_and_manager: tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ],
 ) -> None:
-    client, _, _ = client_and_manager
+    client, _, _, _ = client_and_manager
     opened = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
@@ -144,9 +189,14 @@ async def test_open_replace_get_and_revision_checked_delete(
 
 
 async def test_mutations_return_423_without_changing_the_record(
-    client_and_manager: tuple[httpx.AsyncClient, _ExecutionManager, WorkflowStoreService],
+    client_and_manager: tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ],
 ) -> None:
-    client, manager, store = client_and_manager
+    client, manager, store, _ = client_and_manager
     opened = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
@@ -196,9 +246,14 @@ async def test_mutations_return_423_without_changing_the_record(
 
 
 async def test_delete_rejects_orphaning_a_nested_snapshot(
-    client_and_manager: tuple[httpx.AsyncClient, _ExecutionManager, WorkflowStoreService],
+    client_and_manager: tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ],
 ) -> None:
-    client, _, _ = client_and_manager
+    client, _, _, _ = client_and_manager
     parent_response = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
@@ -252,4 +307,142 @@ async def test_delete_rejects_orphaning_a_nested_snapshot(
     assert {item["$ref"] for item in conflict_schema["anyOf"]} == {
         "#/components/schemas/NestedWorkflowSnapshotConflictResponse",
         "#/components/schemas/NestedWorkflowSnapshotDependencyConflictResponse",
+    }
+
+
+async def test_finalize_root_preferences_requires_accepted_graph_and_is_retryable(
+    client_and_manager: tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ],
+) -> None:
+    client, _, store, preferences = client_and_manager
+    child_graph = _graph_with_output("inner")
+    opened = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {
+                "kind": "root",
+                "canvas_id": "workflow:root-a",
+                "workflow_id": "root-a",
+            },
+            "parent_node_id": "child_1",
+            "graph": child_graph,
+        },
+    )
+    child = opened.json()
+    workspace_id = ensure_workspace_identity(store.workspace_dir)
+    environment_id = uuid4()
+    preferences.set(
+        SessionOutputPreferenceKey(
+            workspace_id=workspace_id,
+            session_id=child["session_id"],
+            node_path=("inner",),
+            output_key="image",
+        ),
+        environment_id,
+        expected_revision=0,
+    )
+    endpoint = (
+        f"/api/v1/nested-workflow-snapshots/{child['session_id']}"
+        "/viewer-preferences/finalize-apply"
+    )
+
+    mismatch = await client.post(endpoint, json={"expected_revision": 0})
+    assert mismatch.status_code == 409
+    assert "has not accepted" in mismatch.json()["detail"]
+
+    current = await client.get("/api/v1/workflow-drafts/root-a")
+    accepted = await client.put(
+        "/api/v1/workflow-drafts/root-a",
+        json={
+            "expected_revision": current.json()["draft_revision"],
+            "graph": _parent_graph("child_1", child_graph),
+        },
+    )
+    assert accepted.status_code == 200
+
+    stale = await client.post(endpoint, json={"expected_revision": 1})
+    assert stale.status_code == 409
+    assert stale.json()["current_revision"] == 0
+
+    finalized = await client.post(endpoint, json={"expected_revision": 0})
+    assert finalized.status_code == 200
+    favorite = finalized.json()["favorites"][0]
+    assert favorite["environment_id"] == str(environment_id)
+    assert favorite["key"] == {
+        "kind": "persistent",
+        "workspace_id": str(workspace_id),
+        "workflow_id": "root-a",
+        "identity_generation": store.workflow_generation("root-a"),
+        "node_path": ["child_1", "inner"],
+        "output_key": "image",
+    }
+
+    retry = await client.post(endpoint, json={"expected_revision": 0})
+    assert retry.status_code == 200
+    assert retry.json() == finalized.json()
+
+
+async def test_finalize_nested_preferences_targets_parent_session(
+    client_and_manager: tuple[
+        httpx.AsyncClient,
+        _ExecutionManager,
+        WorkflowStoreService,
+        ViewerPreferenceStore,
+    ],
+) -> None:
+    client, _, store, preferences = client_and_manager
+    child_graph = _graph_with_output("inner")
+    parent_response = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {
+                "kind": "root",
+                "canvas_id": "workflow:root-a",
+                "workflow_id": "root-a",
+            },
+            "parent_node_id": "child_1",
+            "graph": _parent_graph("child_2", child_graph),
+        },
+    )
+    parent = parent_response.json()
+    child_response = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {"kind": "nested", "session_id": parent["session_id"]},
+            "parent_node_id": "child_2",
+            "graph": child_graph,
+        },
+    )
+    child = child_response.json()
+    workspace_id = ensure_workspace_identity(store.workspace_dir)
+    environment_id = uuid4()
+    preferences.set(
+        SessionOutputPreferenceKey(
+            workspace_id=workspace_id,
+            session_id=child["session_id"],
+            node_path=("inner",),
+            output_key="image",
+        ),
+        environment_id,
+        expected_revision=0,
+    )
+
+    finalized = await client.post(
+        f"/api/v1/nested-workflow-snapshots/{child['session_id']}"
+        "/viewer-preferences/finalize-apply",
+        json={"expected_revision": child["snapshot_revision"]},
+    )
+
+    assert finalized.status_code == 200
+    key = finalized.json()["favorites"][0]["key"]
+    assert key == {
+        "kind": "session",
+        "workspace_id": str(workspace_id),
+        "session_id": parent["session_id"],
+        "node_path": ["child_2", "inner"],
+        "output_key": "image",
     }

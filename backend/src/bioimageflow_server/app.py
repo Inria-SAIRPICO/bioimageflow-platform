@@ -100,6 +100,9 @@ from bioimageflow_server.routers.napari_environments import (
 from bioimageflow_server.routers.nested_workflow_snapshots import (
     get_execution_manager as nested_snapshots_get_execution_manager,
     get_nested_workflow_snapshot_service,
+    get_workflow_draft_service as nested_get_workflow_draft_service,
+    get_viewer_preference_store as nested_get_viewer_preference_store,
+    get_workflow_store as nested_get_workflow_store,
     router as nested_workflow_snapshots_router,
 )
 from bioimageflow_server.routers.nodes import (
@@ -970,6 +973,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[get_nested_workflow_snapshot_service] = lambda: (
         nested_workflow_snapshot_service
+    )
+    app.dependency_overrides[nested_get_viewer_preference_store] = lambda: (
+        viewer_preference_store
+    )
+    app.dependency_overrides[nested_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[nested_get_workflow_draft_service] = lambda: (
+        workflow_draft_service
     )
     app.dependency_overrides[nested_snapshots_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager

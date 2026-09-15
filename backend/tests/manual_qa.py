@@ -118,7 +118,7 @@ def build_workflow():
 
 def _empty_graph(name: str, display_name: str) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": name,
         "display_name": display_name,
         "nodes": [],
