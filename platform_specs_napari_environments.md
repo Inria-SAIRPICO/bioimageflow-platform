@@ -370,7 +370,8 @@ Setup, failure, or a menu selection must not clear another environment's viewer.
 ## 6. Local preference persistence
 
 Environment registrations, the global default, and format rules belong to the existing per-user application settings store.
-The same store owns the single favorite mapping keyed by structural output identity.
+The single favorite mapping keyed by structural output identity belongs to a separate versioned per-user `viewer-preferences.json` store alongside the application settings store.
+Keeping favorites separate lets workflow identity remaps and snapshot overlays use their own revision-checked lifecycle without rewriting environment registrations or filename rules.
 Browser local storage may cache this state but is never its authority.
 
 Use these logical keys:
