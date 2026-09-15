@@ -87,7 +87,7 @@ Destructive connected-port removal is independent because v2 §§5 and 7 explici
 
 ## ISSUE-007 — Stop does not reach an active cooperative Wetlands task
 
-Status: `safe-to-fix` after GPT-6 Astra/high established an upstream BioImageFlow defect, found no safe platform-only repair, and the owner authorized the sibling-library repair and release workflow.
+Status: resolved through BioImageFlow 0.7.2 and platform integration `da2ced2` after GPT-6 Astra/high established the upstream defect, reviewed the repair, and returned `safe-as-is` for release.
 Scope: platform branch `campaign/execution-failure-cancel` at `cb5b881`, based on platform `9cfa76d`, with installed BioImageFlow 0.7.1, bioimageflow-core 0.3.1, and Wetlands 2.4.1.
 The deterministic GUI journey runs a real sequential Wetlands ProcessingTool in a distinct worker process, uses a socket handshake instead of arbitrary sleeps, and exposes the library-supported injected task cancellation flag.
 Before Stop it proves exact workflow, accepted draft revision, execution identity, completed upstream source, running worker, worker/backend PID isolation, reload/WebSocket recovery of the same running identity, and visibly disabled Save and Clear actions without draft mutation.
@@ -102,10 +102,18 @@ Wetlands task cancellation is cooperative, and the corrected fixture implements 
 The initial non-cooperative fixture was rejected by Astra and is not evidence for the defect.
 
 A platform workaround that marks the run idle, cancels only the asyncio wrapper, reaches into private task state, or kills an environment could unlock mutation while a worker still writes and is not authorized.
-The required repair belongs in the sibling BioImageFlow library: propagate cancellation to unfinished active tasks, drain every possible writer before returning or reuse, retain the corrected platform regression, run the library's required CI, publish an updated dependency, then adopt it here and run the exact Chromium and Firefox journey plus affected completion lanes.
-No platform semantic-contract decision remains unclear; the owner authorized expanding the campaign back into the sibling library and release workflow on 2026-09-14.
-The clean platform worktree remains `.worktrees/execution-failure-cancel` on `campaign/execution-failure-cancel` with commits `4318814`, `7912ab9`, and `cb5b881`; none is integrated while the required GUI regression is red.
-`/root/library_cancel_repair` owns `.worktrees/bioimageflow-cancel` on sibling-library branch `campaign/cancel-active-wetlands` at baseline `bb74097`.
+The required repair was assigned to the sibling BioImageFlow library: propagate cancellation to unfinished active tasks, drain every possible writer before returning or reuse, retain the corrected platform regression, run the library's required CI, publish an updated dependency, then adopt it here and run the exact Chromium and Firefox journey plus affected completion lanes.
+No platform semantic-contract decision remained unclear; the owner authorized expanding the campaign back into the sibling library and release workflow on 2026-09-14.
+Before integration, the clean platform worktree preserved commits `4318814`, `7912ab9`, and `cb5b881` and the exact red GUI evidence.
+BioImageFlow commits `bdfb777`, `1cf95f4`, and `cf2efd4` propagate cancellation to active row and batch tasks, register every returned handle immediately, stop later submissions, drain partial submissions and interrupted waits, ignore late results, and place the real held-writer regressions in the blocking Complete Wetlands gate.
+The release commit `659acda` prepared BioImageFlow 0.7.2; exact GitHub CI run `34863426923` and manually selected Complete Wetlands run `34863450754` passed, publication run `34864151902` succeeded, and the package index reported 0.7.2 available.
+The platform adopted the published wheel in `da2ced2` together with the deterministic held-worker fixture and GUI regression.
+The exact cancellation journey passed Chromium 1/1 in 27s and Firefox 1/1 in 24s, and `scripts/test check app` passed in 111s with 1,609 backend tests and 9 deselected, 1,295 frontend tests, 7 logging-order tests, and 13 critical Chromium journeys; the lane intentionally omitted external certification and non-critical browser tests.
+The journey proves an isolated worker PID, exact workflow/revision/run identity, reload recovery, locked Save/Clear controls, HTTP 200 Stop, cooperative acknowledgement before idle, retained exact completed-source rows, absent partial worker results, and a successful rerun with exact values from one non-backend worker PID.
+An initial exact Chromium attempt was blocked before collection by sandbox port allocation and is not a test failure.
+The final Astra reachability review classified Wetlands' theoretical BaseException-listener ordering hazard as a dependency follow-up rather than a blocker: BioImageFlow's internal listener performs no user callback on the cancellation event, and the platform does not expose the artificial listener used by the probe.
+No claim is made that cancellation is immune to interruption at every possible dependency instruction.
+Both completed worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted.
 
 ## New issue record template
 
