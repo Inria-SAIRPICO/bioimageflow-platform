@@ -112,6 +112,13 @@ async def test_openapi_exposes_typed_managed_operation_routes(tmp_path: Path) ->
         "/api/v1/napari/environments/{environment_id}/operations/{operation_id}/cancel"
         in paths
     )
+    readiness = paths["/api/v1/napari/viewing-readiness"]["post"]
+    assert readiness["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ViewingRequirementsManifest-Input"
+    }
+    assert readiness["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/NapariViewingReadinessResponse"
+    }
 
 
 async def test_managed_routes_return_operations_and_enforce_initiation_cas(
@@ -185,6 +192,14 @@ async def test_webapp_rejects_all_local_registry_operations(tmp_path: Path) -> N
         responses = [
             await client.get("/api/v1/napari/environments"),
             await client.post(
+                "/api/v1/napari/viewing-readiness",
+                json={
+                    "schema": "bioimageflow.viewing_requirements.v1",
+                    "complete": True,
+                    "outputs": {},
+                },
+            ),
+            await client.post(
                 "/api/v1/napari/environments",
                 json={"name": "Nope", "path": "/server/python", "expected_revision": 0},
             ),
@@ -250,7 +265,7 @@ async def test_webapp_rejects_all_local_registry_operations(tmp_path: Path) -> N
                 f"/api/v1/napari/environments/{environment_id}/operations/{rule_id}/cancel"
             ),
         ]
-    assert [response.status_code for response in responses] == [403] * 15
+    assert [response.status_code for response in responses] == [403] * 16
     assert all(response.json()["error"] == "desktop_only" for response in responses)
 
 

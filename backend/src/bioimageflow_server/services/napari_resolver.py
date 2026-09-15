@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
 from typing import Literal
@@ -12,14 +14,20 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from bioimageflow_server.models.graph import ViewerSpec
+from bioimageflow_server.models.graph import PackageRequirement, ViewerSpec
 from bioimageflow_server.models.napari_environments import (
     NapariCompatibilityIssue,
     NapariEnvironment,
     NapariEnvironmentCandidate,
+    NapariManagedCreatePrefill,
     NapariResolveRequest,
     NapariResolveResponse,
+    NapariViewingReadinessOutput,
+    NapariViewingReadinessResponse,
+    NapariViewingReadinessSummary,
+    NapariViewingRequirementGroup,
 )
+from bioimageflow_server.models.workflow import ViewingRequirementsManifest
 from bioimageflow_server.models.viewer_preferences import (
     PersistentOutputPreferenceKey,
 )
@@ -117,26 +125,33 @@ class NapariResolverService:
 
         by_id = {item.id: item for item in snapshot.environments}
         ordered = [by_id[item] for item in rank if item in by_id]
-        candidates = [
-            self._candidate(environment, viewer, rank[environment.id])
-            for environment in ordered
-        ]
-        effective = next(
-            (candidate for candidate in candidates if candidate.status == "compatible"),
-            None,
-        )
-        reader_id = (
+        hard_reader_id = (
             viewer.napari.reader_id
             if viewer is not None and viewer.napari is not None
             else None
         )
-        if (
-            reader_id is None
-            and effective is not None
-            and winning_rule is not None
-            and effective.environment_id == winning_rule.environment_id
-        ):
-            reader_id = winning_rule.reader_id
+        candidates = []
+        for environment in ordered:
+            candidate_reader_id = hard_reader_id
+            if (
+                candidate_reader_id is None
+                and winning_rule is not None
+                and environment.id == winning_rule.environment_id
+            ):
+                candidate_reader_id = winning_rule.reader_id
+            candidates.append(
+                self._candidate(
+                    environment,
+                    viewer,
+                    rank[environment.id],
+                    reader_id=candidate_reader_id,
+                )
+            )
+        effective = next(
+            (candidate for candidate in candidates if candidate.status == "compatible"),
+            None,
+        )
+        reader_id = effective.reader_id if effective is not None else None
         return NapariResolveResponse(
             artifact_identity=request.result_identity,
             preference_key=key,
@@ -158,11 +173,203 @@ class NapariResolverService:
             ),
         )
 
+    def viewing_readiness(
+        self, manifest: ViewingRequirementsManifest
+    ) -> NapariViewingReadinessResponse:
+        """Evaluate portable requirements without probing or reading workflow state."""
+        environments = sorted(
+            self.environments.snapshot().environments,
+            key=lambda item: (item.registration_order, str(item.id)),
+        )
+        outputs: list[NapariViewingReadinessOutput] = []
+        groups_by_id: dict[str, NapariViewingRequirementGroup] = {}
+
+        for output_identity, entry in manifest.outputs.items():
+            if entry.status == "unknown":
+                candidates = [
+                    self._unknown_candidate(environment, entry.reason)
+                    for environment in environments
+                ]
+                outputs.append(
+                    NapariViewingReadinessOutput(
+                        output_identity=output_identity,
+                        manifest_status="unknown",
+                        manifest_reason=entry.reason,
+                        status="unknown",
+                        reason="manifest_unknown",
+                        candidates=candidates,
+                        effective_reason=entry.reason
+                        or "Portable viewing requirements are unknown",
+                    )
+                )
+                continue
+
+            viewer = entry.viewer
+            candidates = [
+                self._candidate(environment, viewer, "other")
+                for environment in environments
+            ]
+            effective = next(
+                (candidate for candidate in candidates if candidate.status == "compatible"),
+                None,
+            )
+            if viewer is None or viewer.napari is None:
+                status: Literal["covered", "not_covered", "unknown"] = "covered"
+                reason = "no_declared_napari_requirements"
+                effective_reason = "No declared napari package requirements"
+                group_id = None
+            else:
+                group = self._requirement_group(output_identity, viewer)
+                group_id = group.id
+                existing = groups_by_id.get(group.id)
+                if existing is None:
+                    groups_by_id[group.id] = group
+                else:
+                    existing.members.append(output_identity)
+                if effective is not None:
+                    status = "covered"
+                    reason = "compatible_environment"
+                    effective_reason = "A registered environment satisfies all requirements"
+                elif any(candidate.status == "unknown" for candidate in candidates):
+                    status = "unknown"
+                    reason = "requirements_not_verified"
+                    effective_reason = (
+                        "No registered environment has verified required packages"
+                    )
+                else:
+                    status = "not_covered"
+                    reason = "requirements_not_satisfied"
+                    effective_reason = (
+                        "No registered environment satisfies all requirements"
+                    )
+            outputs.append(
+                NapariViewingReadinessOutput(
+                    output_identity=output_identity,
+                    manifest_status="known",
+                    viewer=viewer,
+                    status=status,
+                    reason=reason,
+                    group_id=group_id,
+                    candidates=candidates,
+                    effective_environment_id=(
+                        effective.environment_id if effective is not None else None
+                    ),
+                    effective_reason=effective_reason,
+                )
+            )
+
+        covered = sum(output.status == "covered" for output in outputs)
+        not_covered = sum(output.status == "not_covered" for output in outputs)
+        unknown = sum(output.status == "unknown" for output in outputs)
+        needs_setup = not_covered + unknown
+        noun = "output" if needs_setup == 1 else "outputs"
+        verb = "needs" if needs_setup == 1 else "need"
+        return NapariViewingReadinessResponse(
+            manifest_schema=manifest.schema_,
+            manifest_complete=manifest.complete,
+            summary=NapariViewingReadinessSummary(
+                total_outputs=len(outputs),
+                covered_outputs=covered,
+                not_covered_outputs=not_covered,
+                unknown_outputs=unknown,
+                outputs_needing_setup=needs_setup,
+                message=f"{needs_setup} {noun} {verb} viewer setup",
+            ),
+            outputs=outputs,
+            groups=list(groups_by_id.values()),
+        )
+
+    @classmethod
+    def _requirement_group(
+        cls, output_identity: str, viewer: ViewerSpec
+    ) -> NapariViewingRequirementGroup:
+        requirement = viewer.napari
+        assert requirement is not None
+
+        def normalized_package(package):
+            return {
+                "distribution": canonicalize_name(package.distribution),
+                "normalized_name": canonicalize_name(package.distribution),
+                "version": cls._normalized_specifier(package.version),
+            }
+
+        required_data = sorted(
+            (normalized_package(package) for package in requirement.required_packages),
+            key=lambda item: (item["normalized_name"], item["version"] or ""),
+        )
+        recommended_data = sorted(
+            (normalized_package(package) for package in requirement.recommended_packages),
+            key=lambda item: (item["normalized_name"], item["version"] or ""),
+        )
+        napari_version = cls._normalized_specifier(requirement.napari_version)
+        signature_payload = {
+            "required_packages": required_data,
+            "recommended_packages": recommended_data,
+            "napari_version": napari_version,
+        }
+        signature = json.dumps(
+            signature_payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        group_id = f"sha256:{hashlib.sha256(signature).hexdigest()}"
+        required_packages = [PackageRequirement.model_validate(item) for item in required_data]
+        recommended_packages = [
+            PackageRequirement.model_validate(item) for item in recommended_data
+        ]
+
+        def requirement_string(package) -> str:
+            return f"{package.distribution}{package.version or ''}"
+
+        requested = [requirement_string(package) for package in required_packages]
+        recommended = [
+            requirement_string(package) for package in recommended_packages
+        ]
+        return NapariViewingRequirementGroup(
+            id=group_id,
+            members=[output_identity],
+            required_packages=required_packages,
+            recommended_packages=recommended_packages,
+            napari_version=napari_version,
+            managed_create_prefill=NapariManagedCreatePrefill(
+                requested_packages=requested,
+                recommended_packages=recommended,
+                napari_version_constraint=napari_version,
+                requires_source_confirmation=bool(requested or recommended),
+            ),
+        )
+
+    def _unknown_candidate(
+        self, environment: NapariEnvironment, manifest_reason: str | None
+    ) -> NapariEnvironmentCandidate:
+        candidate = self._candidate(environment, None, "other")
+        if candidate.status == "unavailable":
+            return candidate
+        detail = manifest_reason or "Portable viewing requirements are unknown"
+        return candidate.model_copy(
+            update={
+                "status": "unknown",
+                "label": "Not verified",
+                "reason": f"Registration order fallback: {detail}",
+                "issues": [
+                    NapariCompatibilityIssue(
+                        code="requirements_unknown",
+                        detail=detail,
+                    )
+                ],
+                "missing_recommended_packages": [],
+            }
+        )
+
+    @staticmethod
+    def _normalized_specifier(value: str | None) -> str | None:
+        return None if value is None else str(SpecifierSet(value))
+
     def _candidate(
         self,
         environment: NapariEnvironment,
         viewer: ViewerSpec | None,
         preference: PreferenceSource,
+        *,
+        reader_id: str | None = None,
     ) -> NapariEnvironmentCandidate:
         issues: list[NapariCompatibilityIssue] = []
         unavailable_states = {
@@ -182,7 +389,7 @@ class NapariResolverService:
                 )
             )
             status = "unavailable"
-        elif viewer is not None and viewer.napari is not None and (
+        elif self._has_hard_requirements(viewer) and (
             environment.inventory is None
             or environment.state in {"probe_failed", "drifted"}
             or self._inventory_stale(environment)
@@ -206,7 +413,8 @@ class NapariResolverService:
             status = "unknown"
         else:
             status = "compatible"
-            if viewer is not None and viewer.napari is not None:
+            if self._has_hard_requirements(viewer):
+                assert viewer is not None
                 issues.extend(self._required_issues(environment, viewer))
                 if issues:
                     status = "incompatible"
@@ -235,6 +443,13 @@ class NapariResolverService:
             issues=issues,
             missing_recommended_packages=missing_recommended,
             preference=preference,
+            reader_id=(
+                viewer.napari.reader_id
+                if reader_id is None
+                and viewer is not None
+                and viewer.napari is not None
+                else reader_id
+            ),
         )
 
     @staticmethod
@@ -321,7 +536,13 @@ class NapariResolverService:
     def _missing_recommended(
         self, environment: NapariEnvironment, viewer: ViewerSpec | None
     ) -> list:
-        if viewer is None or viewer.napari is None or environment.inventory is None:
+        if (
+            viewer is None
+            or viewer.napari is None
+            or environment.inventory is None
+            or environment.state in {"probe_failed", "drifted"}
+            or self._inventory_stale(environment)
+        ):
             return []
         installed = self._installed(environment)
         return [
@@ -333,6 +554,17 @@ class NapariResolverService:
                 and not self._satisfies(version, package.version)
             )
         ]
+
+    @staticmethod
+    def _has_hard_requirements(viewer: ViewerSpec | None) -> bool:
+        return bool(
+            viewer is not None
+            and viewer.napari is not None
+            and (
+                viewer.napari.required_packages
+                or viewer.napari.napari_version is not None
+            )
+        )
 
     @staticmethod
     def _satisfies(version: str, specifier: str) -> bool:

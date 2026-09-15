@@ -523,6 +523,7 @@ class NapariCompatibilityIssue(BaseModel):
         "inventory_missing",
         "inventory_stale",
         "probe_failed",
+        "requirements_unknown",
         "unavailable",
     ]
     distribution: str | None = None
@@ -542,6 +543,7 @@ class NapariEnvironmentCandidate(BaseModel):
     issues: list[NapariCompatibilityIssue] = Field(default_factory=list)
     missing_recommended_packages: list[PackageRequirement] = Field(default_factory=list)
     preference: Literal["favorite", "filename_rule", "global_default", "other"]
+    reader_id: str | None = None
 
 
 class NapariResolveResponse(BaseModel):
@@ -559,3 +561,81 @@ class NapariResolveResponse(BaseModel):
     candidates: list[NapariEnvironmentCandidate]
     effective_environment_id: UUID | None = None
     effective_reason: str
+
+
+class NapariManagedCreatePrefill(BaseModel):
+    """Requirement-set values suitable for prefilling managed setup.
+
+    Distribution declarations do not prove that a package is public on PyPI,
+    so callers must retain the unverified source status rather than presenting
+    this as an installability guarantee.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_packages: list[str] = Field(default_factory=list)
+    recommended_packages: list[str] = Field(default_factory=list)
+    napari_version_constraint: str | None = None
+    package_source: Literal["unverified"] = "unverified"
+    requires_source_confirmation: bool = False
+
+
+class NapariViewingRequirementGroup(BaseModel):
+    """One normalized package-compatibility set and its output members."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    members: list[str] = Field(default_factory=list)
+    required_packages: list[PackageRequirement] = Field(default_factory=list)
+    recommended_packages: list[PackageRequirement] = Field(default_factory=list)
+    napari_version: str | None = None
+    managed_create_prefill: NapariManagedCreatePrefill
+
+
+class NapariViewingReadinessOutput(BaseModel):
+    """Passive compatibility result for one structural output identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    output_identity: str = Field(min_length=1)
+    manifest_status: Literal["known", "unknown"]
+    viewer: ViewerSpec | None = None
+    manifest_reason: str | None = None
+    status: Literal["covered", "not_covered", "unknown"]
+    reason: Literal[
+        "compatible_environment",
+        "no_declared_napari_requirements",
+        "requirements_not_satisfied",
+        "requirements_not_verified",
+        "manifest_unknown",
+    ]
+    group_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    candidates: list[NapariEnvironmentCandidate] = Field(default_factory=list)
+    effective_environment_id: UUID | None = None
+    effective_reason: str
+
+
+class NapariViewingReadinessSummary(BaseModel):
+    """Counts used by passive workflow/import setup guidance."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_outputs: int = Field(ge=0)
+    covered_outputs: int = Field(ge=0)
+    not_covered_outputs: int = Field(ge=0)
+    unknown_outputs: int = Field(ge=0)
+    outputs_needing_setup: int = Field(ge=0)
+    message: str
+
+
+class NapariViewingReadinessResponse(BaseModel):
+    """Backend-authoritative passive readiness for a portable manifest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    manifest_schema: Literal["bioimageflow.viewing_requirements.v1"]
+    manifest_complete: bool
+    summary: NapariViewingReadinessSummary
+    outputs: list[NapariViewingReadinessOutput] = Field(default_factory=list)
+    groups: list[NapariViewingRequirementGroup] = Field(default_factory=list)

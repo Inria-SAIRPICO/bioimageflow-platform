@@ -396,6 +396,8 @@ Expected export failures use stable status categories for missing workflows, for
 
 OpenAPI is the sole frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
+`POST /api/v1/napari/viewing-readiness` accepts a `ViewingRequirementsManifest` directly, including the exact manifest returned after import, and returns the backend-authoritative desktop-only passive compatibility report without rereading workflow state.
+The report preserves every structural output identity and declaration or unknown reason, shares registered-inventory candidate evaluation with retained-artifact resolution, and returns independent normalized requirement groups with managed-create prefill rather than unioning incompatible output needs.
 `POST /api/v1/editor/open-node` identifies the workflow ID and identity generation, the accepted revision, the node ID, and an optional nested session UUID.
 It resolves the addressed node's actual source and rejects stale or missing identities instead of falling back to the global registry for bound local sources.
 Nested source preparation returns the updated accepted snapshot along with the editor response.

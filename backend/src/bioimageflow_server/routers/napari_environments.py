@@ -24,6 +24,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariProbeRequest,
     NapariResolveRequest,
     NapariResolveResponse,
+    NapariViewingReadinessResponse,
 )
 from bioimageflow_server.models.viewer_preferences import (
     PersistentOutputPreferenceKey,
@@ -48,6 +49,7 @@ from bioimageflow_server.services.viewer_preferences import (
     ensure_workspace_identity,
 )
 from bioimageflow_server.models.graph import GraphState, ToolNodeState, WorkflowNodeState
+from bioimageflow_server.models.workflow import ViewingRequirementsManifest
 from bioimageflow_server.routers.nested_workflow_snapshots import (
     get_nested_workflow_snapshot_service,
 )
@@ -511,3 +513,14 @@ def resolve_environment(
         ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/viewing-readiness", response_model=NapariViewingReadinessResponse)
+def viewing_readiness(
+    manifest: ViewingRequirementsManifest,
+    environment_service: NapariEnvironmentService = Depends(_service),
+    resolver: NapariResolverService = Depends(get_napari_resolver_service),
+) -> NapariViewingReadinessResponse:
+    """Evaluate portable viewer metadata against the current inventory snapshot."""
+    del environment_service
+    return resolver.viewing_readiness(manifest)

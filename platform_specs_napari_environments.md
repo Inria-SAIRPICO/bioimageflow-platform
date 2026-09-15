@@ -442,6 +442,12 @@ The creation preview identifies requested distributions, constraints, source, an
 Import and passive checks never download/install packages or execute workflow-provided installation instructions.
 Unknown or private packages require manual installation in an external environment in the first release; do not guess URLs from reader IDs, add archive-provided package sources, or copy credentials into a workflow.
 
+The implemented desktop-only `POST /api/v1/napari/viewing-readiness` endpoint accepts the portable viewing-requirement manifest itself, so an import success response can be evaluated without rereading mutable workflow state.
+It returns every structural output identity, its retained viewer or unknown reason, per-environment package-only candidate status and issues, an effective compatible environment when one exists, and covered/not-covered/unknown summary counts suitable for setup guidance.
+Identical compatibility sets receive a stable normalized SHA-256 group ID, explicit member identities, and managed-create prefill whose package source remains `unverified`; different groups are never implicitly unioned.
+Known entries with no viewer or no napari declaration remain normally covered, while unknown entries and all of their launchable candidates remain unknown rather than green.
+Inventory freshness gates only required distributions and an explicit napari version constraint: a reader-only or recommended-only declaration remains covered in a launchable environment, and stale metadata does not invent missing recommendations.
+
 ## 8. Backend and process contract
 
 Replace the singleton launcher with an environment registry and launchers keyed by immutable environment ID and installation identity.
@@ -500,6 +506,7 @@ Phase C replaces the explicit-ID launch path with independently locked, UUID-key
 External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
 The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path during migration, while explicit registered IDs never provision or mutate their environment.
 The implemented Phase C backend advances canonical graphs to schema v2, migrates saved/draft/nested authorities and hashes through a forward journal, captures immutable public run/node/result/record identities for result pages, reads retained viewer metadata through public storage APIs, resolves package-only compatibility, stores favorites in a separate revisioned file, and remaps them through workflow move/delete and nested-session lifecycles.
+The same resolver candidate evaluator powers the passive manifest readiness endpoint and retained-artifact resolution, so required-package co-location, PEP 440 checks, freshness, unavailable-state handling, recommendations, and reader independence cannot drift; passive evaluation reads only the registered inventory snapshot and never probes, installs, launches, reads workflow state, or executes archive content.
 The managed backend uses only public Wetlands 2 environment and operation APIs; it does not install a bridge distribution because the platform launches its standalone helper script inside the selected environment.
 The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation. The frontend settings/output chooser remains pending.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.

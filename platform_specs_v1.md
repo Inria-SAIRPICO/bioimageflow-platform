@@ -805,11 +805,14 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 | `GET` | `/napari/environments/{environment_id}/operations/{operation_id}` | Poll one durable managed mutation |
 | `POST` | `/napari/environments/{environment_id}/operations/{operation_id}/cancel` | Request public Wetlands operation cancellation |
 | `DELETE` | `/napari/environments/managed/{environment_id}` | Stop its viewer and delete a proven platform-owned generation |
+| `POST` | `/napari/viewing-readiness` | Passively evaluate a portable viewing-requirement manifest against registered environment inventories |
 | `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
 
 The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
 They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
 Webapp mode rejects all of these local operations.
+The desktop-only passive viewing-readiness route accepts the manifest returned by workflow import directly and uses the same package-only candidate evaluator as retained-artifact resolution.
+It does not reread a workflow, probe or mutate environments, launch a viewer, or execute archive content; its response retains structural output identities, unknown reasons, candidates, effective environments, normalized requirement groups, honest managed-setup prefill, and covered/not-covered/unknown summary counts.
 Phase C extends `/napari/open`, `/napari/status`, and `/napari/shutdown` with optional registered environment IDs while preserving their no-ID compatibility behavior.
 Managed creation provisions an immutable UUID-addressed Wetlands name with `replace_existing=False` and an `EnvironmentSpec` containing only Python 3.12 through Conda plus napari, Qt, and requested distributions through PyPI.
 Each operation is persisted before provisioning/removal and has typed state, progress, message, and error fields; startup recovers published ready generations but never represents interrupted progress as live.
@@ -1832,6 +1835,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 36c | `POST` | `/api/v1/napari/environments/{id}/retry` | Retry eligible managed setup |
 | 36d | `GET`/`POST` | `/api/v1/napari/environments/{id}/operations/{operation_id}` | Poll or cancel a managed mutation (cancel adds `/cancel`) |
 | 36e | `DELETE` | `/api/v1/napari/environments/managed/{id}` | Remove a proven owned managed generation |
+| 36f | `POST` | `/api/v1/napari/viewing-readiness` | Passive desktop-only compatibility report for a portable viewing-requirement manifest |
 | 37 | `POST` | `/api/v1/fiji/open` | "Open in Fiji" button in Node Data |
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" for catalog tools and newly created tools after the active canvas persistence barrier |

@@ -134,7 +134,86 @@ def test_resolution_falls_through_incompatible_favorite_to_filename_rule(tmp_pat
     ]
     assert response.candidates[1].label == "Required packages installed"
     assert response.reader_id == "artifact.reader"
+    assert [candidate.reader_id for candidate in response.candidates] == [
+        "artifact.reader",
+        "artifact.reader",
+    ]
     assert response.preference_key == favorite_key
+
+
+def test_filename_rule_reader_is_scoped_to_its_candidate(tmp_path) -> None:
+    rule_environment = _environment("rule", 0, {"napari": "0.7.1"})
+    fallback = _environment("fallback", 1, {"napari": "0.7.1", "reader": "1.0"})
+    rule = NapariFilenameRule(
+        id=uuid4(),
+        pattern="*.tif",
+        environment_id=rule_environment.id,
+        reader_id="rule.reader",
+    )
+    environments = SimpleNamespace(
+        snapshot=lambda: NapariEnvironmentList(
+            revision=1,
+            environments=[rule_environment, fallback],
+            default_environment_id=None,
+            filename_rules=[rule],
+        )
+    )
+    workflow_store = SimpleNamespace(
+        workspace_dir=tmp_path / "workspace",
+        ensure_workflow_generation=lambda workflow_id, generation: None,
+        get_storage_path=lambda workflow_id: tmp_path / "results",
+    )
+    viewer = LibraryViewerSpec.from_dict(
+        {
+            "napari": {
+                "required_packages": [
+                    {
+                        "distribution": "reader",
+                        "normalized_name": "reader",
+                        "version": None,
+                    }
+                ],
+                "recommended_packages": [],
+                "napari_version": None,
+                "reader_id": None,
+            }
+        }
+    )
+    resolver = NapariResolverService(
+        environments,
+        ViewerPreferenceStore(tmp_path / "viewer-preferences.json"),
+        SimpleNamespace(
+            load_result_dataframe=lambda identity, storage_path: pd.DataFrame(
+                {"image": ["sample.tif"]}
+            ),
+            result_viewer=lambda identity, output, storage_path: viewer,
+        ),
+        lambda: workflow_store,
+    )
+    identity = ResultArtifactIdentity(
+        run_id="run_old",
+        node_key="n1",
+        result_key="rk_old",
+        record_id="rec_old",
+    )
+
+    response = resolver.resolve(
+        NapariResolveRequest(
+            workflow_id="wf",
+            identity_generation=3,
+            node_path=("n1",),
+            output_key="image",
+            result_identity=identity,
+            row=0,
+        )
+    )
+
+    assert response.effective_environment_id == fallback.id
+    assert [candidate.reader_id for candidate in response.candidates] == [
+        "rule.reader",
+        None,
+    ]
+    assert response.reader_id is None
 
 
 def test_stale_inventory_is_unknown_not_incompatible(tmp_path) -> None:
