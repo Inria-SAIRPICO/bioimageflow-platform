@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import httpx
 import logging
@@ -14,13 +15,17 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
-from bioimageflow_server.models.napari import NapariStatus
+from bioimageflow_server.models.napari import NapariEnvironmentStatus, NapariStatus
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 from bioimageflow_server.services.napari_launcher import (
     NapariLauncher,
+    NapariLauncherPool,
     NapariLaunchError,
+    NapariOpenError,
+    NapariOpenOutcomeUnknown,
 )
+from bioimageflow_server.services.settings_store import SettingsStore
 
 pytestmark = pytest.mark.anyio
 
@@ -38,9 +43,7 @@ def _fake_launcher(*, status: NapariStatus | None = None) -> MagicMock:
     launcher = MagicMock(spec=NapariLauncher)
     launcher.open = AsyncMock(return_value=None)
     launcher.shutdown = AsyncMock(return_value=None)
-    launcher.status = MagicMock(
-        return_value=status or NapariStatus(running=False)
-    )
+    launcher.status = MagicMock(return_value=status or NapariStatus(running=False))
     return launcher
 
 
@@ -99,6 +102,54 @@ async def test_open_with_clear_layers_passes_flag(
     launcher.open.assert_awaited_once_with(["/tmp/a.tif"], True)
 
 
+async def test_open_with_environment_and_reader_passes_typed_selection(
+    client_with_launcher,
+) -> None:
+    client, launcher = client_with_launcher
+    environment_id = uuid4()
+    res = await client.post(
+        "/api/v1/napari/open",
+        json={
+            "paths": ["/tmp/a.tif"],
+            "environment_id": str(environment_id),
+            "reader_id": "  org.example.reader  ",
+        },
+    )
+    assert res.status_code == 200
+    launcher.open.assert_awaited_once_with(
+        ["/tmp/a.tif"],
+        False,
+        environment_id=environment_id,
+        reader_id="org.example.reader",
+    )
+
+
+async def test_open_legacy_path_can_pass_explicit_reader(client_with_launcher) -> None:
+    client, launcher = client_with_launcher
+    res = await client.post(
+        "/api/v1/napari/open",
+        json={"paths": ["/tmp/a.tif"], "reader_id": "org.example.reader"},
+    )
+    assert res.status_code == 200
+    launcher.open.assert_awaited_once_with(["/tmp/a.tif"], False, reader_id="org.example.reader")
+
+
+async def test_open_exposes_viewer_failure(client_with_launcher) -> None:
+    client, launcher = client_with_launcher
+    launcher.open.side_effect = NapariOpenError("reader rejected artifact")
+    res = await client.post("/api/v1/napari/open", json={"paths": ["/tmp/a.tif"]})
+    assert res.status_code == 422
+    assert res.json()["error"] == "napari_open_failed"
+
+
+async def test_open_exposes_unknown_outcome(client_with_launcher) -> None:
+    client, launcher = client_with_launcher
+    launcher.open.side_effect = NapariOpenOutcomeUnknown("completion unknown")
+    res = await client.post("/api/v1/napari/open", json={"paths": ["/tmp/a.tif"]})
+    assert res.status_code == 504
+    assert res.json()["error"] == "napari_open_outcome_unknown"
+
+
 async def test_open_resolves_record_relative_asset_path(tmp_path: Path) -> None:
     record_dir = tmp_path / "records" / "rec_test"
     image_path = record_dir / "assets" / "mask.tif"
@@ -137,9 +188,7 @@ async def test_open_resolves_relative_path_against_workflow_storage(
     image_path.parent.mkdir()
     image_path.write_bytes(b"tif")
     result_store = MagicMock()
-    result_store.get_latest_dataframe.return_value = pd.DataFrame(
-        {"mask": ["outputs/mask.tif"]}
-    )
+    result_store.get_latest_dataframe.return_value = pd.DataFrame({"mask": ["outputs/mask.tif"]})
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
     launcher = _fake_launcher()
@@ -168,7 +217,8 @@ async def test_open_resolves_relative_path_against_workflow_storage(
 
 
 async def test_open_returns_400_when_launcher_raises_filenotfound(
-    client_with_launcher, caplog: pytest.LogCaptureFixture,
+    client_with_launcher,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     client, launcher = client_with_launcher
     launcher.open.side_effect = FileNotFoundError(["/tmp/missing.tif"])
@@ -185,7 +235,8 @@ async def test_open_returns_400_when_launcher_raises_filenotfound(
 
 
 async def test_open_returns_503_on_napari_launch_error(
-    client_with_launcher, caplog: pytest.LogCaptureFixture,
+    client_with_launcher,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     client, launcher = client_with_launcher
     launcher.open.side_effect = NapariLaunchError("solver crashed")
@@ -203,9 +254,7 @@ async def test_open_returns_503_on_napari_launch_error(
 
 async def test_open_with_empty_paths_is_valid(client_with_launcher) -> None:
     client, launcher = client_with_launcher
-    res = await client.post(
-        "/api/v1/napari/open", json={"paths": []}
-    )
+    res = await client.post("/api/v1/napari/open", json={"paths": []})
     assert res.status_code == 200
     launcher.open.assert_awaited_once_with([], False)
 
@@ -214,6 +263,35 @@ async def test_open_without_body_returns_422(client_with_launcher) -> None:
     client, _ = client_with_launcher
     res = await client.post("/api/v1/napari/open")
     assert res.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/v1/napari/open"),
+        ("get", "/api/v1/napari/status"),
+        ("post", "/api/v1/napari/shutdown"),
+    ],
+)
+async def test_napari_lifecycle_routes_are_desktop_only(
+    method: str, path: str, tmp_path: Path
+) -> None:
+    launcher = _fake_launcher()
+    app = create_app(
+        config=AppConfig(  # type: ignore[arg-type]
+            deployment_mode="webapp",
+            napari_launcher=launcher,
+            workspace_path=tmp_path,
+            storage_path=tmp_path / "runtime",
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        kwargs = {"json": {"paths": ["/tmp/a.tif"]}} if path.endswith("/open") else {}
+        response = await client.request(method, path, **kwargs)
+    assert response.status_code == 403
+    assert response.json()["error"] == "desktop_only"
 
 
 # ---------------------------------------------------------------------------
@@ -231,15 +309,11 @@ async def test_status_returns_napari_status_shape_when_not_running(
 
 
 async def test_status_returns_running_with_pid_when_alive() -> None:
-    launcher = _fake_launcher(
-        status=NapariStatus(running=True, env_path="/envs/napari", pid=4242)
-    )
+    launcher = _fake_launcher(status=NapariStatus(running=True, env_path="/envs/napari", pid=4242))
     config = AppConfig(napari_launcher=launcher)  # type: ignore[arg-type]
     app = create_app(config=config)
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as ac:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         res = await ac.get("/api/v1/napari/status")
     assert res.status_code == 200
     assert res.json() == {
@@ -247,6 +321,31 @@ async def test_status_returns_running_with_pid_when_alive() -> None:
         "env_path": "/envs/napari",
         "pid": 4242,
     }
+
+
+async def test_status_for_environment_is_attributed() -> None:
+    environment_id = uuid4()
+    launcher = _fake_launcher()
+    launcher.status.return_value = NapariEnvironmentStatus(
+        running=True,
+        env_path="/envs/tracking",
+        pid=4242,
+        environment_id=environment_id,
+        environment_name="Tracking",
+        installation_identity="install-1:inventory-1",
+        status="running",
+    )
+    app = create_app(config=AppConfig(napari_launcher=launcher))  # type: ignore[arg-type]
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/v1/napari/status", params={"environment_id": str(environment_id)}
+        )
+    assert response.status_code == 200
+    assert response.json()["environment_id"] == str(environment_id)
+    assert response.json()["environment_name"] == "Tracking"
+    launcher.status.assert_called_once_with(environment_id)
 
 
 async def test_status_does_not_call_open_or_send_command(
@@ -280,6 +379,16 @@ async def test_shutdown_is_safe_when_not_running(client_with_launcher) -> None:
     res = await client.post("/api/v1/napari/shutdown")
     assert res.status_code == 200
     launcher.shutdown.assert_awaited_once()
+
+
+async def test_shutdown_can_target_one_environment(client_with_launcher) -> None:
+    client, launcher = client_with_launcher
+    environment_id = uuid4()
+    res = await client.post(
+        "/api/v1/napari/shutdown", params={"environment_id": str(environment_id)}
+    )
+    assert res.status_code == 200
+    launcher.shutdown.assert_awaited_once_with(environment_id)
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +429,20 @@ def test_create_app_uses_provided_napari_launcher() -> None:
     config = AppConfig(napari_launcher=custom)  # type: ignore[arg-type]
     app = create_app(config=config)
     assert app.state.napari_launcher is custom
+
+
+def test_create_app_wraps_legacy_launcher_with_registry_pool(tmp_path: Path) -> None:
+    legacy = _fake_launcher()
+    store = SettingsStore(tmp_path / "settings.json")
+    app = create_app(
+        config=AppConfig(
+            napari_launcher=legacy,  # type: ignore[arg-type]
+            settings_store=store,
+            workspace_path=tmp_path / "workspace",
+        )
+    )
+    assert isinstance(app.state.napari_launcher, NapariLauncherPool)
+    assert app.state.napari_launcher._legacy_launcher is legacy
 
 
 # ---------------------------------------------------------------------------

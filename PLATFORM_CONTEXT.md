@@ -266,7 +266,9 @@ Its package-compatibility contract uses installed Python distribution metadata a
 Managed creation uses Python 3.12 from Conda and installs the remaining distributions from PyPI, with napari 0.9.1/PyQt6 as the default matrix and napari 0.6.6/PyQt5 as the older smoke matrix.
 Its coordinated portable contract advances graphs to schema v2 and assigns recursive v1 normalization, artifact hashing, and atomic saved-document/root-draft-baseline migration to the implementation phase.
 Its Phase B backend foundation implements the settings-backed environment registry, explicit immutable launch/managed identity, package-only bounded probes, singleton adoption, revisioned desktop-only routes, and ordered filename rules.
-The existing single-environment launch contract remains in force until later launcher, resolver, favorite, frontend, and coordinated library/graph phases land.
+Phase C implements UUID-keyed lazy launcher processes and locks, frozen registered-environment argv dispatch, public Wetlands generation-owned spawning for recipe-created managed entries with a narrow persisted-interpreter fallback for adopted legacy Wetlands 1 workspaces, per-environment napari settings files, optional explicit reader dispatch, Qt-completion acknowledgements, typed open failures, unknown-outcome no-replay semantics, and attributed lifecycle status/events.
+The legacy no-ID open/status/shutdown contract remains as a temporary desktop compatibility path; explicit IDs never provision or mutate registered environments.
+Resolver, favorite, frontend, managed installer, and coordinated library/graph phases remain pending.
 Read it alongside the v1 viewer/settings sections and v2 output/import/export contracts when designing or implementing multiple napari environments; do not introduce row favorites, row exceptions, result-row preference storage or migration, or a favorite scope selector.
 
 Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.

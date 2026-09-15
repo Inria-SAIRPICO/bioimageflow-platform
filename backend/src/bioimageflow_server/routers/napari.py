@@ -14,15 +14,24 @@ does not re-validate. Errors map:
 from __future__ import annotations
 
 import logging
+from typing import cast
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from bioimageflow_server.models.errors import mark_exception_logged
-from bioimageflow_server.models.napari import NapariOpenRequest, NapariStatus
+from bioimageflow_server.models.napari import (
+    NapariEnvironmentStatus,
+    NapariOpenRequest,
+    NapariStatus,
+)
 from bioimageflow_server.routers.viewer_paths import resolve_selected_image_path
 from bioimageflow_server.services.napari_launcher import (
     NapariLauncher,
+    NapariLauncherPool,
     NapariLaunchError,
+    NapariOpenError,
+    NapariOpenOutcomeUnknown,
 )
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -32,7 +41,7 @@ router = APIRouter(prefix="/napari", tags=["napari"])
 _logger = logging.getLogger(__name__)
 
 
-def get_napari_launcher() -> NapariLauncher:  # pragma: no cover
+def get_napari_launcher() -> NapariLauncher | NapariLauncherPool:  # pragma: no cover
     """Stub overridden by ``create_app`` via ``dependency_overrides``."""
     raise NotImplementedError
 
@@ -44,6 +53,21 @@ def get_result_store() -> ResultStoreService:  # pragma: no cover
 
 def get_workflow_store() -> WorkflowStoreService | None:  # pragma: no cover
     return None
+
+
+def get_deployment_mode() -> str:  # pragma: no cover
+    return "desktop"
+
+
+def _require_desktop(mode: str = Depends(get_deployment_mode)) -> None:
+    if mode != "desktop":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "desktop_only",
+                "detail": "napari viewer operations are available only in desktop mode",
+            },
+        )
 
 
 def _context_fields(request: NapariOpenRequest) -> tuple[object, ...]:
@@ -87,13 +111,26 @@ def _resolve_open_paths(
 @router.post("/open")
 async def open_in_napari(
     request: NapariOpenRequest,
-    launcher: NapariLauncher = Depends(get_napari_launcher),
+    _desktop: None = Depends(_require_desktop),
+    launcher: NapariLauncher | NapariLauncherPool = Depends(get_napari_launcher),
     result_store: ResultStoreService = Depends(get_result_store),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> dict[str, str]:
     try:
         paths = _resolve_open_paths(request, result_store, workflow_store)
-        await launcher.open(paths, request.clear_layers)
+        if request.environment_id is None:
+            if request.reader_id is None:
+                await launcher.open(paths, request.clear_layers)
+            else:
+                await launcher.open(paths, request.clear_layers, reader_id=request.reader_id)
+        else:
+            pool = cast(NapariLauncherPool, launcher)
+            await pool.open(
+                paths,
+                request.clear_layers,
+                environment_id=request.environment_id,
+                reader_id=request.reader_id,
+            )
     except HTTPException as exc:
         _logger.warning(
             "Napari open request rejected with HTTP %s: %s",
@@ -110,6 +147,21 @@ async def open_in_napari(
             status_code=400,
             detail={"error": "path_not_found", "detail": str(exc)},
         ) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(
+            status_code=404 if isinstance(exc, KeyError) else 422,
+            detail={"error": "napari_environment_invalid", "detail": str(exc)},
+        ) from exc
+    except NapariOpenError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "napari_open_failed", "detail": str(exc)},
+        ) from exc
+    except NapariOpenOutcomeUnknown as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={"error": "napari_open_outcome_unknown", "detail": str(exc)},
+        ) from exc
     except NapariLaunchError as exc:
         _logger.error(
             "Napari open request failed while launching or contacting Napari: %s",
@@ -125,17 +177,38 @@ async def open_in_napari(
     return {"status": "ok"}
 
 
-@router.get("/status", response_model=NapariStatus)
+@router.get("/status", response_model=NapariStatus | NapariEnvironmentStatus)
 def napari_status(
-    launcher: NapariLauncher = Depends(get_napari_launcher),
-) -> NapariStatus:
+    environment_id: UUID | None = None,
+    _desktop: None = Depends(_require_desktop),
+    launcher: NapariLauncher | NapariLauncherPool = Depends(get_napari_launcher),
+) -> NapariStatus | NapariEnvironmentStatus:
     # Lock-free: safe to call concurrently with a long-running launch.
-    return launcher.status()
+    try:
+        if environment_id is None:
+            return launcher.status()
+        return cast(NapariLauncherPool, launcher).status(environment_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "napari_environment_not_found", "detail": str(exc)},
+        ) from exc
 
 
 @router.post("/shutdown")
 async def shutdown_napari(
-    launcher: NapariLauncher = Depends(get_napari_launcher),
+    environment_id: UUID | None = None,
+    _desktop: None = Depends(_require_desktop),
+    launcher: NapariLauncher | NapariLauncherPool = Depends(get_napari_launcher),
 ) -> dict[str, str]:
-    await launcher.shutdown()
+    try:
+        if environment_id is None:
+            await launcher.shutdown()
+        else:
+            await cast(NapariLauncherPool, launcher).shutdown(environment_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "napari_environment_not_found", "detail": str(exc)},
+        ) from exc
     return {"status": "ok"}

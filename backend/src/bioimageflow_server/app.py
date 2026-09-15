@@ -85,6 +85,7 @@ from bioimageflow_server.routers.executions import (
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.data_table import router as data_table_router
 from bioimageflow_server.routers.napari import (
+    get_deployment_mode as napari_get_deployment_mode,
     get_napari_launcher,
     get_result_store as napari_get_result_store,
     get_workflow_store as napari_get_workflow_store,
@@ -171,7 +172,7 @@ from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.fiji_launcher import FijiLauncher
 from bioimageflow_server.services.demo_workflows import DemoWorkflowService
 from bioimageflow_server.services.known_packages import KnownPackagesService
-from bioimageflow_server.services.napari_launcher import NapariLauncher
+from bioimageflow_server.services.napari_launcher import NapariLauncher, NapariLauncherPool
 from bioimageflow_server.services.napari_environments import NapariEnvironmentService
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
@@ -573,6 +574,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     napari_launcher = config.napari_launcher or NapariLauncher(
         connection_manager=ws_manager,
     )
+    napari_lifecycle: NapariLauncher | NapariLauncherPool = (
+        config.napari_launcher_pool or napari_launcher
+    )
+    if (
+        config.napari_launcher_pool is None
+        and napari_environment_service is not None
+        and settings_store is not None
+    ):
+        napari_lifecycle = NapariLauncherPool(
+            napari_environment_service.snapshot,
+            legacy_launcher=napari_launcher,
+            connection_manager=ws_manager,
+            config_root=settings_store.path.parent / "napari",
+        )
     fiji_launcher = config.fiji_launcher or FijiLauncher(settings_provider=_live_settings)
 
     editor_service = config.editor_service or EditorService(
@@ -658,7 +673,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             # and must run before the WS log handler is detached so the
             # final environment_status: stopped event reaches clients.
             try:
-                await napari_launcher.shutdown()
+                if isinstance(napari_lifecycle, NapariLauncherPool):
+                    await napari_lifecycle.shutdown_all()
+                else:
+                    await napari_lifecycle.shutdown()
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).exception(
                     "napari_launcher.shutdown() raised during lifespan: %r",
@@ -865,9 +883,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(fiji_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.include_router(data_table_router, prefix="/api/v1")
-    app.state.napari_launcher = napari_launcher
+    app.state.napari_launcher = napari_lifecycle
     app.state.fiji_launcher = fiji_launcher
-    app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
+    app.dependency_overrides[get_napari_launcher] = lambda: napari_lifecycle
     app.dependency_overrides[get_fiji_launcher] = lambda: fiji_launcher
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
@@ -926,6 +944,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[napari_get_deployment_mode] = lambda: config.deployment_mode
     app.dependency_overrides[fiji_get_result_store] = lambda: result_store
     app.dependency_overrides[fiji_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[fiji_get_settings] = _live_settings

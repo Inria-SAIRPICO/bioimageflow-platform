@@ -636,6 +636,28 @@ async def test_broadcast_environment_status() -> None:
     }
 
 
+async def test_broadcast_environment_status_includes_registered_identity() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+    await mgr.broadcast_environment_status(
+        "napari",
+        "running",
+        environment_id="1234",
+        environment_name="Tracking",
+    )
+    await _drain(mgr)
+    assert ws.sent[0] == {
+        "type": "environment_status",
+        "env_name": "napari",
+        "status": "running",
+        "environment_id": "1234",
+        "environment_name": "Tracking",
+    }
+
+
 async def test_broadcast_workflow_draft_changed() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 

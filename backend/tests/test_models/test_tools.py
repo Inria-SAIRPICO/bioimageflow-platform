@@ -256,6 +256,7 @@ def test_app_config_defaults():
     assert cfg.datasets_root is None
     assert cfg.max_upload_size is None
     assert cfg.napari_launcher is None
+    assert cfg.napari_launcher_pool is None
 
 
 def test_app_config_dataset_overrides():
@@ -270,3 +271,9 @@ def test_app_config_napari_launcher_override():
     sentinel = object()
     cfg = AppConfig(napari_launcher=sentinel)  # type: ignore[arg-type]
     assert cfg.napari_launcher is sentinel
+
+
+def test_app_config_napari_launcher_pool_override():
+    sentinel = object()
+    cfg = AppConfig(napari_launcher_pool=sentinel)  # type: ignore[arg-type]
+    assert cfg.napari_launcher_pool is sentinel

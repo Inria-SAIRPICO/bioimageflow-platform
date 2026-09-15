@@ -1,6 +1,6 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: Phase A specification complete; Phase B backend environment registry, inventory probe, and settings foundation implemented; remaining phases not implemented.
+Status: Phase A specification complete; Phase B backend environment registry, inventory probe, and settings foundation implemented; Phase C per-environment launcher and lifecycle implemented; remaining phases not implemented.
 This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
 It does not change their implemented status or the library's current public API.
 The examples below describe proposed schemas, not APIs available today.
@@ -486,7 +486,10 @@ Implement in independently verifiable increments:
 
 The intended feature is complete only when all three increments are available.
 The implemented Phase B foundation covers the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
-It does not yet replace the singleton launcher or implement launcher/configuration isolation, the frontend settings list and split button, one-time selection, compatibility resolution, output favorites, managed creation/deletion, or graph/library contracts.
+Phase C replaces the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
+External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
+The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path during migration, while explicit registered IDs never provision or mutate their environment.
+The frontend settings list and split button, one-time selection, compatibility resolution, output favorites, managed creation/deletion, and graph/library contracts remain unimplemented.
 Before implementation, settle the supported bridge/version matrix, configuration-isolation mechanism, and public Wetlands recipe capabilities with small feasibility checks.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 

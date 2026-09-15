@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, field_validator
 
 
 class NapariOpenRequest(BaseModel):
@@ -10,10 +13,20 @@ class NapariOpenRequest(BaseModel):
 
     paths: list[str]
     clear_layers: bool = False
+    environment_id: UUID | None = None
+    reader_id: str | None = None
     node_id: str | None = None
     row: int | None = None
     col: str | None = None
     workflow_name: str | None = None
+
+    @field_validator("reader_id", mode="before")
+    @classmethod
+    def _normalize_reader_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
 
 class NapariStatus(BaseModel):
@@ -22,3 +35,13 @@ class NapariStatus(BaseModel):
     running: bool
     env_path: str | None = None
     pid: int | None = None
+
+
+class NapariEnvironmentStatus(NapariStatus):
+    """Lifecycle state for one explicitly registered environment."""
+
+    environment_id: UUID
+    environment_name: str
+    installation_identity: str
+    status: Literal["stopped", "opening", "running", "failed", "restart_required"]
+    detail: str | None = None

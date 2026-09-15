@@ -56,7 +56,7 @@ The backend is stateless between request-local validation calls except for workf
 | `tool_registry: dict[str, type[BaseTool]]` | Discovered tools indexed by class name (the unique tool identifier) |
 | `agent workspace context` | The active workflow id and draft revision written for external agents; this context does not select graph meaning for validation, persistence, or execution requests |
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
-| `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
+| `napari_launcher: NapariLauncher or NapariLauncherPool | None` | Manages the legacy process and UUID-keyed registered-environment processes (lazily created) |
 
 There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Execution without a draft revision does the same as an explicit compatibility operation; revision-addressed execution first proves the submitted graph matches the named accepted draft revision and then compiles the backend-loaded draft. Run Selected also compiles that complete graph, then derives the requested root node IDs plus their transitive upstream root IDs from its edges. A diagnostic is ignored only when its scoped node path proves that it belongs to a root node outside this selected execution scope; diagnostics owned by a selected or upstream workflow boundary, including descendant paths, remain blocking, as do global or otherwise unattributable diagnostics.
 
@@ -795,18 +795,19 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 |--------|----------|-------------|
 | `GET` | `/nodes/{node_id}/image` | Serve an image-valued output cell; query parameters are `row`, `col`, optional `workflow_name`, and optional `format=ome-tiff`. |
 | `GET` | `/nodes/{node_id}/image/{filename}` | Serve the same image with a stable response filename for Avivator-compatible range and offset requests. |
-| `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool}`) |
-| `GET` | `/napari/status` | Check if Napari is running |
+| `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool, environment_id?: UUID, reader_id?: str}`) |
+| `GET` | `/napari/status` | Check legacy Napari status, or one registered environment with `environment_id` |
+| `POST` | `/napari/shutdown` | Stop the legacy viewer, or one registered environment with `environment_id` |
 | `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
 
 The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
 They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
 Webapp mode rejects all of these local operations.
-These routes do not yet change the singleton `/napari/open`, `/napari/status`, or `/napari/shutdown` behavior described below.
+Phase C extends `/napari/open`, `/napari/status`, and `/napari/shutdown` with optional registered environment IDs while preserving their no-ID compatibility behavior.
 
 The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
-The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in an isolated Conda environment (`napari` + `pyqt`) with its own Qt event loop. Communication uses `multiprocessing.connection` (Client/Listener pattern on localhost). The backend launches Napari lazily on the first `/napari/open` call and reconnects automatically if the process dies.
+The backend uses an authenticated `multiprocessing.connection` Client/Listener channel to a helper running napari's Qt loop. The no-ID compatibility path lazily provisions the legacy Wetlands `napari` environment. An explicit registered ID instead uses that environment's persisted argv prefix without provisioning or package mutation, owns an independent process/lock/configuration file, and may pass `reader_id` separately as napari's `plugin=` argument. Success is returned only after the Qt-thread operation completes. A timeout or disconnect after dispatch reports an unknown outcome, invalidates the channel, and never replays the open automatically.
 
 Fiji is a desktop-only, user-owned integration. BioImageFlow stores the selected `Fiji.app` installation directory, resolves the appropriate current or legacy launcher for the host platform, and passes the workflow-resolved image path as a separate process argument. BioImageFlow does not install, update, supervise, or shut down Fiji. The Fiji endpoint is forbidden in webapp mode and never accepts an arbitrary client-supplied filesystem path.
 
@@ -1481,12 +1482,13 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 
 **Avivator:** The browser action requests the selected cell through the workflow-scoped node-image endpoint with `format=ome-tiff`, then opens the external Avivator application in a Dockview iframe using that absolute image URL. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
 
-**Napari:** Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
+**Napari:** The backend uses a legacy `NapariLauncher` plus a registered-environment launcher pool that:
 
-1. Provisions an immutable environment recipe with `napari` and `pyqt` via Wetlands
-2. Launches and supervises `napari_manager.py` with Wetlands managed processes
-3. Communicates via `multiprocessing.connection` (Client/Listener on localhost)
-4. Auto-reconnects if Napari crashes or is closed by the user
+1. Preserves lazy Wetlands provisioning only for the no-ID compatibility path
+2. Launches external explicit registrations directly from their frozen argv prefix, while recipe-created managed registrations use the public Wetlands managed-environment `spawn` API; adopted legacy Wetlands 1 workspaces may fall back to their persisted interpreter
+3. Gives every registered environment a UUID-scoped `NAPARI_CONFIG` settings YAML file and verifies napari resolved that public configuration path before viewer startup
+4. Communicates through authenticated local IPC and acknowledges opens only after their Qt-thread viewer operation completes
+5. Reports reader failures as typed open errors and ambiguous post-dispatch completion as unknown without replay
 
 **Interactions:**
 - **Open in Napari:** Triggered from Node Data image cells. Sends `POST /napari/open {paths, clear_layers: false}`.

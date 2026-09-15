@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
     from bioimageflow_server.services.execution_profiles import ExecutionProfileStore
     from bioimageflow_server.services.known_packages import KnownPackagesService
-    from bioimageflow_server.services.napari_launcher import NapariLauncher
+    from bioimageflow_server.services.napari_launcher import NapariLauncher, NapariLauncherPool
     from bioimageflow_server.services.napari_environments import NapariEnvironmentService
     from bioimageflow_server.services.fiji_launcher import FijiLauncher
     from bioimageflow_server.services.package_catalog import PackageCatalogService
@@ -233,6 +233,7 @@ class AppConfig:
     settings_store: SettingsStore | None = None
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
+    napari_launcher_pool: NapariLauncherPool | None = None
     napari_environment_service: NapariEnvironmentService | None = None
     fiji_launcher: FijiLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
