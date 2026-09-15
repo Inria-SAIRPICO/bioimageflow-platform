@@ -344,6 +344,7 @@ test('copies an agent graph with recursively owned unsaved sources without alias
         outputs: [{
           id: 'embedded-owned-value', name: 'value', schema: { type: 'int' },
           source: { node: 'owned_numbers', column: 'value' },
+          viewer_addition: null,
         }],
       },
     }
