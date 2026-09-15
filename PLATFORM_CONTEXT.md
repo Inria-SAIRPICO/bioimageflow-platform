@@ -261,6 +261,10 @@ Use this authority order:
 4. `platform_specs_distributed_execution.md` is the implemented normative delta for managed distributed execution and overrides v2 where it explicitly changes the same behavior.
 5. `platform_specs_v3.md` is a future webapp and multi-user proposal, not evidence that a feature is implemented.
 
+[`platform_specs_napari_environments.md`](platform_specs_napari_environments.md) is a separate future feature proposal for named local napari environments, portable output viewing requirements, environment selection, and setup guidance.
+It does not supersede the implemented single-environment viewer contract until implementation and coordinated library/platform specification updates land.
+Read it alongside the v1 viewer/settings sections and v2 output/import/export contracts when designing or implementing multiple napari environments.
+
 Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.
 When implementation and specification disagree, determine whether the code is defective or the specification has not been updated, then make the task leave them consistent.
 
