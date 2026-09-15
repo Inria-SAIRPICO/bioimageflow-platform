@@ -89,6 +89,29 @@ async def test_routes_return_typed_revisioned_mutations(tmp_path: Path) -> None:
         assert listing.json()["revision"] == 2
 
 
+async def test_openapi_exposes_typed_managed_operation_routes(tmp_path: Path) -> None:
+    client, _store = await _client(tmp_path, "desktop")
+    async with client:
+        schema = (await client.get("/openapi.json")).json()
+
+    paths = schema["paths"]
+    assert paths["/api/v1/napari/environments/managed"]["post"]["responses"]["202"]
+    assert paths["/api/v1/napari/environments/managed/{environment_id}"]["delete"][
+        "responses"
+    ]["202"]
+    assert paths["/api/v1/napari/environments/{environment_id}/copy"]["post"]["responses"][
+        "202"
+    ]
+    assert paths["/api/v1/napari/environments/{environment_id}/retry"]["post"]["responses"][
+        "202"
+    ]
+    assert "/api/v1/napari/environments/{environment_id}/operations/{operation_id}" in paths
+    assert (
+        "/api/v1/napari/environments/{environment_id}/operations/{operation_id}/cancel"
+        in paths
+    )
+
+
 async def test_webapp_rejects_all_local_registry_operations(tmp_path: Path) -> None:
     client, _store = await _client(tmp_path, "webapp")
     environment_id = str(uuid4())

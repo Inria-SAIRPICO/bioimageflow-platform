@@ -12,6 +12,10 @@ from bioimageflow_server.models.napari_environments import (
     NapariEnvironmentList,
     NapariEnvironmentMutation,
     NapariEnvironmentUpdate,
+    NapariManagedEnvironmentCopy,
+    NapariManagedEnvironmentCreate,
+    NapariManagedOperationMutation,
+    NapariManagedRetryRequest,
     NapariFilenamePreview,
     NapariFilenamePreviewRequest,
     NapariFilenameRuleCreate,
@@ -95,6 +99,104 @@ def list_environments(
     service: NapariEnvironmentService = Depends(_service),
 ) -> NapariEnvironmentList:
     return service.snapshot()
+
+
+@router.post(
+    "/environments/managed",
+    response_model=NapariManagedOperationMutation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_managed_environment(
+    request: NapariManagedEnvironmentCreate,
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return await service.create_managed(request)
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.delete(
+    "/environments/managed/{environment_id}",
+    response_model=NapariManagedOperationMutation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def remove_managed_environment(
+    environment_id: UUID,
+    expected_revision: int = Query(ge=0),
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return await service.remove_managed(
+            environment_id, expected_revision=expected_revision
+        )
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/environments/{environment_id}/copy",
+    response_model=NapariManagedOperationMutation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def copy_managed_environment(
+    environment_id: UUID,
+    request: NapariManagedEnvironmentCopy,
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return await service.copy_managed(environment_id, request)
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/environments/{environment_id}/retry",
+    response_model=NapariManagedOperationMutation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_managed_environment(
+    environment_id: UUID,
+    request: NapariManagedRetryRequest,
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return await service.retry_managed(
+            environment_id, expected_revision=request.expected_revision
+        )
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get(
+    "/environments/{environment_id}/operations/{operation_id}",
+    response_model=NapariManagedOperationMutation,
+)
+def get_managed_operation(
+    environment_id: UUID,
+    operation_id: UUID,
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return service.managed_operation(environment_id, operation_id)
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/environments/{environment_id}/operations/{operation_id}/cancel",
+    response_model=NapariManagedOperationMutation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def cancel_managed_operation(
+    environment_id: UUID,
+    operation_id: UUID,
+    service: NapariEnvironmentService = Depends(_service),
+) -> NapariManagedOperationMutation:
+    try:
+        return await service.cancel_managed_operation(environment_id, operation_id)
+    except NapariEnvironmentError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.post(

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -12,24 +14,42 @@ import threading
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
+from wetlands import (
+    EnvironmentManager,
+    EnvironmentSpec,
+    ManagedEnvironmentState,
+    Operation,
+    OperationCanceled,
+    OperationEvent,
+)
+
+from bioimageflow.env_manager import get_shared_environment_manager
 
 from bioimageflow_server.models.napari_environments import (
     NapariEnvironment,
+    NapariEnvironmentOperation,
+    NapariEnvironmentOperationError,
     NapariEnvironmentInventory,
     NapariEnvironmentList,
     NapariFilenamePreview,
     NapariFilenameRule,
     NapariFilenameRuleCreate,
     NapariLaunchContext,
+    NapariManagedEnvironmentCopy,
+    NapariManagedEnvironmentCreate,
     NapariManagedMetadata,
+    NapariManagedOperationMutation,
     NapariManagedRecipe,
 )
 from bioimageflow_server.services.settings_store import SettingsRevisionConflict, SettingsStore
 from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
+
+if TYPE_CHECKING:
+    from bioimageflow_server.services.napari_launcher import NapariLauncherPool
 
 
 PROBE_TIMEOUT_SECONDS = 15.0
@@ -81,6 +101,8 @@ class NapariEnvironmentError(Exception):
 
 
 ProbeRunner = Callable[[Sequence[str], dict[str, str], float, int], str]
+EnvironmentManagerProvider = Callable[[], EnvironmentManager]
+EnvironmentReferenceCleanup = Callable[[UUID], Any]
 
 
 def _bounded_run(
@@ -225,12 +247,24 @@ class NapariEnvironmentService:
         conda_executable: str | None = None,
         probe_runner: ProbeRunner = _bounded_run,
         preference_store: ViewerPreferenceStore | None = None,
+        environment_manager_provider: EnvironmentManagerProvider = get_shared_environment_manager,
+        reference_cleanup: EnvironmentReferenceCleanup | None = None,
     ) -> None:
         self.store = store
         self.managed_singleton_roots = tuple(managed_singleton_roots)
         self.conda_executable = conda_executable
         self.probe_runner = probe_runner
         self.preference_store = preference_store
+        self.environment_manager_provider = environment_manager_provider
+        self.reference_cleanup = reference_cleanup
+        self._launcher_pool: NapariLauncherPool | None = None
+        self._wetlands_operations: dict[UUID, Operation[Any]] = {}
+        self._operation_tasks: dict[UUID, asyncio.Task[None]] = {}
+        self._environment_locks: dict[UUID, asyncio.Lock] = {}
+
+    def set_launcher_pool(self, launcher_pool: NapariLauncherPool) -> None:
+        """Bind viewer lifecycle coordination after the app constructs the pool."""
+        self._launcher_pool = launcher_pool
 
     def snapshot(self) -> NapariEnvironmentList:
         settings = self.store.get()
@@ -243,7 +277,270 @@ class NapariEnvironmentService:
             environments=environments,
             default_environment_id=settings.napari_default_environment_id,
             filename_rules=settings.napari_filename_rules,
+            operations=settings.napari_environment_operations,
         )
+
+    async def create_managed(
+        self, request: NapariManagedEnvironmentCreate
+    ) -> NapariManagedOperationMutation:
+        return await self._begin_new_managed(
+            name=request.name,
+            recipe=request.recipe.resolved(),
+            kind="create",
+            expected_revision=request.expected_revision,
+        )
+
+    async def copy_managed(
+        self, source_id: UUID, request: NapariManagedEnvironmentCopy
+    ) -> NapariManagedOperationMutation:
+        source = self._get(source_id)
+        if (
+            source.ownership != "managed"
+            or source.managed is None
+            or source.managed.recipe.source != "managed"
+        ):
+            raise NapariEnvironmentError(
+                "napari_managed_copy_forbidden",
+                "only recipe-created managed environments can be copied",
+            )
+        if source.state not in {"ready", "drifted"}:
+            raise NapariEnvironmentError(
+                "napari_managed_copy_unavailable", "the source environment is not ready"
+            )
+        recipe_data = source.managed.recipe.model_dump()
+        changed_matrix = any(value is not None for value in (request.python, request.napari, request.qt))
+        if request.python is not None:
+            recipe_data["python"] = request.python
+        if request.napari is not None:
+            recipe_data["napari"] = request.napari
+        if request.qt is not None:
+            recipe_data["qt"] = request.qt
+        if request.requested_packages is not None:
+            recipe_data["requested_packages"] = request.requested_packages
+        if changed_matrix:
+            recipe_data["preset"] = "advanced"
+        recipe = NapariManagedRecipe.model_validate(recipe_data)
+        return await self._begin_new_managed(
+            name=request.name,
+            recipe=recipe,
+            kind="copy",
+            expected_revision=request.expected_revision,
+        )
+
+    async def retry_managed(
+        self, environment_id: UUID, *, expected_revision: int
+    ) -> NapariManagedOperationMutation:
+        environment = self._get(environment_id)
+        if (
+            environment.ownership != "managed"
+            or environment.managed is None
+            or environment.managed.recipe.source != "managed"
+        ):
+            raise NapariEnvironmentError(
+                "napari_managed_retry_forbidden",
+                "only recipe-created managed environments can be retried",
+            )
+        if environment.state not in {"failed", "cancelled", "setup_needed"}:
+            raise NapariEnvironmentError(
+                "napari_managed_retry_unavailable",
+                f"environment state {environment.state!r} cannot be retried",
+            )
+        self._require_no_active_operation(environment_id)
+        operation = self._new_operation(environment_id, "retry", "Retry queued")
+        updated = environment.model_copy(
+            update={"state": "creating", "last_error": None, "inventory": None}
+        )
+        settings = self.store.get()
+        await self._patch(
+            expected_revision,
+            {
+                "napari_environments": [
+                    updated if item.id == environment_id else item
+                    for item in settings.napari_environments
+                ],
+                "napari_environment_operations": self._append_operation(
+                    settings.napari_environment_operations, operation
+                ),
+            },
+        )
+        self._start_provisioning(updated, operation)
+        return self.managed_operation(environment_id, operation.id)
+
+    async def remove_managed(
+        self, environment_id: UUID, *, expected_revision: int
+    ) -> NapariManagedOperationMutation:
+        environment = self._get(environment_id)
+        if (
+            environment.ownership != "managed"
+            or environment.managed is None
+            or environment.managed.recipe.source != "managed"
+        ):
+            raise NapariEnvironmentError(
+                "napari_managed_delete_forbidden",
+                "only platform-created managed installations can be deleted; forget this entry instead",
+            )
+        self._require_no_active_operation(environment_id)
+        operation = self._new_operation(
+            environment_id, "remove", "Removal queued", state="removing"
+        )
+        updated = environment.model_copy(update={"state": "removing", "last_error": None})
+        settings = self.store.get()
+        await self._patch(
+            expected_revision,
+            {
+                "napari_environments": [
+                    updated if item.id == environment_id else item
+                    for item in settings.napari_environments
+                ],
+                "napari_environment_operations": self._append_operation(
+                    settings.napari_environment_operations, operation
+                ),
+            },
+        )
+        self._operation_tasks[operation.id] = asyncio.create_task(
+            self._complete_removal(updated, operation),
+            name=f"napari-remove-{environment_id}",
+        )
+        return self.managed_operation(environment_id, operation.id)
+
+    def managed_operation(
+        self, environment_id: UUID, operation_id: UUID
+    ) -> NapariManagedOperationMutation:
+        settings = self.store.get()
+        operation = next(
+            (
+                item
+                for item in settings.napari_environment_operations
+                if item.id == operation_id and item.environment_id == environment_id
+            ),
+            None,
+        )
+        if operation is None:
+            raise NapariEnvironmentError(
+                "napari_operation_not_found", f"napari operation {operation_id} was not found"
+            )
+        environment = next(
+            (item for item in settings.napari_environments if item.id == environment_id), None
+        )
+        return NapariManagedOperationMutation(
+            revision=settings.napari_registry_revision,
+            environment=environment,
+            operation=operation,
+        )
+
+    async def cancel_managed_operation(
+        self, environment_id: UUID, operation_id: UUID
+    ) -> NapariManagedOperationMutation:
+        mutation = self.managed_operation(environment_id, operation_id)
+        if mutation.operation.state in {"completed", "failed", "cancelled"}:
+            return mutation
+        wetlands_operation = self._wetlands_operations.get(operation_id)
+        if wetlands_operation is None:
+            raise NapariEnvironmentError(
+                "napari_operation_not_live",
+                "the operation did not survive process restart; reconcile or retry it",
+            )
+        if not wetlands_operation.cancel():
+            return self.managed_operation(environment_id, operation_id)
+        await self._update_operation(
+            operation_id,
+            message="Cancellation requested; waiting for cleanup",
+        )
+        return self.managed_operation(environment_id, operation_id)
+
+    async def reconcile_managed_operations(self) -> None:
+        """Reconcile persisted non-terminal operations without claiming live progress."""
+        manager = self.environment_manager_provider()
+        infos = {item.name: item for item in manager.managed_environments()}
+        for operation in list(self.store.get().napari_environment_operations):
+            if operation.state in {"completed", "failed", "cancelled"}:
+                continue
+            environment = next(
+                (
+                    item
+                    for item in self.store.get().napari_environments
+                    if item.id == operation.environment_id
+                ),
+                None,
+            )
+            if environment is None or environment.managed is None:
+                await self._finish_operation_without_environment(
+                    operation,
+                    state="failed",
+                    code="napari_operation_restart_unknown",
+                    detail="operation ownership could not be recovered after restart",
+                )
+                continue
+            info = infos.get(environment.managed.wetlands_name)
+            if operation.kind == "remove" and info is None:
+                await self._finalize_removed(environment, operation)
+            elif (
+                operation.kind != "remove"
+                and info is not None
+                and info.state is ManagedEnvironmentState.READY
+            ):
+                await self._recover_ready_environment(environment, operation)
+            else:
+                await self._finish_environment_operation(
+                    environment,
+                    operation,
+                    environment_state="failed",
+                    operation_state="failed",
+                    code="napari_operation_interrupted",
+                    detail="live progress did not survive process restart; retry is required",
+                )
+
+    async def close(self) -> None:
+        """Request cancellation and await owned background operation tasks."""
+        for operation in list(self._wetlands_operations.values()):
+            operation.cancel()
+        tasks = list(self._operation_tasks.values())
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _begin_new_managed(
+        self,
+        *,
+        name: str,
+        recipe: NapariManagedRecipe,
+        kind: Literal["create", "copy"],
+        expected_revision: int,
+    ) -> NapariManagedOperationMutation:
+        settings = self.store.get()
+        self._require_unique_name(name, settings.napari_environments)
+        environment_id = uuid4()
+        wetlands_name = f"napari-{environment_id.hex}"
+        operation = self._new_operation(environment_id, kind, "Creation queued")
+        environment = NapariEnvironment(
+            id=environment_id,
+            registration_order=max(
+                (item.registration_order for item in settings.napari_environments), default=-1
+            )
+            + 1,
+            name=name,
+            ownership="managed",
+            kind="conda",
+            root=f"managed-pending:{wetlands_name}",
+            interpreter="",
+            interpreter_identity="",
+            interpreter_fingerprint="",
+            launch=NapariLaunchContext(strategy="wetlands-managed"),
+            managed=NapariManagedMetadata(
+                wetlands_name=wetlands_name,
+                installation_generation=None,
+                recipe=recipe,
+            ),
+            state="creating",
+        )
+        changes: dict[str, Any] = {
+            "napari_environments": [*settings.napari_environments, environment],
+            "napari_environment_operations": self._append_operation(
+                settings.napari_environment_operations, operation
+            ),
+        }
+        await self._patch(expected_revision, changes)
+        self._start_provisioning(environment, operation)
+        return self.managed_operation(environment.id, operation.id)
 
     async def adopt_managed_singleton(self) -> None:
         settings = self.store.get()
@@ -277,6 +574,372 @@ class NapariEnvironmentService:
                 },
             )
             return
+
+    def _start_provisioning(
+        self, environment: NapariEnvironment, platform_operation: NapariEnvironmentOperation
+    ) -> None:
+        assert environment.managed is not None
+        manager = self.environment_manager_provider()
+        try:
+            wetlands_operation = manager.provision(
+                environment.managed.wetlands_name,
+                self._environment_spec(environment.managed.recipe),
+                replace_existing=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - converted to durable typed failure
+            self._operation_tasks[platform_operation.id] = asyncio.create_task(
+                self._finish_environment_operation(
+                    environment,
+                    platform_operation,
+                    environment_state="failed",
+                    operation_state="failed",
+                    code="napari_provision_failed",
+                    detail=str(exc) or type(exc).__name__,
+                )
+            )
+            return
+        self._wetlands_operations[platform_operation.id] = wetlands_operation
+        loop = asyncio.get_running_loop()
+
+        def receive(event: OperationEvent) -> None:
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(
+                    self._record_wetlands_event(platform_operation.id, event)
+                )
+            )
+
+        wetlands_operation.listen(receive)
+        self._operation_tasks[platform_operation.id] = asyncio.create_task(
+            self._complete_provisioning(environment, platform_operation, wetlands_operation),
+            name=f"napari-provision-{environment.id}",
+        )
+
+    async def _complete_provisioning(
+        self,
+        environment: NapariEnvironment,
+        platform_operation: NapariEnvironmentOperation,
+        wetlands_operation: Operation[Any],
+    ) -> None:
+        lock = self._environment_locks.setdefault(environment.id, asyncio.Lock())
+        async with lock:
+            try:
+                managed = await asyncio.to_thread(wetlands_operation.wait_for)
+                resolved = self.environment_manager_provider().environment(
+                    environment.managed.wetlands_name  # type: ignore[union-attr]
+                )
+                if Path(managed.path).resolve() != Path(resolved.path).resolve():
+                    raise NapariEnvironmentError(
+                        "napari_managed_generation_mismatch",
+                        "provisioned environment does not match the published generation",
+                    )
+                await self._publish_validating_environment(environment, resolved)
+                validating = self._get(environment.id)
+                inventory = await asyncio.to_thread(self._probe_inventory, validating)
+                ready = validating.model_copy(
+                    update={"inventory": inventory, "state": "ready", "last_error": None}
+                )
+                await self._finish_environment_operation(
+                    ready,
+                    platform_operation,
+                    environment_state="ready",
+                    operation_state="completed",
+                    detail="Managed napari environment is ready",
+                )
+            except OperationCanceled:
+                await self._bind_observed_generation(environment.id)
+                await self._finish_environment_operation(
+                    self._get(environment.id),
+                    platform_operation,
+                    environment_state="cancelled",
+                    operation_state="cancelled",
+                    detail="Managed environment creation was cancelled",
+                )
+            except Exception as exc:  # noqa: BLE001 - persisted operational failure
+                await self._bind_observed_generation(environment.id)
+                await self._finish_environment_operation(
+                    self._get(environment.id),
+                    platform_operation,
+                    environment_state="failed",
+                    operation_state="failed",
+                    code=(
+                        exc.code
+                        if isinstance(exc, NapariEnvironmentError)
+                        else "napari_provision_failed"
+                    ),
+                    detail=(
+                        exc.detail
+                        if isinstance(exc, NapariEnvironmentError)
+                        else str(exc) or type(exc).__name__
+                    ),
+                )
+            finally:
+                self._wetlands_operations.pop(platform_operation.id, None)
+                self._operation_tasks.pop(platform_operation.id, None)
+
+    async def _publish_validating_environment(
+        self, environment: NapariEnvironment, managed: Any
+    ) -> None:
+        root, kind, interpreter = self._resolve_installation(Path(managed.path))
+        try:
+            generation = UUID(str(managed.generation_id))
+        except (TypeError, ValueError) as exc:
+            raise NapariEnvironmentError(
+                "napari_managed_generation_invalid",
+                "Wetlands published an invalid managed generation identity",
+            ) from exc
+        assert environment.managed is not None
+        metadata = environment.managed.model_copy(
+            update={"installation_generation": generation}
+        )
+        validating = environment.model_copy(
+            update={
+                "root": _canonical_path(root),
+                "kind": kind,
+                "interpreter": _launch_path(interpreter),
+                "interpreter_identity": _canonical_path(interpreter),
+                "interpreter_fingerprint": _interpreter_fingerprint(interpreter),
+                "launch": self._launch_context(root, kind, interpreter, ownership="managed"),
+                "managed": metadata,
+                "state": "creating",
+                "last_error": None,
+            }
+        )
+        await self._replace_environment_internal(validating)
+        await self._update_operation(
+            environment_id=environment.id,
+            operation_id=self._active_operation(environment.id).id,
+            state="validating",
+            progress=85,
+            message="Validating installed distributions",
+            wetlands_operation_id=None,
+        )
+
+    async def _complete_removal(
+        self, environment: NapariEnvironment, platform_operation: NapariEnvironmentOperation
+    ) -> None:
+        lock = self._environment_locks.setdefault(environment.id, asyncio.Lock())
+        async with lock:
+            try:
+                if self._launcher_pool is None:
+                    raise NapariEnvironmentError(
+                        "napari_launcher_coordination_unavailable",
+                        "napari launcher coordination is not configured",
+                    )
+                await self._launcher_pool.shutdown(environment.id)
+                manager = self.environment_manager_provider()
+                self._verify_owned_generation(environment, manager)
+                assert environment.managed is not None
+                wetlands_operation = manager.remove(environment.managed.wetlands_name)
+                self._wetlands_operations[platform_operation.id] = wetlands_operation
+                await self._update_operation(
+                    operation_id=platform_operation.id,
+                    environment_id=environment.id,
+                    wetlands_operation_id=wetlands_operation.id,
+                    message="Removing managed installation",
+                    progress=25,
+                )
+                loop = asyncio.get_running_loop()
+
+                def receive(event: OperationEvent) -> None:
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(
+                            self._record_wetlands_event(platform_operation.id, event)
+                        )
+                    )
+
+                wetlands_operation.listen(receive)
+                await asyncio.to_thread(wetlands_operation.wait_for)
+                await self._finalize_removed(environment, platform_operation)
+            except OperationCanceled:
+                await self._finish_environment_operation(
+                    environment,
+                    platform_operation,
+                    environment_state="cancelled",
+                    operation_state="cancelled",
+                    detail="Managed environment removal was cancelled",
+                )
+            except Exception as exc:  # noqa: BLE001 - persisted operational failure
+                await self._finish_environment_operation(
+                    environment,
+                    platform_operation,
+                    environment_state="failed",
+                    operation_state="failed",
+                    code=(
+                        exc.code
+                        if isinstance(exc, NapariEnvironmentError)
+                        else "napari_remove_failed"
+                    ),
+                    detail=(
+                        exc.detail
+                        if isinstance(exc, NapariEnvironmentError)
+                        else str(exc) or type(exc).__name__
+                    ),
+                )
+            finally:
+                self._wetlands_operations.pop(platform_operation.id, None)
+                self._operation_tasks.pop(platform_operation.id, None)
+
+    async def _recover_ready_environment(
+        self, environment: NapariEnvironment, operation: NapariEnvironmentOperation
+    ) -> None:
+        try:
+            managed = self.environment_manager_provider().environment(
+                environment.managed.wetlands_name  # type: ignore[union-attr]
+            )
+            await self._publish_validating_environment(environment, managed)
+            validating = self._get(environment.id)
+            inventory = await asyncio.to_thread(self._probe_inventory, validating)
+            ready = validating.model_copy(
+                update={"inventory": inventory, "state": "ready", "last_error": None}
+            )
+            await self._finish_environment_operation(
+                ready,
+                operation,
+                environment_state="ready",
+                operation_state="completed",
+                detail="Recovered and validated completed managed environment",
+            )
+        except Exception as exc:  # noqa: BLE001
+            await self._finish_environment_operation(
+                self._get(environment.id),
+                operation,
+                environment_state="failed",
+                operation_state="failed",
+                code="napari_restart_validation_failed",
+                detail=str(exc) or type(exc).__name__,
+            )
+
+    async def _finalize_removed(
+        self, environment: NapariEnvironment, operation: NapariEnvironmentOperation
+    ) -> None:
+        if self.reference_cleanup is not None:
+            result = self.reference_cleanup(environment.id)
+            if inspect.isawaitable(result):
+                await result
+
+        def mutation(settings: Any) -> dict[str, Any]:
+            completed = self._operation_update(
+                settings.napari_environment_operations,
+                operation.id,
+                state="completed",
+                progress=100,
+                message="Managed installation removed",
+                error=None,
+            )
+            return {
+                "napari_environments": [
+                    item for item in settings.napari_environments if item.id != environment.id
+                ],
+                "napari_filename_rules": [
+                    rule
+                    for rule in settings.napari_filename_rules
+                    if rule.environment_id != environment.id
+                ],
+                "napari_default_environment_id": (
+                    None
+                    if settings.napari_default_environment_id == environment.id
+                    else settings.napari_default_environment_id
+                ),
+                "napari_environment_operations": completed,
+            }
+
+        await self.store.mutate_napari_registry(mutation)
+
+    def _verify_owned_generation(
+        self, environment: NapariEnvironment, manager: EnvironmentManager
+    ) -> None:
+        assert environment.managed is not None
+        if environment.managed.installation_generation is None:
+            raise NapariEnvironmentError(
+                "napari_managed_ownership_unverified",
+                "managed generation identity is unavailable; deletion is unsafe",
+            )
+        info = next(
+            (
+                item
+                for item in manager.managed_environments()
+                if item.name == environment.managed.wetlands_name
+            ),
+            None,
+        )
+        if info is None:
+            raise NapariEnvironmentError(
+                "napari_managed_generation_missing", "owned Wetlands environment is missing"
+            )
+        if (
+            Path(info.path).resolve() != Path(environment.root).resolve()
+            or info.generation_id != str(environment.managed.installation_generation)
+        ):
+            raise NapariEnvironmentError(
+                "napari_managed_generation_mismatch",
+                "Wetlands name, path, or generation no longer matches the owned registry entry",
+            )
+
+    async def _bind_observed_generation(self, environment_id: UUID) -> None:
+        environment = self._get(environment_id)
+        assert environment.managed is not None
+        info = next(
+            (
+                item
+                for item in self.environment_manager_provider().managed_environments()
+                if item.name == environment.managed.wetlands_name and item.generation_id is not None
+            ),
+            None,
+        )
+        if info is None:
+            return
+        try:
+            generation = UUID(info.generation_id)
+            root, kind, interpreter = self._resolve_installation(info.path)
+        except (ValueError, NapariEnvironmentError):
+            return
+        bound = environment.model_copy(
+            update={
+                "root": _canonical_path(root),
+                "kind": kind,
+                "interpreter": _launch_path(interpreter),
+                "interpreter_identity": _canonical_path(interpreter),
+                "interpreter_fingerprint": _interpreter_fingerprint(interpreter),
+                "launch": self._launch_context(root, kind, interpreter, ownership="managed"),
+                "managed": environment.managed.model_copy(
+                    update={"installation_generation": generation}
+                ),
+            }
+        )
+        await self._replace_environment_internal(bound)
+
+    async def _record_wetlands_event(
+        self, platform_operation_id: UUID, event: OperationEvent
+    ) -> None:
+        operation = next(
+            (
+                item
+                for item in self.store.get().napari_environment_operations
+                if item.id == platform_operation_id
+            ),
+            None,
+        )
+        if operation is None or operation.state in {"completed", "failed", "cancelled"}:
+            return
+        if operation.kind == "remove":
+            state = "removing"
+            base_progress = 25
+        else:
+            state = "installing"
+            base_progress = 10
+        progress = base_progress
+        if event.current is not None and event.maximum:
+            progress = base_progress + round(
+                (event.current / event.maximum) * (70 if operation.kind != "remove" else 60)
+            )
+        await self._update_operation(
+            operation_id=platform_operation_id,
+            environment_id=operation.environment_id,
+            state=state,
+            progress=min(progress, 80),
+            message=event.message,
+            wetlands_operation_id=event.operation_id,
+        )
 
     async def register(self, name: str, path: str, *, expected_revision: int) -> NapariEnvironment:
         root, kind, interpreter = self._resolve_installation(Path(path))
@@ -347,13 +1010,22 @@ class NapariEnvironmentService:
         self, environment_id: UUID, *, expected_revision: int
     ) -> NapariEnvironmentList:
         settings = self.store.get()
-        self._get(environment_id)
+        environment = self._get(environment_id)
         if settings.napari_registry_revision != expected_revision:
             raise NapariEnvironmentError(
                 "napari_registry_revision_conflict",
                 f"expected registry revision {expected_revision}, current is "
                 f"{settings.napari_registry_revision}",
             )
+        if (
+            environment.managed is not None
+            and environment.managed.recipe.source == "managed"
+        ):
+            raise NapariEnvironmentError(
+                "napari_managed_forget_forbidden",
+                "platform-created installations must use managed deletion",
+            )
+        self._require_no_active_operation(environment_id)
         environments = [item for item in settings.napari_environments if item.id != environment_id]
         rules = [
             rule for rule in settings.napari_filename_rules if rule.environment_id != environment_id
@@ -530,6 +1202,255 @@ class NapariEnvironmentService:
             },
         )
 
+    @staticmethod
+    def _environment_spec(recipe: NapariManagedRecipe) -> EnvironmentSpec:
+        if recipe.source != "managed":
+            raise NapariEnvironmentError(
+                "napari_managed_recipe_missing", "adopted environments have no install recipe"
+            )
+        assert recipe.python is not None and recipe.napari is not None and recipe.qt is not None
+        return EnvironmentSpec(
+            python=recipe.python,
+            conda=(),
+            pypi=(
+                f"napari=={recipe.napari}",
+                recipe.qt,
+                *recipe.requested_packages,
+            ),
+            channels=tuple(recipe.channels),
+        )
+
+    def _probe_inventory(self, environment: NapariEnvironment) -> NapariEnvironmentInventory:
+        output = self.probe_runner(
+            self._probe_argv(environment),
+            self._probe_environment(),
+            PROBE_TIMEOUT_SECONDS,
+            PROBE_OUTPUT_LIMIT,
+        )
+        try:
+            raw = json.loads(output)
+            return NapariEnvironmentInventory(**raw, probed_at=datetime.now(UTC))
+        except (json.JSONDecodeError, KeyError, TypeError, ValidationError) as exc:
+            raise NapariEnvironmentError(
+                "napari_probe_invalid", "probe returned invalid inventory"
+            ) from exc
+
+    @staticmethod
+    def _new_operation(
+        environment_id: UUID,
+        kind: Literal["create", "copy", "retry", "remove"],
+        message: str,
+        *,
+        state: Literal[
+            "pending", "resolving", "installing", "validating", "removing"
+        ] = "pending",
+    ) -> NapariEnvironmentOperation:
+        return NapariEnvironmentOperation(
+            id=uuid4(),
+            environment_id=environment_id,
+            kind=kind,
+            state=state,
+            progress=0,
+            message=message,
+        )
+
+    @staticmethod
+    def _append_operation(
+        operations: list[NapariEnvironmentOperation], operation: NapariEnvironmentOperation
+    ) -> list[NapariEnvironmentOperation]:
+        combined = [*operations, operation]
+        if len(combined) <= 200:
+            return combined
+        terminal = {"completed", "failed", "cancelled"}
+        for index, existing in enumerate(combined):
+            if existing.state in terminal:
+                return [*combined[:index], *combined[index + 1 :]]
+        return combined
+
+    @staticmethod
+    def _operation_update(
+        operations: list[NapariEnvironmentOperation],
+        operation_id: UUID,
+        **changes: Any,
+    ) -> list[NapariEnvironmentOperation]:
+        found = False
+        updated: list[NapariEnvironmentOperation] = []
+        for operation in operations:
+            if operation.id != operation_id:
+                updated.append(operation)
+                continue
+            found = True
+            updated.append(
+                NapariEnvironmentOperation.model_validate(
+                    {
+                        **operation.model_dump(),
+                        **changes,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+        if not found:
+            raise NapariEnvironmentError(
+                "napari_operation_not_found", f"napari operation {operation_id} was not found"
+            )
+        return updated
+
+    def _active_operation(self, environment_id: UUID) -> NapariEnvironmentOperation:
+        for operation in reversed(self.store.get().napari_environment_operations):
+            if operation.environment_id == environment_id and operation.state not in {
+                "completed",
+                "failed",
+                "cancelled",
+            }:
+                return operation
+        raise NapariEnvironmentError(
+            "napari_operation_not_found", "environment has no active mutation"
+        )
+
+    def _require_no_active_operation(self, environment_id: UUID) -> None:
+        if any(
+            operation.environment_id == environment_id
+            and operation.state not in {"completed", "failed", "cancelled"}
+            for operation in self.store.get().napari_environment_operations
+        ):
+            raise NapariEnvironmentError(
+                "napari_environment_mutation_active",
+                "this environment already has an active mutation",
+            )
+
+    async def _update_operation(
+        self,
+        operation_id: UUID,
+        *,
+        environment_id: UUID | None = None,
+        state: str | None = None,
+        progress: int | None = None,
+        message: str | None = None,
+        error: NapariEnvironmentOperationError | None | object = ...,
+        wetlands_operation_id: str | None | object = ...,
+    ) -> None:
+        def mutation(settings: Any) -> dict[str, Any]:
+            current = next(
+                (
+                    item
+                    for item in settings.napari_environment_operations
+                    if item.id == operation_id
+                ),
+                None,
+            )
+            if current is None:
+                return {}
+            if environment_id is not None and current.environment_id != environment_id:
+                return {}
+            if current.state in {"completed", "failed", "cancelled"}:
+                return {}
+            changes: dict[str, Any] = {}
+            if state is not None:
+                changes["state"] = state
+            if progress is not None:
+                changes["progress"] = progress
+            if message is not None:
+                changes["message"] = message
+            if error is not ...:
+                changes["error"] = error
+            if wetlands_operation_id is not ...:
+                changes["wetlands_operation_id"] = wetlands_operation_id
+            if not changes:
+                return {}
+            return {
+                "napari_environment_operations": self._operation_update(
+                    settings.napari_environment_operations, operation_id, **changes
+                )
+            }
+
+        await self.store.mutate_napari_registry(mutation)
+
+    async def _replace_environment_internal(self, replacement: NapariEnvironment) -> None:
+        def mutation(settings: Any) -> dict[str, Any]:
+            return {
+                "napari_environments": [
+                    replacement if item.id == replacement.id else item
+                    for item in settings.napari_environments
+                ]
+            }
+
+        await self.store.mutate_napari_registry(mutation)
+
+    async def _finish_environment_operation(
+        self,
+        environment: NapariEnvironment,
+        operation: NapariEnvironmentOperation,
+        *,
+        environment_state: str,
+        operation_state: str,
+        detail: str,
+        code: str | None = None,
+    ) -> None:
+        error = (
+            NapariEnvironmentOperationError(code=code, detail=detail)
+            if code is not None
+            else None
+        )
+
+        def mutation(settings: Any) -> dict[str, Any]:
+            current = next(
+                (item for item in settings.napari_environments if item.id == environment.id),
+                None,
+            )
+            environments = settings.napari_environments
+            if current is not None:
+                runtime_fields = {
+                    "root": environment.root,
+                    "kind": environment.kind,
+                    "interpreter": environment.interpreter,
+                    "interpreter_identity": environment.interpreter_identity,
+                    "interpreter_fingerprint": environment.interpreter_fingerprint,
+                    "launch": environment.launch,
+                    "managed": environment.managed,
+                    "inventory": environment.inventory,
+                    "state": environment_state,
+                    "last_error": detail if error is not None else None,
+                }
+                replacement = current.model_copy(update=runtime_fields)
+                environments = [
+                    replacement if item.id == environment.id else item
+                    for item in settings.napari_environments
+                ]
+            return {
+                "napari_environments": environments,
+                "napari_environment_operations": self._operation_update(
+                    settings.napari_environment_operations,
+                    operation.id,
+                    state=operation_state,
+                    progress=100 if operation_state == "completed" else operation.progress,
+                    message=detail,
+                    error=error,
+                ),
+            }
+
+        await self.store.mutate_napari_registry(mutation)
+
+    async def _finish_operation_without_environment(
+        self,
+        operation: NapariEnvironmentOperation,
+        *,
+        state: Literal["failed", "cancelled"],
+        code: str,
+        detail: str,
+    ) -> None:
+        def mutation(settings: Any) -> dict[str, Any]:
+            return {
+                "napari_environment_operations": self._operation_update(
+                    settings.napari_environment_operations,
+                    operation.id,
+                    state=state,
+                    message=detail,
+                    error=NapariEnvironmentOperationError(code=code, detail=detail),
+                )
+            }
+
+        await self.store.mutate_napari_registry(mutation)
+
     async def _patch(self, expected_revision: int, changes: dict[str, Any]) -> None:
         try:
             await self.store.patch_napari_registry(expected_revision, changes)
@@ -548,7 +1469,7 @@ class NapariEnvironmentService:
         self,
         name: str,
         root: Path,
-        kind: str,
+        kind: Literal["conda", "venv"],
         interpreter: Path,
         *,
         ownership: Literal["external", "managed"],

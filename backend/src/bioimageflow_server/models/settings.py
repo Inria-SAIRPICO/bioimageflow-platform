@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from bioimageflow_server.models.napari_environments import (
     NapariEnvironment,
+    NapariEnvironmentOperation,
     NapariFilenameRule,
 )
 
@@ -84,6 +85,7 @@ class Settings(BaseModel):
     napari_environments: list[NapariEnvironment] = Field(default_factory=list)
     napari_default_environment_id: UUID | None = None
     napari_filename_rules: list[NapariFilenameRule] = Field(default_factory=list)
+    napari_environment_operations: list[NapariEnvironmentOperation] = Field(default_factory=list)
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -178,4 +180,16 @@ class Settings(BaseModel):
         patterns = [rule.pattern.casefold() for rule in self.napari_filename_rules]
         if len(patterns) != len(set(patterns)):
             raise ValueError("napari filename rule patterns must be unique ignoring case")
+        operation_ids = [operation.id for operation in self.napari_environment_operations]
+        if len(operation_ids) != len(set(operation_ids)):
+            raise ValueError("napari environment operation IDs must be unique")
+        active_by_environment: set[UUID] = set()
+        for operation in self.napari_environment_operations:
+            if operation.state in {"completed", "failed", "cancelled"}:
+                continue
+            if operation.environment_id in active_by_environment:
+                raise ValueError("napari environments allow only one active mutation")
+            active_by_environment.add(operation.environment_id)
+            if operation.environment_id not in known:
+                raise ValueError("active napari operations must reference registered environments")
         return self
