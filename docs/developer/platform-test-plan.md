@@ -77,7 +77,7 @@ Interrupt this order only for a reproduced security, data-loss, corruption, or w
 | 1B — Important primary-GUI extensions | If the owner continues after the gate, close this tier before non-primary work. | Every remaining dashboard row marked `Primary GUI: yes`, including broader clipboard/shortcut variants, grouping and recursive editing, real-worker failure/cancellation, cache lifecycle, richer result combination/export, and their applicable scenario boundaries. Thus `Primary GUI` remains the broader Tier 1 campaign scope, not the gate denominator. |
 | 2 — Important extensions | Start only after Tier 1B is closed. | Common but non-primary user features recorded as P1 or equivalent in the dashboard, including layout/settings, datasets, catalog administration, package/custom-tool management, source operations, authoring/editor controls, diagnostics, and other non-primary GUI workflows. |
 | 3 — Advanced/external boundaries | Start only after Tier 2 is closed, except for a time-bound external appointment that does not consume a higher-tier worker. | P2 specialist behavior, native desktop dialogs and packaging, real external editors/viewers/credential stores, application crash/restart, uncommon integration and permission boundaries, and final manual/external acceptance. |
-| Final systematic closure | Mandatory for a complete campaign claim, whether performed continuously or resumed after a pause. | Every remaining applicable obligation in all three tiers, denominator reconciliation, complete deterministic and external certification, and owner disposition of manual limitations. |
+| Final systematic closure | Mandatory for a complete campaign claim, whether performed continuously or resumed after a pause. | Every remaining applicable obligation in all tiers, denominator reconciliation, complete deterministic and external certification, and owner disposition of manual limitations. |
 
 The earlier waves remain useful evidence and ordering history: ISSUE-005, the main create/run journey, everyday editing, nested workflows, and execution/results are completed batches only to the extent recorded in the dashboard and evidence file.
 Within Tier 1, take the highest-reach unfinished normal GUI path first, then its immediate loss/wrong-result/refusal/recovery boundaries, before less frequent variants of the same feature.
@@ -92,7 +92,7 @@ A new combined campaign command is optional; the existing audited selectors can 
 ## Basic-Use Readiness Gate
 
 The **Basic-Use Readiness Gate** is an optional owner decision point between Tier 1A and the remaining campaign.
-It can authorize a pause or early stop of active campaign work, but it never means the systematic campaign is complete and never removes a Tier 2, Tier 3, manual, external, or final-certification obligation.
+It can authorize a pause or early stop of active campaign work, but it never means the systematic campaign is complete and never removes a Tier 1B, Tier 2, Tier 3, manual, external, or final-certification obligation.
 The orchestrator may present this decision only after all requirements below pass on one reconciled current revision.
 
 ### Exact basic-use scope
@@ -134,7 +134,7 @@ The finding record must include the supported deployment, visible entry steps, d
 An artificial dependency state that the platform neither installs nor exposes does not block the gate unless it demonstrates a safety failure against state produced by a supported path.
 Moderate degradation with a safe in-product workaround and cosmetic, performance, or convenience defects do not block the gate only when their affected dashboard cells are outside the gate scope; record them in the durable backlog instead of weakening an assertion.
 
-The gate may leave Tier 2 and Tier 3 work incomplete, including package and custom-tool administration, uncommon source/authoring flows, native dialogs, packaged-window behavior, real editor/viewer/credential-store interaction, application crash/restart, and other manual/external boundaries.
+The gate may leave Tier 1B, Tier 2, and Tier 3 work incomplete, including grouping/recursive workflows, real-worker lifecycle, richer exports, package and custom-tool administration, uncommon source/authoring flows, native dialogs, packaged-window behavior, real editor/viewer/credential-store interaction, application crash/restart, and other manual/external boundaries.
 Unavailable visible-display infrastructure may use the artifact-backed headed-confidence alternative below.
 Scope exclusions already named in this plan remain exclusions, not limitations and not passing evidence.
 No skip, deselection, unresolved flake, reachable data/wrong-result/loss defect, or missing required gate cell is an acceptable gate limitation.
@@ -146,7 +146,7 @@ Historical browser evidence remains useful for diagnosis but cannot by itself pa
 Record one source SHA and run, without intervening product changes:
 
 - `scripts/test check backend`, `scripts/test check frontend`, and `scripts/test check docs`;
-- every exact browser selector credited to the 73 required cells in Chromium and Firefox, using the source inventories to avoid substituting a neighboring test; a same-revision `scripts/test check browser-all` pass may supply this evidence when its complete collection contains all of those selectors;
+- every exact browser selector and required deployment variant credited to the 73 required cells in Chromium and Firefox, using the source inventories to avoid substituting a neighboring test; a same-revision `scripts/test check browser-all` pass may supply the browser evidence when its complete collection contains all of those selectors;
 - any gate-scope manual procedure that cannot be represented in those lanes, if dashboard applicability explicitly requires it.
 
 Do not make an unrelated Tier 1B, Tier 2, or Tier 3 browser failure a hidden gate requirement by demanding a broader lane when the exact gate selection is sufficient.
@@ -156,12 +156,12 @@ At least one representative create/edit/connect/run/inspect/save/reopen journey 
 Record the selector and observation as confidence only; assertions remain authoritative.
 If no visible display is available, retain trace/video/screenshots from the same current-revision journey, record that no window was shown, and treat this as an acceptable confidence limitation rather than a passed headed run.
 
-After all gate-scope cells and checks pass, commit a durable gate checkpoint before asking the owner whether to **continue now through Tiers 2 and 3** or **pause/stop now with the systematic campaign incomplete**.
+After all gate-scope cells and checks pass, commit a durable gate checkpoint before asking the owner whether to **continue now through Tiers 1B, 2, and 3** or **pause/stop now with the systematic campaign incomplete**.
 Do not infer the decision from a request for status, and do not stop early on the orchestrator's initiative.
 If the gate fails, continue the highest-priority Tier 1 repair or report a genuine owner blocker; an early-stop choice is not yet available.
 
 An early-stop checkpoint must record the evaluated SHA, clean/integration state, commands/results/durations and any retries or exclusions, headed or artifact evidence, reachable blocker audit, dashboard denominator revision, overall and primary-GUI verified/applicable percentages, blocked/unassessed counts, and the first three resumable backlog actions.
-It must list outstanding Tier 2, Tier 3, manual/external, limitation, and risk categories by links to their owning inventories rather than duplicate their rows.
+It must list outstanding Tier 1B, Tier 2, Tier 3, manual/external, limitation, and risk categories by links to their owning inventories rather than duplicate their rows.
 Label the state **basic-use gate passed; systematic campaign paused/incomplete** and preserve the final certification gate unchanged.
 
 ## Complete and systematic feature coverage

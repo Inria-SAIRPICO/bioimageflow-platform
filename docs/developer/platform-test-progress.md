@@ -29,7 +29,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | --- | --- | --- |
 | T01 dependencies | Complete | Published BioImageFlow 0.7.1/core 0.3.1 and Wetlands 2.4.1 integration; retained release and worker evidence in [Campaign evidence](platform-test-evidence.md). |
 | T02 fixture foundations | Complete | Genuine Generate metadata, compatible whole-DataFrame wiring, exact results, and sequential worker fixture established. |
-| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After correcting applicability, blocker, primary-GUI, and traceability classifications and crediting integrated image/export evidence, 157/457 overall obligations are verified (34.4%) and 144/220 primary-GUI obligations are verified (65.5%). |
+| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After correcting applicability and crediting the integrated image/export, grouping, and workflow CRUD evidence, 172/457 overall obligations are verified (37.6%) and 150/220 primary-GUI obligations are verified (68.2%). |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
@@ -45,12 +45,11 @@ Ordering is not a reduction in final scope.
 
 ## Basic-Use Readiness Gate status
 
-The gate has **not passed** and has not been evaluated on one integrated current revision.
-Using the audited cell states from dashboard-correction branch `c92a754`, before credit from the grouping and workflow CRUD branches, the fixed matrix is **66 V / 73 required (90.4%)** with 7 runnable gaps, 0 in-progress cells, 0 externally blocked cells, and 0 unassessed cells.
-The runnable gaps are `WF-LIF-003.S`, `WF-LIF-003.P`, `WF-LIF-003.B`, `WF-LIF-010.S`, `WF-LIF-010.F`, `WF-LIF-010.P`, and `WF-LIF-010.B`.
-Workflow CRUD branch `6b38792` contains candidate Save As and deletion evidence for those cells, but no cell becomes `V` until the branch is integrated, its exact assertions are reconciled into the dashboard/inventory, and the required current-revision checks pass.
-Grouping branch `82270ff` remains important Primary-GUI evidence but is intentionally outside the smaller 73-cell gate.
-Recompute from the verified dashboard after integration; do not carry this pre-integration percentage forward or infer a pass from branch-local green checks.
+The dashboard-content tally is **73 V / 73 required (100.0%)** with 0 runnable gaps, 0 in-progress cells, 0 externally blocked cells, and 0 unassessed cells.
+This tally was recomputed after integrated workflow CRUD evidence changed the former seven `WF-LIF-003` and `WF-LIF-010` gate cells to `V`; the dashboard verifier passes and a direct lookup of all 73 named `ID.cell` entries finds no non-`V` state.
+The gate itself has **not passed**: the 73 credited cells have not yet been re-executed through every required exact Chromium and Firefox selector together with the backend, frontend, documentation, and headed or artifact-backed current-revision checks defined by the plan.
+Grouping evidence remains important Primary-GUI Tier 1B coverage and is intentionally outside the smaller 73-cell denominator.
+Do not present the owner decision until the current-revision execution evidence and reachable-blocker audit are durably recorded.
 
 ## Ownership and unresolved decisions
 
