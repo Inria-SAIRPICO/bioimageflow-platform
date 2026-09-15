@@ -261,11 +261,12 @@ Use this authority order:
 4. `platform_specs_distributed_execution.md` is the implemented normative delta for managed distributed execution and overrides v2 where it explicitly changes the same behavior.
 5. `platform_specs_v3.md` is a future webapp and multi-user proposal, not evidence that a feature is implemented.
 
-[`platform_specs_napari_environments.md`](platform_specs_napari_environments.md) is the completed Phase A design checkpoint for the future multiple-napari-environments feature: named local environments, portable output viewing requirements, one exclusive toggleable favorite per structural output identity across all rows and future results, filename rules with extension shortcuts, deterministic environment selection, and setup guidance.
+[`platform_specs_napari_environments.md`](platform_specs_napari_environments.md) is the completed Phase A design and phased implementation authority for multiple napari environments: named local environments, portable output viewing requirements, one exclusive toggleable favorite per structural output identity across all rows and future results, filename rules with extension shortcuts, deterministic environment selection, and setup guidance.
 Its package-compatibility contract uses installed Python distribution metadata and PEP 440 constraints independently of npe1/npe2 manifests, plugin discovery, and enabled flags; reader identifiers remain separate launch instructions and actual reader/plugin failures are launch-time outcomes.
 Managed creation uses Python 3.12 from Conda and installs the remaining distributions from PyPI, with napari 0.9.1/PyQt6 as the default matrix and napari 0.6.6/PyQt5 as the older smoke matrix.
 Its coordinated portable contract advances graphs to schema v2 and assigns recursive v1 normalization, artifact hashing, and atomic saved-document/root-draft-baseline migration to the implementation phase.
-It does not supersede the implemented single-environment viewer contract until implementation and coordinated library/platform specification updates land.
+Its Phase B backend foundation implements the settings-backed environment registry, explicit immutable launch/managed identity, package-only bounded probes, singleton adoption, revisioned desktop-only routes, and ordered filename rules.
+The existing single-environment launch contract remains in force until later launcher, resolver, favorite, frontend, and coordinated library/graph phases land.
 Read it alongside the v1 viewer/settings sections and v2 output/import/export contracts when designing or implementing multiple napari environments; do not introduce row favorites, row exceptions, result-row preference storage or migration, or a favorite scope selector.
 
 Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.

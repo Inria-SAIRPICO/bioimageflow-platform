@@ -755,6 +755,10 @@ class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
     fiji_path: str | None = None                    # selected Fiji.app installation directory
+    napari_registry_revision: int = 0
+    napari_environments: list[NapariEnvironment] = []
+    napari_default_environment_id: UUID | None = None
+    napari_filename_rules: list[NapariFilenameRule] = []
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -770,6 +774,10 @@ class Settings(BaseModel):
 ```
 
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
+
+Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji and all previous settings.
+The generic `PATCH /settings` route returns these fields but rejects direct napari registry mutation; revision-checked typed routes own environment registration, rename/locate/forget, default selection, probe, rule creation/reordering, and first-match preview.
+Every registry mutation carries and increments `napari_registry_revision` so stale clients cannot overwrite another window's changes.
 
 `enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
 
@@ -790,6 +798,11 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 | `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool}`) |
 | `GET` | `/napari/status` | Check if Napari is running |
 | `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
+
+The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
+They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
+Webapp mode rejects all of these local operations.
+These routes do not yet change the singleton `/napari/open`, `/napari/status`, or `/napari/shutdown` behavior described below.
 
 The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 

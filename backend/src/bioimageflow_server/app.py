@@ -90,6 +90,10 @@ from bioimageflow_server.routers.napari import (
     get_workflow_store as napari_get_workflow_store,
     router as napari_router,
 )
+from bioimageflow_server.routers.napari_environments import (
+    get_napari_environment_service,
+    router as napari_environments_router,
+)
 from bioimageflow_server.routers.nested_workflow_snapshots import (
     get_execution_manager as nested_snapshots_get_execution_manager,
     get_nested_workflow_snapshot_service,
@@ -168,6 +172,7 @@ from bioimageflow_server.services.fiji_launcher import FijiLauncher
 from bioimageflow_server.services.demo_workflows import DemoWorkflowService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
+from bioimageflow_server.services.napari_environments import NapariEnvironmentService
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
 )
@@ -291,6 +296,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         execution_profile_store = ExecutionProfileStore(
             settings_store.path.parent / "execution_profiles.json",
             editable=_deployment_mode == "desktop",
+        )
+    napari_environment_service = config.napari_environment_service
+    if napari_environment_service is None and settings_store is not None:
+        wetlands_root = get_wetlands_path()
+        napari_environment_service = NapariEnvironmentService(
+            settings_store,
+            managed_singleton_roots=(
+                wetlands_root / "environments" / "napari",
+                wetlands_root / "pixi" / "workspaces" / "napari",
+            ),
         )
 
     def _live_settings() -> Settings:
@@ -574,6 +589,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # catalog might consult (tool_store_path, etc.) are in place.
         if config.settings_store is not None:
             await config.settings_store.load()
+        if (
+            napari_environment_service is not None
+            and napari_environment_service.store.deployment_mode == "desktop"
+        ):
+            await napari_environment_service.adopt_managed_singleton()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()
             if config.settings_store is not None:
@@ -837,6 +857,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
+    if napari_environment_service is not None:
+        app.include_router(napari_environments_router, prefix="/api/v1")
+        app.dependency_overrides[get_napari_environment_service] = (
+            lambda: napari_environment_service
+        )
     app.include_router(fiji_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.include_router(data_table_router, prefix="/api/v1")

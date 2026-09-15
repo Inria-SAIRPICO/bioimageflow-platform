@@ -75,7 +75,7 @@ class TestLoad:
         # File should now exist with the version envelope.
         assert path.exists()
         on_disk = _read_disk(path)
-        assert on_disk["settings_version"] == 2
+        assert on_disk["settings_version"] == 3
         assert on_disk["deployment_mode"] == "desktop"
         assert on_disk["fiji_path"] is None
 
@@ -188,7 +188,7 @@ class TestLoad:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         path = tmp_path / "settings.json"
-        original = {"settings_version": 3, "external_editor": "x", "future_field": "y"}
+        original = {"settings_version": 4, "external_editor": "x", "future_field": "y"}
         path.write_text(json.dumps(original))
         store = SettingsStore(path=path)
         with caplog.at_level("WARNING"):
@@ -291,7 +291,7 @@ class TestPatch:
         result = await store.patch({"execution_engine": "parallel"})
         assert result.execution_engine == "parallel"
         on_disk = _read_disk(path)
-        assert on_disk["settings_version"] == 2
+        assert on_disk["settings_version"] == 3
         assert on_disk["execution_engine"] == "parallel"
         assert store.get().execution_engine == "parallel"
 

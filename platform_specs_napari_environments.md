@@ -1,6 +1,6 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: Phase A specification checkpoint complete; not implemented.
+Status: Phase A specification complete; Phase B backend environment registry, inventory probe, and settings foundation implemented; remaining phases not implemented.
 This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
 It does not change their implemented status or the library's current public API.
 The examples below describe proposed schemas, not APIs available today.
@@ -135,7 +135,7 @@ An illustrative serialized output declaration is:
       "recommended_packages": [
         {"distribution": "example-track-editor", "version": ">=1"}
       ],
-      "reader_plugin": "example-track-reader",
+      "reader_id": "example-track-reader",
       "napari_version": null
     }
   }
@@ -146,13 +146,13 @@ These package names are fictional examples.
 `required_packages` means every listed Python distribution must be installed at a PEP 440-compatible version in the same environment for this output.
 `recommended_packages` describes optional conveniences such as editing widgets; their absence does not prevent normal opening or remove the green requirements indicator.
 Authors should not require an analysis plugin merely because it produced an ordinary TIFF that napari can already read.
-`reader_plugin`, when present, is an optional napari reader identifier passed separately at launch; it does not participate in package compatibility and need not duplicate a package requirement.
+`reader_id`, when present, is an optional napari reader identifier passed separately at launch; it does not participate in package compatibility and need not duplicate a package requirement.
 Leave it absent when normal reader discovery is appropriate.
 Viewer requirements never execute a workflow-supplied widget, command, or Python function automatically.
 
 Package compatibility uses installed Python distribution metadata, with names normalized according to Python packaging rules and versions evaluated with PEP 440 specifiers.
 It is deliberately independent of npe1 or npe2 manifests, napari plugin discovery, contribution registration, and enabled/disabled flags.
-The optional `reader_plugin` is a launch instruction, never a package identity inferred from a distribution name, display label, or Python import module.
+The optional `reader_id` is a launch instruction, never a package identity inferred from a distribution name, display label, or Python import module.
 Every required or recommended package declaration needs an explicit distribution name; a package unavailable from PyPI may still be checked when already installed in an external environment, while managed setup reports that manual installation is required.
 Package version constraints, and a rarely needed napari release constraint, use validated Python package version specifiers.
 These are software release constraints, not references to locally named environments.
@@ -300,7 +300,7 @@ Long paths collapse without hiding their full selectable text, and actions remai
 ### 5.2 Filename rules and extension shortcuts
 
 Keep associations because they serve standalone images, generic file-source outputs, and old workflows without annotations.
-A rule contains one filename pattern, one environment ID, an enabled flag defaulting to true, and an optional reader plugin ID to attempt in that environment; its position in the saved list defines its priority.
+A rule contains one filename pattern, one environment ID, an enabled flag defaulting to true, and an optional reader ID to attempt in that environment; its position in the saved list defines its priority.
 Reader is optional because choosing an environment and choosing a reader within it are distinct operations.
 Napari already supports reader preferences and explicit reader selection; pass an explicit reader only when the resolved request calls for one. [Napari viewer API](https://napari.org/dev/api/napari.Viewer.html).
 
@@ -484,11 +484,13 @@ Implement in independently verifiable increments:
 3. Managed environment creation and Create modified copy using the same requirements report and resolver.
 
 The intended feature is complete only when all three increments are available.
+The implemented Phase B foundation covers the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
+It does not yet replace the singleton launcher or implement launcher/configuration isolation, the frontend settings list and split button, one-time selection, compatibility resolution, output favorites, managed creation/deletion, or graph/library contracts.
 Before implementation, settle the supported bridge/version matrix, configuration-isolation mechanism, and public Wetlands recipe capabilities with small feasibility checks.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
 At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.
-Until then this design checkpoint describes future behavior, and the existing normative documents continue to describe the current implementation.
+Until the remaining phases land, this design checkpoint distinguishes its implemented Phase B foundation from future behavior, and the existing normative documents continue to govern unaffected implementation.
 
 ## 10. Acceptance criteria
 
