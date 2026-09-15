@@ -3798,6 +3798,7 @@ function toggleWorkflowInput(
     if (!replaceWorkflowInputs([...context.inputs, {
       id: `input-${crypto.randomUUID()}`, name, kind: 'dataframe',
       schema: { type: 'DataFrame' },
+      default: null,
       targets: [{ node: nodeId, port: { kind: 'positional', index: input } }],
     }])) return workflowInterfaceRejected('unavailable')
     emitInterfaceChanged()
@@ -3815,6 +3816,7 @@ function toggleWorkflowInput(
     if (!replaceWorkflowInputs([...context.inputs, {
       id: `input-${crypto.randomUUID()}`, name, kind: 'dataframe',
       schema: { type: 'DataFrame' },
+      default: null,
       targets: [{ node: nodeId, port: { kind: 'workflow', id: input } }],
     }])) return workflowInterfaceRejected('unavailable')
     emitInterfaceChanged()

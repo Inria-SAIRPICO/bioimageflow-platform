@@ -128,6 +128,8 @@ vi.mock('@/composables/useGraphSync', () => ({
     loadWorkflow: vi.fn().mockResolvedValue(null),
     validationResult: ref(null),
     isPending: ref(false),
+    syncState: ref('idle'),
+    lastError: ref(null),
   }),
 }))
 
@@ -143,14 +145,19 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 
 const canvasCommandMocks = vi.hoisted(() => ({
   updateParameter: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+  toggleWorkflowInput: null as null | ((nodeId: string, input: string | number) => unknown),
 }))
 
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: (options?: {
     updateParameter?: (nodeId: string, key: string, value: unknown) => boolean
+    toggleWorkflowInput?: (nodeId: string, input: string | number) => unknown
   }) => {
     if (options?.updateParameter) {
       canvasCommandMocks.updateParameter = options.updateParameter
+    }
+    if (options?.toggleWorkflowInput) {
+      canvasCommandMocks.toggleWorkflowInput = options.toggleWorkflowInput
     }
     return {
       routeSave: vi.fn().mockResolvedValue('root'),
@@ -173,6 +180,7 @@ import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
 import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
 import {
   _resetCanvasStatusProjectionForTest,
@@ -204,6 +212,37 @@ function mountCanvas(graph = makeGraph()) {
   })
   canvasSessionRegistry.activate(rootCanvasId('execution-lock'))
   return wrapper
+}
+
+async function mountNestedCanvas(graph: ReturnType<typeof makeGraph>) {
+  const sessionId = 'nested-interface-publication'
+  const nestedSessions = useNestedWorkflowSessionsStore()
+  nestedSessions.sessions = [{
+    id: sessionId,
+    owner: {
+      kind: 'root',
+      canvas_id: rootCanvasId('parent'),
+      workflow_id: 'parent',
+    },
+    parentCanvasId: rootCanvasId('parent'),
+    parentWorkflowName: 'parent',
+    parentSourceWorkflowName: null,
+    parentNodeId: 'nested-node',
+    parentNodeName: 'Nested node',
+    draft: structuredClone(graph),
+    savedSnapshot: structuredClone(graph),
+    acceptedSnapshot: structuredClone(graph),
+    parentApplyConflict: null,
+    snapshotRevision: 1,
+    updatedAt: '2026-09-15T00:00:00Z',
+    validation: { valid: true, node_statuses: {}, errors: [] },
+  }]
+  const wrapper = mount(CanvasView, {
+    props: { nestedWorkflowSessionId: sessionId },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  return { wrapper, sessionId }
 }
 
 function projectedStatusesOf(wrapper: ReturnType<typeof mountCanvas>) {
@@ -239,6 +278,7 @@ describe('CanvasView execution lock', () => {
     vueFlowMocks.updateEdge.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
     canvasCommandMocks.updateParameter = null
+    canvasCommandMocks.toggleWorkflowInput = null
   })
 
   it.each(['starting', 'stopping'] as const)(
@@ -461,6 +501,102 @@ describe('CanvasView execution lock', () => {
       interface: graph.interface,
     }))
     w.unmount()
+  })
+
+  it('publishes a positional DataFrame input with its canonical default in a nested editor', async () => {
+    useToolRegistryStore().tools = [{
+      name: 'CrossJoin',
+      display_name: 'Cross join',
+      package: 'bioimageflow-common-tools',
+      package_version: '1.0.0',
+      tool_type: 'DataFrameTool',
+      accepts_upstream: true,
+      dynamic_outputs: true,
+      dataframe_output: true,
+      row_consumption: null,
+      documentation: '',
+      tags: [],
+      categories: [],
+      inputs: {},
+      outputs: {},
+      environment: null,
+      source_kind: 'package',
+      editable: false,
+    }]
+    const graph = makeGraph({
+      name: 'nested-child',
+      display_name: 'Nested child',
+      nodes: [makeGraphNode({
+        id: 'cross-join',
+        name: 'Cross join',
+        tool_name: 'CrossJoin',
+      })],
+    })
+    const { wrapper, sessionId } = await mountNestedCanvas(graph)
+
+    expect(canvasCommandMocks.toggleWorkflowInput?.('cross-join', 0)).toEqual({
+      status: 'changed',
+    })
+    expect(useNestedWorkflowSessionsStore().sessionById(sessionId)?.draft.interface.inputs)
+      .toEqual([expect.objectContaining({
+        kind: 'dataframe',
+        default: null,
+        targets: [{
+          node: 'cross-join',
+          port: { kind: 'positional', index: 0 },
+        }],
+      })])
+    wrapper.unmount()
+  })
+
+  it('forwards a child DataFrame port with its canonical default in a nested editor', async () => {
+    const child = makeGraph({
+      name: 'grandchild',
+      display_name: 'Grandchild',
+      interface: {
+        inputs: [{
+          id: 'source-table',
+          name: 'Source table',
+          kind: 'dataframe',
+          schema: { type: 'DataFrame' },
+          default: null,
+          targets: [{
+            node: 'increment',
+            port: { kind: 'positional', index: 0 },
+          }],
+        }],
+        outputs: [],
+      },
+    })
+    const graph = makeGraph({
+      name: 'nested-child',
+      display_name: 'Nested child',
+      nodes: [{
+        type: 'workflow',
+        id: 'grandchild-node',
+        name: 'Grandchild',
+        position: [0, 0],
+        workflow: child,
+        bindings: {},
+        resources: {},
+        enabled: true,
+        collapsed: false,
+      }],
+    })
+    const { wrapper, sessionId } = await mountNestedCanvas(graph)
+
+    expect(canvasCommandMocks.toggleWorkflowInput?.('grandchild-node', 'source-table'))
+      .toEqual({ status: 'changed' })
+    expect(useNestedWorkflowSessionsStore().sessionById(sessionId)?.draft.interface.inputs)
+      .toEqual([expect.objectContaining({
+        kind: 'dataframe',
+        default: null,
+        targets: [{
+          node: 'grandchild-node',
+          port: { kind: 'workflow', id: 'source-table' },
+        }],
+      })])
+    wrapper.unmount()
   })
 
   it('rejects an edge update delivered after the stopping phase begins', async () => {
