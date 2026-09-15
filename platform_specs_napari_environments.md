@@ -20,14 +20,14 @@ The feature has three independent layers:
 | --- | --- | --- |
 | Viewing requirements | Output `tracks` requires plugin `example-track-reader` | Tool/workflow author; travels with the workflow |
 | Environment inventory | “Tracking” contains napari and those plugins | Local platform user; never travels with the workflow |
-| Selection preferences | Prefer “Tracking” for this output or `.tracks` files | Local platform user; never travels with the workflow |
+| Selection preferences | Prefer “Tracking” for this output's current row, all its rows, or matching filenames | Local platform user; never travels with the workflow |
 
 The developer describes what is needed to view the data.
 The user chooses which local installation supplies it.
 Viewing requirements are independent of the packages and environments needed to execute a tool.
 Missing viewer dependencies must not prevent importing, editing, exporting, or executing an otherwise valid workflow.
 
-Recommended first release includes attaching existing environments, creating managed environments, output requirements, automatic selection, explicit local output defaults, simple format associations, and import diagnostics.
+Recommended first release includes attaching existing environments, creating managed environments, output requirements, automatic selection, explicit local defaults for one row or all rows of an output, filename associations with extension shortcuts, and import diagnostics.
 A general plugin marketplace, arbitrary install scripts, automatic upgrades, and shared environment synchronization are outside this feature.
 
 ## 2. Environment registration and ownership
@@ -232,14 +232,16 @@ The frontend renders this result and does not implement a competing resolver.
 For an output with known hard requirements, first exclude candidates that fail those requirements or cannot launch.
 Rank the remaining candidates in this order:
 
-1. The user's saved preference for this output instance.
-2. A matching format rule's preferred environment.
-3. The user's global default environment.
-4. Other candidates, preferring more satisfied optional recommendations, then stable registration order.
+1. The user's saved preference for this output's selected row in the addressed result.
+2. The user's saved preference for all rows of this output instance.
+3. The first matching filename rule's preferred environment.
+4. The user's global default environment.
+5. Other candidates, preferring more satisfied optional recommendations, then stable registration order.
 
 Within equal recommendation scores, stable registration order wins; renaming, starting a viewer, and transient process state do not reshuffle defaults.
 Required reader declarations take precedence over optional local reader preferences during normal selection.
 A format preference never makes an environment with missing hard requirements eligible.
+One-time environment selection bypasses this preference ranking for that open without changing stored defaults; the existing requirements check or explicit **Try opening anyway** still applies.
 
 For an unannotated artifact, apply the same preference order among healthy environments, preferring evidence of reader support when falling through to other candidates.
 Normal napari opening remains available where there is no declared requirement and no known reader failure; lack of an annotation is not a setup error.
@@ -274,10 +276,11 @@ Microscopy       napari <detected>    Ready                 [Details ...]
 Tracking         napari <detected>    Running               [Details ...]
 Legacy scope     napari <detected>    Environment missing   [Locate ...]
 
-File format preferences (optional)                         [Add rule]
-Extensions              Preferred environment       Reader (optional)
-.czi, .lif              Microscopy                  Automatic
-.ome.zarr               Multiscale                  Selected reader
+File opening rules (optional; first match wins)            [Add rule]
+Filename pattern        Preferred environment       Reader (optional)
+*_labels.tif            Microscopy                  Selected reader
+*.ome.zarr              Multiscale                  Selected reader
+*.tif                   Microscopy                  Automatic
 ```
 
 Version placeholders and format examples illustrate the layout, not guaranteed package support.
@@ -285,22 +288,39 @@ Details show path, ownership (“Managed by BioImageFlow” or “External”), 
 Provide Refresh and Launch empty viewer; managed entries also offer Create modified copy.
 Long paths collapse without hiding their full selectable text, and actions remain usable in a narrow settings window.
 
-### 5.2 Format preferences
+### 5.2 Filename rules and extension shortcuts
 
 Keep associations because they serve standalone images, generic file-source outputs, and old workflows without annotations.
-A rule contains one or more literal suffixes, one environment ID, and an optional reader plugin ID available in that environment.
+A rule contains one filename pattern, one environment ID, an enabled flag defaulting to true, and an optional reader plugin ID available in that environment; its position in the saved list defines its priority.
 Reader is optional because choosing an environment and choosing a reader within it are distinct operations.
 Napari already supports reader preferences and explicit reader selection; pass an explicit reader only when the resolved request calls for one. [Napari viewer API](https://napari.org/dev/api/napari.Viewer.html).
 
-Normalize suffixes to a leading dot and compare case-insensitively against the artifact basename.
-The longest matching suffix wins: `.ome.tif` before `.tif`, `.nii.gz` before `.gz`, and `.ome.zarr` before `.zarr`.
-Reject duplicate suffix assignments instead of introducing hidden rule priorities.
-Support directory suffixes such as `.zarr`; a directory still needs a reader that accepts directories.
-Paths without recognized suffixes fall back to output requirements and reader discovery.
-Do not initially expose regular expressions, arbitrary glob ranking, MIME registries, or content-sniffing rules.
+The Add rule form defaults to **Extension**, accepting `tif` or `.tif` and showing the resulting `*.tif` pattern before saving.
+Compound extensions such as `.ome.tif`, `.nii.gz`, and `.ome.zarr` remain intact.
+An optional **Filename pattern** mode accepts patterns such as `*_labels.tif`, `experiment-??.czi`, or an exact extensionless basename.
+Both modes produce the same canonical rule type; do not persist parallel extension and glob maps or require users to fill two matching fields.
+Adding several extensions is a convenience that creates separate adjacent rules with the same target; users can then reorder or edit them independently.
+
+Match the entire file or directory basename, case-insensitively and independently of the host OS.
+The initial pattern language supports literals, `*` for zero or more characters, `?` for one character, and bracket character classes including `[!...]` negation.
+Bracket forms such as `[*]` and `[?]` match literal wildcard characters; reject malformed classes.
+Leading dots are ordinary characters, not a special hidden-file exclusion.
+Do not support path separators, recursive `**`, brace expansion, regular expressions, or filesystem traversal; patterns select among already addressed artifacts and never enumerate files.
+Directory names such as `sample.ome.zarr` are eligible, but the reader must still accept directories.
+Full-path and workspace-relative patterns are deferred because moves and platform differences would change their meaning.
+
+Evaluate enabled rules from top to bottom; the first matching rule wins.
+Provide Move up/down actions and a “Test filename” field that shows every matching rule and identifies the winner.
+Show the first-match rule beside the table and preview overlaps for the edited example or currently selected artifact; do not claim exhaustive detection of overlapping glob languages.
+Reject duplicate normalized patterns, including an extension shorthand and its equivalent simple glob.
+For example, place `*_labels.tif` and `*.ome.tif` above `*.tif`; there is no additional implicit longest-suffix or glob-specificity ranking.
+When authoring a rule for an actual image, preview its effective winner before saving so an earlier broad rule cannot silently hide the new rule.
+Only the winning rule participates in environment selection; if its environment is unavailable or incompatible, explain that and continue to the global/default candidate fallback rather than trying hidden lower-priority matching rules.
+Paths with no matching rule fall back to output requirements and normal environment/reader selection.
 
 Show reader-advertised formats in environment details and optionally suggest rules, but never install broad `*` associations automatically.
-An extension match is a preference, not proof that a reader supports every variant of a format.
+Warn when a user creates a catch-all `*` rule that would hide later rules; a global default is normally clearer.
+A filename match is a preference, not proof that a reader supports every variant of a format.
 An optional reader rule applies only when the selected environment is the rule's environment and no hard reader declaration conflicts.
 Otherwise show why it was ignored and use the hard reader or normal discovery.
 Raw JSON import/export of local configuration may be a later advanced convenience; normal configuration and validation must work without it.
@@ -310,17 +330,42 @@ Raw JSON import/export of local configuration may be a later advanced convenienc
 The existing **Open in napari** becomes a split button.
 Its main action opens in the resolved environment; its tooltip/accessibility label includes that environment and selection reason.
 The arrow opens a popover showing all registered environments with status, detected napari version, and a short reason when requirements are unmet.
-Keep unavailable entries visible and disabled so users can understand or repair them.
+Keep unavailable entries visible with disabled launch controls so users can understand or repair them; removing an existing favorite remains available.
 
-Use a separate star or pin action **Always use for this output**, with a tooltip that explicitly states its scope.
-The green check describes requirements; the star describes the user's saved default; a “Selected automatically” label identifies the resolver's choice.
-Clicking an environment opens it once and does not save a preference.
-Clicking its star saves a preference and does not launch it.
-Provide **Reset to automatic**, **Manage environments**, and **Create environment for these requirements**.
+Above the environment list, show a scope selector **Favorite for: This row / All rows of this output**.
+Default the selector to **All rows of this output** each time the popover opens; when this row already has an explicit override, initially select **This row** so the effective exception is immediately visible.
+Always show the selected output name and, for This row, its result/row context.
+Changing scope only changes which stored preference the stars display and edit; it does not change selection or launch anything.
+
+Use an exclusive, toggleable star beside each environment, scoped to that selector:
+
+- Click an empty star to set that environment as the sole favorite at the selected scope, replacing any previous favorite there atomically.
+- Click the filled star to remove that scope's explicit favorite and resume inheritance from broader preferences.
+- At most one star is filled in the visible list, and no star is filled when that scope has no explicit preference.
+- Clicking an environment's launch control opens it once without saving; clicking a star never launches it.
+
+The green check describes requirements; the star describes the explicit favorite at the displayed scope; a separate **Will open in …** line shows the effective environment and reason.
+Never fill a star merely because an environment is inherited or automatically selected.
+For example, This row can show no filled star and “Inherited from all rows: Microscopy.”
+Removing a row favorite then correctly reveals the all-rows favorite, which may be the same environment that was just unstarred.
+Use scope-specific labels such as **Set favorite for this row**, **Unset favorite for this row**, and equivalent all-rows labels; star buttons expose their pressed state to assistive technology.
+
+Changing the all-rows favorite preserves existing row exceptions.
+Display “Applies to all rows without a row override” and the number of exceptions for the currently addressed result when relevant.
+An explicit **Clear row overrides for this result** action previews the affected output and count, then removes that result's row exceptions atomically so its rows inherit the all-rows favorite.
+Filtered or off-screen rows are included; overrides for other retained results remain unchanged.
+This action never launches viewers or changes the all-rows favorite.
+This separation lets users either change a default while keeping exceptions, or deliberately use it for every row in the current result.
+Provide **Reset favorite for this scope**, **Manage environments**, and **Create environment for these requirements**.
+Resetting the all-rows favorite preserves row exceptions and returns other rows to filename/global selection.
+An incompatible saved favorite remains visible with its warning and can always be unset; setting a new incompatible persistent favorite is disallowed under the normal requirements contract.
 Do not embed a button inside another button or a menuitem with conflicting keyboard semantics; use a popover list with independently focusable launch and preference controls.
 
-Preferences apply to the output column across rows, not a filename or a single table cell.
-The first release has no node-wide preference, avoiding another inheritance level.
+**This row** means this output cell in the selected result, not every output column of the table row or every appearance of the same filename elsewhere.
+**All rows of this output** covers the entire output column, including filtered/off-screen rows, and future results for that same output identity, subject to fresh compatibility checks and more specific row exceptions.
+Opening one cell after selecting All rows still opens only that cell; preference scope is not a bulk-open operation.
+The other supported preference scopes are filename rules and the global default in Settings.
+Node-wide defaults, workflow-wide defaults, and batch-setting selected rows are deferred until a concrete need justifies their additional interaction and inheritance rules.
 The existing Ctrl+Click replace action clears layers only in the selected environment's viewer.
 Expose an explicit **Replace layers and open** action as well so replacement does not depend solely on a modifier key.
 Setup, failure, or a menu selection must not clear another environment's viewer.
@@ -328,15 +373,19 @@ Setup, failure, or a menu selection must not clear another environment's viewer.
 ## 6. Local preference persistence
 
 Environment registrations, the global default, and format rules belong to the existing per-user application settings store.
-Backend-persisted per-output preferences belong in a separate versioned `viewer-preferences.json` alongside that settings file, because they can grow independently of settings.
+Backend-persisted preferences for all rows and individual rows belong in a separate versioned `viewer-preferences.json` alongside that settings file, because they can grow independently of settings.
 Browser local storage may cache this state but is never its authority.
 
-Use this logical key:
+Use these logical keys:
 
 ```text
-(workspace identity, root workflow identity generation,
- structural node-instance path, output field key or stable public output ID)
-    -> environment ID
+output key = (workspace identity, root workflow identity generation,
+              structural node-instance path,
+              output field key or stable public output ID)
+
+all rows: output key -> environment ID
+this row: (output key, result snapshot identity, stable row identity)
+              -> environment ID
 ```
 
 Use existing stable workspace identity where available, otherwise define a persisted local workspace identity as part of implementation; do not hash a mutable display name or raw workflow path as identity.
@@ -345,6 +394,16 @@ Structural node paths use node IDs, never node labels or nesting positions.
 Tool output field names are schema identities until the library offers stable field IDs; a tool-field rename invalidates that preference.
 Public workflow output labels can change while their stable IDs preserve preferences.
 An exposed workflow output has its own user preference key; it inherits viewing requirements from its provider, not the provider's local preference.
+
+The backend supplies the result snapshot and stable row identities, resolving merged-table cells back to their original provider output.
+Use immutable record identity when available, otherwise a retained run/node result identity with equivalent row-stability guarantees.
+A row's DataFrame index is useful within that result; its displayed row number, page offset, filename, or bare index reused across executions is not a durable preference identity.
+A row preference survives sorting, filtering, pagination, reopening the same retained result, and cache reuse of the same immutable record within the same output identity.
+It does not automatically transfer to newly computed data, even if that data reuses row index `0` or the same filename.
+Explain This row as “This output row in this result; new results use the all-rows default.”
+Following one logical image across recomputation would need a separately specified stable dataset/lineage identity and is deferred; never infer that relationship from row position.
+If no durable result identity is available, disable saving a row favorite with a reason while retaining one-time open and the all-rows preference.
+When a result is no longer retained or addressable, its row preferences can be pruned; clearing only a disposable latest projection must not erase preferences for still-retained records.
 
 Local rules survive restart, table sorting/pagination, workflow display renaming, and moves within the same workspace through the normal identity-aware lifecycle coordinator.
 Deletion drops that workflow generation's rules.
@@ -356,6 +415,8 @@ Private nested edits use a session-scoped preference overlay tied to the snapsho
 Apply remaps surviving entries to the accepted parent instance; discard drops the overlay.
 Unsaved root workflows similarly use temporary session identity until saved.
 Preference writes bind to the captured workspace/generation/session so a delayed request cannot target a replacement workflow or another workspace.
+They also bind to the captured result for row operations and use revision-checked set/unset actions; a stale toggle cannot accidentally clear a favorite changed in another window.
+Each scope stores zero or one environment ID, with no independent per-environment boolean favorites.
 Preference changes are atomic local UI state and do not acquire a graph execution lock or prevent viewing during execution.
 
 ## 7. Workflow import and setup guidance
@@ -429,7 +490,7 @@ Legacy outputs with no viewer annotations retain normal opening behavior once a 
 Implement in independently verifiable increments:
 
 1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; preserve existing opening and migrate the singleton.
-2. Coordinated library annotation/archive support, output provenance, compatibility resolver, local output defaults, simple format rules, and import report.
+2. Coordinated library annotation/archive support, output provenance, compatibility resolver, local row/all-rows defaults, filename rules with extension shortcuts, and import report.
 3. Managed environment creation and Create modified copy using the same requirements report and resolver.
 
 The intended feature is complete only when all three increments are available.
@@ -446,9 +507,9 @@ Until then this file is a proposal, and the existing normative documents continu
 3. Different outputs of one node resolve independently, including published outputs through nested workflows and two embeddings of one child.
 4. Required plugins must all be satisfied in one environment for one output; requirements for different outputs can be covered by different environments.
 5. Missing recommended plugins do not block opening; absent, disabled, incompatible, stale, and unknown required plugins produce distinct explanations.
-6. A matching format rule cannot override a hard plugin/reader requirement; compound suffixes and directory images resolve correctly.
-7. Choosing once leaves preferences unchanged; starring changes only local output preference; reset restores automatic selection; each control is keyboard accessible.
-8. Preferences survive restart, label changes, and same-workspace moves, but do not leak through export/import, copy, delete-and-recreate, discarded nested edits, or workspace switches.
+6. A matching filename rule cannot override a hard plugin/reader requirement; extension shortcuts, compound suffixes, directory names, case-insensitive patterns, duplicates, and overlapping rules obey the documented first-match order and preview.
+7. Choosing once leaves preferences unchanged; stars are exclusive and toggleable per scope; setting/unsetting one scope preserves the other, inherited choices have no filled star, and each control is keyboard accessible.
+8. Preferences survive restart, label changes, and same-workspace moves, but do not leak through export/import, copy, delete-and-recreate, discarded nested edits, or workspace switches; all-rows defaults persist for new results while row exceptions remain bound to their original result identity.
 9. Export/import preserves recursive requirements and contains no local environment references or credentials; missing tool metadata yields an incomplete report rather than false coverage.
 10. An imported workflow with unmet viewer needs can still run; setup can create separate installations for incompatible requirements on different outputs.
 11. Existing-environment checks make no package changes; failed or cancelled managed creation leaves old environments/defaults usable; recipe changes create a separate installation.
@@ -457,6 +518,8 @@ Until then this file is a proposal, and the existing normative documents continu
 14. Result selection survives table sorting, pagination, active-tab changes, and later graph edits; retained results use their captured requirements and representation.
 15. Webapp endpoints reject local environment operations, and the import check never triggers installation or runs archive-provided commands.
 16. Native smoke checks on each supported desktop OS cover an external Conda environment, a virtual environment, paths with spaces, managed creation, a missing plugin, explicit reader choice, and configuration isolation.
+17. Updating an all-rows favorite preserves row exceptions, displays their current-result count, and opens no images; clearing current-result row exceptions includes filtered/off-screen rows and leaves other retained results untouched.
+18. Row favorites survive sorting, pagination, and reuse of the same immutable record, but do not attach to a different result with the same row index; unsupported durable identity disables only saving a row favorite.
 
 Use `scripts/test` for implementation checks proportionate to each increment, following [Test lanes](docs/testing.md).
 The bridge and native napari behavior additionally require real desktop checks; mocked unit tests and headless browser tests do not certify Qt startup or third-party plugin compatibility.
