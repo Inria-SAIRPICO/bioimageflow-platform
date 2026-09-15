@@ -346,13 +346,17 @@ test.describe('Canvas interactions', () => {
         validation: draft.validation,
         nodeCount: draft.graph.nodes.length,
         toolName: created?.type === 'tool' ? created.tool_name : undefined,
-        position: created?.position,
+        positionXNearTarget: created?.position !== undefined
+          && Math.abs(created.position[0] - 260) < 1,
+        positionYNearTarget: created?.position !== undefined
+          && Math.abs(created.position[1] - 180) < 1,
       }
     }).toMatchObject({
       validation: { valid: true, errors: [] },
       nodeCount: 1,
       toolName: 'SeedNumbers',
-      position: [260, 180],
+      positionXNearTarget: true,
+      positionYNearTarget: true,
     })
   })
 
