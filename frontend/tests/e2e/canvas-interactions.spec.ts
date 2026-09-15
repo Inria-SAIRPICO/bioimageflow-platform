@@ -720,6 +720,176 @@ test.describe('Canvas interactions', () => {
     ])
   })
 
+  test('merges related selected results, stacks independent results, and restores explicit widths', async ({ page }) => {
+    test.setTimeout(45_000)
+    const seedNode = await addToolNode(page, 'SeedNumbers', { x: 120, y: 160 })
+    const incrementNode = await addToolNode(page, 'IncrementNumbers', { x: 440, y: 160 })
+    await incrementNode.click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const numberRow = page.getByTestId('panel-nodePanel').locator('.param-row')
+      .filter({ hasText: 'Number column to increment' })
+    await numberRow.locator('input.p-inputnumber-input').fill('10')
+    await numberRow.locator('input.p-inputnumber-input').press('Tab')
+    const independentNode = await addToolNode(page, 'ResultTableFixture', { x: 280, y: 60 })
+    const seedId = await seedNode.getAttribute('data-id')
+    const incrementId = await incrementNode.getAttribute('data-id')
+    const independentId = await independentNode.getAttribute('data-id')
+    expect(seedId).toBeTruthy()
+    expect(incrementId).toBeTruthy()
+    expect(independentId).toBeTruthy()
+
+    await connectDataFrames(page, seedNode, incrementNode)
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      return {
+        valid: draft.validation.valid,
+        nodeIds: draft.graph.nodes.map(node => node.id),
+        edges: draft.graph.edges.map(({ id: _id, ...edge }) => edge),
+      }
+    }).toEqual({
+      valid: true,
+      nodeIds: [seedId, incrementId, independentId],
+      edges: [{
+        type: 'dataframe',
+        source_node: seedId,
+        target_node: incrementId,
+        target_position: 0,
+        target_input: null,
+      }],
+    })
+
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    const seedResult = await page.request.post(`${API_BASE}/api/v1/nodes/${seedId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(seedResult.ok()).toBeTruthy()
+    expect(await seedResult.json()).toMatchObject({
+      columns: ['number', 'label'],
+      rows: [
+        { number: 1, label: 'one' },
+        { number: 2, label: 'two' },
+        { number: 3, label: 'three' },
+      ],
+      absolute_rows: [0, 1, 2],
+      total_rows: 3,
+    })
+    const incrementResult = await page.request.post(`${API_BASE}/api/v1/nodes/${incrementId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(incrementResult.ok()).toBeTruthy()
+    expect(await incrementResult.json()).toMatchObject({
+      columns: ['number', 'label', 'number_plus_one'],
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      absolute_rows: [0, 1, 2],
+      total_rows: 3,
+    })
+
+    await seedNode.click()
+    const mergedResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/data-table/query')
+      && response.request().method() === 'POST'
+      && response.status() === 200
+      && response.request().postDataJSON().sources.length === 2,
+    )
+    await incrementNode.click({ modifiers: ['Shift'] })
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const merged = await mergedResponse
+    const mergedRequest = merged.request().postDataJSON()
+    const mergedResult = await merged.json()
+    expect(mergedRequest).toMatchObject({
+      workflow_id: workflowName,
+      sources: [
+        { node_id: seedId, role: 'anchor', label: 'Seed Numbers 1' },
+        { node_id: incrementId, role: 'anchor', label: 'Increment Numbers 1' },
+      ],
+    })
+    expect(mergedResult).toMatchObject({
+      mode: 'merged',
+      columns: [
+        { label: 'Seed Numbers 1: number', source_node_id: seedId, source_column: 'number' },
+        { label: 'Seed Numbers 1: label', source_node_id: seedId, source_column: 'label' },
+        { label: 'Increment Numbers 1: number', source_node_id: incrementId, source_column: 'number' },
+        { label: 'Increment Numbers 1: label', source_node_id: incrementId, source_column: 'label' },
+        { label: 'number_plus_one', source_node_id: incrementId, source_column: 'number_plus_one' },
+      ],
+      rows: [
+        { index: '0', source_rows: { [seedId!]: 0, [incrementId!]: 0 } },
+        { index: '1', source_rows: { [seedId!]: 1, [incrementId!]: 1 } },
+        { index: '2', source_rows: { [seedId!]: 2, [incrementId!]: 2 } },
+      ],
+      total_rows: 3,
+    })
+
+    const mergedTable = page.getByTestId('merged-data-table')
+    await expect(mergedTable).toContainText('Seed Numbers 1 → Increment Numbers 1')
+    const grid = mergedTable.locator('.p-datatable')
+    const headers = await grid.locator('.p-datatable-thead th').allTextContents()
+    const seedNumberColumn = headers.findIndex(header => header.includes('Seed Numbers 1: number'))
+    const incrementNumberColumn = headers.findIndex(header => header.includes('Increment Numbers 1: number'))
+    const resultColumn = headers.findIndex(header => header.includes('number_plus_one'))
+    expect([seedNumberColumn, incrementNumberColumn, resultColumn].every(index => index >= 0)).toBe(true)
+    const visibleRows = grid.locator('.p-datatable-tbody tr')
+    await expect(visibleRows).toHaveCount(3)
+    for (const [row, expected] of [[0, [1, 1, 2]], [1, [2, 2, 3]], [2, [3, 3, 4]]] as const) {
+      const cells = visibleRows.nth(row).locator('td')
+      await expect(cells.nth(seedNumberColumn)).toHaveText(String(expected[0]))
+      await expect(cells.nth(incrementNumberColumn)).toHaveText(String(expected[1]))
+      await expect(cells.nth(resultColumn)).toHaveText(String(expected[2]))
+    }
+
+    const seedSeparator = page.getByRole('separator', { name: 'Resize Seed Numbers 1: number' })
+    const seedHeader = grid.locator('.p-datatable-thead th').nth(seedNumberColumn)
+    await expect(seedSeparator).toBeVisible()
+    const automaticWidth = (await seedHeader.boundingBox())!.width
+    await seedSeparator.focus()
+    for (let step = 0; step < 5; step += 1) await seedSeparator.press('ArrowRight')
+    await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width))
+      .toBe(Math.round(automaticWidth) + 50)
+    const widthStorageKeys = await page.evaluate(() => Object.keys(localStorage)
+      .filter(key => key.startsWith('bif-node-data-widths-v2:')))
+    expect(widthStorageKeys).toHaveLength(1)
+
+    await independentNode.click()
+    await seedNode.click({ modifiers: ['Shift'] })
+    const fallback = page.getByTestId('data-table-fallback')
+    await expect(fallback).toHaveText(
+      'The selected nodes are independent in this workflow, so their DataFrames are shown separately.',
+    )
+    const seedStackedTable = page.getByTestId(`node-data-table-${seedId}`)
+    const independentStackedTable = page.getByTestId(`node-data-table-${independentId}`)
+    await expect(seedStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(3)
+    await expect(independentStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(60)
+    await expect(seedStackedTable.locator('.p-datatable-tbody tr').nth(2)).toContainText('three')
+    await expect(independentStackedTable.locator('.p-datatable-tbody tr').nth(59)).toContainText('drop-59')
+
+    const restoredMergedResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/data-table/query')
+      && response.request().method() === 'POST'
+      && response.status() === 200
+      && response.request().postDataJSON().sources.length === 2,
+    )
+    await incrementNode.click()
+    await seedNode.click({ modifiers: ['Shift'] })
+    await restoredMergedResponse
+    await expect(mergedTable).toBeVisible()
+    await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width))
+      .toBe(Math.round(automaticWidth) + 50)
+    await mergedTable.getByRole('button', { name: 'Reset column widths', exact: true }).click()
+    await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width))
+      .toBe(Math.round(automaticWidth))
+    expect(await page.evaluate(key => localStorage.getItem(key), widthStorageKeys[0]!)).toBeNull()
+  })
+
   test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
     await addToolNode(page, 'Generate', { x: 220, y: 180 })
     await addToolNode(page, 'Generate', { x: 520, y: 260 })
