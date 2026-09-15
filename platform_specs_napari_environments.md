@@ -1,9 +1,9 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, and managed creation/copy/removal lifecycle are implemented; frontend phases remain.
+Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, managed creation/copy/removal lifecycle, environment settings UI, passive readiness report, and exact-result output chooser are implemented; native desktop smoke certification remains incomplete.
 This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
 It does not change their implemented status or the library's current public API.
-The portable workflow and frontend examples below remain proposed where their implementation status is not stated explicitly.
+The portable workflow and frontend examples below describe implemented behavior unless their implementation status is stated explicitly.
 
 ## 1. Product decisions
 
@@ -509,11 +509,15 @@ The no-ID open/status/shutdown routes retain the legacy managed-singleton compat
 The implemented Phase C backend advances canonical graphs to schema v2, migrates saved/draft/nested authorities and hashes through a forward journal, captures immutable public run/node/result/record identities for result pages, reads retained viewer metadata through public storage APIs, resolves package-only compatibility, stores favorites in a separate revisioned file, and remaps them through workflow move/delete and nested-session lifecycles.
 The same resolver candidate evaluator powers the passive manifest readiness endpoint and retained-artifact resolution, so required-package co-location, PEP 440 checks, freshness, unavailable-state handling, recommendations, and reader independence cannot drift; passive evaluation reads only the registered inventory snapshot and never probes, installs, launches, reads workflow state, or executes archive content.
 The managed backend uses only public Wetlands 2 environment and operation APIs; it does not install a bridge distribution because the platform launches its standalone helper script inside the selected environment.
-The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation. The frontend settings/output chooser remains pending.
+The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation.
+The frontend settings panel consumes those operations, displays per-environment inventory and lifecycle state, manages defaults and ordered filename rules, and launches an addressed empty viewer.
+The output split action resolves an exact retained artifact through the backend, keeps one exclusive toggleable structural-output favorite, supports one-shot environment selection and replace-layers dispatch, and exposes honest incompatible, unknown, and unavailable candidates.
+The passive report evaluates imported or currently saved workflow requirements without provisioning or launching an environment and can prefill managed setup from one normalized requirement group.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
 At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.
-Until the remaining phases land, this design checkpoint distinguishes its implemented backend phases from future UI and managed-environment behavior, and the existing normative documents continue to govern unaffected implementation.
+Native desktop certification is still required before declaring the feature complete: the earlier local attempt did not leave a reliable completion artifact and therefore is not acceptance evidence.
+The existing normative documents continue to govern unaffected implementation.
 
 ## 10. Acceptance criteria
 

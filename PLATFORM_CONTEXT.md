@@ -274,7 +274,9 @@ Its Phase C backend implements immutable public result identities, retained per-
 Portable viewing manifests can also be submitted directly to the desktop-only passive readiness endpoint before any result artifact exists; it shares the resolver's installed-distribution and PEP 440 candidate evaluator, preserves output identities and unknowns, and groups identical normalized requirements without implicitly unioning different outputs.
 Resolve responses return the exact server-derived persistent output-preference key, including durable workspace identity, rather than requiring clients to infer it from existing favorites.
 Nested favorite finalization derives its destination from the stored snapshot owner and remaps only after the accepted parent snapshot or current root draft embeds the exact child graph; unsaved roots cannot create durable favorites.
-Frontend output-choice controls remain pending.
+The frontend Image Viewers settings UI manages registered and managed environments, defaults, ordered filename rules, lifecycle operations, empty launches, and passive per-output readiness reports.
+Result tables use a backend-resolved exact-artifact split action for deterministic environment selection, one-shot overrides, replace-layers dispatch, and one exclusive toggleable favorite per structural output identity.
+Native desktop smoke certification for this feature remains incomplete and must not be inferred from mocked or headless checks.
 Read it alongside the v1 viewer/settings sections and v2 output/import/export contracts when designing or implementing multiple napari environments; do not introduce row favorites, row exceptions, result-row preference storage or migration, or a favorite scope selector.
 
 Source and tests reveal actual implementation state but do not silently erase an explicit normative requirement.

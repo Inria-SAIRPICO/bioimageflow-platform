@@ -56,6 +56,9 @@ If its name already exists, enter another name.
 The name entered in **Rename imported workflow** becomes the imported workflow's visible name in the Workflows panel and canvas tab and is retained when you reopen it.
 The existing workflow keeps its name and contents.
 After import, BioImageFlow shows missing tools and offers compatible versions already installed on your system.
+It also checks the archive's portable viewing requirements against registered Napari environments without installing packages or opening the archive's code.
+An uncovered or unknown viewer requirement does not prevent importing or running the workflow.
+Use the reported requirement groups to prefill one or more managed environment recipes, then review the proposed packages before starting setup.
 Select a tool node and click **Open tool script** to edit the code that node uses.
 Saving the script affects the next run; exporting the workflow includes the edited code.
 

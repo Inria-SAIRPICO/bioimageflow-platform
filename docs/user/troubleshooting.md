@@ -121,7 +121,10 @@ Confirmed remote cleanup does not remove a verified local archive that was alrea
 
 ## A viewer is unavailable
 
-For Napari, wait for the first-time environment preparation, retry, and inspect application logs for a launch error.
+For Napari, open **Preferences → Image Viewers** and inspect the selected environment's state and package inventory.
+Use **Refresh** after external package changes, **Retry** for an eligible failed managed setup, or **Locate** when a registered installation moved.
+If the result chooser reports unmet requirements, select another compatible environment or create an isolated environment from the offered requirement group.
+An explicit reader can still reject a file after package compatibility passes; inspect the launch error and correct the reader or rule instead of repeatedly opening other environments.
 For Avivator, confirm that the image format is supported and the application can reach the external viewer.
 Use the action that reveals the image in the system file manager as a fallback.
 

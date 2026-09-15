@@ -1506,9 +1506,11 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 6. Coordinates independently locked managed create/copy/retry/remove operations without replacing a working generation in place
 
 **Interactions:**
-- **Open in Napari:** Triggered from Node Data image cells. Sends `POST /napari/open {paths, clear_layers: false}`.
-- **Replace in Napari (Ctrl+Click):** Same endpoint with `clear_layers: true`.
-- Napari is launched lazily on first use.
+- **Open in Napari:** The primary action resolves the exact retained cell and uses the compatible environment selected by structural-output favorite, first matching filename rule, global default, then another qualifying environment.
+- **Choose environment:** The adjacent menu lists every compatible, incompatible, unknown, or unavailable registered environment with its backend explanation; choosing a runnable row opens once without changing preferences.
+- **Favorite:** One keyboard-accessible exclusive star per structural output identity applies across rows and future results; choosing the filled star removes it, and favorite mutations never launch a viewer.
+- **Replace layers and open:** Explicitly clears layers only in the chosen environment before opening.
+- Napari is launched lazily on first use, while **Launch empty viewer** starts or focuses one addressed environment without dispatching an empty open request.
 
 **Fiji:** Fiji is installed separately by the user. In desktop mode, the Node Data image-cell action sends the selected node, row, column, and workflow context to `POST /fiji/open`; the backend resolves the authoritative result path and launches the configured Fiji installation with that image. If Fiji is not configured, the action opens Preferences → Image Viewers. If the saved installation has moved or become invalid, the action returns to configuration mode. Fiji controls reuse of an existing Fiji process.
 
@@ -1537,6 +1539,10 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.2 Image Viewers
 
+- **Napari environments:** Lists named external Conda/virtual environments and platform-managed generations with detected interpreter, napari, Qt, inventory, probe, launcher, and setup state.
+- **Environment actions:** Register or locate an existing installation; create, copy, retry, cancel, or remove a managed generation; refresh inventory; rename; forget; or launch that addressed environment empty.
+- **Selection preferences:** Chooses one global default and manages revision-checked, first-match filename rules with extension shortcuts, ordering, catch-all diagnostics, and filename preview.
+- **Viewing readiness:** Passively evaluates the saved or imported workflow's per-output requirements against registered inventories, preserves unknown and incomplete declarations, and can prefill managed setup from one normalized requirement group without installing or launching anything.
 - **Fiji installation:** Editable directory field with Browse and Clear actions. The selected directory must be a usable `Fiji.app` installation for the current desktop platform before it is saved.
 - **Download Fiji:** Links to the official Fiji downloads page. Fiji installation and updates remain the user's responsibility.
 - The section and Fiji result action are hidden in webapp mode.
