@@ -57,4 +57,63 @@ describe('groupIntoWorkflow', () => {
     })
     expect(result.workflowNode.data!.workflow.interface).toEqual({ inputs: [], outputs: [] })
   })
+
+  it('publishes an incoming positional DataFrame and preserves exact DataFrame routes', () => {
+    const nodes = [
+      toolNode('before', 0),
+      toolNode('first', 100),
+      toolNode('second', 200),
+      toolNode('after', 300),
+    ]
+    const edges = [
+      {
+        id: 'table-in', source: 'before', target: 'first', type: 'dataframe',
+        sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+        targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+      },
+      {
+        id: 'table-internal', source: 'first', target: 'second', type: 'dataframe',
+        sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+        targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+      },
+      {
+        id: 'table-out', source: 'second', target: 'after', type: 'dataframe',
+        sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+        targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+      },
+    ]
+
+    const result = groupIntoWorkflow({
+      nodes,
+      edges,
+      selectedNodeIds: new Set(['first', 'second']),
+      workflowNodeId: 'group',
+      workflowNodeName: 'Grouped',
+    })
+
+    expect(result.workflowNode.data!.workflow.interface.inputs).toEqual([{
+      id: 'input-table-in',
+      name: 'first.table_0',
+      kind: 'dataframe',
+      schema: { type: 'DataFrame' },
+      default: null,
+      targets: [{ node: 'first', port: { kind: 'positional', index: 0 } }],
+    }])
+    expect(result.workflowNode.data!.workflow.edges).toEqual([{
+      type: 'dataframe',
+      id: 'table-internal',
+      source_node: 'first',
+      target_node: 'second',
+      target_position: 0,
+      target_input: null,
+    }])
+    expect(result.edges).toEqual([{
+      ...edges[0],
+      target: 'group',
+      targetHandle: encodeEndpointHandle({ kind: 'workflow-input', id: 'input-table-in' }),
+    }, {
+      ...edges[2],
+      source: 'group',
+    }])
+  })
 })

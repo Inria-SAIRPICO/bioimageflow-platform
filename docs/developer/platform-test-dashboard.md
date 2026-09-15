@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **157 V + 294 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **157 / 457 are verified (34.4%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **144 V + 76 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **144 / 220 are verified (65.5%)**.
+- Overall: **172 V + 279 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **172 / 457 are verified (37.6%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **150 V + 70 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **150 / 220 are verified (68.2%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -75,14 +75,14 @@ The integrated image/file/export evidence is credited only for its exact browser
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `4208769` |
-| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `a25ac17` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
-| WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | `a25ac17` |
 | WF-LIF-006 | Copy captured agent graph and recursive owned sources | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `e817d77` |
 | WF-LIF-007 | Reject stale duplicate generation | P1 | Workflow API/storage | no | N (this row owns stale-generation refusal; ordinary duplication is WF-LIF-005) | G | N (stale duplication is refused before side effects and has no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
 | WF-LIF-008 | Durable workflow generation across restart | P1 | Workflow API/storage | no | G | N (generation durability accepts no user input to refuse) | G | G | G | gap | `fcb4408` inspection |
 | WF-LIF-009 | Move results and rewrite provenance safely | P1 | Workflow API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `0b3ee1e` |
 | WF-LIF-011 | Revisioned draft writes, dirtiness, and validation | P0 | Draft API/storage and GUI | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -91,8 +91,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `3422e1c` |
 | WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
+| WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `da0ded6`, `152c82b` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | G | G | G | G | G | gap | `fcb4408` inspection |
