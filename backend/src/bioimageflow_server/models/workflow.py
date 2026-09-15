@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import GraphState, ViewerSpec
 
 
 _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]*$")
@@ -230,12 +230,53 @@ class WorkflowDocument(BaseModel):
     artifact_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
+class ViewingRequirementEntry(BaseModel):
+    """One archive-inspectable scoped output viewer requirement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["known", "unknown"]
+    viewer: ViewerSpec | None = None
+    reason: str | None = None
+
+    @model_validator(mode="after")
+    def validate_status(self) -> ViewingRequirementEntry:
+        if self.status == "known" and self.reason is not None:
+            raise ValueError("known viewing requirements cannot carry a reason")
+        if self.status == "unknown" and self.viewer is not None:
+            raise ValueError("unknown viewing requirements cannot carry a viewer")
+        return self
+
+
+class ViewingRequirementsManifest(BaseModel):
+    """Portable archive viewing metadata available before tool installation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_: Literal["bioimageflow.viewing_requirements.v1"] = Field(
+        default="bioimageflow.viewing_requirements.v1", alias="schema"
+    )
+    complete: bool = True
+    outputs: dict[str, ViewingRequirementEntry] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_completeness(self) -> ViewingRequirementsManifest:
+        if self.complete != all(item.status == "known" for item in self.outputs.values()):
+            raise ValueError("viewing requirement completeness does not match outputs")
+        if any(not key for key in self.outputs):
+            raise ValueError("viewing requirement output keys must be non-empty")
+        return self
+
+
 class WorkflowImportResponse(BaseModel):
     """Workflow import success response."""
 
     info: WorkflowInfo
     missing_packages: list[MissingPackage] = Field(default_factory=list)
     missing_tools: list[MissingTool] = Field(default_factory=list)
+    viewing_requirements: ViewingRequirementsManifest = Field(
+        default_factory=ViewingRequirementsManifest
+    )
 
 
 class WorkflowImportConflictResponse(BaseModel):

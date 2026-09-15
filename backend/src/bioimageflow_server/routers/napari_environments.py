@@ -18,11 +18,32 @@ from bioimageflow_server.models.napari_environments import (
     NapariFilenameRuleMutation,
     NapariFilenameRulesReplace,
     NapariProbeRequest,
+    NapariResolveRequest,
+    NapariResolveResponse,
+)
+from bioimageflow_server.models.viewer_preferences import (
+    ViewerFavoriteSetRequest,
+    ViewerFavoriteToggleRequest,
+    ViewerFavoriteUnsetRequest,
+    ViewerPreferencesSnapshot,
 )
 from bioimageflow_server.services.napari_environments import (
     NapariEnvironmentError,
     NapariEnvironmentService,
 )
+from bioimageflow_server.services.napari_resolver import (
+    NapariResolverError,
+    NapariResolverService,
+)
+from bioimageflow_server.services.viewer_preferences import (
+    ViewerPreferenceStore,
+    ViewerPreferencesRevisionConflict,
+    ViewerPreferenceTargetConflict,
+    ensure_workspace_identity,
+)
+from bioimageflow_server.models.viewer_preferences import PersistentOutputPreferenceKey
+from bioimageflow_server.routers.workflows import get_workflow_store
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 router = APIRouter(prefix="/napari", tags=["napari-environments"])
@@ -30,6 +51,14 @@ router = APIRouter(prefix="/napari", tags=["napari-environments"])
 
 def get_napari_environment_service() -> NapariEnvironmentService:  # pragma: no cover
     raise RuntimeError("napari environment service is not configured")
+
+
+def get_viewer_preference_store() -> ViewerPreferenceStore:  # pragma: no cover
+    raise RuntimeError("viewer preference store is not configured")
+
+
+def get_napari_resolver_service() -> NapariResolverService:  # pragma: no cover
+    raise RuntimeError("napari resolver service is not configured")
 
 
 def _service(
@@ -187,3 +216,126 @@ def preview_filename_rules(
     service: NapariEnvironmentService = Depends(_service),
 ) -> NapariFilenamePreview:
     return service.preview(request.filename)
+
+
+def _preference_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ViewerPreferencesRevisionConflict):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "error": "viewer_preferences_revision_conflict",
+                "detail": str(exc),
+                "expected_revision": exc.expected,
+                "current_revision": exc.current,
+            },
+        )
+    return HTTPException(
+        status_code=409,
+        detail={"error": "viewer_favorite_target_conflict", "detail": str(exc)},
+    )
+
+
+def _validate_preference_key(key, store: WorkflowStoreService) -> None:
+    if key.workspace_id != ensure_workspace_identity(store.workspace_dir):
+        raise HTTPException(status_code=409, detail="workspace identity changed")
+    if isinstance(key, PersistentOutputPreferenceKey):
+        try:
+            store.get_workflow(key.workflow_id)
+            store.ensure_workflow_generation(
+                key.workflow_id, key.identity_generation
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="workflow identity not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/viewer-preferences", response_model=ViewerPreferencesSnapshot)
+def viewer_preferences(
+    service: NapariEnvironmentService = Depends(_service),
+    preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
+    workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+) -> ViewerPreferencesSnapshot:
+    del service
+    return preferences.snapshot()
+
+
+@router.put("/viewer-preferences/favorite", response_model=ViewerPreferencesSnapshot)
+def set_viewer_favorite(
+    request: ViewerFavoriteSetRequest,
+    service: NapariEnvironmentService = Depends(_service),
+    preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
+    workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+) -> ViewerPreferencesSnapshot:
+    if request.environment_id not in {
+        environment.id for environment in service.snapshot().environments
+    }:
+        raise HTTPException(status_code=404, detail="napari environment not found")
+    _validate_preference_key(request.key, workflow_store)
+    try:
+        return preferences.set(
+            request.key,
+            request.environment_id,
+            expected_revision=request.expected_revision,
+        )
+    except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
+        raise _preference_error(exc) from exc
+
+
+@router.delete("/viewer-preferences/favorite", response_model=ViewerPreferencesSnapshot)
+def unset_viewer_favorite(
+    request: ViewerFavoriteUnsetRequest,
+    service: NapariEnvironmentService = Depends(_service),
+    preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
+    workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+) -> ViewerPreferencesSnapshot:
+    del service
+    _validate_preference_key(request.key, workflow_store)
+    try:
+        return preferences.unset(
+            request.key,
+            expected_environment_id=request.expected_environment_id,
+            expected_revision=request.expected_revision,
+        )
+    except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
+        raise _preference_error(exc) from exc
+
+
+@router.post("/viewer-preferences/favorite/toggle", response_model=ViewerPreferencesSnapshot)
+def toggle_viewer_favorite(
+    request: ViewerFavoriteToggleRequest,
+    service: NapariEnvironmentService = Depends(_service),
+    preferences: ViewerPreferenceStore = Depends(get_viewer_preference_store),
+    workflow_store: WorkflowStoreService = Depends(get_workflow_store),
+) -> ViewerPreferencesSnapshot:
+    if request.environment_id not in {
+        environment.id for environment in service.snapshot().environments
+    }:
+        raise HTTPException(status_code=404, detail="napari environment not found")
+    _validate_preference_key(request.key, workflow_store)
+    try:
+        return preferences.toggle(
+            request.key,
+            request.environment_id,
+            expected_revision=request.expected_revision,
+        )
+    except (ViewerPreferencesRevisionConflict, ViewerPreferenceTargetConflict) as exc:
+        raise _preference_error(exc) from exc
+
+
+@router.post("/resolve", response_model=NapariResolveResponse)
+def resolve_environment(
+    request: NapariResolveRequest,
+    environment_service: NapariEnvironmentService = Depends(_service),
+    resolver: NapariResolverService = Depends(get_napari_resolver_service),
+) -> NapariResolveResponse:
+    del environment_service
+    try:
+        return resolver.resolve(request)
+    except NapariResolverError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": exc.code, "detail": exc.detail},
+        ) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

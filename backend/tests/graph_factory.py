@@ -9,7 +9,7 @@ def graph_state(**changes: Any) -> GraphState:
     """Build a complete recursive workflow document with concise test overrides."""
 
     document: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "test_workflow",
         "display_name": "Test workflow",
         "nodes": [],

@@ -71,7 +71,7 @@ def _require_desktop(mode: str = Depends(get_deployment_mode)) -> None:
 
 
 def _context_fields(request: NapariOpenRequest) -> tuple[object, ...]:
-    return (request.node_id, request.row, request.col)
+    return (request.node_id, request.row, request.col, request.result_identity)
 
 
 def _resolve_open_paths(
@@ -86,7 +86,10 @@ def _resolve_open_paths(
     if not all(value is not None for value in context_values):
         raise HTTPException(
             status_code=422,
-            detail="node_id, row, and col are required together for path resolution",
+            detail=(
+                "node_id, row, col, and result_identity are required together "
+                "for path resolution"
+            ),
         )
     if len(request.paths) != 1:
         raise HTTPException(
@@ -97,6 +100,7 @@ def _resolve_open_paths(
     assert request.node_id is not None
     assert request.row is not None
     assert request.col is not None
+    assert request.result_identity is not None
     image_path = resolve_selected_image_path(
         node_id=request.node_id,
         row=request.row,
@@ -104,6 +108,7 @@ def _resolve_open_paths(
         workflow_name=request.workflow_name,
         result_store=result_store,
         workflow_store=workflow_store,
+        result_identity=request.result_identity,
     )
     return [str(image_path)]
 

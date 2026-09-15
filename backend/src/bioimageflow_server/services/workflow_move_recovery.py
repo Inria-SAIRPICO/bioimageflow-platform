@@ -10,6 +10,10 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
     RootWorkflowSnapshotMove,
 )
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.viewer_preferences import (
+    ViewerPreferenceStore,
+    ensure_workspace_identity,
+)
 
 
 class WorkflowMoveRecoveryService:
@@ -19,9 +23,11 @@ class WorkflowMoveRecoveryService:
         self,
         workflow_store_provider: Callable[[], WorkflowStoreService],
         nested_snapshot_service: NestedWorkflowSnapshotService,
+        viewer_preference_store: ViewerPreferenceStore | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self._nested_snapshot_service = nested_snapshot_service
+        self._viewer_preference_store = viewer_preference_store
 
     def recover_pending_move(self) -> WorkflowMoveJournal | None:
         """Recover or abandon the current workspace's pending move atomically."""
@@ -56,21 +62,37 @@ class WorkflowMoveRecoveryService:
             if recovered is None:
                 return None
 
-            snapshot_moves = [
-                RootWorkflowSnapshotMove(
-                    old_workflow_id=move.source_workflow_id,
-                    old_identity_generation=move.source_generation_before,
-                    new_workflow_id=move.destination_workflow_id,
-                    new_identity_generation=move.destination_generation_after,
+            if recovered.phase in {"prepared", "artifacts_rewritten"}:
+                snapshot_moves = [
+                    RootWorkflowSnapshotMove(
+                        old_workflow_id=move.source_workflow_id,
+                        old_identity_generation=move.source_generation_before,
+                        new_workflow_id=move.destination_workflow_id,
+                        new_identity_generation=move.destination_generation_after,
+                    )
+                    for move in recovered.moves
+                ]
+                if snapshot_moves:
+                    self._nested_snapshot_service.preflight_root_workflow_moves()
+                    self._nested_snapshot_service.move_root_workflows(snapshot_moves)
+                store.mark_workflow_move_phase(
+                    recovered.operation_id,
+                    "snapshots_rewritten",
                 )
-                for move in recovered.moves
-            ]
-            if snapshot_moves:
-                self._nested_snapshot_service.preflight_root_workflow_moves()
-                self._nested_snapshot_service.move_root_workflows(snapshot_moves)
-            store.mark_workflow_move_phase(
-                recovered.operation_id,
-                "snapshots_rewritten",
-            )
+            if recovered.phase != "preferences_rewritten":
+                if self._viewer_preference_store is not None:
+                    workspace_id = ensure_workspace_identity(store.workspace_dir)
+                    for move in recovered.moves:
+                        self._viewer_preference_store.move_workflow_generation(
+                            workspace_id=workspace_id,
+                            source_workflow_id=move.source_workflow_id,
+                            source_generation=move.source_generation_before,
+                            destination_workflow_id=move.destination_workflow_id,
+                            destination_generation=move.destination_generation_after,
+                        )
+                store.mark_workflow_move_phase(
+                    recovered.operation_id,
+                    "preferences_rewritten",
+                )
             store.complete_workflow_move(recovered.operation_id)
             return recovered

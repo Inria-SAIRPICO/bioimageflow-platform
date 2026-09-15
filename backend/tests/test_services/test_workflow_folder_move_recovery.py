@@ -113,6 +113,7 @@ def _finish_recovery_twice(
     assert _generation_snapshot(store, workflow_ids) == generations
 
     store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+    store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
     store.complete_workflow_move(operation_id)
     assert store.pending_workflow_move() is None
     assert store.recover_pending_workflow_move() is None

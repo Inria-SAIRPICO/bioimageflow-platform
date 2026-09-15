@@ -93,6 +93,8 @@ from bioimageflow_server.routers.napari import (
 )
 from bioimageflow_server.routers.napari_environments import (
     get_napari_environment_service,
+    get_napari_resolver_service,
+    get_viewer_preference_store as napari_get_viewer_preference_store,
     router as napari_environments_router,
 )
 from bioimageflow_server.routers.nested_workflow_snapshots import (
@@ -128,6 +130,7 @@ from bioimageflow_server.routers.workflows import (
     get_execution_manager as workflows_get_execution_manager,
     get_workflow_store as workflows_get_workflow_store,
     get_workflow_source_service,
+    get_viewer_preference_store as workflows_get_viewer_preference_store,
     get_nested_workflow_snapshot_service as workflows_get_nested_snapshot_service,
     get_settings as workflows_get_settings,
     router as workflows_router,
@@ -174,6 +177,7 @@ from bioimageflow_server.services.demo_workflows import DemoWorkflowService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher, NapariLauncherPool
 from bioimageflow_server.services.napari_environments import NapariEnvironmentService
+from bioimageflow_server.services.napari_resolver import NapariResolverService
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
 )
@@ -197,6 +201,7 @@ from bioimageflow_server.services.workflow_sources import WorkflowSourceService
 from bioimageflow_server.services.workflow_move_recovery import WorkflowMoveRecoveryService
 from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
+from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 from bioimageflow_server.services.workspace import WorkspaceService
 from bioimageflow_server.ws import (
     ConnectionManager,
@@ -299,6 +304,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             editable=_deployment_mode == "desktop",
         )
     napari_environment_service = config.napari_environment_service
+    viewer_preference_store = config.viewer_preference_store
+    if viewer_preference_store is None and settings_store is not None:
+        viewer_preference_store = ViewerPreferenceStore(
+            settings_store.path.with_name("viewer-preferences.json")
+        )
     if napari_environment_service is None and settings_store is not None:
         wetlands_root = get_wetlands_path()
         napari_environment_service = NapariEnvironmentService(
@@ -307,7 +317,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 wetlands_root / "environments" / "napari",
                 wetlands_root / "pixi" / "workspaces" / "napari",
             ),
+            preference_store=viewer_preference_store,
         )
+    elif (
+        napari_environment_service is not None
+        and napari_environment_service.preference_store is None
+        and viewer_preference_store is not None
+    ):
+        napari_environment_service.preference_store = viewer_preference_store
 
     def _live_settings() -> Settings:
         if config.settings_store is not None:
@@ -475,7 +492,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     workflow_move_recovery_service = WorkflowMoveRecoveryService(
         _current_workflow_store,
         nested_workflow_snapshot_service,
+        viewer_preference_store,
     )
+    napari_resolver_service = config.napari_resolver_service
+    if (
+        napari_resolver_service is None
+        and napari_environment_service is not None
+        and viewer_preference_store is not None
+    ):
+        napari_resolver_service = NapariResolverService(
+            napari_environment_service,
+            viewer_preference_store,
+            result_store,
+            _current_workflow_store,
+        )
     initialized_workflow_stores: set[str] = set()
 
     def _initialize_workflow_store(store: WorkflowStoreService) -> None:
@@ -485,6 +515,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         is_new_workspace = not store.root_dir.exists()
         workflow_move_recovery_service.recover_pending_move()
         store.migrate_legacy_workflows()
+        store.migrate_schema_v2_workflows()
         try:
             nested_workflow_snapshot_service.cleanup_orphaned_snapshots()
         except Exception as exc:  # noqa: BLE001
@@ -608,6 +639,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             napari_environment_service is not None
             and napari_environment_service.store.deployment_mode == "desktop"
         ):
+            await napari_environment_service.recover_pending_environment_forget()
             await napari_environment_service.adopt_managed_singleton()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()
@@ -880,6 +912,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         app.dependency_overrides[get_napari_environment_service] = (
             lambda: napari_environment_service
         )
+        if viewer_preference_store is not None:
+            app.dependency_overrides[napari_get_viewer_preference_store] = (
+                lambda: viewer_preference_store
+            )
+        if napari_resolver_service is not None:
+            app.dependency_overrides[get_napari_resolver_service] = (
+                lambda: napari_resolver_service
+            )
     app.include_router(fiji_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.include_router(data_table_router, prefix="/api/v1")
@@ -913,6 +953,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workflow_source_service] = lambda: workflow_source_service
     app.dependency_overrides[workflows_get_nested_snapshot_service] = lambda: (
         nested_workflow_snapshot_service
+    )
+    app.dependency_overrides[workflows_get_viewer_preference_store] = lambda: (
+        viewer_preference_store
     )
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store

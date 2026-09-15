@@ -23,6 +23,7 @@ from bioimageflow_server.models.nodes import (
     NodeDataQueryRequest,
     NodeDataResponse,
 )
+from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.dataframe_query import (
     DataFrameQueryError,
     filter_positions,
@@ -30,6 +31,7 @@ from bioimageflow_server.services.dataframe_query import (
 )
 from bioimageflow_server.services.result_store import (
     DATAFRAME_RECORD_DIR_ATTR,
+    DATAFRAME_RESULT_IDENTITY_ATTR,
     ResultDataNotReadyError,
     ResultStoreService,
 )
@@ -82,13 +84,23 @@ def _get_node_dataframe(
     node_id: str,
     result_store: ResultStoreService,
     storage_path: Path | None,
+    result_identity: ResultArtifactIdentity | None = None,
 ) -> pd.DataFrame:
     try:
-        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
+        df = (
+            result_store.get_latest_dataframe(node_id, storage_path=storage_path)
+            if result_identity is None
+            else result_store.load_result_dataframe(
+                result_identity, storage_path=storage_path
+            )
+        )
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
+    identity = df.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
+    if isinstance(identity, ResultArtifactIdentity) and identity.node_key != node_id:
+        raise HTTPException(status_code=422, detail="Result identity does not match node")
     return df
 
 
@@ -131,6 +143,22 @@ def _node_data_response(
         page=page,
         page_size=page_size,
         column_types=column_types,
+        source_identity=(
+            dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
+            if isinstance(
+                dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR),
+                ResultArtifactIdentity,
+            )
+            else None
+        ),
+        identity_status=(
+            "captured"
+            if isinstance(
+                dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR),
+                ResultArtifactIdentity,
+            )
+            else "legacy_unpinned"
+        ),
     )
 
 
@@ -193,7 +221,7 @@ def _coerce_image_path(
             candidate_paths.append(storage_path / image_path)
         candidate_paths.append(image_path)
     for candidate in candidate_paths:
-        if candidate.is_file():
+        if candidate.is_file() or candidate.is_dir():
             return candidate
     raise HTTPException(status_code=404, detail=f"Image file not found: {candidate_paths[0]}")
 
@@ -398,7 +426,12 @@ async def query_node_data(
 ) -> NodeDataResponse:
     storage_path = _workflow_storage_path(request.workflow_name, workflow_store)
     return _node_data_response(
-        _get_node_dataframe(node_id, result_store, storage_path),
+        _get_node_dataframe(
+            node_id,
+            result_store,
+            storage_path,
+            request.result_identity,
+        ),
         result_store,
         page=request.page,
         page_size=request.page_size,

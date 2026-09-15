@@ -29,6 +29,13 @@ from bioimageflow_server.services.settings_store import SettingsStore
 
 pytestmark = pytest.mark.anyio
 
+_RESULT_IDENTITY = {
+    "run_id": "run_0123456789abcdef0123456789abcdef",
+    "node_key": "n1",
+    "result_key": "rk_" + "a" * 64,
+    "record_id": "rec_0123456789abcdef0123456789abcdef",
+}
+
 
 @pytest.fixture
 def anyio_backend() -> str:
@@ -158,7 +165,8 @@ async def test_open_resolves_record_relative_asset_path(tmp_path: Path) -> None:
     df = pd.DataFrame({"mask": ["assets/mask.tif"]})
     df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
     result_store = MagicMock()
-    result_store.get_latest_dataframe.return_value = df
+    result_store.load_result_dataframe.return_value = df
+    result_store.resolve_result_asset.return_value = image_path
     launcher = _fake_launcher()
     config = AppConfig(
         napari_launcher=launcher,  # type: ignore[arg-type]
@@ -174,10 +182,12 @@ async def test_open_resolves_record_relative_asset_path(tmp_path: Path) -> None:
                 "node_id": "n1",
                 "row": 0,
                 "col": "mask",
+                "result_identity": _RESULT_IDENTITY,
             },
         )
     assert res.status_code == 200
-    result_store.get_latest_dataframe.assert_called_once_with("n1", storage_path=None)
+    result_store.load_result_dataframe.assert_called_once()
+    result_store.resolve_result_asset.assert_called_once()
     launcher.open.assert_awaited_once_with([str(image_path)], False)
 
 
@@ -188,7 +198,9 @@ async def test_open_resolves_relative_path_against_workflow_storage(
     image_path.parent.mkdir()
     image_path.write_bytes(b"tif")
     result_store = MagicMock()
-    result_store.get_latest_dataframe.return_value = pd.DataFrame({"mask": ["outputs/mask.tif"]})
+    result_store.load_result_dataframe.return_value = pd.DataFrame(
+        {"mask": [str(image_path)]}
+    )
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
     launcher = _fake_launcher()
@@ -208,11 +220,12 @@ async def test_open_resolves_relative_path_against_workflow_storage(
                 "row": 0,
                 "col": "mask",
                 "workflow_name": "wf_a",
+                "result_identity": _RESULT_IDENTITY,
             },
         )
     assert res.status_code == 200
     workflow_store.get_storage_path.assert_called_once_with("wf_a")
-    result_store.get_latest_dataframe.assert_called_once_with("n1", storage_path=tmp_path)
+    result_store.load_result_dataframe.assert_called_once()
     launcher.open.assert_awaited_once_with([str(image_path)], False)
 
 

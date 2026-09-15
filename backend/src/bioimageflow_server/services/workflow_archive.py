@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -70,15 +72,18 @@ class BioImageFlowWorkflowArchiveAdapter:
         extract_to: Path | None = None,
         storage_path: Path,
     ) -> dict[str, Any]:
-        if extract_to is None:
-            workflow = BioImageFlowWorkflow.load(
-                archive_path,
-                storage_path=storage_path,
-            )
-        else:
-            workflow = BioImageFlowWorkflow.import_archive(
-                archive_path,
-                extract_to,
-                storage_path=storage_path,
-            )
-        return workflow.to_dict(include_custom_tools=True)
+        """Read portable bytes without importing or installing tool packages."""
+
+        del extract_to, storage_path
+        with zipfile.ZipFile(archive_path) as archive:
+            entries = [item for item in archive.infolist() if item.filename == "workflow.json"]
+            if len(entries) != 1:
+                raise ValueError("Workflow archive must contain exactly one workflow.json")
+            document = json.loads(archive.read(entries[0]))
+        if not isinstance(document, dict):
+            raise ValueError("Workflow archive document must be an object")
+        BioImageFlowWorkflow.inspect_viewing_requirements(document)
+        return document
+
+    def inspect_viewing_requirements(self, archive_path: Path) -> dict[str, Any]:
+        return BioImageFlowWorkflow.inspect_viewing_requirements(archive_path).to_dict()

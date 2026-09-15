@@ -7,6 +7,7 @@ from bioimageflow_server.models.data_table import (
     DataTableSource,
     DataTableStackedResponse,
 )
+from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.data_table_projection import DataTableProjectionService
 
 
@@ -63,6 +64,50 @@ def test_exact_indices_merge_and_snapshot_records_before_loading() -> None:
     ]
     assert result.rows[1].source_rows == {"a": 1, "b": 1}
     assert store.resolved == ["a", "b"]
+    assert store.loaded == ["a", "b"]
+
+
+def test_exact_identities_are_captured_before_latest_can_change() -> None:
+    identities = {
+        node: ResultArtifactIdentity(
+            run_id=f"run_{node}",
+            node_key=node,
+            result_key=f"rk_{node}",
+            record_id=f"rec_{node}",
+        )
+        for node in ("a", "b")
+    }
+
+    class RacingStore(FakeResultStore):
+        def capture_latest_result_identity(self, node_id, storage_path=None):
+            self.resolved.append(node_id)
+            return identities[node_id]
+
+        def load_result_dataframe(self, identity, storage_path=None):
+            assert self.resolved == ["a", "b"]
+            self.loaded.append(identity.node_key)
+            return self.frames[identity.node_key]
+
+    store = RacingStore(
+        {
+            "a": pd.DataFrame({"x": [1]}, index=["r0"]),
+            "b": pd.DataFrame({"y": [2]}, index=["r0"]),
+        }
+    )
+    result = DataTableProjectionService(store).query(
+        [source("a", "context"), source("b")],
+        storage_path=None,
+        page=0,
+        page_size=50,
+        sort_by=None,
+        sort_order="asc",
+    )
+
+    assert result.mode == "merged"
+    assert [item.result_identity for item in result.sources] == [
+        identities["a"],
+        identities["b"],
+    ]
     assert store.loaded == ["a", "b"]
 
 

@@ -20,6 +20,8 @@ from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers import nodes as nodes_router
 from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
+from bioimageflow_server.models.results import ResultArtifactIdentity
+from bioimageflow_server.services.result_store import DATAFRAME_RESULT_IDENTITY_ATTR
 
 pytestmark = pytest.mark.anyio
 
@@ -106,6 +108,35 @@ async def test_post_node_data_filters_before_sorting_and_paging() -> None:
     assert body["absolute_rows"] == [2]
     assert body["total_rows"] == 2
     assert body["unfiltered_total_rows"] == 3
+
+
+async def test_pagination_reuses_captured_result_after_latest_changes() -> None:
+    identity = ResultArtifactIdentity(
+        run_id="run_old",
+        node_key="n1",
+        result_key="rk_old",
+        record_id="rec_old",
+    )
+    initial = pd.DataFrame({"x": [1, 2]})
+    initial.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = initial
+    store.load_result_dataframe.return_value = pd.DataFrame({"x": [1, 2]})
+    store.get_column_types.return_value = {"x": "int"}
+    async with await _client(store) as client:
+        first = await client.get("/api/v1/nodes/n1/data", params={"page_size": 1})
+        second = await client.post(
+            "/api/v1/nodes/n1/data/query",
+            json={
+                "page": 1,
+                "page_size": 1,
+                "result_identity": identity.model_dump(mode="json"),
+            },
+        )
+
+    assert first.json()["source_identity"] == identity.model_dump(mode="json")
+    assert second.json()["rows"] == [{"x": 2}]
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
 
 
 async def test_post_node_data_rejects_incompatible_filter() -> None:

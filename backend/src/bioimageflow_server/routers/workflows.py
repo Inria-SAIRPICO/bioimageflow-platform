@@ -27,6 +27,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowFormatStatus,
     WorkflowInfo,
     WorkflowImportResponse,
+    ViewingRequirementsManifest,
     WorkflowSaveBody,
     WorkflowUpdate,
 )
@@ -67,6 +68,10 @@ from bioimageflow_server.services.workflow_sources import (
     WorkflowSourceService,
 )
 from bioimageflow_server.services.workflow_artifacts import WorkflowSourceMissingError
+from bioimageflow_server.services.viewer_preferences import (
+    ViewerPreferenceStore,
+    ensure_workspace_identity,
+)
 from bioimageflow_server.services.execution import ExecutionConflictError
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -86,6 +91,10 @@ def get_connection_manager() -> Any | None:
 
 
 def get_nested_workflow_snapshot_service() -> NestedWorkflowSnapshotService | None:
+    return None
+
+
+def get_viewer_preference_store() -> ViewerPreferenceStore | None:
     return None
 
 
@@ -166,6 +175,7 @@ def _delete_workflow_with_snapshots(
     nested_snapshot_service: NestedWorkflowSnapshotService | None,
     workflow_id: str,
     expected_identity_generation: int | None = None,
+    viewer_preferences: ViewerPreferenceStore | None = None,
 ) -> int:
     """Delete one identity using the shared snapshot-before-workflow lock order."""
 
@@ -187,6 +197,12 @@ def _delete_workflow_with_snapshots(
                     "Workflow '%s' was deleted but retained nested snapshot cleanup failed",
                     workflow_id,
                 )
+        if viewer_preferences is not None:
+            viewer_preferences.clear_workflow_generation(
+                workspace_id=ensure_workspace_identity(store.workspace_dir),
+                workflow_id=workflow_id,
+                identity_generation=identity_generation,
+            )
     return identity_generation
 
 
@@ -227,6 +243,7 @@ def _finish_workflow_move(
     nested_snapshot_service: NestedWorkflowSnapshotService | None,
     move_plans: list[WorkflowIdentityMovePlan],
     operation_id: UUID | None,
+    viewer_preferences: ViewerPreferenceStore | None = None,
 ) -> None:
     """Finish the store-to-snapshot move boundary before clearing its journal."""
 
@@ -235,6 +252,22 @@ def _finish_workflow_move(
     _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
     if operation_id is not None:
         store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+        journal = store.pending_workflow_move()
+        if journal is None or journal.operation_id != operation_id:
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move journal {operation_id} disappeared before preferences"
+            )
+        if viewer_preferences is not None:
+            workspace_id = ensure_workspace_identity(store.workspace_dir)
+            for move in journal.moves:
+                viewer_preferences.move_workflow_generation(
+                    workspace_id=workspace_id,
+                    source_workflow_id=move.source_workflow_id,
+                    source_generation=move.source_generation_before,
+                    destination_workflow_id=move.destination_workflow_id,
+                    destination_generation=move.destination_generation_after,
+                )
+        store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
         store.complete_workflow_move(operation_id)
 
 
@@ -351,6 +384,9 @@ async def rename_folder(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(
+        get_viewer_preference_store
+    ),
 ) -> WorkflowFolderInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
@@ -377,6 +413,7 @@ async def rename_folder(
                     nested_snapshot_service,
                     move_plans,
                     operation_id,
+                    viewer_preferences,
                 )
             except Exception as exc:
                 if not _discard_unstarted_workflow_move(store, operation_id):
@@ -412,6 +449,9 @@ async def delete_folder(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(
+        get_viewer_preference_store
+    ),
 ) -> Any:
     _ensure_unlocked(execution_manager)
     try:
@@ -425,6 +465,10 @@ async def delete_folder(
                 removed_workflow_ids = (
                     store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
                 )
+                removed_generations = {
+                    workflow_id: store.workflow_generation(workflow_id)
+                    for workflow_id in removed_workflow_ids
+                }
                 move_plans = store.plan_folder_delete_moves(path, body)
                 _preflight_root_workflow_snapshot_moves(
                     nested_snapshot_service,
@@ -453,11 +497,20 @@ async def delete_folder(
                                     "cleanup failed",
                                     path,
                                 )
+                        if viewer_preferences is not None:
+                            workspace_id = ensure_workspace_identity(store.workspace_dir)
+                            for workflow_id, generation in removed_generations.items():
+                                viewer_preferences.clear_workflow_generation(
+                                    workspace_id=workspace_id,
+                                    workflow_id=workflow_id,
+                                    identity_generation=generation,
+                                )
                         _finish_workflow_move(
                             store,
                             nested_snapshot_service,
                             move_plans,
                             operation_id,
+                            viewer_preferences,
                         )
                     except Exception as exc:
                         if not _discard_unstarted_workflow_move(store, operation_id):
@@ -535,6 +588,20 @@ async def reveal_latest_workflow_outputs(
         logger.error("Could not reveal latest outputs for %s", name, exc_info=exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "ok", "path": str(output_path)}
+
+
+@router.get(
+    "/{name:path}/viewing-readiness",
+    response_model=ViewingRequirementsManifest,
+)
+async def workflow_viewing_readiness(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> ViewingRequirementsManifest:
+    try:
+        return store.viewing_requirements(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
 
 @router.get("/{name:path}", response_model=WorkflowFile)
@@ -838,6 +905,9 @@ async def delete_workflow(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(
+        get_viewer_preference_store
+    ),
 ) -> WorkflowDeleteResponse:
     _ensure_unlocked(execution_manager)
     try:
@@ -846,6 +916,7 @@ async def delete_workflow(
             nested_snapshot_service,
             name,
             expected_identity_generation,
+            viewer_preferences,
         )
         _publish_workflow_tree_changed(
             connection_manager,
@@ -892,6 +963,9 @@ async def patch_workflow(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(
+        get_viewer_preference_store
+    ),
 ) -> WorkflowInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
@@ -918,6 +992,7 @@ async def patch_workflow(
                     nested_snapshot_service,
                     move_plans,
                     operation_id,
+                    viewer_preferences,
                 )
             except Exception as exc:
                 if not _discard_unstarted_workflow_move(store, operation_id):

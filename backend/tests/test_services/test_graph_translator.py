@@ -319,7 +319,7 @@ def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() ->
     assert graph.nodes[0].type == "workflow"
     assert translated.errors == []
     assert translated.lib_dict["nodes"][0]["type"] == "workflow"
-    assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 1
+    assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 2
 
 
 def test_requirements_and_version_rebinding_recurse() -> None:

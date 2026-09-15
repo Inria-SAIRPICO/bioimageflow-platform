@@ -8,6 +8,7 @@ the same recursive shape at every depth.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -30,6 +31,50 @@ class WireModel(BaseModel):
         serialize_by_alias=True,
         json_schema_mode_override="validation",
     )
+
+
+class PackageRequirement(WireModel):
+    """Strict portable Python distribution requirement owned by the library."""
+
+    distribution: str = Field(min_length=1)
+    normalized_name: str = Field(min_length=1)
+    version: str | None = None
+
+    @model_validator(mode="after")
+    def validate_with_library(self) -> PackageRequirement:
+        from bioimageflow_core import PackageRequirement as LibraryPackageRequirement
+
+        LibraryPackageRequirement.from_dict(self.model_dump(mode="json"))
+        return self
+
+
+class NapariRequirement(WireModel):
+    """Strict portable requirements for opening one output in napari."""
+
+    required_packages: list[PackageRequirement] = Field(default_factory=list)
+    recommended_packages: list[PackageRequirement] = Field(default_factory=list)
+    napari_version: str | None = None
+    reader_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_with_library(self) -> NapariRequirement:
+        from bioimageflow_core import NapariRequirement as LibraryNapariRequirement
+
+        LibraryNapariRequirement.from_dict(self.model_dump(mode="json"))
+        return self
+
+
+class ViewerSpec(WireModel):
+    """Portable output viewer metadata mirrored from ``bioimageflow-core``."""
+
+    napari: NapariRequirement | None = None
+
+    @model_validator(mode="after")
+    def validate_with_library(self) -> ViewerSpec:
+        from bioimageflow_core import ViewerSpec as LibraryViewerSpec
+
+        LibraryViewerSpec.from_dict(self.model_dump(mode="json"))
+        return self
 
 
 class SerializedConstant(WireModel):
@@ -116,6 +161,13 @@ class WorkflowOutput(WireModel):
     name: str = Field(min_length=1)
     schema_: dict[str, Any] | None = Field(default=None, alias="schema")
     source: WorkflowOutputSource
+    viewer_addition: ViewerSpec | None = None
+
+    @model_validator(mode="after")
+    def validate_schema_viewer(self) -> WorkflowOutput:
+        if self.schema_ is not None and "viewer" in self.schema_:
+            ViewerSpec.model_validate(self.schema_["viewer"])
+        return self
 
 
 class WorkflowInterface(WireModel):
@@ -226,6 +278,7 @@ class ToolNodeState(WireModel):
     tool_package: str | None = None
     tool_package_version: str | None = None
     source_module: str | None = None
+    viewer_additions: dict[str, ViewerSpec] = Field(default_factory=dict)
 
 
 class WorkflowNodeState(WireModel):
@@ -241,6 +294,7 @@ class WorkflowNodeState(WireModel):
     resources: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     collapsed: bool = False
+    viewer_additions: dict[str, ViewerSpec] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_bindings(self) -> WorkflowNodeState:
@@ -295,13 +349,57 @@ Edge = Annotated[ColumnEdge | DataFrameEdge, Discriminator("type")]
 class GraphState(WireModel):
     """One self-contained workflow definition at any editor depth."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[2] = 2
     name: str = Field(min_length=1)
     display_name: str
     nodes: list[NodeState]
     edges: list[Edge]
     interface: WorkflowInterface
     config: WorkflowConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_schema_v1(cls, value: Any) -> Any:
+        """Upgrade a strict recursive v1 input without accepting v2 fields as v1."""
+
+        if not isinstance(value, dict) or value.get("schema_version") != 1:
+            return value
+        normalized = deepcopy(value)
+
+        def visit(graph: dict[str, Any]) -> None:
+            if graph.get("schema_version") != 1:
+                raise ValueError("Schema-v1 graphs must be recursively version 1")
+            interface = graph.get("interface")
+            if isinstance(interface, dict):
+                outputs = interface.get("outputs")
+                if isinstance(outputs, list):
+                    for output in outputs:
+                        if isinstance(output, dict) and "viewer_addition" in output:
+                            raise ValueError(
+                                "Workflow schema_version 1 does not support viewer additions"
+                            )
+                        schema = output.get("schema") if isinstance(output, dict) else None
+                        if isinstance(schema, dict) and "viewer" in schema:
+                            raise ValueError(
+                                "Workflow schema_version 1 does not support viewer metadata"
+                            )
+            nodes = graph.get("nodes")
+            if isinstance(nodes, list):
+                for node in nodes:
+                    if not isinstance(node, dict):
+                        continue
+                    if "viewer_additions" in node:
+                        raise ValueError(
+                            "Workflow schema_version 1 does not support viewer additions"
+                        )
+                    if node.get("type") == "workflow" and isinstance(
+                        node.get("workflow"), dict
+                    ):
+                        visit(node["workflow"])
+            graph["schema_version"] = 2
+
+        visit(normalized)
+        return normalized
 
     @field_validator("name")
     @classmethod

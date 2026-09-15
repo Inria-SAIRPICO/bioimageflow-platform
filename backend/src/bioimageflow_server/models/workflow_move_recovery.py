@@ -19,6 +19,7 @@ WorkflowMovePhase = Literal[
     "prepared",
     "artifacts_rewritten",
     "snapshots_rewritten",
+    "preferences_rewritten",
 ]
 
 

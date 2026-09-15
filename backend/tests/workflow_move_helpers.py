@@ -22,6 +22,7 @@ def finish_move_without_retained_snapshots(
     if operation_id is None:
         return
     store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+    store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
     store.complete_workflow_move(operation_id)
 
 

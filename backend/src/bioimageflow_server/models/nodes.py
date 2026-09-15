@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from bioimageflow_server.models.data_table import DataTableFilter
+from bioimageflow_server.models.results import ResultArtifactIdentity
 
 
 class NodeDataQueryRequest(BaseModel):
@@ -19,6 +20,7 @@ class NodeDataQueryRequest(BaseModel):
     sort_by: str | None = None
     sort_order: Literal["asc", "desc"] = "asc"
     filters: list[DataTableFilter] = Field(default_factory=list)
+    result_identity: ResultArtifactIdentity | None = None
 
 
 class NodeDataCsvRequest(BaseModel):
@@ -43,6 +45,8 @@ class NodeDataResponse(BaseModel):
     page: int
     page_size: int
     column_types: dict[str, str]
+    source_identity: ResultArtifactIdentity | None = None
+    identity_status: Literal["captured", "legacy_unpinned"]
 
     @model_validator(mode="after")
     def _validate_parallel_shapes(self) -> "NodeDataResponse":

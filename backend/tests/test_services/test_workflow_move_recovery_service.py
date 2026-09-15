@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from tests.graph_factory import graph_state
@@ -10,6 +11,7 @@ from tests.graph_factory import graph_state
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.nested_workflow_snapshot import NestedSnapshotOwner
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
+from bioimageflow_server.models.viewer_preferences import PersistentOutputPreferenceKey
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
     RootWorkflowSnapshotMove,
@@ -19,6 +21,10 @@ from bioimageflow_server.services.workflow_move_recovery import (
     WorkflowMoveRecoveryService,
 )
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.viewer_preferences import (
+    ViewerPreferenceStore,
+    ensure_workspace_identity,
+)
 
 
 def _store(tmp_path: Path) -> WorkflowStoreService:
@@ -97,6 +103,45 @@ def test_recovery_moves_retained_snapshot_tree_before_clearing_journal(
     assert recovery.recover_pending_move() is None
     assert restarted_snapshots.cleanup_orphaned_snapshots() == []
     assert created.identity_generation == move.source_generation_before
+
+
+def test_recovery_remaps_favorite_with_journaled_destination_generation(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    created = store.create_workflow(WorkflowCreate(name="old"))
+    preferences = ViewerPreferenceStore(tmp_path / "viewer-preferences.json")
+    key = PersistentOutputPreferenceKey(
+        workspace_id=ensure_workspace_identity(store.workspace_dir),
+        workflow_id="old",
+        identity_generation=created.identity_generation,
+        node_path=("n1",),
+        output_key="image",
+    )
+    preferences.set(key, uuid4(), expected_revision=0)
+    patch = WorkflowUpdate(action="update", new_id="new")
+    operation_id = store.prepare_workflow_patch_move("old", patch)
+    assert operation_id is not None
+    prepared = store.pending_workflow_move()
+    assert prepared is not None
+    move = prepared.moves[0]
+    store.patch_workflow("old", patch, move_operation_id=operation_id)
+    store.mark_workflow_move_phase(operation_id, "artifacts_rewritten")
+    store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+
+    restarted = _store(tmp_path)
+    recovery = WorkflowMoveRecoveryService(
+        lambda: restarted,
+        NestedWorkflowSnapshotService(lambda: restarted),
+        preferences,
+    )
+    recovery.recover_pending_move()
+
+    favorite_key = preferences.snapshot().favorites[0].key
+    assert isinstance(favorite_key, PersistentOutputPreferenceKey)
+    assert favorite_key.workflow_id == "new"
+    assert favorite_key.identity_generation == move.destination_generation_after
+    assert restarted.pending_workflow_move() is None
 
 
 def test_unreadable_snapshot_fails_before_forward_recovery_and_keeps_journal(

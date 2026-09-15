@@ -57,6 +57,7 @@ def _move_workflow(
     result = store.patch_workflow(source, patch, move_operation_id=operation_id)
     assert operation_id is not None
     store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+    store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
     store.complete_workflow_move(operation_id)
     return result
 

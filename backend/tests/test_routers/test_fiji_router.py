@@ -21,6 +21,13 @@ from bioimageflow_server.services.fiji_launcher import (
 
 pytestmark = pytest.mark.anyio
 
+_RESULT_IDENTITY = {
+    "run_id": "run_0123456789abcdef0123456789abcdef",
+    "node_key": "n1",
+    "result_key": "rk_" + "a" * 64,
+    "record_id": "rec_0123456789abcdef0123456789abcdef",
+}
+
 
 @pytest.fixture
 def anyio_backend() -> str:
@@ -45,8 +52,8 @@ async def test_open_resolves_workflow_result_cell(tmp_path: Path) -> None:
     image.parent.mkdir()
     image.write_bytes(b"tif")
     result_store = MagicMock()
-    result_store.get_latest_dataframe.return_value = pd.DataFrame(
-        {"mask": ["outputs/mask.tif"]}
+    result_store.load_result_dataframe.return_value = pd.DataFrame(
+        {"mask": [str(image)]}
     )
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
@@ -62,7 +69,13 @@ async def test_open_resolves_workflow_result_cell(tmp_path: Path) -> None:
 
     response = await _post(
         app,
-        {"node_id": "n1", "row": 0, "col": "mask", "workflow_name": "analysis"},
+        {
+            "node_id": "n1",
+            "row": 0,
+            "col": "mask",
+            "workflow_name": "analysis",
+            "result_identity": _RESULT_IDENTITY,
+        },
     )
 
     assert response.status_code == 200
@@ -103,7 +116,7 @@ async def test_open_returns_structured_fiji_errors(
     image = tmp_path / "mask.tif"
     image.write_bytes(b"tif")
     result_store = MagicMock()
-    result_store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [str(image)]})
+    result_store.load_result_dataframe.return_value = pd.DataFrame({"mask": [str(image)]})
     launcher = _launcher()
     launcher.open.side_effect = error
     app = create_app(
@@ -114,7 +127,15 @@ async def test_open_returns_structured_fiji_errors(
         )
     )
 
-    response = await _post(app, {"node_id": "n1", "row": 0, "col": "mask"})
+    response = await _post(
+        app,
+        {
+            "node_id": "n1",
+            "row": 0,
+            "col": "mask",
+            "result_identity": _RESULT_IDENTITY,
+        },
+    )
 
     assert response.status_code == status
     assert response.json()["error"] == code

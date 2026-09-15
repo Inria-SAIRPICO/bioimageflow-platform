@@ -8,6 +8,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from bioimageflow_server.models.graph import PackageRequirement, ViewerSpec
+from bioimageflow_server.models.results import ResultArtifactIdentity
+
 
 class InstalledDistribution(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -224,3 +227,64 @@ class NapariFilenamePreview(BaseModel):
     filename: str
     matching_rule_ids: list[UUID]
     winner_rule_id: UUID | None
+
+
+class NapariResolveRequest(BaseModel):
+    """Resolve one captured output artifact against local environments."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str = Field(min_length=1)
+    identity_generation: int = Field(ge=0)
+    node_path: tuple[str, ...] = Field(min_length=1)
+    output_key: str = Field(min_length=1)
+    result_identity: ResultArtifactIdentity
+    row: int = Field(ge=0)
+
+
+class NapariCompatibilityIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal[
+        "missing_distribution",
+        "version_out_of_range",
+        "napari_version_out_of_range",
+        "missing_napari",
+        "inventory_missing",
+        "inventory_stale",
+        "probe_failed",
+        "unavailable",
+    ]
+    distribution: str | None = None
+    required_version: str | None = None
+    installed_version: str | None = None
+    detail: str
+
+
+class NapariEnvironmentCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    environment_id: UUID
+    name: str
+    status: Literal["compatible", "incompatible", "unknown", "unavailable"]
+    label: str
+    reason: str
+    issues: list[NapariCompatibilityIssue] = Field(default_factory=list)
+    missing_recommended_packages: list[PackageRequirement] = Field(default_factory=list)
+    preference: Literal["favorite", "filename_rule", "global_default", "other"]
+
+
+class NapariResolveResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_identity: ResultArtifactIdentity
+    workflow_id: str
+    identity_generation: int
+    node_path: tuple[str, ...]
+    output_key: str
+    filename: str
+    viewer: ViewerSpec | None = None
+    reader_id: str | None = None
+    candidates: list[NapariEnvironmentCandidate]
+    effective_environment_id: UUID | None = None
+    effective_reason: str

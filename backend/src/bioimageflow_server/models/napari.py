@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
+from bioimageflow_server.models.results import ResultArtifactIdentity
+
 
 class NapariOpenRequest(BaseModel):
     """Body for ``POST /napari/open``."""
@@ -19,6 +21,7 @@ class NapariOpenRequest(BaseModel):
     row: int | None = None
     col: str | None = None
     workflow_name: str | None = None
+    result_identity: ResultArtifactIdentity | None = None
 
     @field_validator("reader_id", mode="before")
     @classmethod

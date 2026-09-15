@@ -29,6 +29,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariManagedRecipe,
 )
 from bioimageflow_server.services.settings_store import SettingsRevisionConflict, SettingsStore
+from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 
 
 PROBE_TIMEOUT_SECONDS = 15.0
@@ -223,11 +224,13 @@ class NapariEnvironmentService:
         managed_singleton_roots: Sequence[Path] = (),
         conda_executable: str | None = None,
         probe_runner: ProbeRunner = _bounded_run,
+        preference_store: ViewerPreferenceStore | None = None,
     ) -> None:
         self.store = store
         self.managed_singleton_roots = tuple(managed_singleton_roots)
         self.conda_executable = conda_executable
         self.probe_runner = probe_runner
+        self.preference_store = preference_store
 
     def snapshot(self) -> NapariEnvironmentList:
         settings = self.store.get()
@@ -345,13 +348,17 @@ class NapariEnvironmentService:
     ) -> NapariEnvironmentList:
         settings = self.store.get()
         self._get(environment_id)
+        if settings.napari_registry_revision != expected_revision:
+            raise NapariEnvironmentError(
+                "napari_registry_revision_conflict",
+                f"expected registry revision {expected_revision}, current is "
+                f"{settings.napari_registry_revision}",
+            )
         environments = [item for item in settings.napari_environments if item.id != environment_id]
         rules = [
             rule for rule in settings.napari_filename_rules if rule.environment_id != environment_id
         ]
-        await self._patch(
-            expected_revision,
-            {
+        changes = {
                 "napari_environments": environments,
                 "napari_filename_rules": rules,
                 "napari_default_environment_id": (
@@ -359,9 +366,55 @@ class NapariEnvironmentService:
                     if settings.napari_default_environment_id == environment_id
                     else settings.napari_default_environment_id
                 ),
-            },
-        )
+            }
+        if self.preference_store is not None:
+            self.preference_store.prepare_environment_forget(
+                environment_id, registry_revision=expected_revision
+            )
+            self.preference_store.apply_prepared_environment_forget()
+        try:
+            await self._patch(expected_revision, changes)
+        except Exception:
+            # The durable journal intentionally remains for startup or retry
+            # forward recovery; it is never rolled back to dangling state.
+            raise
+        if self.preference_store is not None:
+            self.preference_store.complete_environment_forget()
         return self.snapshot()
+
+    async def recover_pending_environment_forget(self) -> None:
+        """Forward-complete a crash-interrupted registry/preference cleanup."""
+
+        if self.preference_store is None:
+            return
+        journal = self.preference_store.pending_environment_forget()
+        if journal is None:
+            return
+        environment_id = self.preference_store.apply_prepared_environment_forget()
+        assert environment_id is not None
+        settings = self.store.get()
+        if any(item.id == environment_id for item in settings.napari_environments):
+            environments = [
+                item for item in settings.napari_environments if item.id != environment_id
+            ]
+            rules = [
+                rule
+                for rule in settings.napari_filename_rules
+                if rule.environment_id != environment_id
+            ]
+            await self._patch(
+                settings.napari_registry_revision,
+                {
+                    "napari_environments": environments,
+                    "napari_filename_rules": rules,
+                    "napari_default_environment_id": (
+                        None
+                        if settings.napari_default_environment_id == environment_id
+                        else settings.napari_default_environment_id
+                    ),
+                },
+            )
+        self.preference_store.complete_environment_forget()
 
     async def set_default(
         self, environment_id: UUID | None, *, expected_revision: int
