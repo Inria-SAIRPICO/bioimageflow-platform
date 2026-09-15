@@ -154,8 +154,30 @@ test.describe('result exports', () => {
     await generateNode.click()
     await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
     const values = page.getByTestId('panel-nodePanel').getByTestId('list-input-values')
+    const beforeEditResponse = await page.request.get(
+      `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+    )
+    expect(beforeEditResponse.ok()).toBeTruthy()
+    const beforeEdit = await beforeEditResponse.json()
+    const acceptedEdit = page.waitForResponse(response => {
+      if (
+        !response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+        || response.request().method() !== 'PUT'
+      ) return false
+      const body = response.request().postDataJSON() as {
+        graph?: { nodes?: Array<{ id?: string; parameters?: { values?: unknown } }> }
+      } | null
+      const generate = body?.graph?.nodes?.find(node => node.id === 'generate_result')
+      return JSON.stringify(generate?.parameters?.values) === '[2]'
+    })
     await values.fill('[2]')
-    await values.press('Tab')
+    // Moving to an adjacent tab is the ordinary user blur gesture that commits
+    // the textarea's native change event consistently in Chromium and Firefox.
+    await page.getByTestId('panel-nodePanel').getByRole('tab', { name: 'Resources' }).click()
+    const acceptedEditResponse = await acceptedEdit
+    expect(acceptedEditResponse.status()).toBe(200)
+    const acceptedDraft = await acceptedEditResponse.json()
+    expect(acceptedDraft.draft_revision).toBe(beforeEdit.draft_revision + 1)
     await expect.poll(async () => {
       const response = await page.request.get(
         `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
