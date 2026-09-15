@@ -53,6 +53,8 @@ The bulk-delete/output-clear worktree was archived under `/private/tmp`, pruned,
 The recursive-source worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `13a384b`, `9561b25`, `c911eb3`, and `e817d77`.
 The root-discard worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `dd20821`.
 The ISSUE-007 platform and sibling-library worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted after BioImageFlow 0.7.2 publication and platform integration at `da2ced2`.
+`/root/execution_failure_rerun` owns `.worktrees/execution-failure-rerun` on `campaign/execution-failure-rerun` for the real failure, visible diagnostic/log, correction, and rerun journey.
+`/root/results_multiselect_widths` owns `.worktrees/results-multiselect-widths` on `campaign/results-multiselect-widths` for multi-selection result projection, source attribution/navigation, and persistent column-width behavior.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
 The nested-execution worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `fd96f8f`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.
