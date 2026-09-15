@@ -236,32 +236,16 @@ describe('ImageCell', () => {
     expect(wrapper.find('img.image-cell__thumb').attributes('src')).toBe('blob:mock-url')
   })
 
-  it('keeps Open in Napari enabled after a launch failure so the action can be retried', async () => {
+  it('does not open a result until its immutable identity is available', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
-    mockedPost.mockRejectedValueOnce({
-      response: {
-        status: 503,
-        data: { error: 'napari_launch_failed', detail: 'solver crashed' },
-      },
-    })
-
     const wrapper = mountCell()
     await flushPromises()
 
     const button = wrapper.find('[data-testid="open-napari-0-mask"]')
-    await button.trigger('click')
-    await flushPromises()
-
-    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/open', {
-      paths: ['/tmp/m.tif'],
-      clear_layers: false,
-      node_id: 'n1',
-      row: 0,
-      col: 'mask',
-      workflow_name: null,
-    })
-    expect(button.attributes('disabled')).toBeUndefined()
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toContain('Refresh output data')
+    expect(mockedPost).not.toHaveBeenCalledWith('/api/v1/napari/open', expect.anything())
   })
 
   it('opens the selected workflow image in configured Fiji', async () => {
@@ -316,6 +300,7 @@ describe('ImageCell', () => {
 
     expect(wrapper.find('[data-testid="open-fiji-0-mask"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="configure-fiji-0-mask"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
   })
 
   it('returns a stale Fiji configuration to setup mode', async () => {

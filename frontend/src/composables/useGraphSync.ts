@@ -153,14 +153,14 @@ function serializeEdge(e: any): Edge {
 export function serializeGraph(raw: {
   nodes: any[]
   edges: any[]
-  schema_version?: 1
+  schema_version?: 2
   name?: string
   display_name?: string
   interface?: GraphState['interface']
   config?: GraphState['config']
 }): GraphState {
   return {
-    schema_version: raw.schema_version ?? 1,
+    schema_version: raw.schema_version ?? 2,
     name: raw.name ?? 'workflow',
     display_name: raw.display_name ?? raw.name ?? 'Workflow',
     nodes: raw.nodes.map(serializeNode),

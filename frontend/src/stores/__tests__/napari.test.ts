@@ -57,6 +57,27 @@ describe('napari store', () => {
     expect(napari.phase).toBeNull()
   })
 
+  it('deduplicates one environment while another environment remains responsive', async () => {
+    const releases: Array<() => void> = []
+    vi.mocked(api.post).mockImplementation(() => new Promise((resolve) => {
+      releases.push(() => resolve({ data: { status: 'ok' } }))
+    }))
+    const napari = useNapariStore()
+    const environmentA = { ...payload, environment_id: '68ff94c5-b649-4dc5-9d98-605e82736e3b' }
+    const environmentB = { ...payload, environment_id: '0767ed99-f301-445a-8c31-c75462303fde' }
+
+    const first = napari.open(environmentA)
+    await napari.open(environmentA)
+    const second = napari.open(environmentB)
+
+    expect(api.post).toHaveBeenCalledTimes(2)
+    expect(napari.environmentState(environmentA.environment_id).pending).toBe(true)
+    expect(napari.environmentState(environmentB.environment_id).pending).toBe(true)
+    releases.forEach(release => release())
+    await Promise.all([first, second])
+    expect(napari.requestPending).toBe(false)
+  })
+
   it('distinguishes environment installation from opening and requests Logger', () => {
     const napari = useNapariStore()
     napari.requestPending = true

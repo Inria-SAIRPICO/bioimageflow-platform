@@ -36,6 +36,7 @@ function response(path: string, page: number): NodeDataResponse {
     page,
     page_size: 50,
     column_types: { path: 'Path' },
+    identity_status: 'legacy_unpinned',
   }
 }
 
@@ -274,6 +275,28 @@ describe('dataTable store canvas ownership', () => {
     })
   })
 
+  it('pins the captured node result across sorting and pagination', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const sourceIdentity = {
+      run_id: 'run-1', node_key: 'node', result_key: 'result-1', record_id: 'record-1',
+    }
+    mockedPost.mockResolvedValue({ data: {
+      ...response('/captured.tif', 0),
+      source_identity: sourceIdentity,
+      identity_status: 'captured',
+    } } as any)
+
+    await store.fetchNodeData('node', { workflowName: 'a' })
+    await store.setSort('node', 'path', 'desc', { workflowName: 'a' })
+    await store.setPage('node', 1, { workflowName: 'a' })
+
+    expect(mockedPost.mock.calls[0][1]).toMatchObject({ result_identity: null })
+    expect(mockedPost.mock.calls[1][1]).toMatchObject({ result_identity: sourceIdentity })
+    expect(mockedPost.mock.calls[2][1]).toMatchObject({ result_identity: sourceIdentity })
+  })
+
   it('cancels stale consolidated queries and ignores their responses', async () => {
     const [canvasA] = registerCanvases()
     canvasSessionRegistry.activate(canvasA)
@@ -316,9 +339,15 @@ describe('dataTable store canvas ownership', () => {
     const [canvasA] = registerCanvases()
     canvasSessionRegistry.activate(canvasA)
     const store = useDataTableStore()
+    const sourceIdentity = {
+      run_id: 'run-1', node_key: 'node', result_key: 'result-1', record_id: 'record-1',
+    }
     mockedPost.mockResolvedValue({ data: {
       mode: 'merged',
-      sources: [],
+      sources: [{
+        node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {},
+        result_identity: sourceIdentity,
+      }],
       columns: [],
       rows: [],
       total_rows: 0,
@@ -337,16 +366,32 @@ describe('dataTable store canvas ownership', () => {
       page: 0,
       sort_by: 's0:value',
       sort_order: 'desc',
+      sources: [expect.objectContaining({ result_identity: sourceIdentity })],
     })
     expect(mockedPost.mock.calls[2][1]).toMatchObject({
       page: 0,
       filters: [{ column: 's0:value', operator: 'gte', value: 2 }],
+      sources: [expect.objectContaining({ result_identity: sourceIdentity })],
     })
     expect(mockedPost.mock.calls[3][1]).toMatchObject({
       page: 2,
       sort_by: 's0:value',
       sort_order: 'desc',
       filters: [{ column: 's0:value', operator: 'gte', value: 2 }],
+      sources: [expect.objectContaining({ result_identity: sourceIdentity })],
+    })
+
+    const sourceRequest = {
+      workflow_id: 'a',
+      sources: [{ node_id: 'node', role: 'anchor' as const, label: 'Node', column_aliases: {} }],
+    }
+    await store.fetchProjection(sourceRequest)
+    await store.fetchProjection(sourceRequest, { captureLatest: true })
+    expect(mockedPost.mock.calls[4][1]).toMatchObject({
+      sources: [expect.objectContaining({ result_identity: sourceIdentity })],
+    })
+    expect(mockedPost.mock.calls[5][1]).toMatchObject({
+      sources: [expect.objectContaining({ result_identity: null })],
     })
   })
 

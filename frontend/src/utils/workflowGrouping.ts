@@ -223,7 +223,7 @@ export function groupIntoWorkflow(
   const outputs = [...outputByRoute.values()]
 
   const workflow: GraphState = {
-    schema_version: 1,
+    schema_version: 2,
     name: options.workflowNodeName,
     display_name: options.workflowNodeName,
     nodes: selectedNodes.map(serializeNode),

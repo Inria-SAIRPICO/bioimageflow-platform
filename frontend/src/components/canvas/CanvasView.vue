@@ -645,7 +645,7 @@ function serializeGraph(state: CanvasVueFlowState): GraphState {
   const context = currentInterfaceContext()
   return serializeCanvasGraph({
     ...state,
-    schema_version: previous?.schema_version ?? 1,
+    schema_version: 2,
     name: previous?.name ?? identity.workflowName ?? 'workflow',
     display_name: previous?.display_name
       ?? identity.workflowDisplayName
@@ -2736,7 +2736,7 @@ function showPasteSummary(summary: PasteSummary) {
 function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
   const previous = lastAuthoritativeGraph.value
   const graph = graphStateToVueFlow({
-    schema_version: previous?.schema_version ?? 1,
+    schema_version: 2,
     name: previous?.name ?? 'clipboard',
     display_name: previous?.display_name ?? 'Clipboard',
     nodes: [n],
