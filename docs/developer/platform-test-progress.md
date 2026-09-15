@@ -54,6 +54,7 @@ The recursive-source worktree was archived under `/private/tmp`, pruned, and its
 The root-discard worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `dd20821`.
 The ISSUE-007 platform and sibling-library worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted after BioImageFlow 0.7.2 publication and platform integration at `da2ced2`.
 `/root/execution_failure_rerun` owns `.worktrees/execution-failure-rerun` on `campaign/execution-failure-rerun` for the real failure, visible diagnostic/log, correction, and rerun journey.
+`/root/image_file_export` owns `.worktrees/image-file-export` on `campaign/image-file-export` for real image/file viewing and export-byte verification.
 The result multi-selection/width worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c050207` and `d8bd740` reached main.
 The ISSUE-008 worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `3422e1c` passed the applicable completion lanes.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
