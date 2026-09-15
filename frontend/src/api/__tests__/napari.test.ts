@@ -5,18 +5,28 @@ vi.mock('@/api/client', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
 import { api } from '@/api/client'
-import { openInNapari, getNapariStatus, shutdownNapari } from '../napari'
+import {
+  addNapariFilenameRule, cancelManagedNapariOperation, createManagedNapariEnvironment,
+  getManagedNapariOperation, getNapariStatus, getNapariViewingReadiness,
+  getWorkflowViewingRequirements, launchNapariEnvironment, openInNapari, previewNapariFilename,
+  replaceNapariFilenameRules, shutdownNapari,
+} from '../napari'
 
 const mockedGet = vi.mocked(api.get)
 const mockedPost = vi.mocked(api.post)
+const mockedPut = vi.mocked(api.put)
 
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
+  mockedPut.mockReset()
 })
 
 describe('openInNapari', () => {
@@ -82,5 +92,46 @@ describe('shutdownNapari', () => {
     mockedPost.mockResolvedValue({ data: { status: 'ok' } })
     await shutdownNapari()
     expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/shutdown')
+  })
+})
+
+describe('napari registry contracts', () => {
+  it('preserves extension shorthand and ordered rule replacement bodies', async () => {
+    mockedPost.mockResolvedValueOnce({ data: { revision: 2, rule: { id: 'r1', pattern: '*.tif' } } })
+    await addNapariFilenameRule({ value: '.tif', mode: 'extension', environment_id: 'env-a', enabled: true, reader_id: null, expected_revision: 1 })
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/environment-settings/filename-rules', expect.objectContaining({ value: '.tif', mode: 'extension' }))
+
+    mockedPut.mockResolvedValueOnce({ data: { revision: 3, environments: [], default_environment_id: null, filename_rules: [], operations: [] } })
+    await replaceNapariFilenameRules({ rules: [], expected_revision: 2 })
+    expect(mockedPut).toHaveBeenCalledWith('/api/v1/napari/environment-settings/filename-rules', { rules: [], expected_revision: 2 })
+  })
+
+  it('previews rules and routes managed operation create, poll, and cancel', async () => {
+    mockedPost.mockResolvedValue({ data: { revision: 1, environment: null, operation: { id: 'op', environment_id: 'env', state: 'installing' } } })
+    mockedGet.mockResolvedValue({ data: { revision: 1, environment: null, operation: { id: 'op', environment_id: 'env', state: 'completed' } } })
+    await createManagedNapariEnvironment({ name: 'Tracking', recipe: { preset: 'default', requested_packages: ['track-reader>=1'] }, expected_revision: 0 })
+    await getManagedNapariOperation('env', 'op')
+    await cancelManagedNapariOperation('env', 'op')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/environments/managed', expect.anything())
+    expect(mockedGet).toHaveBeenCalledWith('/api/v1/napari/environments/env/operations/op')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/environments/env/operations/op/cancel')
+
+    mockedPost.mockResolvedValueOnce({ data: { filename: 'sample.tif', matching_rule_ids: ['r1'], winner_rule_id: 'r1' } })
+    expect((await previewNapariFilename('sample.tif')).winner_rule_id).toBe('r1')
+  })
+
+  it('uses dedicated launch and passive readiness endpoints without probing or opening', async () => {
+    mockedPost.mockResolvedValueOnce({ data: { status: 'launched' } })
+    await launchNapariEnvironment('env')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/launch', { environment_id: 'env' })
+
+    const manifest = { schema: 'bioimageflow.viewing_requirements.v1' as const, complete: true, outputs: {} }
+    mockedPost.mockResolvedValueOnce({ data: { manifest_schema: manifest.schema, manifest_complete: true, summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No setup needed' }, outputs: [], groups: [] } })
+    await getNapariViewingReadiness(manifest)
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+
+    mockedGet.mockResolvedValueOnce({ data: manifest })
+    await getWorkflowViewingRequirements('folder/workflow')
+    expect(mockedGet).toHaveBeenCalledWith('/api/v1/workflows/folder/workflow/viewing-readiness')
   })
 })

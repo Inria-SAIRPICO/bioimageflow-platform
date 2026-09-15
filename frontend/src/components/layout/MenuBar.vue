@@ -27,6 +27,7 @@ import {
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
+import { useNapariStore } from '@/stores/napari'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { api } from '@/api/client'
 import {
@@ -70,6 +71,7 @@ const executionStore = useExecutionStore()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const workflowStore = useWorkflowStore()
 const settingsStore = useSettingsStore()
+const napariStore = useNapariStore()
 const toolRegistryStore = useToolRegistryStore()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 const canvasPersistence = useCanvasPersistence()
@@ -574,6 +576,33 @@ async function openImportedWorkflow(name: string): Promise<void> {
 async function finishImport(file: File, nameOverride?: string): Promise<void> {
   const response = await workflowStore.importWorkflow(file, { nameOverride })
   await openImportedWorkflow(workflowId(response.info))
+  if (settingsStore.isDesktop && response.viewing_requirements) {
+    try {
+      const readiness = await napariStore.evaluateViewingReadiness(response.viewing_requirements)
+      const uncoveredGroupIds = new Set(
+        (readiness.outputs ?? [])
+          .filter(output => output.status === 'not_covered' && output.group_id)
+          .map(output => output.group_id!),
+      )
+      const uncoveredGroups = (readiness.groups ?? []).filter(group => uncoveredGroupIds.has(group.id))
+      useSettingsPanel().prepareNapariCreate(uncoveredGroups)
+      if (readiness.summary.outputs_needing_setup > 0 || readiness.summary.unknown_outputs > 0) {
+        toast?.add({
+          severity: 'warn',
+          summary: 'Viewing requirements',
+          detail: `${readiness.summary.message} Open Preferences → Image Viewers to review setup options. Workflow execution is unaffected.`,
+          life: 8000,
+        })
+      }
+    } catch (error: unknown) {
+      toast?.add({
+        severity: 'warn',
+        summary: 'Viewing requirements not checked',
+        detail: `The workflow was imported successfully. ${error instanceof Error ? error.message : String(error)}`,
+        life: 8000,
+      })
+    }
+  }
   pendingImportFile.value = null
 }
 

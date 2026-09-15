@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/api/client', () => ({
-  api: { post: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }))
 
 import { api } from '@/api/client'
@@ -21,6 +21,10 @@ describe('napari store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.put).mockReset()
+    vi.mocked(api.patch).mockReset()
+    vi.mocked(api.delete).mockReset()
   })
 
   it('keeps progress visible until opening completes', async () => {
@@ -74,5 +78,111 @@ describe('napari store', () => {
     napari.applyEnvironmentStatus({ env_name: 'napari', status: 'running' })
 
     expect(napari.loggerActivationRequest).toBe(0)
+  })
+
+  it('tracks concurrent opens independently across environments', async () => {
+    const resolvers: Array<() => void> = []
+    vi.mocked(api.post).mockImplementation(() => new Promise((resolve) => {
+      resolvers.push(() => resolve({ data: { status: 'ok' } }))
+    }))
+    const napari = useNapariStore()
+    const first = napari.open({ ...payload, environment_id: 'env-a' })
+    const second = napari.open({ ...payload, environment_id: 'env-b' })
+
+    expect(api.post).toHaveBeenCalledTimes(2)
+    expect(napari.environmentState('env-a').pending).toBe(true)
+    expect(napari.environmentState('env-b').pending).toBe(true)
+
+    resolvers[0]!()
+    await first
+    expect(napari.environmentState('env-a').pending).toBe(false)
+    expect(napari.environmentState('env-b').pending).toBe(true)
+    resolvers[1]!()
+    await second
+    expect(napari.requestPending).toBe(false)
+  })
+
+  it('attributes lifecycle events to the addressed environment', () => {
+    const napari = useNapariStore()
+    napari.applyEnvironmentStatus({ environment_id: 'env-a', request_id: 'a1', status: 'opening' })
+    napari.applyEnvironmentStatus({ environment_id: 'env-b', request_id: 'b1', status: 'opening' })
+    napari.applyEnvironmentStatus({ environment_id: 'env-a', request_id: 'a1', status: 'running' })
+
+    expect(napari.environmentState('env-a').pending).toBe(false)
+    expect(napari.environmentState('env-b').pending).toBe(true)
+  })
+
+  it('applies registry mutations with the current revision', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        revision: 3,
+        environment: { id: 'env-a', name: 'Tracking' },
+      },
+    })
+    const napari = useNapariStore()
+    napari.revision = 2
+
+    await napari.registerEnvironment({ name: 'Tracking', path: '/envs/tracking' })
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/napari/environments', {
+      name: 'Tracking', path: '/envs/tracking', expected_revision: 2,
+    })
+    expect(napari.revision).toBe(3)
+    expect(napari.environments[0]?.name).toBe('Tracking')
+  })
+
+  it('launches an empty viewer through the dedicated endpoint then refreshes status', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'launched' } })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        environment_id: 'env-a', environment_name: 'Tracking',
+        installation_identity: 'identity', status: 'running', running: true,
+        env_path: '/envs/tracking', pid: 42,
+      },
+    })
+    const napari = useNapariStore()
+
+    await napari.launchEmpty('env-a')
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/napari/launch', { environment_id: 'env-a' })
+    expect(api.get).toHaveBeenCalledWith('/api/v1/napari/status', { params: { environment_id: 'env-a' } })
+    expect(napari.environmentState('env-a').status).toBe('running')
+  })
+
+  it('keeps filename-rule order backend-authoritative', async () => {
+    const rules = [
+      { id: 'specific', pattern: '*_labels.tif', environment_id: 'env-a', enabled: true, reader_id: null },
+      { id: 'general', pattern: '*.tif', environment_id: 'env-a', enabled: true, reader_id: null },
+    ]
+    vi.mocked(api.put).mockResolvedValueOnce({
+      data: { revision: 6, environments: [], default_environment_id: null, filename_rules: rules, operations: [] },
+    })
+    const napari = useNapariStore()
+    napari.revision = 5
+
+    await napari.replaceFilenameRules(rules)
+
+    expect(api.put).toHaveBeenCalledWith('/api/v1/napari/environment-settings/filename-rules', {
+      rules, expected_revision: 5,
+    })
+    expect(napari.filenameRules.map(rule => rule.id)).toEqual(['specific', 'general'])
+  })
+
+  it('deduplicates resumed polling for a durable managed operation', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        data: { revision: 2, environment: null, operation: { id: 'op-a', environment_id: 'env-a', kind: 'create', state: 'completed', progress: 100, message: 'Ready', error: null } },
+      })
+      .mockResolvedValueOnce({
+        data: { revision: 2, environments: [], default_environment_id: null, filename_rules: [], operations: [] },
+      })
+    const napari = useNapariStore()
+
+    await Promise.all([
+      napari.watchOperation('env-a', 'op-a'),
+      napari.watchOperation('env-a', 'op-a'),
+    ])
+
+    expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).includes('/operations/'))).toHaveLength(1)
   })
 })
