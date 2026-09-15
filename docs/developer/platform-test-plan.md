@@ -123,6 +123,7 @@ Final closure requires that this reconciliation covers all implemented in-scope 
 ### Coverage dashboard and completion denominator
 
 Before Wave 6 expands into the remaining feature families, normalize each inventory into an auditable dashboard.
+The canonical normalized denominator is the [platform test obligation dashboard](platform-test-dashboard.md); the three detailed inventories retain its selector, assertion, manual-procedure, and gap evidence.
 Every implemented user action or contract must have a stable feature ID and explicit fields for priority, supported surface, applicable scenario obligations, selectors or manual procedure, browser/deployment variants, status, and evidence revision.
 Scenario obligations are normal success, invalid or refused action, cancellation/failure/recovery, persistence/reload, and applicable identity/concurrency/ownership/permission boundaries; mark a dimension `not-applicable` only with a short reason.
 

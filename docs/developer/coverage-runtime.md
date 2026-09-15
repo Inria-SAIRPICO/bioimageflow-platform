@@ -11,6 +11,7 @@ Selectors below are relative to `backend/tests/` unless prefixed with `frontend/
 File-level selectors identify a relevant family, while named selectors identify assertions inspected directly or a specific follow-up boundary.
 Parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines are excluded.
 An in-process Direct computation and a mocked worker lifecycle are distinct from real sequential Wetlands worker certification.
+Stable feature IDs, scenario applicability, status, evidence revision, and the countable campaign denominator are maintained in the [obligation dashboard](platform-test-dashboard.md); feature labels below are the mapping key and must remain aligned with it.
 
 ## Execution, cache, and outputs
 

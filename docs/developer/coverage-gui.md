@@ -7,6 +7,7 @@ orphan: true
 This partial inventory records inspected assertions, not a claim that every listed test passed in the current campaign.
 Rows combine historical inspection with subsequent campaign repairs; use each row's evidence and the current checkpoint to distinguish completed work from remaining gaps.
 The [campaign plan](platform-test-plan.md) owns priority order and the systematic per-feature completion requirements; all in-scope gaps remain obligations after the main GUI paths.
+Stable feature IDs, scenario applicability, status, evidence revision, and the countable campaign denominator are maintained in the [obligation dashboard](platform-test-dashboard.md); feature labels below are the mapping key and must remain aligned with it.
 It covers local GUI editing and authoring; workflow lifecycle, recursive interfaces, results, integrations, and execution have complementary campaign inventories.
 HPC, Parsl, distributed engines, remote execution, and parallel execution behavior are excluded.
 Browser automation remains an opt-in lane called after substantial changes, using the authoritative commands in [Testing](../testing.md).

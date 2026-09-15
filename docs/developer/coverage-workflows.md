@@ -12,6 +12,7 @@ Serialized `execution: parallel` values in persistence-only fixtures do not demo
 
 The source-update identity concern below was resolved as ISSUE-001; current open decisions are tracked in [Campaign issues](platform-test-issues.md).
 The [campaign plan](platform-test-plan.md) owns global priorities and systematic per-feature completion requirements; every remaining in-scope row is mandatory.
+Stable feature IDs, scenario applicability, status, evidence revision, and the countable campaign denominator are maintained in the [obligation dashboard](platform-test-dashboard.md); feature labels below are the mapping key and must remain aligned with it.
 Remaining gaps are proposed work, not implemented coverage.
 
 ## Selector conventions
