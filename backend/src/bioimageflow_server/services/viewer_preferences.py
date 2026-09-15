@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 from bioimageflow_server.models.viewer_preferences import (
@@ -167,10 +168,11 @@ class ViewerPreferenceStore:
             if current != target:
                 if current.revision != journal["source_preferences_revision"]:
                     raise ViewerPreferencesRevisionConflict(
-                        journal["source_preferences_revision"], current.revision
+                        cast(int, journal["source_preferences_revision"]),
+                        current.revision,
                     )
                 _atomic_json(self.path, target.model_dump(mode="json"))
-            return UUID(journal["environment_id"])
+            return UUID(cast(str, journal["environment_id"]))
 
     def pending_environment_forget(self) -> dict[str, object] | None:
         with self._lock:

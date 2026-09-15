@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
+from typing import Literal
 from uuid import UUID
 
 from packaging.specifiers import SpecifierSet
@@ -33,6 +34,7 @@ from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 INVENTORY_MAX_AGE = timedelta(hours=24)
+PreferenceSource = Literal["favorite", "filename_rule", "global_default", "other"]
 
 
 class NapariResolverError(ValueError):
@@ -101,7 +103,7 @@ class NapariResolverService:
             ),
             None,
         )
-        preference_order: list[tuple[UUID, str]] = []
+        preference_order: list[tuple[UUID, PreferenceSource]] = []
         if favorite is not None:
             preference_order.append((favorite, "favorite"))
         if winning_rule is not None:
@@ -109,7 +111,7 @@ class NapariResolverService:
         if snapshot.default_environment_id is not None:
             preference_order.append((snapshot.default_environment_id, "global_default"))
         preference_order.extend((item.id, "other") for item in snapshot.environments)
-        rank: dict[UUID, str] = {}
+        rank: dict[UUID, PreferenceSource] = {}
         for environment_id, source in preference_order:
             rank.setdefault(environment_id, source)
 
@@ -159,7 +161,7 @@ class NapariResolverService:
         self,
         environment: NapariEnvironment,
         viewer: ViewerSpec | None,
-        preference: str,
+        preference: PreferenceSource,
     ) -> NapariEnvironmentCandidate:
         issues: list[NapariCompatibilityIssue] = []
         unavailable_states = {
