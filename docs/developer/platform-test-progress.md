@@ -8,16 +8,18 @@ Last updated: 2026-09-15.
 Objective: establish objective basic-use readiness through the fixed gate, then complete systematic coverage of all implemented in-scope features unless the owner explicitly pauses with a durable backlog.
 Orchestrator: GPT-5.6 Sol/high with focused context; ordinary workers: Sol/medium; specialist: Astra/high.
 The [plan](platform-test-plan.md) defines priorities, coverage obligations, commit/worktree rules, and the final completion gate.
-The campaign is incomplete; this checkpoint is a planning update, not a new application certification.
+**Basic-use gate passed; systematic campaign awaiting owner decision/incomplete.**
+The fixed Basic-Use gate passed on evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`; the broader campaign is still incomplete, and this checkpoint records no owner decision to continue or pause.
 
 The owner approved an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, reachability-first blocker classification, and a distinct Basic-Use Readiness Gate before lower-priority campaign work.
 The plan and restart prompt contain the normative rules; this checkpoint records their activation without duplicating their detail.
 
-## Next three actions
+## Next actions
 
-1. Recompute the fixed 73-cell Basic-Use matrix from the integrated dashboard and verify its exact selectors in Chromium and Firefox on one current revision.
-2. Complete the required backend, frontend, and documentation checks plus the headed or artifact-backed confidence run without intervening product changes.
-3. If every gate condition passes, commit the durable evidence and ask the owner whether to continue into Tier 1B or pause with the systematic campaign explicitly incomplete.
+1. Ask the owner whether to continue now through Tiers 1B, 2, and 3 or pause with the systematic campaign explicitly incomplete; do not infer that choice from this checkpoint.
+2. If paused, resume first with the remaining Tier 1B shell and everyday-editing boundaries in the [GUI inventory](coverage-gui.md), including startup refusal/recovery and the broader clipboard, shortcut, and history-isolation variants outside the fixed gate.
+3. Continue with the remaining Tier 1B grouping, recursive editing, interface, private-snapshot, and identity/recovery boundaries in the [workflow inventory](coverage-workflows.md).
+4. Then close the remaining Tier 1B execution and result-lifecycle boundaries in the [runtime inventory](coverage-runtime.md), including real-worker progress/failure/cancellation variants, cache lifecycle, richer result projections, and export recovery.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -37,7 +39,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Commit `3422e1c` resolves nested DataFrame publication remaining dirty after accepted Save and passes the complete Chromium browser lane plus the exact Firefox journey. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
 | Wave 5 / execution and results lifecycle | Primary execution/results batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Commit `4676ffb` adds the real sequential failure, single enriched contextual error, unlocked GUI correction, successful rerun, exact rows, and output-file bytes. Commits `624d986` through `7ab16e6` add real typed image/file viewing, the actual Avivator GUI action, and byte-level mixed-latest versus pinned-run export verification. A visible headed Chromium run of the primary create/run/inspect/save/reopen journey passed at `8574adc`. True thumbnail provisioning and native viewer/dialog checks remain later external/manual boundaries. |
-| Wave 6 / tiered remaining features | Tier 1A evidence integrated; gate validation pending | Current main includes the Save As identity repair, independent copy/results/switch/reload and deletion evidence, permanent-P0 multi-node grouping/rewiring/undo/save/reload evidence, and the reconciled dashboard. Content credit is not a current-revision gate pass; run the gate checks before the owner decision. |
+| Wave 6 / tiered remaining features | Tier 1A gate passed; awaiting owner decision | The fixed 73-cell gate and every current-revision validation requirement passed at `50c1af485edef8ebfaca7971ee99e8717694f85e`. Tier 1B and later systematic obligations remain incomplete; ask the owner whether to continue now or pause. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.
@@ -47,9 +49,12 @@ Ordering is not a reduction in final scope.
 
 The dashboard-content tally is **73 V / 73 required (100.0%)** with 0 runnable gaps, 0 in-progress cells, 0 externally blocked cells, and 0 unassessed cells.
 This tally was recomputed after integrated workflow CRUD evidence changed the former seven `WF-LIF-003` and `WF-LIF-010` gate cells to `V`; the dashboard verifier passes and a direct lookup of all 73 named `ID.cell` entries finds no non-`V` state.
-The gate itself has **not passed**: the 73 credited cells have not yet been re-executed through every required exact Chromium and Firefox selector together with the backend, frontend, documentation, and headed or artifact-backed current-revision checks defined by the plan.
+The gate passed on the one clean evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`: the audited collection contained 28 exact selectors per browser, all 28 passed in Chromium and all 28 passed in Firefox, the backend/frontend/documentation completion gates passed, and the representative create/edit/connect/run/inspect/save/reopen journey passed headed in Chromium on the available display.
+The reachable-blocker audit found no supported-path critical or high-impact basic-use defect: all ten recorded campaign issues are resolved except ISSUE-006's reviewed `not-a-defect` disposition, and no required gate cell, selector, retry, skip, or unresolved flake remains.
+The current dashboard remains **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**, with 0 blocked cells and 6 unassessed overall cells; these broader denominators make no systematic-completion claim.
 Grouping evidence remains important Primary-GUI Tier 1B coverage and is intentionally outside the smaller 73-cell denominator.
-Do not present the owner decision until the current-revision execution evidence and reachable-blocker audit are durably recorded.
+Full browser lanes, external package certification, Tier 1B–3 selectors, native/external application checks, and final systematic certification were not run for this fixed gate and remain owned by their existing campaign inventories and final completion gate.
+The exact commands, durations, environment-only blocked first attempts, and exclusions are retained in [Campaign evidence](platform-test-evidence.md).
 
 ## Ownership and unresolved decisions
 

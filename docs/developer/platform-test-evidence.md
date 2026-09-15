@@ -17,6 +17,47 @@ The revision sets Sol/high orchestration, main-GUI priority waves, systematic al
 No product code or tests changed; application, browser, and external certification were not rerun for this documentation-only task.
 The task commit is discoverable with `git log -1 -- docs/developer/platform-test-plan.md`.
 
+## Basic-Use Readiness Gate — 2026-09-15
+
+**Basic-use gate passed; systematic campaign awaiting owner decision/incomplete.**
+The gate was evaluated without intervening product changes on clean revision `50c1af485edef8ebfaca7971ee99e8717694f85e`.
+The fixed matrix lookup returned **73 V / 73 required (100.0%)**, with 0 runnable gaps, 0 in-progress cells, 0 externally blocked cells, 0 unassessed cells, and no unexpected `N`.
+The verified dashboard remained **172 / 457 overall (37.6%)** and **150 / 220 primary GUI (68.2%)**, with 279 overall gaps, 70 primary-GUI gaps, 0 in-progress cells, 0 blocked cells, and 6 overall unassessed cells.
+
+The browser selection used these nine exact files:
+
+`tests/e2e/workflow-creation.spec.ts tests/e2e/workflow-crud.spec.ts tests/e2e/canvas-interactions.spec.ts tests/e2e/everyday-node-editing.spec.ts tests/e2e/parameter-controls.spec.ts tests/e2e/critical-operation-races.spec.ts tests/e2e/graph-persistence.spec.ts tests/e2e/execution.spec.ts tests/e2e/avivator.spec.ts`
+
+The exact title expression was:
+
+`shows a non-persistent chooser|creates a workflow from the polished dialog|save-as creates an independent graph|delete workflow uses confirmation|deleting A closes its exact tab|deleting the last workflow|single click toggles tool information|drags a named catalog tool|new dynamic tools connect cleanly|builds, runs, inspects, saves, and reopens|filters, sorts, pages, and exports|selects, toggles a multiselection|box-selects and atomically deletes|clears selected outputs only|refuses to clear outputs|renames without changing node|persists collapse and the single-node|disconnects and reconnects|undoes and redoes mixed|keeps undo history isolated|typed parameter controls refuse|recovers an accepted root draft|delayed parameter persistence|immediate Node Panel parameter|auto-saved graph restores|Run Selected executes|creates a workflow and executes a source tool|opens a converted OME-TIFF image`
+
+At the evaluated revision, the command formed as `scripts/test focus e2e --project=<project> <the nine files above> --grep '<the exact title expression above>'` was collected once with both `--project=chromium` and `--project=firefox`, then executed independently for each project against fresh runner-managed roots.
+The collection reported exactly 56 tests in nine files: 28 Chromium and 28 Firefox.
+
+| Command or phase | Result | Duration | Exclusions or retry status |
+| --- | --- | --- | --- |
+| Exact Chromium/Firefox selector collection with `--list` | 56 collected: 28 Chromium and 28 Firefox | 1s | No test executed; initial sandboxed attempt exited before collection in 0s because loopback port allocation was denied. |
+| Exact Chromium selector execution | 28/28 passed | 96s | No skips, retries, or selected-test deselections. |
+| Exact Firefox selector execution | 28/28 passed | 121s | No skips, retries, or selected-test deselections. |
+| `scripts/test check backend` | Ruff passed; 1,610 deterministic tests passed; 7 logging-order tests passed | 48s | 9 external tests were intentionally deselected. The first sandboxed lane ran 48s and reported 1,608 passed plus 2 loopback-bind permission failures; both exact node IDs passed 2/2 in 2s with socket authorization before the complete authorized lane was rerun. |
+| `scripts/test check frontend` | Lint, type checking, all 1,298 tests in 132 files, and production build passed | 18s | Browser tests are intentionally outside this lane and were supplied by the exact commands above. The build emitted its non-failing large-chunk advisory. |
+| `scripts/test check docs` | Dashboard verifier and warning-as-error Sphinx build passed | 2s | The first attempt passed dashboard verification, then exited in 6s before Sphinx could run because sandbox DNS denied the `myst-parser` requirement fetch; the network-authorized rerun passed. |
+| `scripts/test focus e2e --project=chromium --headed tests/e2e/canvas-interactions.spec.ts --grep 'builds, runs, inspects, saves, and reopens a real workflow through the GUI'` | 1/1 passed on the available XQuartz display | 13s | No retry or artifact-backed no-display substitution. |
+
+The initial port-allocation, backend loopback-bind, and documentation dependency-fetch failures were environment/sandbox restrictions rather than product assertion failures.
+Each was rerun only after the exact environmental cause was established; the two failed backend node IDs were reproduced exactly before the broader authorized backend continuation.
+The successful browser executions used actual Playwright browsers, not mocks, and no green test was retried except for the distinct required headed confidence run.
+
+The reachable-blocker audit found no current supported-path critical or high-impact basic-use blocker.
+Every recorded ISSUE-001 through ISSUE-010 is resolved except ISSUE-006, whose reviewed disposition is `not-a-defect`, and every fixed gate cell and selector is green on the evaluated revision.
+No separate webapp browser variant is named or credited by the current gate inventory; webapp permission and mode boundaries remain represented in the deterministic completion coverage where applicable.
+No gate-scope manual procedure remained after the successful headed browser run.
+
+The complete Chromium/Firefox browser lanes, `scripts/test full`, published-package external certification, Tier 1B–3 browser and manual work, native dialogs/windows, real editors/viewers/credential stores, and final systematic certification were intentionally not run.
+Those are not hidden Basic-Use gate requirements and remain explicit obligations in the source inventories and the unchanged final completion gate.
+This checkpoint records no owner acceptance and no decision to continue or pause.
+
 ## Completed feature validation
 
 - Wave 6 workflow grouping: integrated commits `a36a4cb`, `da0ded6`, and `152c82b` add an exact incoming positional-DataFrame utility regression and a real multi-selection canvas journey for mixed DataFrame/field boundaries. The browser case proves exact embedded nodes/internal edge, stable published input/output identities and targets, four external rewrites, accepted validation, atomic Undo/Redo, Save, reload, and rendered topology. The focused utility selector passed 3/3 in 2s; the exact journey passed Chromium 1/1 in 9s after two fixture-only authoring failures and Firefox 1/1 in 11s. `scripts/test check frontend` passed lint, type checking, build, and 1,298 tests in 20s on `e181f44`-equivalent content; `scripts/test check browser` passed 84/84 Chromium tests in 222s; and `scripts/test check cross-browser-smoke` passed 14 Chromium and 14 Firefox journeys in 66s on patch-equivalent final content before the critical-tag commit. Backend, full, and external lanes were omitted because platform behavior and APIs did not change. Invalid/refused grouping, execution failure/recovery, and recursive clipboard transport remain gaps.
