@@ -16,7 +16,7 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 ## Next three actions
 
 1. Use the held real sequential worker fixture for the primary failure, visible error/log attribution, correction, and successful rerun journey.
-2. Complete the active Astra/high investigation of the reproducible nested child Save failure, then implement only its established safe boundary.
+2. Complete ISSUE-008's Astra-bounded DataFrame-input canonicalization repair and unchanged nested Save acceptance journey.
 3. Complete image/file viewing and verified export bytes, normalize the three inventories into the obligation-based dashboard, then begin Wave 6.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
@@ -55,7 +55,7 @@ The root-discard worktree was archived under `/private/tmp`, pruned, and its pat
 The ISSUE-007 platform and sibling-library worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted after BioImageFlow 0.7.2 publication and platform integration at `da2ced2`.
 `/root/execution_failure_rerun` owns `.worktrees/execution-failure-rerun` on `campaign/execution-failure-rerun` for the real failure, visible diagnostic/log, correction, and rerun journey.
 The result multi-selection/width worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c050207` and `d8bd740` reached main.
-`/root/nested_save_review` owns `.worktrees/nested-save-review` on `campaign/nested-save-review` for a read-only Astra/high assessment of the reproducible nested child Save failure; do not alter expectations or product behavior before its disposition.
+`/root/nested_save_fix` owns `.worktrees/nested-save-review` on `campaign/nested-save-review` for ISSUE-008's Astra-bounded DataFrame-input canonicalization repair.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
 The nested-execution worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `fd96f8f`.
 The clipboard/shortcut worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `3bb5a10` and `790345a`.
