@@ -132,6 +132,18 @@ The repair adds `default: null` to both DataFrame input constructors, preserves 
 The unchanged exact clean-title journey passed Chromium and Firefox, `scripts/test check frontend` passed 1,297 tests plus lint, typecheck, and build, and `scripts/test check browser` passed all 81 Chromium journeys.
 The integrated worktree was archived and pruned after completion.
 
+## ISSUE-009 — Preliminary worker failure duplicates the contextual error log
+
+Status: resolved by commit `4676ffb` after the real sequential failure journey reproduced two node-attributed contextual ERROR rows.
+Wetlands first publishes a failed progress update without a message or traceback, then the terminal run callback receives the enriched worker exception and remote traceback.
+The execution manager previously formatted the empty preliminary update as a generic “Execution failed” node log and later published the useful terminal log, so Error History and Logger presented the same failure twice at different detail levels.
+
+V1 §§3.7 and 3.11 require contextual failure presentation and readable logs.
+The repair retains the immediate failed node state, omits only the empty-detail preliminary ERROR, and leaves the terminal callback responsible for the single enriched node-attributed traceback.
+A focused manager regression asserts one contextual ERROR with node provenance and remote traceback.
+The real GUI journey additionally proves the failed node has no partial result, completed upstream output remains, editing unlocks, a GUI parameter correction persists at the next draft revision, and a distinct successful rerun returns exact rows and file bytes.
+It passed Chromium and Firefox, the existing cancellation journey remained green, and `scripts/test check app` passed on the patch-equivalent pre-rebase revision.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.

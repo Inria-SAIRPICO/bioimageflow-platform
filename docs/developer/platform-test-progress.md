@@ -15,9 +15,9 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next three actions
 
-1. Use the held real sequential worker fixture for the primary failure, visible error/log attribution, correction, and successful rerun journey.
-2. Complete image/file viewing and verified export bytes.
-3. Normalize the three inventories into the obligation-based dashboard, run the Wave 5 headed confidence checkpoint, then begin Wave 6.
+1. Complete image/file viewing and verified export bytes.
+2. Normalize the three inventories into the obligation-based dashboard.
+3. Run the Wave 5 headed confidence checkpoint, then begin Wave 6.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -36,7 +36,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 2 / main workflow | Verified | Commit `4208769` covers create/open, exact tool information, double-click/drag creation, pointer connection, parameter persistence, real Direct execution, exact GUI rows, Save, workflow switching, and identical graph reopen; the exact journey passes Chromium and Firefox. |
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Commit `3422e1c` resolves nested DataFrame publication remaining dirty after accepted Save and passes the complete Chromium browser lane plus the exact Firefox journey. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
-| Wave 5 / execution and results lifecycle | Primary cancellation and table batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Failure/correction/rerun plus image/file/export obligations remain. |
+| Wave 5 / execution and results lifecycle | Primary execution/table batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Commit `4676ffb` adds the real sequential failure, single enriched contextual error, unlocked GUI correction, successful rerun, exact rows, and output-file bytes. Image/file viewing and remaining export obligations remain. |
 | Wave 6 / remaining user features | Pending | Start after the obligation-based inventory dashboard is normalized; package management, authoring/editor, datasets, settings/layout, viewers, integrations, errors/logging, and agent control retain explicit gaps. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
@@ -53,7 +53,7 @@ The bulk-delete/output-clear worktree was archived under `/private/tmp`, pruned,
 The recursive-source worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `13a384b`, `9561b25`, `c911eb3`, and `e817d77`.
 The root-discard worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `dd20821`.
 The ISSUE-007 platform and sibling-library worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted after BioImageFlow 0.7.2 publication and platform integration at `da2ced2`.
-`/root/execution_failure_rerun` owns `.worktrees/execution-failure-rerun` on `campaign/execution-failure-rerun` for the real failure, visible diagnostic/log, correction, and rerun journey.
+The execution failure/correction/rerun worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4676ffb` passed the applicable completion lane.
 `/root/image_file_export` owns `.worktrees/image-file-export` on `campaign/image-file-export` for real image/file viewing and export-byte verification.
 The result multi-selection/width worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c050207` and `d8bd740` reached main.
 The ISSUE-008 worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `3422e1c` passed the applicable completion lanes.
