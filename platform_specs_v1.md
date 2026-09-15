@@ -797,6 +797,7 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 | `GET` | `/nodes/{node_id}/image` | Serve an image-valued output cell; query parameters are `row`, `col`, optional `workflow_name`, and optional `format=ome-tiff`. |
 | `GET` | `/nodes/{node_id}/image/{filename}` | Serve the same image with a stable response filename for Avivator-compatible range and offset requests. |
 | `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool, environment_id?: UUID, reader_id?: str}`) |
+| `POST` | `/napari/launch` | Start one registered environment without dispatching an artifact-open command |
 | `GET` | `/napari/status` | Check legacy Napari status, or one registered environment with `environment_id` |
 | `POST` | `/napari/shutdown` | Stop the legacy viewer, or one registered environment with `environment_id` |
 | `POST` | `/napari/environments/managed` | Start creation of a new managed generation |

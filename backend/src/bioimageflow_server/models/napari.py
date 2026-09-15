@@ -32,6 +32,12 @@ class NapariOpenRequest(BaseModel):
         return value
 
 
+class NapariLaunchRequest(BaseModel):
+    """Start or focus one registered environment without opening an artifact."""
+
+    environment_id: UUID
+
+
 class NapariStatus(BaseModel):
     """Response for ``GET /napari/status``."""
 

@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.napari import (
     NapariEnvironmentStatus,
+    NapariLaunchRequest,
     NapariOpenRequest,
     NapariStatus,
 )
@@ -111,6 +112,42 @@ def _resolve_open_paths(
         result_identity=request.result_identity,
     )
     return [str(image_path)]
+
+
+@router.post("/launch")
+async def launch_napari_environment(
+    request: NapariLaunchRequest,
+    _desktop: None = Depends(_require_desktop),
+    launcher: NapariLauncher | NapariLauncherPool = Depends(get_napari_launcher),
+) -> dict[str, str]:
+    """Start one registered viewer without dispatching an artifact open."""
+
+    if not isinstance(launcher, NapariLauncherPool):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "napari_environment_registry_unavailable",
+                "detail": "registered napari environments are unavailable",
+            },
+        )
+    try:
+        await launcher.launch(request.environment_id)
+        return {"status": "launched"}
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "napari_environment_not_found",
+                "detail": str(exc),
+            },
+        ) from exc
+    except NapariLaunchError as exc:
+        mark_exception_logged(exc)
+        _logger.error("Failed to launch napari environment", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "napari_launch_failed", "detail": str(exc)},
+        ) from exc
 
 
 @router.post("/open")

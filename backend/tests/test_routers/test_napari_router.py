@@ -69,6 +69,25 @@ async def client_with_launcher() -> AsyncIterator[tuple[httpx.AsyncClient, Magic
 # ---------------------------------------------------------------------------
 
 
+async def test_launch_registered_environment_without_opening_artifact() -> None:
+    environment_id = uuid4()
+    pool = MagicMock(spec=NapariLauncherPool)
+    pool.launch = AsyncMock()
+    app = create_app(config=AppConfig(napari_launcher_pool=pool))  # type: ignore[arg-type]
+    transport = ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/napari/launch",
+            json={"environment_id": str(environment_id)},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "launched"}
+    pool.launch.assert_awaited_once_with(environment_id)
+    pool.open.assert_not_called()
+
+
 async def test_open_returns_200_for_valid_paths(
     client_with_launcher,
 ) -> None:

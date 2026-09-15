@@ -298,6 +298,7 @@ Filename pattern        Preferred environment       Reader (optional)
 
 Version placeholders and format examples illustrate the layout, not guaranteed package support.
 Details show path, ownership (“Managed by BioImageFlow” or “External”), detected versions, installed Python distributions, last check, and relevant actions.
+The **Launch empty viewer** action uses a dedicated environment launch request and does not emulate launch by sending an empty artifact list to `viewer.open()`.
 Provide Refresh and Launch empty viewer; managed entries also offer Create modified copy.
 Long paths collapse without hiding their full selectable text, and actions remain usable in a narrow settings window.
 

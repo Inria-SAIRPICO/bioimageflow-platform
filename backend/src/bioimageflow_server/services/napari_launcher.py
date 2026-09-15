@@ -314,6 +314,13 @@ class NapariLauncher:
                 ) from exc
             self._check_open_response(command, response)
 
+    async def launch(self) -> None:
+        """Start the viewer if needed without dispatching an open command."""
+
+        async with self._lock:
+            if not self._is_alive():
+                await asyncio.to_thread(self._launch)
+
     async def shutdown(self) -> None:
         """Terminate the manager process. Idempotent."""
         async with self._lock:
@@ -818,6 +825,12 @@ class NapariLauncherPool:
             raise FileNotFoundError(paths)
         launcher = await self._launcher(environment_id)
         await launcher.open(paths, clear_layers, reader_id=reader_id)
+
+    async def launch(self, environment_id: UUID) -> None:
+        """Start one registered viewer without adding or clearing layers."""
+
+        launcher = await self._launcher(environment_id)
+        await launcher.launch()
 
     def status(
         self, environment_id: UUID | None = None

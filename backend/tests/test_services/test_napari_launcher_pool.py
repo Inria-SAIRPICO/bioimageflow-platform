@@ -216,6 +216,24 @@ async def test_legacy_calls_remain_no_id_compatibility_path(tmp_path: Path) -> N
     legacy.shutdown.assert_awaited_once()
 
 
+async def test_launch_starts_registered_viewer_without_open_command(tmp_path: Path) -> None:
+    environment = _environment("empty-viewer")
+    launcher = MagicMock(spec=NapariLauncher)
+    launcher.launch = AsyncMock()
+
+    pool = NapariLauncherPool(
+        lambda: _snapshot([environment]),
+        legacy_launcher=MagicMock(spec=NapariLauncher),
+        config_root=tmp_path,
+    )
+    pool._launcher = AsyncMock(return_value=launcher)  # type: ignore[method-assign]
+
+    await pool.launch(environment.id)
+
+    launcher.launch.assert_awaited_once_with()
+    launcher.open.assert_not_called()
+
+
 class _FakePopen:
     def __init__(self) -> None:
         self.stdout = io.StringIO("Listening port 54321\n")
