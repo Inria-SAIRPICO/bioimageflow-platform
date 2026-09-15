@@ -5,19 +5,19 @@ orphan: true
 # Platform test campaign checkpoint
 
 Last updated: 2026-09-15.
-Objective: strengthen the platform through main GUI journeys and bug fixes, then complete systematic coverage of all implemented in-scope features.
+Objective: establish objective basic-use readiness through the fixed gate, then complete systematic coverage of all implemented in-scope features unless the owner explicitly pauses with a durable backlog.
 Orchestrator: GPT-5.6 Sol/high with focused context; ordinary workers: Sol/medium; specialist: Astra/high.
 The [plan](platform-test-plan.md) defines priorities, coverage obligations, commit/worktree rules, and the final completion gate.
 The campaign is incomplete; this checkpoint is a planning update, not a new application certification.
 
-The owner approved four campaign-process improvements on 2026-09-15: an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, and reachability-first P1/release-blocker classification.
+The owner approved an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, reachability-first blocker classification, and a distinct Basic-Use Readiness Gate before lower-priority campaign work.
 The plan and restart prompt contain the normative rules; this checkpoint records their activation without duplicating their detail.
 
 ## Next three actions
 
-1. Complete the dashboard applicability correction and reconcile the integrated image/file/export evidence.
-2. Begin Wave 6 with the highest-priority remaining GUI obligations.
-3. Continue systematic gap closure without weakening the complete-suite gate.
+1. Recompute the fixed 73-cell Basic-Use matrix from the integrated dashboard and verify its exact selectors in Chromium and Firefox on one current revision.
+2. Complete the required backend, frontend, and documentation checks plus the headed or artifact-backed confidence run without intervening product changes.
+3. If every gate condition passes, commit the durable evidence and ask the owner whether to continue into Tier 1B or pause with the systematic campaign explicitly incomplete.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -37,11 +37,20 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Commit `3422e1c` resolves nested DataFrame publication remaining dirty after accepted Save and passes the complete Chromium browser lane plus the exact Firefox journey. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
 | Wave 5 / execution and results lifecycle | Primary execution/results batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Commit `4676ffb` adds the real sequential failure, single enriched contextual error, unlocked GUI correction, successful rerun, exact rows, and output-file bytes. Commits `624d986` through `7ab16e6` add real typed image/file viewing, the actual Avivator GUI action, and byte-level mixed-latest versus pinned-run export verification. A visible headed Chromium run of the primary create/run/inspect/save/reopen journey passed at `8574adc`. True thumbnail provisioning and native viewer/dialog checks remain later external/manual boundaries. |
-| Wave 6 / remaining user features | Active | P0 workflow Save As/delete/switch lifecycle and multi-node grouping/rewiring/undo are assigned in separate worktrees while the obligation dashboard is corrected. Package management, authoring/editor, datasets, settings/layout, remaining viewers, integrations, errors/logging, and agent control retain explicit gaps. |
+| Wave 6 / tiered remaining features | Tier 1A evidence integrated; gate validation pending | Current main includes the Save As identity repair, independent copy/results/switch/reload and deletion evidence, permanent-P0 multi-node grouping/rewiring/undo/save/reload evidence, and the reconciled dashboard. Content credit is not a current-revision gate pass; run the gate checks before the owner decision. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.
 Ordering is not a reduction in final scope.
+
+## Basic-Use Readiness Gate status
+
+The gate has **not passed** and has not been evaluated on one integrated current revision.
+Using the audited cell states from dashboard-correction branch `c92a754`, before credit from the grouping and workflow CRUD branches, the fixed matrix is **66 V / 73 required (90.4%)** with 7 runnable gaps, 0 in-progress cells, 0 externally blocked cells, and 0 unassessed cells.
+The runnable gaps are `WF-LIF-003.S`, `WF-LIF-003.P`, `WF-LIF-003.B`, `WF-LIF-010.S`, `WF-LIF-010.F`, `WF-LIF-010.P`, and `WF-LIF-010.B`.
+Workflow CRUD branch `6b38792` contains candidate Save As and deletion evidence for those cells, but no cell becomes `V` until the branch is integrated, its exact assertions are reconciled into the dashboard/inventory, and the required current-revision checks pass.
+Grouping branch `82270ff` remains important Primary-GUI evidence but is intentionally outside the smaller 73-cell gate.
+Recompute from the verified dashboard after integration; do not carry this pre-integration percentage forward or infer a pass from branch-local green checks.
 
 ## Ownership and unresolved decisions
 
@@ -57,8 +66,8 @@ The execution failure/correction/rerun worktree was archived under `/private/tmp
 The image/file/export worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `624d986`, `8c3b19d`, `4a5015d`, and `7ab16e6` passed the applicable completion lane.
 The first obligation-dashboard worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `65d1d84` and `01ddbd9` established the provisional denominator.
 The dashboard-correction worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c679bab` and `6ea986c` completed the semantic audit, stable-ID mapping, and mechanical verifier.
-`/root/workflow_crud_gui` owns `.worktrees/workflow-crud-gui` on `campaign/workflow-crud-gui` for durable Save As independence, switching, and exact deletion/empty-state behavior.
-`/root/grouping_gui` owns `.worktrees/grouping-gui` on `campaign/grouping-gui` for real multi-node grouping, published-port rewiring, atomic Undo/Redo, and durable reload.
+The workflow CRUD worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `a25ac17` and `0b3ee1e` landed.
+The multi-node grouping worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `a36a4cb`, `da0ded6`, and `152c82b` landed.
 The result multi-selection/width worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c050207` and `d8bd740` reached main.
 The ISSUE-008 worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `3422e1c` passed the applicable completion lanes.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
