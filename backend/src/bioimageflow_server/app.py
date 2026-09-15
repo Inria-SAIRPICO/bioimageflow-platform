@@ -9,7 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from bioimageflow.env_manager import configure_wetlands
+from bioimageflow.env_manager import configure_wetlands, get_shared_environment_manager
 from bioimageflow.paths import get_wetlands_path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -321,13 +321,34 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 wetlands_root / "pixi" / "workspaces" / "napari",
             ),
             preference_store=viewer_preference_store,
+            environment_manager_provider=(
+                config.napari_environment_manager_provider
+                or get_shared_environment_manager
+            ),
+            reference_cleanup=(
+                config.napari_environment_reference_cleanup
+                or (
+                    viewer_preference_store.clear_environment
+                    if viewer_preference_store is not None
+                    else None
+                )
+            ),
         )
-    elif (
-        napari_environment_service is not None
-        and napari_environment_service.preference_store is None
-        and viewer_preference_store is not None
-    ):
-        napari_environment_service.preference_store = viewer_preference_store
+    elif napari_environment_service is not None:
+        if (
+            napari_environment_service.preference_store is None
+            and viewer_preference_store is not None
+        ):
+            napari_environment_service.preference_store = viewer_preference_store
+        if napari_environment_service.reference_cleanup is None:
+            napari_environment_service.reference_cleanup = (
+                config.napari_environment_reference_cleanup
+                or (
+                    viewer_preference_store.clear_environment
+                    if viewer_preference_store is not None
+                    else None
+                )
+            )
 
     def _live_settings() -> Settings:
         if config.settings_store is not None:
@@ -621,7 +642,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             legacy_launcher=napari_launcher,
             connection_manager=ws_manager,
             config_root=settings_store.path.parent / "napari",
+            managed_environment_provider=(
+                config.napari_environment_manager_provider().environment
+                if config.napari_environment_manager_provider is not None
+                else None
+            ),
         )
+    if (
+        napari_environment_service is not None
+        and isinstance(napari_lifecycle, NapariLauncherPool)
+    ):
+        napari_environment_service.set_launcher_pool(napari_lifecycle)
     fiji_launcher = config.fiji_launcher or FijiLauncher(settings_provider=_live_settings)
 
     editor_service = config.editor_service or EditorService(
@@ -644,6 +675,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ):
             await napari_environment_service.recover_pending_environment_forget()
             await napari_environment_service.adopt_managed_singleton()
+            await napari_environment_service.reconcile_managed_operations()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()
             if config.settings_store is not None:
@@ -704,6 +736,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 await distributed_coordinator.close()
             if distributed_tokens is not None:
                 await distributed_tokens.close()
+            if napari_environment_service is not None:
+                await napari_environment_service.close()
             # Napari shutdown FIRST: it may take up to 5s (kill timeout)
             # and must run before the WS log handler is detached so the
             # final environment_status: stopped event reaches clients.

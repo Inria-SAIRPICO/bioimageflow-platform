@@ -70,6 +70,18 @@ def _snapshot(environments: list[NapariEnvironment]) -> NapariEnvironmentList:
 
 def _managed_environment(name: str, *, source: str) -> NapariEnvironment:
     external = _environment(name)
+    recipe = (
+        NapariManagedRecipe(source="adopted")
+        if source == "adopted"
+        else NapariManagedRecipe(
+            source="managed",
+            preset="default",
+            python="==3.12.*",
+            napari="0.9.1",
+            qt="PyQt6",
+            channels=["conda-forge"],
+        )
+    )
     return external.model_copy(
         update={
             "ownership": "managed",
@@ -79,7 +91,7 @@ def _managed_environment(name: str, *, source: str) -> NapariEnvironment:
             "managed": NapariManagedMetadata(
                 wetlands_name=f"napari-{name}",
                 installation_generation=uuid4(),
-                recipe=NapariManagedRecipe(source=source),  # type: ignore[arg-type]
+                recipe=recipe,
             ),
         }
     )

@@ -127,6 +127,7 @@ async def patch_settings(
         "napari_environments",
         "napari_default_environment_id",
         "napari_filename_rules",
+        "napari_environment_operations",
     }
     if napari_registry_fields.intersection(body):
         raise HTTPException(

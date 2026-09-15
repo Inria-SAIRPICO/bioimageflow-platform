@@ -90,13 +90,15 @@ def _service(
 
 
 def _http_error(exc: NapariEnvironmentError) -> HTTPException:
-    if exc.code == "napari_environment_not_found":
+    if exc.code in {"napari_environment_not_found", "napari_operation_not_found"}:
         status_code = 404
     elif exc.code in {
         "napari_environment_duplicate",
         "duplicate_environment_name",
         "duplicate_filename_pattern",
         "napari_registry_revision_conflict",
+        "napari_environment_mutation_active",
+        "napari_operation_not_live",
     }:
         status_code = 409
     else:

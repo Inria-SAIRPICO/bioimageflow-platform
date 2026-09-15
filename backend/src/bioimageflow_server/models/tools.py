@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import keyword
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -242,6 +243,8 @@ class AppConfig:
     napari_environment_service: NapariEnvironmentService | None = None
     viewer_preference_store: ViewerPreferenceStore | None = None
     napari_resolver_service: NapariResolverService | None = None
+    napari_environment_manager_provider: Callable[[], Any] | None = None
+    napari_environment_reference_cleanup: Callable[[Any], Any] | None = None
     fiji_launcher: FijiLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
     editor_service: Any | None = None

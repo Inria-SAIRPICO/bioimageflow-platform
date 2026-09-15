@@ -28,7 +28,7 @@ from bioimageflow_server.services.omero_credentials import (
 
 logger = logging.getLogger(__name__)
 
-CURRENT_SETTINGS_VERSION = 4
+CURRENT_SETTINGS_VERSION = 3
 
 
 class SettingsRevisionConflict(Exception):

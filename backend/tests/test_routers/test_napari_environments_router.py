@@ -114,6 +114,69 @@ async def test_openapi_exposes_typed_managed_operation_routes(tmp_path: Path) ->
     )
 
 
+async def test_managed_routes_return_operations_and_enforce_initiation_cas(
+    tmp_path: Path,
+) -> None:
+    class FailingManager:
+        def provision(self, *_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("solver unavailable")
+
+        def managed_environments(self) -> tuple[object, ...]:
+            return ()
+
+    store = SettingsStore(tmp_path / "settings.json")
+    await store.load()
+    manager = FailingManager()
+    service = NapariEnvironmentService(
+        store,
+        environment_manager_provider=lambda: manager,  # type: ignore[arg-type]
+    )
+    app = create_app(
+        AppConfig(
+            settings_store=store,
+            settings=Settings(deployment_mode="desktop"),
+            deployment_mode="desktop",
+            napari_environment_service=service,
+            storage_path=tmp_path / "runtime",
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        created = await client.post(
+            "/api/v1/napari/environments/managed",
+            json={"name": "Managed", "expected_revision": 0},
+        )
+        assert created.status_code == 202
+        body = created.json()
+        assert body["operation"]["kind"] == "create"
+        assert body["operation"]["state"] == "failed"
+        assert body["operation"]["error"]["code"] == "napari_provision_failed"
+
+        polled = await client.get(
+            "/api/v1/napari/environments/"
+            f"{body['environment']['id']}/operations/{body['operation']['id']}"
+        )
+        assert polled.status_code == 200
+        assert polled.json()["operation"] == body["operation"]
+
+        cancelled = await client.post(
+            "/api/v1/napari/environments/"
+            f"{body['environment']['id']}/operations/{body['operation']['id']}/cancel"
+        )
+        assert cancelled.status_code == 202
+        assert cancelled.json()["operation"]["state"] == "failed"
+
+        stale = await client.post(
+            "/api/v1/napari/environments/managed",
+            json={"name": "Stale", "expected_revision": 0},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "napari_registry_revision_conflict"
+
+
 async def test_webapp_rejects_all_local_registry_operations(tmp_path: Path) -> None:
     client, _store = await _client(tmp_path, "webapp")
     environment_id = str(uuid4())
@@ -165,8 +228,29 @@ async def test_webapp_rejects_all_local_registry_operations(tmp_path: Path) -> N
                 "/api/v1/napari/environment-settings/filename-rules/preview",
                 json={"filename": "image.tif"},
             ),
+            await client.post(
+                "/api/v1/napari/environments/managed",
+                json={"name": "Nope", "expected_revision": 0},
+            ),
+            await client.delete(
+                f"/api/v1/napari/environments/managed/{environment_id}?expected_revision=0"
+            ),
+            await client.post(
+                f"/api/v1/napari/environments/{environment_id}/copy",
+                json={"name": "Nope", "expected_revision": 0},
+            ),
+            await client.post(
+                f"/api/v1/napari/environments/{environment_id}/retry",
+                json={"expected_revision": 0},
+            ),
+            await client.get(
+                f"/api/v1/napari/environments/{environment_id}/operations/{rule_id}"
+            ),
+            await client.post(
+                f"/api/v1/napari/environments/{environment_id}/operations/{rule_id}/cancel"
+            ),
         ]
-    assert [response.status_code for response in responses] == [403] * 9
+    assert [response.status_code for response in responses] == [403] * 15
     assert all(response.json()["error"] == "desktop_only" for response in responses)
 
 
@@ -176,7 +260,11 @@ async def test_generic_settings_patch_cannot_bypass_registry_invariants(
     client, _store = await _client(tmp_path, "desktop")
     async with client:
         response = await client.patch("/api/v1/settings", json={"napari_environments": []})
+        operations_response = await client.patch(
+            "/api/v1/settings", json={"napari_environment_operations": []}
+        )
     assert response.status_code == 422
+    assert operations_response.status_code == 422
 
 
 async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -> None:

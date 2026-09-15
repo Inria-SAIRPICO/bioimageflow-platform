@@ -1,9 +1,9 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, and managed-operation contracts are implemented; frontend phases and final managed provisioning integration remain.
+Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, and managed creation/copy/removal lifecycle are implemented; frontend phases remain.
 This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
 It does not change their implemented status or the library's current public API.
-The examples below describe proposed schemas, not APIs available today.
+The portable workflow and frontend examples below remain proposed where their implementation status is not stated explicitly.
 
 ## 1. Product decisions
 
@@ -40,7 +40,7 @@ Support Conda environments and Python virtual environments on the supported desk
 Detect duplicate canonical installations and offer the existing entry rather than registering the same interpreter twice.
 Moving an installation requires **Locate environment** and a fresh probe; replacing the interpreter at the same path also invalidates its observed inventory.
 
-**Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, bridge support, and installed Python distribution metadata.
+**Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, and installed Python distribution metadata.
 Environment registration and probing never install packages.
 The subprocess must run with the environment's required launch context; invoking an absolute Python path alone must not be assumed sufficient for every Conda installation.
 The platform must not inherit its own Python imports, user-site packages, or Qt selection accidentally into the viewer.
@@ -65,9 +65,9 @@ The creation form contains:
 - Optional recommended distributions, visibly separate and opt-in.
 - An advanced section for the supported napari/Python/Qt matrix and PyPI resolution details.
 
-The default managed recipe creates a Conda environment containing Python 3.12, then installs napari 0.9.1, PyQt6, the bridge, and requested Python distributions from PyPI.
-The older supported smoke recipe creates Python 3.12 through Conda, then installs napari 0.6.6, PyQt5, the bridge, and requested Python distributions from PyPI.
-These are the initial explicit tested matrices; the creation UI defaults to the first and does not synthesize other version combinations.
+The default managed recipe creates a Conda environment containing Python 3.12, then installs napari 0.9.1, PyQt6, and requested Python distributions from PyPI.
+The older supported smoke recipe creates Python 3.12 through Conda, then installs napari 0.6.6, PyQt5, and requested Python distributions from PyPI.
+These are the initial explicit tested matrices; the creation API defaults to the first and advanced requests require an exact napari version and an explicit PyQt5/PyQt6 choice.
 Resolve requested package constraints against the selected tested matrix.
 Do not offer “latest” as a promise that arbitrary plugin combinations will work.
 The implementation must publish these tested napari/Python/Qt and bridge matrices; supporting both does not imply supporting other releases.
@@ -78,12 +78,14 @@ Conda supplies only Python for these managed recipes; napari, Qt, the bridge, an
 Package distribution names and napari plugin IDs are not shell commands or Conda package mappings, and the platform does not maintain Conda-name translations for requested packages.
 For automatic installation, resolve reviewed Python distribution requirements from PyPI.
 Constraints requiring unavailable builds, system libraries, or incompatible Python/Qt versions produce a solvability error with the affected packages.
-Exact backend recipe syntax and the initial supported release matrix require an implementation feasibility check before coding the installer.
+The backend recipe is a Wetlands `EnvironmentSpec` with a Python-3.12-only constraint, empty `conda`, PyPI `napari==<exact version>`, the selected Qt distribution, normalized requested PEP 508 distributions, and the `conda-forge` channel.
+Direct URLs, environment markers, duplicate normalized names, and requests for recipe-controlled napari, Qt, Python, BioImageFlow, or Wetlands distributions are rejected before provisioning.
 
-The operation shows resolving, downloading/installing, validating, ready, failed, or cancelled, with progress and accessible logs.
+The durable operation shows pending, resolving, installing, validating, completed, failed, or cancelled state with progress, message, structured error, and the public Wetlands operation identity where available; Wetlands output continues through the platform logging stream.
 Installation happens in a new location and becomes selectable only after successful validation.
 Failure or cancellation preserves all existing environments and defaults; partial installations are never marked ready.
-Retry and restart recovery use the recorded operation identity and do not create duplicate ready entries.
+Retry and restart recovery use the recorded platform operation and environment identities and do not create duplicate ready entries.
+A restart never claims that live progress survived: a public Wetlands generation already published as ready is probed and recovered, while incomplete or unknown creation is marked failed with an explicit retry path.
 
 ### 2.3 Add plugins and update managed environments
 
@@ -100,8 +102,10 @@ Offer a refreshed inventory and a new managed copy containing supported observed
 
 **Remove from list** and **Delete managed installation** are distinct actions.
 Deletion is available only for a platform-owned installation, reports affected defaults, and requires closing its running viewer first.
-Use the environment manager's ownership-aware cleanup API and never recursively delete a user-provided path.
+Use the public environment manager removal operation and never recursively delete a user-provided path.
+Deletion proves the recorded Wetlands name, public managed project path, and generation identity before removal; the nested `.pixi/envs/default` interpreter path is not substituted for that owned project path.
 Forgetting an entry clears every output favorite, filename rule, and global-default reference to it atomically, with a summary of those changes.
+Platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
 
 ## 3. Portable output requirements
 
@@ -458,7 +462,11 @@ Validate that mechanism during the bridge feasibility check; package isolation a
 Viewer configuration isolation must use the same configuration that the launched viewer will use; it does not turn manifest discovery or enabled state into package-compatibility evidence.
 If an external environment's ordinary napari configuration is imported, make that an explicit one-time copy; subsequent platform launches use their own configuration.
 
-Extend the API with typed registry, probe, compatibility-resolution, local-preference, environment-creation operation, and per-environment lifecycle contracts.
+The backend exposes typed desktop-only managed mutation routes for create, recipe-based copy, retry, operation polling/cancellation, and owned removal alongside the registry, probe, and per-environment lifecycle contracts.
+Initiating mutations use the registry revision compare-and-swap contract, every environment has at most one active mutation, and unrelated environment operations use independent locks.
+Operations remain in the durable registry history after completion; a removed entry therefore remains pollable with `environment: null`.
+Successful owned removal first stops only that environment's launcher, then waits for public Wetlands removal, and finally clears the registry entry/default/filename rules in one settings mutation while invoking an injected idempotent favorite-cleanup seam.
+If reference or registry finalization fails after Wetlands removal, the operation remains durably `removing` so startup can replay finalization instead of leaving an unrecoverable terminal tombstone.
 Exact route names are an implementation detail, but requests must bind to environment and artifact identities, and responses must carry revisions and actionable diagnostic codes.
 Environment status/events include the environment ID; a global `napari` status cannot describe concurrent viewers.
 Long setup/probe operations must not block status reads or unrelated viewers.
@@ -491,8 +499,8 @@ Phase C replaces the explicit-ID launch path with independently locked, UUID-key
 External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
 The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path during migration, while explicit registered IDs never provision or mutate their environment.
 The implemented Phase C backend advances canonical graphs to schema v2, migrates saved/draft/nested authorities and hashes through a forward journal, captures immutable public run/node/result/record identities for result pages, reads retained viewer metadata through public storage APIs, resolves package-only compatibility, stores favorites in a separate revisioned file, and remaps them through workflow move/delete and nested-session lifecycles.
-The managed-environment API and durable create/copy/retry/cancel/delete operation contracts are also implemented. The frontend settings/output chooser remains pending.
-Before implementation, settle the supported bridge/version matrix, configuration-isolation mechanism, and public Wetlands recipe capabilities with small feasibility checks.
+The managed backend uses only public Wetlands 2 environment and operation APIs; it does not install a bridge distribution because the platform launches its standalone helper script inside the selected environment.
+The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation. The frontend settings/output chooser remains pending.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
 At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.

@@ -37,6 +37,10 @@ def test_advanced_recipe_requires_exact_napari_and_qt() -> None:
         NapariManagedRecipeSelection(preset="advanced")
     with pytest.raises(ValidationError, match="exact valid version"):
         NapariManagedRecipeSelection(preset="advanced", napari=">=0.9", qt="PyQt6")
+    with pytest.raises(ValidationError, match="select only Python 3.12"):
+        NapariManagedRecipeSelection(
+            preset="advanced", python=">=3.12", napari="0.9.2", qt="PyQt6"
+        )
 
     recipe = NapariManagedRecipeSelection(
         preset="advanced", napari="0.9.2", qt="PyQt6"
@@ -51,6 +55,7 @@ def test_advanced_recipe_requires_exact_napari_and_qt() -> None:
         ("napari>=0.9", "controlled by the managed recipe"),
         ("PyQt6", "controlled by the managed recipe"),
         ("plugin @ https://example.test/plugin.whl", "resolve from PyPI"),
+        ("plugin>=1; python_version >= '3.12'", "do not support environment markers"),
         ("not a req !!!", "invalid requested PyPI requirement"),
     ],
 )
@@ -63,11 +68,9 @@ def test_requested_plugins_reject_reserved_or_non_pypi_requirements(
 
 def test_requested_plugins_are_normalized_and_deduplicated() -> None:
     selection = NapariManagedRecipeSelection(
-        requested_packages=["Example_Plugin[reader]>=1; python_version >= '3.12'"]
+        requested_packages=["Example_Plugin[reader]>=1"]
     )
-    assert selection.requested_packages == [
-        'Example_Plugin[reader]>=1; python_version >= "3.12"'
-    ]
+    assert selection.requested_packages == ["Example_Plugin[reader]>=1"]
     with pytest.raises(ValidationError, match="duplicate requested distribution"):
         NapariManagedRecipeSelection(requested_packages=["example_plugin", "example-plugin>=1"])
 

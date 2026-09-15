@@ -41,8 +41,14 @@ def _validated_python_constraint(value: str) -> str:
         constraint = SpecifierSet(normalized)
     except InvalidSpecifier as exc:
         raise ValueError("python must be a valid version constraint") from exc
-    if not normalized or not constraint.contains("3.12.0"):
-        raise ValueError("managed napari recipes must support Python 3.12")
+    if (
+        not normalized
+        or not constraint.contains("3.12.0")
+        or not constraint.contains("3.12.99")
+        or constraint.contains("3.11.99")
+        or constraint.contains("3.13.0")
+    ):
+        raise ValueError("managed napari recipes must select only Python 3.12")
     return normalized
 
 
@@ -66,6 +72,8 @@ def _normalized_requested_packages(values: list[str]) -> list[str]:
         name = canonicalize_name(requirement.name)
         if requirement.url is not None:
             raise ValueError("managed requirements must resolve from PyPI, not direct URLs")
+        if requirement.marker is not None:
+            raise ValueError("managed requirements do not support environment markers")
         if name in _RESERVED_MANAGED_DISTRIBUTIONS:
             raise ValueError(f"{requirement.name} is controlled by the managed recipe")
         if name in seen:

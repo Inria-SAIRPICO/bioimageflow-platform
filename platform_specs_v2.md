@@ -416,6 +416,10 @@ Cards use multiple field columns when space permits, collapse to one column in n
 
 Fiji is also a platform-owned desktop integration, but the Fiji application remains user-installed and user-managed. The platform stores and validates the selected installation directory, resolves result images from their workflow-scoped identities, and never exposes this local-launch capability in webapp mode.
 
+Named napari environment registrations, managed recipes and operations, inventories, defaults, filename rules, and output favorites are likewise platform-owned local integration state.
+They never enter recursive `GraphState`, artifact hashes, workflow archives, retained result snapshots, or processing dependency resolution.
+Managed creation, copy, retry, cancellation, and deletion therefore do not acquire a workflow graph mutation lock; their own environment UUID and registry revision contracts prevent them from targeting a replaced local installation.
+
 ## 15. Keyboard And Context Actions
 
 In the main Tools catalog, a single row click toggles the tool documentation panel, a double-click adds the tool to the active canvas at its default position, and drag-and-drop adds it at the requested position.

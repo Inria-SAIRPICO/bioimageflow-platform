@@ -759,6 +759,7 @@ class Settings(BaseModel):
     napari_environments: list[NapariEnvironment] = []
     napari_default_environment_id: UUID | None = None
     napari_filename_rules: list[NapariFilenameRule] = []
+    napari_environment_operations: list[NapariEnvironmentOperation] = []
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -776,7 +777,7 @@ class Settings(BaseModel):
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
 Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji and all previous settings.
-The generic `PATCH /settings` route returns these fields but rejects direct napari registry mutation; revision-checked typed routes own environment registration, rename/locate/forget, default selection, probe, rule creation/reordering, and first-match preview.
+The generic `PATCH /settings` route returns these fields but rejects direct napari registry or durable-operation mutation; revision-checked typed routes own environment registration, rename/locate/forget, managed create/copy/retry/removal, operation polling/cancellation, default selection, probe, rule creation/reordering, and first-match preview.
 Every registry mutation carries and increments `napari_registry_revision` so stale clients cannot overwrite another window's changes.
 
 `enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
@@ -798,12 +799,21 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 | `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool, environment_id?: UUID, reader_id?: str}`) |
 | `GET` | `/napari/status` | Check legacy Napari status, or one registered environment with `environment_id` |
 | `POST` | `/napari/shutdown` | Stop the legacy viewer, or one registered environment with `environment_id` |
+| `POST` | `/napari/environments/managed` | Start creation of a new managed generation |
+| `POST` | `/napari/environments/{environment_id}/copy` | Start an independent recipe-based managed copy |
+| `POST` | `/napari/environments/{environment_id}/retry` | Retry a failed/cancelled managed setup when appropriate |
+| `GET` | `/napari/environments/{environment_id}/operations/{operation_id}` | Poll one durable managed mutation |
+| `POST` | `/napari/environments/{environment_id}/operations/{operation_id}/cancel` | Request public Wetlands operation cancellation |
+| `DELETE` | `/napari/environments/managed/{environment_id}` | Stop its viewer and delete a proven platform-owned generation |
 | `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
 
 The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
 They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
 Webapp mode rejects all of these local operations.
 Phase C extends `/napari/open`, `/napari/status`, and `/napari/shutdown` with optional registered environment IDs while preserving their no-ID compatibility behavior.
+Managed creation provisions an immutable UUID-addressed Wetlands name with `replace_existing=False` and an `EnvironmentSpec` containing only Python 3.12 through Conda plus napari, Qt, and requested distributions through PyPI.
+Each operation is persisted before provisioning/removal and has typed state, progress, message, and error fields; startup recovers published ready generations but never represents interrupted progress as live.
+Managed removal verifies the public Wetlands name, project path, and generation, stops only the addressed launcher, and retains recoverable `removing` intent until registry and local-reference cleanup complete.
 
 The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
@@ -1489,6 +1499,7 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 3. Gives every registered environment a UUID-scoped `NAPARI_CONFIG` settings YAML file and verifies napari resolved that public configuration path before viewer startup
 4. Communicates through authenticated local IPC and acknowledges opens only after their Qt-thread viewer operation completes
 5. Reports reader failures as typed open errors and ambiguous post-dispatch completion as unknown without replay
+6. Coordinates independently locked managed create/copy/retry/remove operations without replacing a working generation in place
 
 **Interactions:**
 - **Open in Napari:** Triggered from Node Data image cells. Sends `POST /napari/open {paths, clear_layers: false}`.
@@ -1816,6 +1827,11 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Node Data |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
+| 36a | `POST` | `/api/v1/napari/environments/managed` | Start managed napari environment creation |
+| 36b | `POST` | `/api/v1/napari/environments/{id}/copy` | Start an independent modified managed copy |
+| 36c | `POST` | `/api/v1/napari/environments/{id}/retry` | Retry eligible managed setup |
+| 36d | `GET`/`POST` | `/api/v1/napari/environments/{id}/operations/{operation_id}` | Poll or cancel a managed mutation (cancel adds `/cancel`) |
+| 36e | `DELETE` | `/api/v1/napari/environments/managed/{id}` | Remove a proven owned managed generation |
 | 37 | `POST` | `/api/v1/fiji/open` | "Open in Fiji" button in Node Data |
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" for catalog tools and newly created tools after the active canvas persistence barrier |

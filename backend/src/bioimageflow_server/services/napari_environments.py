@@ -7,6 +7,7 @@ import fnmatch
 import hashlib
 import inspect
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -54,6 +55,7 @@ if TYPE_CHECKING:
 
 PROBE_TIMEOUT_SECONDS = 15.0
 PROBE_OUTPUT_LIMIT = 1024 * 1024
+_logger = logging.getLogger(__name__)
 
 _PROBE_SCRIPT = r"""
 import hashlib
@@ -102,6 +104,8 @@ class NapariEnvironmentError(Exception):
 
 ProbeRunner = Callable[[Sequence[str], dict[str, str], float, int], str]
 EnvironmentManagerProvider = Callable[[], EnvironmentManager]
+# Called again during restart recovery when finalization may have crossed a crash boundary.
+# Integrations must therefore journal or otherwise implement this hook idempotently.
 EnvironmentReferenceCleanup = Callable[[UUID], Any]
 
 
@@ -261,6 +265,7 @@ class NapariEnvironmentService:
         self._wetlands_operations: dict[UUID, Operation[Any]] = {}
         self._operation_tasks: dict[UUID, asyncio.Task[None]] = {}
         self._environment_locks: dict[UUID, asyncio.Lock] = {}
+        self._cancellation_requested: set[UUID] = set()
 
     def set_launcher_pool(self, launcher_pool: NapariLauncherPool) -> None:
         """Bind viewer lifecycle coordination after the app constructs the pool."""
@@ -345,6 +350,19 @@ class NapariEnvironmentService:
                 "napari_managed_retry_unavailable",
                 f"environment state {environment.state!r} cannot be retried",
             )
+        latest = next(
+            (
+                operation
+                for operation in reversed(self.store.get().napari_environment_operations)
+                if operation.environment_id == environment_id
+            ),
+            None,
+        )
+        if latest is not None and latest.kind == "remove":
+            raise NapariEnvironmentError(
+                "napari_managed_retry_unavailable",
+                "a failed deletion must be retried through managed DELETE",
+            )
         self._require_no_active_operation(environment_id)
         operation = self._new_operation(environment_id, "retry", "Retry queued")
         updated = environment.model_copy(
@@ -363,7 +381,21 @@ class NapariEnvironmentService:
                 ),
             },
         )
-        self._start_provisioning(updated, operation)
+        info = next(
+            (
+                item
+                for item in self.environment_manager_provider().managed_environments()
+                if item.name == environment.managed.wetlands_name
+            ),
+            None,
+        )
+        if info is not None and info.state is ManagedEnvironmentState.READY:
+            self._operation_tasks[operation.id] = asyncio.create_task(
+                self._recover_ready_environment(updated, operation),
+                name=f"napari-recover-{environment_id}",
+            )
+        else:
+            await self._start_provisioning(updated, operation)
         return self.managed_operation(environment_id, operation.id)
 
     async def remove_managed(
@@ -436,6 +468,13 @@ class NapariEnvironmentService:
             return mutation
         wetlands_operation = self._wetlands_operations.get(operation_id)
         if wetlands_operation is None:
+            if operation_id in self._operation_tasks:
+                self._cancellation_requested.add(operation_id)
+                await self._update_operation(
+                    operation_id,
+                    message="Cancellation requested; waiting for the current step",
+                )
+                return self.managed_operation(environment_id, operation_id)
             raise NapariEnvironmentError(
                 "napari_operation_not_live",
                 "the operation did not survive process restart; reconcile or retry it",
@@ -494,6 +533,7 @@ class NapariEnvironmentService:
         """Request cancellation and await owned background operation tasks."""
         for operation in list(self._wetlands_operations.values()):
             operation.cancel()
+        self._cancellation_requested.update(self._operation_tasks)
         tasks = list(self._operation_tasks.values())
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -539,7 +579,7 @@ class NapariEnvironmentService:
             ),
         }
         await self._patch(expected_revision, changes)
-        self._start_provisioning(environment, operation)
+        await self._start_provisioning(environment, operation)
         return self.managed_operation(environment.id, operation.id)
 
     async def adopt_managed_singleton(self) -> None:
@@ -575,7 +615,7 @@ class NapariEnvironmentService:
             )
             return
 
-    def _start_provisioning(
+    async def _start_provisioning(
         self, environment: NapariEnvironment, platform_operation: NapariEnvironmentOperation
     ) -> None:
         assert environment.managed is not None
@@ -587,18 +627,24 @@ class NapariEnvironmentService:
                 replace_existing=False,
             )
         except Exception as exc:  # noqa: BLE001 - converted to durable typed failure
-            self._operation_tasks[platform_operation.id] = asyncio.create_task(
-                self._finish_environment_operation(
-                    environment,
-                    platform_operation,
-                    environment_state="failed",
-                    operation_state="failed",
-                    code="napari_provision_failed",
-                    detail=str(exc) or type(exc).__name__,
-                )
+            await self._finish_environment_operation(
+                environment,
+                platform_operation,
+                environment_state="failed",
+                operation_state="failed",
+                code="napari_provision_failed",
+                detail=str(exc) or type(exc).__name__,
             )
             return
         self._wetlands_operations[platform_operation.id] = wetlands_operation
+        await self._update_operation(
+            platform_operation.id,
+            environment_id=environment.id,
+            state="resolving",
+            progress=5,
+            message="Resolving managed environment recipe",
+            wetlands_operation_id=wetlands_operation.id,
+        )
         loop = asyncio.get_running_loop()
 
         def receive(event: OperationEvent) -> None:
@@ -679,7 +725,7 @@ class NapariEnvironmentService:
     async def _publish_validating_environment(
         self, environment: NapariEnvironment, managed: Any
     ) -> None:
-        root, kind, interpreter = self._resolve_installation(Path(managed.path))
+        root, kind, interpreter = self._resolve_managed_installation(Path(managed.path))
         try:
             generation = UUID(str(managed.generation_id))
         except (TypeError, ValueError) as exc:
@@ -719,6 +765,7 @@ class NapariEnvironmentService:
     ) -> None:
         lock = self._environment_locks.setdefault(environment.id, asyncio.Lock())
         async with lock:
+            installation_removed = False
             try:
                 if self._launcher_pool is None:
                     raise NapariEnvironmentError(
@@ -726,6 +773,15 @@ class NapariEnvironmentService:
                         "napari launcher coordination is not configured",
                     )
                 await self._launcher_pool.shutdown(environment.id)
+                if platform_operation.id in self._cancellation_requested:
+                    await self._finish_environment_operation(
+                        environment,
+                        platform_operation,
+                        environment_state="ready",
+                        operation_state="cancelled",
+                        detail="Managed environment removal was cancelled",
+                    )
+                    return
                 manager = self.environment_manager_provider()
                 self._verify_owned_generation(environment, manager)
                 assert environment.managed is not None
@@ -749,6 +805,7 @@ class NapariEnvironmentService:
 
                 wetlands_operation.listen(receive)
                 await asyncio.to_thread(wetlands_operation.wait_for)
+                installation_removed = True
                 await self._finalize_removed(environment, platform_operation)
             except OperationCanceled:
                 await self._finish_environment_operation(
@@ -759,25 +816,44 @@ class NapariEnvironmentService:
                     detail="Managed environment removal was cancelled",
                 )
             except Exception as exc:  # noqa: BLE001 - persisted operational failure
-                await self._finish_environment_operation(
-                    environment,
-                    platform_operation,
-                    environment_state="failed",
-                    operation_state="failed",
-                    code=(
-                        exc.code
-                        if isinstance(exc, NapariEnvironmentError)
-                        else "napari_remove_failed"
-                    ),
-                    detail=(
-                        exc.detail
-                        if isinstance(exc, NapariEnvironmentError)
-                        else str(exc) or type(exc).__name__
-                    ),
-                )
+                if installation_removed:
+                    detail = (
+                        "managed installation was removed, but registry/reference cleanup "
+                        f"is pending: {str(exc) or type(exc).__name__}"
+                    )
+                    try:
+                        await self._update_operation(
+                            platform_operation.id,
+                            environment_id=environment.id,
+                            state="removing",
+                            message=detail,
+                            error=NapariEnvironmentOperationError(
+                                code="napari_remove_finalization_pending", detail=detail
+                            ),
+                        )
+                    except Exception:  # noqa: BLE001 - original durable intent remains recoverable
+                        _logger.exception("Could not record pending napari removal finalization")
+                else:
+                    await self._finish_environment_operation(
+                        environment,
+                        platform_operation,
+                        environment_state="failed",
+                        operation_state="failed",
+                        code=(
+                            exc.code
+                            if isinstance(exc, NapariEnvironmentError)
+                            else "napari_remove_failed"
+                        ),
+                        detail=(
+                            exc.detail
+                            if isinstance(exc, NapariEnvironmentError)
+                            else str(exc) or type(exc).__name__
+                        ),
+                    )
             finally:
                 self._wetlands_operations.pop(platform_operation.id, None)
                 self._operation_tasks.pop(platform_operation.id, None)
+                self._cancellation_requested.discard(platform_operation.id)
 
     async def _recover_ready_environment(
         self, environment: NapariEnvironment, operation: NapariEnvironmentOperation
@@ -808,6 +884,8 @@ class NapariEnvironmentService:
                 code="napari_restart_validation_failed",
                 detail=str(exc) or type(exc).__name__,
             )
+        finally:
+            self._operation_tasks.pop(operation.id, None)
 
     async def _finalize_removed(
         self, environment: NapariEnvironment, operation: NapariEnvironmentOperation
@@ -890,7 +968,7 @@ class NapariEnvironmentService:
             return
         try:
             generation = UUID(info.generation_id)
-            root, kind, interpreter = self._resolve_installation(info.path)
+            root, kind, interpreter = self._resolve_managed_installation(info.path)
         except (ValueError, NapariEnvironmentError):
             return
         bound = environment.model_copy(
@@ -1538,7 +1616,54 @@ class NapariEnvironmentService:
             )
         return root, kind, interpreter
 
+    def _resolve_managed_installation(
+        self, project_path: Path
+    ) -> tuple[Path, Literal["conda"], Path]:
+        """Resolve a Wetlands project while preserving its public owned path."""
+        project = Path(os.path.abspath(project_path.expanduser()))
+        if not project.is_dir():
+            raise NapariEnvironmentError(
+                "napari_managed_path_missing", "Wetlands managed environment path is missing"
+            )
+        prefix = project / ".pixi" / "envs" / "default"
+        interpreter = next(
+            (
+                candidate
+                for candidate in (
+                    prefix / "bin" / "python",
+                    prefix / "bin" / "python3",
+                    prefix / "Scripts" / "python.exe",
+                )
+                if candidate.is_file()
+            ),
+            None,
+        )
+        if interpreter is None:
+            raise NapariEnvironmentError(
+                "napari_interpreter_not_found",
+                "Wetlands managed environment has no Python interpreter",
+            )
+        if not (prefix / "conda-meta").is_dir():
+            raise NapariEnvironmentError(
+                "napari_environment_kind_unsupported",
+                "Wetlands managed environment has no Conda prefix",
+            )
+        if not os.access(interpreter, os.X_OK):
+            raise NapariEnvironmentError(
+                "napari_interpreter_not_executable",
+                "Wetlands managed Python interpreter is not executable",
+            )
+        return project, "conda", interpreter
+
     def _with_current_interpreter_state(self, environment: NapariEnvironment) -> NapariEnvironment:
+        if environment.state in {
+            "setup_needed",
+            "creating",
+            "failed",
+            "cancelled",
+            "removing",
+        }:
+            return environment
         interpreter = Path(environment.interpreter)
         if not interpreter.is_file():
             return environment.model_copy(
