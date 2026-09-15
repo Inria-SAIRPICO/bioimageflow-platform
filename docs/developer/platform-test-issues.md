@@ -117,10 +117,10 @@ Both completed worktrees were archived under `/private/tmp`, pruned, and their i
 
 ## ISSUE-008 — Nested Save remains dirty after successful accepted writes
 
-Status: `safe-to-fix` after GPT-6 Astra/high independently reproduced the failure on unmodified main `215a5fc`, established the exact canonicalization mismatch, and bounded the repair.
+Status: resolved by commit `3422e1c` after GPT-6 Astra/high independently reproduced the failure on unmodified main `215a5fc`, established the exact canonicalization mismatch, and bounded the repair.
 The exact Chromium selector `frontend/tests/e2e/workflow-interface.spec.ts:352` completes both the nested accepted-snapshot PUT and parent draft PUT with HTTP 200, but the nested title remains `Child *` instead of becoming clean.
 It failed 1/1 with a 6.1s test duration in a 40s runner; the initial sandbox attempt was blocked before collection by port allocation.
-The first trace and error context are retained in the investigation worktree under `frontend/test-results/workflow-interface-workflo-99a22-hrough-the-parent-interface-chromium/`.
+The first trace and error context were archived with the investigation worktree under `/private/tmp/nested-save-review-3422e1c/frontend/test-results/workflow-interface-workflo-99a22-hrough-the-parent-interface-chromium/`.
 
 The two DataFrame input constructors in `CanvasView.vue` omit `default`, while backend graph validation supplies `default: null`; the adjacent field-input constructor already emits the canonical property.
 Both writes persist the accepted child into the parent, but `acknowledgeApplied` correctly retains the local draft for concurrent-edit safety and strict `graphDocumentsEqual` therefore sees the omitted property as a difference.
@@ -128,9 +128,9 @@ Using the production comparator, adding only `default: null` in memory makes the
 The temporarily unbound parent input can remain validation-invalid because the v1 workflow PUT contract allows saving invalid graphs; it is not the cause of the failed clean state.
 
 V2 §§5, 7, 12, and 15 require ordinary publication, private editing, and Save applying the accepted snapshot.
-The authorized repair adds `default: null` to both DataFrame input constructors, preserves strict equality and the newer-private-edit/retry/identity/conflict guards, and covers positional publication plus child-port forwarding inside a nested editor.
-The unchanged exact clean-title journey must pass Chromium and Firefox, followed by the applicable frontend and browser completion lanes.
-`/root/nested_save_fix` owns `.worktrees/nested-save-review` on `campaign/nested-save-review`; shared campaign records remain orchestrator-owned.
+The repair adds `default: null` to both DataFrame input constructors, preserves strict equality and the newer-private-edit/retry/identity/conflict guards, and covers positional publication plus child-port forwarding inside a nested editor.
+The unchanged exact clean-title journey passed Chromium and Firefox, `scripts/test check frontend` passed 1,297 tests plus lint, typecheck, and build, and `scripts/test check browser` passed all 81 Chromium journeys.
+The integrated worktree was archived and pruned after completion.
 
 ## New issue record template
 
