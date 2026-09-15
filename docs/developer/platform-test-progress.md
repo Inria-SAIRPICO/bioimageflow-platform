@@ -29,7 +29,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | --- | --- | --- |
 | T01 dependencies | Complete | Published BioImageFlow 0.7.1/core 0.3.1 and Wetlands 2.4.1 integration; retained release and worker evidence in [Campaign evidence](platform-test-evidence.md). |
 | T02 fixture foundations | Complete | Genuine Generate metadata, compatible whole-DataFrame wiring, exact results, and sequential worker fixture established. |
-| T03 systematic inventory | Partial | [GUI](coverage-gui.md), [Workflow](coverage-workflows.md), and [Runtime](coverage-runtime.md) inventories need stable feature IDs and completion of all applicable scenario obligations. |
+| T03 systematic inventory | Dashboard established; closure incomplete | The canonical [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows to stable IDs and 485 applicable scenario obligations. At `01ddbd9`, 142/485 overall obligations are verified (29.3%) and 127/194 primary-GUI obligations are verified (65.5%); active image/file/export evidence is not yet credited. |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
@@ -55,6 +55,7 @@ The root-discard worktree was archived under `/private/tmp`, pruned, and its pat
 The ISSUE-007 platform and sibling-library worktrees were archived under `/private/tmp`, pruned, and their integrated branches deleted after BioImageFlow 0.7.2 publication and platform integration at `da2ced2`.
 The execution failure/correction/rerun worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4676ffb` passed the applicable completion lane.
 `/root/image_file_export` owns `.worktrees/image-file-export` on `campaign/image-file-export` for real image/file viewing and export-byte verification.
+The obligation-dashboard worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `65d1d84` and `01ddbd9` established and reconciled the canonical denominator.
 The result multi-selection/width worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commits `c050207` and `d8bd740` reached main.
 The ISSUE-008 worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `3422e1c` passed the applicable completion lanes.
 The result-table worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integrating `ec0e32f`, `52006ae`, and `d1072ce`.
