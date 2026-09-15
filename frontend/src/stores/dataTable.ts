@@ -1,7 +1,7 @@
 import { computed, reactive, shallowReactive } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
-import type { NodeDataResponse, ResultArtifactIdentity } from '@/api/types'
+import type { NodeDataResponse, ResultArtifactIdentity, ViewerSpec } from '@/api/types'
 import { apiErrorMessage } from '@/utils/apiError'
 import {
   canvasSessionRegistry,
@@ -52,6 +52,8 @@ export interface ConsolidatedDataTableColumn {
   type: string
   source_node_id: string
   source_column: string
+  viewer: ViewerSpec | null
+  viewer_status: 'captured' | 'legacy_unpinned'
 }
 
 export interface ConsolidatedDataTableRow {

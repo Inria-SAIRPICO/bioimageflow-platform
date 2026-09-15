@@ -76,6 +76,23 @@ class ViewerSpec(WireModel):
         LibraryViewerSpec.from_dict(self.model_dump(mode="json"))
         return self
 
+    @classmethod
+    def from_library(cls, value: object) -> ViewerSpec | None:
+        """Convert one library viewer declaration into the platform wire model.
+
+        The library records no declaration at all for an output without viewer
+        metadata, so ``None`` converts to ``None``.  Every retained-result and
+        resolver conversion goes through here rather than re-encoding the
+        library object at each call site.
+        """
+        from bioimageflow_core import ViewerSpec as LibraryViewerSpec
+
+        if value is None:
+            return None
+        if not isinstance(value, LibraryViewerSpec):
+            raise TypeError("Library viewer metadata must be a ViewerSpec")
+        return cls.model_validate(value.to_dict())
+
 
 class SerializedConstant(WireModel):
     """Typed constant envelope shared with the BioImageFlow library."""

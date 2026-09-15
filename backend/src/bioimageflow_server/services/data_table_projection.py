@@ -17,6 +17,7 @@ from bioimageflow_server.models.data_table import (
     DataTableSource,
     DataTableStackedResponse,
 )
+from bioimageflow_server.models.graph import ViewerSpec
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.dataframe_query import (
     DataFrameQueryError,
@@ -46,6 +47,7 @@ class _LoadedSource:
     index_values: list[str]
     positions: dict[str, int]
     column_types: dict[str, str]
+    column_viewers: dict[str, ViewerSpec | None]
 
 
 _FALLBACK_MESSAGES = {
@@ -198,6 +200,17 @@ class DataTableProjectionService:
             types = self.result_store.get_column_types(
                 dataframe, tool_name=source.tool_name
             )
+            retained_viewers = (
+                self.result_store.result_viewers(
+                    source.result_identity, storage_path=storage_path
+                )
+                if source.result_identity is not None
+                else {}
+            )
+            column_viewers = {
+                column: ViewerSpec.from_library(retained_viewers.get(column))
+                for column in dataframe.columns
+            }
             loaded.append(
                 _LoadedSource(
                     spec=source,
@@ -205,6 +218,7 @@ class DataTableProjectionService:
                     index_values=index_values,
                     positions={value: position for position, value in enumerate(index_values)},
                     column_types=types,
+                    column_viewers=column_viewers,
                 )
             )
         return loaded
@@ -301,6 +315,12 @@ class DataTableProjectionService:
                         type=source.column_types.get(original, "str"),
                         source_node_id=source.spec.node_id,
                         source_column=original,
+                        viewer=source.column_viewers.get(original),
+                        viewer_status=(
+                            "captured"
+                            if source.spec.result_identity is not None
+                            else "legacy_unpinned"
+                        ),
                     )
                 )
 

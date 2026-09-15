@@ -18,6 +18,7 @@ from starlette.responses import FileResponse
 
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
 from bioimageflow_server.models.data_table import DataTableFilter
+from bioimageflow_server.models.graph import ViewerSpec
 from bioimageflow_server.models.nodes import (
     NodeDataCsvRequest,
     NodeDataQueryRequest,
@@ -114,10 +115,21 @@ def _node_data_response(
     sort_order: Literal["asc", "desc"],
     filters: list[DataTableFilter],
     tool_name: str | None,
+    storage_path: Path | None,
 ) -> NodeDataResponse:
+    identity = dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
     dataframe = dataframe.copy()
     dataframe.columns = [str(column) for column in dataframe.columns]
     column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
+    retained_viewers = (
+        result_store.result_viewers(identity, storage_path=storage_path)
+        if isinstance(identity, ResultArtifactIdentity)
+        else {}
+    )
+    column_viewers = {
+        column: ViewerSpec.from_library(retained_viewers.get(column))
+        for column in dataframe.columns
+    }
     unfiltered_total_rows = len(dataframe)
     try:
         filtered_positions = filter_positions(dataframe, filters)
@@ -143,6 +155,7 @@ def _node_data_response(
         page=page,
         page_size=page_size,
         column_types=column_types,
+        column_viewers=column_viewers,
         source_identity=(
             dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
             if isinstance(
@@ -414,6 +427,7 @@ async def get_node_data(
         sort_order=sort_order,
         filters=[],
         tool_name=tool_name,
+        storage_path=storage_path,
     )
 
 
@@ -439,6 +453,7 @@ async def query_node_data(
         sort_order=request.sort_order,
         filters=request.filters,
         tool_name=request.tool_name,
+        storage_path=storage_path,
     )
 
 

@@ -11,9 +11,8 @@ import NodeDataActiveFilters from './NodeDataActiveFilters.vue'
 import NodeDataColumnHeader from './NodeDataColumnHeader.vue'
 import NodeDataPaginator from './NodeDataPaginator.vue'
 import { useDataTableStore } from '@/stores/dataTable'
-import type { DataTableFilter } from '@/stores/dataTable'
+import type { ConsolidatedDataTableColumn, DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
-import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 
 const props = defineProps<{
@@ -21,7 +20,6 @@ const props = defineProps<{
 }>()
 
 const store = useDataTableStore()
-const resolvedOutputs = useResolvedOutputsStore()
 const workflowStore = useWorkflowStore()
 const data = computed(() => store.projection?.mode === 'merged' ? store.projection : null)
 const pageState = computed(() => store.projectionPage)
@@ -43,14 +41,8 @@ function hasImageBehavior(type: string, value: unknown): boolean {
   return isTypedImage(type) || (type === 'Path' && isImagePath(value))
 }
 
-function hasExplicitNapariViewer(nodeId: string, column: string): boolean {
-  const field = resolvedOutputs.resolvedOutputsByNodeId[nodeId]?.columns[column]
-  return Boolean(
-    field
-    && typeof field === 'object'
-    && 'viewer' in field
-    && (field as { viewer?: { napari?: unknown } | null }).viewer?.napari,
-  )
+function hasRetainedNapariViewer(column: ConsolidatedDataTableColumn): boolean {
+  return column.viewer_status === 'captured' && Boolean(column.viewer?.napari)
 }
 
 function sourceIdentity(nodeId: string) {
@@ -135,16 +127,16 @@ function setFilters(filters: DataTableFilter[]): void {
         </template>
         <template #body="slotProps">
           <ImageCell
-            v-if="isTypedImage(column.type) || isPathType(column.type)"
+            v-if="isTypedImage(column.type) || isPathType(column.type) || hasRetainedNapariViewer(column)"
             :node-id="column.source_node_id"
             :workflow-name="props.workflowId"
             :row="slotProps.data.__sourceRows[column.source_node_id]"
             :col="column.source_column"
             :value="String(slotProps.data[column.id] ?? '')"
             :show-path="isPathType(column.type)"
-            :show-image-actions="hasImageBehavior(column.type, slotProps.data[column.id]) || hasExplicitNapariViewer(column.source_node_id, column.source_column)"
+            :show-image-actions="hasImageBehavior(column.type, slotProps.data[column.id])"
             :thumbnail-enabled="hasImageBehavior(column.type, slotProps.data[column.id])"
-            :explicit-napari-viewer="hasExplicitNapariViewer(column.source_node_id, column.source_column)"
+            :explicit-napari-viewer="hasRetainedNapariViewer(column)"
             :result-identity="sourceIdentity(column.source_node_id)"
             :identity-generation="identityGeneration"
             :node-path="column.source_node_id.split('/')"

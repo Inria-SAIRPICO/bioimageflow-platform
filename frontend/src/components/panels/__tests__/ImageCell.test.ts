@@ -236,16 +236,43 @@ describe('ImageCell', () => {
     expect(wrapper.find('img.image-cell__thumb').attributes('src')).toBe('blob:mock-url')
   })
 
-  it('does not open a result until its immutable identity is available', async () => {
+  it('does not offer napari until its immutable identity is available', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountCell()
     await flushPromises()
 
-    const button = wrapper.find('[data-testid="open-napari-0-mask"]')
-    expect(button.attributes('disabled')).toBeDefined()
-    expect(button.attributes('title')).toContain('Refresh output data')
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
     expect(mockedPost).not.toHaveBeenCalledWith('/api/v1/napari/open', expect.anything())
+  })
+
+  it('offers normal image actions when an exact result captured no specialized viewer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES)))
+    mockedPost.mockRejectedValueOnce(new Error('resolver unavailable in component fixture'))
+    const wrapper = mountCell({
+      resultIdentity: { run_id: 'run', node_key: 'n1', result_key: 'result', record_id: 'record' },
+      explicitNapariViewer: false,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').exists()).toBe(true)
+  })
+
+  it('offers napari for an exact specialized non-image viewer without image actions', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    mockedPost.mockRejectedValueOnce(new Error('resolver unavailable in component fixture'))
+    const wrapper = mountCell({
+      value: '/tmp/measurements.custom',
+      resultIdentity: { run_id: 'run', node_key: 'n1', result_key: 'result', record_id: 'record' },
+      thumbnailEnabled: false,
+      showImageActions: false,
+      explicitNapariViewer: true,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').exists()).toBe(false)
   })
 
   it('opens the selected workflow image in configured Fiji', async () => {

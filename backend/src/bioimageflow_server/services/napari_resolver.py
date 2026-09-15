@@ -86,11 +86,7 @@ class NapariResolverService:
             request.output_key,
             storage_path=storage_path,
         )
-        viewer = (
-            None
-            if library_viewer is None
-            else ViewerSpec.model_validate(library_viewer.to_dict())
-        )
+        viewer = ViewerSpec.from_library(library_viewer)
 
         workspace_id = ensure_workspace_identity(store.workspace_dir)
         key = PersistentOutputPreferenceKey(

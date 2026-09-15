@@ -98,6 +98,7 @@ const shouldShowPath = computed(() => props.showPath)
 const shouldShowImageActions = computed(() => props.showImageActions)
 const shouldShowNapari = computed(() => (
   (shouldShowImageActions.value || props.explicitNapariViewer)
+  && props.resultIdentity !== null
   && (settings.settings === null || settings.isDesktop)
 ))
 const shouldShowFiji = computed(() => shouldShowImageActions.value && settings.isDesktop)

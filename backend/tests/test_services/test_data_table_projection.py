@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+from bioimageflow_core import ViewerSpec as LibraryViewerSpec
 
 from bioimageflow_server.models.data_table import (
     DataTableFilter,
@@ -28,6 +29,9 @@ class FakeResultStore:
 
     def get_column_types(self, dataframe: pd.DataFrame, tool_name: str | None = None):
         return {str(column): "int" for column in dataframe.columns}
+
+    def result_viewers(self, identity, storage_path=None):
+        return {}
 
 
 def source(node_id: str, role: str = "anchor", label: str | None = None) -> DataTableSource:
@@ -109,6 +113,55 @@ def test_exact_identities_are_captured_before_latest_can_change() -> None:
         identities["b"],
     ]
     assert store.loaded == ["a", "b"]
+    assert all(column.viewer_status == "captured" for column in result.columns)
+
+
+def test_merged_columns_use_retained_viewer_snapshot() -> None:
+    identity = ResultArtifactIdentity(
+        run_id="run_a", node_key="a", result_key="rk_a", record_id="rec_a"
+    )
+    retained_viewer = LibraryViewerSpec.from_dict({
+        "napari": {
+            "required_packages": [],
+            "recommended_packages": [],
+            "napari_version": None,
+            "reader_id": "retained.reader",
+        }
+    })
+
+    class RetainedStore(FakeResultStore):
+        def capture_latest_result_identity(self, node_id, storage_path=None):
+            return identity
+
+        def load_result_dataframe(self, captured, storage_path=None):
+            return self.frames[captured.node_key]
+
+        def result_viewers(self, captured, storage_path=None):
+            assert captured == identity
+            return {"measurements": retained_viewer}
+
+    store = RetainedStore({"a": pd.DataFrame({"measurements": ["table.custom"]}, index=["r0"])})
+    result = DataTableProjectionService(store).query(
+        [source("a")], storage_path=None, page=0, page_size=50,
+        sort_by=None, sort_order="asc",
+    )
+
+    assert result.mode == "merged"
+    assert result.columns[0].viewer_status == "captured"
+    assert result.columns[0].viewer is not None
+    assert result.columns[0].viewer.napari.reader_id == "retained.reader"
+
+
+def test_merged_legacy_columns_mark_viewer_metadata_unknown() -> None:
+    result, _ = query(
+        {"a": pd.DataFrame({"image": ["old.tif"]}, index=["r0"])},
+        [source("a")],
+    )
+
+    assert result.mode == "merged"
+    assert result.sources[0].result_identity is None
+    assert result.columns[0].viewer is None
+    assert result.columns[0].viewer_status == "legacy_unpinned"
 
 
 def test_parent_values_expand_to_finest_selected_lineage() -> None:

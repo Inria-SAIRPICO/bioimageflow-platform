@@ -13,7 +13,6 @@ import NodeDataPaginator from './NodeDataPaginator.vue'
 import { useDataTableStore } from '@/stores/dataTable'
 import type { DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
-import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 
 const props = defineProps<{
@@ -26,7 +25,6 @@ const props = defineProps<{
 }>()
 
 const store = useDataTableStore()
-const resolvedOutputs = useResolvedOutputsStore()
 const workflowStore = useWorkflowStore()
 
 const data = computed(() => store.getNodeData(props.nodeId))
@@ -64,18 +62,12 @@ function isPathColumn(col: string): boolean {
 
 function hasImageBehavior(col: string, value: unknown): boolean {
   return isImageColumn(col)
-    || hasExplicitNapariViewer(col)
     || (data.value?.column_types[col] === 'Path' && isImagePath(value))
 }
 
-function hasExplicitNapariViewer(col: string): boolean {
-  const field = resolvedOutputs.resolvedOutputsByNodeId[props.nodeId]?.columns[col]
-  return Boolean(
-    field
-    && typeof field === 'object'
-    && 'viewer' in field
-    && (field as { viewer?: { napari?: unknown } | null }).viewer?.napari,
-  )
+function hasRetainedNapariViewer(col: string): boolean {
+  return data.value?.identity_status === 'captured'
+    && Boolean(data.value.column_viewers?.[col]?.napari)
 }
 
 const identityGeneration = computed(() => props.workflowName
@@ -210,7 +202,7 @@ function onPage(page: number): void {
           </template>
           <template #body="slotProps">
             <div
-              v-if="isImageColumn(column.id) || isPathColumn(column.id)"
+              v-if="isImageColumn(column.id) || isPathColumn(column.id) || hasRetainedNapariViewer(column.id)"
               class="node-data-table__image-path"
             >
               <ImageCell
@@ -222,7 +214,7 @@ function onPage(page: number): void {
                 :show-path="isPathColumn(column.id)"
                 :show-image-actions="hasImageBehavior(column.id, slotProps.data[column.id])"
                 :thumbnail-enabled="isImageColumn(column.id) || (data.column_types[column.id] === 'Path' && isImagePath(slotProps.data[column.id]))"
-                :explicit-napari-viewer="hasExplicitNapariViewer(column.id)"
+                :explicit-napari-viewer="hasRetainedNapariViewer(column.id)"
                 :result-identity="data.source_identity"
                 :identity-generation="identityGeneration"
                 :node-path="nodeId.split('/')"

@@ -399,6 +399,7 @@ An exposed workflow output has its own user preference key; it inherits viewing 
 No result snapshot, record, DataFrame index, displayed row, filename, or row offset participates in the favorite key.
 There are no row favorites, row exceptions, or result-row preference records to store, prune, copy, remap, or migrate.
 The backend still resolves a merged-table cell to its structural provider output so the same favorite applies across sorting, filtering, pagination, retained results, and future results.
+Direct and merged table responses expose each column's viewer declaration from the exact retained result snapshot, with an explicit legacy-unpinned status when no immutable identity exists; the frontend never substitutes mutable current graph or tool metadata for specialized action visibility.
 
 Local rules survive restart, table sorting/pagination, workflow display renaming, and moves within the same workspace through the normal identity-aware lifecycle coordinator.
 Deletion drops that workflow generation's rules.

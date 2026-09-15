@@ -2140,6 +2140,13 @@ export interface components {
             source_node_id: string;
             /** Source Column */
             source_column: string;
+            viewer?: components["schemas"]["ViewerSpec"] | null;
+            /**
+             * Viewer Status
+             * @default legacy_unpinned
+             * @enum {string}
+             */
+            viewer_status: "captured" | "legacy_unpinned";
         };
         /**
          * DataTableCsvRequest
@@ -4010,6 +4017,10 @@ export interface components {
             /** Column Types */
             column_types: {
                 [key: string]: string;
+            };
+            /** Column Viewers */
+            column_viewers?: {
+                [key: string]: components["schemas"]["ViewerSpec"] | null;
             };
             source_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
             /**

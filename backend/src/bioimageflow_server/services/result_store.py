@@ -133,11 +133,18 @@ class ResultStoreService:
     ):
         """Return producer-snapshot viewer metadata for one exact output."""
 
+        return self.result_viewers(identity, storage_path=storage_path).get(output_key)
+
+    def result_viewers(
+        self,
+        identity: ResultArtifactIdentity,
+        *,
+        storage_path: Path | None = None,
+    ) -> dict[str, object]:
+        """Return all producer-snapshot viewer metadata for one exact result."""
+
         retained = self.read_run_node_result(identity, storage_path=storage_path)
-        return next(
-            (item.viewer for item in retained.viewers if item.output == output_key),
-            None,
-        )
+        return {item.output: item.viewer for item in retained.viewers}
 
     def resolve_result_asset(
         self,
