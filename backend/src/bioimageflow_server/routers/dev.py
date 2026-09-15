@@ -97,6 +97,37 @@ class ResultTableFixture(DataFrameTool):
         )
 
 
+class ImageResultFixtureOutputs(IOModel):
+    mask: Annotated[Path, ImageSpec()]
+    report: Path
+
+
+class ImageResultFixture(DataFrameTool):
+    """Typed output schema used by the result image and file GUI journey."""
+
+    display_name = "Image Result Fixture"
+    documentation = "Expose deterministic image and file results for development tests."
+    tags = ["image", "result", "e2e"]
+    accepts_upstream = False
+    Inputs = SeedNumberInputs
+    Outputs = ImageResultFixtureOutputs
+
+    def transform(self, df: Any, arguments: Any) -> Any:
+        import os
+        import tempfile
+
+        output_dir = Path(tempfile.gettempdir()) / f"bioimageflow-e2e-image-result-{os.getpid()}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        image_path = output_dir / "mask.png"
+        Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8)).save(image_path)
+        report_path = output_dir / "measurements.txt"
+        report_path.write_bytes(b"cell_count=7\nmean_intensity=31.5\n")
+        return pd.DataFrame({
+            "mask": [str(image_path)],
+            "report": [str(report_path)],
+        })
+
+
 class IncrementNumberInputs(IOModel):
     number: int
 
@@ -219,6 +250,22 @@ _SEED_TOOLS: list[ToolMetadata] = [
         },
         outputs={
             "number_plus_one": OutputFieldSchema(type="int"),
+        },
+    ),
+    ToolMetadata(
+        name="ImageResultFixture",
+        display_name="Image Result Fixture",
+        package="bioimageflow-dev-seed",
+        package_version="0.1.0",
+        tool_type="DataFrameTool",
+        row_consumption=None,
+        accepts_upstream=False,
+        documentation=ImageResultFixture.documentation,
+        tags=ImageResultFixture.tags,
+        categories=["Utilities"],
+        outputs={
+            "mask": OutputFieldSchema(type="ImageFile"),
+            "report": OutputFieldSchema(type="Path"),
         },
     ),
     ToolMetadata(
@@ -355,6 +402,7 @@ _SEED_PACKAGES: list[PackageInfo] = [
                 "ResultTableFixture",
                 "IncrementNumbers",
                 "IncrementAgainNumbers",
+                "ImageResultFixture",
             ]
         },
         environment_status="stopped",
@@ -387,6 +435,7 @@ async def seed_tools(
             "ResultTableFixture": ResultTableFixture,
             "IncrementNumbers": IncrementNumbers,
             "IncrementAgainNumbers": IncrementAgainNumbers,
+            "ImageResultFixture": ImageResultFixture,
             "GaussianBlur": GaussianBlur,
         }.get(tool.name)
         registry.register_tool(tool.name, tool, tool_class=tool_class)

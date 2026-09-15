@@ -1,16 +1,23 @@
 import { test, expect } from '@playwright/test'
 
-const API_BASE = `http://localhost:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
+const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const AVIVATOR_ORIGIN = 'https://avivator.gehlenborglab.org'
 
-type SeedImageOutputResponse = {
-  node_id: string
-  column: string
-  filename: string
+function deriveWorkflowId(value: string): string {
+  return value
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toLowerCase()
 }
 
 test.describe('Avivator viewer', () => {
   test('opens a converted OME-TIFF image inside the Dockview panel', async ({ page }) => {
+    const displayName = `Image result ${test.info().project.name} ${Date.now()}`
+    const workflowName = deriveWorkflowId(displayName)
     await page.route('https://avivator.gehlenborglab.org/**', async (route) => {
       await route.fulfill({
         status: 200,
@@ -34,20 +41,89 @@ test.describe('Avivator viewer', () => {
       })
     })
 
-    const seedResponse = await page.request.post(`${API_BASE}/api/v1/dev/seed-image-output`)
-    expect(seedResponse.ok()).toBeTruthy()
-    const seed = (await seedResponse.json()) as SeedImageOutputResponse
+    // Thumbnail environment provisioning is a separate external acceptance
+    // boundary. Keep this journey focused on the real result/image endpoints
+    // while still requiring a readable, non-placeholder GUI preview.
+    await page.route('**/api/v1/nodes/*/thumbnail?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        headers: { 'X-Thumbnail-Status': 'ready' },
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      })
+    })
 
+    expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New', exact: true }).click()
+    await page.getByTestId('workflow-display-name-input').fill(displayName)
+    await page.getByTestId('workflow-dialog-submit').click()
+    await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+
+    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+    await page.getByTestId('tool-search').fill('ImageResultFixture')
+    const tool = page.getByTestId('tool-item-ImageResultFixture')
+    await expect(tool).toBeVisible()
+    const draftResponse = page.waitForResponse(response => (
+      response.url().includes(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await tool.dblclick()
+    await draftResponse
+    const node = page.locator('.vue-flow__node').filter({ hasText: 'Image Result Fixture' })
+    await expect(node).toBeVisible()
+    const nodeId = await node.getAttribute('data-id')
+    expect(nodeId).toBeTruthy()
+
+    const runResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText(
+      'Execution complete',
+      { timeout: 30_000 },
+    )
+
+    await node.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const table = page.getByTestId('merged-data-table')
+    await expect(table).toBeVisible()
+    await expect(table.getByTestId('image-thumbnail')).toHaveAttribute('src', /^blob:/)
+    const displayedPaths = table.getByTestId('path-display')
+    await expect(displayedPaths).toHaveCount(2)
+    await expect(table.getByText('mask.png', { exact: true })).toBeVisible()
+    await expect(table.getByText('measurements.txt', { exact: true })).toBeVisible()
+
+    const resultResponse = await page.request.post(
+      `${API_BASE}/api/v1/nodes/${encodeURIComponent(nodeId!)}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    expect(resultResponse.ok()).toBeTruthy()
+    const result = await resultResponse.json() as {
+      columns: string[]
+      rows: Array<{ mask: string, report: string }>
+    }
+    expect(result.columns).toEqual(['mask', 'report'])
+    expect(result.rows).toHaveLength(1)
+    await expect(displayedPaths.nth(0)).toHaveAttribute('title', result.rows[0].mask)
+    await expect(displayedPaths.nth(1)).toHaveAttribute('title', result.rows[0].report)
 
     const imageUrl = new URL(
-      `/api/v1/nodes/${encodeURIComponent(seed.node_id)}/image/${encodeURIComponent(seed.filename)}`,
+      `/api/v1/nodes/${encodeURIComponent(nodeId!)}/image/mask.ome.tif`,
       API_BASE,
     )
     imageUrl.searchParams.set('row', '0')
-    imageUrl.searchParams.set('col', seed.column)
+    imageUrl.searchParams.set('col', 'mask')
     imageUrl.searchParams.set('format', 'ome-tiff')
+    imageUrl.searchParams.set('workflow_name', workflowName)
 
     const preflight = await page.request.fetch(imageUrl.toString(), {
       method: 'OPTIONS',
@@ -87,17 +163,8 @@ test.describe('Avivator viewer', () => {
     expect(offsets.length).toBeGreaterThan(0)
     expect(offsets.every((offset) => Number.isInteger(offset) && offset > 0)).toBeTruthy()
 
-    const avivatorUrl = new URL('https://avivator.gehlenborglab.org/')
-    avivatorUrl.searchParams.set('image_url', imageUrl.toString())
-
-    await page.evaluate(
-      ({ url, imageUrl }) => {
-        window.dispatchEvent(new CustomEvent('bioimageflow:open-avivator', {
-          detail: { url, imageUrl, title: 'mask.ome.tif' },
-        }))
-      },
-      { url: avivatorUrl.toString(), imageUrl: imageUrl.toString() },
-    )
+    await expect(table.locator('.p-datatable-mask')).toHaveCount(0)
+    await table.getByTestId('open-avivator-0-mask').click()
 
     await expect(page.locator('[data-testid="avivator-panel"]')).toBeVisible()
     await expect(page.locator('[data-testid="avivator-iframe"]')).toBeVisible()
@@ -105,5 +172,7 @@ test.describe('Avivator viewer', () => {
     await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
     await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
     await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
+
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
   })
 })
