@@ -41,6 +41,7 @@ from bioimageflow_server.services.napari_environments import (
 from bioimageflow_server.services.napari_resolver import (
     NapariResolverError,
     NapariResolverService,
+    compatibility_status,
 )
 from bioimageflow_server.services.viewer_preferences import (
     ViewerPreferenceStore,
@@ -48,7 +49,12 @@ from bioimageflow_server.services.viewer_preferences import (
     ViewerPreferenceTargetConflict,
     ensure_workspace_identity,
 )
-from bioimageflow_server.models.graph import GraphState, ToolNodeState, WorkflowNodeState
+from bioimageflow_server.models.graph import (
+    GraphState,
+    ToolNodeState,
+    ViewerSpec,
+    WorkflowNodeState,
+)
 from bioimageflow_server.models.workflow import ViewingRequirementsManifest
 from bioimageflow_server.routers.nested_workflow_snapshots import (
     get_nested_workflow_snapshot_service,
@@ -351,12 +357,37 @@ def _preference_error(exc: Exception) -> HTTPException:
     )
 
 
+def _output_viewer_declaration(
+    declared: ViewerSpec | None, addition: ViewerSpec | None
+) -> ViewerSpec | None:
+    """Combine one output's declared and additive viewer metadata.
+
+    The graph is the authority for a structural output's viewer declaration;
+    combining through the library's own merge keeps the additive semantics
+    identical to the resolver's retained-result viewer.
+    """
+    if declared is None:
+        return addition
+    if addition is None:
+        return declared
+    from bioimageflow_core import ViewerSpec as LibraryViewerSpec
+    from bioimageflow_core import merge_viewer_specs
+
+    return ViewerSpec.from_library(
+        merge_viewer_specs(
+            LibraryViewerSpec.from_dict(declared.model_dump(mode="json", by_alias=True)),
+            LibraryViewerSpec.from_dict(addition.model_dump(mode="json", by_alias=True)),
+        )
+    )
+
+
 def _validate_structural_output(
     graph: GraphState,
     node_path: tuple[str, ...],
     output_key: str,
     store: WorkflowStoreService,
-) -> None:
+) -> ViewerSpec | None:
+    """Validate the addressed structural output and return its viewer declaration."""
     current = graph
     node = None
     for index, node_id in enumerate(node_path):
@@ -368,17 +399,53 @@ def _validate_structural_output(
                 raise HTTPException(status_code=422, detail="favorite node path is not structural")
             current = node.workflow
     if isinstance(node, WorkflowNodeState):
-        outputs = {item.id for item in node.workflow.interface.outputs}
-    elif isinstance(node, ToolNodeState):
+        output = next(
+            (item for item in node.workflow.interface.outputs if item.id == output_key),
+            None,
+        )
+        if output is None:
+            raise HTTPException(status_code=422, detail="favorite output does not exist")
+        return _output_viewer_declaration(
+            output.viewer_addition, node.viewer_additions.get(output_key)
+        )
+    if isinstance(node, ToolNodeState):
         metadata = store.tool_registry.get_tool(node.tool_name)
         schema = metadata.outputs if metadata is not None else None
         outputs = set(node.viewer_additions) | set(node.output_templates)
         if isinstance(schema, dict):
             outputs.update(key for key in schema if key != "_passthrough")
-    else:  # pragma: no cover - node_path is non-empty and graph nodes are strict
-        outputs = set()
-    if output_key not in outputs:
-        raise HTTPException(status_code=422, detail="favorite output does not exist")
+        if output_key not in outputs:
+            raise HTTPException(status_code=422, detail="favorite output does not exist")
+        return node.viewer_additions.get(output_key)
+    raise HTTPException(status_code=422, detail="favorite output does not exist")
+
+
+def _enforce_favorite_compatibility(
+    key,
+    environment,
+    viewer: ViewerSpec | None,
+    preferences: ViewerPreferenceStore,
+) -> None:
+    """Refuse a new incompatible favorite for this structural output identity.
+
+    Spec section 5.3 keeps an incompatible saved favorite for repair but
+    disallows setting a new one, so re-affirming the current favorite stays
+    allowed while unsetting is always permitted.
+    """
+    if compatibility_status(environment, viewer) != "incompatible":
+        return
+    if preferences.favorite_for(key) == environment.id:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "napari_favorite_incompatible",
+            "detail": (
+                f"Environment {environment.name!r} does not satisfy this output's "
+                "required packages"
+            ),
+        },
+    )
 
 
 def _validate_preference_key(
@@ -386,7 +453,7 @@ def _validate_preference_key(
     store: WorkflowStoreService,
     snapshots: NestedWorkflowSnapshotService,
     drafts: WorkflowDraftService,
-) -> None:
+) -> ViewerSpec | None:
     if key.workspace_id != ensure_workspace_identity(store.workspace_dir):
         raise HTTPException(status_code=409, detail="workspace identity changed")
     if isinstance(key, PersistentOutputPreferenceKey):
@@ -400,13 +467,14 @@ def _validate_preference_key(
             raise HTTPException(status_code=404, detail="workflow identity not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        _validate_structural_output(graph, key.node_path, key.output_key, store)
-    elif isinstance(key, SessionOutputPreferenceKey):
+        return _validate_structural_output(graph, key.node_path, key.output_key, store)
+    if isinstance(key, SessionOutputPreferenceKey):
         try:
             snapshot = snapshots.get_snapshot(UUID(key.session_id))
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=404, detail="nested editor session not found") from exc
-        _validate_structural_output(snapshot.graph, key.node_path, key.output_key, store)
+        return _validate_structural_output(snapshot.graph, key.node_path, key.output_key, store)
+    return None
 
 
 @router.get("/viewer-preferences", response_model=ViewerPreferencesSnapshot)
@@ -430,13 +498,20 @@ def set_viewer_favorite(
     ),
     drafts: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> ViewerPreferencesSnapshot:
-    if request.environment_id not in {
-        environment.id for environment in service.snapshot().environments
-    }:
+    environment = next(
+        (
+            item
+            for item in service.snapshot().environments
+            if item.id == request.environment_id
+        ),
+        None,
+    )
+    if environment is None:
         raise HTTPException(status_code=404, detail="napari environment not found")
     try:
         with snapshots.snapshot_mutation():
-            _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            viewer = _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            _enforce_favorite_compatibility(request.key, environment, viewer, preferences)
             return preferences.set(
                 request.key,
                 request.environment_id,
@@ -481,13 +556,20 @@ def toggle_viewer_favorite(
     ),
     drafts: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> ViewerPreferencesSnapshot:
-    if request.environment_id not in {
-        environment.id for environment in service.snapshot().environments
-    }:
+    environment = next(
+        (
+            item
+            for item in service.snapshot().environments
+            if item.id == request.environment_id
+        ),
+        None,
+    )
+    if environment is None:
         raise HTTPException(status_code=404, detail="napari environment not found")
     try:
         with snapshots.snapshot_mutation():
-            _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            viewer = _validate_preference_key(request.key, workflow_store, snapshots, drafts)
+            _enforce_favorite_compatibility(request.key, environment, viewer, preferences)
             return preferences.toggle(
                 request.key,
                 request.environment_id,

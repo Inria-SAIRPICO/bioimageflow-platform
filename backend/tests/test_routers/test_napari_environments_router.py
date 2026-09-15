@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -34,13 +35,17 @@ def _venv(root: Path) -> Path:
     return root
 
 
-async def _client(tmp_path: Path, mode: str) -> tuple[httpx.AsyncClient, SettingsStore]:
+async def _client(
+    tmp_path: Path, mode: str, probe_runner=None
+) -> tuple[httpx.AsyncClient, SettingsStore]:
     store = SettingsStore(
         tmp_path / f"{mode}-settings.json",
         deployment_mode=mode,  # type: ignore[arg-type]
     )
     await store.load()
-    service = NapariEnvironmentService(store)
+    service = NapariEnvironmentService(
+        store, **({"probe_runner": probe_runner} if probe_runner else {})
+    )
     app = create_app(
         AppConfig(
             settings_store=store,
@@ -335,3 +340,118 @@ async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -
 
     assert updated.status_code == 200
     assert favorite.status_code == 200
+
+
+_REQUIRED_READER_VIEWER = {
+    "napari": {
+        "required_packages": [
+            {"distribution": "reader", "normalized_name": "reader", "version": None}
+        ],
+        "recommended_packages": [],
+        "napari_version": None,
+        "reader_id": None,
+    }
+}
+
+
+def _inventory(*distributions: tuple[str, str]) -> str:
+    return json.dumps(
+        {
+            "python_version": "3.13.1",
+            "napari_version": "0.7.1",
+            "distributions": [
+                {"name": name, "version": version} for name, version in distributions
+            ],
+            "fingerprint": "a" * 64,
+        }
+    )
+
+
+async def _favorite_key(client: httpx.AsyncClient, tmp_path: Path, viewer: dict) -> dict:
+    created = await client.post("/api/v1/workflows", json={"name": "draft-output"})
+    current = await client.get("/api/v1/workflow-drafts/draft-output")
+    graph = graph_document(
+        nodes=[
+            {
+                "type": "tool",
+                "id": "new-node",
+                "name": "New node",
+                "tool_name": "MissingTool",
+                "position": [0, 0],
+                "parameters": {},
+                "viewer_additions": {"image": viewer},
+            }
+        ]
+    )
+    updated = await client.put(
+        "/api/v1/workflow-drafts/draft-output",
+        json={
+            "expected_revision": current.json()["draft_revision"],
+            "graph": graph,
+        },
+    )
+    assert updated.status_code == 200
+    return {
+        "kind": "persistent",
+        "workspace_id": str(ensure_workspace_identity(tmp_path)),
+        "workflow_id": "draft-output",
+        "identity_generation": created.json()["identity_generation"],
+        "node_path": ["new-node"],
+        "output_key": "image",
+    }
+
+
+async def test_toggle_rejects_favorite_incompatible_with_the_output(tmp_path: Path) -> None:
+    client, _store = await _client(
+        tmp_path, "desktop", probe_runner=lambda *_args: _inventory(("napari", "0.7.1"))
+    )
+    async with client:
+        environment = await client.post(
+            "/api/v1/napari/environments",
+            json={
+                "name": "Old viewer",
+                "path": str(_venv(tmp_path / "old-viewer")),
+                "expected_revision": 0,
+            },
+        )
+        environment_id = environment.json()["environment"]["id"]
+        probed = await client.post(
+            f"/api/v1/napari/environments/{environment_id}/probe",
+            json={"expected_revision": 1},
+        )
+        key = await _favorite_key(client, tmp_path, _REQUIRED_READER_VIEWER)
+        rejected = await client.post(
+            "/api/v1/napari/viewer-preferences/favorite/toggle",
+            json={"key": key, "environment_id": environment_id, "expected_revision": 0},
+        )
+        preferences = await client.get("/api/v1/napari/viewer-preferences")
+
+    assert probed.status_code == 200
+    assert probed.json()["environment"]["state"] == "ready"
+    assert rejected.status_code == 409
+    assert rejected.json()["error"] == "napari_favorite_incompatible"
+    assert preferences.json()["favorites"] == []
+
+
+async def test_toggle_permits_unverified_requirements_for_the_output(tmp_path: Path) -> None:
+    client, _store = await _client(tmp_path, "desktop")
+    async with client:
+        environment = await client.post(
+            "/api/v1/napari/environments",
+            json={
+                "name": "Unprobed viewer",
+                "path": str(_venv(tmp_path / "unprobed-viewer")),
+                "expected_revision": 0,
+            },
+        )
+        environment_id = environment.json()["environment"]["id"]
+        key = await _favorite_key(client, tmp_path, _REQUIRED_READER_VIEWER)
+        accepted = await client.post(
+            "/api/v1/napari/viewer-preferences/favorite/toggle",
+            json={"key": key, "environment_id": environment_id, "expected_revision": 0},
+        )
+
+    assert accepted.status_code == 200
+    assert [favorite["environment_id"] for favorite in accepted.json()["favorites"]] == [
+        environment_id
+    ]

@@ -43,6 +43,162 @@ from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 INVENTORY_MAX_AGE = timedelta(hours=24)
 PreferenceSource = Literal["favorite", "filename_rule", "global_default", "other"]
+CompatibilityStatus = Literal["compatible", "incompatible", "unknown", "unavailable"]
+
+UNAVAILABLE_STATES = frozenset(
+    {
+        "setup_needed",
+        "creating",
+        "failed",
+        "cancelled",
+        "removing",
+        "missing",
+        "replaced",
+    }
+)
+
+
+def compatibility_status(
+    environment: NapariEnvironment, viewer: ViewerSpec | None
+) -> CompatibilityStatus:
+    """Return the package-only compatibility of one environment for one output.
+
+    Single authority for the candidate status literal, shared by resolver
+    candidate ranking and the favorite write guard so the two can never
+    disagree about what "incompatible" means.
+    """
+    if environment.state in UNAVAILABLE_STATES:
+        return "unavailable"
+    if _has_hard_requirements(viewer) and (
+        environment.inventory is None
+        or environment.state in {"probe_failed", "drifted"}
+        or _inventory_stale(environment)
+    ):
+        return "unknown"
+    if _has_hard_requirements(viewer) and _required_issues(environment, viewer):
+        return "incompatible"
+    return "compatible"
+
+
+def _has_hard_requirements(viewer: ViewerSpec | None) -> bool:
+    return bool(
+        viewer is not None
+        and viewer.napari is not None
+        and (
+            viewer.napari.required_packages
+            or viewer.napari.napari_version is not None
+        )
+    )
+
+
+def _inventory_stale(environment: NapariEnvironment) -> bool:
+    inventory = environment.inventory
+    if inventory is None:
+        return True
+    probed_at = inventory.probed_at
+    if probed_at.tzinfo is None:
+        probed_at = probed_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - probed_at > INVENTORY_MAX_AGE
+
+
+def _installed(environment: NapariEnvironment) -> dict[str, str]:
+    if environment.inventory is None:
+        return {}
+    return {
+        canonicalize_name(item.name): item.version
+        for item in environment.inventory.distributions
+    }
+
+
+def _satisfies(version: str, specifier: str) -> bool:
+    try:
+        return Version(version) in SpecifierSet(specifier)
+    except InvalidVersion:
+        return False
+
+
+def _required_issues(
+    environment: NapariEnvironment, viewer: ViewerSpec
+) -> list[NapariCompatibilityIssue]:
+    requirement = viewer.napari
+    assert requirement is not None
+    installed = _installed(environment)
+    issues: list[NapariCompatibilityIssue] = []
+    for package in requirement.required_packages:
+        version = installed.get(package.normalized_name)
+        if version is None:
+            issues.append(
+                NapariCompatibilityIssue(
+                    code="missing_distribution",
+                    distribution=package.distribution,
+                    required_version=package.version,
+                    detail=f"{package.distribution} is not installed",
+                )
+            )
+        elif package.version is not None and not _satisfies(version, package.version):
+            issues.append(
+                NapariCompatibilityIssue(
+                    code="version_out_of_range",
+                    distribution=package.distribution,
+                    required_version=package.version,
+                    installed_version=version,
+                    detail=(
+                        f"{package.distribution} {version} does not satisfy "
+                        f"{package.version}"
+                    ),
+                )
+            )
+    if requirement.napari_version is not None:
+        napari_version = (
+            environment.inventory.napari_version
+            if environment.inventory is not None
+            else None
+        )
+        if napari_version is None:
+            issues.append(
+                NapariCompatibilityIssue(
+                    code="missing_napari",
+                    required_version=requirement.napari_version,
+                    detail="napari is not installed",
+                )
+            )
+        elif not _satisfies(napari_version, requirement.napari_version):
+            issues.append(
+                NapariCompatibilityIssue(
+                    code="napari_version_out_of_range",
+                    distribution="napari",
+                    required_version=requirement.napari_version,
+                    installed_version=napari_version,
+                    detail=(
+                        f"napari {napari_version} does not satisfy "
+                        f"{requirement.napari_version}"
+                    ),
+                )
+            )
+    return issues
+
+
+def _missing_recommended(
+    environment: NapariEnvironment, viewer: ViewerSpec | None
+) -> list:
+    if (
+        viewer is None
+        or viewer.napari is None
+        or environment.inventory is None
+        or environment.state in {"probe_failed", "drifted"}
+        or _inventory_stale(environment)
+    ):
+        return []
+    installed = _installed(environment)
+    return [
+        package
+        for package in viewer.napari.recommended_packages
+        if (version := installed.get(package.normalized_name)) is None
+        or (
+            package.version is not None
+            and not _satisfies(version, package.version)
+        )
+    ]
 
 
 class NapariResolverError(ValueError):
@@ -368,28 +524,16 @@ class NapariResolverService:
         reader_id: str | None = None,
     ) -> NapariEnvironmentCandidate:
         issues: list[NapariCompatibilityIssue] = []
-        unavailable_states = {
-            "setup_needed",
-            "creating",
-            "failed",
-            "cancelled",
-            "removing",
-            "missing",
-            "replaced",
-        }
-        if environment.state in unavailable_states:
+        status = compatibility_status(environment, viewer)
+        if status == "unavailable":
             issues.append(
                 NapariCompatibilityIssue(
                     code="unavailable",
                     detail=environment.last_error or f"Environment is {environment.state}",
                 )
             )
-            status = "unavailable"
-        elif self._has_hard_requirements(viewer) and (
-            environment.inventory is None
-            or environment.state in {"probe_failed", "drifted"}
-            or self._inventory_stale(environment)
-        ):
+        elif status == "unknown":
+            assert _has_hard_requirements(viewer)
             code = (
                 "probe_failed"
                 if environment.state == "probe_failed"
@@ -406,16 +550,11 @@ class NapariResolverService:
                     ),
                 )
             )
-            status = "unknown"
-        else:
-            status = "compatible"
-            if self._has_hard_requirements(viewer):
-                assert viewer is not None
-                issues.extend(self._required_issues(environment, viewer))
-                if issues:
-                    status = "incompatible"
+        elif status == "incompatible":
+            assert viewer is not None
+            issues.extend(_required_issues(environment, viewer))
 
-        missing_recommended = self._missing_recommended(environment, viewer)
+        missing_recommended = _missing_recommended(environment, viewer)
         label = {
             "compatible": "Required packages installed",
             "incompatible": "Needs attention",
@@ -447,124 +586,3 @@ class NapariResolverService:
                 else reader_id
             ),
         )
-
-    @staticmethod
-    def _inventory_stale(environment: NapariEnvironment) -> bool:
-        inventory = environment.inventory
-        if inventory is None:
-            return True
-        probed_at = inventory.probed_at
-        if probed_at.tzinfo is None:
-            probed_at = probed_at.replace(tzinfo=UTC)
-        return datetime.now(UTC) - probed_at > INVENTORY_MAX_AGE
-
-    @staticmethod
-    def _installed(environment: NapariEnvironment) -> dict[str, str]:
-        if environment.inventory is None:
-            return {}
-        return {
-            canonicalize_name(item.name): item.version
-            for item in environment.inventory.distributions
-        }
-
-    def _required_issues(
-        self, environment: NapariEnvironment, viewer: ViewerSpec
-    ) -> list[NapariCompatibilityIssue]:
-        requirement = viewer.napari
-        assert requirement is not None
-        installed = self._installed(environment)
-        issues: list[NapariCompatibilityIssue] = []
-        for package in requirement.required_packages:
-            version = installed.get(package.normalized_name)
-            if version is None:
-                issues.append(
-                    NapariCompatibilityIssue(
-                        code="missing_distribution",
-                        distribution=package.distribution,
-                        required_version=package.version,
-                        detail=f"{package.distribution} is not installed",
-                    )
-                )
-            elif package.version is not None and not self._satisfies(
-                version, package.version
-            ):
-                issues.append(
-                    NapariCompatibilityIssue(
-                        code="version_out_of_range",
-                        distribution=package.distribution,
-                        required_version=package.version,
-                        installed_version=version,
-                        detail=(
-                            f"{package.distribution} {version} does not satisfy "
-                            f"{package.version}"
-                        ),
-                    )
-                )
-        if requirement.napari_version is not None:
-            napari_version = (
-                environment.inventory.napari_version
-                if environment.inventory is not None
-                else None
-            )
-            if napari_version is None:
-                issues.append(
-                    NapariCompatibilityIssue(
-                        code="missing_napari",
-                        required_version=requirement.napari_version,
-                        detail="napari is not installed",
-                    )
-                )
-            elif not self._satisfies(napari_version, requirement.napari_version):
-                issues.append(
-                    NapariCompatibilityIssue(
-                        code="napari_version_out_of_range",
-                        distribution="napari",
-                        required_version=requirement.napari_version,
-                        installed_version=napari_version,
-                        detail=(
-                            f"napari {napari_version} does not satisfy "
-                            f"{requirement.napari_version}"
-                        ),
-                    )
-                )
-        return issues
-
-    def _missing_recommended(
-        self, environment: NapariEnvironment, viewer: ViewerSpec | None
-    ) -> list:
-        if (
-            viewer is None
-            or viewer.napari is None
-            or environment.inventory is None
-            or environment.state in {"probe_failed", "drifted"}
-            or self._inventory_stale(environment)
-        ):
-            return []
-        installed = self._installed(environment)
-        return [
-            package
-            for package in viewer.napari.recommended_packages
-            if (version := installed.get(package.normalized_name)) is None
-            or (
-                package.version is not None
-                and not self._satisfies(version, package.version)
-            )
-        ]
-
-    @staticmethod
-    def _has_hard_requirements(viewer: ViewerSpec | None) -> bool:
-        return bool(
-            viewer is not None
-            and viewer.napari is not None
-            and (
-                viewer.napari.required_packages
-                or viewer.napari.napari_version is not None
-            )
-        )
-
-    @staticmethod
-    def _satisfies(version: str, specifier: str) -> bool:
-        try:
-            return Version(version) in SpecifierSet(specifier)
-        except InvalidVersion:
-            return False
