@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **172 V + 279 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **172 / 457 are verified (37.6%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **150 V + 70 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **150 / 220 are verified (68.2%)**.
+- Overall: **200 V + 251 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **200 / 457 are verified (43.8%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **178 V + 42 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **178 / 220 are verified (80.9%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -41,8 +41,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | GUI-SHL-001 | Default docks, menu, and panel visibility | P1 | Desktop and webapp GUI | no | G | N (no invalid-input or refused-action contract for shell layout) | N (no cancellation or recovery lifecycle for static shell layout) | G | N (no identity, concurrency, ownership, or permission boundary for shell layout) | gap | `fcb4408` inspection |
-| GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | G | in-progress | `4208769` |
-| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | G | V | V | in-progress | `dd20821` |
+| GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
+| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | G | V | V | in-progress | `dd20821`, `75be9c2` |
 | GUI-SHL-004 | Recovered-edge geometry | P0 | Desktop and webapp GUI | yes | V | N (geometry rendering accepts no user input to refuse) | N (geometry rendering has no cancellation or recovery lifecycle) | V | N (geometry is derived within the owning canvas and has no separate boundary) | verified | `dd20821` |
 | GUI-SHL-005 | Preferences opening and desktop availability | P1 | Desktop and webapp GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
@@ -50,8 +50,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-SHL-008 | Desktop/editor settings and forbidden webapp mutation | P2 | Desktop and webapp settings API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-EDT-001 | Catalog inspect, double-click add, drag add, and select | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `eb0dc74`, `4208769` |
 | GUI-EDT-002 | Fit large/small graphs and encoded paths | P1 | Desktop and webapp GUI | no | G | N (viewport fitting accepts no invalid domain input) | N (viewport fitting has no cancellation or recovery lifecycle) | N (fit geometry is recomputed and is not durable workflow state) | N (viewport fitting has no identity, concurrency, ownership, or permission boundary) | gap | `fcb4408` inspection |
-| GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | G | in-progress | `4208769` |
-| GUI-EDT-004 | Column input labels and disconnect/reconnect | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `e0aa123` |
+| GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | V | G | V | V | in-progress | `4208769`, `4456435` |
+| GUI-EDT-004 | Column input labels and disconnect/reconnect | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `e0aa123`, `4456435` |
 | GUI-EDT-005 | Mapped/collective column appearance | P1 | Desktop and webapp GUI | no | G | N (row-consumption appearance accepts no user input to refuse) | N (derived edge appearance has no cancellation or recovery lifecycle) | N (appearance is derived from metadata and is not persisted) | G | gap | `fcb4408` inspection |
 | GUI-EDT-006 | Parameter controls feed the accepted Run | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `1261326`, `4208769` |
 | GUI-EDT-007 | Node rename preserves identity and refuses duplicates | P0 | Desktop and webapp GUI | yes | V | V | N (rename validation is synchronous; refusal is owned by R and no separate recovery follows) | V | V | verified | `ec0ca3b` |
@@ -74,8 +74,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
-| WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `4208769` |
-| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `a25ac17` |
+| WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
+| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
 | WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | `a25ac17` |
 | WF-LIF-006 | Copy captured agent graph and recursive owned sources | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `e817d77` |
@@ -88,14 +88,14 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | G | V | V | in-progress | `dd20821` |
 | WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `af58e4e` |
-| WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `1e84421` |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `3422e1c` |
-| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `1e84421` |
 | WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `da0ded6`, `152c82b` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `f920c9b` |
 | WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `cf794fb` |
 | WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
@@ -122,17 +122,17 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | G | V | V | in-progress | `4208769` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
 | RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
-| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
-| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | G | V | V | V | V | in-progress | `30faeb6` |
+| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | G | V | in-progress | `30faeb6`, `fe0cf9d`; ISSUE-011 |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | G | in-progress | `7ab16e6` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | G | V | V | in-progress | `7ab16e6` |
-| RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `d1072ce` |
-| RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | G | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | in-progress | `c050207` |
+| RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
+| RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `c050207` |
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |

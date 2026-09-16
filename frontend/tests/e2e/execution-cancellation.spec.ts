@@ -157,13 +157,24 @@ async function expectExactTable(panel: Locator, columns: string[], rows: string[
   for (let row = 0; row < rows.length; row++) {
     const cells = table.locator('.p-datatable-tbody tr').nth(row).locator('td')
     for (let column = 0; column < columns.length; column++) {
-      await expect(cells.nth(column)).toHaveText(rows[row]![column]!)
+      const cell = cells.nth(column)
+      const pathValue = cell.locator('.path-cell__path-value')
+      await expect(await pathValue.count() === 1 ? pathValue : cell).toHaveText(rows[row]![column]!)
     }
   }
 }
 
 test('cancels a held real sequential worker without mutating its exact draft', async ({ page }) => {
   test.setTimeout(180_000)
+  const executionEvents: Record<string, unknown>[] = []
+  page.on('websocket', socket => socket.on('framereceived', frame => {
+    try {
+      const event = JSON.parse(frame.payload.toString()) as Record<string, unknown>
+      executionEvents.push(event)
+    } catch {
+      // Other WebSocket traffic is not part of this execution contract.
+    }
+  }))
   const control = new WorkerControl()
   const controlPort = await control.listen()
   const workflowName = uniqueWorkflowName()
@@ -257,16 +268,77 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       ['1', 'one'], ['2', 'two'], ['3', 'three'],
     ])
 
-    control.releaseImmediately = true
     const rerunResponse = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
     ))
     await page.getByTestId('run-workflow-button').click()
-    expect((await rerunResponse).status()).toBe(202)
+    const acceptedRerun = await rerunResponse
+    expect(acceptedRerun.status()).toBe(202)
+    const rerunContext = await acceptedRerun.json()
+    expect(rerunContext).toMatchObject({
+      execution_id: expect.stringMatching(/^run_/),
+      workflow_id: workflowName,
+      draft_revision: acceptedDraft.draft_revision,
+    })
+    expect(rerunContext.execution_id).not.toBe(heldStatus.execution_id)
+    const firstRerunStart = await control.nextStart()
+    expect(firstRerunStart).toMatchObject({ value: 1 })
+    expect(firstRerunStart.process_id).not.toBe(backendPid.process_id)
+    expect(executionEvents.some(event => event.type === 'node_state'
+      && event.status === 'running' && event.node_id === WORKER_ID
+      && event.execution_id === rerunContext.execution_id
+      && event.workflow_id === workflowName
+      && event.draft_revision === acceptedDraft.draft_revision)).toBe(true)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
+    control.releaseAll()
     await expect.poll(async () => {
       const status = await executionStatus(page)
       return [status.state, status.last_result?.success, status.node_statuses?.[WORKER_ID]?.status]
     }, { timeout: 60_000 }).toEqual(['idle', true, 'executed'])
+    await expect.poll(() => executionEvents.filter(event => (
+      event.type === 'progress' && event.execution_id === rerunContext.execution_id
+    )).map(event => [event.status, event.node_id, event.row, event.total_rows]), {
+      timeout: 5_000,
+    }).toContainEqual(['row_complete', WORKER_ID, 0, 3])
+    const firstProgress = executionEvents.find(event => (
+      event.type === 'progress' && event.status === 'row_complete'
+      && event.node_id === WORKER_ID && event.row === 0
+      && event.execution_id === rerunContext.execution_id
+    ))
+    expect(firstProgress).toMatchObject({
+      execution_id: rerunContext.execution_id,
+      workflow_id: workflowName,
+      draft_revision: acceptedDraft.draft_revision,
+    })
+    await expect.poll(() => executionEvents.some(event => (
+      event.type === 'execution_complete' && event.execution_id === rerunContext.execution_id
+    )), { timeout: 15_000 }).toBe(true)
+    expect(executionEvents.find(event => (
+      event.type === 'execution_complete' && event.execution_id === rerunContext.execution_id
+    ))).toMatchObject({
+      success: true,
+      execution_id: rerunContext.execution_id,
+      workflow_id: workflowName,
+      draft_revision: acceptedDraft.draft_revision,
+    })
+    expect(executionEvents.filter(event => event.execution_id === rerunContext.execution_id)
+      .every(event => event.workflow_id === workflowName
+        && event.draft_revision === acceptedDraft.draft_revision)).toBe(true)
+    const completed = await executionStatus(page)
+    expect(completed).toMatchObject({
+      execution_id: rerunContext.execution_id,
+      workflow_id: workflowName,
+      draft_revision: acceptedDraft.draft_revision,
+      last_result: { success: true },
+    })
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+    expect(await executionStatus(page)).toMatchObject({
+      execution_id: rerunContext.execution_id,
+      workflow_id: workflowName,
+      draft_revision: acceptedDraft.draft_revision,
+      last_result: { success: true },
+    })
 
     const workerResult = await page.request.post(
       `${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`,
@@ -280,6 +352,11 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     )
     expect(workerPids.size).toBe(1)
     expect(workerPids.has(backendPid.process_id)).toBe(false)
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    await expectExactTable(page.getByTestId('data-table-panel'), result.columns, result.rows.map(
+      (row: Record<string, unknown>) => result.columns.map((column: string) => String(row[column])),
+    ))
   } finally {
     control.releaseAll()
     try {

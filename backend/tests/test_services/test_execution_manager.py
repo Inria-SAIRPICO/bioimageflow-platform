@@ -415,6 +415,24 @@ async def _drain(manager: ExecutionManager, timeout: float = 2.0) -> None:
 
 
 class TestExecutionManagerLifecycle:
+    async def test_cache_clear_updates_matching_live_status_without_rewriting_run_history(self) -> None:
+        em = ExecutionManager(NullEventBus(), MagicMock(), _settings())
+        em.context = ExecutionContext(
+            execution_id="run-1", workflow_id="wf", draft_revision=2
+        )
+        executed = NodeStatus(node_id="source", status="executed", cached=True)
+        em._node_statuses = {"source": executed}
+        em.last_result = ExecutionResult(
+            success=True, errors=[], node_statuses={"source": executed}
+        )
+
+        cleared = NodeStatus(node_id="source", status="unexecuted", cached=False)
+        em.apply_cache_clear_statuses("other", {"source": cleared})
+        assert em.get_status().node_statuses["source"].status == "executed"
+        em.apply_cache_clear_statuses("wf", {"source": cleared})
+        assert em.get_status().node_statuses["source"].status == "unexecuted"
+        assert em.get_status().last_result.node_statuses["source"].status == "executed"
+
     async def test_idle_state_initially(self) -> None:
         em = ExecutionManager(NullEventBus(), MagicMock(), _settings())
         assert em.state == "idle"

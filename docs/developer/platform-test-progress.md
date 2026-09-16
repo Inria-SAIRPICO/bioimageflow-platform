@@ -4,22 +4,21 @@ orphan: true
 
 # Platform test campaign checkpoint
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-16.
 Objective: establish objective basic-use readiness through the fixed gate, then complete systematic coverage of all implemented in-scope features unless the owner explicitly pauses with a durable backlog.
 Orchestrator: GPT-5.6 Sol/high with focused context; ordinary workers: Sol/medium; specialist: Astra/high.
 The [plan](platform-test-plan.md) defines priorities, coverage obligations, commit/worktree rules, and the final completion gate.
-**Basic-use gate passed; systematic campaign awaiting owner decision/incomplete.**
-The fixed Basic-Use gate passed on evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`; the broader campaign is still incomplete, and this checkpoint records no owner decision to continue or pause.
+**Basic-use gate passed; owner chose to continue with Tier 1B; systematic campaign incomplete.**
+The fixed Basic-Use gate passed on evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`; on 2026-09-16, the owner chose to continue with Tier 1B.
 
 The owner approved an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, reachability-first blocker classification, and a distinct Basic-Use Readiness Gate before lower-priority campaign work.
 The plan and restart prompt contain the normative rules; this checkpoint records their activation without duplicating their detail.
 
 ## Next actions
 
-1. Ask the owner whether to continue now through Tiers 1B, 2, and 3 or pause with the systematic campaign explicitly incomplete; do not infer that choice from this checkpoint.
-2. If paused, resume first with the remaining Tier 1B shell and everyday-editing boundaries in the [GUI inventory](coverage-gui.md), including startup refusal/recovery and the broader clipboard, shortcut, and history-isolation variants outside the fixed gate.
-3. Continue with the remaining Tier 1B grouping, recursive editing, interface, private-snapshot, and identity/recovery boundaries in the [workflow inventory](coverage-workflows.md).
-4. Then close the remaining Tier 1B execution and result-lifecycle boundaries in the [runtime inventory](coverage-runtime.md), including real-worker progress/failure/cancellation variants, cache lifecycle, richer result projections, and export recovery.
+1. Complete the Astra-bounded ISSUE-011 backend-restart cache-status repair and exact restart/GUI evidence, then resume the highest-reach remaining Tier 1B shell, root editing, recursive workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
+2. Preserve the observed BioImageFlow 0.7.2 sequential row-progress timing as a documented limitation; assess user impact before classifying it as a defect or dependency change.
+3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -31,7 +30,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | --- | --- | --- |
 | T01 dependencies | Complete | Published BioImageFlow 0.7.1/core 0.3.1 and Wetlands 2.4.1 integration; retained release and worker evidence in [Campaign evidence](platform-test-evidence.md). |
 | T02 fixture foundations | Complete | Genuine Generate metadata, compatible whole-DataFrame wiring, exact results, and sequential worker fixture established. |
-| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After correcting applicability and crediting the integrated image/export, grouping, and workflow CRUD evidence, 172/457 overall obligations are verified (37.6%) and 150/220 primary-GUI obligations are verified (68.2%). |
+| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After the Tier 1B result-selection and workflow-dialog milestone, 200/457 overall obligations are verified (43.8%) and 178/220 primary-GUI obligations are verified (80.9%). |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
@@ -39,7 +38,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Commit `3422e1c` resolves nested DataFrame publication remaining dirty after accepted Save and passes the complete Chromium browser lane plus the exact Firefox journey. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
 | Wave 5 / execution and results lifecycle | Primary execution/results batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Commit `4676ffb` adds the real sequential failure, single enriched contextual error, unlocked GUI correction, successful rerun, exact rows, and output-file bytes. Commits `624d986` through `7ab16e6` add real typed image/file viewing, the actual Avivator GUI action, and byte-level mixed-latest versus pinned-run export verification. A visible headed Chromium run of the primary create/run/inspect/save/reopen journey passed at `8574adc`. True thumbnail provisioning and native viewer/dialog checks remain later external/manual boundaries. |
-| Wave 6 / tiered remaining features | Tier 1A gate passed; awaiting owner decision | The fixed 73-cell gate and every current-revision validation requirement passed at `50c1af485edef8ebfaca7971ee99e8717694f85e`. Tier 1B and later systematic obligations remain incomplete; ask the owner whether to continue now or pause. |
+| Wave 6 / tiered remaining features | Tier 1B milestone: primary GUI above 80% | The fixed 73-cell gate passed at `50c1af485edef8ebfaca7971ee99e8717694f85e`, and the owner chose to continue. Commits through `4a03750` add canvas/nested/result/workflow refusal and recovery coverage; ISSUE-012's stale workflow-collision suggestion is fixed. The integrated `4a03750` Chromium browser lane passed 89/89, and the representative create/build/run/inspect/save/reopen journey passed headed. Primary GUI reached 178/220 (80.9%); Tier 1B and later systematic obligations remain incomplete. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.
@@ -51,12 +50,24 @@ The dashboard-content tally is **73 V / 73 required (100.0%)** with 0 runnable g
 This tally was recomputed after integrated workflow CRUD evidence changed the former seven `WF-LIF-003` and `WF-LIF-010` gate cells to `V`; the dashboard verifier passes and a direct lookup of all 73 named `ID.cell` entries finds no non-`V` state.
 The gate passed on the one clean evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`: the audited collection contained 28 exact selectors per browser, all 28 passed in Chromium and all 28 passed in Firefox, the backend/frontend/documentation completion gates passed, and the representative create/edit/connect/run/inspect/save/reopen journey passed headed in Chromium on the available display.
 The reachable-blocker audit found no supported-path critical or high-impact basic-use defect: all ten recorded campaign issues are resolved except ISSUE-006's reviewed `not-a-defect` disposition, and no required gate cell, selector, retry, skip, or unresolved flake remains.
-The current dashboard remains **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**, with 0 blocked cells and 6 unassessed overall cells; these broader denominators make no systematic-completion claim.
+The gate-evaluated dashboard was **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**; the current dashboard is **200 / 457 overall (43.8%)** and **178 / 220 primary GUI (80.9%)**, with 0 blocked cells and 6 unassessed overall cells. Neither set of broader denominators makes a systematic-completion claim.
 Grouping evidence remains important Primary-GUI Tier 1B coverage and is intentionally outside the smaller 73-cell denominator.
 Full browser lanes, external package certification, Tier 1B–3 selectors, native/external application checks, and final systematic certification were not run for this fixed gate and remain owned by their existing campaign inventories and final completion gate.
 The exact commands, durations, environment-only blocked first attempts, and exclusions are retained in [Campaign evidence](platform-test-evidence.md).
 
 ## Ownership and unresolved decisions
+
+The Tier 1B workflow-dialog worktree integrated at `4a03750` verifies Create/Save As invalid/collision refusal and lossless cancellation, fixes ISSUE-012, and was archived with its merged branch deleted.
+The Tier 1B result-selection worktree integrated at `7d9de88` verifies source-pure unrelated-lineage fallback after reload; its worktree was archived and branch deleted.
+The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its worktree was archived and branch deleted.
+ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; after one usage-limited attempt, GPT-6 Astra/high returned `safe-to-fix` with a moderate read-time projection design, now owned by the Sol/medium worker in `.worktrees/issue011-durable-status`.
+The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its worktree was archived and branch deleted.
+The Tier 1B shell-recovery worktree integrated at `75be9c2` verifies the empty-workspace chooser and obsolete startup preference; its worktree was archived and branch deleted.
+The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
+The Tier 1B nested-interface worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `1e84421` verified durable positional publication and atomic exposed-node interface pruning.
+The Tier 1B nested-conflict worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `d86c9b0` verified both explicit GUI conflict choices and parent/private state isolation.
+The Tier 1B execution-progress worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `2c1ff72` verified real worker context through rerun, progress, completion, and reload.
+The unrelated pre-existing `.claude/CLAUDE.md` edit remains owner-owned and outside this campaign task.
 
 The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.

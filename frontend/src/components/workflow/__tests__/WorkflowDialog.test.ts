@@ -92,6 +92,23 @@ describe('WorkflowDialog', () => {
     })
   })
 
+  it('drops a collision suggestion when the user changes the destination name', async () => {
+    const wrapper = mountDialog()
+    const input = wrapper.find('[data-testid="workflow-display-name-input"]')
+    await input.setValue('Occupied workflow')
+    await wrapper.setProps({ suggestedName: 'occupied_workflow_2' })
+    expect((input.element as HTMLInputElement).value).toBe('Occupied workflow')
+    expect(wrapper.find('[data-testid="workflow-generated-name"]').text()).toContain('occupied_workflow_2')
+
+    await input.setValue('Different workflow')
+    expect(wrapper.find('[data-testid="workflow-generated-name"]').text()).toContain('different_workflow')
+    await wrapper.find('[data-testid="workflow-dialog-submit"]').trigger('click')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      name: 'different_workflow',
+      display_name: 'Different workflow',
+    })
+  })
+
   it('disables submit when the display name cannot produce an id', async () => {
     const wrapper = mountDialog({ initialDisplayName: '!!!' })
 

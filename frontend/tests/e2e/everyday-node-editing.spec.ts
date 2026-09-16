@@ -445,6 +445,99 @@ test.describe('everyday node editing', () => {
     )).status()).toBe(404)
   })
 
+  test('clearing an upstream result stales its dependent and rerun restores current rows', async ({ page }) => {
+    const runResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    const query = async (id: string) => page.request.post(
+      `${API_BASE}/api/v1/nodes/${id}/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    const originalSource = await query(SOURCE_ID)
+    const originalTarget = await query(TARGET_ID)
+    expect(originalSource.ok()).toBeTruthy()
+    expect(originalTarget.ok()).toBeTruthy()
+    expect(await originalTarget.json()).toMatchObject({
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      total_rows: 3,
+    })
+
+    await node(page, SOURCE_ID).click()
+    const panel = await openNodesPanel(page)
+    const baseline = await fetchDraft(page, workflowName)
+    const clearResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/clear')
+      && response.request().method() === 'POST'
+    ))
+    await panel.getByTestId('clear-node-outputs').click()
+    await page.getByTestId('node-destructive-confirm').click()
+    const cleared = await clearResponse
+    expect(cleared.status()).toBe(200)
+    expect(await cleared.json()).toMatchObject({
+      node_statuses: {
+        [SOURCE_ID]: { status: 'unexecuted', cached: false },
+        [TARGET_ID]: { status: 'out_of_date', cached: false },
+      },
+    })
+    await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
+    await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
+    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await query(SOURCE_ID)).status()).toBe(404)
+    expect((await query(TARGET_ID)).ok()).toBeTruthy()
+
+    await page.reload()
+    await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
+    await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
+    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await query(SOURCE_ID)).status()).toBe(404)
+    expect((await query(TARGET_ID)).ok()).toBeTruthy()
+
+    const rerun = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    const rebuild = page.getByTestId('out-of-date-confirm')
+    await expect(rebuild).toContainText('Rebuild nodes before running?')
+    await expect(rebuild.locator('li')).toHaveText([TARGET_ID])
+    await page.getByTestId('out-of-date-continue').click()
+    const rerunAccepted = await rerun
+    expect(rerunAccepted.status()).toBe(202)
+    expect(await rerunAccepted.json()).toMatchObject({
+      status: 'started',
+      workflow_id: workflowName,
+      draft_revision: baseline.draft_revision,
+      execution_id: expect.any(String),
+    })
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+    await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-executed/)
+    await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-executed/)
+    expect((await query(SOURCE_ID)).ok()).toBeTruthy()
+    const restored = await query(TARGET_ID)
+    expect(restored.ok()).toBeTruthy()
+    expect(await restored.json()).toMatchObject({
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      total_rows: 3,
+    })
+    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+  })
+
   test('refuses to clear outputs when the pending draft cannot be accepted', async ({ page }) => {
     const runResponse = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run')
@@ -611,6 +704,34 @@ test.describe('everyday node editing', () => {
       target_input: null,
       target_position: 0,
     }])
+  })
+
+  test('refuses a column-to-DataFrame connection without replacing the accepted edge', async ({ page }) => {
+    const baseline = await fetchDraft(page, workflowName)
+    const columnOutput = node(page, SOURCE_ID).locator('.body-outputs .vue-flow__handle').first()
+    const freeDataframeInput = node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle').last()
+    await expect(columnOutput).toBeVisible()
+    await expect(freeDataframeInput).toBeVisible()
+    await expect(node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle')).toHaveCount(2)
+
+    const targetBox = await freeDataframeInput.boundingBox()
+    expect(targetBox).not.toBeNull()
+    await dragPointer(page, columnOutput, {
+      x: targetBox!.x + targetBox!.width / 2,
+      y: targetBox!.y + targetBox!.height / 2,
+    })
+
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expect(node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle')).toHaveCount(2)
+    await page.waitForTimeout(600) // Allow the draft persistence debounce to expose an unintended edit.
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+
+    await page.reload()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    const reloaded = await fetchDraft(page, workflowName)
+    expect(reloaded.graph).toEqual(baseline.graph)
   })
 
   test('undoes and redoes mixed node, edge, and parameter edits one action at a time', async ({ page }) => {

@@ -441,6 +441,9 @@ async def clear_execution(
         else:
             async with execution_manager.exclusive_idle_mutation():
                 statuses = await clear_in_current_context()
+                execution_manager.apply_cache_clear_statuses(
+                    body.workflow_name, statuses
+                )
     except ExecutionConflictError as exc:
         raise HTTPException(
             status_code=423,

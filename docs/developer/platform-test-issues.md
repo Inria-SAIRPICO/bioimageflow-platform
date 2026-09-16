@@ -157,6 +157,33 @@ The browser regression proves destination graph-owned name/display name, distinc
 It passed Chromium 1/1 in 13s and Firefox 1/1 in 15s; `scripts/test check frontend` passed 1,297 tests plus lint, type checking, and build in 19s; and `scripts/test check browser` passed all 83 Chromium journeys in 222s with no failures, skips, or retries.
 Invalid destination input, duplicate-service failure/rollback, stale identity refusal, and source-owning copy variants were not exercised by this repair and remain separate dashboard gaps.
 
+## ISSUE-011 — Clear status reverts after backend restart
+
+Status: `safe-to-fix` after GPT-6 Astra/high read-only review; a code-traced durable-authority defect remains after the bounded same-process reconnect fix `fe0cf9d`.
+In a two-node Direct workflow, Run followed by Clear on the upstream node removes only its latest result and marks it `unexecuted` with its dependent `out_of_date`; the live UI and same-process browser reload now agree.
+The stored accepted root draft still contains pre-Clear `validation.node_statuses`, because `_read_validated_authority_snapshot()` returns an existing draft verbatim, while a new `ExecutionManager` starts with empty live statuses.
+After stopping and restarting the backend against the same workspace, reopening can therefore display the cleared source as `executed` even though its latest result query returns 404.
+The restart sequence is code-traced, not yet executed as a process-level reproduction; it must be reproduced before closure.
+The repair must keep the accepted graph/revision and CAS contract unchanged, preserve historical `last_result`, and avoid resurrecting selected output pointers.
+The specialist recommends fresh cache-status projection on authoritative accepted-draft reads, using the compiled accepted graph, public workflow plan, and retained latest-output metadata rather than persisting Clear-adjusted validation.
+An enabled `pending_upstream` node with a retained latest output must present `out_of_date`; without retained output it remains `unexecuted`, so globally remapping that library plan state would be wrong.
+Compile outside the workflow mutation lock, then recheck workflow generation, storage path, accepted graph and revision and project plan/latest status under the same lock used by Clear commit; retry a changed snapshot.
+This is moderate backend correctness work without a new schema or owner decision, but not a one-line fix: writing status into the draft after cache deletion would leave a crash/write-failure gap, and Clear has no accepted draft revision with which to fence that write.
+The source revision is `fe0cf9d`; authoritative contracts include v1 §2.4.5, v2 execution/cache semantics, and `PLATFORM_CONTEXT.md` result-lifecycle invariants.
+The first GPT-6 Astra/high request did not execute because of a usage limit; a subsequent read-only review returned `safe-to-fix` on current product revision `d5e45ee` and supplied the bounded design above.
+The `campaign/issue011-durable-status` Sol/medium worker owns a process-restart reproduction, scoped repair, identity/race tests, and exact GUI evidence where feasible.
+The specialist performed no process-level reproduction or tests; do not close this issue until those regressions and affected completion checks pass.
+
+## ISSUE-012 — Workflow collision suggestion survives a later name edit
+
+Status: resolved by `4a03750` with a bounded Sol/medium repair; no specialist review was needed because the dialog contract and local cause were clear.
+The Create/Save As collision path offered an alternative workflow ID after HTTP 409, but the dialog kept that suggestion as a persistent prop override when the user subsequently changed the display name.
+The preview and submitted destination could therefore remain tied to the old collision rather than the newly entered name.
+The repair keeps the suggestion active only until the user edits the display name, then derives a fresh ID; it preserves the server's collision proposal before that edit and does not alter the backend collision contract.
+A focused dialog unit asserts the new preview and submitted ID; a real Chromium/Firefox Create and Save As journey proves invalid-name refusal, occupied-ID 409, suggestion replacement, cancellation, unchanged source and occupied workflow state, absent canceled destination, and exact reload identity.
+At patch-equivalent task revision `4823752`, the focused unit passed in 2s, exact Chromium in 14s, exact Firefox in 19s, `scripts/test check frontend` passed 1,299 units plus lint/typecheck/build in 28s, and cross-browser smoke passed 16/16 in each browser in 109s; the integrated Chromium browser lane passed 89/89 at `4a03750` in 347s.
+V1 workflow-dialog behavior was clarified in the same task.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.

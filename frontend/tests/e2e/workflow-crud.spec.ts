@@ -111,6 +111,102 @@ test.describe('workflow CRUD dialogs', () => {
     await deleteWorkflowIfExists(page, name)
   })
 
+  test('create and Save As refuse invalid or occupied names without changing the open workflow', { tag: '@critical' }, async ({ page }) => {
+    const sourceLabel = uniqueName('Dialog Source', page)
+    const occupiedLabel = uniqueName('Dialog Occupied', page)
+    const cancelledLabel = uniqueName('Dialog Cancelled', page)
+    const source = deriveWorkflowId(sourceLabel)
+    const occupied = deriveWorkflowId(occupiedLabel)
+    const cancelled = deriveWorkflowId(cancelledLabel)
+    try {
+      await createWorkflow(page, occupied, occupiedLabel)
+      await chooseWorkflowItem(page, 'New')
+      const dialog = page.getByTestId('workflow-dialog')
+      await expect(dialog).toBeVisible()
+      await page.getByTestId('workflow-display-name-input').fill(sourceLabel)
+      await page.getByTestId('workflow-dialog-submit').click()
+      await expect(dialog).not.toBeVisible()
+      await expect(page.getByTestId('workflow-title')).toContainText(sourceLabel)
+
+      const savedSource = page.waitForResponse(response =>
+        response.url().endsWith(`/api/v1/workflows/${source}`)
+        && response.request().method() === 'PUT'
+        && response.status() === 200,
+      )
+      await chooseWorkflowItem(page, 'Save')
+      await savedSource
+
+      const sourceBefore = await savedWorkflow(page, source)
+      const sourceDraftBefore = await acceptedDraft(page, source)
+      const occupiedBefore = await savedWorkflow(page, occupied)
+      const listBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json()
+
+      await chooseWorkflowItem(page, 'New')
+      await expect(dialog).toBeVisible()
+      await page.getByTestId('workflow-display-name-input').fill('!!!')
+      await expect(page.getByTestId('workflow-display-name-error')).toHaveText('Use at least one letter or number.')
+      await expect(page.getByTestId('workflow-dialog-submit')).toBeDisabled()
+      await page.getByTestId('workflow-display-name-input').fill(occupiedLabel)
+      const refusedCreate = page.waitForResponse(response =>
+        response.url().endsWith('/api/v1/workflows')
+        && response.request().method() === 'POST',
+      )
+      await page.getByTestId('workflow-dialog-submit').click()
+      expect((await refusedCreate).status()).toBe(409)
+      await expect(dialog).toBeVisible()
+      await expect(page.getByTestId('workflow-generated-name')).toContainText(`${occupied}_2`)
+      await page.getByTestId('workflow-dialog-cancel').click()
+      await expect(dialog).not.toBeVisible()
+
+      await chooseWorkflowItem(page, 'Save As')
+      await expect(dialog).toBeVisible()
+      await page.getByTestId('workflow-display-name-input').fill('!!!')
+      await expect(page.getByTestId('workflow-dialog-submit')).toBeDisabled()
+      await page.getByTestId('workflow-display-name-input').fill(occupiedLabel)
+      const refusedCopy = page.waitForResponse(response =>
+        response.url().endsWith(`/api/v1/workflows/${source}`)
+        && response.request().method() === 'PATCH',
+      )
+      await page.getByTestId('workflow-dialog-submit').click()
+      expect((await refusedCopy).status()).toBe(409)
+      await expect(dialog).toBeVisible()
+      await expect(page.getByTestId('workflow-generated-name')).toContainText(`${occupied}_2`)
+      await page.getByTestId('workflow-display-name-input').fill(cancelledLabel)
+      await expect(page.getByTestId('workflow-generated-name')).toContainText(cancelled)
+      await page.getByTestId('workflow-dialog-cancel').click()
+      await expect(dialog).not.toBeVisible()
+
+      await expect(page.getByTestId('workflow-title')).toContainText(sourceLabel)
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: sourceLabel })).toHaveCount(1)
+      expect(await savedWorkflow(page, source)).toEqual(sourceBefore)
+      expect(await acceptedDraft(page, source)).toMatchObject({
+        graph: sourceDraftBefore.graph,
+        base_saved_revision: sourceDraftBefore.base_saved_revision,
+        dirty_against_saved: false,
+      })
+      expect(await savedWorkflow(page, occupied)).toEqual(occupiedBefore)
+      expect(await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json()).toEqual(listBefore)
+      expect((await page.request.get(`${API_BASE}/api/v1/workflows/${cancelled}`)).status()).toBe(404)
+
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toContainText(sourceLabel)
+      expect(await savedWorkflow(page, source)).toEqual(sourceBefore)
+      expect(await acceptedDraft(page, source)).toMatchObject({
+        graph: sourceDraftBefore.graph,
+        base_saved_revision: sourceDraftBefore.base_saved_revision,
+        dirty_against_saved: false,
+      })
+      expect(await savedWorkflow(page, occupied)).toEqual(occupiedBefore)
+      expect(await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json()).toEqual(listBefore)
+      expect((await page.request.get(`${API_BASE}/api/v1/workflows/${cancelled}`)).status()).toBe(404)
+    } finally {
+      await page.goto('about:blank')
+      await deleteWorkflowIfExists(page, cancelled)
+      await deleteWorkflowIfExists(page, source)
+      await deleteWorkflowIfExists(page, occupied)
+    }
+  })
+
   test('import collision rename persists the chosen visible name', { tag: '@critical' }, async ({ page }) => {
     const originalLabel = uniqueName('Original Import', page)
     const original = deriveWorkflowId(originalLabel)

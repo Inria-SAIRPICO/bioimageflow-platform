@@ -46,9 +46,12 @@ While a worker runs, review another independent feature's coverage or prepare th
 For a remote CI, validation, or publication run, record its URL and exact source revision, then poll only for meaningful state changes while continuing independent work.
 Do not repeatedly ingest complete job payloads when the run status and first failing step are sufficient.
 
-Use up to two independent ordinary workers, leaving a slot for Astra.
+Use at most two independent ordinary workers concurrently, including while a specialist review is pending; reserve the remaining agent slot for Astra or urgent integration review.
+Do not fill a free slot merely to maximize parallelism, and do not start two browser-heavy completion lanes at once when their shared machine resources could make failures ambiguous.
 Parallel writable tasks require separate worktrees under `.worktrees/<task_name>` with independent dependencies and runtime state as required by `AGENTS.md`.
-Give each task one coherent feature or issue and explicit write ownership; do not split tightly coupled fixes merely to occupy agents.
+Give each task one coherent user journey or issue, the related `ID.cell` obligations it may close, explicit write ownership, and a completion-check choice from `docs/testing.md`.
+Prefer one representative success plus its immediate refusal/recovery and identity assertions in an existing journey when that closes related cells without turning the test into a long multi-feature chain.
+Do not split tightly coupled fixes into one-cell assignments merely to occupy agents; do not add duplicate browser journeys when strengthening an existing one supplies the missing evidence.
 Read-only investigations may share the primary checkout.
 A blocked feature does not block independent work unless its fixture, contract, or safety issue affects them too.
 
@@ -58,6 +61,9 @@ Commit each coherent validated issue or feature immediately when resolved, toget
 Do not start another writable task in that checkout until the previous completed task is committed.
 Workers review and commit only their own task changes on their branches; the orchestrator reviews the commit, integrates it, and records the resulting revision and evidence.
 Shared progress/issue records belong to the orchestrator; integrate their updates at the same task boundary and commit them promptly if they cannot be included in the implementation commit.
+At that boundary, update the inventory, dashboard, evidence, and short checkpoint together, run `scripts/test check docs` once on the consolidated documentation diff, and commit the documentation with or immediately after the feature commit.
+Use the dashboard verifier for interim count checks; avoid separate administrative ownership, status, and worktree-archival commits when one resolved-batch record suffices.
+An interruption, open defect, remote milestone, or new owner decision still requires an immediate durable record rather than waiting for unrelated work.
 Do not accumulate resolved independent issues, stage another worker's files, or include temporary plans and raw logs in commits.
 An unfinished failing reproduction remains explicitly unfinished; preserve its owner, worktree, selector, and evidence before interruption without claiming a passing fix.
 After integration, move the clean completed worktree to trash with `mv`, prune its registration, and delete only its integrated branch, following `AGENTS.md`.
@@ -81,6 +87,7 @@ Interrupt this order only for a reproduced security, data-loss, corruption, or w
 
 The earlier waves remain useful evidence and ordering history: ISSUE-005, the main create/run journey, everyday editing, nested workflows, and execution/results are completed batches only to the extent recorded in the dashboard and evidence file.
 Within Tier 1, take the highest-reach unfinished normal GUI path first, then its immediate loss/wrong-result/refusal/recovery boundaries, before less frequent variants of the same feature.
+Rank the next batches by ordinary user frequency and the impact of an incorrect result, lost work, or wrong identity; use the dashboard's remaining cells to choose the batch, not a convenient isolated test or a raw test-count target.
 The three detailed inventories remain the feature backlog; this tier table classifies scheduling and does not replace or shorten them.
 
 Build small independent journeys around these batches instead of one long test whose early failure hides later features.
@@ -237,6 +244,9 @@ If a visible display is unavailable, retain a Playwright trace, video, or screen
 Use `scripts/test focus` without campaign-wide selection flags for exact failing selectors.
 After a fix, run the exact test once; use `--repeat-each=5` only for a suspected timing/race defect.
 Run the applicable completion lane from `docs/testing.md` before declaring the batch complete.
+For a localized test-only cross-browser assertion, run its exact Chromium and Firefox selectors, then the documented localized cross-browser completion check; for a browser interaction or persistence implementation change, honor the documented browser completion lane.
+Do not add a complete browser-project run to a passing localized batch solely for reassurance; reserve additional broad browser acceptance for substantial GUI milestones, browser/E2E infrastructure changes, and final certification.
+When a completion check already subsumes an earlier phase, do not run both; if a late browser phase fails, retain the unchanged successful phases and reproduce that exact selector and project before rerunning only invalidated checks.
 Reuse successful unchanged phases after a late failure and state their source revision; rerun only checks invalidated by subsequent edits.
 Do not stack quick, scoped, and full checks when the later scheduled command subsumes the earlier work.
 Run comprehensive browser acceptance at substantial milestones and final certification, not after every edit.
@@ -246,6 +256,9 @@ Run comprehensive browser acceptance at substantial milestones and final certifi
 Sol workers may repair routine, bounded defects autonomously when the intended behavior is explicit, the cause is reproduced or decisive, and regressions preserve the contract.
 Use Astra/high for conflicting specifications, unclear library semantics or fixture validity, identity/data-loss risk, a proposed semantic redesign, or one unsuccessful bounded repair whose cause remains unclear.
 A production failure alone does not require specialist escalation if those conditions are absent.
+Before escalation, a Sol worker should capture the smallest reachable reproduction, authoritative contract, likely ownership boundary, and failed bounded attempts; a routine local event-wiring or assertion defect with clear intent stays with Sol.
+For a risky change, send Astra one bounded decision packet with an explicit invariant checklist covering identity, concurrency, persistence, rollback, and affected user-visible outcomes.
+Request another Astra pass only when the implementation materially changes those invariants or a concrete unresolved safety concern remains; record each pass and its disposition in the issue or evidence record.
 
 Before classifying a finding as release-blocking or P1, record the exact reachable platform entry path, credible trigger, affected user outcome, and smallest reproduction.
 An artificial dependency state that platform code neither installs nor exposes is a dependency follow-up unless it demonstrates a reachable safety or correctness failure.

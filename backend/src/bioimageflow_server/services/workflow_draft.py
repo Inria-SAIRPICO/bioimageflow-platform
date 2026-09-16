@@ -24,8 +24,10 @@ from bioimageflow_server.services.agent_workspace_context import (
     PLATFORM_SOURCE_DIR,
     agent_workspace_instructions,
 )
-from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.graph_compiler import GraphCompiler
+from bioimageflow_server.services.graph_validator import GraphValidationService, validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
+from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_store import (
     WorkflowStoreService,
     normalize_workflow_draft_identity,
@@ -303,7 +305,7 @@ class WorkflowDraftService:
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
         store = self._store()
-        draft = self._read_validated_snapshot(store, workflow_id)
+        draft = self._read_projected_draft(store, workflow_id)
         self.write_agent_context(
             store,
             workflow_id=workflow_id,
@@ -609,6 +611,60 @@ class WorkflowDraftService:
         workflow_id: str,
     ) -> WorkflowDraftResponse:
         return self._read_validated_authority_snapshot(store, workflow_id).draft
+
+    def _read_projected_draft(
+        self,
+        store: WorkflowStoreService,
+        workflow_id: str,
+    ) -> WorkflowDraftResponse:
+        """Refresh only read-time statuses without changing accepted draft authority.
+
+        Compilation is outside the workflow mutation lock. The final plan and
+        latest-output reads share Clear's commit lock, after the draft and
+        workflow storage identity have been checked again.
+        """
+        validator = GraphValidationService(store.tool_registry)
+        while True:
+            authority = self._read_validated_authority_snapshot(store, workflow_id)
+            draft = authority.draft
+            compilation = GraphCompiler(store.tool_registry).compile(
+                draft.graph,
+                storage_path=authority.storage_path,
+                settings=self._settings_provider(),
+            )
+            with store.workflow_mutation(workflow_id):
+                if (
+                    store.workflow_generation(workflow_id) != authority.identity_generation
+                    or store.get_storage_path(workflow_id) != authority.storage_path
+                ):
+                    continue
+                current = self._read_current_for_mutation_locked(store, workflow_id)
+                if (
+                    current.draft_revision != draft.draft_revision
+                    or current.graph != draft.graph
+                    or current.base_saved_revision != draft.base_saved_revision
+                    or current.updated_at != draft.updated_at
+                    or current.updated_by != draft.updated_by
+                    or current.dirty_against_saved != draft.dirty_against_saved
+                ):
+                    continue
+                results = ResultStoreService(authority.storage_path, store.tool_registry)
+                projected = validator.validation_from_compilation(
+                    draft.graph,
+                    compilation,
+                    dev_mode=self._dev_mode_provider(),
+                    has_retained_latest=lambda node_id: (
+                        results.get_latest_record_dir(node_id, storage_path=authority.storage_path)
+                        is not None
+                    ),
+                )
+                return draft.model_copy(
+                    update={
+                        "validation": draft.validation.model_copy(
+                            update={"node_statuses": projected.node_statuses}
+                        )
+                    }
+                )
 
     def _read_validated_authority_snapshot(
         self,

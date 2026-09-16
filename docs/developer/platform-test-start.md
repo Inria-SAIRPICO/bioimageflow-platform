@@ -27,13 +27,14 @@ This documentation change does not launch a new campaign session or alter global
 Execute the BioImageFlow Platform testing campaign in this repository.
 Use GPT-5.6 Sol with high reasoning as the main orchestrator and GPT-5.6 Sol with medium reasoning for focused ordinary workers.
 The objective is to test and strengthen the platform, fix demonstrated bugs, and systematically cover all implemented in-scope features.
-Use the plan's strict tiers: finish runnable basic/common GUI readiness obligations first, then important extensions, then advanced/native/external boundaries and final systematic closure.
+Use the plan's strict tiers and resume the highest-priority runnable obligation in the current tier; the Basic-Use Gate is already passed.
 Do not assign a lower tier while a higher-tier runnable obligation remains; priority changes execution order, never the final coverage requirements.
 Keep the orchestrator context focused on the feature-status table, current decisions, active ownership, and next three tasks.
 Delegate detailed investigation, implementation, and focused validation in bounded packets; consume concise outcomes and failure excerpts, not full logs or worker transcripts.
-For an issue that is difficult, unsafe, or unclear, delegate a bounded investigation to GPT-6 Astra with high reasoning.
-If Astra still cannot establish the intended contract and a safe repair, stop the whole campaign, record the issue, and ask me one concrete question.
-Otherwise implement and validate the established repair autonomously.
+Keep routine, bounded defects with Sol when intent and the repair boundary are clear.
+For conflicting contracts, identity/data-loss risk, semantic redesign, unclear library behavior, or a failed bounded repair, delegate one focused decision packet to GPT-6 Astra with high reasoning and an identity/concurrency/persistence/rollback invariant checklist.
+Request another specialist pass only for materially changed safety invariants or an unresolved concrete concern.
+If Astra returns needs-owner on a shared-foundation issue, stop dependent work, record the issue, and ask me one concrete question; otherwise implement the established repair and continue independent work.
 
 Read AGENTS.md and PLATFORM_CONTEXT.md, then docs/developer/platform-test-progress.md, docs/developer/platform-test-plan.md, and the open entries in docs/developer/platform-test-issues.md.
 Read only the relevant coverage inventory and specifications for each assigned task.
@@ -41,39 +42,40 @@ Inspect git status/log and reconcile the checkpoint with actual files and instal
 Do not assume historical workers still exist or temporary logs are available.
 Do not repeat completed library releases, audits, or successful checks unless changes invalidate their evidence.
 
-Continue from the first runnable action in the progress file after reconciling actual Git and worker state.
-ISSUE-005 has a preserved Run Selected reproduction awaiting contract assessment; ISSUE-001 and the scope-selection foundations are already resolved.
+Continue from the first runnable action in the progress file after reconciling actual Git and worker state; do not treat historical issue examples in this prompt as an active queue.
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds exactly one node, and drag is a separate creation gesture.
-Prioritize the main create/edit/connect/run/inspect/save/reopen journey and its everyday lifecycle safety through the Basic-Use subset.
-If the owner continues, finish the remaining Primary-GUI work, including permanent-P0 multi-node grouping, nested workflows, real-worker failure/cancellation/recovery, and richer result use, before non-primary important extensions or specialist boundaries.
+Prioritize remaining Primary-GUI journeys by ordinary use and risk of lost work, wrong identity, or wrong results before non-primary important extensions or specialist boundaries.
 Preserve complete inventory obligations for negative, boundary, deployment, integration, native, and external cases after the basic paths.
 Use disposable state for reproduction; do not change test expectations to manufacture a pass.
-Keep writes disjoint and use at most two ordinary workers alongside the master, leaving a slot for Astra.
+Keep writes disjoint and use at most two ordinary workers alongside the master, leaving a slot for Astra or urgent integration review; do not fill the slot merely to maximize parallelism.
 When more than one agent may write in parallel, give each agent a dedicated worktree under `.worktrees/<task_name>`; never let parallel agents share one writable checkout.
-Pass fresh, bounded task packets with explicit model/reasoning overrides rather than full-history forks.
+Pass fresh, bounded task packets with explicit model/reasoning overrides rather than full-history forks; give each worker one coherent user journey, related dashboard `ID.cell` targets, owned paths, and the scoped completion check.
+Strengthen an adequate existing browser journey to cover related refusal/recovery and identity cells before adding a near-duplicate test; avoid one long test whose early failure hides separate features.
 Allow independent main-feature work while a bounded issue is investigated; freeze only dependent work unless the issue affects shared foundations.
 
 Exclude parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines from platform certification.
 Keep Direct and test real Wetlands workers sequentially with one worker.
-Comprehensive Chromium/Firefox GUI acceptance is opt-in after large changes, not part of every development edit.
-Use scripts/test and its documented focused/completion gates with audited per-case exclusions.
-Reuse valid unchanged phase results and existing scope selectors; do not build more runner infrastructure without a concrete testing need.
+Run exact Chromium and Firefox selectors for a changed GUI journey, then use the smallest applicable `scripts/test` completion lane documented in `docs/testing.md`.
+For localized browser test-only changes, do not add a complete browser-project run solely for reassurance; browser implementation/persistence changes, broad infrastructure changes, major GUI milestones, and final certification retain their documented broader checks.
+Do not overlap browser-heavy completion lanes when shared machine resources could make failures ambiguous.
+After a late failure, reproduce the exact failing selector/project and retain successful unchanged phases; rerun only invalidated checks.
+Use audited per-case exclusions.
+Reuse existing scope selectors; do not build more runner infrastructure without a concrete testing need.
 Make clean changes without backward-compatibility shims; update affected specifications, documentation, fixtures, and tests.
 Commit each coherent validated task as soon as its issue or bounded task is resolved, including its durable progress update, without staging unrelated files.
+Consolidate that task's inventory, dashboard, evidence, and checkpoint edits; run `scripts/test check docs` once for the batch and commit the documentation with or immediately after its product/test commit.
+Use the dashboard verifier for interim counts instead of repeated full documentation builds; avoid separate administrative ownership and worktree-archival commits when the task-boundary record suffices.
+Record an interruption, open defect, remote milestone, or owner decision immediately even when no feature is complete.
 Do not begin another writable task in that checkout until the completed task is committed; keep restart points clean so the campaign can be interrupted safely.
 Maintain the progress file, issue decisions, and feature inventories so another fresh session can continue without this conversation.
 Keep completed validation history in platform-test-evidence.md and keep the active checkpoint short and internally consistent.
-Before Wave 6, normalize the inventories into a stable-ID dashboard and report verified applicable obligations over the total, separately for the whole campaign and primary GUI coverage; do not use raw test counts as completion percentages.
+Use the established stable-ID dashboard to report verified applicable obligations over the total, separately for the whole campaign and primary GUI coverage; do not use raw test counts as completion percentages.
 After remote CI, validation, publication, or dependency-availability milestones, update and commit the durable checkpoint/evidence before starting unrelated writable work; after interruption, reconcile the remote state before repeating an operation.
 At each major GUI-wave boundary, run one representative primary Playwright journey headed when a visible display is available, otherwise retain trace/video/screenshots and record that no window was shown.
 Before treating a specialist finding as P1 or release-blocking, prove its reachable platform entry path and user impact; keep artificial, unexposed dependency states as follow-ups without weakening reachable safety findings.
-After integrating all completed feature branches, close the plan's fixed 73-cell Basic-Use subset before broader Primary-GUI, important-extension, or advanced/native work.
-Recompute its score from the verified dashboard, list every non-verified `ID.cell` by state, and do not carry an older percentage forward.
-Evaluate the gate on one clean current revision: all 73 cells must be verified, reachable critical/high basic-use blockers must be absent, backend/frontend/docs completion checks and every exact gate browser selector in Chromium and Firefox must pass without intervening product changes, and one representative basic journey must have same-revision headed Chromium confidence or the recorded artifact-backed no-display alternative.
-A passing same-revision browser-all lane may supply the browser-selector evidence, but do not make unrelated grouping, recursive, worker, export, native, or specialist failures hidden gate requirements.
-Only after that evidence is durably committed may the owner choose either to continue through important extensions and advanced/external work or to pause/stop with the systematic campaign explicitly incomplete.
-Do not infer or make the early-stop decision autonomously; if the gate fails, continue the highest-priority basic/common repair.
-If the owner stops early, record the evaluated SHA, commands/results/durations, headed or artifact evidence, overall and primary dashboard percentages, blocked/unassessed counts, reachable risks and limitations, and the first three resumable backlog actions; label it basic-use gate passed and systematic campaign paused/incomplete, never complete.
+The fixed 73-cell Basic-Use Gate passed on the evaluated revision recorded in the progress file, and the owner chose to continue with Tier 1B.
+Preserve that evidence; reevaluate the gate only if later relevant changes invalidate it, following the plan's exact matrix and current-revision requirements.
+An owner-approved early pause leaves the systematic campaign incomplete and requires a durable risk/backlog checkpoint; do not infer such a decision from a status question.
 Do not claim completion until every in-scope feature has verified applicable scenarios, all primary GUI journeys pass Chromium and Firefox, bugs are resolved, and external/manual obligations are completed or explicitly accepted by the owner as limitations.
 Answer status questions briefly and continue the active campaign unless I explicitly pause it or change the objective.
 Proceed until the campaign is complete or an escalation genuinely requires my decision.

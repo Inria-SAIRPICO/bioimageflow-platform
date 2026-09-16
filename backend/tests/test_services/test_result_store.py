@@ -81,6 +81,14 @@ def test_get_latest_dataframe_returns_none_for_missing_node(tmp_path: Path) -> N
     assert _store(tmp_path).get_latest_dataframe("n1") is None
 
 
+def test_get_latest_record_dir_resolves_scoped_nested_node(tmp_path: Path) -> None:
+    record_dir = _record_dir(tmp_path, "child/inner")
+    store = _store(tmp_path)
+
+    assert store.get_latest_record_dir("child/inner") == record_dir
+    assert store.get_latest_record_dir("inner") is None
+
+
 def test_get_latest_dataframe_returns_none_for_missing_latest_link(tmp_path: Path) -> None:
     (tmp_path / "views" / "runs" / "run_1" / "nodes" / "n1").mkdir(parents=True)
     assert _store(tmp_path).get_latest_dataframe("n1") is None

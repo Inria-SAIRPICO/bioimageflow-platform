@@ -722,10 +722,64 @@ test.describe('Canvas interactions', () => {
         String(row.score),
       ]),
     ])
+
+  })
+
+  test('refuses an incomplete numeric range without losing result rows, then recovers', async ({ page }) => {
+    const resultNode = await addToolNode(page, 'ResultTableFixture', { x: 280, y: 180 })
+    const nodeId = await resultNode.getAttribute('data-id')
+    expect(nodeId).toBeTruthy()
+    await expect.poll(async () => (await currentDraft(page, workflowName)).validation.valid).toBe(true)
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    await resultNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const nodeTable = page.getByTestId('merged-data-table')
+    const dataTable = nodeTable.locator('.p-datatable')
+    const visibleRows = dataTable.locator('.p-datatable-tbody tr')
+    await expect(visibleRows).toHaveCount(60)
+
+    await dataTable.getByRole('button', { name: 'Filter score' }).click()
+    await page.getByRole('combobox', { name: 'Filter operator' }).click()
+    await page.getByRole('option', { name: 'Between' }).click()
+    await page.getByRole('spinbutton', { name: 'Filter value', exact: true }).fill('20')
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await expect(visibleRows).toHaveCount(60)
+
+    await page.getByRole('spinbutton', { name: 'Second filter value' }).fill('40')
+    await page.getByRole('spinbutton', { name: 'Second filter value' }).press('Tab')
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeEnabled()
+    const ranged = await projectionQueryAfter(page, async () => {
+      await page.getByRole('button', { name: 'Apply' }).click()
+    })
+    expect(ranged.request.filters).toEqual([
+      { column: 's0:score', operator: 'between', value: 20, second_value: 40 },
+    ])
+    const expectedRows = Array.from({ length: 60 }, (_, sourceRow) => sourceRow)
+      .filter(sourceRow => {
+        const score = (sourceRow * 17) % 61
+        return score >= 20 && score <= 40
+      })
+    expect(ranged.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows)
+    await expect(visibleRows).toHaveCount(expectedRows.length)
+
+    const restored = await projectionQueryAfter(page, async () => {
+      await nodeTable.getByTestId('node-data-active-filters').getByRole('button', { name: 'Clear filters' }).click()
+    })
+    expect(restored.request.filters).toEqual([])
+    expect(restored.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(Array.from({ length: 60 }, (_, sourceRow) => sourceRow))
+    await expect(visibleRows).toHaveCount(60)
   })
 
   test('merges related selected results, stacks independent results, and restores explicit widths', async ({ page }) => {
-    test.setTimeout(45_000)
+    test.setTimeout(60_000)
     const seedNode = await addToolNode(page, 'SeedNumbers', { x: 120, y: 160 })
     const incrementNode = await addToolNode(page, 'IncrementNumbers', { x: 440, y: 160 })
     await incrementNode.click()
@@ -871,10 +925,24 @@ test.describe('Canvas interactions', () => {
     )
     const seedStackedTable = page.getByTestId(`node-data-table-${seedId}`)
     const independentStackedTable = page.getByTestId(`node-data-table-${independentId}`)
-    await expect(seedStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(3)
-    await expect(independentStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(60)
-    await expect(seedStackedTable.locator('.p-datatable-tbody tr').nth(2)).toContainText('three')
-    await expect(independentStackedTable.locator('.p-datatable-tbody tr').nth(59)).toContainText('drop-59')
+    async function expectIndependentStackedRows() {
+      await expect(mergedTable).toHaveCount(0)
+      await expect(seedStackedTable.locator('.p-datatable-thead th')).toHaveCount(2)
+      await expect(independentStackedTable.locator('.p-datatable-thead th')).toHaveCount(3)
+      await expect(seedStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(3)
+      await expect(independentStackedTable.locator('.p-datatable-tbody tr')).toHaveCount(60)
+      expect(await seedStackedTable.locator('.p-datatable-tbody tr').evaluateAll(rows => rows.map(row =>
+        [...row.querySelectorAll('td')].map(cell => cell.textContent?.trim()),
+      ))).toEqual([['1', 'one'], ['2', 'two'], ['3', 'three']])
+      expect(await independentStackedTable.locator('.p-datatable-tbody tr').evaluateAll(rows => rows.map(row =>
+        [...row.querySelectorAll('td')].map(cell => cell.textContent?.trim()),
+      ))).toEqual(Array.from({ length: 60 }, (_, sourceRow) => [
+        String(sourceRow),
+        `${sourceRow % 2 === 0 ? 'keep' : 'drop'}-${String(sourceRow).padStart(2, '0')}`,
+        String((sourceRow * 17) % 61),
+      ]))
+    }
+    await expectIndependentStackedRows()
 
     const restoredMergedResponse = page.waitForResponse(response =>
       response.url().endsWith('/api/v1/data-table/query')
@@ -885,6 +953,20 @@ test.describe('Canvas interactions', () => {
     await incrementNode.click()
     await seedNode.click({ modifiers: ['Shift'] })
     await restoredMergedResponse
+    await expect(mergedTable).toBeVisible()
+    await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width))
+      .toBe(Math.round(automaticWidth) + 50)
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toBeVisible()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    await page.locator(`.vue-flow__node[data-id="${independentId}"]`).click()
+    await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click({ modifiers: ['Shift'] })
+    await expect(fallback).toHaveText(
+      'The selected nodes are independent in this workflow, so their DataFrames are shown separately.',
+    )
+    await expectIndependentStackedRows()
+    await page.locator(`.vue-flow__node[data-id="${incrementId}"]`).click()
+    await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click({ modifiers: ['Shift'] })
     await expect(mergedTable).toBeVisible()
     await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width))
       .toBe(Math.round(automaticWidth) + 50)
