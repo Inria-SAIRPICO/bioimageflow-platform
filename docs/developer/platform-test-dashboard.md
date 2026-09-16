@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **201 V + 250 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **201 / 457 are verified (44.0%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **179 V + 41 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **179 / 220 are verified (81.4%)**.
+- Overall: **202 V + 249 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **202 / 457 are verified (44.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **180 V + 40 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **180 / 220 are verified (81.8%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -55,7 +55,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-005 | Mapped/collective column appearance | P1 | Desktop and webapp GUI | no | G | N (row-consumption appearance accepts no user input to refuse) | N (derived edge appearance has no cancellation or recovery lifecycle) | N (appearance is derived from metadata and is not persisted) | G | gap | `fcb4408` inspection |
 | GUI-EDT-006 | Parameter controls feed the accepted Run | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `1261326`, `4208769` |
 | GUI-EDT-007 | Node rename preserves identity and refuses duplicates | P0 | Desktop and webapp GUI | yes | V | V | N (rename validation is synchronous; refusal is owned by R and no separate recovery follows) | V | V | verified | `ec0ca3b` |
-| GUI-EDT-008 | Selection, multiselection, collapse, and enablement | P0 | Desktop and webapp GUI | yes | V | G | V | V | V | in-progress | `30faeb6` |
+| GUI-EDT-008 | Selection, multiselection, collapse, and enablement | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `30faeb6`, `1d7cbd7` |
 | GUI-EDT-009 | Bulk delete and root output clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6` |
 | GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | G | in-progress | `e0aa123`, `30faeb6` |
 | GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `790345a` |
