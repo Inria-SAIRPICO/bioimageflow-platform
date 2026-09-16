@@ -800,6 +800,110 @@ test.describe('workflow interface and grouping', () => {
     expectStableParentRoutes(afterDiscard)
   })
 
+  test('isolates nested keyboard history from the parent and saves only the active context', async ({ page }) => {
+    const name = workflowName('nested_shortcut_history')
+    const displayName = `Nested shortcut history ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const canonicalInitial = await draftState(page, name)
+
+    const renameSelected = async (nodeId: string, nextName: string): Promise<void> => {
+      await page.locator(`.vue-flow__node[data-id="${nodeId}"]`).click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      await page.locator('.node-panel-header .node-name').dblclick()
+      const input = page.locator('.node-panel-header .name-input')
+      await input.fill(nextName)
+      await input.press('Enter')
+    }
+    const shortcut = async (keys: string): Promise<void> => {
+      await page.locator('.vue-flow__pane').click({ position: { x: 20, y: 20 } })
+      await page.keyboard.press(keys)
+    }
+    const nestedWrite = () => page.waitForResponse(response => (
+      response.url().includes('/api/v1/nested-workflow-snapshots/')
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+
+    const rootEdit = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await renameSelected('seed', 'Parent edit')
+    await rootEdit
+    const parentEdited = await draftState(page, name)
+    expect(parentEdited.graph.nodes.find(node => node.id === 'seed')?.name).toBe('Parent edit')
+
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    const initialPrivateWrite = nestedWrite()
+    await renameSelected('increment', 'Private edit')
+    const privateEdited = await (await initialPrivateWrite).json() as {
+      session_id: string; snapshot_revision: number; graph: GraphState
+    }
+    expect(privateEdited.graph.nodes.find(node => node.id === 'increment')?.name).toBe('Private edit')
+    expect((await draftState(page, name)).graph).toEqual(parentEdited.graph)
+
+    let accepted = nestedWrite()
+    await shortcut('Control+z')
+    const privateUndone = await (await accepted).json() as typeof privateEdited
+    expect(privateUndone.session_id).toBe(privateEdited.session_id)
+    expect(privateUndone.snapshot_revision).toBe(privateEdited.snapshot_revision + 1)
+    expect(privateUndone.graph).toEqual(childNode(parentEdited.graph).workflow)
+    expect((await draftState(page, name)).draft_revision).toBe(parentEdited.draft_revision)
+
+    accepted = nestedWrite()
+    await shortcut('Control+Shift+z')
+    const privateRedone = await (await accepted).json() as typeof privateEdited
+    expect(privateRedone.session_id).toBe(privateEdited.session_id)
+    expect(privateRedone.snapshot_revision).toBe(privateUndone.snapshot_revision + 1)
+    expect(privateRedone.graph).toEqual(privateEdited.graph)
+
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    const rootUndo = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await shortcut('Control+z')
+    await rootUndo
+    const parentUndone = await draftState(page, name)
+    expect(parentUndone.graph).toEqual(canonicalInitial.graph)
+    expect(parentUndone.draft_revision).toBe(parentEdited.draft_revision + 1)
+    const privateAfterRootUndo = await (await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${privateEdited.session_id}`,
+    )).json() as typeof privateEdited
+    expect(privateAfterRootUndo.snapshot_revision).toBe(privateRedone.snapshot_revision)
+    expect(privateAfterRootUndo.graph).toEqual(privateRedone.graph)
+
+    await page.locator('.dv-tab').filter({ hasText: 'Stable child' }).click()
+    const parentApply = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await shortcut('Control+s')
+    await parentApply
+    const applied = await draftState(page, name)
+    expect(applied.graph.nodes.find(node => node.id === 'seed')?.name).toBe('Seed')
+    expect(childNode(applied.graph).workflow).toEqual(privateRedone.graph)
+    expect(await savedGraph(page, name)).toEqual(canonicalInitial.graph)
+
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    const rootSave = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflows/${name}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await shortcut('Control+s')
+    await rootSave
+    expect(await savedGraph(page, name)).toEqual(applied.graph)
+  })
+
   test('refuses a stale-parent nested save without mutating either graph', async ({ page }) => {
     const name = workflowName('nested_parent_conflict')
     const displayName = `Nested parent conflict ${name}`
