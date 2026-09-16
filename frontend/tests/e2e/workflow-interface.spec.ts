@@ -385,14 +385,49 @@ test.describe('workflow interface and grouping', () => {
     const original = await draftState(page, name)
     expect(original.validation).toMatchObject({ valid: true, errors: [] })
 
+    // Dismissing the offered action must leave the accepted graph and history alone.
+    await page.locator('.vue-flow__node[data-id="table_first"]').click({ button: 'right' })
+    await expect(page.getByText('Group into workflow', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByText('Group into workflow', { exact: true })).toHaveCount(0)
+    const afterCancelledMenu = await draftState(page, name)
+    expect(afterCancelledMenu.graph).toEqual(original.graph)
+    expect(afterCancelledMenu.draft_revision).toBe(original.draft_revision)
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Undo', exact: true })).toBeDisabled()
+    await page.keyboard.press('Escape')
+
     await page.locator('.vue-flow__node[data-id="table_first"]').click()
     await page.locator('.vue-flow__node[data-id="table_second"]').click({ modifiers: ['Shift'] })
     await page.locator('.vue-flow__node[data-id="field_middle"]').click({ modifiers: ['Shift'] })
     await expect(page.locator('.vue-flow__node.selected')).toHaveCount(3)
-    const grouped = await waitForAcceptedGraph(page, name, async () => {
-      await page.locator('.vue-flow__node[data-id="table_first"]').click({ button: 'right' })
-      await page.getByText('Group into workflow', { exact: true }).click()
+    let draftWrites = 0
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue()
+      draftWrites += 1
+      if (draftWrites === 1) {
+        return route.fulfill({ status: 500, json: { detail: 'forced grouping persistence failure' } })
+      }
+      return route.continue()
     })
+    const failedWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    await page.locator('.vue-flow__node[data-id="table_first"]').click({ button: 'right' })
+    await page.getByText('Group into workflow', { exact: true }).click()
+    await failedWrite
+    await expect(page.locator('.vue-flow__node[data-id="workflow_1"]')).toBeVisible()
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    const afterFailedWrite = await draftState(page, name)
+    expect(afterFailedWrite.graph).toEqual(original.graph)
+    expect(afterFailedWrite.draft_revision).toBe(original.draft_revision)
+    const grouped = await waitForAcceptedGraph(page, name, async () => {
+      await page.getByTestId('canvas-persistence-retry').click()
+    })
+    expect(draftWrites).toBe(2)
+    await expect(page.getByTestId('canvas-persistence-retry')).toHaveCount(0)
     expect(grouped.validation).toMatchObject({ valid: true, errors: [] })
     await expect(page.locator('.vue-flow__node')).toHaveCount(5)
 
@@ -441,6 +476,15 @@ test.describe('workflow interface and grouping', () => {
       type: 'column', id: 'field-out', source_node: 'workflow_1', target_node: 'field_after',
       source_output: 'output-field-out', target_input: 'input_image',
     }])
+
+    // A workflow node offers opening its child instead of another grouping action.
+    await page.locator('.vue-flow__node[data-id="workflow_1"]').click({ button: 'right' })
+    await expect(page.locator('.node-context-menu').getByText('Open workflow', { exact: true })).toBeVisible()
+    await expect(page.getByText('Group into workflow', { exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    const afterOpenMenu = await draftState(page, name)
+    expect(afterOpenMenu.graph).toEqual(grouped.graph)
+    expect(afterOpenMenu.draft_revision).toBe(grouped.draft_revision)
 
     const restored = await waitForAcceptedGraph(page, name, async () => {
       await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
