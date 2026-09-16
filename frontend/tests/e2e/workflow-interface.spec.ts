@@ -787,6 +787,123 @@ test.describe('workflow interface and grouping', () => {
     await expect(page.getByTestId('dataframe-input-name-0')).toHaveValue('Latest parent version')
   })
 
+  test('waits for an explicit nested snapshot conflict choice without replacing newer private state', async ({ page }) => {
+    const name = workflowName('nested_snapshot_conflict')
+    const displayName = `Nested snapshot conflict ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: initial },
+    })).ok()).toBeTruthy()
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const inputName = page.getByTestId('dataframe-input-name-0')
+    const privateWrite = page.waitForResponse(response => (
+      responseCarriesNestedInputName(response, 'My accepted name')
+    ))
+    await inputName.fill('My accepted name')
+    const accepted = await (await privateWrite).json() as {
+      session_id: string
+      snapshot_revision: number
+      graph: GraphState
+    }
+
+    async function remoteRename(nextName: string) {
+      const currentResponse = await page.request.get(
+        `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+      )
+      expect(currentResponse.ok(), await currentResponse.text()).toBeTruthy()
+      const current = await currentResponse.json() as {
+        snapshot_revision: number
+        graph: GraphState
+      }
+      const remoteGraph = structuredClone(current.graph)
+      remoteGraph.interface.inputs.find(input => input.id === 'child-table-input')!.name = nextName
+      const response = await page.request.put(
+        `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+        { data: { expected_revision: current.snapshot_revision, graph: remoteGraph } },
+      )
+      expect(response.ok(), await response.text()).toBeTruthy()
+      return await response.json() as { snapshot_revision: number; graph: GraphState }
+    }
+
+    const remoteA = await remoteRename('Newer private name')
+    const refusedWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/nested-workflow-snapshots/${accepted.session_id}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 409
+    ))
+    await inputName.fill('My conflicting name')
+    await refusedWrite
+    const issue = page.getByTestId('canvas-persistence-issue')
+    await expect(issue).toContainText('nested-workflow changes need attention')
+    await expect(issue.getByTestId('canvas-persistence-use-latest')).toBeVisible()
+    await expect(issue.getByTestId('canvas-persistence-resolve-conflict')).toHaveText('Keep my changes')
+    await expect(inputName).toHaveValue('My conflicting name')
+    const stillRemote = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+    )
+    expect(await stillRemote.json()).toMatchObject({
+      snapshot_revision: remoteA.snapshot_revision,
+      graph: remoteA.graph,
+    })
+    expect(childInputName(childNode(await draftGraph(page, name)).workflow)).toBe('Source table')
+
+    await issue.getByTestId('canvas-persistence-use-latest').click()
+    await expect(issue).toHaveCount(0)
+    await expect(inputName).toHaveValue('Newer private name')
+    const afterDiscard = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+    )
+    expect(await afterDiscard.json()).toMatchObject({
+      snapshot_revision: remoteA.snapshot_revision,
+      graph: remoteA.graph,
+    })
+
+    const remoteB = await remoteRename('Newest private name')
+    const secondRefusal = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/nested-workflow-snapshots/${accepted.session_id}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 409
+    ))
+    await inputName.fill('Chosen local name')
+    await secondRefusal
+    await expect(issue).toBeVisible()
+    expect((await (await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+    )).json()).snapshot_revision).toBe(remoteB.snapshot_revision)
+    const resolvedWrite = page.waitForResponse(response => (
+      responseCarriesNestedInputName(response, 'Chosen local name')
+    ))
+    await issue.getByTestId('canvas-persistence-resolve-conflict').click()
+    await resolvedWrite
+    await expect(issue).toHaveCount(0)
+    await expect(inputName).toHaveValue('Chosen local name')
+    const resolved = await (await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${accepted.session_id}`,
+    )).json() as { snapshot_revision: number; graph: GraphState }
+    expect(resolved.snapshot_revision).toBe(remoteB.snapshot_revision + 1)
+    expect(childInputName(resolved.graph)).toBe('Chosen local name')
+    expect(childInputName(childNode(await draftGraph(page, name)).workflow)).toBe('Source table')
+
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await expect.poll(async () => childInputName(childNode(await draftGraph(page, name)).workflow))
+      .toBe('Chosen local name')
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    await saveWorkflow(page, name)
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    expect(childInputName(childNode(await draftGraph(page, name)).workflow)).toBe('Chosen local name')
+    expectStableParentRoutes(await draftGraph(page, name))
+  })
+
   test('confirms before atomically removing connected nested ports from the parent', async ({ page }) => {
     const name = workflowName('nested_destructive_ports')
     const displayName = `Nested destructive ports ${name}`
