@@ -16,7 +16,7 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next actions
 
-1. Resolve ISSUE-011's restart durability boundary after specialist review, then address the highest-reach remaining shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
+1. Integrate the active Tier 1B workflow-dialog refusal/recovery batch, then address the highest-reach remaining shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories; keep ISSUE-011's dependent restart durability repair pending specialist review.
 2. Preserve the observed BioImageFlow 0.7.2 sequential row-progress timing as a documented limitation; assess user impact before classifying it as a defect or dependency change.
 3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
@@ -30,7 +30,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | --- | --- | --- |
 | T01 dependencies | Complete | Published BioImageFlow 0.7.1/core 0.3.1 and Wetlands 2.4.1 integration; retained release and worker evidence in [Campaign evidence](platform-test-evidence.md). |
 | T02 fixture foundations | Complete | Genuine Generate metadata, compatible whole-DataFrame wiring, exact results, and sequential worker fixture established. |
-| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After the Tier 1B canvas, nested-interface, real-worker progress, shell chooser, and result-filter batches, 195/457 overall obligations are verified (42.7%) and 173/220 primary-GUI obligations are verified (78.6%). |
+| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After the Tier 1B canvas, nested-interface, real-worker progress, shell chooser, result-filter, and result-selection batches, 196/457 overall obligations are verified (42.9%) and 174/220 primary-GUI obligations are verified (79.1%). |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
@@ -50,13 +50,15 @@ The dashboard-content tally is **73 V / 73 required (100.0%)** with 0 runnable g
 This tally was recomputed after integrated workflow CRUD evidence changed the former seven `WF-LIF-003` and `WF-LIF-010` gate cells to `V`; the dashboard verifier passes and a direct lookup of all 73 named `ID.cell` entries finds no non-`V` state.
 The gate passed on the one clean evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`: the audited collection contained 28 exact selectors per browser, all 28 passed in Chromium and all 28 passed in Firefox, the backend/frontend/documentation completion gates passed, and the representative create/edit/connect/run/inspect/save/reopen journey passed headed in Chromium on the available display.
 The reachable-blocker audit found no supported-path critical or high-impact basic-use defect: all ten recorded campaign issues are resolved except ISSUE-006's reviewed `not-a-defect` disposition, and no required gate cell, selector, retry, skip, or unresolved flake remains.
-The gate-evaluated dashboard was **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**; the current dashboard is **195 / 457 overall (42.7%)** and **173 / 220 primary GUI (78.6%)**, with 0 blocked cells and 6 unassessed overall cells. Neither set of broader denominators makes a systematic-completion claim.
+The gate-evaluated dashboard was **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**; the current dashboard is **196 / 457 overall (42.9%)** and **174 / 220 primary GUI (79.1%)**, with 0 blocked cells and 6 unassessed overall cells. Neither set of broader denominators makes a systematic-completion claim.
 Grouping evidence remains important Primary-GUI Tier 1B coverage and is intentionally outside the smaller 73-cell denominator.
 Full browser lanes, external package certification, Tier 1B–3 selectors, native/external application checks, and final systematic certification were not run for this fixed gate and remain owned by their existing campaign inventories and final completion gate.
 The exact commands, durations, environment-only blocked first attempts, and exclusions are retained in [Campaign evidence](platform-test-evidence.md).
 
 ## Ownership and unresolved decisions
 
+The `campaign/tier1b-workflow-dialogs` worker owns the active Create/Save As refusal and cancellation batch in `.worktrees/tier1b-workflow-dialogs`.
+The Tier 1B result-selection worktree integrated at `7d9de88` verifies source-pure unrelated-lineage fallback after reload; its worktree was archived and branch deleted.
 The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its worktree was archived and branch deleted.
 ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; the requested GPT-6 Astra/high review could not start because the agent hit its usage limit, so no disposition exists yet.
 The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its worktree was archived and branch deleted.
