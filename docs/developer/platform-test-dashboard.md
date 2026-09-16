@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **207 V + 244 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **207 / 457 are verified (45.3%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **185 V + 35 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **185 / 220 are verified (84.1%)**.
+- Overall: **209 V + 242 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **209 / 457 are verified (45.7%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **187 V + 33 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **187 / 220 are verified (85.0%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -57,9 +57,9 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-007 | Node rename preserves identity and refuses duplicates | P0 | Desktop and webapp GUI | yes | V | V | N (rename validation is synchronous; refusal is owned by R and no separate recovery follows) | V | V | verified | `ec0ca3b` |
 | GUI-EDT-008 | Selection, multiselection, collapse, and enablement | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `30faeb6`, `1d7cbd7` |
 | GUI-EDT-009 | Bulk delete and root output clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6` |
-| GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | G | in-progress | `e0aa123`, `30faeb6` |
+| GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `e0aa123`, `30faeb6`, `4ec5dbc` |
 | GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `790345a` |
-| GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | G | in-progress | `790345a` |
+| GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `4ec5dbc` |
 | GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
 | GUI-AUT-002 | Custom-tool create/rename/delete and editor opening | P1 | Desktop GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
