@@ -91,7 +91,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow-server"
-version = "0.1.22"
+version = "0.1.23"
 source = { editable = "." }
 dependencies = [
     { name = "bioimageflow", extra = ["cluster"] },
