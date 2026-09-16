@@ -44,6 +44,80 @@ describe('canonical canvas serialization', () => {
     expect(graph.nodes[1]).not.toHaveProperty('tool_name')
   })
 
+  it('declares the optional viewer fields of the persisted document', () => {
+    const child = emptyGraph('child', 'Child')
+    child.nodes.push({
+      type: 'tool', id: 'child_tool', name: 'Child tool', tool_name: 'tool',
+      position: [0, 0], parameters: {}, enabled: true, collapsed: false,
+    })
+    child.interface.outputs.push({
+      id: 'child-output', name: 'Child output', schema: { type: 'ImageFile' },
+      source: { node: 'child_tool', column: 'result' },
+    })
+    const graph = serializeGraph({
+      name: 'root',
+      interface: {
+        inputs: [],
+        outputs: [
+          {
+            id: 'plain-output', name: 'Plain output', schema: { type: 'ImageFile' },
+            source: { node: 'tool', column: 'result' },
+          },
+          {
+            id: 'declared-output', name: 'Declared output', schema: { type: 'ImageFile' },
+            source: { node: 'tool', column: 'result' },
+            viewer_addition: { napari: null },
+          },
+        ],
+      },
+      nodes: [
+        {
+          id: 'tool', type: 'tool', position: { x: 0, y: 0 },
+          data: {
+            nodeType: 'tool', name: 'Tool', toolName: 'tool', parameters: {},
+            resources: {}, output_templates: {}, enabled: true, collapsed: false,
+          },
+        },
+        {
+          id: 'workflow', type: 'workflow', position: { x: 100, y: 0 },
+          data: {
+            nodeType: 'workflow', name: 'Workflow', workflow: child, bindings: {},
+            source: null, resources: {}, enabled: true, collapsed: false,
+            viewerAdditions: { result: { napari: null } },
+          },
+        },
+      ],
+      edges: [],
+    })
+
+    expect(graph.interface.outputs).toEqual([
+      {
+        id: 'plain-output', name: 'Plain output', schema: { type: 'ImageFile' },
+        source: { node: 'tool', column: 'result' },
+        viewer_addition: null,
+      },
+      {
+        id: 'declared-output', name: 'Declared output', schema: { type: 'ImageFile' },
+        source: { node: 'tool', column: 'result' },
+        viewer_addition: { napari: null },
+      },
+    ])
+    expect(graph.nodes[0]).toMatchObject({ viewer_additions: {} })
+    expect(graph.nodes[1]).toMatchObject({
+      viewer_additions: { result: { napari: null } },
+      workflow: {
+        nodes: [{ viewer_additions: {} }],
+        interface: {
+          outputs: [{
+            id: 'child-output', name: 'Child output', schema: { type: 'ImageFile' },
+            source: { node: 'child_tool', column: 'result' },
+            viewer_addition: null,
+          }],
+        },
+      },
+    })
+  })
+
   it('rejects canvas nodes without an explicit discriminator', () => {
     expect(() => serializeGraph({ nodes: [{ id: 'unknown', data: {} }], edges: [] }))
       .toThrow(/discriminator/)

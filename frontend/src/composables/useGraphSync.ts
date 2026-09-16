@@ -88,6 +88,7 @@ function serializeNode(n: any): NodeState {
       workflow: deepCloneJson(data.workflow),
       bindings: deepCloneJson(data.bindings ?? {}),
       source: data.source == null ? null : deepCloneJson(data.source),
+      viewer_additions: deepCloneJson(data.viewerAdditions ?? {}),
     }
   }
   if (n.type !== 'tool' || data.nodeType !== 'tool') {
@@ -104,6 +105,7 @@ function serializeNode(n: any): NodeState {
     tool_package: data.toolPackage ?? null,
     tool_package_version: data.toolPackageVersion ?? null,
     source_module: data.sourceModule ?? null,
+    viewer_additions: deepCloneJson(data.viewerAdditions ?? {}),
   }
 }
 
@@ -148,6 +150,35 @@ function serializeEdge(e: any): Edge {
 }
 
 /**
+ * Complete one serialized graph with the declared optional v2 viewer fields.
+ *
+ * The workflow API serializes declared optional fields explicitly, and the
+ * canvas adopts the persisted graph it receives back, so a document that
+ * omitted an empty viewer addition would leave client and server holding two
+ * spellings of the same content.  Absent additions become their declared empty
+ * value and existing ones are preserved, recursively for embedded workflows.
+ */
+function completeGraphWireForm(graph: GraphState): GraphState {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => node.type === 'workflow'
+      ? {
+          ...node,
+          viewer_additions: deepCloneJson(node.viewer_additions ?? {}),
+          workflow: completeGraphWireForm(node.workflow),
+        }
+      : { ...node, viewer_additions: deepCloneJson(node.viewer_additions ?? {}) }),
+    interface: {
+      inputs: deepCloneJson(graph.interface.inputs),
+      outputs: graph.interface.outputs.map(output => ({
+        ...output,
+        viewer_addition: output.viewer_addition ?? null,
+      })),
+    },
+  }
+}
+
+/**
  * Convert raw Vue Flow state ({ nodes, edges }) into the backend GraphState.
  */
 export function serializeGraph(raw: {
@@ -159,7 +190,7 @@ export function serializeGraph(raw: {
   interface?: GraphState['interface']
   config?: GraphState['config']
 }): GraphState {
-  return {
+  return completeGraphWireForm({
     schema_version: raw.schema_version ?? 2,
     name: raw.name ?? 'workflow',
     display_name: raw.display_name ?? raw.name ?? 'Workflow',
@@ -170,7 +201,7 @@ export function serializeGraph(raw: {
       engine: 'wetlands',
       execution: 'parallel',
     }),
-  }
+  })
 }
 
 export const graphSyncCanvasSessions = canvasSessionRegistry

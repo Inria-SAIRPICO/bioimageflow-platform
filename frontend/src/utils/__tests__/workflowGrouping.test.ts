@@ -14,7 +14,51 @@ function toolNode(id: string, x: number) {
   }
 }
 
+function toolNodeWithOutputs(id: string, outputs: Record<string, unknown>) {
+  const node = toolNode(id, 0)
+  return { ...node, data: { ...node.data, tool: { name: 'tool', tool_type: 'ImageTool', outputs } } }
+}
+
 describe('groupIntoWorkflow', () => {
+  it('publishes exposed output schemas without an absent viewer declaration', () => {
+    const nodes = [
+      toolNodeWithOutputs('blur', {
+        image: { type: 'ImageFile', default: null, image_spec: null, viewer: null },
+        mask: { type: 'ImageFile', default: null, viewer: { napari: {} } },
+      }),
+      toolNode('after', 200),
+    ]
+    const edges = [
+      {
+        id: 'image-out', source: 'blur', target: 'after', type: 'column',
+        sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'image' }),
+        targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'image' }),
+      },
+      {
+        id: 'mask-out', source: 'blur', target: 'after', type: 'column',
+        sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'mask' }),
+        targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'mask' }),
+      },
+    ]
+
+    const result = groupIntoWorkflow({
+      nodes,
+      edges,
+      selectedNodeIds: new Set(['blur']),
+      workflowNodeId: 'group',
+      workflowNodeName: 'Grouped',
+    })
+
+    expect(
+      result.workflowNode.data!.workflow.interface.outputs.map(
+        (output: { schema: unknown }) => output.schema,
+      ),
+    ).toEqual([
+      { type: 'ImageFile', default: null, image_spec: null },
+      { type: 'ImageFile', default: null, viewer: { napari: {} } },
+    ])
+  })
+
   it('preserves detached branches and creates stable field and DataFrame ports', () => {
     const nodes = [toolNode('before', 0), toolNode('a', 100), toolNode('detached', 150), toolNode('after', 300)]
     const edges = [

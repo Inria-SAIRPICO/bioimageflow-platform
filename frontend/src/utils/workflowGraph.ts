@@ -37,6 +37,24 @@ export function removeNodesFromWorkflowInterface(
   }
 }
 
+/**
+ * Build the interface output schema for one exposed tool output field.
+ *
+ * The library grammar declares an output viewer through the key's presence, so
+ * an explicit ``viewer: null`` is not a declaration and the backend erases it
+ * on ingress.  Copying the tool's null through would give the canvas a second
+ * representation of "no viewer declaration" that can never match the graph the
+ * server persists; only a real declaration travels into the interface port.
+ */
+export function interfaceOutputSchemaFromToolField(
+  field: unknown,
+): Record<string, unknown> {
+  if (typeof field !== 'object' || field === null || Array.isArray(field)) return {}
+  const schema = JSON.parse(JSON.stringify(field)) as Record<string, unknown>
+  if (schema.viewer === null) delete schema.viewer
+  return schema
+}
+
 function sourceHandle(
   graph: GraphState,
   nodeId: string,
@@ -91,6 +109,7 @@ function toolNodeData(
     toolPackage: node.tool_package ?? null,
     toolPackageVersion: node.tool_package_version ?? null,
     sourceModule: node.source_module ?? null,
+    viewerAdditions: node.viewer_additions ?? {},
   }
 }
 
@@ -106,6 +125,7 @@ function workflowNodeData(node: WorkflowNodeState) {
     enabled: node.enabled ?? true,
     status: 'unexecuted',
     connectedInputs: {},
+    viewerAdditions: node.viewer_additions ?? {},
     pinnedInputs: Object.fromEntries(
       node.workflow.interface.inputs.map(input => [input.id, true]),
     ),

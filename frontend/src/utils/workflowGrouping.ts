@@ -8,6 +8,7 @@ import {
   encodeEndpointHandle,
 } from '@/utils/endpointHandles'
 import { connectionSourceLabel } from '@/utils/displayNames'
+import { interfaceOutputSchemaFromToolField } from '@/utils/workflowGraph'
 
 type VueFlowNode = {
   id: string
@@ -65,7 +66,7 @@ function schemaForInput(node: VueFlowNode | undefined, name: string) {
 
 function schemaForOutput(node: VueFlowNode | undefined, name: string) {
   const schema = node?.data?.tool?.outputs?.[name]
-  return schema == null ? null : clone(schema)
+  return schema == null ? null : interfaceOutputSchemaFromToolField(schema)
 }
 
 function serializeNode(node: VueFlowNode): GraphState['nodes'][number] {

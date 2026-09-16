@@ -58,6 +58,7 @@ import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import {
   graphStateToVueFlow,
+  interfaceOutputSchemaFromToolField,
   removeNodesFromWorkflowInterface,
 } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
@@ -627,10 +628,6 @@ interface GraphChangeOptions {
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function rememberAuthoritativeGraph(graph: GraphState): GraphState {
@@ -3868,7 +3865,7 @@ function toggleWorkflowOutput(
   if (exposedNameIsUsed(context, name)) {
     return workflowInterfaceRejected('duplicate_name', name)
   }
-  const schema: Record<string, unknown> = isRecord(field) ? deepClone(field) : {}
+  const schema = interfaceOutputSchemaFromToolField(field)
   const nextOutputs: WorkflowOutput[] = [...context.outputs, {
     id: `output-${crypto.randomUUID()}`,
     name,
