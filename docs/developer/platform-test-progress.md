@@ -16,7 +16,7 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next actions
 
-1. Complete the active Tier 1B cache/clear and result-table boundary batches, then address the highest-reach remaining shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
+1. Resolve ISSUE-011's restart durability boundary after specialist review, then address the highest-reach remaining shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
 2. Preserve the observed BioImageFlow 0.7.2 sequential row-progress timing as a documented limitation; assess user impact before classifying it as a defect or dependency change.
 3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
@@ -57,9 +57,10 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 
 ## Ownership and unresolved decisions
 
-The `campaign/tier1b-cache-lifecycle` agent owns `RT-EXE-009.S` real-GUI downstream invalidation and selected-result clearing in `.worktrees/tier1b-cache-lifecycle`; it must return exact browser/scoped validation and a committed, isolated increment.
-The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its branch/worktree are pending archival.
-The Tier 1B shell-recovery worktree integrated at `75be9c2` verifies the empty-workspace chooser and obsolete startup preference; its branch/worktree are pending archival.
+The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its branch/worktree are pending archival.
+ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; the requested GPT-6 Astra/high review could not start because the agent hit its usage limit, so no disposition exists yet.
+The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its worktree was archived and branch deleted.
+The Tier 1B shell-recovery worktree integrated at `75be9c2` verifies the empty-workspace chooser and obsolete startup preference; its worktree was archived and branch deleted.
 The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
 The Tier 1B nested-interface worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `1e84421` verified durable positional publication and atomic exposed-node interface pruning.
 The Tier 1B nested-conflict worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `d86c9b0` verified both explicit GUI conflict choices and parent/private state isolation.

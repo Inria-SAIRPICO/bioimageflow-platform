@@ -157,6 +157,19 @@ The browser regression proves destination graph-owned name/display name, distinc
 It passed Chromium 1/1 in 13s and Firefox 1/1 in 15s; `scripts/test check frontend` passed 1,297 tests plus lint, type checking, and build in 19s; and `scripts/test check browser` passed all 83 Chromium journeys in 222s with no failures, skips, or retries.
 Invalid destination input, duplicate-service failure/rollback, stale identity refusal, and source-owning copy variants were not exercised by this repair and remain separate dashboard gaps.
 
+## ISSUE-011 — Clear status reverts after backend restart
+
+Status: `open`; a code-traced durable-authority defect remains after the bounded same-process reconnect fix `fe0cf9d`.
+In a two-node Direct workflow, Run followed by Clear on the upstream node removes only its latest result and marks it `unexecuted` with its dependent `out_of_date`; the live UI and same-process browser reload now agree.
+The stored accepted root draft still contains pre-Clear `validation.node_statuses`, because `_read_validated_authority_snapshot()` returns an existing draft verbatim, while a new `ExecutionManager` starts with empty live statuses.
+After stopping and restarting the backend against the same workspace, reopening can therefore display the cleared source as `executed` even though its latest result query returns 404.
+The restart sequence is code-traced, not yet executed as a process-level reproduction; it must be reproduced before closure.
+The repair must keep the accepted graph/revision and CAS contract unchanged, preserve historical `last_result`, and avoid resurrecting selected output pointers.
+Potential boundaries are read-time revalidation against current cache or a durable Clear-adjusted validation snapshot with an identity fence; neither has yet been approved as safe.
+The source revision is `fe0cf9d`; authoritative contracts include v1 §2.4.5, v2 execution/cache semantics, and `PLATFORM_CONTEXT.md` result-lifecycle invariants.
+The requested GPT-6 Astra/high review did not execute because the agent hit its usage limit; it supplied no disposition, so no specialist decision is claimed.
+Resume after specialist review establishes the status authority and safe repair/test boundary; then a bounded Sol worker should implement and validate the restart regression.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.

@@ -124,7 +124,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
 | RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
-| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | G | V | V | V | V | in-progress | `30faeb6` |
+| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | G | V | in-progress | `30faeb6`, `fe0cf9d`; ISSUE-011 |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
