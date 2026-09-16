@@ -59,6 +59,7 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 
 The `campaign/tier1b-cache-lifecycle` agent owns `RT-EXE-009.S` real-GUI downstream invalidation and selected-result clearing in `.worktrees/tier1b-cache-lifecycle`; it must return exact browser/scoped validation and a committed, isolated increment.
 The `campaign/tier1b-result-boundaries` agent owns common result-table refusal and identity gaps around `RT-RES-001`, `RT-RES-002`, and `RT-RES-003` in `.worktrees/tier1b-result-boundaries`; it must return exact browser/scoped validation and a committed, isolated increment.
+The `campaign/tier1b-shell-recovery` agent owns the common empty-workspace chooser and recovery preference GUI gaps around `GUI-SHL-002` and `GUI-SHL-003` in `.worktrees/tier1b-shell-recovery`; it must return exact browser/scoped validation and a committed, isolated increment.
 The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
 The Tier 1B nested-interface worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `1e84421` verified durable positional publication and atomic exposed-node interface pruning.
 The Tier 1B nested-conflict worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `d86c9b0` verified both explicit GUI conflict choices and parent/private state isolation.
