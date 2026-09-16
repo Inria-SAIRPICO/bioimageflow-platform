@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **175 V + 276 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **175 / 457 are verified (38.3%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **153 V + 67 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **153 / 220 are verified (69.5%)**.
+- Overall: **181 V + 270 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **181 / 457 are verified (39.6%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **159 V + 61 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **159 / 220 are verified (72.3%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -88,9 +88,9 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | G | V | V | in-progress | `dd20821` |
 | WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `af58e4e` |
-| WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `1e84421` |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `3422e1c` |
-| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `1e84421` |
 | WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `da0ded6`, `152c82b` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
