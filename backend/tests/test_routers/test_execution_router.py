@@ -207,6 +207,11 @@ class _FakeExecutionManager:
     def get_status(self) -> ExecutionStatus:
         return self._status
 
+    def apply_cache_clear_statuses(
+        self, workflow_id: str, statuses: dict[str, NodeStatus]
+    ) -> None:
+        self._status.node_statuses.update(statuses)
+
     @asynccontextmanager
     async def reserve_start(
         self,

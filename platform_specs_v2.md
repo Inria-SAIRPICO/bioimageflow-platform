@@ -188,6 +188,7 @@ The stateless graph endpoint validates the same canonical graph shape but does n
 Execution compiles the accepted recursive graph to one flat plan.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
+Clearing selected outputs updates the matching workflow's retained live node-status snapshot without changing the completed run's historical result; a reconnect therefore preserves the cleared and downstream out-of-date presentation.
 Each compilation captures current source bytes before loading the library workflow, without waiting for filesystem notifications.
 Source-bound nodes select the worker-capable engine without consulting a same-named global catalog class.
 The captured library payload assigns content-derived source-module identities, including helper and asset contents, to isolate Python imports between source versions.

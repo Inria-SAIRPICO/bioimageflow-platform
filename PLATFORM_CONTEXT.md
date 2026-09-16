@@ -171,6 +171,7 @@ After version-1 profiles are dropped, an invalid or disabled default target is d
 Each saved workflow owns runtime storage at `<workflow-directory>/results`.
 The `outputs/latest` view is a disposable per-node projection and may combine the latest successful outputs from different runs.
 Clearing selected root-workflow nodes operates on an accepted draft, invalidates their cache/status, and removes only those nodes' disposable latest pointers and materializations without mutating the graph; nested-canvas result clearing requires its own scoped ownership path and is not exposed through the root-only control.
+The matching retained execution-status snapshot tracks a successful Clear across browser reloads, while the completed run's historical result remains unchanged.
 A workflow-and-results bundle instead pins one successful run.
 These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.
 

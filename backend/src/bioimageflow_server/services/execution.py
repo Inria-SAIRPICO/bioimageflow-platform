@@ -334,6 +334,14 @@ class ExecutionManager:
             **context_fields,
         )
 
+    def apply_cache_clear_statuses(
+        self, workflow_id: str, statuses: dict[str, NodeStatus]
+    ) -> None:
+        """Keep the live status snapshot current without rewriting run history."""
+
+        if self.context is not None and self.context.workflow_id == workflow_id:
+            self._node_statuses.update(statuses)
+
     # ---- Lifecycle ---------------------------------------------------------
 
     async def start(
