@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **193 V + 258 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **193 / 457 are verified (42.2%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **171 V + 49 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **171 / 220 are verified (77.7%)**.
+- Overall: **195 V + 256 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **195 / 457 are verified (42.7%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **173 V + 47 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **173 / 220 are verified (78.6%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -131,7 +131,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | G | in-progress | `7ab16e6` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | G | V | V | in-progress | `7ab16e6` |
-| RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `d1072ce` |
+| RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | G | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | in-progress | `c050207` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `c050207` |
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
