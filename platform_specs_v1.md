@@ -294,7 +294,7 @@ class CellposeSegmenter(ProcessingTool):
 ]
 ```
 
-**Package installation:** Packages are installed into the tool store via `uv pip install --target <dir>`. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
+**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --target <dir>` to populate the tool store. This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 

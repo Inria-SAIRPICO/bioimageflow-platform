@@ -107,6 +107,7 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
+The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
 An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
