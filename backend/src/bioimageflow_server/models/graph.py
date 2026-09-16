@@ -182,8 +182,20 @@ class WorkflowOutput(WireModel):
 
     @model_validator(mode="after")
     def validate_schema_viewer(self) -> WorkflowOutput:
+        """Validate a declared viewer and erase an explicit null declaration.
+
+        The library grammar declares a viewer through the key's presence, so
+        ``{"viewer": null}`` and a schema without the key would otherwise
+        become two different portable documents with two artifact hashes.
+        An explicit null therefore means "no declaration" and is normalized
+        away on ingress; a real declaration is still validated strictly.
+        """
         if self.schema_ is not None and "viewer" in self.schema_:
-            ViewerSpec.model_validate(self.schema_["viewer"])
+            declaration = self.schema_["viewer"]
+            if declaration is None:
+                del self.schema_["viewer"]
+            else:
+                ViewerSpec.model_validate(declaration)
         return self
 
 

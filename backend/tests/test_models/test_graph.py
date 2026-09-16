@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.services.workflow_artifacts import artifact_hash
 
 
 def _tool(node_id: str) -> dict[str, object]:
@@ -244,3 +245,51 @@ def test_v2_viewer_wire_is_strict_at_node_and_workflow_output() -> None:
     invalid["interface"]["outputs"][0]["schema"]["viewer"]["unknown"] = True  # type: ignore[index]
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         GraphState.model_validate(invalid)
+
+
+def _graph_with_output_schema(schema: dict[str, object]) -> dict[str, object]:
+    payload = _graph()
+    payload["schema_version"] = 2
+    payload["interface"] = {
+        "inputs": [],
+        "outputs": [
+            {
+                "id": "image",
+                "name": "Image",
+                "schema": schema,
+                "source": {"node": "generate", "column": "value"},
+            }
+        ],
+    }
+    return payload
+
+
+def test_explicit_null_workflow_output_viewer_means_no_declaration() -> None:
+    parsed = GraphState.model_validate(
+        _graph_with_output_schema(
+            {"type": "ImageFile", "default": None, "image_spec": None, "viewer": None}
+        )
+    )
+    assert parsed.interface.outputs[0].schema_ == {
+        "type": "ImageFile",
+        "default": None,
+        "image_spec": None,
+    }
+
+    with pytest.raises(ValidationError, match="valid dictionary or instance of ViewerSpec"):
+        GraphState.model_validate(_graph_with_output_schema({"type": "Path", "viewer": "nope"}))
+
+
+def test_explicit_null_viewer_shares_one_identity_with_an_absent_declaration() -> None:
+    declared_null = GraphState.model_validate(
+        _graph_with_output_schema({"type": "ImageFile", "image_spec": None, "viewer": None})
+    )
+    absent = GraphState.model_validate(
+        _graph_with_output_schema({"type": "ImageFile", "image_spec": None})
+    )
+
+    assert declared_null.model_dump(mode="json", by_alias=True) == absent.model_dump(
+        mode="json", by_alias=True
+    )
+    assert declared_null.interface.outputs[0].schema_ == absent.interface.outputs[0].schema_
+    assert artifact_hash(declared_null, []) == artifact_hash(absent, [])
