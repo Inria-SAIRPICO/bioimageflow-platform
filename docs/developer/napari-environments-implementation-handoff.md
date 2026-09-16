@@ -3,27 +3,28 @@
 ## Purpose
 
 This document is the continuation checkpoint for the multiple napari environments feature.
-It records the accepted product contract, integrated implementation, preserved work in progress, known blockers, validation evidence, and the recommended continuation plan.
+It records the accepted product contract, the integrated implementation, the released library dependency, independent review outcomes, validation evidence, and the work that still remains.
 It does not replace the normative specifications.
 Read `PLATFORM_CONTEXT.md`, `platform_specs_napari_environments.md`, the affected v1/v2 sections, and the BioImageFlow library viewer requirements documentation before changing the implementation.
 
-Snapshot date: 2026-09-15.
+Snapshot date: 2026-09-16, second checkpoint.
+The first checkpoint recorded the integrated feature before library release, before reconciliation with platform `main`, and before independent review; all three have since happened, and the exact-result metadata follow-up it preserved uncommitted is now committed and integrated.
 
 ## Source-of-truth branches and worktrees
 
-The platform integration branch is `feature/napari-environments` in `.worktrees/napari-environments`.
-Its clean checkpoint is `c17b863c196e72a6954a0687a6cdac2368e37c59`.
-It was forked from platform commit `b10fe936334d1377ceb1690ab81b9f488c3c5b5d`.
-Platform `main` was observed at `1e692ed02289d16760d8c2e131bb1b9b53e9c791` when this handoff was written, so later integration with current `main` remains required.
+The platform integration branch is `feature/napari-environments` in `.worktrees/napari-environments`, checked out at commit `887e326`.
+It is reconciled with platform `main` `1e692ed` through merge commit `532db4d`; the merge was textually clean, and a subsequent semantic audit found no composition defect.
+Platform `main` is untouched.
+Do not implement further work directly on platform `main`.
 
-The BioImageFlow library integration branch is `feature/napari-viewer-contract` in `/Users/amasson/Travail/bioimageflow/.worktrees/napari-viewer-contract`.
-Its clean checkpoint is `c0a854c` based on library `main` commit `659acda`.
-
-Neither feature branch has been merged into `main`.
-Do not implement the continuation directly on either repository's `main` branch.
+The BioImageFlow library work is released.
+The library branch `feature/napari-viewer-contract` (worktree `/Users/amasson/Travail/bioimageflow/.worktrees/napari-viewer-contract`, clean checkpoint `c0a854c`, release commit `4943915`) was merged into library `main` as `c467f501d5a5ba99dfb2d6f147109011806ec860` and published; see the release section.
+Library `main` now carries the viewer contract.
 Do not share virtual environments, frontend dependencies, runtime state, build output, or `.bioimageflow` directories between worktrees.
 
 ## Accepted product contract
+
+Unchanged from the first checkpoint and still authoritative.
 
 - Users manage multiple named napari environments because plugin sets may be mutually incompatible.
 - Names are user-facing labels and are useful even though portable workflows never refer to those names or local environment IDs.
@@ -43,75 +44,54 @@ Do not share virtual environments, frontend dependencies, runtime state, build o
 - There are no row-level favorites, row exceptions, or favorite-scope selectors.
 - Choosing an environment from the output menu is a one-time launch and does not persist a preference.
 - Selecting an empty star sets or replaces the favorite, and selecting the filled star unsets it.
+- Setting a new incompatible persistent favorite is disallowed under the normal requirements contract, enforced by the backend, not only by the frontend.
 - Ordered filename rules use first-match semantics.
 - Extension entries are GUI shorthand normalized to glob patterns, while advanced users may enter complete glob patterns.
 - Resolution considers the structural-output favorite, author requirements, filename rules, the global default, compatibility, availability, and deterministic fallback in the order defined by the specification.
 - The output control is a split button whose primary action uses the effective environment and whose menu shows all environments, compatibility status, one-time launch actions, the exclusive favorite toggle, setup, and management actions.
 
-## Implemented library scope
+## Library release
 
-Library commit `c0a854c` adds the portable contract required by the platform.
+The portable viewer contract is published and consumed through the frozen platform lock.
 
-- `bioimageflow-core` defines strict `ViewerSpec`, napari requirements, normalized package names, required and recommended distributions, version specifiers, and optional reader instructions without importing napari.
-- Processing and DataFrame tools may annotate outputs with viewer requirements.
-- Recursive workflow serialization carries viewer metadata through nested and published outputs.
-- Canonical workflow documents use schema version 2, while schema-version-1 inputs are explicitly normalized.
-- Viewer metadata participates in the normalized portable graph and artifact hash.
-- Workflow archives include a derived requirements manifest without local environment references.
-- Retained run-node output metadata records the effective viewer declarations alongside immutable result identities.
-- Public library APIs expose retained viewer metadata to the platform without requiring access to private storage internals.
-- Viewer metadata is provenance and viewing behavior, not a processing dependency or cache-key input beyond its presence in the canonical workflow definition.
+- `bioimageflow-core` `0.3.1` to `0.4.0`: new public worker-safe viewer API (`ViewerSpec`, `NapariRequirement`, `PackageRequirement`, and the `coerce_viewer_spec`, `extract_viewer_spec`, `merge_viewer_specs` helpers) plus a new `packaging` runtime dependency.
+- `bioimageflow` `0.7.2` to `0.8.0`: public viewing requirements API, viewer metadata in node and workflow serialization, canonical schema version 2 with explicit v1 normalization, viewer metadata in the normalized portable graph and artifact hash, a derived requirements manifest in workflow archives, and retained run-node viewer metadata. Its core range moved to `>=0.4.0,<0.5`.
+- Eight tool packages received compatibility-range-only patch bumps so that `bioimageflow` `0.8.0` and the published tool packages remain jointly installable: `bioimageflow-common-tools`, `bioimageflow-io-tools`, `bioimageflow-measurement-tools`, `bioimageflow-restoration-tools`, `bioimageflow-sairpico-tools`, and `bioimageflow-spot-tools` to `0.2.1`; `bioimageflow-segmentation-tools` and `bioimageflow-tracking-tools` to `0.3.1`. Their core floor stayed at `>=0.3.0` while the ceiling widened to `<0.5`.
+- `bioimageflow-phasor-tools` was deliberately not released; it has never been published, and the release policy routes unpublished projects to a separate bootstrap path.
+- Release authority: the library release policy in `docs/source/reference/releasing.md`, and publication through `.github/workflows/release.yml` with PyPI trusted publishing.
+- Execution record: release commit `4943915`; pull request `Inria-SAIRPICO/bioimageflow#1`; merge commit `c467f501d5a5ba99dfb2d6f147109011806ec860`, whose tree is identical to the release commit; ten annotated tags pushed at that commit and verified to peel to it; publish workflow run `34980256529` on `main` with `mode=publish`, successful with no environment approval required.
+- Independent verification: every released version answers `https://pypi.org/pypi/<project>/<version>/json`, wheel and sdist names match the locally built artifacts, the published metadata reports `bioimageflow-core>=0.4.0,<0.5` for `bioimageflow` `0.8.0` and `>=0.3.0,<0.5` for the tool packages, and a fresh resolution installs the nine downstream packages together with `bioimageflow-core==0.4.0`.
 
-The library package versions remain `bioimageflow==0.7.2` and `bioimageflow-core==0.3.1` on this branch.
-A release/versioning decision is therefore still required before the platform can consume the new APIs through its frozen production lock.
+## Platform dependency boundary
 
-## Implemented platform backend scope
+The blocker recorded in the first checkpoint is resolved.
 
-The platform branch contains the following integrated backend work.
+- `backend/pyproject.toml` pins `bioimageflow-core>=0.4.0,<0.5` and `bioimageflow[cluster]==0.8.0`.
+- `backend/uv.lock` was relocked and resolves the published artifacts; it no longer installs the pre-viewer `0.7.2`/`0.3.1`.
+- `scripts/ci/test_versions.env` pins `BIOIMAGEFLOW_COMMON_TOOLS_VERSION=0.2.1`, because `0.2.0` declares `bioimageflow-core<0.4` and cannot coexist with `bioimageflow` `0.8.0`.
+- A clean isolated environment created with `uv sync --frozen --group dev` under a separate project environment installs `bioimageflow` `0.8.0` and `bioimageflow-core` `0.4.0`, from which `bioimageflow_core.ViewerSpec` imports successfully. No editable or path dependency is used anywhere in the frozen lane.
+- The library worktree's diagnostic editable installation recorded in the first checkpoint has been removed from the platform environment and is not part of any completion evidence.
 
-- A settings-backed, revisioned registry stores named environments, ownership, immutable launch context, inventory, state, and managed-recipe identity.
-- External Conda and virtual environments can be registered through typed desktop-only APIs.
-- Inventory probes run in bounded subprocesses and use `importlib.metadata` distribution metadata rather than importing napari or discovering plugin manifests.
-- The former singleton napari environment can be adopted into the registry.
-- UUID-keyed launcher processes and locks permit independent environment lifecycle and concurrent viewers.
-- Registered launch arguments are frozen and dispatched according to the persisted interpreter, Conda, or managed strategy.
-- Each environment receives an isolated napari settings file.
-- Open commands carry an optional explicit reader and acknowledge only after the Qt-thread operation completes.
-- Ambiguous open outcomes are not replayed automatically.
-- Lifecycle events and WebSocket state are attributed to the environment ID rather than a singleton `napari` key.
-- A dedicated launch route starts an empty viewer without issuing an empty open request.
-- Managed creation, copy, retry, cancellation, restart reconciliation, and ownership-proven removal use public Wetlands operations where available.
-- Managed recipes install only Python through Conda and install napari, Qt, and requested distributions from PyPI.
-- Ordered filename rules, extension shortcuts, the global default, rule previews, and catch-all validation are exposed through typed APIs.
-- Graph schema-v2 migration covers saved workflow documents, durable root drafts, nested snapshots, normalized hashes, and forward-recoverable migration state.
-- Result APIs expose immutable run, node, result, and record identity needed to address an exact retained artifact.
-- The resolver evaluates package-only compatibility for exact results and portable manifests.
-- The resolver returns the exact server-derived persistent preference key so the frontend does not reconstruct it.
-- A separate revisioned `viewer-preferences.json` store owns exclusive structural-output favorites.
-- Favorite lifecycle is coordinated with workflow move, delete, identity generation, and nested-session apply behavior.
-- Passive readiness evaluates portable output requirements, groups identical normalized requirement sets, preserves unknown or incomplete declarations, and can prefill managed setup without side effects.
-- Desktop-only mode gates protect local filesystem and process operations from webapp deployment.
+Ownership note: the release policy publishes from library `main` and requires the release commit to be there, so the library feature branch was merged to library `main` for the release. That is a release action, not an implementation route; further library implementation should still not be done directly on `main`.
 
-The legacy open, status, and shutdown routes without an environment ID remain temporarily available for compatibility.
+Repository maintenance finding, outside this feature: library `main` branch protection still requires status contexts named `Fast tests (Python 3.10)`, `Fast tests (Python 3.11)`, and `Fast tests (Python 3.12)`, which the current `ci.yml` no longer produces, so pull requests report a permanently blocked merge state. The release merged with an administrator override. The protection rule should be updated to the contexts the workflow now emits.
 
-## Implemented platform frontend and documentation scope
+## Implemented scope
 
-Platform commits `6111f84`, `9a1e904`, `0fe9974`, and `c17b863` add the integrated frontend and documentation increments.
+The implemented library, backend, and frontend scope recorded in the first checkpoint is unchanged and remains accurate for commit `c17b863` and its ancestors; this document does not repeat that inventory.
+The commits after the first checkpoint add or change the following.
 
-- Image Viewers settings provides environment listing, registration, probing, locating, renaming, forgetting, and empty launch.
-- Managed environment controls cover default, legacy, and advanced creation, operation polling, deduplication, progress, retry, cancellation, copying, and deletion.
-- Settings exposes the global default and ordered file-opening rules with extension shortcuts, advanced glob patterns, reordering, previews, and a catch-all warning.
-- Installing unverified requested packages requires explicit confirmation.
-- Workflow import readiness is non-blocking and can prefill environment creation from a normalized requirement group.
-- The passive readiness report displays per-output coverage and setup state and refreshes on relevant workflow, environment, and tool lifecycle events.
-- The readiness UI explicitly says that plugin active/enabled state is unavailable instead of inferring it.
-- Direct and merged result tables propagate exact result identity to image cells.
-- The output split button resolves and opens the effective environment.
-- The chooser lists compatible, incompatible, unknown, and unavailable candidates with package-only explanations.
-- The chooser supports one-time environment selection, replace-layers dispatch, explicit try-anyway behavior, environment management, and requirement-prefilled setup.
-- The chooser implements one exclusive toggleable favorite for the structural output across all rows.
-- Generated OpenAPI frontend types were updated for schema-v2 graphs and the new napari APIs.
-- User guidance, the napari feature specification, affected v1/v2 contracts, and `PLATFORM_CONTEXT.md` describe the implemented behavior and remaining certification limit.
+- Retained viewer metadata is pinned to the exact result identity for direct and merged tables: each displayed structural column carries the viewer declaration captured with that exact retained result, with an explicit `captured` or `legacy_unpinned` status, and the frontend never substitutes mutable current graph or tool metadata for specialized action visibility.
+- Viewer conversion from the library type to the platform wire model has one authority, `ViewerSpec.from_library`, used by the resolver, the pages router, and the projection service.
+- The incompatible-favorite rule is enforced by the backend favorite toggle and set endpoints, with one shared compatibility evaluator extracted from the resolver.
+- The feature specification describes delivered behaviour instead of a proposal.
+
+Two defects that only the complete browser lane could expose were found and fixed after the first full-lane run.
+
+- Saving a workflow whose interface output schema carried an explicit `null` viewer declaration was rejected with `422`. `OutputFieldSchema` gained `viewer: ViewerSpec | None`, so tool output metadata carries `"viewer": null`, and the canvas copied that field verbatim into the exposed output's schema; the new `WorkflowOutput.validate_schema_viewer` then treated the present key as a declaration and refused the null. An explicit null is not a declaration: `36d12f7` makes the validator erase the key on ingress so that `{"viewer": null}` and an absent key produce one serialized graph and one artifact hash, while a non-null value is still validated strictly against the library type.
+- Even after the save was accepted, the unsaved-changes marker never cleared. The canvas document and the API wire document disagreed on optional viewer fields: the API carried `viewer_addition: null` on interface outputs and `viewer_additions: {}` on nodes, the canvas document omitted them, and an exposed output schema re-introduced `viewer: null`. The save coordinator then saw a phantom newer edit, kept the canvas dirty, and never reached the clean state. `887e326` makes the canvas serialize the same optional fields and stops an exposed output schema from copying an absent viewer declaration, so client and server agree on one spelling of the document.
+
+Both were reproduced deterministically on both browser engines and confirmed as feature-caused, not environmental.
 
 ## Integrated platform commit sequence
 
@@ -135,179 +115,120 @@ fb47db3 Implement managed napari lifecycle
 9a1e904 Add napari result environment chooser
 0fe9974 Add passive viewing requirements report
 c17b863 Document napari environment workflows
+61aa96b Document napari implementation handoff
+1799397 Pin retained viewer metadata to the exact result identity
+532db4d Merge branch 'main' into feature/napari-environments
+4931b20 Consume the released viewer contract from the frozen lock
+b7da7f4 Describe the delivered napari environments specification
+3a79ded Enforce the incompatible favorite rule in the napari backend
+5f1dcc2 Add the rendered viewer addition to the recursive copy e2e expectation
+36d12f7 Give a workflow output without a viewer declaration one identity
+887e326 Serialize the viewer fields the canvas graph document omits
 ```
 
-## Preserved uncommitted exact-result metadata follow-up
+Platform `main` at this checkpoint is `1e692ed`.
 
-The worktree `.worktrees/napari-output-chooser` on branch `task/napari-output-chooser` is intentionally dirty at base commit `a19aea6`.
-Do not discard, reset, rebase, or remove this worktree before reviewing and preserving its changes.
+## Worktree disposition
 
-This follow-up fixes the main known functional defect at `c17b863`.
-The current integrated frontend can decide specialized non-image napari action visibility from mutable current resolved-output metadata rather than metadata captured with the exact retained result.
-The follow-up makes direct and merged table responses carry the viewer declaration captured with the exact result and an explicit `captured` or `legacy_unpinned` status.
+- `.worktrees/napari-environments` is the integration authority and holds the branch checkpoint.
+- `.worktrees/napari-output-chooser` on branch `task/napari-output-chooser` at commit `3577093` is now clean. Its commit was cherry-picked into the integration branch as `1799397`, so its content is integrated, but the branch itself was never merged. Keep the worktree until the integration branch is merged or the branch is explicitly disposed of.
+- `.worktrees/napari-frontend` was audited: every remaining unstaged change is either already integrated or superseded by the dedicated `NapariOutputChooser.vue` authority, and no salvageable behaviour was identified. It can be discarded once the integration branch is merged.
+- `.worktrees/napari-env-registry`, `.worktrees/napari-launcher`, `.worktrees/napari-managed`, `.worktrees/napari-readiness`, `.worktrees/napari-resolver`, and `.worktrees/napari-spec` were clean at the first checkpoint.
+- The detached `.worktrees/napari-review` worktree is not an integration authority.
+- The historical test-evidence documents under `docs/developer/platform-test-*.md` intentionally keep the library versions that were current when those runs happened; they are records, not live status, and must not be rewritten.
 
-Its uncommitted files are:
+## Independent review outcomes
 
-```text
-backend/src/bioimageflow_server/models/data_table.py
-backend/src/bioimageflow_server/models/nodes.py
-backend/src/bioimageflow_server/routers/nodes.py
-backend/src/bioimageflow_server/services/data_table_projection.py
-backend/src/bioimageflow_server/services/result_store.py
-backend/tests/test_routers/test_nodes.py
-backend/tests/test_services/test_data_table_projection.py
-frontend/src/api/types.ts
-frontend/src/components/panels/ImageCell.vue
-frontend/src/components/panels/MergedDataTable.vue
-frontend/src/components/panels/NodeDataTable.vue
-frontend/src/components/panels/__tests__/ImageCell.test.ts
-frontend/src/stores/dataTable.ts
-frontend/tests/e2e/napari-output-chooser.spec.ts
-platform_specs_napari_environments.md
-platform_specs_v2.md
-```
-
-The diff contained 221 added and 39 removed lines when this handoff was written.
-It has not been validated or committed.
-
-## Other worker worktree state
-
-The `.worktrees/napari-frontend` worktree is at task commit `9bcd384` and remains dirty.
-Its committed Settings and readiness changes are already integrated as `6111f84` and `0fe9974`.
-Its remaining unstaged chooser, canvas, data-table, fixture, and E2E changes overlap an earlier abandoned implementation and are not the integration authority.
-Inspect them before discarding the worktree, but do not merge them wholesale over the dedicated `NapariOutputChooser.vue` implementation.
-
-The other napari task worktrees were clean when this handoff was written:
-
-```text
-.worktrees/napari-env-registry
-.worktrees/napari-launcher
-.worktrees/napari-managed
-.worktrees/napari-readiness
-.worktrees/napari-resolver
-.worktrees/napari-spec
-```
-
-The detached `.worktrees/napari-review` worktree was at platform commit `28b17f0` and is not the current integration authority.
-
-## Dependency and release blocker
-
-The platform production dependency still declares `bioimageflow[cluster]==0.7.2` and `bioimageflow-core>=0.3.1,<0.4` in `backend/pyproject.toml`.
-The frozen `backend/uv.lock` therefore installs published BioImageFlow 0.7.2 and core 0.3.1, which do not contain `ViewerSpec` and the new schema/viewer APIs.
-Consequently, an authoritative `scripts/test` backend or browser lane cannot collect the feature branch from the frozen lock.
-
-Do not solve this with a permanent local path dependency or by claiming editable-install results as a frozen-lock pass.
-Choose library release versions according to the BioImageFlow release policy, update both library packages consistently, publish only with explicit release authority, then update the platform dependency constraints and frozen lock to those released artifacts.
-Until publication is authorized and completed, editable local installation may be used only for diagnostic cross-repository testing and must be reported as such.
+- Merge semantics audit of the reconciled branch: the schema-v2 mandate, result-identity pinning, and multi-environment UI authority survived the merge intact; the two flagged items (a schema-version-1 golden fixture and the legacy singleton compatibility paths) were adjudicated as intentional by design, and a third (the campaign manifest's own document `schema_version`) is a distinct field unrelated to the graph schema. No must-fix item.
+- Architecture and reliability review of portability, schema migration, result identity, preference lifecycle, concurrency, package-compatibility semantics, and frontend/backend contract alignment: correct, with one medium finding that the backend favorite endpoint did not enforce the specification's incompatible-favorite rule. Fixed by `3a79ded`.
+- Security and mode-gate review of desktop gating, path handling, process execution, managed-environment ownership, package installation, and credential leakage: no release-blocking finding. Three low-severity hardening items were recorded for the implemented desktop, single-user, same-account threat model.
+  1. Managed-environment viewers started through Wetlands inherit the backend process's ambient environment, while external registered environments are started with an explicit whitelist. Third-party packages requested into a managed environment therefore receive ambient environment variables such as proxy or token settings.
+  2. `GET /api/v1/settings` serves the registry roots, interpreter paths, launch argv, and distribution inventory without the desktop-only gate that the dedicated napari environment routes enforce.
+  3. The local API accepts unauthenticated, origin-open requests, so a page the user visits could drive destructive managed-environment routes. This is inherited platform behaviour, not introduced by this feature.
+- Documentation consistency audit: the feature specification and the handoff carried proposal framing and pre-release version claims, while the user documentation, `platform_specs_v1.md`, `platform_specs_v2.md`, and `PLATFORM_CONTEXT.md` were already accurate. Fixed by `b7da7f4`.
 
 ## Validation evidence
 
-### BioImageFlow library at `c0a854c`
+### BioImageFlow library at the release commit `4943915`
 
 | Command or check | Result | Duration |
 | --- | --- | --- |
-| `uv run pytest` | 2,306 passed, 37 skipped, 12 warnings | 103.78s |
-| Focused viewer, archive, and retained-result tests | 79 passed | 18.76s |
-| `uv run ruff check .` | Passed | Not retained |
-| `uv run pyright` | 0 errors and 0 warnings | Not retained |
-| File-size and import-boundary guardrails | Passed | Not retained |
-| `uv run sphinx-build -W --keep-going docs/source docs/_build/html` | Passed | Not retained |
+| `uv run pytest` | 2,306 passed, 37 skipped, 12 warnings | 84.47s |
+| `uv run ruff check .` | Passed | 0.12s |
+| `uv run pyright` | 0 errors, 0 warnings | 7.89s |
+| `uv run sphinx-build -W --keep-going docs/source docs/_build/html` | Succeeded | 35.68s |
+| Metadata, release-tooling, tagging, artifact, and development-workflow tests | 83 passed | 7.79s |
+| `scripts/check_file_sizes.py`, `scripts/check_import_boundaries.py` | Passed | <0.5s |
+| `uv run python docs/generate_tool_package_docs.py --check` | Passed | 0.10s |
+| `uv lock` | Resolved 127 packages, 11 workspace members reversioned | 0.39s |
+| Release packaging and publication | Ten projects built, validated, and published; PyPI confirmed per project | Workflow duration recorded in run `34980256529` |
 
 ### Platform backend
 
 | Revision and command | Result | Duration |
 | --- | --- | --- |
-| Backend feature revision through `28b17f0`, authoritative `scripts/test focus backend ...` | Failed during collection because the frozen published library lacks the new viewer APIs | 2s |
-| Backend feature revision through `28b17f0`, relevant direct pytest families after diagnostic editable installation of the library feature | 148 passed | 3.31s |
+| `532db4d`, focused feature families after the exact-result follow-up and the frozen-lock update | 168 passed | 7.96s |
+| `3a79ded`, napari environments router, resolver, and readiness families | 18 passed | 1.31s |
+| `3a79ded`, broad napari backend family including launcher and managed lifecycle | 149 passed | 3.74s |
+| `5f1dcc2`, `scripts/test full`, backend with branch coverage and external common-tools `0.2.1` | 1,722 passed | 118s |
+| `5f1dcc2`, logging-order certification phase | 7 passed | 2s |
 
-The editable-library result is useful implementation evidence but is not an authoritative frozen-lock platform completion check.
+The backend suite now runs against the published `bioimageflow` `0.8.0` and `bioimageflow-core` `0.4.0` through the frozen lock; the first checkpoint's blocker was that this was impossible before publication.
 
-### Platform frontend and docs
+### Platform frontend
 
 | Revision and command | Result | Duration |
 | --- | --- | --- |
-| Integrated primary `9a1e904`, `bun run type-check` | Passed | Not retained |
-| Integrated primary `9a1e904`, focused chooser/component/store tests | 120 passed | 7.81s test time, 9s wrapper |
-| Chooser worker `a19aea6`, focused Chromium E2E with all napari endpoints intercepted | 1 passed | Approximately 7s |
-| Chooser worker `a19aea6`, frontend completion check | Lint, typecheck, 1,302 tests, and production build passed | Not retained |
-| Readiness worker `9bcd384`, focused tests | 102 passed | 7s |
-| Readiness worker `9bcd384`, `scripts/test check frontend` | Lint, typecheck, 1,319 tests, and production build passed | 17s |
-| Browser lane | 3 passed, 1 failed, 80 not run; failure occurred before chooser coverage because published BioImageFlow 0.7.2 rejects schema-v2 export | Not retained |
-| Integrated primary `c17b863`, `scripts/test check docs` | Passed after the initial sandbox dependency-access failure was rerun with approved access | 1s successful run; 3s blocked run |
+| `532db4d`, `scripts/test check frontend` | Lint, type check, 1,324 unit tests, and production build passed | 20s |
+| `5f1dcc2`, `scripts/test full`, frontend unit tests with branch coverage | 134 files, 1,324 tests passed | 25s |
+| `5f1dcc2`, frontend lint, type check, production build phases | Passed | 9s, 0s, 6s |
+| `3a79ded`, `scripts/test focus e2e tests/e2e/napari-output-chooser.spec.ts` | Chromium and Firefox passed | 6.1s, 6.6s |
+| `5f1dcc2`, `scripts/test focus e2e tests/e2e/agent-draft-sync.spec.ts` | Chromium 4 passed, Firefox 4 passed | 10.3s, 15.1s |
 
-No clean-primary full frontend completion check was run after `0fe9974` was integrated.
-The exact-result metadata follow-up has not been validated.
-Native desktop behavior remains an explicit manual certification obligation.
+### Platform documentation
 
-## Recommended continuation orchestration
+| Revision and command | Result | Duration |
+| --- | --- | --- |
+| `4931b20`, `scripts/test check docs` | Passed | 2s |
+| `b7da7f4`, `scripts/test check docs` | Passed | 2s |
 
-Use one GPT-5.6 Sol high master agent to retain the global contract, integration sequence, dependency boundary, and validation record.
-Keep the four-agent concurrency limit.
-Give at most two GPT-5.6 Sol medium workers bounded implementation or test tasks in separate worktrees.
-Reserve the remaining slot for a GPT-6 Astra high architecture/reliability review after the implementation and frozen dependency integration are coherent.
-The master should integrate commits, resolve conflicts, run clean checks, update this handoff/specification status, and make all completion claims.
+### Browser lane
 
-Suggested task split:
+Getting both browser projects to a complete green run took three attempts, and the two intermediate failures were real.
 
-1. Assign one worker to preserve and finish the dirty `.worktrees/napari-output-chooser` exact-result metadata follow-up.
-2. Assign a second worker to audit library versioning/release requirements and prepare the platform dependency/lock update without publishing anything unless explicitly authorized.
-3. Have the master review and integrate the exact-result metadata commit into `feature/napari-environments`.
-4. After released library artifacts exist, update the platform dependency pins and frozen lock and validate from a clean isolated environment.
-5. Reconcile `feature/napari-environments` with the current platform `main`, preserving unrelated campaign work and resolving schema-v2/frontend conflicts deliberately.
-6. Run focused backend and frontend tests for any conflict resolution, then the clean scoped checks required by `docs/testing.md`.
-7. Run the chooser E2E with intercepted viewer endpoints before any broader browser lane.
-8. Ask the GPT-6 Astra high reviewer to inspect portability, schema migration, result identity, preference lifecycle, concurrency, security/mode gates, package compatibility semantics, and frontend/backend contract alignment.
-9. Resolve every material reviewer finding and rerun the affected focused checks.
-10. Run `scripts/test check app`, `scripts/test check docs`, and finally `scripts/test full` because this is a large cross-stack, schema, package-loading, and external-compatibility change.
-11. Record exact commands, results, durations, revisions, skips, and external/manual limits in the final handoff.
-12. Commit only feature changes, leave both `main` branches untouched until review, and clean merged worktrees only after their branches are actually merged.
+The first `scripts/test full`, on revision `532db4d`/`4931b20`, aborted both projects on `tests/e2e/agent-draft-sync.spec.ts`, a deep-equality mismatch caused by the feature's explicit `viewer_addition: null` in a copied embedded graph; `5f1dcc2` updated the stale expectation after establishing that the platform's wire convention is to render optional fields as explicit `null`.
+The second run, on `5f1dcc2`, cleared that blocker and executed 76 of 85 Chromium tests and 48 of 85 Firefox tests before each project aborted at its first remaining failure, `tests/e2e/workflow-interface.spec.ts:308`. Isolated reproduction showed that failure to be deterministic on both engines and feature-caused: saving an interface output whose schema carried `"viewer": null` was rejected `422`, and behind it the canvas and API documents disagreed on their viewer-field spelling so the unsaved-changes marker never cleared. A separate Firefox `tests/e2e/hot-reload.spec.ts` failure was run six times in isolation without reproducing and did not recur, so it was recorded as load flakiness rather than a defect.
+The third run, on `887e326` after `36d12f7` and `887e326`, completed both projects with no failures and no flakes.
 
-## Detailed continuation steps
+| Revision and command | Result | Duration |
+| --- | --- | --- |
+| `887e326`, `scripts/test full`, Chromium project | 85 passed, 0 failed, 0 flaky, 0 not run | 277s |
+| `887e326`, `scripts/test full`, Firefox project | 85 passed, 0 failed, 0 flaky, 0 not run | 414s |
+| `887e326`, `scripts/test full`, whole lane | Exit 0, every phase passed | 645s |
 
-### 1. Resume the exact-result metadata follow-up
+### Complete lane on the final revision `887e326`
 
-- Start in `.worktrees/napari-output-chooser` without changing its base or cleaning its working tree.
-- Review every existing diff against `a19aea6` and against current integration `c17b863` before editing.
-- Preserve the retained-result contract: viewer metadata comes from the exact immutable result identity, not the current graph or latest row offset.
-- Ensure legacy results without captured metadata are explicitly reported as `legacy_unpinned` and never presented as authoritatively captured.
-- Ensure explicit viewer declarations can expose the napari action for non-thumbnail path, directory, points, or tracks outputs.
-- Regenerate OpenAPI types from the backend model rather than maintaining handwritten copies.
-- Run exact backend tests, exact frontend tests, and the intercepted chooser E2E.
-- Commit the coherent follow-up on `task/napari-output-chooser`, then cherry-pick or otherwise integrate only that commit into `feature/napari-environments`.
+| Phase | Result | Duration |
+| --- | --- | --- |
+| Backend source import preflight | Passed | 2s |
+| Install `bioimageflow-common-tools` `0.2.1` | Passed | 0s |
+| Backend and frontend lint | Passed | 0s, 9s |
+| Frontend type check and production build | Passed | 1s, 6s |
+| Frontend unit tests with branch coverage | 134 files, 1,326 tests passed | 35s |
+| Backend full tests with branch coverage | 1,724 passed, 0 failed | 218s |
+| Backend logging-order certification | 7 passed | 11s |
+| Chromium end-to-end | 85 passed | 277s |
+| Firefox end-to-end | 85 passed | 414s |
 
-### 2. Resolve library consumption
+## Remaining work
 
-- Review BioImageFlow release/versioning instructions in the library repository.
-- Select compatible new versions for `bioimageflow` and `bioimageflow-core`; do not reuse the already published 0.7.2/0.3.1 versions.
-- Update library metadata, changelog/release documentation, and locks as required by that repository.
-- Re-run the full library suite and documentation checks after version changes.
-- Publish only if the user explicitly authorizes a release.
-- Once artifacts are available from the production package source, update platform `backend/pyproject.toml` and `backend/uv.lock` and verify that a fresh `uv sync --frozen` installs them.
-
-### 3. Integrate current platform main
-
-- Record the new `main` revision and compare it with merge base `b10fe936`.
-- Preserve unrelated test-campaign changes.
-- Pay particular attention to generated OpenAPI types, graph schema construction sites, data-table models, result identity, Settings, ImageCell, workflow import/export, and test fixtures.
-- Do not resolve schema-version conflicts by accepting version 1 or by adding silent fallback behavior.
-- Re-run the exact affected tests after each conflict cluster before broader checks.
-
-### 4. Final verification
-
-- Verify named external and managed registry CRUD, probe bounds, mode gates, and revision conflicts.
-- Verify independent per-environment launch state and WebSocket attribution without relying on a singleton pending flag.
-- Verify ordered first-match filename rules, extension normalization, advanced globs, catch-all warnings, and preview behavior.
-- Verify resolution precedence and package-only compatibility for compatible, incompatible, unknown, unavailable, and try-anyway cases.
-- Verify one exclusive toggleable favorite per structural output identity across all rows and future results.
-- Verify favorite remapping on workflow moves, clearing on deletion, identity-generation isolation, and nested-session apply semantics.
-- Verify workflow export/import portability, no local environment references, missing requirement warnings, and setup prefill.
-- Verify exact retained-result identity and captured viewer metadata for direct and merged tables, including legacy unpinned results.
-- Verify webapp rejection for local environment, filesystem, process, and viewer-launch operations.
-- Verify managed creation/copy/removal ownership, cancellation, restart reconciliation, and package validation.
-- Verify user documentation and all affected specifications match the final implementation.
-- Complete native desktop checks separately and report any unsupported platform matrix honestly.
+1. Complete native desktop certification. A packaged native window, operating-system dialogs, real napari launches against a real environment, and the cross-platform matrix remain outside every automated lane, including `scripts/test full`, which mocks pywebview. The earlier local attempt did not leave a reliable completion artifact and is not acceptance evidence. This obligation is manual and must be reported honestly rather than inferred from green lanes.
+2. Decide whether to act on the three recorded low-severity security hardening items. None is release-blocking for the implemented desktop, single-user, same-account threat model.
+3. Update library `main` branch protection so the required status contexts match the contexts `ci.yml` actually emits.
+4. Merge or explicitly dispose of the remaining napari task worktrees after the integration branch itself is merged.
 
 ## Completion definition
 
 The feature is not complete merely because mocked backend tests or headless frontend tests pass.
-Completion requires the exact-result metadata fix, released library consumption through the frozen platform lock, clean cross-stack checks on the reconciled platform branch, independent architecture review, documentation consistency, and an explicit record of native/manual certification status.
+Completion requires the complete browser certification on both projects, native desktop certification by a human on a real machine, and no unresolved material review finding.
+As of this checkpoint the implemented contract, the released library consumption through the frozen lock, the reconciled platform branch, the complete Chromium and Firefox certification, independent architecture and security review, and documentation consistency are all in place; the only outstanding obligation for this feature is native desktop certification, followed by the repository maintenance and hardening decisions listed above.
