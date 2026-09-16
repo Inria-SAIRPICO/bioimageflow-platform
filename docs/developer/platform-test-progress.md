@@ -4,22 +4,21 @@ orphan: true
 
 # Platform test campaign checkpoint
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-16.
 Objective: establish objective basic-use readiness through the fixed gate, then complete systematic coverage of all implemented in-scope features unless the owner explicitly pauses with a durable backlog.
 Orchestrator: GPT-5.6 Sol/high with focused context; ordinary workers: Sol/medium; specialist: Astra/high.
 The [plan](platform-test-plan.md) defines priorities, coverage obligations, commit/worktree rules, and the final completion gate.
-**Basic-use gate passed; systematic campaign awaiting owner decision/incomplete.**
-The fixed Basic-Use gate passed on evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`; the broader campaign is still incomplete, and this checkpoint records no owner decision to continue or pause.
+**Basic-use gate passed; owner chose to continue with Tier 1B; systematic campaign incomplete.**
+The fixed Basic-Use gate passed on evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`; on 2026-09-16, the owner chose to continue with Tier 1B.
 
 The owner approved an obligation-based inventory denominator before Wave 6, immediate durable recording of remote milestones, a visible headed or artifact-backed browser confidence checkpoint at each major GUI-wave boundary, reachability-first blocker classification, and a distinct Basic-Use Readiness Gate before lower-priority campaign work.
 The plan and restart prompt contain the normative rules; this checkpoint records their activation without duplicating their detail.
 
 ## Next actions
 
-1. Ask the owner whether to continue now through Tiers 1B, 2, and 3 or pause with the systematic campaign explicitly incomplete; do not infer that choice from this checkpoint.
-2. If paused, resume first with the remaining Tier 1B shell and everyday-editing boundaries in the [GUI inventory](coverage-gui.md), including startup refusal/recovery and the broader clipboard, shortcut, and history-isolation variants outside the fixed gate.
-3. Continue with the remaining Tier 1B grouping, recursive editing, interface, private-snapshot, and identity/recovery boundaries in the [workflow inventory](coverage-workflows.md).
-4. Then close the remaining Tier 1B execution and result-lifecycle boundaries in the [runtime inventory](coverage-runtime.md), including real-worker progress/failure/cancellation variants, cache lifecycle, richer result projections, and export recovery.
+1. Complete the assigned Tier 1B everyday canvas refusal/context and nested-interface primary GUI batches; integrate each coherent validated result immediately.
+2. Reconcile their verified cells in the [dashboard](platform-test-dashboard.md), then address the highest-reach remaining Tier 1B shell, workflow, execution, and result gaps.
+3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
 Commit `eb0dc74` implements and tests this owner-approved change; earlier single-click creation evidence is historical.
@@ -39,7 +38,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | Wave 3 / editing | Primary batch verified | Commits through `dd20821` verify node state, connection/history, clipboard identity/structure, active-root shortcuts, text-entry focus safety, typed parameters, Shift-drag box selection, atomic bulk Delete with Undo/Redo, accepted root output Clear/refusal, accepted backend-draft recovery, sibling switching, close Cancel, visible CAS conflict, Keep my canvas, and exact Discard/reopen. Lower-priority inventory boundaries remain for final systematic closure. |
 | Wave 4 / nested workflows | Primary batch verified | Commits through `e817d77` verify private Apply/discard, stale-parent refusal, destructive port confirmation, forwarded-interface reconciliation, failed-write retry with unrelated parent edits, concurrent newer private state, remount dirtiness, real nested Direct execution with scoped durable results, and recursive agent-copy ownership with same-class/different-byte sources and independent copied execution. Commit `3422e1c` resolves nested DataFrame publication remaining dirty after accepted Save and passes the complete Chromium browser lane plus the exact Firefox journey. Packaged-crash and other lower-priority recursive boundaries remain for final closure. |
 | Wave 5 / execution and results lifecycle | Primary execution/results batches verified | Commits through `d1072ce` verify the primary real GUI result-table filter/sort/page/direct-page/CSV journey. Commits `c050207` and `d8bd740` add real merged/stacked multi-selection, exact source attribution/navigation, persistent/reset widths, and bounded subpixel drag assertions. BioImageFlow 0.7.2 and integrated `da2ced2` verify real cooperative Stop and successful rerun. Commit `4676ffb` adds the real sequential failure, single enriched contextual error, unlocked GUI correction, successful rerun, exact rows, and output-file bytes. Commits `624d986` through `7ab16e6` add real typed image/file viewing, the actual Avivator GUI action, and byte-level mixed-latest versus pinned-run export verification. A visible headed Chromium run of the primary create/run/inspect/save/reopen journey passed at `8574adc`. True thumbnail provisioning and native viewer/dialog checks remain later external/manual boundaries. |
-| Wave 6 / tiered remaining features | Tier 1A gate passed; awaiting owner decision | The fixed 73-cell gate and every current-revision validation requirement passed at `50c1af485edef8ebfaca7971ee99e8717694f85e`. Tier 1B and later systematic obligations remain incomplete; ask the owner whether to continue now or pause. |
+| Wave 6 / tiered remaining features | Tier 1B active | The fixed 73-cell gate and every current-revision validation requirement passed at `50c1af485edef8ebfaca7971ee99e8717694f85e`. The owner chose to continue on 2026-09-16; everyday canvas safety and nested-interface GUI batches are assigned in dedicated worktrees. Tier 1B and later systematic obligations remain incomplete. |
 | T06 / wave 7 final coverage | Pending | Every implemented in-scope feature/scenario mapped and verified, all required suites executed, manual/external boundaries completed or explicit limitations accepted. |
 
 The three inventories own detailed rows; this summary must not become a competing feature list.
@@ -57,6 +56,10 @@ Full browser lanes, external package certification, Tier 1B–3 selectors, nativ
 The exact commands, durations, environment-only blocked first attempts, and exclusions are retained in [Campaign evidence](platform-test-evidence.md).
 
 ## Ownership and unresolved decisions
+
+`/root/tier1b_everyday_safety` owns `.worktrees/tier1b-everyday-safety` on `campaign/tier1b-everyday-safety` for high-reach root canvas connection refusal and active-context safety.
+`/root/tier1b_nested_primary` owns `.worktrees/tier1b-nested-primary` on `campaign/tier1b-nested-primary` for ordinary positional DataFrame publication and exposed-node nested-interface safety.
+The unrelated pre-existing `.claude/CLAUDE.md` edit remains owner-owned and outside this campaign task.
 
 The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
 The Wave 2 worktree was archived under `/private/tmp`, pruned, and its patch-equivalent branch deleted after integration.
