@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -22,8 +24,16 @@ from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.graph import ColumnEdge, GraphState, ToolNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
-from bioimageflow_server.services.execution import ExecutionManager, WorkflowBuildError
+from bioimageflow_server.models.workflow import WorkflowCreate
+from bioimageflow_server.services.execution import (
+    ExecutionManager,
+    WorkflowBuildError,
+    clear_node_cache,
+)
+from bioimageflow_server.services.graph_compiler import GraphCompiler
 from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 pytestmark = pytest.mark.anyio
 
@@ -232,6 +242,217 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     assert validation.node_statuses["source"].cached is True
     assert validation.node_statuses["offset"].status == "executed"
     assert validation.node_statuses["offset"].cached is True
+
+
+async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path) -> None:
+    registry = local_registry()
+    root = tmp_path / "workspace" / "workflows"
+    store = WorkflowStoreService(root_dir=root, tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(
+        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+    )
+    graph = dataframe_chain()
+    accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
+    storage = store.get_storage_path("wf")
+    manager = ExecutionManager(RecordingEventBus(), registry, _settings(), storage_path=storage)
+    await manager.start(graph, workflow_id="wf", draft_revision=accepted.draft_revision)
+    await _drain_manager(manager)
+    assert manager.last_result is not None and manager.last_result.success
+
+    # A harmless accepted canvas edit stores post-run executed validation.
+    edited = graph.model_copy(deep=True)
+    edited.nodes[0].position = (20, 10)
+    accepted = drafts.put_draft("wf", graph=edited, expected_revision=accepted.draft_revision)
+    assert accepted.validation.node_statuses["source"].status == "executed"
+    assert accepted.validation.node_statuses["offset"].status == "executed"
+    before = accepted.model_dump(mode="json")
+
+    cleared = clear_node_cache(
+        ["source"], edited, registry, storage, dev_mode=False, settings=_settings()
+    )
+    assert cleared["source"].status == "unexecuted"
+    assert cleared["offset"].status == "out_of_date"
+
+    # New backend services have no live execution status, only the same workspace.
+    restarted_registry = local_registry()
+    restarted_store = WorkflowStoreService(root_dir=root, tool_registry=restarted_registry)
+    restarted_drafts = WorkflowDraftService(
+        lambda: restarted_store, dev_mode_provider=lambda: False, settings_provider=_settings
+    )
+    restarted = restarted_drafts.get_draft("wf")
+    assert restarted.validation.node_statuses["source"].status == "unexecuted"
+    assert restarted.validation.node_statuses["offset"].status == "out_of_date"
+    assert restarted.model_dump(mode="json", exclude={"validation"}) == {
+        key: value for key, value in before.items() if key != "validation"
+    }
+    assert restarted_drafts.get_draft_authority("wf").draft.model_dump(mode="json") == before
+
+    # A new backend's HTTP GET projects the same accepted authority.
+    app = create_app(
+        AppConfig(
+            tool_registry=restarted_registry,
+            workflow_store=restarted_store,
+            settings=_settings(),
+            disable_hot_reload=True,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/workflow-drafts/wf")
+    assert response.status_code == 200, response.text
+    assert response.json()["validation"]["node_statuses"]["source"]["status"] == "unexecuted"
+    assert response.json()["validation"]["node_statuses"]["offset"]["status"] == "out_of_date"
+
+    # Reopen the same workspace in a separate OS process and query its new app.
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import asyncio
+import json
+import sys
+import httpx
+from bioimageflow_server.app import create_app
+from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from tests.platform_fixtures import local_registry
+
+async def main():
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=sys.argv[1], tool_registry=registry)
+    app = create_app(AppConfig(tool_registry=registry, workflow_store=store, disable_hot_reload=True))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/workflow-drafts/wf")
+    print(json.dumps({"http": response.status_code, "body": response.json()}))
+
+asyncio.run(main())
+""",
+            str(root),
+        ],
+        cwd=Path(__file__).parents[2],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    process_response = json.loads(child.stdout.splitlines()[-1])
+    assert process_response["http"] == 200
+    process_statuses = process_response["body"]["validation"]["node_statuses"]
+    assert process_statuses["source"]["status"] == "unexecuted"
+    assert process_statuses["offset"]["status"] == "out_of_date"
+
+    # Once no downstream latest output remains, pending_upstream means unexecuted.
+    clear_node_cache(
+        ["offset"], edited, restarted_registry, storage, dev_mode=False, settings=_settings()
+    )
+    without_output = restarted_drafts.get_draft("wf")
+    assert without_output.validation.node_statuses["offset"].status == "unexecuted"
+
+    # Rerunning the unchanged accepted graph restores current cache status.
+    new_manager = ExecutionManager(
+        RecordingEventBus(), restarted_registry, _settings(), storage_path=storage
+    )
+    await new_manager.start(edited, workflow_id="wf", draft_revision=accepted.draft_revision)
+    await _drain_manager(new_manager)
+    assert new_manager.last_result is not None and new_manager.last_result.success
+    rerun = restarted_drafts.get_draft("wf")
+    assert rerun.validation.node_statuses["source"].status == "executed"
+    assert rerun.validation.node_statuses["offset"].status == "executed"
+
+
+async def test_draft_status_before_any_run_has_no_false_downstream_staleness(
+    tmp_path: Path,
+) -> None:
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(
+        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+    )
+    graph = dataframe_chain()
+    accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
+    assert accepted.validation.node_statuses["offset"].status == "unexecuted"
+
+    clear_node_cache(
+        ["source"],
+        graph,
+        registry,
+        store.get_storage_path("wf"),
+        dev_mode=False,
+        settings=_settings(),
+    )
+    restarted = WorkflowDraftService(
+        lambda: WorkflowStoreService(
+            root_dir=tmp_path / "workflows", tool_registry=local_registry()
+        ),
+        dev_mode_provider=lambda: False,
+        settings_provider=_settings,
+    ).get_draft("wf")
+    assert restarted.validation.node_statuses["source"].status == "unexecuted"
+    assert restarted.validation.node_statuses["offset"].status == "unexecuted"
+
+
+async def test_draft_get_retries_when_accepted_revision_changes_during_compile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(
+        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+    )
+    graph = dataframe_chain()
+    first = drafts.put_draft("wf", graph=graph, expected_revision=0)
+    changed = graph.model_copy(deep=True)
+    changed.nodes[0].position = (40, 20)
+    compile_original = GraphCompiler.compile
+    injected = False
+
+    def compile_with_intervening_write(self: GraphCompiler, *args: Any, **kwargs: Any) -> Any:
+        nonlocal injected
+        if not injected:
+            injected = True
+            drafts.put_draft("wf", graph=changed, expected_revision=first.draft_revision)
+        return compile_original(self, *args, **kwargs)
+
+    monkeypatch.setattr(GraphCompiler, "compile", compile_with_intervening_write)
+    response = drafts.get_draft("wf")
+    assert injected
+    assert response.draft_revision == first.draft_revision + 1
+    assert response.graph == changed
+
+
+async def test_draft_get_retries_same_id_recreation_during_compile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    drafts.put_draft("wf", graph=dataframe_chain(), expected_revision=0)
+    original_generation = store.workflow_generation("wf")
+    compile_original = GraphCompiler.compile
+    replaced = False
+
+    def compile_with_replacement(self: GraphCompiler, *args: Any, **kwargs: Any) -> Any:
+        nonlocal replaced
+        result = compile_original(self, *args, **kwargs)
+        if not replaced:
+            replaced = True
+            store.delete_workflow("wf")
+            store.create_workflow(WorkflowCreate(name="wf"))
+        return result
+
+    monkeypatch.setattr(GraphCompiler, "compile", compile_with_replacement)
+    response = drafts.get_draft("wf")
+    assert replaced
+    assert response.draft_revision == 0
+    assert response.graph.nodes == []
+    assert store.workflow_generation("wf") != original_generation
 
 
 async def test_execution_manager_run_selected_executes_valid_branch_with_unrelated_missing_tool(

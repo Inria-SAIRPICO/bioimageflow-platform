@@ -508,7 +508,18 @@ test.describe('everyday node editing', () => {
       && response.request().method() === 'POST'
     ))
     await page.getByTestId('run-workflow-button').click()
-    expect((await rerun).status()).toBe(202)
+    const rebuild = page.getByTestId('out-of-date-confirm')
+    await expect(rebuild).toContainText('Rebuild nodes before running?')
+    await expect(rebuild.locator('li')).toHaveText([TARGET_ID])
+    await page.getByTestId('out-of-date-continue').click()
+    const rerunAccepted = await rerun
+    expect(rerunAccepted.status()).toBe(202)
+    expect(await rerunAccepted.json()).toMatchObject({
+      status: 'started',
+      workflow_id: workflowName,
+      draft_revision: baseline.draft_revision,
+      execution_id: expect.any(String),
+    })
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
     await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-executed/)
     await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-executed/)

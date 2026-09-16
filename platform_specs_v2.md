@@ -189,6 +189,7 @@ Execution compiles the accepted recursive graph to one flat plan.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
 Clearing selected outputs updates the matching workflow's retained live node-status snapshot without changing the completed run's historical result; a reconnect therefore preserves the cleared and downstream out-of-date presentation.
+An authoritative root-draft GET also recomputes cache-derived statuses for its accepted graph against the workflow's current storage, so a backend restart does not revive pre-Clear badges from persisted validation. This is a response-only projection: it does not change draft graph/revision or other durable metadata. A `pending_upstream` node is `out_of_date` only if its latest output remains published, and `unexecuted` otherwise. The accepted draft, workflow identity generation, and storage path are fenced against Clear and concurrent workflow mutations before the final plan and latest-output read.
 Each compilation captures current source bytes before loading the library workflow, without waiting for filesystem notifications.
 Source-bound nodes select the worker-capable engine without consulting a same-named global catalog class.
 The captured library payload assigns content-derived source-module identities, including helper and asset contents, to isolate Python imports between source versions.

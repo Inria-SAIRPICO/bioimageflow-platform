@@ -71,6 +71,7 @@ def _validation_from_compilation(
     compilation: BuildOutput,
     *,
     dev_mode: bool,
+    has_retained_latest: Callable[[str], bool] | None = None,
 ) -> ValidationResult:
     """Derive validation and statuses from one request-local compilation."""
     from bioimageflow import CycleInWorkflowError
@@ -119,6 +120,12 @@ def _validation_from_compilation(
                 str(node_plan.status.value),
                 ("unexecuted", False),
             )
+            if (
+                str(node_plan.status.value) == "pending_upstream"
+                and has_retained_latest is not None
+                and has_retained_latest(node_id)
+            ):
+                status = "out_of_date"
             node_statuses[node_id] = NodeStatus(
                 node_id=node_id,
                 status=status,
@@ -145,7 +152,10 @@ def _validation_from_compilation(
                 if isinstance(item, WorkflowNodeState):
                     collect(node.workflow, item.workflow, (*scope, item.id))
                 elif item.source_module:
-                    node_tools["/".join((*scope, item.id))] = ToolRegistryService.metadata_for_class(type(node.tool))
+                    node_tools["/".join((*scope, item.id))] = (
+                        ToolRegistryService.metadata_for_class(type(node.tool))
+                    )
+
         collect(workflow, graph)
 
     return ValidationResult(
@@ -166,6 +176,22 @@ class GraphValidationService:
         compiler: GraphCompiler | None = None,
     ) -> None:
         self._compiler = compiler or GraphCompiler(registry)
+
+    @staticmethod
+    def validation_from_compilation(
+        graph: GraphState,
+        compilation: BuildOutput,
+        *,
+        dev_mode: bool,
+        has_retained_latest: Callable[[str], bool] | None = None,
+    ) -> ValidationResult:
+        """Project a compiled graph against cache state at the caller's linearization point."""
+        return _validation_from_compilation(
+            graph,
+            compilation,
+            dev_mode=dev_mode,
+            has_retained_latest=has_retained_latest,
+        )
 
     def validate_with_compilation(
         self,
