@@ -16,8 +16,8 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next actions
 
-1. Address the highest-reach remaining Tier 1B shell, root editing, and workflow identity/recovery gaps in the [GUI](coverage-gui.md) and [workflow](coverage-workflows.md) inventories.
-2. Close remaining Tier 1B execution/result lifecycle obligations in the [runtime inventory](coverage-runtime.md), prioritizing actual GUI behavior and supported loss/wrong-result boundaries.
+1. Complete the assigned nested conflict/active-canvas safety and live execution progress/result-context GUI batches; integrate each coherent validated result immediately.
+2. Address the highest-reach remaining Tier 1B shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
 3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
 Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds one node, and drag is a separate creation gesture.
@@ -59,6 +59,8 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 
 The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
 The Tier 1B nested-interface worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `1e84421` verified durable positional publication and atomic exposed-node interface pruning.
+`/root/tier1b_nested_conflict` owns `.worktrees/tier1b-nested-conflict` on `campaign/tier1b-nested-conflict` for visible nested conflict choice and active-canvas loss prevention.
+`/root/tier1b_execution_progress` owns `.worktrees/tier1b-execution-progress` on `campaign/tier1b-execution-progress` for real live execution context and result/log attribution.
 The unrelated pre-existing `.claude/CLAUDE.md` edit remains owner-owned and outside this campaign task.
 
 The ISSUE-005 implementation and old failing reproduction worktrees were archived under `/private/tmp`, pruned, and their integrated or superseded branches deleted.
