@@ -722,6 +722,60 @@ test.describe('Canvas interactions', () => {
         String(row.score),
       ]),
     ])
+
+  })
+
+  test('refuses an incomplete numeric range without losing result rows, then recovers', async ({ page }) => {
+    const resultNode = await addToolNode(page, 'ResultTableFixture', { x: 280, y: 180 })
+    const nodeId = await resultNode.getAttribute('data-id')
+    expect(nodeId).toBeTruthy()
+    await expect.poll(async () => (await currentDraft(page, workflowName)).validation.valid).toBe(true)
+    const runResponse = page.waitForResponse(response =>
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
+    )
+    await page.getByTestId('run-workflow-button').click()
+    expect((await runResponse).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    await resultNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const nodeTable = page.getByTestId('merged-data-table')
+    const dataTable = nodeTable.locator('.p-datatable')
+    const visibleRows = dataTable.locator('.p-datatable-tbody tr')
+    await expect(visibleRows).toHaveCount(60)
+
+    await dataTable.getByRole('button', { name: 'Filter score' }).click()
+    await page.getByRole('combobox', { name: 'Filter operator' }).click()
+    await page.getByRole('option', { name: 'Between' }).click()
+    await page.getByRole('spinbutton', { name: 'Filter value', exact: true }).fill('20')
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await expect(visibleRows).toHaveCount(60)
+
+    await page.getByRole('spinbutton', { name: 'Second filter value' }).fill('40')
+    await page.getByRole('spinbutton', { name: 'Second filter value' }).press('Tab')
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeEnabled()
+    const ranged = await projectionQueryAfter(page, async () => {
+      await page.getByRole('button', { name: 'Apply' }).click()
+    })
+    expect(ranged.request.filters).toEqual([
+      { column: 's0:score', operator: 'between', value: 20, second_value: 40 },
+    ])
+    const expectedRows = Array.from({ length: 60 }, (_, sourceRow) => sourceRow)
+      .filter(sourceRow => {
+        const score = (sourceRow * 17) % 61
+        return score >= 20 && score <= 40
+      })
+    expect(ranged.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(expectedRows)
+    await expect(visibleRows).toHaveCount(expectedRows.length)
+
+    const restored = await projectionQueryAfter(page, async () => {
+      await nodeTable.getByTestId('node-data-active-filters').getByRole('button', { name: 'Clear filters' }).click()
+    })
+    expect(restored.request.filters).toEqual([])
+    expect(restored.result.rows.map((row: { source_rows: Record<string, number> }) => row.source_rows[nodeId!]))
+      .toEqual(Array.from({ length: 60 }, (_, sourceRow) => sourceRow))
+    await expect(visibleRows).toHaveCount(60)
   })
 
   test('merges related selected results, stacks independent results, and restores explicit widths', async ({ page }) => {
