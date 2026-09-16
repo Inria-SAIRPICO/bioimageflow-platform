@@ -275,7 +275,25 @@ test.describe('everyday node editing', () => {
     await expect(target).toHaveClass(/selected/)
     await expect(panel.locator('.multi-select')).toContainText('2 nodes selected')
     await expect(panel.getByTestId('bulk-disable-nodes')).toBeVisible()
+    await expect(panel.getByTestId('bulk-enable-nodes')).toBeEnabled()
     await expect(panel.locator('.node-details')).toHaveCount(0)
+
+    const baseline = await fetchDraft(page, workflowName)
+    let draftWrites = 0
+    const countDraftWrites = (request: import('@playwright/test').Request) => {
+      if (request.method() === 'PUT' && request.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)) {
+        draftWrites += 1
+      }
+    }
+    page.on('request', countDraftWrites)
+    await expectUndoDisabled(page)
+    await panel.getByTestId('bulk-enable-nodes').click()
+    await expectUndoDisabled(page)
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+    expect(draftWrites).toBe(0)
+    page.off('request', countDraftWrites)
 
     await waitForAcceptedEdit(page, workflowName, () => panel.getByTestId('bulk-disable-nodes').click())
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
