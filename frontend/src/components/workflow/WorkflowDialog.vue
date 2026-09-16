@@ -26,6 +26,7 @@ const emit = defineEmits<{
 const name = ref('')
 const displayName = ref('')
 const description = ref('')
+const activeSuggestion = ref<string | null>(null)
 
 const title = computed(() => (
   props.mode === 'new' ? 'Create workflow' : 'Save workflow as'
@@ -46,7 +47,7 @@ function deriveWorkflowId(value: string): string {
     .toLowerCase()
 }
 
-const generatedName = computed(() => props.suggestedName || deriveWorkflowId(displayName.value))
+const generatedName = computed(() => activeSuggestion.value || deriveWorkflowId(displayName.value))
 const displayNameError = computed(() => {
   if (!displayName.value.trim()) return 'A workflow name is required.'
   if (!generatedName.value) return 'Use at least one letter or number.'
@@ -59,11 +60,11 @@ watch(
     props.visible,
     props.initialName,
     props.initialDisplayName,
-    props.suggestedName,
     props.initialDescription,
   ],
   ([visible]) => {
     if (!visible) return
+    activeSuggestion.value = props.suggestedName ?? null
     const nextName = props.suggestedName || props.initialName || ''
     name.value = nextName || deriveWorkflowId(props.initialDisplayName || '')
     displayName.value = props.initialDisplayName || nextName || ''
@@ -72,6 +73,10 @@ watch(
   { immediate: true },
 )
 
+watch(() => props.suggestedName, value => {
+  activeSuggestion.value = value ?? null
+})
+
 function onCancel() {
   emit('update:visible', false)
 }
@@ -79,7 +84,7 @@ function onCancel() {
 function onSubmit() {
   if (!canSubmit.value) return
   const trimmedDisplayName = displayName.value.trim()
-  const trimmedName = (props.suggestedName || generatedName.value || name.value).trim()
+  const trimmedName = (generatedName.value || name.value).trim()
   emit('submit', {
     name: trimmedName,
     display_name: trimmedDisplayName || trimmedName,
@@ -110,6 +115,7 @@ function onSubmit() {
         <span>Name</span>
         <InputText
           v-model="displayName"
+          @update:model-value="activeSuggestion = null"
           autofocus
           autocomplete="off"
           data-testid="workflow-display-name-input"
