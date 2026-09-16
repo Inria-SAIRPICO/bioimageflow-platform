@@ -455,6 +455,61 @@ async def test_draft_get_retries_same_id_recreation_during_compile(
     assert store.workflow_generation("wf") != original_generation
 
 
+async def test_draft_get_preserves_disabled_status(tmp_path: Path) -> None:
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    graph = dataframe_chain()
+    graph.nodes[1].enabled = False
+    accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
+    assert accepted.validation.node_statuses["offset"].status == "disabled"
+
+    projected = drafts.get_draft("wf")
+    assert projected.validation.node_statuses["offset"].status == "disabled"
+    assert projected.validation.node_statuses["offset"].cached is False
+    assert projected.draft_revision == accepted.draft_revision
+
+
+async def test_draft_get_retries_changed_storage_path_during_compile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = local_registry()
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    graph = dataframe_chain()
+    accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
+    old_storage = store.get_storage_path("wf")
+    new_storage = tmp_path / "relocated-results"
+    new_storage.mkdir()
+    current_storage = old_storage
+    original_get_storage_path = store.get_storage_path
+    compile_original = GraphCompiler.compile
+    compiled_storage_paths: list[Path] = []
+
+    def switched_storage_path(workflow_id: str) -> Path:
+        if workflow_id == "wf":
+            return current_storage
+        return original_get_storage_path(workflow_id)
+
+    def compile_with_storage_switch(self: GraphCompiler, *args: Any, **kwargs: Any) -> Any:
+        nonlocal current_storage
+        compiled_storage_paths.append(kwargs["storage_path"])
+        result = compile_original(self, *args, **kwargs)
+        if len(compiled_storage_paths) == 1:
+            current_storage = new_storage
+        return result
+
+    monkeypatch.setattr(store, "get_storage_path", switched_storage_path)
+    monkeypatch.setattr(GraphCompiler, "compile", compile_with_storage_switch)
+    projected = drafts.get_draft("wf")
+    assert compiled_storage_paths == [old_storage, new_storage]
+    assert projected.graph == graph
+    assert projected.draft_revision == accepted.draft_revision
+
+
 async def test_execution_manager_run_selected_executes_valid_branch_with_unrelated_missing_tool(
     tmp_path: Path,
 ) -> None:
