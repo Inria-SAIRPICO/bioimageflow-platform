@@ -1026,7 +1026,7 @@ Reloading an inactive package version preserves both the active class bindings a
 
 **Shutdown sequence:**
 1. If execution is running, send stop signal and wait (with timeout)
-2. Terminate Napari process if running (via `NapariLauncher`)
+2. Terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`)
 3. Clean up shared memory segments (`bioimageflow clean-shm`)
 4. Save any pending settings changes
 5. Stop FastAPI server

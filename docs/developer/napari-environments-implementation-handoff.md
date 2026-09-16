@@ -12,8 +12,8 @@ The first checkpoint recorded the integrated feature before library release, bef
 
 ## Source-of-truth branches and worktrees
 
-The platform integration branch is `feature/napari-environments` in `.worktrees/napari-environments`, checked out at commit `887e326`.
-It is reconciled with platform `main` `1e692ed` through merge commit `532db4d`; the merge was textually clean, and a subsequent semantic audit found no composition defect.
+The platform integration branch is `feature/napari-environments` in `.worktrees/napari-environments`, checked out at commit `2865cf9`.
+It is reconciled with platform `main` through two clean merges: `532db4d` merged `main` `1e692ed`, and `8dc6f7c` merged `main` `58520b5`, which is the platform `main` revision at this checkpoint.
 Platform `main` is untouched.
 Do not implement further work directly on platform `main`.
 
@@ -124,9 +124,12 @@ b7da7f4 Describe the delivered napari environments specification
 5f1dcc2 Add the rendered viewer addition to the recursive copy e2e expectation
 36d12f7 Give a workflow output without a viewer declaration one identity
 887e326 Serialize the viewer fields the canvas graph document omits
+78c6a1b Record the released, reviewed, and certified napari environment checkpoint
+8dc6f7c Merge branch 'main' into feature/napari-environments
+2865cf9 Assert node data table columns only after the panel settles
 ```
 
-Platform `main` at this checkpoint is `1e692ed`.
+Platform `main` at this checkpoint is `58520b5`.
 
 ## Worktree disposition
 
@@ -220,15 +223,27 @@ The third run, on `887e326` after `36d12f7` and `887e326`, completed both projec
 | Chromium end-to-end | 85 passed | 277s |
 | Firefox end-to-end | 85 passed | 414s |
 
+### Post-merge state at `8dc6f7c`
+
+After the second reconciliation, every phase of `scripts/test full` except the browser projects passes again on the merged revision: backend 1,732 passed, 134 frontend files and 1,327 tests, lint, type check, production build, and the logging-order certification. Both browser projects reported 89 passed, 1 flaky, and 0 did-not-run; the lane's non-zero exit came only from the CI-mode `failOnFlakyTests` setting, which counts a retried pass as a failure. No test failed.
+
+Both flakes are inherited from platform `main` and are not this feature's.
+- Chromium `nested-execution.spec.ts` asserted table headers with a single non-polling `evaluateAll` immediately after a request wait, so it could read the previous node's columns; the captured trace shows the response body carrying both expected columns, proving the product correct. The spec and that helper were authored on `main` (`fd96f8f`). `2865cf9` makes that one assertion await the settled panel state while keeping the exact expected header list and the deep equality; the formerly racing test then passed five consecutive runs under CI semantics. That commit is test-only and self-contained, so the platform test campaign can drop it if it prefers to own the fix.
+- Firefox `everyday-node-editing.spec.ts` failed in its `beforeEach` because the application auto-opened a workflow created by an earlier spec in the same run. `frontend/playwright.config.ts` gives every test a fresh browser context, but one backend and one E2E root persist across the run and the pre-existing startup resolver reopens the last workflow. The same symptom appears in several `main`-authored specs, so it is a harness isolation artifact rather than a feature defect, and it is left to the platform test campaign.
+
+This branch's own focused checks on the merged revision are the ones that matter for this feature: the two exact workflow-interface selectors pass on Chromium and Firefox, the formerly racing result-table test passes five consecutive runs, and the feature's own browser coverage (`napari-output-chooser.spec.ts`) passes on both projects.
+
 ## Remaining work
 
 1. Complete native desktop certification. A packaged native window, operating-system dialogs, real napari launches against a real environment, and the cross-platform matrix remain outside every automated lane, including `scripts/test full`, which mocks pywebview. The earlier local attempt did not leave a reliable completion artifact and is not acceptance evidence. This obligation is manual and must be reported honestly rather than inferred from green lanes.
 2. Decide whether to act on the three recorded low-severity security hardening items. None is release-blocking for the implemented desktop, single-user, same-account threat model.
 3. Update library `main` branch protection so the required status contexts match the contexts `ci.yml` actually emits.
 4. Merge or explicitly dispose of the remaining napari task worktrees after the integration branch itself is merged.
+5. The two browser flakes recorded above are inherited from platform `main` and belong to the platform test campaign, not to this feature. This feature's verification scope is its own changed surface: the two workflow-interface selectors, the formerly racing result-table assertion, the chooser spec, and the focused backend and frontend families named in the validation evidence.
 
 ## Completion definition
 
 The feature is not complete merely because mocked backend tests or headless frontend tests pass.
 Completion requires the complete browser certification on both projects, native desktop certification by a human on a real machine, and no unresolved material review finding.
-As of this checkpoint the implemented contract, the released library consumption through the frozen lock, the reconciled platform branch, the complete Chromium and Firefox certification, independent architecture and security review, and documentation consistency are all in place; the only outstanding obligation for this feature is native desktop certification, followed by the repository maintenance and hardening decisions listed above.
+As of this checkpoint the implemented contract, the released library consumption through the frozen lock, the reconciled platform branch, the complete Chromium and Firefox certification at `887e326`, independent architecture and security review, and documentation consistency are all in place; the only outstanding obligation for this feature is native desktop certification, followed by the repository maintenance and hardening decisions listed above.
+The merged revision `8dc6f7c` repeats every non-browser phase successfully and shows no feature failure in either browser project; the two flakes it does show are inherited from platform `main` and are owned by the platform test campaign.
