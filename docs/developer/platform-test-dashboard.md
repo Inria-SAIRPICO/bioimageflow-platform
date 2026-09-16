@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **206 V + 245 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **206 / 457 are verified (45.1%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **184 V + 36 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **184 / 220 are verified (83.6%)**.
+- Overall: **207 V + 244 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **207 / 457 are verified (45.3%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **185 V + 35 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **185 / 220 are verified (84.1%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -137,7 +137,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | G | G | V | in-progress | `7ab16e6` |
+| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | G | V | V | in-progress | `7ab16e6`, `af1951b` |
 | RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
