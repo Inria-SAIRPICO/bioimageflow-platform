@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **196 V + 255 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **196 / 457 are verified (42.9%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **174 V + 46 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **174 / 220 are verified (79.1%)**.
+- Overall: **200 V + 251 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **200 / 457 are verified (43.8%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **178 V + 42 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **178 / 220 are verified (80.9%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -74,8 +74,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
-| WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `4208769` |
-| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `a25ac17` |
+| WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
+| WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
 | WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | `a25ac17` |
 | WF-LIF-006 | Copy captured agent graph and recursive owned sources | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `e817d77` |

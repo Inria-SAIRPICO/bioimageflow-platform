@@ -170,6 +170,16 @@ The source revision is `fe0cf9d`; authoritative contracts include v1 §2.4.5, v2
 The requested GPT-6 Astra/high review did not execute because the agent hit its usage limit; it supplied no disposition, so no specialist decision is claimed.
 Resume after specialist review establishes the status authority and safe repair/test boundary; then a bounded Sol worker should implement and validate the restart regression.
 
+## ISSUE-012 — Workflow collision suggestion survives a later name edit
+
+Status: resolved by `4a03750` with a bounded Sol/medium repair; no specialist review was needed because the dialog contract and local cause were clear.
+The Create/Save As collision path offered an alternative workflow ID after HTTP 409, but the dialog kept that suggestion as a persistent prop override when the user subsequently changed the display name.
+The preview and submitted destination could therefore remain tied to the old collision rather than the newly entered name.
+The repair keeps the suggestion active only until the user edits the display name, then derives a fresh ID; it preserves the server's collision proposal before that edit and does not alter the backend collision contract.
+A focused dialog unit asserts the new preview and submitted ID; a real Chromium/Firefox Create and Save As journey proves invalid-name refusal, occupied-ID 409, suggestion replacement, cancellation, unchanged source and occupied workflow state, absent canceled destination, and exact reload identity.
+At patch-equivalent task revision `4823752`, the focused unit passed in 2s, exact Chromium in 14s, exact Firefox in 19s, `scripts/test check frontend` passed 1,299 units plus lint/typecheck/build in 28s, and cross-browser smoke passed 16/16 in each browser in 109s; the integrated Chromium browser lane passed 89/89 at `4a03750` in 347s.
+V1 workflow-dialog behavior was clarified in the same task.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
