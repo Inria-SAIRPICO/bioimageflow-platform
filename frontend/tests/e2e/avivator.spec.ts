@@ -18,7 +18,17 @@ test.describe('Avivator viewer', () => {
   test('opens a converted OME-TIFF image inside the Dockview panel', async ({ page }) => {
     const displayName = `Image result ${test.info().project.name} ${Date.now()}`
     const workflowName = deriveWorkflowId(displayName)
+    let failNextViewerLoad = true
     await page.route('https://avivator.gehlenborglab.org/**', async (route) => {
+      if (failNextViewerLoad) {
+        failNextViewerLoad = false
+        await route.fulfill({
+          status: 503,
+          contentType: 'text/html',
+          body: '<!doctype html><body data-status="failed" data-error="viewer HTTP 503"></body>',
+        })
+        return
+      }
       await route.fulfill({
         status: 200,
         contentType: 'text/html',
@@ -169,10 +179,31 @@ test.describe('Avivator viewer', () => {
     await expect(page.locator('[data-testid="avivator-panel"]')).toBeVisible()
     await expect(page.locator('[data-testid="avivator-iframe"]')).toBeVisible()
     const iframeBody = page.frameLocator('[data-testid="avivator-iframe"]').locator('body')
+    await expect(iframeBody).toHaveAttribute('data-status', 'failed')
+    await expect(iframeBody).toHaveAttribute('data-error', 'viewer HTTP 503')
+    await page.getByTestId('avivator-tab-close').click()
+    await expect(page.locator('[data-testid="avivator-panel"]')).toHaveCount(0)
+    await table.getByTestId('open-avivator-0-mask').click()
     await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
     await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
     await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
 
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+    const reopenedNode = page.locator('.vue-flow__node').filter({ hasText: 'Image Result Fixture' })
+    await expect(reopenedNode).toHaveAttribute('data-id', nodeId!)
+    await reopenedNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const reopenedTable = page.getByTestId('merged-data-table')
+    await expect(reopenedTable).toBeVisible()
+    await expect(reopenedTable.getByTestId('path-display').nth(0)).toHaveAttribute('title', result.rows[0].mask)
+    await expect(reopenedTable.getByTestId('path-display').nth(1)).toHaveAttribute('title', result.rows[0].report)
+    await expect(reopenedTable.locator('.p-datatable-mask')).toHaveCount(0)
+    await reopenedTable.getByTestId('open-avivator-0-mask').focus()
+    await page.keyboard.press('Enter')
+    await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
+    await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
+    await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
   })
 })
