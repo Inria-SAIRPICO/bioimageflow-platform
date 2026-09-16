@@ -527,6 +527,15 @@ test.describe('workflow interface and grouping', () => {
     await openWorkflow(page, name, displayName)
     await page.locator('.vue-flow__node[data-id="increment"]').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const beforeRefusal = await draftState(page, name)
+    await expect(page.getByTestId('publish-dataframe-input')).toBeVisible()
+    await page.locator('.vue-flow__node[data-id="seed"]').click()
+    await expect(page.getByTestId('publish-dataframe-input')).toHaveCount(0)
+    await page.locator('.vue-flow__node[data-id="increment"]').click()
+    expect(await draftState(page, name)).toMatchObject({
+      draft_revision: beforeRefusal.draft_revision,
+      graph: beforeRefusal.graph,
+    })
     for (let index = 0; index < 3; index++) {
       await page.getByTestId('publish-dataframe-input').click()
       await expect(page.getByTestId(`dataframe-input-name-${index}`)).toBeVisible()
@@ -541,7 +550,21 @@ test.describe('workflow interface and grouping', () => {
     ])
     expect(first.interface.inputs.every(input => input.kind === 'dataframe')).toBe(true)
 
+    await page.getByTestId('dataframe-input-name-2').fill(first.interface.inputs[0]!.name)
+    await expect(page.locator('[data-testid="published-dataframe-inputs"] [role="alert"]')).toContainText(
+      `Workflow interface name '${first.interface.inputs[0]!.name}' is already used.`,
+    )
+    expect(await draftGraph(page, name)).toEqual(first)
+    await page.getByTestId('dataframe-input-name-2').fill('Last table')
+
     // A connected slot after the publications must move with them on unpublish.
+    const connectedDraftWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+      && (response.request().postDataJSON() as { graph?: GraphState } | null)
+        ?.graph?.edges.length === 1
+    ))
     const source = await page.locator('.vue-flow__node[data-id="seed"] [data-handleid="bif:v1:dataframe-output"]').boundingBox()
     const target = await page.locator('.vue-flow__node[data-id="increment"] [data-handleid="bif:v1:dataframe-position:3"]').boundingBox()
     if (!source || !target) throw new Error('Expected DataFrame handles')
@@ -549,11 +572,57 @@ test.describe('workflow interface and grouping', () => {
     await page.mouse.down()
     await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 10 })
     await page.mouse.up()
+    await connectedDraftWrite
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
     await expect(page.getByTestId('dataframe-input-name-2')).toHaveValue('Last table')
+    await saveWorkflow(page, name)
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    await page.waitForLoadState('networkidle')
+    await expect.poll(async () => (await draftGraph(page, name)).edges.length).toBe(1)
+    const beforeCompaction = await draftState(page, name)
+    expect(beforeCompaction.graph.interface.inputs).toHaveLength(3)
+    let allowCompactionWrite = false
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      const body = route.request().method() === 'PUT'
+        ? route.request().postDataJSON() as { graph?: GraphState } | null
+        : null
+      if (body?.graph?.interface.inputs.length === 2 && !allowCompactionWrite) {
+        await route.fulfill({ status: 500, json: { detail: 'forced compaction persistence failure' } })
+        return
+      }
+      await route.continue()
+    })
+    const failedCompaction = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+      && (response.request().postDataJSON() as { graph?: GraphState } | null)
+        ?.graph?.interface.inputs.length === 2
+    ))
     await page.getByTestId('unpublish-dataframe-1').click()
+    await failedCompaction
     await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
     await expect(page.getByTestId('dataframe-input-name-2')).toHaveCount(0)
+    const afterFailedCompaction = await draftState(page, name)
+    expect(afterFailedCompaction.graph).toEqual(beforeCompaction.graph)
+    expect(afterFailedCompaction.draft_revision).toBe(beforeCompaction.draft_revision)
+    await expect(page.getByTestId('canvas-persistence-issue')).toBeVisible()
+    allowCompactionWrite = true
+    const recoveredWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await page.getByTestId('canvas-persistence-retry').click()
+    const recovered = await (await recoveredWrite).json() as WorkflowDraftResponse
+    expect(recovered.draft_revision).toBe(afterFailedCompaction.draft_revision + 1)
+    expect(recovered.graph.interface.inputs.map(input => input.id)).toEqual([
+      firstIds[0], firstIds[2],
+    ])
+    expect(recovered.graph.edges).toMatchObject([{
+      target_node: 'increment', target_position: 2,
+    }])
+    await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Undo', exact: true }).click()
     await expect(page.getByTestId('dataframe-input-name-2')).toHaveValue('Last table')
@@ -648,8 +717,35 @@ test.describe('workflow interface and grouping', () => {
       responseCarriesNestedInputName(response, 'Applied source table')
     ))
     await privateInputName.fill('Applied source table')
-    await privateSnapshotAccepted
+    const acceptedPrivate = await (await privateSnapshotAccepted).json() as {
+      session_id: string
+      snapshot_revision: number
+      graph: GraphState
+    }
     await expect(privateInputName).toHaveValue('Applied source table')
+    expectStableParentRoutes(await draftGraph(page, name))
+
+    await privateInputName.fill('Number value')
+    await expect(page.getByTestId('interface-name-error')).toContainText(
+      "Workflow interface name 'Number value' is already used.",
+    )
+    await privateInputName.fill('   ')
+    await expect(page.getByTestId('interface-name-error')).toContainText(
+      'Workflow interface name cannot be empty.',
+    )
+    const refusedPrivateResponse = await page.request.get(
+      `${API_BASE}/api/v1/nested-workflow-snapshots/${acceptedPrivate.session_id}`,
+    )
+    expect(refusedPrivateResponse.ok(), await refusedPrivateResponse.text()).toBeTruthy()
+    const refusedPrivate = await refusedPrivateResponse.json() as {
+      snapshot_revision: number
+      graph: GraphState
+    }
+    expect(refusedPrivate.snapshot_revision).toBe(acceptedPrivate.snapshot_revision)
+    expect(refusedPrivate.graph).toEqual(acceptedPrivate.graph)
+    expectStableParentRoutes(await draftGraph(page, name))
+    await privateInputName.fill('Applied source table')
+    await expect(page.getByTestId('interface-name-error')).toHaveCount(0)
 
     // The nested snapshot autosaves privately; the owning draft is unchanged until Save applies it.
     await expect.poll(async () => childNode(await draftGraph(page, name)).workflow.interface.inputs[0]?.name)
