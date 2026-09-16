@@ -16,7 +16,7 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next actions
 
-1. Complete the assigned nested conflict/active-canvas safety and live execution progress/result-context GUI batches; integrate each coherent validated result immediately.
+1. Complete the assigned live execution progress/result-context GUI batch and integrate its coherent validated result immediately.
 2. Address the highest-reach remaining Tier 1B shell, root editing, workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
 3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
@@ -30,7 +30,7 @@ Do not restart completed library releases, source-identity repairs, or the exist
 | --- | --- | --- |
 | T01 dependencies | Complete | Published BioImageFlow 0.7.1/core 0.3.1 and Wetlands 2.4.1 integration; retained release and worker evidence in [Campaign evidence](platform-test-evidence.md). |
 | T02 fixture foundations | Complete | Genuine Generate metadata, compatible whole-DataFrame wiring, exact results, and sequential worker fixture established. |
-| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After the Tier 1B canvas and nested-interface batches, 181/457 overall obligations are verified (39.6%) and 159/220 primary-GUI obligations are verified (72.3%). |
+| T03 systematic inventory | Audited dashboard established; closure incomplete | The [obligation dashboard](platform-test-dashboard.md) maps all 98 inventory rows by stable ID to explicit scenario contracts and is mechanically verified by `scripts/test check docs`. After the Tier 1B canvas and nested-interface conflict batches, 186/457 overall obligations are verified (40.7%) and 164/220 primary-GUI obligations are verified (74.5%). |
 | T04 known maintenance | Completed batch | Hot reload, recovery/cache fixtures, ToolsPanel routing, and mutation serialization repaired; new findings retain their own issue status. |
 | T05 scope selection | Implemented | Backend, frontend-unit, Chromium, and Firefox selectors are drift-audited; browser collection evidence alone does not certify execution. |
 | Wave 1 / ISSUE-005 | Verified | Commits `38e14f2` and `8908388` implement the Astra boundary, exact manager/compiler regressions, dangling-edge guard, and exact Chromium/Firefox GUI journey; integrated `scripts/test check app` passes. |
@@ -50,7 +50,7 @@ The dashboard-content tally is **73 V / 73 required (100.0%)** with 0 runnable g
 This tally was recomputed after integrated workflow CRUD evidence changed the former seven `WF-LIF-003` and `WF-LIF-010` gate cells to `V`; the dashboard verifier passes and a direct lookup of all 73 named `ID.cell` entries finds no non-`V` state.
 The gate passed on the one clean evaluated revision `50c1af485edef8ebfaca7971ee99e8717694f85e`: the audited collection contained 28 exact selectors per browser, all 28 passed in Chromium and all 28 passed in Firefox, the backend/frontend/documentation completion gates passed, and the representative create/edit/connect/run/inspect/save/reopen journey passed headed in Chromium on the available display.
 The reachable-blocker audit found no supported-path critical or high-impact basic-use defect: all ten recorded campaign issues are resolved except ISSUE-006's reviewed `not-a-defect` disposition, and no required gate cell, selector, retry, skip, or unresolved flake remains.
-The gate-evaluated dashboard was **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**; the current dashboard is **181 / 457 overall (39.6%)** and **159 / 220 primary GUI (72.3%)**, with 0 blocked cells and 6 unassessed overall cells. Neither set of broader denominators makes a systematic-completion claim.
+The gate-evaluated dashboard was **172 / 457 overall verified (37.6%)** and **150 / 220 primary-GUI verified (68.2%)**; the current dashboard is **186 / 457 overall (40.7%)** and **164 / 220 primary GUI (74.5%)**, with 0 blocked cells and 6 unassessed overall cells. Neither set of broader denominators makes a systematic-completion claim.
 Grouping evidence remains important Primary-GUI Tier 1B coverage and is intentionally outside the smaller 73-cell denominator.
 Full browser lanes, external package certification, Tier 1B–3 selectors, native/external application checks, and final systematic certification were not run for this fixed gate and remain owned by their existing campaign inventories and final completion gate.
 The exact commands, durations, environment-only blocked first attempts, and exclusions are retained in [Campaign evidence](platform-test-evidence.md).
@@ -59,7 +59,7 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 
 The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
 The Tier 1B nested-interface worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `1e84421` verified durable positional publication and atomic exposed-node interface pruning.
-`/root/tier1b_nested_conflict` owns `.worktrees/tier1b-nested-conflict` on `campaign/tier1b-nested-conflict` for visible nested conflict choice and active-canvas loss prevention.
+The Tier 1B nested-conflict worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `d86c9b0` verified both explicit GUI conflict choices and parent/private state isolation.
 `/root/tier1b_execution_progress` owns `.worktrees/tier1b-execution-progress` on `campaign/tier1b-execution-progress` for real live execution context and result/log attribution.
 The unrelated pre-existing `.claude/CLAUDE.md` edit remains owner-owned and outside this campaign task.
 

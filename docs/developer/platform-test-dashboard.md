@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **181 V + 270 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **181 / 457 are verified (39.6%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **159 V + 61 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **159 / 220 are verified (72.3%)**.
+- Overall: **186 V + 265 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **186 / 457 are verified (40.7%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **164 V + 56 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **164 / 220 are verified (74.5%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -95,7 +95,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `da0ded6`, `152c82b` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `f920c9b` |
 | WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `cf794fb` |
 | WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
