@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **190 V + 261 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **190 / 457 are verified (41.6%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **168 V + 52 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **168 / 220 are verified (76.4%)**.
+- Overall: **193 V + 258 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **193 / 457 are verified (42.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **171 V + 49 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **171 / 220 are verified (77.7%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -41,8 +41,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | GUI-SHL-001 | Default docks, menu, and panel visibility | P1 | Desktop and webapp GUI | no | G | N (no invalid-input or refused-action contract for shell layout) | N (no cancellation or recovery lifecycle for static shell layout) | G | N (no identity, concurrency, ownership, or permission boundary for shell layout) | gap | `fcb4408` inspection |
-| GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | G | in-progress | `4208769` |
-| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | G | V | V | in-progress | `dd20821` |
+| GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
+| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | G | V | V | in-progress | `dd20821`, `75be9c2` |
 | GUI-SHL-004 | Recovered-edge geometry | P0 | Desktop and webapp GUI | yes | V | N (geometry rendering accepts no user input to refuse) | N (geometry rendering has no cancellation or recovery lifecycle) | V | N (geometry is derived within the owning canvas and has no separate boundary) | verified | `dd20821` |
 | GUI-SHL-005 | Preferences opening and desktop availability | P1 | Desktop and webapp GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
