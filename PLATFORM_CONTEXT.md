@@ -141,6 +141,7 @@ Building from Python materializes a canonical graph and its allowed source bundl
 
 Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
 They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
+The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 
 Execution operates on one exact accepted graph or draft snapshot.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.

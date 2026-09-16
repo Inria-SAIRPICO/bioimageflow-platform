@@ -18,17 +18,7 @@ test.describe('Avivator viewer', () => {
   test('opens a converted OME-TIFF image inside the Dockview panel', async ({ page }) => {
     const displayName = `Image result ${test.info().project.name} ${Date.now()}`
     const workflowName = deriveWorkflowId(displayName)
-    let failNextViewerLoad = true
     await page.route('https://avivator.gehlenborglab.org/**', async (route) => {
-      if (failNextViewerLoad) {
-        failNextViewerLoad = false
-        await route.fulfill({
-          status: 503,
-          contentType: 'text/html',
-          body: '<!doctype html><body data-status="failed" data-error="viewer HTTP 503"></body>',
-        })
-        return
-      }
       await route.fulfill({
         status: 200,
         contentType: 'text/html',
@@ -173,17 +163,22 @@ test.describe('Avivator viewer', () => {
     expect(offsets.length).toBeGreaterThan(0)
     expect(offsets.every((offset) => Number.isInteger(offset) && offset > 0)).toBeTruthy()
 
+    let failNextBackendOffsets = true
+    await page.route('**/api/v1/nodes/*/image/*.offsets.json?**', async (route) => {
+      if (!failNextBackendOffsets) return route.continue()
+      failNextBackendOffsets = false
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"temporary conversion failure"}' })
+    })
     await expect(table.locator('.p-datatable-mask')).toHaveCount(0)
+    await table.getByTestId('open-avivator-0-mask').click()
+    await expect(page.getByText('Could not load image offsets. Try opening it again.')).toBeVisible()
+    await expect(page.locator('[data-testid="avivator-panel"]')).toHaveCount(0)
+    expect(failNextBackendOffsets).toBe(false)
     await table.getByTestId('open-avivator-0-mask').click()
 
     await expect(page.locator('[data-testid="avivator-panel"]')).toBeVisible()
     await expect(page.locator('[data-testid="avivator-iframe"]')).toBeVisible()
     const iframeBody = page.frameLocator('[data-testid="avivator-iframe"]').locator('body')
-    await expect(iframeBody).toHaveAttribute('data-status', 'failed')
-    await expect(iframeBody).toHaveAttribute('data-error', 'viewer HTTP 503')
-    await page.getByTestId('avivator-tab-close').click()
-    await expect(page.locator('[data-testid="avivator-panel"]')).toHaveCount(0)
-    await table.getByTestId('open-avivator-0-mask').click()
     await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
     await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
     await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())

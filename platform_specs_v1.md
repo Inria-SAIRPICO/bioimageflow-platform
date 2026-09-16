@@ -1469,7 +1469,7 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 
 Image-valued Node Data cells expose both the managed desktop viewer and a browser viewer action.
 
-**Avivator:** The browser action requests the selected cell through the workflow-scoped node-image endpoint with `format=ome-tiff`, then opens the external Avivator application in a Dockview iframe using that absolute image URL. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
+**Avivator:** The browser action checks the selected cell's workflow-scoped OME-TIFF offsets response through the same-origin backend API before opening the external Avivator application in a Dockview iframe using the absolute node-image URL with `format=ome-tiff`. A failed or malformed offsets response leaves the action available, shows an error, and opens no panel; clicking the action again retries the backend read. An in-flight read cannot open a different cell if its result identity changes before completion. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
 
 **Napari:** Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
 

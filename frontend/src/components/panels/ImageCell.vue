@@ -66,6 +66,7 @@ const napari = useNapariStore()
 const settings = useSettingsStore()
 const settingsPanel = useSettingsPanel()
 const fijiPending = ref(false)
+const avivatorPending = ref(false)
 const fijiConfigurationInvalid = ref(false)
 const blobUrl = ref<string | null>(null)
 const cellElement = ref<HTMLElement | null>(null)
@@ -143,11 +144,17 @@ const avivatorUrl = computed(() => {
   url.searchParams.set('image_url', imageUrl.value)
   return url.toString()
 })
+const offsetsPath = computed(() => {
+  const url = new URL(imageUrl.value)
+  url.pathname = url.pathname.replace(/\.ome\.tiff?$/i, '.offsets.json')
+  return `${url.pathname}${url.search}`
+})
 
 let abort: AbortController | null = null
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 let retryAttempt = 0
 let stopObserving: (() => void) | null = null
+let avivatorRequestId = 0
 
 function clearTimer() {
   if (retryTimer !== null) {
@@ -215,6 +222,8 @@ async function fetchThumbnail() {
 }
 
 function reset() {
+  avivatorRequestId += 1
+  avivatorPending.value = false
   clearTimer()
   abort?.abort()
   abort = null
@@ -258,6 +267,7 @@ watch(
 onMounted(startObserving)
 
 onBeforeUnmount(() => {
+  avivatorRequestId += 1
   stopObserving?.()
   stopObserving = null
   clearTimer()
@@ -331,14 +341,42 @@ async function openFiji() {
   }
 }
 
-function openAvivator() {
-  window.dispatchEvent(new CustomEvent('bioimageflow:open-avivator', {
-    detail: {
-      url: avivatorUrl.value,
-      imageUrl: imageUrl.value,
-      title: avivatorImageFileName.value,
-    },
-  }))
+async function openAvivator() {
+  if (avivatorPending.value) return
+  const requestId = ++avivatorRequestId
+  const requestedOffsetsPath = offsetsPath.value
+  const requestedViewerUrl = avivatorUrl.value
+  const requestedImageUrl = imageUrl.value
+  const requestedTitle = avivatorImageFileName.value
+  avivatorPending.value = true
+  try {
+    // Use the same-origin API route so a backend failure is visible here,
+    // before handing the absolute image URL to the external iframe.
+    const response = await fetch(requestedOffsetsPath)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const offsets: unknown = await response.json()
+    if (!Array.isArray(offsets) || offsets.length === 0 || !offsets.every((offset) => Number.isInteger(offset) && offset > 0)) {
+      throw new Error('Invalid image offsets')
+    }
+    if (requestId !== avivatorRequestId) return
+    window.dispatchEvent(new CustomEvent('bioimageflow:open-avivator', {
+      detail: {
+        url: requestedViewerUrl,
+        imageUrl: requestedImageUrl,
+        title: requestedTitle,
+      },
+    }))
+  } catch {
+    if (requestId !== avivatorRequestId) return
+    toast?.add({
+      severity: 'error',
+      summary: 'Image viewer unavailable',
+      detail: 'Could not load image offsets. Try opening it again.',
+      life: 5000,
+    })
+  } finally {
+    if (requestId === avivatorRequestId) avivatorPending.value = false
+  }
 }
 
 async function copyPath() {
@@ -430,6 +468,7 @@ async function reveal() {
         text
         size="small"
         title="Open in Avivator"
+        :disabled="avivatorPending"
         :data-testid="`open-avivator-${row}-${colSlug}`"
         @click="openAvivator"
       />
