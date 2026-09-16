@@ -107,11 +107,61 @@ test.describe('workflow creation', () => {
 
   test('shows a non-persistent chooser when no workflow exists', async ({ page }) => {
     await deleteAllWorkflows(page)
+    await rememberLastOpenedWorkflow(page, 'obsolete_startup_workflow')
+    const workflowPosts: string[] = []
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/workflows') {
+        workflowPosts.push(request.url())
+      }
+    })
     await page.reload()
 
     await expect(page.getByTestId('canvas-placeholder')).toContainText('No workflow is open')
     await expect(page.getByTestId('canvas-tab')).toHaveCount(0)
     await expect(page.locator('.vue-flow')).toHaveCount(0)
+    expect((await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json())).toEqual([])
+    expect(workflowPosts).toEqual([])
+    await expect.poll(() => page.evaluate(async () => {
+      const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+      return useAutoSave().getLastOpenedWorkflow()
+    })).toBeNull()
+
+    await page.getByTestId('canvas-placeholder').getByRole('button', { name: 'Open workflow' }).click()
+    const openDialog = page.getByTestId('open-workflow-dialog')
+    await expect(openDialog).toBeVisible()
+    await expect(openDialog.getByText('No workflows match this search.')).toBeVisible()
+    await expect(page.getByTestId('workflow-open-submit')).toBeDisabled()
+    await openDialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(openDialog).not.toBeVisible()
+
+    await page.getByTestId('canvas-placeholder').getByRole('button', { name: 'New workflow' }).click()
+    await expect(page.getByTestId('workflow-dialog')).toBeVisible()
+    await page.getByTestId('workflow-dialog-cancel').click()
+    await expect(page.getByTestId('workflow-dialog')).not.toBeVisible()
+    expect(workflowPosts).toEqual([])
+    expect((await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json())).toEqual([])
+
+    const displayName = `First Workflow ${Date.now()}`
+    const name = displayName.toLowerCase().replaceAll(' ', '_')
+    try {
+      await page.getByTestId('canvas-placeholder').getByRole('button', { name: 'New workflow' }).click()
+      await page.getByTestId('workflow-display-name-input').fill(displayName)
+      await expect(page.getByTestId('workflow-generated-name')).toContainText(name)
+      await page.getByTestId('workflow-dialog-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
+      expect(workflowPosts).toHaveLength(1)
+      const workflows = await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json() as Array<{ id: string; display_name: string }>
+      expect(workflows).toMatchObject([{ id: name, display_name: displayName }])
+
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
+      await expect(page.getByTestId('canvas-placeholder')).toHaveCount(0)
+      expect(workflowPosts).toHaveLength(1)
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+    }
   })
 
   test('Create Tool dialog opens and closes', async ({ page }) => {
