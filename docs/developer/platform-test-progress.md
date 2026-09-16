@@ -57,7 +57,7 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 
 ## Ownership and unresolved decisions
 
-The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its branch/worktree are pending archival.
+The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its worktree was archived and branch deleted.
 ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; the requested GPT-6 Astra/high review could not start because the agent hit its usage limit, so no disposition exists yet.
 The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its worktree was archived and branch deleted.
 The Tier 1B shell-recovery worktree integrated at `75be9c2` verifies the empty-workspace chooser and obsolete startup preference; its worktree was archived and branch deleted.
