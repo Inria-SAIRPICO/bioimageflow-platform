@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **186 V + 265 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **186 / 457 are verified (40.7%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **164 V + 56 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **164 / 220 are verified (74.5%)**.
+- Overall: **190 V + 261 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **190 / 457 are verified (41.6%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **168 V + 52 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **168 / 220 are verified (76.4%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -122,7 +122,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | G | V | V | in-progress | `4208769` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
 | RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
-| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | G | V | V | V | V | in-progress | `30faeb6` |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
