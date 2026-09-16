@@ -649,8 +649,26 @@ test.describe('workflow interface and grouping', () => {
     await createWorkflow(page, name, displayName)
     const child = graph('child', 'Child')
     child.nodes = [{ type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers', position: [180, 160], parameters: { number: 1 } }]
+    child.interface.inputs.push({
+      id: 'child-bound-number', name: 'Bound number', kind: 'field',
+      schema: { type: 'int' }, default: null,
+      targets: [{ node: 'increment', port: { kind: 'field', name: 'number' } }],
+    })
     const parent = graph(name, displayName)
-    parent.nodes = [{ type: 'workflow', id: 'child', name: 'Child', position: [180, 160], workflow: child, bindings: {} }]
+    parent.nodes = [{
+      type: 'workflow', id: 'child', name: 'Child', position: [180, 160], workflow: child,
+      bindings: { 'child-bound-number': { __type__: 'int', value: 7 } },
+    }, {
+      type: 'tool', id: 'seed', name: 'Seed', tool_name: 'SeedNumbers',
+      position: [180, 400], parameters: {},
+    }, {
+      type: 'tool', id: 'outside_increment', name: 'Outside increment',
+      tool_name: 'IncrementNumbers', position: [520, 400], parameters: { number: 1 },
+    }]
+    parent.edges = [{
+      type: 'dataframe', id: 'outside-edge', source_node: 'seed',
+      target_node: 'outside_increment', target_position: 0,
+    }]
     const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: parent } })
     expect(setup.ok(), await setup.text()).toBeTruthy()
     await page.goto('/')
@@ -660,26 +678,89 @@ test.describe('workflow interface and grouping', () => {
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     await page.getByTestId('publish-dataframe-input').click()
     await page.getByTestId('dataframe-input-name-0').fill('Source table')
+    const privateParent = await draftGraph(page, name)
+    const privateParentChild = privateParent.nodes.find(node => node.id === 'child')
+    expect(privateParentChild?.type).toBe('workflow')
+    if (privateParentChild?.type !== 'workflow') throw new Error('Expected child workflow')
+    expect(privateParentChild.workflow.interface.inputs.map(input => input.id)).toEqual(['child-bound-number'])
+    expect(privateParentChild.bindings).toEqual({ 'child-bound-number': { __type__: 'int', value: 7 } })
+    expect(privateParent.edges).toEqual((await savedGraph(page, name)).edges)
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
     await expect(page.getByTestId('workflow-title')).not.toContainText('*')
     await page.locator('.dv-tab').getByText(displayName, { exact: true }).click()
     await saveWorkflow(page, name)
-    const savedChild = (await savedGraph(page, name)).nodes[0]!
+    const savedChild = (await savedGraph(page, name)).nodes.find(node => node.id === 'child')!
     if (savedChild.type !== 'workflow') throw new Error('Expected child workflow')
-    const childPortId = savedChild.workflow.interface.inputs[0]!.id
+    const childPortId = savedChild.workflow.interface.inputs.find(input => input.kind === 'dataframe')!.id
     await page.locator('.vue-flow__node[data-id="child"]').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     await page.getByRole('button', { name: 'Publish DataFrame input: Source table', exact: true }).click()
     await page.getByTestId(`dataframe-input-name-${childPortId}`).fill('Parent table')
     await saveWorkflow(page, name)
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    await page.waitForLoadState('networkidle')
     expect((await savedGraph(page, name)).interface.inputs[0]).toMatchObject({
       kind: 'dataframe', name: 'Parent table', targets: [{ node: 'child', port: { kind: 'workflow', id: childPortId } }],
     })
+    const beforeRefusal = await draftState(page, name)
+    const parentInput = page.getByTestId(`dataframe-input-name-${childPortId}`)
+    const portNameError = page.getByTestId('published-dataframe-inputs').getByRole('alert')
+    await parentInput.fill('   ')
+    await expect(portNameError).toContainText('Workflow interface name cannot be empty.')
+    const refused = await draftState(page, name)
+    expect(refused.draft_revision).toBe(beforeRefusal.draft_revision)
+    expect(refused.graph).toEqual(beforeRefusal.graph)
+    await parentInput.fill('Parent table')
+    await expect(portNameError).toHaveCount(0)
+
+    let allowUnpublish = false
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      const body = route.request().method() === 'PUT'
+        ? route.request().postDataJSON() as { graph?: GraphState } | null
+        : null
+      if (body?.graph?.interface.inputs.length === 0 && !allowUnpublish) {
+        await route.fulfill({ status: 500, json: { detail: 'forced forwarded-port write failure' } })
+        return
+      }
+      await route.continue()
+    })
+    const failedUnpublish = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
     await page.getByTestId(`unpublish-dataframe-${childPortId}`).click()
+    await failedUnpublish
     await expect(page.getByRole('button', { name: 'Publish DataFrame input: Source table', exact: true })).toBeVisible()
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    const afterFailure = await draftState(page, name)
+    expect(afterFailure.draft_revision).toBe(beforeRefusal.draft_revision)
+    expect(afterFailure.graph).toEqual(beforeRefusal.graph)
+    allowUnpublish = true
+    const recovered = await waitForAcceptedGraph(page, name, async () => {
+      await page.getByTestId('canvas-persistence-retry').click()
+    })
+    expect(recovered.draft_revision).toBe(beforeRefusal.draft_revision + 1)
+    expect(recovered.graph.interface.inputs).toEqual([])
+    expect(recovered.graph.edges).toEqual(beforeRefusal.graph.edges)
+    const recoveredChild = recovered.graph.nodes.find(node => node.id === 'child')
+    expect(recoveredChild?.type).toBe('workflow')
+    if (recoveredChild?.type !== 'workflow') throw new Error('Expected child workflow')
+    expect(recoveredChild.workflow.interface.inputs.find(input => input.kind === 'dataframe')?.id).toBe(childPortId)
+    expect(recoveredChild.bindings).toEqual({ 'child-bound-number': { __type__: 'int', value: 7 } })
     await saveWorkflow(page, name)
     expect((await savedGraph(page, name)).interface.inputs).toEqual([])
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    const reloaded = await draftGraph(page, name)
+    expect(reloaded).toEqual(await savedGraph(page, name))
+    expect(reloaded.edges).toEqual(beforeRefusal.graph.edges)
+    const reloadedChild = reloaded.nodes.find(node => node.id === 'child')
+    expect(reloadedChild?.type).toBe('workflow')
+    if (reloadedChild?.type !== 'workflow') throw new Error('Expected child workflow')
+    expect(reloadedChild.workflow.interface.inputs.find(input => input.kind === 'dataframe')?.id).toBe(childPortId)
+    expect(reloadedChild.bindings).toEqual({ 'child-bound-number': { __type__: 'int', value: 7 } })
   })
 
   test('keeps nested edits private until save and discards later private changes', async ({ page }) => {
@@ -1462,15 +1543,36 @@ test.describe('workflow interface and grouping', () => {
     await openWorkflow(page, name, displayName)
 
     await page.locator('.vue-flow__node[data-id="blur_1"]').click()
+    const before = await draftState(page, name)
+    let allowDeletion = false
+    await page.route(`**/api/v1/workflow-drafts/${name}`, async (route) => {
+      const body = route.request().method() === 'PUT'
+        ? route.request().postDataJSON() as { graph?: GraphState } | null
+        : null
+      if (body?.graph?.nodes.length === 1 && !allowDeletion) {
+        await route.fulfill({ status: 500, json: { detail: 'forced exposed-node write failure' } })
+        return
+      }
+      await route.continue()
+    })
     const acceptedDeletion = page.waitForResponse(response => (
       response.url().includes(`/api/v1/workflow-drafts/${name}`)
       && response.request().method() === 'PUT'
+      && response.status() === 500
     ))
     await page.locator('.canvas-view').press('Delete')
     const deletionResponse = await acceptedDeletion
 
-    expect(deletionResponse.status(), await deletionResponse.text()).toBe(200)
-    const accepted = (await deletionResponse.json()) as WorkflowDraftResponse
+    expect(deletionResponse.status()).toBe(500)
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    const afterFailure = await draftState(page, name)
+    expect(afterFailure.draft_revision).toBe(before.draft_revision)
+    expect(afterFailure.graph).toEqual(before.graph)
+    allowDeletion = true
+    const accepted = await waitForAcceptedGraph(page, name, async () => {
+      await page.getByTestId('canvas-persistence-retry').click()
+    })
+    expect(accepted.draft_revision).toBe(before.draft_revision + 1)
     expect(accepted.graph.nodes.map(node => node.id)).toEqual(['blur_2'])
     expect(accepted.graph.interface.inputs).toEqual([{
       id: 'shared-image-input', name: 'Shared image', kind: 'field',
