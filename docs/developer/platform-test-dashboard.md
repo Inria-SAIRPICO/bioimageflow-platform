@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **215 V + 236 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **215 / 457 are verified (47.0%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **193 V + 27 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **193 / 220 are verified (87.7%)**.
+- Overall: **216 V + 235 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **216 / 457 are verified (47.3%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **194 V + 26 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **194 / 220 are verified (88.2%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -48,7 +48,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
 | GUI-SHL-007 | OMERO settings cards and secret handling | P2 | Desktop GUI/settings API; webapp restrictions | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-008 | Desktop/editor settings and forbidden webapp mutation | P2 | Desktop and webapp settings API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| GUI-EDT-001 | Catalog inspect, double-click add, drag add, and select | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `eb0dc74`, `4208769` |
+| GUI-EDT-001 | Catalog inspect, double-click add, drag add, and select | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `eb0dc74`, `4208769`, `a44851e` |
 | GUI-EDT-002 | Fit large/small graphs and encoded paths | P1 | Desktop and webapp GUI | no | G | N (viewport fitting accepts no invalid domain input) | N (viewport fitting has no cancellation or recovery lifecycle) | N (fit geometry is recomputed and is not durable workflow state) | N (viewport fitting has no identity, concurrency, ownership, or permission boundary) | gap | `fcb4408` inspection |
 | GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4456435`, `bd92dfc` |
 | GUI-EDT-004 | Column input labels and disconnect/reconnect | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `e0aa123`, `4456435`, `bd92dfc` |
