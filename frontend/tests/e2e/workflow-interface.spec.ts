@@ -44,6 +44,18 @@ function graphWithExposedOutput(name: string, displayName: string): GraphState {
     schema: { type: 'ImageFile' },
     source: { node: 'blur_1', column: 'output_image' },
   })
+  result.interface.inputs.push({
+    id: 'shared-image-input', name: 'Shared image', kind: 'field',
+    schema: { type: 'ImageFile' }, default: null,
+    targets: [
+      { node: 'blur_1', port: { kind: 'field', name: 'input_image' } },
+      { node: 'blur_2', port: { kind: 'field', name: 'input_image' } },
+    ],
+  }, {
+    id: 'removed-sigma-input', name: 'Removed sigma', kind: 'field',
+    schema: { type: 'float' }, default: null,
+    targets: [{ node: 'blur_1', port: { kind: 'field', name: 'sigma' } }],
+  })
   return result
 }
 
@@ -478,6 +490,8 @@ test.describe('workflow interface and grouping', () => {
     await page.getByTestId('dataframe-input-name-2').fill('Last table')
     await saveWorkflow(page, name)
     const first = await savedGraph(page, name)
+    const firstIds = first.interface.inputs.map(input => input.id)
+    expect(new Set(firstIds).size).toBe(3)
     expect(first.interface.inputs.map(input => input.targets[0]?.port)).toEqual([
       { kind: 'positional', index: 0 }, { kind: 'positional', index: 1 }, { kind: 'positional', index: 2 },
     ])
@@ -504,7 +518,7 @@ test.describe('workflow interface and grouping', () => {
     await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
     await saveWorkflow(page, name)
     const saved = await savedGraph(page, name)
-    expect(saved.interface.inputs.map(input => input.id)).toEqual([first.interface.inputs[0]!.id, first.interface.inputs[2]!.id])
+    expect(saved.interface.inputs.map(input => input.id)).toEqual([firstIds[0], firstIds[2]])
     expect(saved.interface.inputs[1]).toMatchObject({ name: 'Last table', targets: [{ node: 'increment', port: { kind: 'positional', index: 1 } }] })
     expect(saved.edges[0]).toMatchObject({ type: 'dataframe', target_node: 'increment', target_position: 2 })
     await page.reload()
@@ -512,6 +526,8 @@ test.describe('workflow interface and grouping', () => {
     await page.locator('.vue-flow__node[data-id="increment"]').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     await expect(page.getByTestId('dataframe-input-name-1')).toHaveValue('Last table')
+    expect(await draftGraph(page, name)).toEqual(saved)
+    expect(await savedGraph(page, name)).toEqual(saved)
   })
 
   test('publishes an existing child DataFrame port through the parent interface', async ({ page }) => {
@@ -1093,6 +1109,14 @@ test.describe('workflow interface and grouping', () => {
     const deletionResponse = await acceptedDeletion
 
     expect(deletionResponse.status(), await deletionResponse.text()).toBe(200)
+    const accepted = (await deletionResponse.json()) as WorkflowDraftResponse
+    expect(accepted.graph.nodes.map(node => node.id)).toEqual(['blur_2'])
+    expect(accepted.graph.interface.inputs).toEqual([{
+      id: 'shared-image-input', name: 'Shared image', kind: 'field',
+      schema: { type: 'ImageFile' }, default: null,
+      targets: [{ node: 'blur_2', port: { kind: 'field', name: 'input_image' } }],
+    }])
+    expect(accepted.graph.interface.outputs).toEqual([])
     await expect(page.locator('.vue-flow__node[data-id="blur_1"]')).toHaveCount(0)
     await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
     await saveWorkflow(page, name)
@@ -1100,5 +1124,11 @@ test.describe('workflow interface and grouping', () => {
     const saved = await savedGraph(page, name)
     expect(saved.nodes.map(node => node.id)).toEqual(['blur_2'])
     expect(saved.interface.outputs).toEqual([])
+    expect(saved).toEqual(accepted.graph)
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    expect(await draftGraph(page, name)).toEqual(saved)
+    await expect(page.locator('.vue-flow__node[data-id="blur_2"]')).toBeVisible()
+    await expect(page.locator('.vue-flow__node[data-id="blur_1"]')).toHaveCount(0)
   })
 })
