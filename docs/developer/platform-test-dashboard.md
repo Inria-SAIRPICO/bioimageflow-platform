@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **212 V + 239 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **212 / 457 are verified (46.4%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **190 V + 30 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **190 / 220 are verified (86.4%)**.
+- Overall: **215 V + 236 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **215 / 457 are verified (47.0%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **193 V + 27 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **193 / 220 are verified (87.7%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -89,8 +89,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | G | V | V | in-progress | `dd20821` |
 | WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e`, `bcedaec` |
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `bcedaec` |
-| WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | G | G | V | V | in-progress | `3422e1c` |
-| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | G | G | V | V | in-progress | `1e84421` |
+| WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `3422e1c`, `dd9e231` |
+| WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | G | V | V | V | in-progress | `1e84421`, `dd9e231` |
 | WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | V | V | V | in-progress | `da0ded6`, `152c82b`, `0dc71b5` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
