@@ -1653,9 +1653,11 @@ App starts
   +--> GET /api/v1/workflow-drafts/{id}
   |
   +--> If backend draft exists or is synthesized:
-  |      Load graph from the draft and record its revision
-  |      Show unsaved indicator when dirty_against_saved is true
-  |      Use the validation/status projection returned with that accepted draft
+  |      Record its revision and validation/status projection
+  |      Prefer a newer IndexedDB recovery snapshot for the same existing workflow,
+  |      keeping the accepted draft revision as the compare-and-swap base
+  |      Otherwise load the accepted draft graph; clear obsolete or older recovery
+  |      Show the unsaved indicator for a recovered graph or dirty accepted draft
   |
   +--> If backend draft load fails but IndexedDB recovery exists:
   |      Load IndexedDB recovery state and schedule a draft save when the backend is available

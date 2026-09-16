@@ -23,6 +23,7 @@ type GraphState = {
 
 type WorkflowDraft = {
   draft_revision: number
+  updated_at: string
   dirty_against_saved: boolean
   graph: GraphState
   validation: {
@@ -231,6 +232,25 @@ async function clearWorkflowRecovery(page: Page, workflowName: string): Promise<
   }), workflowName)
 }
 
+async function readWorkflowRecovery(page: Page, workflowName: string): Promise<{
+  name: string
+  graph: GraphState
+  timestamp: number
+} | null> {
+  return page.evaluate((name) => new Promise((resolve, reject) => {
+    const request = indexedDB.open('bioimageflow-autosave', 1)
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction('workflows', 'readonly')
+      const entry = transaction.objectStore('workflows').get(name)
+      entry.onsuccess = () => resolve(entry.result ?? null)
+      entry.onerror = () => reject(entry.error)
+      transaction.oncomplete = () => db.close()
+    }
+    request.onerror = () => reject(request.error)
+  }), workflowName)
+}
+
 async function fetchDraft(page: Page, workflowName: string): Promise<WorkflowDraft> {
   const response = await page.request.get(
     `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
@@ -276,6 +296,82 @@ async function saveFromMenu(page: Page): Promise<void> {
 test.describe('critical operation race contracts', () => {
   test.beforeEach(async ({ page }) => {
     await seedTools(page)
+  })
+
+  test('recovers a newer browser fallback after a refused root-draft write', { tag: '@critical' }, async ({ page }) => {
+    const workflowName = uniqueName('interrupted_draft_recovery')
+    const displayName = `Interrupted Draft Recovery ${workflowName}`
+    const sourceId = 'recovery_seed'
+    const targetId = 'recovery_increment'
+    await createWorkflow(
+      page,
+      workflowName,
+      displayName,
+      connectedDraftGraph(workflowName, displayName, sourceId, targetId, 1),
+    )
+
+    try {
+      const savedGraph = await loadSavedGraph(page, workflowName)
+      await page.goto('/')
+      await expect(page.locator('#bioimageflow-app')).toBeVisible()
+      await openWorkflow(page, workflowName, displayName)
+      const acceptedBeforeEdit = await fetchDraft(page, workflowName)
+      expect(acceptedBeforeEdit.graph).toEqual(savedGraph)
+
+      let refusedWrites = 0
+      await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async (route) => {
+        if (route.request().method() === 'PUT') {
+          refusedWrites += 1
+          await route.abort('failed')
+        } else {
+          await route.continue()
+        }
+      })
+      const numberInput = await selectNumberField(page, targetId)
+      await numberInput.fill('10')
+      await numberInput.press('Tab')
+      await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+      expect(refusedWrites).toBeGreaterThan(0)
+
+      const expectedGraph = {
+        ...savedGraph,
+        nodes: savedGraph.nodes.map(node => node.id === targetId
+          ? { ...node, parameters: { ...node.parameters, number: 10 } }
+          : node),
+      }
+      await expect.poll(async () => readWorkflowRecovery(page, workflowName)).toMatchObject({
+        name: workflowName,
+        graph: expectedGraph,
+        timestamp: expect.any(Number),
+      })
+      const fallback = await readWorkflowRecovery(page, workflowName)
+      expect(fallback).not.toBeNull()
+      expect(fallback!.timestamp).toBeGreaterThan(Date.parse(acceptedBeforeEdit.updated_at))
+      expect(await fetchDraft(page, workflowName)).toMatchObject({
+        draft_revision: acceptedBeforeEdit.draft_revision,
+        graph: savedGraph,
+        dirty_against_saved: false,
+      })
+      expect(await loadSavedGraph(page, workflowName)).toEqual(savedGraph)
+
+      await page.unroute(`**/api/v1/workflow-drafts/${workflowName}`)
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toHaveText(`${displayName} *`)
+      await expect(page.locator(`.vue-flow__node[data-id="${sourceId}"]`)).toBeVisible()
+      await expect(page.locator(`.vue-flow__node[data-id="${targetId}"]`)).toBeVisible()
+      await expect(page.locator(`.vue-flow__edge[data-id="${sourceId}-${targetId}-dataframe"]`)).toHaveCount(1)
+      await expect.poll(async () => Number(await (await selectNumberField(page, targetId)).inputValue())).toBe(10)
+      const recoveredDraft = await waitForDraftParameter(page, workflowName, targetId, 10, true, 'number')
+      expect(recoveredDraft).toMatchObject({
+        draft_revision: acceptedBeforeEdit.draft_revision + 1,
+        graph: expectedGraph,
+        validation: { valid: true, errors: [] },
+      })
+      expect(await loadSavedGraph(page, workflowName)).toEqual(savedGraph)
+    } finally {
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    }
   })
 
   test('Save keeps its initiating snapshot and canvas while a newer edit remains dirty', async ({ page }) => {
