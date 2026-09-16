@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **200 V + 251 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **200 / 457 are verified (43.8%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **178 V + 42 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **178 / 220 are verified (80.9%)**.
+- Overall: **201 V + 250 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **201 / 457 are verified (44.0%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **179 V + 41 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **179 / 220 are verified (81.4%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -124,7 +124,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
 | RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
-| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | G | V | in-progress | `30faeb6`, `fe0cf9d`; ISSUE-011 |
+| RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6`, `fe0cf9d`, `0043397`, `58520b5`; ISSUE-011 resolved |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
