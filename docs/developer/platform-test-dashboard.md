@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **216 V + 235 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **216 / 457 are verified (47.3%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **194 V + 26 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **194 / 220 are verified (88.2%)**.
+- Overall: **218 V + 233 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **218 / 457 are verified (47.7%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **196 V + 24 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **196 / 220 are verified (89.1%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -42,7 +42,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | GUI-SHL-001 | Default docks, menu, and panel visibility | P1 | Desktop and webapp GUI | no | G | N (no invalid-input or refused-action contract for shell layout) | N (no cancellation or recovery lifecycle for static shell layout) | G | N (no identity, concurrency, ownership, or permission boundary for shell layout) | gap | `fcb4408` inspection |
 | GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
-| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | G | V | V | in-progress | `dd20821`, `75be9c2` |
+| GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | V | V | V | verified | `dd20821`, `75be9c2`, `301c19c` |
 | GUI-SHL-004 | Recovered-edge geometry | P0 | Desktop and webapp GUI | yes | V | N (geometry rendering accepts no user input to refuse) | N (geometry rendering has no cancellation or recovery lifecycle) | V | N (geometry is derived within the owning canvas and has no separate boundary) | verified | `dd20821` |
 | GUI-SHL-005 | Preferences opening and desktop availability | P1 | Desktop and webapp GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
@@ -86,7 +86,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-011 | Revisioned draft writes, dirtiness, and validation | P0 | Draft API/storage and GUI | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | G | V | V | in-progress | `dd20821` |
+| WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | V | V | V | verified | `dd20821`, `301c19c` |
 | WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e`, `bcedaec` |
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `bcedaec` |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `3422e1c`, `dd9e231` |
