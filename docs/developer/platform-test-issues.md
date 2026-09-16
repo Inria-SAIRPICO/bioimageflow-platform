@@ -159,16 +159,20 @@ Invalid destination input, duplicate-service failure/rollback, stale identity re
 
 ## ISSUE-011 — Clear status reverts after backend restart
 
-Status: `open`; a code-traced durable-authority defect remains after the bounded same-process reconnect fix `fe0cf9d`.
+Status: `safe-to-fix` after GPT-6 Astra/high read-only review; a code-traced durable-authority defect remains after the bounded same-process reconnect fix `fe0cf9d`.
 In a two-node Direct workflow, Run followed by Clear on the upstream node removes only its latest result and marks it `unexecuted` with its dependent `out_of_date`; the live UI and same-process browser reload now agree.
 The stored accepted root draft still contains pre-Clear `validation.node_statuses`, because `_read_validated_authority_snapshot()` returns an existing draft verbatim, while a new `ExecutionManager` starts with empty live statuses.
 After stopping and restarting the backend against the same workspace, reopening can therefore display the cleared source as `executed` even though its latest result query returns 404.
 The restart sequence is code-traced, not yet executed as a process-level reproduction; it must be reproduced before closure.
 The repair must keep the accepted graph/revision and CAS contract unchanged, preserve historical `last_result`, and avoid resurrecting selected output pointers.
-Potential boundaries are read-time revalidation against current cache or a durable Clear-adjusted validation snapshot with an identity fence; neither has yet been approved as safe.
+The specialist recommends fresh cache-status projection on authoritative accepted-draft reads, using the compiled accepted graph, public workflow plan, and retained latest-output metadata rather than persisting Clear-adjusted validation.
+An enabled `pending_upstream` node with a retained latest output must present `out_of_date`; without retained output it remains `unexecuted`, so globally remapping that library plan state would be wrong.
+Compile outside the workflow mutation lock, then recheck workflow generation, storage path, accepted graph and revision and project plan/latest status under the same lock used by Clear commit; retry a changed snapshot.
+This is moderate backend correctness work without a new schema or owner decision, but not a one-line fix: writing status into the draft after cache deletion would leave a crash/write-failure gap, and Clear has no accepted draft revision with which to fence that write.
 The source revision is `fe0cf9d`; authoritative contracts include v1 §2.4.5, v2 execution/cache semantics, and `PLATFORM_CONTEXT.md` result-lifecycle invariants.
-The requested GPT-6 Astra/high review did not execute because the agent hit its usage limit; it supplied no disposition, so no specialist decision is claimed.
-Resume after specialist review establishes the status authority and safe repair/test boundary; then a bounded Sol worker should implement and validate the restart regression.
+The first GPT-6 Astra/high request did not execute because of a usage limit; a subsequent read-only review returned `safe-to-fix` on current product revision `d5e45ee` and supplied the bounded design above.
+The `campaign/issue011-durable-status` Sol/medium worker owns a process-restart reproduction, scoped repair, identity/race tests, and exact GUI evidence where feasible.
+The specialist performed no process-level reproduction or tests; do not close this issue until those regressions and affected completion checks pass.
 
 ## ISSUE-012 — Workflow collision suggestion survives a later name edit
 

@@ -16,7 +16,7 @@ The plan and restart prompt contain the normative rules; this checkpoint records
 
 ## Next actions
 
-1. Address the highest-reach remaining Tier 1B shell, root editing, recursive workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories; keep ISSUE-011's dependent restart durability repair pending specialist review.
+1. Complete the Astra-bounded ISSUE-011 backend-restart cache-status repair and exact restart/GUI evidence, then resume the highest-reach remaining Tier 1B shell, root editing, recursive workflow, execution, and result gaps in the [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories.
 2. Preserve the observed BioImageFlow 0.7.2 sequential row-progress timing as a documented limitation; assess user impact before classifying it as a defect or dependency change.
 3. After all broader Primary-GUI obligations are verified, proceed to Tier 2 important extensions before Tier 3 advanced/native/external checks.
 
@@ -60,7 +60,7 @@ The exact commands, durations, environment-only blocked first attempts, and excl
 The Tier 1B workflow-dialog worktree integrated at `4a03750` verifies Create/Save As invalid/collision refusal and lossless cancellation, fixes ISSUE-012, and was archived with its merged branch deleted.
 The Tier 1B result-selection worktree integrated at `7d9de88` verifies source-pure unrelated-lineage fallback after reload; its worktree was archived and branch deleted.
 The Tier 1B cache-lifecycle worktree integrated at `fe0cf9d` verifies downstream invalidation and selected-result clearing across same-process browser reload; its worktree was archived and branch deleted.
-ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; the requested GPT-6 Astra/high review could not start because the agent hit its usage limit, so no disposition exists yet.
+ISSUE-011 tracks the code-traced backend-restart status-authority defect, and `RT-EXE-009.P` remains a gap; after one usage-limited attempt, GPT-6 Astra/high returned `safe-to-fix` with a moderate read-time projection design, now owned by the Sol/medium worker in `.worktrees/issue011-durable-status`.
 The Tier 1B result-boundaries worktree integrated at `168b487` verifies numeric filter refusal and recovery with exact source-row identity; its worktree was archived and branch deleted.
 The Tier 1B shell-recovery worktree integrated at `75be9c2` verifies the empty-workspace chooser and obsolete startup preference; its worktree was archived and branch deleted.
 The Tier 1B everyday-canvas worktree was archived under `/private/tmp`, pruned, and its integrated branch deleted after commit `4456435` verified real incompatible connection refusal and retained graph identity.
