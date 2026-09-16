@@ -137,9 +137,10 @@ async function expectExactTable(
 ): Promise<void> {
   const table = panel.locator('.p-datatable')
   await expect(table).toBeVisible()
-  const headers = (await table.locator('.p-datatable-thead [aria-label^="Sort "]')
-    .evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')?.slice(5))))
-  expect(headers).toEqual(columns)
+  await expect.poll(async () => (
+    await table.locator('.p-datatable-thead [aria-label^="Sort "]')
+      .evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')?.slice(5)))
+  ), { timeout: 15_000 }).toEqual(columns)
   const bodyRows = table.locator('.p-datatable-tbody tr')
   await expect(bodyRows).toHaveCount(rows.length)
   for (let row = 0; row < rows.length; row++) {
