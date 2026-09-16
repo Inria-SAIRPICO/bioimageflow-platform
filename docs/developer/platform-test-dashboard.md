@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **172 V + 279 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **172 / 457 are verified (37.6%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **150 V + 70 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **150 / 220 are verified (68.2%)**.
+- Overall: **175 V + 276 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **175 / 457 are verified (38.3%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **153 V + 67 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **153 / 220 are verified (69.5%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -50,8 +50,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-SHL-008 | Desktop/editor settings and forbidden webapp mutation | P2 | Desktop and webapp settings API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-EDT-001 | Catalog inspect, double-click add, drag add, and select | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `eb0dc74`, `4208769` |
 | GUI-EDT-002 | Fit large/small graphs and encoded paths | P1 | Desktop and webapp GUI | no | G | N (viewport fitting accepts no invalid domain input) | N (viewport fitting has no cancellation or recovery lifecycle) | N (fit geometry is recomputed and is not durable workflow state) | N (viewport fitting has no identity, concurrency, ownership, or permission boundary) | gap | `fcb4408` inspection |
-| GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | G | G | V | G | in-progress | `4208769` |
-| GUI-EDT-004 | Column input labels and disconnect/reconnect | P0 | Desktop and webapp GUI | yes | V | G | G | V | V | in-progress | `e0aa123` |
+| GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | V | G | V | V | in-progress | `4208769`, `4456435` |
+| GUI-EDT-004 | Column input labels and disconnect/reconnect | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `e0aa123`, `4456435` |
 | GUI-EDT-005 | Mapped/collective column appearance | P1 | Desktop and webapp GUI | no | G | N (row-consumption appearance accepts no user input to refuse) | N (derived edge appearance has no cancellation or recovery lifecycle) | N (appearance is derived from metadata and is not persisted) | G | gap | `fcb4408` inspection |
 | GUI-EDT-006 | Parameter controls feed the accepted Run | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `1261326`, `4208769` |
 | GUI-EDT-007 | Node rename preserves identity and refuses duplicates | P0 | Desktop and webapp GUI | yes | V | V | N (rename validation is synchronous; refusal is owned by R and no separate recovery follows) | V | V | verified | `ec0ca3b` |

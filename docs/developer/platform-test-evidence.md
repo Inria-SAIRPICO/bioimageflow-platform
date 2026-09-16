@@ -17,6 +17,10 @@ The revision sets Sol/high orchestration, main-GUI priority waves, systematic al
 No product code or tests changed; application, browser, and external certification were not rerun for this documentation-only task.
 The task commit is discoverable with `git log -1 -- docs/developer/platform-test-plan.md`.
 
+## Tier 1B canvas connection refusal — 2026-09-16
+
+Commit `4456435` adds a real pointer-drag regression for incompatible column-output to DataFrame-input connection, proving the existing edge, accepted graph, draft revision, and reload identity remain unchanged; no product change was needed. `scripts/test focus e2e tests/e2e/everyday-node-editing.spec.ts --project=chromium --grep 'refuses a column-to-DataFrame connection'` passed 1/1 in 67s, and the same selector in Firefox passed 1/1 in 44s. `scripts/test check frontend` passed lint, typecheck, build, and 1,298 tests across 132 files in 29s. `scripts/test check cross-browser-smoke` passed 15 Chromium and 15 Firefox tests in 111s. No test skips, deselections, or flaky retries occurred; the full browser and external lanes were intentionally not run for this localized test-only batch. The first sandboxed browser launch was blocked before collection by local-port permissions, then the authorized run passed. Passing task content was rebased unchanged over documentation-only `ae754e5` before integration.
+
 ## Basic-Use Readiness Gate — 2026-09-15
 
 **Basic-use gate passed; systematic campaign awaiting owner decision/incomplete.**
