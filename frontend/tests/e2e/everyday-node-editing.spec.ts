@@ -613,6 +613,34 @@ test.describe('everyday node editing', () => {
     }])
   })
 
+  test('refuses a column-to-DataFrame connection without replacing the accepted edge', async ({ page }) => {
+    const baseline = await fetchDraft(page, workflowName)
+    const columnOutput = node(page, SOURCE_ID).locator('.body-outputs .vue-flow__handle').first()
+    const freeDataframeInput = node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle').last()
+    await expect(columnOutput).toBeVisible()
+    await expect(freeDataframeInput).toBeVisible()
+    await expect(node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle')).toHaveCount(2)
+
+    const targetBox = await freeDataframeInput.boundingBox()
+    expect(targetBox).not.toBeNull()
+    await dragPointer(page, columnOutput, {
+      x: targetBox!.x + targetBox!.width / 2,
+      y: targetBox!.y + targetBox!.height / 2,
+    })
+
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expect(node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle')).toHaveCount(2)
+    await page.waitForTimeout(600) // Allow the draft persistence debounce to expose an unintended edit.
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+
+    await page.reload()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    const reloaded = await fetchDraft(page, workflowName)
+    expect(reloaded.graph).toEqual(baseline.graph)
+  })
+
   test('undoes and redoes mixed node, edge, and parameter edits one action at a time', async ({ page }) => {
     const baseline = await fetchDraft(page, workflowName)
     const addedNodeId = await addSeedNodeFromCatalog(page, workflowName)
