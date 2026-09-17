@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **238 V + 212 G + 0 I + 0 B + 6 U = 456 applicable obligations**, so **238 / 456 are verified (52.2%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **216 V + 3 G + 0 I + 0 B + 0 U = 219 applicable obligations**, so **216 / 219 are verified (98.6%)**.
+- Overall: **239 V + 211 G + 0 I + 0 B + 6 U = 456 applicable obligations**, so **239 / 456 are verified (52.4%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **217 V + 2 G + 0 I + 0 B + 0 U = 219 applicable obligations**, so **217 / 219 are verified (99.1%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 34 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -133,7 +133,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
-| RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `c050207` |
+| RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `c050207`, `125ee3d` |
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
