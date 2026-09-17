@@ -71,6 +71,7 @@ Do not conflate the following states:
 Saving a root canvas promotes the accepted root graph to the saved workflow.
 Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
+Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
 Workflow IDs are workspace-relative paths and carry identity generations.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.

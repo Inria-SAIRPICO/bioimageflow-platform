@@ -881,6 +881,191 @@ test.describe('workflow interface and grouping', () => {
     expectStableParentRoutes(afterDiscard)
   })
 
+  test('closes depth-two nested snapshots child-first after refusal and failed delete', async ({ page }) => {
+    test.setTimeout(60_000)
+    const name = workflowName('nested_depth_two')
+    const displayName = `Nested depth two ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    const child = childNode(initial).workflow
+    child.nodes.push({
+      type: 'workflow', id: 'grandchild', name: 'Grandchild', position: [600, 180],
+      workflow: graph('grandchild_graph', 'Grandchild graph'), bindings: {},
+    })
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
+    expect(setup.ok(), await setup.text()).toBeTruthy()
+
+    const otherName = workflowName('nested_depth_other')
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name: otherName, display_name: `Other ${otherName}` },
+    })).status()).toBe(201)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${otherName}`, {
+      data: { graph: nestedInterfaceGraph(otherName, `Other ${otherName}`) },
+    })).ok()).toBeTruthy()
+    const otherOpened = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'root', canvas_id: `workflow:${otherName}`, workflow_id: otherName },
+        parent_node_id: 'child', graph: childNode(nestedInterfaceGraph(otherName, `Other ${otherName}`)).workflow,
+      },
+    })
+    expect(otherOpened.status()).toBe(201)
+    const unrelated = await otherOpened.json() as { session_id: string; graph: GraphState }
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const rootBefore = await draftState(page, name)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await expect(page.locator('.nested-workflow-editor')).toHaveCount(1)
+    const parentTab = page.locator('.dv-tab').filter({ hasText: 'Stable child' })
+    const parentOpen = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'root', canvas_id: `workflow:${name}`, workflow_id: name },
+        parent_node_id: 'child', graph: child,
+      },
+    })
+    expect(parentOpen.status()).toBe(201)
+    const parent = await parentOpen.json() as {
+      session_id: string; snapshot_revision: number; graph: GraphState
+      owner: { workflow_id: string; canvas_id: string; identity_generation: number }
+    }
+    const rootIdentity = await setup.json() as {
+      identity_generation: number
+    }
+    expect(parent.owner).toMatchObject({
+      workflow_id: name, canvas_id: `workflow:${name}`,
+      identity_generation: rootIdentity.identity_generation,
+    })
+    await page.locator('.vue-flow__node[data-id="grandchild"]:visible').dblclick()
+    await expect(page.locator('.dv-tab').filter({ hasText: 'Grandchild' })).toBeVisible()
+    const grandchildOpen = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'nested', session_id: parent.session_id },
+        parent_node_id: 'grandchild', graph: graph('grandchild_graph', 'Grandchild graph'),
+      },
+    })
+    expect(grandchildOpen.status()).toBe(201)
+    const grandchild = await grandchildOpen.json() as { session_id: string; snapshot_revision: number; owner: { session_id: string }; graph: GraphState }
+    expect(grandchild.owner.session_id).toBe(parent.session_id)
+    expect(parent.session_id).not.toBe(unrelated.session_id)
+
+    await page.locator('.vue-flow__node[data-id="blur_1"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    await page.locator('.node-panel-header .node-name').dblclick()
+    const nodeName = page.locator('.node-panel-header .name-input')
+    await nodeName.fill('Private grandchild edit')
+    const privateWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await nodeName.press('Enter')
+    const edited = await (await privateWrite).json() as typeof grandchild
+    expect(edited.snapshot_revision).toBe(grandchild.snapshot_revision + 1)
+    expect(edited.graph.nodes[0]?.name).toBe('Private grandchild edit')
+    expect((await draftState(page, name)).graph).toEqual(rootBefore.graph)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${parent.session_id}`)).json())
+      .resolves.toMatchObject({ snapshot_revision: parent.snapshot_revision, graph: parent.graph })
+
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await page.locator('.vue-flow__node[data-id="grandchild"]:visible').dblclick()
+    await expect(page.locator('.vue-flow__node[data-id="blur_1"]:visible')).toContainText('Private grandchild edit')
+    const reopenedParent = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'root', canvas_id: `workflow:${name}`, workflow_id: name },
+        parent_node_id: 'child', graph: child,
+      },
+    })
+    expect((await reopenedParent.json()).session_id).toBe(parent.session_id)
+    const reopenedGrandchild = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'nested', session_id: parent.session_id },
+        parent_node_id: 'grandchild', graph: graph('grandchild_graph', 'Grandchild graph'),
+      },
+    })
+    expect((await reopenedGrandchild.json()).session_id).toBe(grandchild.session_id)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).json())
+      .resolves.toMatchObject({ snapshot_revision: edited.snapshot_revision, graph: edited.graph })
+
+    await parentTab.click()
+    const refusedDelete = page.waitForResponse(response => (
+      response.url().includes(`/api/v1/nested-workflow-snapshots/${parent.session_id}?`)
+      && response.request().method() === 'DELETE'
+    ))
+    await parentTab.locator('.dv-default-tab-action').click()
+    const refusal = await refusedDelete
+    expect(refusal.status()).toBe(409)
+    expect(await refusal.json()).toMatchObject({
+      error: 'nested_snapshot_has_dependents', dependent_session_ids: [grandchild.session_id],
+    })
+    await expect(page.getByTestId('nested-workflow-close-error')).toContainText('dependent nested snapshot must be deleted first')
+    await expect(page.getByTestId('nested-workflow-close-error')).toContainText('Close the child tab first, then retry.')
+    await expect(parentTab).toBeVisible()
+    expect((await draftState(page, name)).graph).toEqual(rootBefore.graph)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${parent.session_id}`)).status()).toBe(200)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).status()).toBe(200)
+
+    const grandchildTab = page.locator('.dv-tab').filter({ hasText: 'Grandchild' })
+    await grandchildTab.click()
+    page.once('dialog', async dialog => {
+      expect(dialog.message()).toContain('Discard unsaved changes')
+      await dialog.dismiss()
+    })
+    await grandchildTab.locator('.dv-default-tab-action').click()
+    await expect(grandchildTab).toBeVisible()
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).status()).toBe(200)
+
+    let failDelete = true
+    await page.route(`**/api/v1/nested-workflow-snapshots/${grandchild.session_id}?*`, async route => {
+      if (route.request().method() === 'DELETE' && failDelete) {
+        failDelete = false
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{"detail":"Injected delete failure"}' })
+      } else {
+        await route.continue()
+      }
+    })
+    page.once('dialog', dialog => dialog.accept())
+    const failedDelete = page.waitForResponse(response => (
+      response.url().includes(grandchild.session_id) && response.request().method() === 'DELETE'
+    ))
+    await grandchildTab.locator('.dv-default-tab-action').click()
+    expect((await failedDelete).status()).toBe(500)
+    await expect(grandchildTab).toBeVisible()
+    await expect(page.getByTestId('nested-workflow-close-error')).toContainText('Injected delete failure')
+    await expect(page.getByTestId('nested-workflow-close-error')).toContainText('Close the tab again to retry.')
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).status()).toBe(200)
+
+    page.once('dialog', dialog => dialog.accept())
+    const retryDelete = page.waitForResponse(response => (
+      response.url().includes(grandchild.session_id) && response.request().method() === 'DELETE'
+    ))
+    await grandchildTab.locator('.dv-default-tab-action').click()
+    expect((await retryDelete).status()).toBe(204)
+    await expect(grandchildTab).toHaveCount(0)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).status()).toBe(404)
+    await parentTab.locator('.dv-default-tab-action').click()
+    await expect(parentTab).toHaveCount(0)
+    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${parent.session_id}`)).status()).toBe(404)
+    expect((await draftState(page, name)).graph).toEqual(rootBefore.graph)
+    expect((await savedGraph(page, name))).toEqual(rootBefore.graph)
+    const unrelatedAfter = await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${unrelated.session_id}`)
+    expect(unrelatedAfter.status()).toBe(200)
+    expect((await unrelatedAfter.json()).graph).toEqual(unrelated.graph)
+
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    const freshParent = await page.request.post(`${API_BASE}/api/v1/nested-workflow-snapshots/open`, {
+      data: {
+        owner: { kind: 'root', canvas_id: `workflow:${name}`, workflow_id: name },
+        parent_node_id: 'child', graph: child,
+      },
+    })
+    expect(freshParent.status()).toBe(201)
+    expect((await freshParent.json()).session_id).not.toBe(parent.session_id)
+  })
+
   test('isolates nested keyboard history from the parent and saves only the active context', async ({ page }) => {
     const name = workflowName('nested_shortcut_history')
     const displayName = `Nested shortcut history ${name}`

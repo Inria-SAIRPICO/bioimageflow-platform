@@ -154,6 +154,7 @@ const rootCloseDialogVisible = ref(false)
 const pendingRootClose = shallowRef<PendingRootClose | null>(null)
 const rootCloseError = ref<string | null>(null)
 const rootCloseBusy = ref(false)
+const nestedCloseError = ref<string | null>(null)
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isMutationLocked anywhere in the tree. The composable has a
@@ -712,8 +713,17 @@ async function finalizeNestedWorkflowClose(sessionId: string): Promise<void> {
     }
     nestedWorkflowSessionsStore.closeSession(sessionId)
     nestedWorkflowParentCanvasIds.delete(sessionId)
+    nestedCloseError.value = null
   } catch (error) {
     console.warn('[nested-snapshot] failed to discard snapshot:', error)
+    const response = (error as {
+      response?: { data?: { detail?: unknown; error?: unknown } }
+    })?.response
+    nestedCloseError.value = typeof response?.data?.detail === 'string'
+      ? `${response.data.detail} ${response.data.error === 'nested_snapshot_has_dependents'
+        ? 'Close the child tab first, then retry.'
+        : 'Close the tab again to retry.'}`
+      : `Could not close nested workflow: ${error instanceof Error ? error.message : String(error)}. Close the tab again to retry.`
     queueMicrotask(() => openNestedWorkflowPanel(sessionId))
   }
 }
@@ -1547,6 +1557,9 @@ defineExpose({ dockviewApi })
 <template>
   <div id="bioimageflow-app">
     <MenuBar />
+    <p v-if="nestedCloseError" role="alert" data-testid="nested-workflow-close-error" class="nested-close-error">
+      {{ nestedCloseError }}
+    </p>
     <ExecutionBanner />
     <NapariProgressBanner />
     <EnvironmentRecoveryDialog />
@@ -1660,6 +1673,13 @@ html, body, #app, #bioimageflow-app {
 
 .root-close-error {
   color: var(--p-red-500);
+}
+
+.nested-close-error {
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  color: var(--p-red-500);
+  background: var(--bif-danger-surface);
 }
 
 .bif-dark-theme .vue-flow {

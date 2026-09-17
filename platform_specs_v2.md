@@ -161,6 +161,7 @@ A deeper snapshot is owned by its parent snapshot session UUID.
 The nested editor uses the standard canvas and panels.
 Edits remain private until Save explicitly applies the accepted snapshot to the parent workflow node.
 Closing a dirty nested tab requires discard confirmation.
+Closing a nested tab whose durable snapshot still owns an open descendant is refused until the descendant closes; a failed snapshot deletion keeps the tab and private state available for an explicit retry and shows the failure reason.
 Opening a custom node source in a nested editor creates and binds a private editable copy of that source under a new identity, using the snapshot revision guard.
 All references to that source within the private graph share the copy; other workflow instances retain their existing files.
 Reopening the source returns the same working file, and applying the graph preserves its new source binding.
