@@ -7,6 +7,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from bioimageflow_server.models.data_table import DataTableFilter
+from bioimageflow_server.models.graph import ViewerSpec
+from bioimageflow_server.models.results import ResultArtifactIdentity
 
 
 class NodeDataQueryRequest(BaseModel):
@@ -19,6 +21,7 @@ class NodeDataQueryRequest(BaseModel):
     sort_by: str | None = None
     sort_order: Literal["asc", "desc"] = "asc"
     filters: list[DataTableFilter] = Field(default_factory=list)
+    result_identity: ResultArtifactIdentity | None = None
 
 
 class NodeDataCsvRequest(BaseModel):
@@ -43,6 +46,9 @@ class NodeDataResponse(BaseModel):
     page: int
     page_size: int
     column_types: dict[str, str]
+    column_viewers: dict[str, ViewerSpec | None] = Field(default_factory=dict)
+    source_identity: ResultArtifactIdentity | None = None
+    identity_status: Literal["captured", "legacy_unpinned"] = "legacy_unpinned"
 
     @model_validator(mode="after")
     def _validate_parallel_shapes(self) -> "NodeDataResponse":
@@ -52,6 +58,10 @@ class NodeDataResponse(BaseModel):
         column_set = set(self.columns)
         if set(self.column_types) != column_set:
             raise ValueError("column_types keys must match columns")
+        if not self.column_viewers:
+            self.column_viewers = dict.fromkeys(self.columns)
+        elif set(self.column_viewers) != column_set:
+            raise ValueError("column_viewers keys must match columns")
 
         for row in self.rows:
             if set(row) != column_set:

@@ -191,6 +191,11 @@ def _graph_to_library(
                             resource_overrides = None
                     if resource_overrides is not None:
                         item["resource_overrides"] = resource_overrides
+        if node.viewer_additions:
+            item["viewer_additions"] = {
+                output: viewer.model_dump(mode="json", by_alias=True)
+                for output, viewer in sorted(node.viewer_additions.items())
+            }
         if not node.enabled:
             item["enabled"] = False
         nodes.append(item)
@@ -202,7 +207,7 @@ def _graph_to_library(
         config["execution"] = root_execution
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": graph.name,
         "display_name": graph.display_name,
         "interface": _interface_dict(graph),
@@ -270,15 +275,131 @@ def _default_position(index: int) -> tuple[float, float]:
     return (float((index % 4) * 280), float((index // 4) * 180))
 
 
+def _validate_library_wire_shape(value: dict[str, Any]) -> dict[str, Any]:
+    """Reject every field that this GUI projection would otherwise discard."""
+
+    from bioimageflow import Workflow
+
+    archive_version = value.get("archive_version")
+    if archive_version in {1, 2}:
+        expected = {"archive_version", "workflow", "custom_sources"}
+        if archive_version == 2:
+            expected.add("viewing_requirements")
+        if set(value) != expected:
+            raise ValueError(
+                f"Workflow archive fields must be exactly {sorted(expected)}"
+            )
+        if archive_version == 2:
+            Workflow.inspect_viewing_requirements(deepcopy(value))
+        graph = value.get("workflow")
+    elif "archive_version" in value:
+        raise ValueError("Only workflow archive_version 1 and 2 are supported")
+    else:
+        graph = value
+    if not isinstance(graph, dict):
+        raise ValueError("Library workflow graph must be an object")
+    graph_fields = {
+        "schema_version",
+        "name",
+        "display_name",
+        "interface",
+        "nodes",
+        "edges",
+        "config",
+    }
+    if set(graph) != graph_fields:
+        raise ValueError(
+            f"Workflow graph fields must be exactly {sorted(graph_fields)}"
+        )
+    version = graph.get("schema_version")
+    if version not in {1, 2}:
+        raise ValueError("Only workflow schema_version 1 and 2 are supported")
+    config = graph.get("config")
+    if not isinstance(config, dict) or not set(config) <= {
+        "engine",
+        "execution",
+        "output_view",
+    }:
+        raise ValueError("Unknown workflow config field")
+    nodes = graph.get("nodes")
+    if not isinstance(nodes, list):
+        raise ValueError("Library workflow nodes must be an array")
+    for raw in nodes:
+        if not isinstance(raw, dict):
+            raise ValueError("Library workflow node must be an object")
+        common = {"name", "type", "enabled"}
+        if version == 2:
+            common.add("viewer_additions")
+        node_type = raw.get("type")
+        if node_type == "workflow":
+            allowed = common | {"workflow", "bindings"}
+            required = {"name", "type", "workflow", "bindings"}
+            child = raw.get("workflow")
+            if isinstance(child, dict):
+                _validate_library_wire_shape(child)
+        elif node_type == "tool":
+            allowed = common | {
+                "tool_module",
+                "tool_class",
+                "tool_package",
+                "tool_package_version",
+                "source_module",
+                "constants",
+                "output_templates",
+                "resource_overrides",
+            }
+            required = {
+                "name",
+                "type",
+                "tool_module",
+                "tool_class",
+                "tool_package",
+                "tool_package_version",
+                "constants",
+            }
+        else:
+            raise ValueError("Unknown or malformed workflow node variant")
+        if not required <= set(raw) or not set(raw) <= allowed:
+            raise ValueError(f"Malformed or unknown fields on node {raw.get('name')!r}")
+    return graph
+
+
 def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
     """Materialize an editable platform graph from the strict library grammar."""
 
-    if set(workflow_data) == {"archive_version", "workflow", "custom_sources"}:
-        graph_data = workflow_data["workflow"]
-    else:
-        graph_data = workflow_data
-    if not isinstance(graph_data, dict):
-        raise ValueError("Library workflow graph must be an object")
+    # Prove the complete payload through the frozen library's public strict
+    # loader before projecting GUI-owned fields. This prevents this adapter
+    # from becoming an accidental unknown-field sink.
+    from bioimageflow import Workflow
+
+    graph_data = _validate_library_wire_shape(workflow_data)
+    _, structural_errors = Workflow.from_dict(
+        deepcopy(workflow_data),
+        storage_path=".",
+        validate_only=True,
+        partial=True,
+        auto_install=False,
+    )
+    construction_errors = [
+        error
+        for error in structural_errors
+        if getattr(error, "kind", None) == "construction_failed"
+    ]
+    structural_markers = (
+        "fields must be exactly",
+        "Unknown workflow",
+        "unknown fields",
+        "Malformed",
+        "schema_version",
+        "viewer metadata",
+        "viewer additions",
+    )
+    if construction_errors and any(
+        marker in str(getattr(error, "message", error))
+        for error in construction_errors
+        for marker in structural_markers
+    ):
+        raise ValueError(str(construction_errors[0]))
 
     raw_nodes = graph_data.get("nodes")
     if not isinstance(raw_nodes, list):
@@ -300,6 +421,11 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
                     "bindings": raw.get("bindings", {}),
                     "position": _default_position(index),
                     "enabled": raw.get("enabled", True),
+                    **(
+                        {"viewer_additions": raw["viewer_additions"]}
+                        if "viewer_additions" in raw
+                        else {}
+                    ),
                 }
             )
             continue
@@ -331,6 +457,11 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
                     if "resource_overrides" in raw
                     else {}
                 ),
+                **(
+                    {"viewer_additions": raw["viewer_additions"]}
+                    if "viewer_additions" in raw
+                    else {}
+                ),
             }
         )
 
@@ -346,7 +477,7 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
     )
     return GraphState.model_validate(
         {
-            "schema_version": graph_data.get("schema_version"),
+            "schema_version": 2,
             "name": graph_data.get("name"),
             "display_name": graph_data.get("display_name"),
             "nodes": nodes,

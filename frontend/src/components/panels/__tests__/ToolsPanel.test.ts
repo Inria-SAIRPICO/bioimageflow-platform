@@ -154,6 +154,7 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
   return {
     deployment_mode: 'desktop',
     external_editor: null,
+    napari_registry_revision: 0,
     omero_instances: [],
     tool_store_path: '~/.bioimageflow/tool_packages/',
     update_mode: 'auto',

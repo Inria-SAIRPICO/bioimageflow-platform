@@ -319,12 +319,23 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
-    async def broadcast_environment_status(self, env_name: str, status: str) -> None:
+    async def broadcast_environment_status(
+        self,
+        env_name: str,
+        status: str,
+        *,
+        environment_id: str | None = None,
+        environment_name: str | None = None,
+    ) -> None:
         payload = {
             "type": "environment_status",
             "env_name": env_name,
             "status": status,
         }
+        if environment_id is not None:
+            payload["environment_id"] = environment_id
+        if environment_name is not None:
+            payload["environment_name"] = environment_name
         self._enqueue_all(payload)
 
     async def broadcast_workflow_draft_changed(
@@ -496,9 +507,21 @@ class ConnectionManager:
             "package_install",
         )
 
-    def publish_environment_status(self, env_name: str, status: str) -> None:
+    def publish_environment_status(
+        self,
+        env_name: str,
+        status: str,
+        *,
+        environment_id: str | None = None,
+        environment_name: str | None = None,
+    ) -> None:
         self._schedule(
-            self.broadcast_environment_status(env_name, status),
+            self.broadcast_environment_status(
+                env_name,
+                status,
+                environment_id=environment_id,
+                environment_name=environment_name,
+            ),
             "environment_status",
         )
 

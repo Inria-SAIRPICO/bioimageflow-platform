@@ -216,7 +216,7 @@ def convert_legacy_graph(
     try:
         return GraphState.model_validate(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "name": workflow_id.rsplit("/", 1)[-1],
                 "display_name": display_name,
                 "nodes": nodes,

@@ -17,6 +17,8 @@ from bioimageflow_server.models.data_table import (
     DataTableSource,
     DataTableStackedResponse,
 )
+from bioimageflow_server.models.graph import ViewerSpec
+from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.dataframe_query import (
     DataFrameQueryError,
     filter_positions,
@@ -45,6 +47,7 @@ class _LoadedSource:
     index_values: list[str]
     positions: dict[str, int]
     column_types: dict[str, str]
+    column_viewers: dict[str, ViewerSpec | None]
 
 
 _FALLBACK_MESSAGES = {
@@ -98,7 +101,7 @@ class DataTableProjectionService:
             )
         ]
         return DataTableMergedResponse(
-            sources=sources,
+            sources=[source.spec for source in loaded],
             columns=columns,
             rows=rows,
             total_rows=total_rows,
@@ -135,23 +138,49 @@ class DataTableProjectionService:
     def _load_sources(
         self, sources: list[DataTableSource], storage_path: Path | None
     ) -> list[_LoadedSource]:
-        records: list[tuple[DataTableSource, Path]] = []
+        captured: list[tuple[DataTableSource, Path | None]] = []
         for source in sources:
-            record_dir = self.result_store.get_latest_record_dir(
-                source.node_id, storage_path=storage_path
+            capture = getattr(self.result_store, "capture_latest_result_identity", None)
+            identity = source.result_identity or (
+                capture(source.node_id, storage_path=storage_path)
+                if callable(capture)
+                else None
             )
-            if record_dir is None:
-                raise DataTableProjectionInputError(
-                    f"No output data for node '{source.node_id}'"
+            if identity is not None and not isinstance(
+                identity, ResultArtifactIdentity
+            ):
+                identity = None
+            if identity is None:
+                record_dir = self.result_store.get_latest_record_dir(
+                    source.node_id, storage_path=storage_path
                 )
-            records.append((source, record_dir))
+                if record_dir is None:
+                    raise DataTableProjectionInputError(
+                        f"No output data for node '{source.node_id}'"
+                    )
+                captured.append((source, record_dir))
+                continue
+            if identity.node_key != source.node_id:
+                raise DataTableProjectionInputError(
+                    f"Result identity does not match node '{source.node_id}'"
+                )
+            captured.append(
+                (source.model_copy(update={"result_identity": identity}), None)
+            )
 
         loaded: list[_LoadedSource] = []
-        for source, record_dir in records:
+        for source, legacy_record_dir in captured:
             try:
-                dataframe = self.result_store.get_dataframe_from_record(
-                    record_dir, node_id=source.node_id
-                )
+                if source.result_identity is not None:
+                    dataframe = self.result_store.load_result_dataframe(
+                        source.result_identity,
+                        storage_path=storage_path,
+                    )
+                else:
+                    assert legacy_record_dir is not None
+                    dataframe = self.result_store.get_dataframe_from_record(
+                        legacy_record_dir, node_id=source.node_id
+                    )
             except ResultDataNotReadyError:
                 raise
             if dataframe is None:
@@ -171,6 +200,17 @@ class DataTableProjectionService:
             types = self.result_store.get_column_types(
                 dataframe, tool_name=source.tool_name
             )
+            retained_viewers = (
+                self.result_store.result_viewers(
+                    source.result_identity, storage_path=storage_path
+                )
+                if source.result_identity is not None
+                else {}
+            )
+            column_viewers = {
+                column: ViewerSpec.from_library(retained_viewers.get(column))
+                for column in dataframe.columns
+            }
             loaded.append(
                 _LoadedSource(
                     spec=source,
@@ -178,6 +218,7 @@ class DataTableProjectionService:
                     index_values=index_values,
                     positions={value: position for position, value in enumerate(index_values)},
                     column_types=types,
+                    column_viewers=column_viewers,
                 )
             )
         return loaded
@@ -274,6 +315,12 @@ class DataTableProjectionService:
                         type=source.column_types.get(original, "str"),
                         source_node_id=source.spec.node_id,
                         source_column=original,
+                        viewer=source.column_viewers.get(original),
+                        viewer_status=(
+                            "captured"
+                            if source.spec.result_identity is not None
+                            else "legacy_unpinned"
+                        ),
                     )
                 )
 

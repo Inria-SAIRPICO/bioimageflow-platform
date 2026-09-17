@@ -16,6 +16,8 @@ from bioimageflow import Workflow
 from bioimageflow_server.models.graph import (
     ColumnEdge,
     GraphState,
+    WorkflowConfig,
+    WorkflowInterface,
     WorkflowNodeState,
     WorkspaceWorkflowSource,
 )
@@ -354,15 +356,15 @@ def _destructive_effects(
     effects: list[SourceDestructiveEffect] = []
     for port_id, old in old_inputs.items():
         new = new_inputs.get(port_id)
-        kind: Literal["removed_input", "changed_input"] | None = None
+        input_kind: Literal["removed_input", "changed_input"] | None = None
         if new is None:
-            kind = "removed_input"
+            input_kind = "removed_input"
         elif old.kind != new.kind or old.schema_ != new.schema_:
-            kind = "changed_input"
-        if kind:
+            input_kind = "changed_input"
+        if input_kind:
             effects.append(
                 SourceDestructiveEffect(
-                    kind=kind,
+                    kind=input_kind,
                     port_id=port_id,
                     affected_edge_ids=[
                         edge.id
@@ -374,15 +376,15 @@ def _destructive_effects(
             )
     for port_id, old in old_outputs.items():
         new = new_outputs.get(port_id)
-        kind: Literal["removed_output", "changed_output"] | None = None
+        output_kind: Literal["removed_output", "changed_output"] | None = None
         if new is None:
-            kind = "removed_output"
+            output_kind = "removed_output"
         elif old.schema_ != new.schema_:
-            kind = "changed_output"
-        if kind:
+            output_kind = "changed_output"
+        if output_kind:
             effects.append(
                 SourceDestructiveEffect(
-                    kind=kind,
+                    kind=output_kind,
                     port_id=port_id,
                     affected_edge_ids=[
                         edge.id
@@ -410,13 +412,13 @@ def _root_replacement_effects(
         position=(0, 0),
     )
     root = GraphState(
-        schema_version=1,
+        schema_version=2,
         name="preview",
         display_name="Preview",
         nodes=[wrapper],
         edges=[],
-        interface={"inputs": [], "outputs": []},
-        config={},
+        interface=WorkflowInterface(inputs=[], outputs=[]),
+        config=WorkflowConfig(),
     )
     return _destructive_effects(root, ["root"], replacement)
 

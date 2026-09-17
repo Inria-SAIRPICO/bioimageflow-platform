@@ -1,9 +1,9 @@
 # Multiple napari environments and portable viewer requirements
 
-Status: proposed design for discussion; not implemented.
-This document proposes a focused extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
-It does not change their implemented status or the library's current public API.
-The examples below describe proposed schemas, not APIs available today.
+Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, managed creation/copy/removal lifecycle, environment settings UI, passive readiness report, and exact-result output chooser are implemented; native desktop smoke certification remains incomplete.
+This document specifies the delivered extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
+It does not change their implemented status; the portable viewer metadata it relies on is defined and exported by the released `bioimageflow-core` 0.4.0 package.
+The portable workflow and frontend examples below describe implemented behavior unless their implementation status is stated explicitly.
 
 ## 1. Product decisions
 
@@ -18,16 +18,16 @@ The feature has three independent layers:
 
 | Layer | Example | Owner and portability |
 | --- | --- | --- |
-| Viewing requirements | Output `tracks` requires plugin `example-track-reader` | Tool/workflow author; travels with the workflow |
-| Environment inventory | “Tracking” contains napari and those plugins | Local platform user; never travels with the workflow |
-| Selection preferences | Prefer “Tracking” for this output's current row, all its rows, or matching filenames | Local platform user; never travels with the workflow |
+| Viewing requirements | Output `tracks` requires distribution `example-track-reader` | Tool/workflow author; travels with the workflow |
+| Environment inventory | “Tracking” contains napari and those Python distributions | Local platform user; never travels with the workflow |
+| Selection preferences | Favor “Tracking” for one structural output identity, or prefer it for matching filenames | Local platform user; never travels with the workflow |
 
 The developer describes what is needed to view the data.
 The user chooses which local installation supplies it.
 Viewing requirements are independent of the packages and environments needed to execute a tool.
 Missing viewer dependencies must not prevent importing, editing, exporting, or executing an otherwise valid workflow.
 
-Recommended first release includes attaching existing environments, creating managed environments, output requirements, automatic selection, explicit local defaults for one row or all rows of an output, filename associations with extension shortcuts, and import diagnostics.
+Recommended first release includes attaching existing environments, creating managed environments, output requirements, automatic selection, one exclusive toggleable favorite per structural output identity, filename associations with extension shortcuts, and import diagnostics.
 A general plugin marketplace, arbitrary install scripts, automatic upgrades, and shared environment synchronization are outside this feature.
 
 ## 2. Environment registration and ownership
@@ -40,7 +40,7 @@ Support Conda environments and Python virtual environments on the supported desk
 Detect duplicate canonical installations and offer the existing entry rather than registering the same interpreter twice.
 Moving an installation requires **Locate environment** and a fresh probe; replacing the interpreter at the same path also invalidates its observed inventory.
 
-**Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, bridge support, and discovered plugins.
+**Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, and installed Python distribution metadata.
 Environment registration and probing never install packages.
 The subprocess must run with the environment's required launch context; invoking an absolute Python path alone must not be assumed sufficient for every Conda installation.
 The platform must not inherit its own Python imports, user-site packages, or Qt selection accidentally into the viewer.
@@ -61,25 +61,31 @@ Managed napari environments must also be independent of processing-tool environm
 The creation form contains:
 
 - Name, with a useful suggested value.
-- Required plugins, prefilled when opened from an output or workflow compatibility report.
-- Optional recommended plugins, visibly separate and opt-in.
-- An advanced section for supported napari/Python constraints and package-source details.
+- Required Python distributions, prefilled when opened from an output or workflow compatibility report.
+- Optional recommended distributions, visibly separate and opt-in.
+- An advanced section for the supported napari/Python/Qt matrix and PyPI resolution details.
 
-Offer a tested platform baseline by default and resolve it against the requested plugin constraints.
+The default managed recipe creates a Conda environment containing Python 3.12, then installs napari 0.9.1, PyQt6, and requested Python distributions from PyPI.
+The older supported smoke recipe creates Python 3.12 through Conda, then installs napari 0.6.6, PyQt5, and requested Python distributions from PyPI.
+These are the initial explicit tested matrices; the creation API defaults to the first and advanced requests require an exact napari version and an explicit PyQt5/PyQt6 choice.
+Resolve requested package constraints against the selected tested matrix.
 Do not offer “latest” as a promise that arbitrary plugin combinations will work.
-The implementation must publish its tested napari/Python/Qt and bridge support matrix; supporting several releases does not imply supporting every historical release.
+The implementation must publish these tested napari/Python/Qt and bridge matrices; supporting both does not imply supporting other releases.
 Users who need unsupported combinations can manage an external installation, but an unsupported bridge remains explicitly unverified or unavailable.
 
 Use one documented provisioning strategy through public Wetlands APIs.
-Package distribution names and napari plugin IDs are not shell commands or Conda package mappings.
-For automatic installation, resolve reviewed Python distribution requirements from approved package sources; use explicit platform-maintained mappings where a Conda package name differs.
-Constraints requiring unavailable builds, system libraries, or incompatible Python/Qt versions produce a solvability error with the affected plugins.
-Exact backend recipe syntax and the initial supported release matrix require an implementation feasibility check before coding the installer.
+Conda supplies only Python for these managed recipes; napari, Qt, the bridge, and requested packages are Python distributions installed from PyPI.
+Package distribution names and napari plugin IDs are not shell commands or Conda package mappings, and the platform does not maintain Conda-name translations for requested packages.
+For automatic installation, resolve reviewed Python distribution requirements from PyPI.
+Constraints requiring unavailable builds, system libraries, or incompatible Python/Qt versions produce a solvability error with the affected packages.
+The backend recipe is a Wetlands `EnvironmentSpec` with a Python-3.12-only constraint, empty `conda`, PyPI `napari==<exact version>`, the selected Qt distribution, normalized requested PEP 508 distributions, and the `conda-forge` channel.
+Direct URLs, environment markers, duplicate normalized names, and requests for recipe-controlled napari, Qt, Python, BioImageFlow, or Wetlands distributions are rejected before provisioning.
 
-The operation shows resolving, downloading/installing, validating, ready, failed, or cancelled, with progress and accessible logs.
+The durable operation shows pending, resolving, installing, validating, completed, failed, or cancelled state with progress, message, structured error, and the public Wetlands operation identity where available; Wetlands output continues through the platform logging stream.
 Installation happens in a new location and becomes selectable only after successful validation.
 Failure or cancellation preserves all existing environments and defaults; partial installations are never marked ready.
-Retry and restart recovery use the recorded operation identity and do not create duplicate ready entries.
+Retry and restart recovery use the recorded platform operation and environment identities and do not create duplicate ready entries.
+A restart never claims that live progress survived: a public Wetlands generation already published as ready is probed and recovered, while incomplete or unknown creation is marked failed with an explicit retry path.
 
 ### 2.3 Add plugins and update managed environments
 
@@ -96,8 +102,10 @@ Offer a refreshed inventory and a new managed copy containing supported observed
 
 **Remove from list** and **Delete managed installation** are distinct actions.
 Deletion is available only for a platform-owned installation, reports affected defaults, and requires closing its running viewer first.
-Use the environment manager's ownership-aware cleanup API and never recursively delete a user-provided path.
-Forgetting an entry clears its local defaults and format references atomically, with a summary of those changes.
+Use the public environment manager removal operation and never recursively delete a user-provided path.
+Deletion proves the recorded Wetlands name, public managed project path, and generation identity before removal; the nested `.pixi/envs/default` interpreter path is not substituted for that owned project path.
+Forgetting an entry clears every output favorite, filename rule, and global-default reference to it atomically, with a summary of those changes.
+Platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
 
 ## 3. Portable output requirements
 
@@ -105,16 +113,16 @@ Forgetting an entry clears its local defaults and format references atomically, 
 
 Declare requirements on an output field, alongside existing image/type metadata.
 A node may produce a standard TIFF and a specialized tracks file that need different viewers.
-A single node-wide plugin requirement would incorrectly apply to both.
+A single node-wide package requirement would incorrectly apply to both.
 
-Introduce optional library-owned viewer annotation metadata, conceptually `ViewerSpec(napari=...)`, separate from `ImageSpec` and `GUIMeta`.
-This annotation must not import napari into the BioImageFlow library or affect tool input compatibility.
-The exact Python spelling and public exports belong to the library implementation.
+Viewer requirements travel as optional library-owned viewer annotation metadata, `ViewerSpec(napari=...)`, separate from `ImageSpec` and `GUIMeta`.
+The annotation does not import napari into the BioImageFlow library or affect tool input compatibility.
+Its exact Python spelling and public exports are fixed by the library: `bioimageflow-core` exports `ViewerSpec`, `NapariRequirement`, and `PackageRequirement` with the `extract_viewer_spec`, `merge_viewer_specs`, and `coerce_viewer_spec` helpers, and the platform wire models mirror that contract.
 The platform exposes the metadata in output schemas and a readable **Viewing requirements** section in the node's output inspector.
 An explicit napari viewer declaration also enables the open action for addressable file/directory outputs such as tracks or points, even when they are not scalar images; ordinary unannotated path columns do not gain that action automatically.
 
 Workflow authors can add portable per-output requirements to a node instance, for example when configuring a generic file-source node for a specialist format.
-Such additions are explicit workflow edits and are visually separate from **My preferred environment**.
+Such additions are explicit workflow edits and are visually separate from the local **Favorite environment** control.
 Tool requirements and workflow additions are combined; additions cannot silently remove a tool's hard requirement.
 Changing an incorrect tool declaration requires editing the tool or using an explicit one-time viewing override.
 The first release does not add inherited node-wide defaults or arbitrary expressions over parameters and rows.
@@ -125,13 +133,13 @@ An illustrative serialized output declaration is:
 {
   "viewer": {
     "napari": {
-      "required_plugins": [
-        {"plugin_id": "example-track-reader", "distribution": "example-track-reader", "version": ">=1.2,<2"}
+      "required_packages": [
+        {"distribution": "example-track-reader", "version": ">=1.2,<2"}
       ],
-      "recommended_plugins": [
-        {"plugin_id": "example-track-editor", "distribution": "example-track-editor", "version": ">=1"}
+      "recommended_packages": [
+        {"distribution": "example-track-editor", "version": ">=1"}
       ],
-      "reader_plugin": "example-track-reader",
+      "reader_id": "example-track-reader",
       "napari_version": null
     }
   }
@@ -139,22 +147,22 @@ An illustrative serialized output declaration is:
 ```
 
 These package names are fictional examples.
-`required_plugins` means every listed plugin must be available in the same environment for this output.
-`recommended_plugins` describes optional conveniences such as editing widgets; their absence does not prevent normal opening or remove the green requirements indicator.
+`required_packages` means every listed Python distribution must be installed at a PEP 440-compatible version in the same environment for this output.
+`recommended_packages` describes optional conveniences such as editing widgets; their absence does not prevent normal opening or remove the green requirements indicator.
 Authors should not require an analysis plugin merely because it produced an ordinary TIFF that napari can already read.
-`reader_plugin`, when present, identifies the required reader and must reference a required plugin.
+`reader_id`, when present, is an optional napari reader identifier passed separately at launch; it does not participate in package compatibility and need not duplicate a package requirement.
 Leave it absent when normal reader discovery is appropriate.
 Viewer requirements never execute a workflow-supplied widget, command, or Python function automatically.
 
-Plugin identity uses a stable napari registration/manifest ID, never a display label or Python import-module name.
-The distribution name supplies installation and version metadata; normalize package names for comparison but preserve the napari ID according to its registration rules.
-Current npe2 manifests require their name to match Python package metadata; keep the fields explicit for installation provenance and legacy adapters, and validate their relationship rather than guessing it. [Napari manifest reference](https://napari.org/stable/plugins/technical_references/manifest.html).
-Distribution is optional when there is no supported automatic installation source; checking an already installed plugin remains possible and setup reports manual installation required.
-Plugin version constraints, and a rarely needed napari release constraint, use validated Python package version specifiers.
+Package compatibility uses installed Python distribution metadata, with names normalized according to Python packaging rules and versions evaluated with PEP 440 specifiers.
+It is deliberately independent of npe1 or npe2 manifests, napari plugin discovery, contribution registration, and enabled/disabled flags.
+The optional `reader_id` is a launch instruction, never a package identity inferred from a distribution name, display label, or Python import module.
+Every required or recommended package declaration needs an explicit distribution name; a package unavailable from PyPI may still be checked when already installed in an external environment, while managed setup reports that manual installation is required.
+Package version constraints, and a rarely needed napari release constraint, use validated Python package version specifiers.
 These are software release constraints, not references to locally named environments.
-Support a list of jointly required plugins initially; alternative requirement sets can be added later if real workflows need them.
-When combining tool declarations and workflow additions, deduplicate by plugin ID and intersect constraints on the same distribution or napari release.
-A required declaration takes precedence over a recommendation for the same plugin.
+Support a list of jointly required packages initially; alternative requirement sets can be added later if real workflows need them.
+When combining tool declarations and workflow additions, deduplicate normalized distribution names and intersect constraints on the same distribution or napari release.
+A required declaration takes precedence over a recommendation for the same distribution.
 Conflicting hard reader IDs or unsatisfiable version intersections produce a viewing-requirement diagnostic attributed to the contributing declarations, without turning viewer setup into an execution dependency.
 
 ### 3.2 Propagation and provenance
@@ -180,14 +188,19 @@ Remote results must first become locally accessible through the existing result-
 
 The portable library contract must preserve viewer annotations and per-instance additions through recursive serialization, materialization from Python, tool introspection, and archive round trips.
 Tool declarations have one authoritative owner in tool metadata; instance additions have one owner in the canonical graph.
-Export also carries a derived, versioned viewing-requirement manifest keyed by scoped output identity so an importer can report viewer needs before all tool packages are available.
+Export also carries a derived, versioned viewing-requirement manifest keyed by structural output identity so an importer can report viewer needs before all tool packages are available.
 This manifest is an export snapshot, not a second editable requirement store.
 After dependencies load, compare it with authoritative tool/graph metadata and report unresolved or changed declarations before declaring coverage.
 Missing or unresolvable tool metadata must produce “requirements unknown,” not an empty list and a green report.
 
-This requires a coordinated library schema/API change: today's strict graph/archive models reject unsupported extra fields.
+This required a coordinated library schema/API change: the strict graph/archive models rejected unsupported extra fields before that change.
 Do not hide the feature in unknown graph keys, environment labels, package execution requirements, or a platform-only archive that the library cannot preserve.
 Version the affected wire contracts, define legacy input as having no viewer declaration, and make older readers reject unsupported newer schemas clearly rather than dropping requirements.
+The coordinated library and platform graph contract is schema version 2.
+Loaders accepting schema-v1 graphs recursively normalize them to schema v2 with absent viewer declarations and no instance additions before validation, persistence, or hashing.
+Artifact hashes are computed from the normalized canonical schema-v2 graph and referenced owned sources, include portable viewer declarations and instance additions, and continue to exclude every local environment preference.
+Workspace migration atomically normalizes the saved graph, its saved artifact hash, the durable root draft graph, and that draft's saved-baseline graph/hash; a clean draft remains clean, while an actually divergent draft remains dirty against the migrated baseline.
+The same recursive normalization applies when loading nested snapshots and archives, and lifecycle records or provenance that cache an affected artifact hash are updated through their existing identity-aware coordinator rather than left pointing at the pre-normalization digest.
 Exports never contain environment IDs/names/paths, local selection rules, process state, credentials, or executable install commands.
 Optional environment recipes or lockfiles are separate explicit exports and are not required to exchange a workflow.
 
@@ -199,30 +212,31 @@ Viewer metadata must be excluded from processing dependency resolution and seman
 
 ### 4.1 What the indicators mean
 
-Environment health, requirement satisfaction, and reader support are separate facts.
+Environment health, package-requirement satisfaction, and actual reader/runtime behavior are separate facts.
 
 | Indicator | Meaning | Normal action |
 | --- | --- | --- |
-| Green check, “Requirements met” | Fresh inventory satisfies all hard plugin/version constraints, required plugins are enabled, and the launch bridge is supported | Eligible for automatic selection |
-| Amber warning, “Needs attention” | Missing/disabled required plugin or version mismatch | Explain the cause; offer setup or an explicit one-time attempt |
-| Gray question mark, “Not verified” | Inventory is stale, probe failed, unsupported discovery, or requirements could not be resolved | Refresh or inspect; no claim of compatibility |
+| Green check, “Required packages installed” | Fresh Python distribution metadata satisfies every required package's PEP 440 constraint | Qualifies by declared package requirements; not proof that a reader or plugin will work |
+| Amber warning, “Needs attention” | A required distribution is absent or its installed version is outside the constraint | Explain the cause; offer setup or an explicit one-time attempt |
+| Gray question mark, “Not verified” | Distribution inventory is stale, the probe failed, or requirements could not be resolved | Refresh or inspect; no claim of compatibility |
 | Unavailable | Interpreter missing, setup incomplete, unsupported launch, or known launch failure | Repair/setup; cannot launch |
 
 A green check is a status icon, not an editable checkbox.
 Use text and accessible labels as well as color.
-It means the declared prerequisites are met, not that every installed plugin is mutually compatible or that the file is valid.
-For unannotated outputs, label the state “Reader available” only when a reader check supplies evidence; otherwise show “No declared requirements; reader not verified.”
-Such an output may still open normally in a healthy environment using napari's standard reader handling.
+It means only that the declared required Python distributions are installed at satisfying versions.
+It is not evidence that napari discovered or enabled a plugin, that the optional reader ID is registered, that packages are mutually compatible, or that the selected artifact can be read.
+For unannotated outputs, show “No declared package requirements”; do not convert discovery or manifest observations into a green compatibility claim.
+Such an output may still open normally in a launchable environment using napari's standard reader handling.
 
-Inventory records installed distribution versions, registered/enabled plugins, reader contributions, napari/Python versions, probe time, and an environment fingerprint.
+Compatibility inventory records installed Python distribution names and versions, napari/Python versions, probe time, and an environment fingerprint.
 Probe in the target environment, outside the backend process, with time and output bounds.
 Do not import plugins into the backend to inspect them.
 Refresh after creation, registration, explicit Refresh, detected package/configuration changes, and viewer restart; revalidate before launch when cached evidence is stale.
 A running viewer's loaded inventory may differ from its on-disk installation after package changes; report restart required rather than claiming it can use the new packages immediately.
 
-Reader filename patterns are hints; actual reader acceptance may depend on file contents and whether the artifact is a directory. [Napari reader contributions](https://napari.org/stable/plugins/building_a_plugin/guides.html).
-Run potentially expensive reader checks only for the selected artifact, not every cell in a table or every output during workflow import.
-If reader choice is ambiguous, request a reader choice for this open; do not arbitrarily choose the first plugin.
+Actual reader acceptance may depend on napari's runtime discovery, file contents, and whether the artifact is a directory. [Napari reader contributions](https://napari.org/stable/plugins/building_a_plugin/guides.html).
+Do not use npe1/npe2 manifests, discovered contributions, or enabled flags to decide declared-package compatibility.
+Pass an explicit optional reader ID only for the selected open; if it is missing, disabled, incompatible, ambiguous, or rejects the artifact, report that launch-time failure without retracting the separate installed-package fact or silently selecting another environment.
 
 ### 4.2 Deterministic selection
 
@@ -232,19 +246,18 @@ The frontend renders this result and does not implement a competing resolver.
 For an output with known hard requirements, first exclude candidates that fail those requirements or cannot launch.
 Rank the remaining candidates in this order:
 
-1. The user's saved preference for this output's selected row in the addressed result.
-2. The user's saved preference for all rows of this output instance.
-3. The first matching filename rule's preferred environment.
-4. The user's global default environment.
-5. Other candidates, preferring more satisfied optional recommendations, then stable registration order.
+1. The user's saved favorite for this structural output identity.
+2. The first matching filename rule's preferred environment.
+3. The user's global default environment.
+4. Other candidates, preferring more satisfied optional recommendations, then stable registration order.
 
 Within equal recommendation scores, stable registration order wins; renaming, starting a viewer, and transient process state do not reshuffle defaults.
-Required reader declarations take precedence over optional local reader preferences during normal selection.
+An explicit reader ID in the output declaration controls the launch request when present and does not affect package eligibility.
 A format preference never makes an environment with missing hard requirements eligible.
 One-time environment selection bypasses this preference ranking for that open without changing stored defaults; the existing requirements check or explicit **Try opening anyway** still applies.
 
-For an unannotated artifact, apply the same preference order among healthy environments, preferring evidence of reader support when falling through to other candidates.
-Normal napari opening remains available where there is no declared requirement and no known reader failure; lack of an annotation is not a setup error.
+For an unannotated artifact, apply the same preference order among launchable environments.
+Normal napari opening remains available where there is no declared requirement; lack of an annotation is not a setup error, and reader success or failure is determined at launch time.
 For unresolved requirements caused by unavailable metadata, ask the user to choose explicitly and show the uncertainty.
 
 If a saved preference becomes incompatible, retain it for repair but show the fallback and reason before the next open.
@@ -274,7 +287,7 @@ Default: [Microscopy v]
 
 Microscopy       napari <detected>    Ready                 [Details ...]
 Tracking         napari <detected>    Running               [Details ...]
-Legacy scope     napari <detected>    Environment missing   [Locate ...]
+Legacy viewer    napari <detected>    Environment missing   [Locate ...]
 
 File opening rules (optional; first match wins)            [Add rule]
 Filename pattern        Preferred environment       Reader (optional)
@@ -284,14 +297,15 @@ Filename pattern        Preferred environment       Reader (optional)
 ```
 
 Version placeholders and format examples illustrate the layout, not guaranteed package support.
-Details show path, ownership (“Managed by BioImageFlow” or “External”), detected versions, plugin list with enabled/error status, last check, and relevant actions.
+Details show path, ownership (“Managed by BioImageFlow” or “External”), detected versions, installed Python distributions, last check, and relevant actions.
+The **Launch empty viewer** action uses a dedicated environment launch request and does not emulate launch by sending an empty artifact list to `viewer.open()`.
 Provide Refresh and Launch empty viewer; managed entries also offer Create modified copy.
 Long paths collapse without hiding their full selectable text, and actions remain usable in a narrow settings window.
 
 ### 5.2 Filename rules and extension shortcuts
 
 Keep associations because they serve standalone images, generic file-source outputs, and old workflows without annotations.
-A rule contains one filename pattern, one environment ID, an enabled flag defaulting to true, and an optional reader plugin ID available in that environment; its position in the saved list defines its priority.
+A rule contains one filename pattern, one environment ID, an enabled flag defaulting to true, and an optional reader ID to attempt in that environment; its position in the saved list defines its priority.
 Reader is optional because choosing an environment and choosing a reader within it are distinct operations.
 Napari already supports reader preferences and explicit reader selection; pass an explicit reader only when the resolved request calls for one. [Napari viewer API](https://napari.org/dev/api/napari.Viewer.html).
 
@@ -318,7 +332,7 @@ When authoring a rule for an actual image, preview its effective winner before s
 Only the winning rule participates in environment selection; if its environment is unavailable or incompatible, explain that and continue to the global/default candidate fallback rather than trying hidden lower-priority matching rules.
 Paths with no matching rule fall back to output requirements and normal environment/reader selection.
 
-Show reader-advertised formats in environment details and optionally suggest rules, but never install broad `*` associations automatically.
+Environment details may show reader formats observed during an actual viewer session and optionally suggest rules, but those observations never affect package compatibility; never install broad `*` associations automatically.
 Warn when a user creates a catch-all `*` rule that would hide later rules; a global default is normally clearer.
 A filename match is a preference, not proof that a reader supports every variant of a format.
 An optional reader rule applies only when the selected environment is the rule's environment and no hard reader declaration conflicts.
@@ -332,39 +346,27 @@ Its main action opens in the resolved environment; its tooltip/accessibility lab
 The arrow opens a popover showing all registered environments with status, detected napari version, and a short reason when requirements are unmet.
 Keep unavailable entries visible with disabled launch controls so users can understand or repair them; removing an existing favorite remains available.
 
-Above the environment list, show a scope selector **Favorite for: This row / All rows of this output**.
-Default the selector to **All rows of this output** each time the popover opens; when this row already has an explicit override, initially select **This row** so the effective exception is immediately visible.
-Always show the selected output name and, for This row, its result/row context.
-Changing scope only changes which stored preference the stars display and edit; it does not change selection or launch anything.
+Always show the selected output name and its structural output identity context.
+There is no favorite-scope selector: one favorite applies to all rows and future results of that structural output identity.
 
-Use an exclusive, toggleable star beside each environment, scoped to that selector:
+Use one exclusive, toggleable star beside each environment for the addressed structural output identity:
 
-- Click an empty star to set that environment as the sole favorite at the selected scope, replacing any previous favorite there atomically.
-- Click the filled star to remove that scope's explicit favorite and resume inheritance from broader preferences.
-- At most one star is filled in the visible list, and no star is filled when that scope has no explicit preference.
-- Clicking an environment's launch control opens it once without saving; clicking a star never launches it.
+- Click an empty star to set that environment as the sole favorite, atomically replacing any previous favorite for that output identity.
+- Click the filled star to unset the favorite and resume selection from the first matching filename rule, then the global default, then another qualifying environment.
+- At most one star is filled in the visible list, and no star is filled when the output identity has no explicit favorite.
+- Clicking the environment row or its open control opens the currently selected artifact once in that environment without saving a preference; clicking a star never launches anything.
 
-The green check describes requirements; the star describes the explicit favorite at the displayed scope; a separate **Will open in …** line shows the effective environment and reason.
-Never fill a star merely because an environment is inherited or automatically selected.
-For example, This row can show no filled star and “Inherited from all rows: Microscopy.”
-Removing a row favorite then correctly reveals the all-rows favorite, which may be the same environment that was just unstarred.
-Use scope-specific labels such as **Set favorite for this row**, **Unset favorite for this row**, and equivalent all-rows labels; star buttons expose their pressed state to assistive technology.
+The green check describes installed package requirements; the star describes the explicit favorite; a separate **Will open in …** line shows the effective environment and reason.
+Never fill a star merely because an environment was selected by a filename rule, the global default, or fallback ranking.
+Use accessible labels such as **Set favorite for this output** and **Unset favorite for this output**; star buttons expose their pressed state to assistive technology.
 
-Changing the all-rows favorite preserves existing row exceptions.
-Display “Applies to all rows without a row override” and the number of exceptions for the currently addressed result when relevant.
-An explicit **Clear row overrides for this result** action previews the affected output and count, then removes that result's row exceptions atomically so its rows inherit the all-rows favorite.
-Filtered or off-screen rows are included; overrides for other retained results remain unchanged.
-This action never launches viewers or changes the all-rows favorite.
-This separation lets users either change a default while keeping exceptions, or deliberately use it for every row in the current result.
-Provide **Reset favorite for this scope**, **Manage environments**, and **Create environment for these requirements**.
-Resetting the all-rows favorite preserves row exceptions and returns other rows to filename/global selection.
+Provide **Unset favorite**, **Manage environments**, and **Create environment for these requirements**.
 An incompatible saved favorite remains visible with its warning and can always be unset; setting a new incompatible persistent favorite is disallowed under the normal requirements contract.
 Do not embed a button inside another button or a menuitem with conflicting keyboard semantics; use a popover list with independently focusable launch and preference controls.
 
-**This row** means this output cell in the selected result, not every output column of the table row or every appearance of the same filename elsewhere.
-**All rows of this output** covers the entire output column, including filtered/off-screen rows, and future results for that same output identity, subject to fresh compatibility checks and more specific row exceptions.
-Opening one cell after selecting All rows still opens only that cell; preference scope is not a bulk-open operation.
-The other supported preference scopes are filename rules and the global default in Settings.
+The structural output identity covers the entire output column, including filtered/off-screen rows and future results, subject to a fresh compatibility check for each artifact.
+Opening one cell still opens only that selected artifact; favorite coverage is not a bulk-open operation.
+Filename rules and the global default in Settings are the other persisted selection preferences; neither creates another favorite scope.
 Node-wide defaults, workflow-wide defaults, and batch-setting selected rows are deferred until a concrete need justifies their additional interaction and inheritance rules.
 The existing Ctrl+Click replace action clears layers only in the selected environment's viewer.
 Expose an explicit **Replace layers and open** action as well so replacement does not depend solely on a modifier key.
@@ -373,7 +375,8 @@ Setup, failure, or a menu selection must not clear another environment's viewer.
 ## 6. Local preference persistence
 
 Environment registrations, the global default, and format rules belong to the existing per-user application settings store.
-Backend-persisted preferences for all rows and individual rows belong in a separate versioned `viewer-preferences.json` alongside that settings file, because they can grow independently of settings.
+The single favorite mapping keyed by structural output identity belongs to a separate versioned per-user `viewer-preferences.json` store alongside the application settings store.
+Keeping favorites separate lets workflow identity remaps and snapshot overlays use their own revision-checked lifecycle without rewriting environment registrations or filename rules.
 Browser local storage may cache this state but is never its authority.
 
 Use these logical keys:
@@ -383,9 +386,7 @@ output key = (workspace identity, root workflow identity generation,
               structural node-instance path,
               output field key or stable public output ID)
 
-all rows: output key -> environment ID
-this row: (output key, result snapshot identity, stable row identity)
-              -> environment ID
+favorite: output key -> environment ID
 ```
 
 Use existing stable workspace identity where available, otherwise define a persisted local workspace identity as part of implementation; do not hash a mutable display name or raw workflow path as identity.
@@ -395,15 +396,10 @@ Tool output field names are schema identities until the library offers stable fi
 Public workflow output labels can change while their stable IDs preserve preferences.
 An exposed workflow output has its own user preference key; it inherits viewing requirements from its provider, not the provider's local preference.
 
-The backend supplies the result snapshot and stable row identities, resolving merged-table cells back to their original provider output.
-Use immutable record identity when available, otherwise a retained run/node result identity with equivalent row-stability guarantees.
-A row's DataFrame index is useful within that result; its displayed row number, page offset, filename, or bare index reused across executions is not a durable preference identity.
-A row preference survives sorting, filtering, pagination, reopening the same retained result, and cache reuse of the same immutable record within the same output identity.
-It does not automatically transfer to newly computed data, even if that data reuses row index `0` or the same filename.
-Explain This row as “This output row in this result; new results use the all-rows default.”
-Following one logical image across recomputation would need a separately specified stable dataset/lineage identity and is deferred; never infer that relationship from row position.
-If no durable result identity is available, disable saving a row favorite with a reason while retaining one-time open and the all-rows preference.
-When a result is no longer retained or addressable, its row preferences can be pruned; clearing only a disposable latest projection must not erase preferences for still-retained records.
+No result snapshot, record, DataFrame index, displayed row, filename, or row offset participates in the favorite key.
+There are no row favorites, row exceptions, or result-row preference records to store, prune, copy, remap, or migrate.
+The backend still resolves a merged-table cell to its structural provider output so the same favorite applies across sorting, filtering, pagination, retained results, and future results.
+Direct and merged table responses expose each column's viewer declaration from the exact retained result snapshot, with an explicit legacy-unpinned status when no immutable identity exists; the frontend never substitutes mutable current graph or tool metadata for specialized action visibility.
 
 Local rules survive restart, table sorting/pagination, workflow display renaming, and moves within the same workspace through the normal identity-aware lifecycle coordinator.
 Deletion drops that workflow generation's rules.
@@ -413,37 +409,46 @@ Environment deletion clears references; an incompatible but still registered env
 
 Private nested edits use a session-scoped preference overlay tied to the snapshot UUID.
 Apply remaps surviving entries to the accepted parent instance; discard drops the overlay.
-Unsaved root workflows similarly use temporary session identity until saved.
+After parent persistence succeeds, the client finalizes the child snapshot through an idempotent backend endpoint that derives the destination from the stored owner and verifies that the current parent snapshot or root draft embeds the exact accepted child graph.
+The endpoint remaps into the parent session for nested owners and into the current workflow generation for saved root owners; it rejects unsaved root owners, so the UI must not offer durable output favorites before a workflow has persistent identity.
 Preference writes bind to the captured workspace/generation/session so a delayed request cannot target a replacement workflow or another workspace.
-They also bind to the captured result for row operations and use revision-checked set/unset actions; a stale toggle cannot accidentally clear a favorite changed in another window.
-Each scope stores zero or one environment ID, with no independent per-environment boolean favorites.
+The resolver returns the exact server-derived persistent preference key for the addressed structural output, including the durable workspace UUID, so a client can create the first favorite without inventing or inferring workspace identity.
+They use revision-checked set/unset actions so a stale toggle cannot accidentally clear a favorite changed in another window.
+Each structural output identity stores zero or one environment ID, with no independent per-environment boolean favorites.
 Preference changes are atomic local UI state and do not acquire a graph execution lock or prevent viewing during execution.
 
 ## 7. Workflow import and setup guidance
 
-After import, show a non-blocking **Viewing requirements** report with coverage per scoped output, including nested nodes.
+After import, show a non-blocking **Viewing requirements** report with coverage per structural output identity, including nested nodes.
 Run the same check on workflow open, requirement changes, and relevant environment inventory changes, without reopening a modal repeatedly.
 Include inactive nodes in the report, marked inactive, but preselect only the active workflow's unmet output requirements in setup.
 Imported workflows with no declarations continue to work through automatic readers and local format rules.
 
-Report precise failures: missing plugin, installed version outside the constraint, disabled plugin, unknown metadata, unsupported viewer, or required plugins split across environments.
-Two plugins installed in different environments do not satisfy one output that needs both.
-Conversely, two incompatible plugin sets used by different outputs are acceptable when separate environments cover them.
+Report precise compatibility failures: missing distribution, installed version outside the PEP 440 constraint, unknown distribution metadata, unsupported viewer, or required packages split across environments.
+Two required packages installed in different environments do not satisfy one output that needs both.
+Conversely, two incompatible package sets used by different outputs are acceptable when separate environments cover them.
+Reader IDs, manifest discovery, enabled flags, and actual plugin loading do not participate in this passive report; any resulting failure is reported when napari handles the selected open request.
 Summaries should say “2 outputs need viewer setup,” rather than claiming that the workflow cannot run.
 
 For each uncovered requirement set, offer:
 
 - Use a satisfying registered environment, or attach an existing installation.
-- Refresh/restart or enable a disabled plugin through the environment's own configuration.
+- Refresh/restart or repair packages through the environment's own configuration.
 - Create a new managed environment, with requirements prefilled.
 - Continue and configure later.
 
 Group identical requirement sets for convenience.
-Do not assume all missing plugins can be installed together: solving a combined environment is an optional explicit choice, with per-output alternatives available if it fails.
+Do not assume all missing packages can be installed together: solving a combined environment is an optional explicit choice, with per-output alternatives available if it fails.
 If the required set for a single output is itself unsatisfiable, report its conflicting constraints and point to the declaration; splitting that set cannot repair it.
 The creation preview identifies requested distributions, constraints, source, and new environment name before installation starts.
 Import and passive checks never download/install packages or execute workflow-provided installation instructions.
-Unknown/private packages require a separately configured trusted source or manual installation; do not guess URLs from plugin IDs or copy credentials into a workflow.
+Unknown or private packages require manual installation in an external environment in the first release; do not guess URLs from reader IDs, add archive-provided package sources, or copy credentials into a workflow.
+
+The implemented desktop-only `POST /api/v1/napari/viewing-readiness` endpoint accepts the portable viewing-requirement manifest itself, so an import success response can be evaluated without rereading mutable workflow state.
+It returns every structural output identity, its retained viewer or unknown reason, per-environment package-only candidate status and issues, an effective compatible environment when one exists, and covered/not-covered/unknown summary counts suitable for setup guidance.
+Identical compatibility sets receive a stable normalized SHA-256 group ID, explicit member identities, and managed-create prefill whose package source remains `unverified`; different groups are never implicitly unioned.
+Known entries with no viewer or no napari declaration remain normally covered, while unknown entries and all of their launchable candidates remain unknown rather than green.
+Inventory freshness gates only required distributions and an explicit napari version constraint: a reader-only or recommended-only declaration remains covered in a launchable environment, and stale metadata does not invent missing recommendations.
 
 ## 8. Backend and process contract
 
@@ -463,10 +468,14 @@ Close or restart only the process owned by the addressed launcher; never attach 
 Separate Python environments may still share user configuration or inherit host state.
 Give platform-launched environments separate napari configuration locations, scoped by environment ID, using a supported mechanism for each tested napari release.
 Validate that mechanism during the bridge feasibility check; package isolation alone is not acceptance evidence for settings isolation.
-Inventory and disabled-plugin checks must use the same configuration that the viewer will use.
+Viewer configuration isolation must use the same configuration that the launched viewer will use; it does not turn manifest discovery or enabled state into package-compatibility evidence.
 If an external environment's ordinary napari configuration is imported, make that an explicit one-time copy; subsequent platform launches use their own configuration.
 
-Extend the API with typed registry, probe, compatibility-resolution, local-preference, environment-creation operation, and per-environment lifecycle contracts.
+The backend exposes typed desktop-only managed mutation routes for create, recipe-based copy, retry, operation polling/cancellation, and owned removal alongside the registry, probe, and per-environment lifecycle contracts.
+Initiating mutations use the registry revision compare-and-swap contract, every environment has at most one active mutation, and unrelated environment operations use independent locks.
+Operations remain in the durable registry history after completion; a removed entry therefore remains pollable with `environment: null`.
+Successful owned removal first stops only that environment's launcher, then waits for public Wetlands removal, and finally clears the registry entry/default/filename rules in one settings mutation while invoking an injected idempotent favorite-cleanup seam.
+If reference or registry finalization fails after Wetlands removal, the operation remains durably `removing` so startup can replay finalization instead of leaving an unrecoverable terminal tombstone.
 Exact route names are an implementation detail, but requests must bind to environment and artifact identities, and responses must carry revisions and actionable diagnostic codes.
 Environment status/events include the environment ID; a global `napari` status cannot describe concurrent viewers.
 Long setup/probe operations must not block status reads or unrelated viewers.
@@ -487,39 +496,51 @@ If it does not exist, register a setup-needed default recipe; first use presents
 Changing settings alone must not provision it.
 Legacy outputs with no viewer annotations retain normal opening behavior once a healthy default is available.
 
-Implement in independently verifiable increments:
+Delivery advanced in three independently verifiable increments:
 
-1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; preserve existing opening and migrate the singleton.
-2. Coordinated library annotation/archive support, output provenance, compatibility resolver, local row/all-rows defaults, filename rules with extension shortcuts, and import report.
+1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; existing opening was preserved and the singleton migrated.
+2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
 3. Managed environment creation and Create modified copy using the same requirements report and resolver.
 
-The intended feature is complete only when all three increments are available.
-Before implementation, settle the supported bridge/version matrix, configuration-isolation mechanism, and public Wetlands recipe capabilities with small feasibility checks.
+The feature is complete only when all three increments are available, and all three are now delivered.
+The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
+Phase C replaced the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
+External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
+The no-ID open/status/shutdown routes retain the legacy managed-singleton compatibility path, while explicit registered IDs never provision or mutate their environment.
+The Phase C backend advanced canonical graphs to schema v2, migrated saved/draft/nested authorities and hashes through a forward journal, captured immutable public run/node/result/record identities for result pages, read retained viewer metadata through public storage APIs, resolved package-only compatibility, stored favorites in a separate revisioned file, and remapped them through workflow move/delete and nested-session lifecycles.
+The same resolver candidate evaluator powers the passive manifest readiness endpoint and retained-artifact resolution, so required-package co-location, PEP 440 checks, freshness, unavailable-state handling, recommendations, and reader independence cannot drift; passive evaluation reads only the registered inventory snapshot and never probes, installs, launches, reads workflow state, or executes archive content.
+The managed backend uses only public Wetlands 2 environment and operation APIs; it does not install a bridge distribution because the platform launches its standalone helper script inside the selected environment.
+The managed-environment API provides durable create/copy/retry/cancel/delete operations with restart reconciliation.
+The frontend settings panel consumes those operations, displays per-environment inventory and lifecycle state, manages defaults and ordered filename rules, and launches an addressed empty viewer.
+The output split action resolves an exact retained artifact through the backend, keeps one exclusive toggleable structural-output favorite, supports one-shot environment selection and replace-layers dispatch, and exposes honest incompatible, unknown, and unavailable candidates.
+The passive report evaluates imported or currently saved workflow requirements without provisioning or launching an environment and can prefill managed setup from one normalized requirement group.
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
-At implementation time, update the affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` together.
-Until then this file is a proposal, and the existing normative documents continue to describe the current implementation.
+The affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` were updated together with this implementation; further implementation of this feature updates them together as well.
+Native desktop certification is still required before declaring the feature complete: the earlier local attempt did not leave a reliable completion artifact and therefore is not acceptance evidence.
+The existing normative documents continue to govern unaffected implementation.
 
 ## 10. Acceptance criteria
 
 1. Two environments with the same napari version and different plugins appear as distinct named entries and run concurrently without shared layers or reader preferences.
 2. Renaming an environment preserves every reference; attaching the same canonical interpreter twice does not create duplicates.
 3. Different outputs of one node resolve independently, including published outputs through nested workflows and two embeddings of one child.
-4. Required plugins must all be satisfied in one environment for one output; requirements for different outputs can be covered by different environments.
-5. Missing recommended plugins do not block opening; absent, disabled, incompatible, stale, and unknown required plugins produce distinct explanations.
-6. A matching filename rule cannot override a hard plugin/reader requirement; extension shortcuts, compound suffixes, directory names, case-insensitive patterns, duplicates, and overlapping rules obey the documented first-match order and preview.
-7. Choosing once leaves preferences unchanged; stars are exclusive and toggleable per scope; setting/unsetting one scope preserves the other, inherited choices have no filled star, and each control is keyboard accessible.
-8. Preferences survive restart, label changes, and same-workspace moves, but do not leak through export/import, copy, delete-and-recreate, discarded nested edits, or workspace switches; all-rows defaults persist for new results while row exceptions remain bound to their original result identity.
+4. Required packages must all be satisfied in one environment for one output; requirements for different outputs can be covered by different environments.
+5. Missing recommended packages do not block opening; absent, version-incompatible, stale, and unknown required distributions produce distinct explanations without consulting npe1/npe2 manifests, discovery, or enabled flags.
+6. A matching filename rule cannot override a hard package requirement or an explicit output reader ID; extension shortcuts, compound suffixes, directory names, case-insensitive patterns, duplicates, and overlapping rules obey the documented first-match order and preview.
+7. Choosing an environment row opens the selected artifact exactly once and leaves preferences unchanged; one keyboard-accessible star is exclusive and toggleable per structural output identity, another star replaces it, the filled star unsets it, and star actions never launch a viewer.
+8. Output favorites survive restart, label changes, same-workspace moves, all rows, and future results, but do not leak through export/import, copy, delete-and-recreate, discarded nested edits, or workspace switches; no row favorite, exception, or result-row preference state exists or is migrated.
 9. Export/import preserves recursive requirements and contains no local environment references or credentials; missing tool metadata yields an incomplete report rather than false coverage.
 10. An imported workflow with unmet viewer needs can still run; setup can create separate installations for incompatible requirements on different outputs.
-11. Existing-environment checks make no package changes; failed or cancelled managed creation leaves old environments/defaults usable; recipe changes create a separate installation.
-12. Package/configuration drift and pending viewer restart invalidate stale compatibility claims; actual reader exceptions are reported after dispatch.
+11. Existing-environment checks make no package changes; managed creation uses Python 3.12 from Conda plus PyPI-installed napari 0.9.1/PyQt6 by default or the explicit napari 0.6.6/PyQt5 smoke matrix; failed or cancelled creation leaves old environments/defaults usable, and recipe changes create a separate installation.
+12. Package/configuration drift and pending viewer restart invalidate stale compatibility claims; green means only that required distributions and PEP 440 constraints are satisfied, while actual reader/plugin failures are reported after dispatch.
 13. A launch race starts one viewer per environment; a failure in one does not block another; ambiguous command completion is not automatically replayed.
 14. Result selection survives table sorting, pagination, active-tab changes, and later graph edits; retained results use their captured requirements and representation.
 15. Webapp endpoints reject local environment operations, and the import check never triggers installation or runs archive-provided commands.
 16. Native smoke checks on each supported desktop OS cover an external Conda environment, a virtual environment, paths with spaces, managed creation, a missing plugin, explicit reader choice, and configuration isolation.
-17. Updating an all-rows favorite preserves row exceptions, displays their current-result count, and opens no images; clearing current-result row exceptions includes filtered/off-screen rows and leaves other retained results untouched.
-18. Row favorites survive sorting, pagination, and reuse of the same immutable record, but do not attach to a different result with the same row index; unsupported durable identity disables only saving a row favorite.
+17. Selection precedence is favorite for the structural output identity, first matching filename rule, global default, then another qualifying environment; an unavailable or incompatible candidate falls through with an explanation.
+18. No favorite scope selector or row-level favorite/exception control appears anywhere in the opening UI or persistence/API contract.
+19. Schema-v1 graphs normalize recursively to schema v2 before hashing; saved documents and root draft baselines migrate atomically so clean/dirty state remains truthful, portable viewer metadata affects artifact identity, and local favorites never do.
 
 Use `scripts/test` for implementation checks proportionate to each increment, following [Test lanes](docs/testing.md).
 The bridge and native napari behavior additionally require real desktop checks; mocked unit tests and headless browser tests do not certify Qt startup or third-party plugin compatibility.

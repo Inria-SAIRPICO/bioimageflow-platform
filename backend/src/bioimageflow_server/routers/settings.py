@@ -122,6 +122,18 @@ async def patch_settings(
     output_view_probe_path: Path = Depends(get_output_view_probe_path),
 ) -> SettingsResponse:
     body = dict(body)
+    napari_registry_fields = {
+        "napari_registry_revision",
+        "napari_environments",
+        "napari_default_environment_id",
+        "napari_filename_rules",
+        "napari_environment_operations",
+    }
+    if napari_registry_fields.intersection(body):
+        raise HTTPException(
+            status_code=422,
+            detail="napari registry fields must be changed through the typed napari environment routes",
+        )
     if "fiji_path" in body:
         if store.deployment_mode == "webapp":
             raise HTTPException(

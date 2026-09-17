@@ -2,7 +2,7 @@ import type { GraphState } from '@/api/types'
 
 export function emptyGraph(name = 'workflow', displayName = 'Workflow'): GraphState {
   return {
-    schema_version: 1,
+    schema_version: 2,
     name,
     display_name: displayName,
     nodes: [],

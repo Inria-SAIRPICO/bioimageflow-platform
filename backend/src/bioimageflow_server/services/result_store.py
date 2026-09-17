@@ -8,11 +8,17 @@ from typing import cast
 
 import pandas as pd
 from bioimageflow.cache import cache_load
-from bioimageflow.storage import validate_relative_posix_path
+from bioimageflow.storage import (
+    CacheCorruptionError,
+    Storage,
+    validate_relative_posix_path,
+)
 
+from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 DATAFRAME_RECORD_DIR_ATTR = "bioimageflow_record_dir"
+DATAFRAME_RESULT_IDENTITY_ATTR = "bioimageflow_result_identity"
 
 
 class ResultDataNotReadyError(Exception):
@@ -29,10 +35,132 @@ class ResultStoreService:
     def get_latest_dataframe(
         self, node_id: str, storage_path: Path | None = None
     ) -> pd.DataFrame | None:
+        identity = self.capture_latest_result_identity(
+            node_id, storage_path=storage_path
+        )
+        if identity is not None:
+            return self.load_result_dataframe(identity, storage_path=storage_path)
         record_dir = self.get_latest_record_dir(node_id, storage_path=storage_path)
         if record_dir is None:
             return None
-        return self.get_dataframe_from_record(record_dir, node_id=node_id)
+        dataframe = self.get_dataframe_from_record(record_dir, node_id=node_id)
+        if dataframe is not None and identity is not None:
+            dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+        return dataframe
+
+    def capture_latest_result_identity(
+        self, node_id: str, storage_path: Path | None = None
+    ) -> ResultArtifactIdentity | None:
+        """Capture latest once, then validate its exact retained identity."""
+
+        root = self._root(storage_path)
+        latest_link = self._latest_node_link(root, node_id)
+        if latest_link is None or not latest_link.is_file():
+            return None
+        node_view = self._resolve_link(latest_link, root)
+        if node_view is None:
+            return None
+        result_path = node_view / "result.json"
+        try:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            # Pre-provenance views remain readable through the legacy immutable
+            # record-link path, but cannot be used for exact viewer opening.
+            return None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ResultDataNotReadyError(
+                f"Output metadata for node '{node_id}' is not ready"
+            ) from exc
+        run_id = payload.get("run_id") if isinstance(payload, dict) else None
+        node_key = payload.get("node_key") if isinstance(payload, dict) else None
+        if not isinstance(run_id, str) or node_key != node_id:
+            return None
+        try:
+            retained = Storage(root).read_run_node_result(run_id, node_id)
+        except (CacheCorruptionError, FileNotFoundError, KeyError):
+            return None
+        return ResultArtifactIdentity(
+            run_id=retained.run_id,
+            node_key=retained.node_key,
+            result_key=retained.result_key,
+            record_id=retained.record_id,
+        )
+
+    def read_run_node_result(
+        self,
+        identity: ResultArtifactIdentity,
+        *,
+        storage_path: Path | None = None,
+    ):
+        """Read and verify one exact retained result through public library APIs."""
+
+        retained = Storage(self._root(storage_path)).read_run_node_result(
+            identity.run_id, identity.node_key
+        )
+        if (
+            retained.result_key != identity.result_key
+            or retained.record_id != identity.record_id
+        ):
+            raise ResultDataNotReadyError("Captured result identity no longer matches")
+        return retained
+
+    def load_result_dataframe(
+        self,
+        identity: ResultArtifactIdentity,
+        *,
+        storage_path: Path | None = None,
+    ) -> pd.DataFrame:
+        """Load one exact record without consulting current/latest pointers."""
+
+        self.read_run_node_result(identity, storage_path=storage_path)
+        try:
+            dataframe = Storage(self._root(storage_path)).load_record_dataframe(
+                identity.result_key, identity.record_id
+            )
+        except Exception as exc:
+            raise ResultDataNotReadyError(
+                f"Output data for node '{identity.node_key}' is not ready"
+            ) from exc
+        dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+        return dataframe
+
+    def result_viewer(
+        self,
+        identity: ResultArtifactIdentity,
+        output_key: str,
+        *,
+        storage_path: Path | None = None,
+    ):
+        """Return producer-snapshot viewer metadata for one exact output."""
+
+        return self.result_viewers(identity, storage_path=storage_path).get(output_key)
+
+    def result_viewers(
+        self,
+        identity: ResultArtifactIdentity,
+        *,
+        storage_path: Path | None = None,
+    ) -> dict[str, object]:
+        """Return all producer-snapshot viewer metadata for one exact result."""
+
+        retained = self.read_run_node_result(identity, storage_path=storage_path)
+        return {item.output: item.viewer for item in retained.viewers}
+
+    def resolve_result_asset(
+        self,
+        identity: ResultArtifactIdentity,
+        relative_path: str,
+        *,
+        storage_path: Path | None = None,
+    ) -> Path:
+        """Resolve an asset named by the exact immutable record manifest."""
+
+        self.read_run_node_result(identity, storage_path=storage_path)
+        return Storage(self._root(storage_path)).resolve_record_asset(
+            identity.result_key,
+            identity.record_id,
+            relative_path,
+        )
 
     def get_latest_record_dir(
         self, node_id: str, storage_path: Path | None = None

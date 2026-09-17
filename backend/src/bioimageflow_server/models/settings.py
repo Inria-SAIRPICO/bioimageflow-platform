@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from bioimageflow_server.models.napari_environments import (
+    NapariEnvironment,
+    NapariEnvironmentOperation,
+    NapariFilenameRule,
+)
 
 
 _DEFAULT_MAX_UPLOAD_SIZE = 2 * 1024**3  # 2 GB (v1 §2.4.10)
@@ -74,6 +81,11 @@ class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None
     fiji_path: str | None = None
+    napari_registry_revision: int = Field(default=0, ge=0)
+    napari_environments: list[NapariEnvironment] = Field(default_factory=list)
+    napari_default_environment_id: UUID | None = None
+    napari_filename_rules: list[NapariFilenameRule] = Field(default_factory=list)
+    napari_environment_operations: list[NapariEnvironmentOperation] = Field(default_factory=list)
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -140,4 +152,44 @@ class Settings(BaseModel):
             if effective_name in seen:
                 raise ValueError("OMERO instance names must be unique")
             seen.add(effective_name)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_napari_registry(self) -> "Settings":
+        ids = [environment.id for environment in self.napari_environments]
+        if len(ids) != len(set(ids)):
+            raise ValueError("napari environment IDs must be unique")
+        names = [environment.name.casefold() for environment in self.napari_environments]
+        if len(names) != len(set(names)):
+            raise ValueError("napari environment names must be unique ignoring case")
+        roots = [environment.root.casefold() for environment in self.napari_environments]
+        if len(roots) != len(set(roots)):
+            raise ValueError("napari environment roots must be unique")
+        orders = [environment.registration_order for environment in self.napari_environments]
+        if len(orders) != len(set(orders)):
+            raise ValueError("napari environment registration orders must be unique")
+        known = set(ids)
+        if self.napari_default_environment_id is not None:
+            if self.napari_default_environment_id not in known:
+                raise ValueError("napari default environment must be registered")
+        rule_ids = [rule.id for rule in self.napari_filename_rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("napari filename rule IDs must be unique")
+        if any(rule.environment_id not in known for rule in self.napari_filename_rules):
+            raise ValueError("napari filename rules must reference registered environments")
+        patterns = [rule.pattern.casefold() for rule in self.napari_filename_rules]
+        if len(patterns) != len(set(patterns)):
+            raise ValueError("napari filename rule patterns must be unique ignoring case")
+        operation_ids = [operation.id for operation in self.napari_environment_operations]
+        if len(operation_ids) != len(set(operation_ids)):
+            raise ValueError("napari environment operation IDs must be unique")
+        active_by_environment: set[UUID] = set()
+        for operation in self.napari_environment_operations:
+            if operation.state in {"completed", "failed", "cancelled"}:
+                continue
+            if operation.environment_id in active_by_environment:
+                raise ValueError("napari environments allow only one active mutation")
+            active_by_environment.add(operation.environment_id)
+            if operation.environment_id not in known:
+                raise ValueError("active napari operations must reference registered environments")
         return self

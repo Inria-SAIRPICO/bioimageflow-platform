@@ -67,7 +67,7 @@ describe('nested workflow interface reconciliation', () => {
     const child: GraphState['nodes'][number] = {
       type: 'workflow' as const, id: 'child', name: 'Child', position: [0, 0] as [number, number],
       workflow: {
-        schema_version: 1, name: 'child', display_name: 'Child', nodes: [], edges: [],
+        schema_version: 2, name: 'child', display_name: 'Child', nodes: [], edges: [],
         interface: { inputs: [], outputs: [] },
         config: { engine: 'wetlands', execution: 'parallel' },
       },
@@ -79,7 +79,7 @@ describe('nested workflow interface reconciliation', () => {
       enabled: true, collapsed: false,
     }
     const graph: GraphState = {
-      schema_version: 1, name: 'parent', display_name: 'Parent', nodes: [child, unrelated], edges: [],
+      schema_version: 2, name: 'parent', display_name: 'Parent', nodes: [child, unrelated], edges: [],
       interface: { inputs: [], outputs: [] },
       config: { engine: 'wetlands', execution: 'parallel' },
     }

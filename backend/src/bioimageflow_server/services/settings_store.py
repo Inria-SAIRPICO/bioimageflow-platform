@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,7 +28,11 @@ from bioimageflow_server.services.omero_credentials import (
 
 logger = logging.getLogger(__name__)
 
-CURRENT_SETTINGS_VERSION = 2
+CURRENT_SETTINGS_VERSION = 3
+
+
+class SettingsRevisionConflict(Exception):
+    """A typed registry write targeted an obsolete settings revision."""
 
 
 class SettingsStore:
@@ -66,8 +71,9 @@ class SettingsStore:
         """Read the settings file from disk; seed defaults if missing.
 
         On any I/O or parse error, log a warning and fall back to in-memory
-        defaults without overwriting the user's file. ``settings_version > 1``
-        is treated the same way (defaults in memory; user's file untouched)
+        defaults without overwriting the user's file. A settings version newer
+        than :data:`CURRENT_SETTINGS_VERSION` is treated the same way
+        (defaults in memory; user's file untouched)
         so a downgrade run preserves the newer config for the next upgrade.
         """
         try:
@@ -228,6 +234,64 @@ class SettingsStore:
             return current
         return await self.patch({"default_execution_target_id": "local"})
 
+    async def patch_napari_registry(
+        self, expected_revision: int, changes: dict[str, Any]
+    ) -> Settings:
+        """Atomically compare-and-swap the napari registry portion of settings."""
+        async with self._lock:
+            if self._current is None:
+                raise RuntimeError("SettingsStore.load() must be awaited before patching registry")
+            if self._current.napari_registry_revision != expected_revision:
+                raise SettingsRevisionConflict(
+                    f"expected napari registry revision {expected_revision}, "
+                    f"current revision is {self._current.napari_registry_revision}"
+                )
+            allowed = {
+                "napari_environments",
+                "napari_default_environment_id",
+                "napari_filename_rules",
+                "napari_environment_operations",
+            }
+            if not set(changes).issubset(allowed):
+                raise ValueError("patch_napari_registry received a non-registry field")
+            merged = {
+                **self._current.model_dump(),
+                **changes,
+                "napari_registry_revision": expected_revision + 1,
+            }
+            candidate = Settings.model_validate(merged)
+            self._write_atomic(candidate)
+            self._current = candidate
+            return candidate
+
+    async def mutate_napari_registry(
+        self, mutation: Callable[[Settings], dict[str, Any]]
+    ) -> Settings:
+        """Apply an internal registry transition without overwriting concurrent fields."""
+        async with self._lock:
+            if self._current is None:
+                raise RuntimeError("SettingsStore.load() must be awaited before mutating registry")
+            changes = mutation(self._current)
+            if not changes:
+                return self._current
+            allowed = {
+                "napari_environments",
+                "napari_default_environment_id",
+                "napari_filename_rules",
+                "napari_environment_operations",
+            }
+            if not set(changes).issubset(allowed):
+                raise ValueError("mutate_napari_registry received a non-registry field")
+            merged = {
+                **self._current.model_dump(),
+                **changes,
+                "napari_registry_revision": self._current.napari_registry_revision + 1,
+            }
+            candidate = Settings.model_validate(merged)
+            self._write_atomic(candidate)
+            self._current = candidate
+            return candidate
+
     def omero_password_stored(self, instance: OMEROInstance) -> bool:
         """Return whether keyring has a stored password for ``instance``."""
         key = OmeroCredentialKey.from_instance(instance)
@@ -254,7 +318,7 @@ class SettingsStore:
         """Write ``settings`` atomically: temp file then ``os.replace``."""
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         envelope: dict[str, Any] = {"settings_version": CURRENT_SETTINGS_VERSION}
-        envelope.update(settings.model_dump())
+        envelope.update(settings.model_dump(mode="json"))
         payload = json.dumps(envelope, indent=2)
         try:
             with open(tmp, "w") as fh:

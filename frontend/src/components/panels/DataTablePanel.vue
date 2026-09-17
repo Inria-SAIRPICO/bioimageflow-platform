@@ -215,7 +215,7 @@ function fetchEntry(entry: DataTableEntry, force = false): void {
   }
 }
 
-function refreshProjection(): void {
+function refreshProjection(captureLatest = false): void {
   if (!settingsReady.value) return
   if (projectionSources.value.length === 0 || localFallback.value) {
     dataTableStore.clearProjection()
@@ -224,16 +224,16 @@ function refreshProjection(): void {
   void dataTableStore.fetchProjection({
     workflow_id: activeWorkflowId.value,
     sources: projectionSources.value,
-  })
+  }, { captureLatest })
 }
 
 watch(maximumDepth, (maximum) => {
   if (dataTableStore.upstreamDepth > maximum) dataTableStore.setUpstreamDepth(maximum)
 })
-watch(projectionKey, refreshProjection, { immediate: true })
+watch(projectionKey, () => refreshProjection(), { immediate: true })
 watch(stackedEntries, (entries) => entries.forEach(entry => fetchEntry(entry)), { immediate: true })
 watch(() => executionStore.lastResult, (result) => {
-  if (result?.success) refreshProjection()
+  if (result?.success) refreshProjection(true)
 })
 
 let scope: EffectScope | null = null

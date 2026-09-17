@@ -928,6 +928,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nested-workflow-snapshots/{session_id}/viewer-preferences/finalize-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finalize Nested Viewer Preferences
+         * @description Remap a child overlay only after its stored parent accepted that graph.
+         */
+        post: operations["finalize_nested_viewer_preferences_api_v1_nested_workflow_snapshots__session_id__viewer_preferences_finalize_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -1099,6 +1119,23 @@ export interface paths {
          * @description Open the authoritative per-node latest output projection.
          */
         post: operations["reveal_latest_workflow_outputs_api_v1_workflows__name__outputs_latest_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/viewing-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Viewing Readiness */
+        get: operations["workflow_viewing_readiness_api_v1_workflows__name__viewing_readiness_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1312,6 +1349,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/napari/launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Launch Napari Environment
+         * @description Start one registered viewer without dispatching an artifact open.
+         */
+        post: operations["launch_napari_environment_api_v1_napari_launch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/napari/open": {
         parameters: {
             query?: never;
@@ -1357,6 +1414,302 @@ export interface paths {
         put?: never;
         /** Shutdown Napari */
         post: operations["shutdown_napari_api_v1_napari_shutdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Environments */
+        get: operations["list_environments_api_v1_napari_environments_get"];
+        put?: never;
+        /** Register Environment */
+        post: operations["register_environment_api_v1_napari_environments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/managed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Managed Environment */
+        post: operations["create_managed_environment_api_v1_napari_environments_managed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/managed/{environment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Managed Environment */
+        delete: operations["remove_managed_environment_api_v1_napari_environments_managed__environment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy Managed Environment */
+        post: operations["copy_managed_environment_api_v1_napari_environments__environment_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Managed Environment */
+        post: operations["retry_managed_environment_api_v1_napari_environments__environment_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}/operations/{operation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Managed Operation */
+        get: operations["get_managed_operation_api_v1_napari_environments__environment_id__operations__operation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}/operations/{operation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Managed Operation */
+        post: operations["cancel_managed_operation_api_v1_napari_environments__environment_id__operations__operation_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Forget Environment */
+        delete: operations["forget_environment_api_v1_napari_environments__environment_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Environment */
+        patch: operations["update_environment_api_v1_napari_environments__environment_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/napari/environments/{environment_id}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe Environment */
+        post: operations["probe_environment_api_v1_napari_environments__environment_id__probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environment-settings/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Default Environment */
+        put: operations["set_default_environment_api_v1_napari_environment_settings_default_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environment-settings/filename-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Filename Rules */
+        put: operations["replace_filename_rules_api_v1_napari_environment_settings_filename_rules_put"];
+        /** Add Filename Rule */
+        post: operations["add_filename_rule_api_v1_napari_environment_settings_filename_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/environment-settings/filename-rules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Filename Rules */
+        post: operations["preview_filename_rules_api_v1_napari_environment_settings_filename_rules_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/viewer-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Viewer Preferences */
+        get: operations["viewer_preferences_api_v1_napari_viewer_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/viewer-preferences/favorite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Viewer Favorite */
+        put: operations["set_viewer_favorite_api_v1_napari_viewer_preferences_favorite_put"];
+        post?: never;
+        /** Unset Viewer Favorite */
+        delete: operations["unset_viewer_favorite_api_v1_napari_viewer_preferences_favorite_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/viewer-preferences/favorite/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Toggle Viewer Favorite */
+        post: operations["toggle_viewer_favorite_api_v1_napari_viewer_preferences_favorite_toggle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Environment */
+        post: operations["resolve_environment_api_v1_napari_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/viewing-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Viewing Readiness
+         * @description Evaluate portable viewer metadata against the current inventory snapshot.
+         */
+        post: operations["viewing_readiness_api_v1_napari_viewing_readiness_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1787,6 +2140,13 @@ export interface components {
             source_node_id: string;
             /** Source Column */
             source_column: string;
+            viewer?: components["schemas"]["ViewerSpec"] | null;
+            /**
+             * Viewer Status
+             * @default legacy_unpinned
+             * @enum {string}
+             */
+            viewer_status: "captured" | "legacy_unpinned";
         };
         /**
          * DataTableCsvRequest
@@ -1913,6 +2273,7 @@ export interface components {
             column_aliases?: {
                 [key: string]: string;
             };
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
         };
         /** DataTableStackedResponse */
         DataTableStackedResponse: {
@@ -2604,6 +2965,7 @@ export interface components {
             col: string;
             /** Workflow Name */
             workflow_name?: string | null;
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
         };
         /** FolderCreate */
         FolderCreate: {
@@ -2626,9 +2988,10 @@ export interface components {
         GraphState: {
             /**
              * Schema Version
+             * @default 2
              * @constant
              */
-            schema_version: 1;
+            schema_version: 2;
             /** Name */
             name: string;
             /** Display Name */
@@ -2711,6 +3074,13 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /** InstalledDistribution */
+        InstalledDistribution: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
         };
         /**
          * JobSnapshot
@@ -2831,6 +3201,440 @@ export interface components {
             /** Moves */
             moves: components["schemas"]["MoveNodeItem"][];
         };
+        /** NapariCompatibilityIssue */
+        NapariCompatibilityIssue: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "missing_distribution" | "version_out_of_range" | "napari_version_out_of_range" | "missing_napari" | "inventory_missing" | "inventory_stale" | "probe_failed" | "requirements_unknown" | "unavailable";
+            /** Distribution */
+            distribution?: string | null;
+            /** Required Version */
+            required_version?: string | null;
+            /** Installed Version */
+            installed_version?: string | null;
+            /** Detail */
+            detail: string;
+        };
+        /** NapariDefaultEnvironmentUpdate */
+        NapariDefaultEnvironmentUpdate: {
+            /** Environment Id */
+            environment_id: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariEnvironment */
+        NapariEnvironment: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Registration Order */
+            registration_order: number;
+            /** Name */
+            name: string;
+            /**
+             * Ownership
+             * @enum {string}
+             */
+            ownership: "external" | "managed";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "conda" | "venv";
+            /** Root */
+            root: string;
+            /** Interpreter */
+            interpreter: string;
+            /** Interpreter Identity */
+            interpreter_identity: string;
+            /** Interpreter Fingerprint */
+            interpreter_fingerprint: string;
+            launch: components["schemas"]["NapariLaunchContext"];
+            managed?: components["schemas"]["NapariManagedMetadata"] | null;
+            inventory?: components["schemas"]["NapariEnvironmentInventory"] | null;
+            /**
+             * State
+             * @default ready
+             * @enum {string}
+             */
+            state: "setup_needed" | "creating" | "ready" | "failed" | "cancelled" | "removing" | "missing" | "replaced" | "drifted" | "probe_failed";
+            /** Last Error */
+            last_error?: string | null;
+        };
+        /** NapariEnvironmentCandidate */
+        NapariEnvironmentCandidate: {
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "compatible" | "incompatible" | "unknown" | "unavailable";
+            /** Label */
+            label: string;
+            /** Reason */
+            reason: string;
+            /** Issues */
+            issues?: components["schemas"]["NapariCompatibilityIssue"][];
+            /** Missing Recommended Packages */
+            missing_recommended_packages?: components["schemas"]["PackageRequirement"][];
+            /**
+             * Preference
+             * @enum {string}
+             */
+            preference: "favorite" | "filename_rule" | "global_default" | "other";
+            /** Reader Id */
+            reader_id?: string | null;
+        };
+        /** NapariEnvironmentCreate */
+        NapariEnvironmentCreate: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariEnvironmentInventory */
+        NapariEnvironmentInventory: {
+            /** Python Version */
+            python_version: string;
+            /** Napari Version */
+            napari_version?: string | null;
+            /** Qt Distribution */
+            qt_distribution?: string | null;
+            /** Qt Version */
+            qt_version?: string | null;
+            /** Bridge Distribution */
+            bridge_distribution?: string | null;
+            /** Bridge Version */
+            bridge_version?: string | null;
+            /** Distributions */
+            distributions: components["schemas"]["InstalledDistribution"][];
+            /** Fingerprint */
+            fingerprint: string;
+            /**
+             * Probed At
+             * Format: date-time
+             */
+            probed_at: string;
+        };
+        /** NapariEnvironmentList */
+        NapariEnvironmentList: {
+            /** Revision */
+            revision: number;
+            /** Environments */
+            environments?: components["schemas"]["NapariEnvironment"][];
+            /** Default Environment Id */
+            default_environment_id: string | null;
+            /** Filename Rules */
+            filename_rules?: components["schemas"]["NapariFilenameRule"][];
+            /** Operations */
+            operations?: components["schemas"]["NapariEnvironmentOperation"][];
+        };
+        /** NapariEnvironmentMutation */
+        NapariEnvironmentMutation: {
+            /** Revision */
+            revision: number;
+            environment: components["schemas"]["NapariEnvironment"];
+        };
+        /** NapariEnvironmentOperation */
+        NapariEnvironmentOperation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "create" | "copy" | "retry" | "remove";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "resolving" | "installing" | "validating" | "removing" | "completed" | "failed" | "cancelled";
+            /** Progress */
+            progress: number;
+            /** Message */
+            message: string;
+            error?: components["schemas"]["NapariEnvironmentOperationError"] | null;
+            /** Wetlands Operation Id */
+            wetlands_operation_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** NapariEnvironmentOperationError */
+        NapariEnvironmentOperationError: {
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+        };
+        /**
+         * NapariEnvironmentStatus
+         * @description Lifecycle state for one explicitly registered environment.
+         */
+        NapariEnvironmentStatus: {
+            /** Running */
+            running: boolean;
+            /** Env Path */
+            env_path?: string | null;
+            /** Pid */
+            pid?: number | null;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /** Environment Name */
+            environment_name: string;
+            /** Installation Identity */
+            installation_identity: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "stopped" | "opening" | "running" | "failed" | "restart_required";
+            /** Detail */
+            detail?: string | null;
+        };
+        /** NapariEnvironmentUpdate */
+        NapariEnvironmentUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Path */
+            path?: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariFilenamePreview */
+        NapariFilenamePreview: {
+            /** Filename */
+            filename: string;
+            /** Matching Rule Ids */
+            matching_rule_ids: string[];
+            /** Winner Rule Id */
+            winner_rule_id: string | null;
+        };
+        /** NapariFilenamePreviewRequest */
+        NapariFilenamePreviewRequest: {
+            /** Filename */
+            filename: string;
+        };
+        /** NapariFilenameRule */
+        NapariFilenameRule: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Pattern */
+            pattern: string;
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Reader Id */
+            reader_id?: string | null;
+        };
+        /** NapariFilenameRuleCreate */
+        NapariFilenameRuleCreate: {
+            /** Value */
+            value: string;
+            /**
+             * Mode
+             * @default extension
+             * @enum {string}
+             */
+            mode: "extension" | "pattern";
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Reader Id */
+            reader_id?: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariFilenameRuleMutation */
+        NapariFilenameRuleMutation: {
+            /** Revision */
+            revision: number;
+            rule: components["schemas"]["NapariFilenameRule"];
+        };
+        /** NapariFilenameRulesReplace */
+        NapariFilenameRulesReplace: {
+            /** Rules */
+            rules?: components["schemas"]["NapariFilenameRule"][];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariLaunchContext */
+        NapariLaunchContext: {
+            /**
+             * Strategy
+             * @enum {string}
+             */
+            strategy: "interpreter" | "conda-run" | "wetlands-managed";
+            /** Argv Prefix */
+            argv_prefix?: string[];
+            /** Conda Executable */
+            conda_executable?: string | null;
+        };
+        /**
+         * NapariLaunchRequest
+         * @description Start or focus one registered environment without opening an artifact.
+         */
+        NapariLaunchRequest: {
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+        };
+        /**
+         * NapariManagedCreatePrefill
+         * @description Requirement-set values suitable for prefilling managed setup.
+         *
+         *     Distribution declarations do not prove that a package is public on PyPI,
+         *     so callers must retain the unverified source status rather than presenting
+         *     this as an installability guarantee.
+         */
+        NapariManagedCreatePrefill: {
+            /** Requested Packages */
+            requested_packages?: string[];
+            /** Recommended Packages */
+            recommended_packages?: string[];
+            /** Napari Version Constraint */
+            napari_version_constraint?: string | null;
+            /**
+             * Package Source
+             * @default unverified
+             * @constant
+             */
+            package_source: "unverified";
+            /**
+             * Requires Source Confirmation
+             * @default false
+             */
+            requires_source_confirmation: boolean;
+        };
+        /** NapariManagedEnvironmentCopy */
+        NapariManagedEnvironmentCopy: {
+            /** Name */
+            name: string;
+            /** Python */
+            python?: string | null;
+            /** Napari */
+            napari?: string | null;
+            /** Qt */
+            qt?: ("PyQt5" | "PyQt6") | null;
+            /** Requested Packages */
+            requested_packages?: string[] | null;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariManagedEnvironmentCreate */
+        NapariManagedEnvironmentCreate: {
+            /** Name */
+            name: string;
+            recipe?: components["schemas"]["NapariManagedRecipeSelection"];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** NapariManagedMetadata */
+        NapariManagedMetadata: {
+            /** Wetlands Name */
+            wetlands_name: string;
+            /** Installation Generation */
+            installation_generation: string | null;
+            recipe: components["schemas"]["NapariManagedRecipe"];
+        };
+        /** NapariManagedOperationMutation */
+        NapariManagedOperationMutation: {
+            /** Revision */
+            revision: number;
+            environment: components["schemas"]["NapariEnvironment"] | null;
+            operation: components["schemas"]["NapariEnvironmentOperation"];
+        };
+        /** NapariManagedRecipe */
+        NapariManagedRecipe: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "adopted" | "managed";
+            /** Preset */
+            preset?: ("default" | "legacy" | "advanced") | null;
+            /** Python */
+            python?: string | null;
+            /** Napari */
+            napari?: string | null;
+            /** Qt */
+            qt?: ("PyQt5" | "PyQt6") | null;
+            /** Requested Packages */
+            requested_packages?: string[];
+            /** Channels */
+            channels?: string[];
+        };
+        /** NapariManagedRecipeSelection */
+        NapariManagedRecipeSelection: {
+            /**
+             * Preset
+             * @default default
+             * @enum {string}
+             */
+            preset: "default" | "legacy" | "advanced";
+            /** Python */
+            python?: string | null;
+            /** Napari */
+            napari?: string | null;
+            /** Qt */
+            qt?: ("PyQt5" | "PyQt6") | null;
+            /** Requested Packages */
+            requested_packages?: string[];
+        };
+        /** NapariManagedRetryRequest */
+        NapariManagedRetryRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /**
          * NapariOpenRequest
          * @description Body for ``POST /napari/open``.
@@ -2843,6 +3647,10 @@ export interface components {
              * @default false
              */
             clear_layers: boolean;
+            /** Environment Id */
+            environment_id?: string | null;
+            /** Reader Id */
+            reader_id?: string | null;
             /** Node Id */
             node_id?: string | null;
             /** Row */
@@ -2851,6 +3659,67 @@ export interface components {
             col?: string | null;
             /** Workflow Name */
             workflow_name?: string | null;
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
+        };
+        /** NapariProbeRequest */
+        NapariProbeRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /**
+         * NapariRequirement
+         * @description Strict portable requirements for opening one output in napari.
+         */
+        NapariRequirement: {
+            /** Required Packages */
+            required_packages?: components["schemas"]["PackageRequirement"][];
+            /** Recommended Packages */
+            recommended_packages?: components["schemas"]["PackageRequirement"][];
+            /** Napari Version */
+            napari_version?: string | null;
+            /** Reader Id */
+            reader_id?: string | null;
+        };
+        /**
+         * NapariResolveRequest
+         * @description Resolve one captured output artifact against local environments.
+         */
+        NapariResolveRequest: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Node Path */
+            node_path: string[];
+            /** Output Key */
+            output_key: string;
+            result_identity: components["schemas"]["ResultArtifactIdentity"];
+            /** Row */
+            row: number;
+        };
+        /** NapariResolveResponse */
+        NapariResolveResponse: {
+            artifact_identity: components["schemas"]["ResultArtifactIdentity"];
+            preference_key: components["schemas"]["PersistentOutputPreferenceKey"];
+            /** Workflow Id */
+            workflow_id: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Node Path */
+            node_path: string[];
+            /** Output Key */
+            output_key: string;
+            /** Filename */
+            filename: string;
+            viewer?: components["schemas"]["ViewerSpec"] | null;
+            /** Reader Id */
+            reader_id?: string | null;
+            /** Candidates */
+            candidates: components["schemas"]["NapariEnvironmentCandidate"][];
+            /** Effective Environment Id */
+            effective_environment_id?: string | null;
+            /** Effective Reason */
+            effective_reason: string;
         };
         /**
          * NapariStatus
@@ -2863,6 +3732,93 @@ export interface components {
             env_path?: string | null;
             /** Pid */
             pid?: number | null;
+        };
+        /**
+         * NapariViewingReadinessOutput
+         * @description Passive compatibility result for one structural output identity.
+         */
+        NapariViewingReadinessOutput: {
+            /** Output Identity */
+            output_identity: string;
+            /**
+             * Manifest Status
+             * @enum {string}
+             */
+            manifest_status: "known" | "unknown";
+            viewer?: components["schemas"]["ViewerSpec"] | null;
+            /** Manifest Reason */
+            manifest_reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "covered" | "not_covered" | "unknown";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "compatible_environment" | "no_declared_napari_requirements" | "requirements_not_satisfied" | "requirements_not_verified" | "manifest_unknown";
+            /** Group Id */
+            group_id?: string | null;
+            /** Candidates */
+            candidates?: components["schemas"]["NapariEnvironmentCandidate"][];
+            /** Effective Environment Id */
+            effective_environment_id?: string | null;
+            /** Effective Reason */
+            effective_reason: string;
+        };
+        /**
+         * NapariViewingReadinessResponse
+         * @description Backend-authoritative passive readiness for a portable manifest.
+         */
+        NapariViewingReadinessResponse: {
+            /**
+             * Manifest Schema
+             * @constant
+             */
+            manifest_schema: "bioimageflow.viewing_requirements.v1";
+            /** Manifest Complete */
+            manifest_complete: boolean;
+            summary: components["schemas"]["NapariViewingReadinessSummary"];
+            /** Outputs */
+            outputs?: components["schemas"]["NapariViewingReadinessOutput"][];
+            /** Groups */
+            groups?: components["schemas"]["NapariViewingRequirementGroup"][];
+        };
+        /**
+         * NapariViewingReadinessSummary
+         * @description Counts used by passive workflow/import setup guidance.
+         */
+        NapariViewingReadinessSummary: {
+            /** Total Outputs */
+            total_outputs: number;
+            /** Covered Outputs */
+            covered_outputs: number;
+            /** Not Covered Outputs */
+            not_covered_outputs: number;
+            /** Unknown Outputs */
+            unknown_outputs: number;
+            /** Outputs Needing Setup */
+            outputs_needing_setup: number;
+            /** Message */
+            message: string;
+        };
+        /**
+         * NapariViewingRequirementGroup
+         * @description One normalized package-compatibility set and its output members.
+         */
+        NapariViewingRequirementGroup: {
+            /** Id */
+            id: string;
+            /** Members */
+            members?: string[];
+            /** Required Packages */
+            required_packages?: components["schemas"]["PackageRequirement"][];
+            /** Recommended Packages */
+            recommended_packages?: components["schemas"]["PackageRequirement"][];
+            /** Napari Version */
+            napari_version?: string | null;
+            managed_create_prefill: components["schemas"]["NapariManagedCreatePrefill"];
         };
         /**
          * NestedSnapshotOwner
@@ -2882,6 +3838,14 @@ export interface components {
             identity_generation?: number | null;
             /** Session Id */
             session_id?: string | null;
+        };
+        /**
+         * NestedViewerPreferencesFinalizeRequest
+         * @description Finalize a child overlay after its parent accepted this snapshot.
+         */
+        NestedViewerPreferencesFinalizeRequest: {
+            /** Expected Revision */
+            expected_revision: number;
         };
         /**
          * NestedWorkflowSnapshotConflictResponse
@@ -3025,6 +3989,7 @@ export interface components {
             sort_order: "asc" | "desc";
             /** Filters */
             filters?: components["schemas"]["DataTableFilter"][];
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
         };
         /**
          * NodeDataResponse
@@ -3053,6 +4018,17 @@ export interface components {
             column_types: {
                 [key: string]: string;
             };
+            /** Column Viewers */
+            column_viewers?: {
+                [key: string]: components["schemas"]["ViewerSpec"] | null;
+            };
+            source_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
+            /**
+             * Identity Status
+             * @default legacy_unpinned
+             * @enum {string}
+             */
+            identity_status: "captured" | "legacy_unpinned";
         };
         /**
          * NodeOutputSchemaResponse
@@ -3211,12 +4187,45 @@ export interface components {
              */
             environment_status: string;
         };
+        /**
+         * PackageRequirement
+         * @description Strict portable Python distribution requirement owned by the library.
+         */
+        PackageRequirement: {
+            /** Distribution */
+            distribution: string;
+            /** Normalized Name */
+            normalized_name: string;
+            /** Version */
+            version?: string | null;
+        };
         /** ParslConfigurationDescription */
         ParslConfigurationDescription: {
             /** Source Kind */
             source_kind?: string | null;
             /** Factory */
             factory?: string | null;
+        };
+        /** PersistentOutputPreferenceKey */
+        PersistentOutputPreferenceKey: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "persistent";
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Node Path */
+            node_path: string[];
+            /** Output Key */
+            output_key: string;
         };
         /** Plan */
         Plan: {
@@ -3380,6 +4389,20 @@ export interface components {
                 [key: string]: string;
             }[];
         };
+        /**
+         * ResultArtifactIdentity
+         * @description Exact library run/node/record identity captured for a table source.
+         */
+        ResultArtifactIdentity: {
+            /** Run Id */
+            run_id: string;
+            /** Node Key */
+            node_key: string;
+            /** Result Key */
+            result_key: string;
+            /** Record Id */
+            record_id: string;
+        };
         /** RetryInvalidationPresentation */
         RetryInvalidationPresentation: {
             /** Node Path */
@@ -3491,6 +4514,25 @@ export interface components {
             /** Value */
             value: unknown;
         };
+        /** SessionOutputPreferenceKey */
+        SessionOutputPreferenceKey: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "session";
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Node Path */
+            node_path: string[];
+            /** Output Key */
+            output_key: string;
+        };
         /** SetNodeEnabledOperation */
         SetNodeEnabledOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -3520,6 +4562,19 @@ export interface components {
             external_editor?: string | null;
             /** Fiji Path */
             fiji_path?: string | null;
+            /**
+             * Napari Registry Revision
+             * @default 0
+             */
+            napari_registry_revision: number;
+            /** Napari Environments */
+            napari_environments?: components["schemas"]["NapariEnvironment"][];
+            /** Napari Default Environment Id */
+            napari_default_environment_id?: string | null;
+            /** Napari Filename Rules */
+            napari_filename_rules?: components["schemas"]["NapariFilenameRule"][];
+            /** Napari Environment Operations */
+            napari_environment_operations?: components["schemas"]["NapariEnvironmentOperation"][];
             /**
              * Omero Instances
              * @default []
@@ -3798,6 +4853,10 @@ export interface components {
             tool_package_version?: string | null;
             /** Source Module */
             source_module?: string | null;
+            /** Viewer Additions */
+            viewer_additions?: {
+                [key: string]: components["schemas"]["ViewerSpec"];
+            };
         };
         /** ToolRename */
         ToolRename: {
@@ -3933,6 +4992,128 @@ export interface components {
             /** Node Tools */
             node_tools?: {
                 [key: string]: components["schemas"]["ToolMetadata"];
+            };
+        };
+        /** ViewerFavorite */
+        ViewerFavorite: {
+            /** Key */
+            key: components["schemas"]["PersistentOutputPreferenceKey"] | components["schemas"]["SessionOutputPreferenceKey"];
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+        };
+        /** ViewerFavoriteSetRequest */
+        ViewerFavoriteSetRequest: {
+            /** Key */
+            key: components["schemas"]["PersistentOutputPreferenceKey"] | components["schemas"]["SessionOutputPreferenceKey"];
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ViewerFavoriteToggleRequest */
+        ViewerFavoriteToggleRequest: {
+            /** Key */
+            key: components["schemas"]["PersistentOutputPreferenceKey"] | components["schemas"]["SessionOutputPreferenceKey"];
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ViewerFavoriteUnsetRequest */
+        ViewerFavoriteUnsetRequest: {
+            /** Key */
+            key: components["schemas"]["PersistentOutputPreferenceKey"] | components["schemas"]["SessionOutputPreferenceKey"];
+            /**
+             * Expected Environment Id
+             * Format: uuid
+             */
+            expected_environment_id: string;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ViewerPreferencesSnapshot */
+        ViewerPreferencesSnapshot: {
+            /**
+             * Preferences Version
+             * @default 1
+             * @constant
+             */
+            preferences_version: 1;
+            /** Revision */
+            revision: number;
+            /** Favorites */
+            favorites?: components["schemas"]["ViewerFavorite"][];
+        };
+        /**
+         * ViewerSpec
+         * @description Portable output viewer metadata mirrored from ``bioimageflow-core``.
+         */
+        ViewerSpec: {
+            napari?: components["schemas"]["NapariRequirement"] | null;
+        };
+        /**
+         * ViewingRequirementEntry
+         * @description One archive-inspectable scoped output viewer requirement.
+         */
+        ViewingRequirementEntry: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "known" | "unknown";
+            viewer?: components["schemas"]["ViewerSpec"] | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * ViewingRequirementsManifest
+         * @description Portable archive viewing metadata available before tool installation.
+         */
+        "ViewingRequirementsManifest-Input": {
+            /**
+             * Schema
+             * @default bioimageflow.viewing_requirements.v1
+             * @constant
+             */
+            schema: "bioimageflow.viewing_requirements.v1";
+            /**
+             * Complete
+             * @default true
+             */
+            complete: boolean;
+            /** Outputs */
+            outputs?: {
+                [key: string]: components["schemas"]["ViewingRequirementEntry"];
+            };
+        };
+        /**
+         * ViewingRequirementsManifest
+         * @description Portable archive viewing metadata available before tool installation.
+         */
+        "ViewingRequirementsManifest-Output": {
+            /**
+             * Schema
+             * @default bioimageflow.viewing_requirements.v1
+             * @constant
+             */
+            schema: "bioimageflow.viewing_requirements.v1";
+            /**
+             * Complete
+             * @default true
+             */
+            complete: boolean;
+            /** Outputs */
+            outputs?: {
+                [key: string]: components["schemas"]["ViewingRequirementEntry"];
             };
         };
         /** WorkflowConfig */
@@ -4209,6 +5390,7 @@ export interface components {
             missing_packages?: components["schemas"]["MissingPackage"][];
             /** Missing Tools */
             missing_tools?: components["schemas"]["MissingTool"][];
+            viewing_requirements?: components["schemas"]["ViewingRequirementsManifest-Output"];
         };
         /**
          * WorkflowInfo
@@ -4324,6 +5506,10 @@ export interface components {
              * @default false
              */
             collapsed: boolean;
+            /** Viewer Additions */
+            viewer_additions?: {
+                [key: string]: components["schemas"]["ViewerSpec"];
+            };
         };
         /** WorkflowOutput */
         WorkflowOutput: {
@@ -4336,6 +5522,7 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             source: components["schemas"]["WorkflowOutputSource"];
+            viewer_addition?: components["schemas"]["ViewerSpec"] | null;
         };
         /** WorkflowOutputSource */
         WorkflowOutputSource: {
@@ -4631,15 +5818,53 @@ export type GraphValidationError = components['schemas']['GraphValidationError']
 export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type InstalledDistribution = components['schemas']['InstalledDistribution'];
 export type JobSnapshot = components['schemas']['JobSnapshot'];
 export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type MoveNodeItem = components['schemas']['MoveNodeItem'];
 export type MoveNodeOperation = components['schemas']['MoveNodeOperation'];
 export type MoveNodesOperation = components['schemas']['MoveNodesOperation'];
+export type NapariCompatibilityIssue = components['schemas']['NapariCompatibilityIssue'];
+export type NapariDefaultEnvironmentUpdate = components['schemas']['NapariDefaultEnvironmentUpdate'];
+export type NapariEnvironment = components['schemas']['NapariEnvironment'];
+export type NapariEnvironmentCandidate = components['schemas']['NapariEnvironmentCandidate'];
+export type NapariEnvironmentCreate = components['schemas']['NapariEnvironmentCreate'];
+export type NapariEnvironmentInventory = components['schemas']['NapariEnvironmentInventory'];
+export type NapariEnvironmentList = components['schemas']['NapariEnvironmentList'];
+export type NapariEnvironmentMutation = components['schemas']['NapariEnvironmentMutation'];
+export type NapariEnvironmentOperation = components['schemas']['NapariEnvironmentOperation'];
+export type NapariEnvironmentOperationError = components['schemas']['NapariEnvironmentOperationError'];
+export type NapariEnvironmentStatus = components['schemas']['NapariEnvironmentStatus'];
+export type NapariEnvironmentUpdate = components['schemas']['NapariEnvironmentUpdate'];
+export type NapariFilenamePreview = components['schemas']['NapariFilenamePreview'];
+export type NapariFilenamePreviewRequest = components['schemas']['NapariFilenamePreviewRequest'];
+export type NapariFilenameRule = components['schemas']['NapariFilenameRule'];
+export type NapariFilenameRuleCreate = components['schemas']['NapariFilenameRuleCreate'];
+export type NapariFilenameRuleMutation = components['schemas']['NapariFilenameRuleMutation'];
+export type NapariFilenameRulesReplace = components['schemas']['NapariFilenameRulesReplace'];
+export type NapariLaunchContext = components['schemas']['NapariLaunchContext'];
+export type NapariLaunchRequest = components['schemas']['NapariLaunchRequest'];
+export type NapariManagedCreatePrefill = components['schemas']['NapariManagedCreatePrefill'];
+export type NapariManagedEnvironmentCopy = components['schemas']['NapariManagedEnvironmentCopy'];
+export type NapariManagedEnvironmentCreate = components['schemas']['NapariManagedEnvironmentCreate'];
+export type NapariManagedMetadata = components['schemas']['NapariManagedMetadata'];
+export type NapariManagedOperationMutation = components['schemas']['NapariManagedOperationMutation'];
+export type NapariManagedRecipe = components['schemas']['NapariManagedRecipe'];
+export type NapariManagedRecipeSelection = components['schemas']['NapariManagedRecipeSelection'];
+export type NapariManagedRetryRequest = components['schemas']['NapariManagedRetryRequest'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
+export type NapariProbeRequest = components['schemas']['NapariProbeRequest'];
+export type NapariRequirement = components['schemas']['NapariRequirement'];
+export type NapariResolveRequest = components['schemas']['NapariResolveRequest'];
+export type NapariResolveResponse = components['schemas']['NapariResolveResponse'];
 export type NapariStatus = components['schemas']['NapariStatus'];
+export type NapariViewingReadinessOutput = components['schemas']['NapariViewingReadinessOutput'];
+export type NapariViewingReadinessResponse = components['schemas']['NapariViewingReadinessResponse'];
+export type NapariViewingReadinessSummary = components['schemas']['NapariViewingReadinessSummary'];
+export type NapariViewingRequirementGroup = components['schemas']['NapariViewingRequirementGroup'];
 export type NestedSnapshotOwner = components['schemas']['NestedSnapshotOwner'];
+export type NestedViewerPreferencesFinalizeRequest = components['schemas']['NestedViewerPreferencesFinalizeRequest'];
 export type NestedWorkflowSnapshotConflictResponse = components['schemas']['NestedWorkflowSnapshotConflictResponse'];
 export type NestedWorkflowSnapshotDependencyConflictResponse = components['schemas']['NestedWorkflowSnapshotDependencyConflictResponse'];
 export type NestedWorkflowSnapshotLockedResponse = components['schemas']['NestedWorkflowSnapshotLockedResponse'];
@@ -4658,7 +5883,9 @@ export type OutputViewConfig = components['schemas']['OutputViewConfig'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
 export type PackageInfo = components['schemas']['PackageInfo'];
+export type PackageRequirement = components['schemas']['PackageRequirement'];
 export type ParslConfigurationDescription = components['schemas']['ParslConfigurationDescription'];
+export type PersistentOutputPreferenceKey = components['schemas']['PersistentOutputPreferenceKey'];
 export type Plan = components['schemas']['Plan'];
 export type PositionalInputPort = components['schemas']['PositionalInputPort'];
 export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
@@ -4670,6 +5897,7 @@ export type RemoteNodePathPlanValue = components['schemas']['RemoteNodePathPlanV
 export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
 export type Report = components['schemas']['Report'];
 export type ResolutionRequiredPreflight = components['schemas']['ResolutionRequiredPreflight'];
+export type ResultArtifactIdentity = components['schemas']['ResultArtifactIdentity'];
 export type RetryInvalidationPresentation = components['schemas']['RetryInvalidationPresentation'];
 export type RetryPlanPresentation = components['schemas']['RetryPlanPresentation'];
 export type RetryPlanRequest = components['schemas']['RetryPlanRequest'];
@@ -4678,6 +5906,7 @@ export type RevealRequest = components['schemas']['RevealRequest'];
 export type SanitizedClusterDescription = components['schemas']['SanitizedClusterDescription'];
 export type SchedulerJobDescription = components['schemas']['SchedulerJobDescription'];
 export type SerializedConstant = components['schemas']['SerializedConstant'];
+export type SessionOutputPreferenceKey = components['schemas']['SessionOutputPreferenceKey'];
 export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOperation'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type SetupScriptDescription = components['schemas']['SetupScriptDescription'];
@@ -4697,6 +5926,15 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
+export type ViewerFavorite = components['schemas']['ViewerFavorite'];
+export type ViewerFavoriteSetRequest = components['schemas']['ViewerFavoriteSetRequest'];
+export type ViewerFavoriteToggleRequest = components['schemas']['ViewerFavoriteToggleRequest'];
+export type ViewerFavoriteUnsetRequest = components['schemas']['ViewerFavoriteUnsetRequest'];
+export type ViewerPreferencesSnapshot = components['schemas']['ViewerPreferencesSnapshot'];
+export type ViewerSpec = components['schemas']['ViewerSpec'];
+export type ViewingRequirementEntry = components['schemas']['ViewingRequirementEntry'];
+export type ViewingRequirementsManifestInput = components['schemas']['ViewingRequirementsManifest-Input'];
+export type ViewingRequirementsManifestOutput = components['schemas']['ViewingRequirementsManifest-Output'];
 export type WorkflowConfig = components['schemas']['WorkflowConfig'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowDeleteResponse = components['schemas']['WorkflowDeleteResponse'];
@@ -6691,6 +7929,50 @@ export interface operations {
             };
         };
     };
+    finalize_nested_viewer_preferences_api_v1_nested_workflow_snapshots__session_id__viewer_preferences_finalize_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NestedViewerPreferencesFinalizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewerPreferencesSnapshot"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_workspace_api_v1_workspace_get: {
         parameters: {
             query?: never;
@@ -7150,6 +8432,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_viewing_readiness_api_v1_workflows__name__viewing_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewingRequirementsManifest-Output"];
                 };
             };
             /** @description Validation Error */
@@ -7660,6 +8973,41 @@ export interface operations {
             };
         };
     };
+    launch_napari_environment_api_v1_napari_launch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariLaunchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     open_in_napari_api_v1_napari_open_post: {
         parameters: {
             query?: never;
@@ -7697,7 +9045,9 @@ export interface operations {
     };
     napari_status_api_v1_napari_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                environment_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7710,14 +9060,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NapariStatus"];
+                    "application/json": components["schemas"]["NapariStatus"] | components["schemas"]["NapariEnvironmentStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
     shutdown_napari_api_v1_napari_shutdown_post: {
         parameters: {
-            query?: never;
+            query?: {
+                environment_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7733,6 +9094,688 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_environments_api_v1_napari_environments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentList"];
+                };
+            };
+        };
+    };
+    register_environment_api_v1_napari_environments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariEnvironmentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_managed_environment_api_v1_napari_environments_managed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariManagedEnvironmentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_managed_environment_api_v1_napari_environments_managed__environment_id__delete: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_managed_environment_api_v1_napari_environments__environment_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariManagedEnvironmentCopy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_managed_environment_api_v1_napari_environments__environment_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariManagedRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_managed_operation_api_v1_napari_environments__environment_id__operations__operation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_managed_operation_api_v1_napari_environments__environment_id__operations__operation_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariManagedOperationMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forget_environment_api_v1_napari_environments__environment_id__delete: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_environment_api_v1_napari_environments__environment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariEnvironmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_environment_api_v1_napari_environments__environment_id__probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_environment_api_v1_napari_environment_settings_default_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariDefaultEnvironmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_filename_rules_api_v1_napari_environment_settings_filename_rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariFilenameRulesReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariEnvironmentList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_filename_rule_api_v1_napari_environment_settings_filename_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariFilenameRuleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariFilenameRuleMutation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_filename_rules_api_v1_napari_environment_settings_filename_rules_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariFilenamePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariFilenamePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    viewer_preferences_api_v1_napari_viewer_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewerPreferencesSnapshot"];
+                };
+            };
+        };
+    };
+    set_viewer_favorite_api_v1_napari_viewer_preferences_favorite_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewerFavoriteSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewerPreferencesSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unset_viewer_favorite_api_v1_napari_viewer_preferences_favorite_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewerFavoriteUnsetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewerPreferencesSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    toggle_viewer_favorite_api_v1_napari_viewer_preferences_favorite_toggle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewerFavoriteToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewerPreferencesSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_environment_api_v1_napari_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariResolveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    viewing_readiness_api_v1_napari_viewing_readiness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ViewingRequirementsManifest-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariViewingReadinessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

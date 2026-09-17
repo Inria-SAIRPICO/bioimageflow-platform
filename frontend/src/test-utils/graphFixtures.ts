@@ -25,7 +25,7 @@ export function makeGraphNode(overrides: Partial<ToolNodeState> = {}): NodeState
 
 export function makeGraph(overrides: Partial<GraphState> = {}): GraphState {
   return {
-    schema_version: 1,
+    schema_version: 2,
     name: 'test_workflow',
     display_name: 'Test workflow',
     nodes: [],

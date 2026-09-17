@@ -66,6 +66,7 @@ def _write_draft(store: WorkflowStoreService, workflow_id: str) -> dict[str, obj
 
 def _complete_without_snapshots(store: WorkflowStoreService, operation_id: UUID) -> None:
     store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+    store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
     store.complete_workflow_move(operation_id)
 
 
@@ -280,6 +281,7 @@ def test_legacy_generation_zero_move_commits_exactly_once(tmp_path: Path) -> Non
     )
     store.mark_workflow_move_phase(operation_id, "artifacts_rewritten")
     store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+    store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
     store.complete_workflow_move(operation_id)
 
     restarted = _store(tmp_path)

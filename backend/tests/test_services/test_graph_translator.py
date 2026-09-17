@@ -175,6 +175,34 @@ def test_recursive_translation_uses_one_library_grammar() -> None:
     assert "collapsed" not in node["workflow"]["nodes"][0]
 
 
+def test_schema_v2_viewer_additions_round_trip_through_library_wire() -> None:
+    payload = _graph("viewer", [_tool("inner")])
+    payload["schema_version"] = 2
+    viewer = {
+        "napari": {
+            "required_packages": [
+                {
+                    "distribution": "example-reader",
+                    "normalized_name": "example-reader",
+                    "version": ">=1",
+                }
+            ],
+            "recommended_packages": [],
+            "napari_version": None,
+            "reader_id": "example.reader",
+        }
+    }
+    payload["nodes"][0]["viewer_additions"] = {"image": viewer}
+    graph = GraphState.model_validate(payload)
+
+    library = graph_state_to_lib_dict(graph, _registry()).lib_dict
+    restored = lib_dict_to_graph_state(library)
+
+    assert library["schema_version"] == 2
+    assert library["nodes"][0]["viewer_additions"]["image"] == viewer
+    assert restored.nodes[0].viewer_additions["image"].model_dump(mode="json") == viewer
+
+
 def test_processing_resource_overrides_round_trip_recursively() -> None:
     child = _graph(
         "child",
@@ -319,7 +347,7 @@ def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() ->
     assert graph.nodes[0].type == "workflow"
     assert translated.errors == []
     assert translated.lib_dict["nodes"][0]["type"] == "workflow"
-    assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 1
+    assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 2
 
 
 def test_requirements_and_version_rebinding_recurse() -> None:

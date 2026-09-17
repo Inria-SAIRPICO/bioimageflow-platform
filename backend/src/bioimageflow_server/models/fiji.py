@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from bioimageflow_server.models.results import ResultArtifactIdentity
+
 
 class FijiOpenRequest(BaseModel):
     """Select one workflow result image to open in Fiji."""
@@ -14,6 +16,7 @@ class FijiOpenRequest(BaseModel):
     row: int = Field(ge=0)
     col: str
     workflow_name: str | None = None
+    result_identity: ResultArtifactIdentity | None = None
 
     @field_validator("node_id", "col", mode="before")
     @classmethod

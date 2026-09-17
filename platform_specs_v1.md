@@ -56,7 +56,7 @@ The backend is stateless between request-local validation calls except for workf
 | `tool_registry: dict[str, type[BaseTool]]` | Discovered tools indexed by class name (the unique tool identifier) |
 | `agent workspace context` | The active workflow id and draft revision written for external agents; this context does not select graph meaning for validation, persistence, or execution requests |
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
-| `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
+| `napari_launcher: NapariLauncher or NapariLauncherPool | None` | Manages the legacy process and UUID-keyed registered-environment processes (lazily created) |
 
 There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Execution without a draft revision does the same as an explicit compatibility operation; revision-addressed execution first proves the submitted graph matches the named accepted draft revision and then compiles the backend-loaded draft. Run Selected also compiles that complete graph, then derives the requested root node IDs plus their transitive upstream root IDs from its edges. A diagnostic is ignored only when its scoped node path proves that it belongs to a root node outside this selected execution scope; diagnostics owned by a selected or upstream workflow boundary, including descendant paths, remain blocking, as do global or otherwise unattributable diagnostics.
 
@@ -760,6 +760,11 @@ class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
     fiji_path: str | None = None                    # selected Fiji.app installation directory
+    napari_registry_revision: int = 0
+    napari_environments: list[NapariEnvironment] = []
+    napari_default_environment_id: UUID | None = None
+    napari_filename_rules: list[NapariFilenameRule] = []
+    napari_environment_operations: list[NapariEnvironmentOperation] = []
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -775,6 +780,10 @@ class Settings(BaseModel):
 ```
 
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
+
+Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji and all previous settings.
+The generic `PATCH /settings` route returns these fields but rejects direct napari registry or durable-operation mutation; revision-checked typed routes own environment registration, rename/locate/forget, managed create/copy/retry/removal, operation polling/cancellation, default selection, probe, rule creation/reordering, and first-match preview.
+Every registry mutation carries and increments `napari_registry_revision` so stale clients cannot overwrite another window's changes.
 
 `enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
 
@@ -792,13 +801,32 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 |--------|----------|-------------|
 | `GET` | `/nodes/{node_id}/image` | Serve an image-valued output cell; query parameters are `row`, `col`, optional `workflow_name`, and optional `format=ome-tiff`. |
 | `GET` | `/nodes/{node_id}/image/{filename}` | Serve the same image with a stable response filename for Avivator-compatible range and offset requests. |
-| `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool}`) |
-| `GET` | `/napari/status` | Check if Napari is running |
+| `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool, environment_id?: UUID, reader_id?: str}`) |
+| `POST` | `/napari/launch` | Start one registered environment without dispatching an artifact-open command |
+| `GET` | `/napari/status` | Check legacy Napari status, or one registered environment with `environment_id` |
+| `POST` | `/napari/shutdown` | Stop the legacy viewer, or one registered environment with `environment_id` |
+| `POST` | `/napari/environments/managed` | Start creation of a new managed generation |
+| `POST` | `/napari/environments/{environment_id}/copy` | Start an independent recipe-based managed copy |
+| `POST` | `/napari/environments/{environment_id}/retry` | Retry a failed/cancelled managed setup when appropriate |
+| `GET` | `/napari/environments/{environment_id}/operations/{operation_id}` | Poll one durable managed mutation |
+| `POST` | `/napari/environments/{environment_id}/operations/{operation_id}/cancel` | Request public Wetlands operation cancellation |
+| `DELETE` | `/napari/environments/managed/{environment_id}` | Stop its viewer and delete a proven platform-owned generation |
+| `POST` | `/napari/viewing-readiness` | Passively evaluate a portable viewing-requirement manifest against registered environment inventories |
 | `POST` | `/fiji/open` | Open one workflow result image in the configured Fiji installation (body: `{node_id, row, col, workflow_name?}`) |
+
+The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
+They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
+Webapp mode rejects all of these local operations.
+The desktop-only passive viewing-readiness route accepts the manifest returned by workflow import directly and uses the same package-only candidate evaluator as retained-artifact resolution.
+It does not reread a workflow, probe or mutate environments, launch a viewer, or execute archive content; its response retains structural output identities, unknown reasons, candidates, effective environments, normalized requirement groups, honest managed-setup prefill, and covered/not-covered/unknown summary counts.
+Phase C extends `/napari/open`, `/napari/status`, and `/napari/shutdown` with optional registered environment IDs while preserving their no-ID compatibility behavior.
+Managed creation provisions an immutable UUID-addressed Wetlands name with `replace_existing=False` and an `EnvironmentSpec` containing only Python 3.12 through Conda plus napari, Qt, and requested distributions through PyPI.
+Each operation is persisted before provisioning/removal and has typed state, progress, message, and error fields; startup recovers published ready generations but never represents interrupted progress as live.
+Managed removal verifies the public Wetlands name, project path, and generation, stops only the addressed launcher, and retains recoverable `removing` intent until registry and local-reference cleanup complete.
 
 The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
-The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in an isolated Conda environment (`napari` + `pyqt`) with its own Qt event loop. Communication uses `multiprocessing.connection` (Client/Listener pattern on localhost). The backend launches Napari lazily on the first `/napari/open` call and reconnects automatically if the process dies.
+The backend uses an authenticated `multiprocessing.connection` Client/Listener channel to a helper running napari's Qt loop. The no-ID compatibility path lazily provisions the legacy Wetlands `napari` environment. An explicit registered ID instead uses that environment's persisted argv prefix without provisioning or package mutation, owns an independent process/lock/configuration file, and may pass `reader_id` separately as napari's `plugin=` argument. Success is returned only after the Qt-thread operation completes. A timeout or disconnect after dispatch reports an unknown outcome, invalidates the channel, and never replays the open automatically.
 
 Fiji is a desktop-only, user-owned integration. BioImageFlow stores the selected `Fiji.app` installation directory, resolves the appropriate current or legacy launcher for the host platform, and passes the workflow-resolved image path as a separate process argument. BioImageFlow does not install, update, supervise, or shut down Fiji. The Fiji endpoint is forbidden in webapp mode and never accepts an arbitrary client-supplied filesystem path.
 
@@ -1000,7 +1028,7 @@ Reloading an inactive package version preserves both the active class bindings a
 
 **Shutdown sequence:**
 1. If execution is running, send stop signal and wait (with timeout)
-2. Terminate Napari process if running (via `NapariLauncher`)
+2. Terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`)
 3. Clean up shared memory segments (`bioimageflow clean-shm`)
 4. Save any pending settings changes
 5. Stop FastAPI server
@@ -1473,17 +1501,21 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 
 **Avivator:** The browser action checks the selected cell's workflow-scoped OME-TIFF offsets response through the same-origin backend API before opening the external Avivator application in a Dockview iframe using the absolute node-image URL with `format=ome-tiff`. A failed or malformed offsets response leaves the action available, shows an error, and opens no panel; clicking the action again retries the backend read. An in-flight read cannot open a different cell if its result identity changes before completion. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
 
-**Napari:** Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
+**Napari:** The backend uses a legacy `NapariLauncher` plus a registered-environment launcher pool that:
 
-1. Provisions an immutable environment recipe with `napari` and `pyqt` via Wetlands
-2. Launches and supervises `napari_manager.py` with Wetlands managed processes
-3. Communicates via `multiprocessing.connection` (Client/Listener on localhost)
-4. Auto-reconnects if Napari crashes or is closed by the user
+1. Preserves lazy Wetlands provisioning only for the no-ID compatibility path
+2. Launches external explicit registrations directly from their frozen argv prefix, while recipe-created managed registrations use the public Wetlands managed-environment `spawn` API; adopted legacy Wetlands 1 workspaces may fall back to their persisted interpreter
+3. Gives every registered environment a UUID-scoped `NAPARI_CONFIG` settings YAML file and verifies napari resolved that public configuration path before viewer startup
+4. Communicates through authenticated local IPC and acknowledges opens only after their Qt-thread viewer operation completes
+5. Reports reader failures as typed open errors and ambiguous post-dispatch completion as unknown without replay
+6. Coordinates independently locked managed create/copy/retry/remove operations without replacing a working generation in place
 
 **Interactions:**
-- **Open in Napari:** Triggered from Node Data image cells. Sends `POST /napari/open {paths, clear_layers: false}`.
-- **Replace in Napari (Ctrl+Click):** Same endpoint with `clear_layers: true`.
-- Napari is launched lazily on first use.
+- **Open in Napari:** The primary action resolves the exact retained cell and uses the compatible environment selected by structural-output favorite, first matching filename rule, global default, then another qualifying environment.
+- **Choose environment:** The adjacent menu lists every compatible, incompatible, unknown, or unavailable registered environment with its backend explanation; choosing a runnable row opens once without changing preferences.
+- **Favorite:** One keyboard-accessible exclusive star per structural output identity applies across rows and future results; choosing the filled star removes it, and favorite mutations never launch a viewer.
+- **Replace layers and open:** Explicitly clears layers only in the chosen environment before opening.
+- Napari is launched lazily on first use, while **Launch empty viewer** starts or focuses one addressed environment without dispatching an empty open request.
 
 **Fiji:** Fiji is installed separately by the user. In desktop mode, the Node Data image-cell action sends the selected node, row, column, and workflow context to `POST /fiji/open`; the backend resolves the authoritative result path and launches the configured Fiji installation with that image. If Fiji is not configured, the action opens Preferences → Image Viewers. If the saved installation has moved or become invalid, the action returns to configuration mode. Fiji controls reuse of an existing Fiji process.
 
@@ -1512,6 +1544,10 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.2 Image Viewers
 
+- **Napari environments:** Lists named external Conda/virtual environments and platform-managed generations with detected interpreter, napari, Qt, inventory, probe, launcher, and setup state.
+- **Environment actions:** Register or locate an existing installation; create, copy, retry, cancel, or remove a managed generation; refresh inventory; rename; forget; or launch that addressed environment empty.
+- **Selection preferences:** Chooses one global default and manages revision-checked, first-match filename rules with extension shortcuts, ordering, catch-all diagnostics, and filename preview.
+- **Viewing readiness:** Passively evaluates the saved or imported workflow's per-output requirements against registered inventories, preserves unknown and incomplete declarations, and can prefill managed setup from one normalized requirement group without installing or launching anything.
 - **Fiji installation:** Editable directory field with Browse and Clear actions. The selected directory must be a usable `Fiji.app` installation for the current desktop platform before it is saved.
 - **Download Fiji:** Links to the official Fiji downloads page. Fiji installation and updates remain the user's responsibility.
 - The section and Fiji result action are hidden in webapp mode.
@@ -1808,6 +1844,12 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Node Data |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
+| 36a | `POST` | `/api/v1/napari/environments/managed` | Start managed napari environment creation |
+| 36b | `POST` | `/api/v1/napari/environments/{id}/copy` | Start an independent modified managed copy |
+| 36c | `POST` | `/api/v1/napari/environments/{id}/retry` | Retry eligible managed setup |
+| 36d | `GET`/`POST` | `/api/v1/napari/environments/{id}/operations/{operation_id}` | Poll or cancel a managed mutation (cancel adds `/cancel`) |
+| 36e | `DELETE` | `/api/v1/napari/environments/managed/{id}` | Remove a proven owned managed generation |
+| 36f | `POST` | `/api/v1/napari/viewing-readiness` | Passive desktop-only compatibility report for a portable viewing-requirement manifest |
 | 37 | `POST` | `/api/v1/fiji/open` | "Open in Fiji" button in Node Data |
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" for catalog tools and newly created tools after the active canvas persistence barrier |

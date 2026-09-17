@@ -21,6 +21,26 @@ The workspace root used by external editors is also used by the [coding-agent wa
 
 ## Image Viewers
 
+Desktop mode can keep several named Napari environments side by side.
+Use **Add existing** to register a Conda environment or virtual environment without changing its packages, or **Create environment** to let BioImageFlow create an isolated managed environment.
+Each entry shows its detected Python, Napari, Qt, and installed-distribution inventory.
+Use **Refresh** after changing packages outside BioImageFlow, and **Launch empty viewer** when you want to start or focus that environment without opening an image.
+
+Choose a global default for outputs that have no more-specific preference.
+Optional file-opening rules match the complete file or directory name from top to bottom; the first match wins.
+The **Extension** shortcut turns values such as `.ome.tif` into `*.ome.tif`, while **Filename pattern** accepts `*`, `?`, and bracket character classes.
+Use the filename test before saving or reordering a broad rule.
+An environment preference never overrides a tool output's required packages, and a reader ID is attempted only for opens selected by that rule.
+
+Managed environment creation uses an isolated recipe.
+The default recipe installs Python 3.12, Napari 0.9.1, and PyQt6; the legacy recipe installs Napari 0.6.6 and PyQt5.
+Creating a modified copy leaves the original installation unchanged.
+Setup, retry, cancellation, and removal progress appears with the affected environment.
+
+The viewing requirements report compares every declared output requirement in the saved workflow with the current registered inventories.
+It is informational: unknown or uncovered requirements do not block editing or running, and checking them does not install packages or launch Napari.
+When requirements are uncovered, use a setup action on one requirement group to prefill a separate managed environment recipe.
+
 Fiji is installed separately from BioImageFlow.
 [Download Fiji](https://imagej.net/software/fiji/downloads), unpack it, then choose the `Fiji.app` folder in **Preferences → Image Viewers**.
 In Node Data, use the Fiji button beside Napari to open an image; before setup, the same button takes you to the Fiji setting.

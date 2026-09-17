@@ -18,6 +18,7 @@ from bioimageflow_server.routers.graph import get_dev_mode as graph_get_dev_mode
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
 )
+from bioimageflow_server.services.napari_environments import NapariEnvironmentService
 from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_move_recovery import WorkflowMoveRecoveryService
@@ -291,6 +292,40 @@ async def test_lifespan_calls_flush_on_shutdown(tmp_path: Path) -> None:
     flush_mock.assert_awaited_once()
 
 
+async def test_lifespan_reconciles_and_closes_managed_napari_operations(
+    tmp_path: Path,
+) -> None:
+    class _OfflineCatalog:
+        async def refresh(self) -> None:
+            return None
+
+        def list_packages(self) -> list[object]:
+            return []
+
+    store = SettingsStore(tmp_path / "settings.json")
+    await store.load()
+    service = NapariEnvironmentService(store)
+    service.adopt_managed_singleton = AsyncMock()  # type: ignore[method-assign]
+    service.reconcile_managed_operations = AsyncMock()  # type: ignore[method-assign]
+    service.close = AsyncMock()  # type: ignore[method-assign]
+    app = create_app(
+        AppConfig(
+            settings_store=store,
+            workspace_path=tmp_path / "workspace",
+            napari_environment_service=service,
+            package_catalog=_OfflineCatalog(),  # type: ignore[arg-type]
+            disable_hot_reload=True,
+        )
+    )
+
+    async with app.router.lifespan_context(app):
+        service.adopt_managed_singleton.assert_awaited_once()
+        service.reconcile_managed_operations.assert_awaited_once()
+        service.close.assert_not_awaited()
+
+    service.close.assert_awaited_once()
+
+
 async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     assert not path.exists()
@@ -305,7 +340,7 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
         pass
     assert path.exists()
     on_disk = json.loads(path.read_text())
-    assert on_disk["settings_version"] == 2
+    assert on_disk["settings_version"] == 3
 
 
 async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> None:

@@ -54,6 +54,11 @@ async def open_in_fiji(
             status_code=403,
             detail={"error": "fiji_unavailable", "detail": "Fiji is available only in the desktop application."},
         )
+    if request.result_identity is None:
+        raise HTTPException(
+            status_code=422,
+            detail="result_identity is required for immutable result selection",
+        )
     try:
         image_path = resolve_selected_image_path(
             node_id=request.node_id,
@@ -62,6 +67,7 @@ async def open_in_fiji(
             workflow_name=request.workflow_name,
             result_store=result_store,
             workflow_store=workflow_store,
+            result_identity=request.result_identity,
         )
         await to_thread.run_sync(launcher.open, image_path)
     except HTTPException:

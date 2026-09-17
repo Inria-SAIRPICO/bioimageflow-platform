@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import keyword
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from bioimageflow_server.models.graph import ViewerSpec
+
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
     from bioimageflow_server.services.execution_profiles import ExecutionProfileStore
     from bioimageflow_server.services.known_packages import KnownPackagesService
-    from bioimageflow_server.services.napari_launcher import NapariLauncher
+    from bioimageflow_server.services.napari_launcher import NapariLauncher, NapariLauncherPool
+    from bioimageflow_server.services.napari_environments import NapariEnvironmentService
+    from bioimageflow_server.services.napari_resolver import NapariResolverService
     from bioimageflow_server.services.fiji_launcher import FijiLauncher
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
@@ -25,6 +30,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.tool_environments import ToolEnvironmentService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.services.workflow_store import WorkflowStoreService
+    from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
     from bioimageflow_server.ws.handler import ConnectionManager
 
 
@@ -52,6 +58,7 @@ class OutputFieldSchema(BaseModel):
     type: str
     default: Any = None
     image_spec: dict[str, list[str]] | None = None
+    viewer: ViewerSpec | None = None
 
 
 # Passthrough marker for DataFrameTool outputs that inherit upstream columns.
@@ -232,6 +239,12 @@ class AppConfig:
     settings_store: SettingsStore | None = None
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
+    napari_launcher_pool: NapariLauncherPool | None = None
+    napari_environment_service: NapariEnvironmentService | None = None
+    viewer_preference_store: ViewerPreferenceStore | None = None
+    napari_resolver_service: NapariResolverService | None = None
+    napari_environment_manager_provider: Callable[[], Any] | None = None
+    napari_environment_reference_cleanup: Callable[[Any], Any] | None = None
     fiji_launcher: FijiLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
     editor_service: Any | None = None

@@ -1,7 +1,7 @@
 import { computed, reactive, shallowReactive } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
-import type { NodeDataResponse } from '@/api/types'
+import type { NodeDataResponse, ResultArtifactIdentity, ViewerSpec } from '@/api/types'
 import { apiErrorMessage } from '@/utils/apiError'
 import {
   canvasSessionRegistry,
@@ -43,6 +43,7 @@ export interface DataTableSourceRequest {
   tool_name?: string | null
   columns?: string[] | null
   column_aliases: Record<string, string>
+  result_identity?: ResultArtifactIdentity | null
 }
 
 export interface ConsolidatedDataTableColumn {
@@ -51,6 +52,8 @@ export interface ConsolidatedDataTableColumn {
   type: string
   source_node_id: string
   source_column: string
+  viewer: ViewerSpec | null
+  viewer_status: 'captured' | 'legacy_unpinned'
 }
 
 export interface ConsolidatedDataTableRow {
@@ -93,6 +96,7 @@ interface FetchOpts {
   sortOrder?: 'asc' | 'desc'
   filters?: DataTableFilter[]
   retryAttempt?: number
+  resultIdentity?: ResultArtifactIdentity | null
 }
 
 interface DataTableState {
@@ -276,6 +280,12 @@ export const useDataTableStore = defineStore('dataTable', () => {
       )
       if (!context.released && context.projectionRequestId === requestId) {
         context.state.projection = data
+        if (data.mode === 'merged') {
+          context.state.projectionRequest = {
+            ...request,
+            sources: data.sources.map(source => ({ ...source })),
+          }
+        }
       }
     } catch (exc: unknown) {
       if (!isCanceled(exc) && !context.released && context.projectionRequestId === requestId) {
@@ -301,10 +311,26 @@ export const useDataTableStore = defineStore('dataTable', () => {
     }
   }
 
-  function fetchProjection(request: DataTableProjectionRequest): Promise<void> {
+  function fetchProjection(
+    request: DataTableProjectionRequest,
+    options: { captureLatest?: boolean } = {},
+  ): Promise<void> {
     const context = activeContext(true)
     if (!context) return Promise.resolve()
-    return fetchProjectionInContext(context, request, defaultPageState())
+    const retainedIdentities = options.captureLatest
+      ? new Map<string, ResultArtifactIdentity>()
+      : new Map(
+          (context.state.projectionRequest?.sources ?? [])
+            .filter(source => source.result_identity)
+            .map(source => [source.node_id, source.result_identity!]),
+        )
+    return fetchProjectionInContext(context, {
+      ...request,
+      sources: request.sources.map(source => ({
+        ...source,
+        result_identity: source.result_identity ?? retainedIdentities.get(source.node_id) ?? null,
+      })),
+    }, defaultPageState())
   }
 
   function clearProjection(): void {
@@ -476,6 +502,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           filters: nextState.filters,
           tool_name: opts.toolName || null,
           workflow_name: opts.workflowName || null,
+          result_identity: opts.resultIdentity ?? null,
         },
         { signal: controller.signal },
       )
@@ -602,6 +629,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
       ...stateFor(context, nodeId),
       page,
       ...opts,
+      resultIdentity: context.state.nodeDataCache[nodeId]?.source_identity,
     })
   }
 
@@ -628,6 +656,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           page: 0,
           pageSize,
           ...opts,
+          resultIdentity: context.state.nodeDataCache[nodeId]?.source_identity,
         })
       : Promise.resolve()
   }
@@ -645,6 +674,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           sortBy,
           sortOrder,
           ...opts,
+          resultIdentity: context.state.nodeDataCache[nodeId]?.source_identity,
         })
       : Promise.resolve()
   }
@@ -661,6 +691,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           page: 0,
           filters: [...filters],
           ...opts,
+          resultIdentity: context.state.nodeDataCache[nodeId]?.source_identity,
         })
       : Promise.resolve()
   }

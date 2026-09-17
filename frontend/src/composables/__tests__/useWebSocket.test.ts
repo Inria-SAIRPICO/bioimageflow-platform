@@ -240,6 +240,8 @@ describe('useWebSocket workflow draft dispatch', () => {
 
   it('dispatches tool_reload and tool_removed messages to the tool registry store', () => {
     const registry = useToolRegistryStore()
+    const refreshViewingReadiness = vi.spyOn(useNapariStore(), 'refreshViewingReadiness')
+      .mockResolvedValue(null)
     const ws = useWebSocket()
     ws.connect('ws://example.test/ws')
 
@@ -273,6 +275,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     } as MessageEvent)
 
     expect(registry.getToolByName('CustomTool')).toBeUndefined()
+    expect(refreshViewingReadiness).toHaveBeenCalledTimes(2)
   })
 
   it('routes Napari launch status to progress and Logger activation state', () => {

@@ -196,6 +196,34 @@ def rewrite_workspace_source_ids(graph: GraphState, mapping: dict[str, str]) -> 
     return graph.model_copy(update={"nodes": nodes})
 
 
+def rewrite_workspace_source_hashes(
+    graph: GraphState, hash_mapping: dict[str, str]
+) -> GraphState:
+    """Rewrite migrated saved-workflow provenance hashes recursively."""
+
+    nodes = []
+    for node in graph.nodes:
+        if not isinstance(node, WorkflowNodeState):
+            nodes.append(node)
+            continue
+        source = node.source
+        if source is not None and source.artifact_hash in hash_mapping:
+            source = source.model_copy(
+                update={"artifact_hash": hash_mapping[source.artifact_hash]}
+            )
+        nodes.append(
+            node.model_copy(
+                update={
+                    "workflow": rewrite_workspace_source_hashes(
+                        node.workflow, hash_mapping
+                    ),
+                    "source": source,
+                }
+            )
+        )
+    return graph.model_copy(update={"nodes": nodes})
+
+
 class WorkflowSourceMissingError(FileNotFoundError):
     """An existing workflow references an unavailable owned source file."""
 

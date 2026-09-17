@@ -80,6 +80,9 @@ import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
+import { useSettingsStore } from '@/stores/settings'
+import { useNapariStore } from '@/stores/napari'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -251,6 +254,7 @@ describe('MenuBar', () => {
       vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
     }
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    useSettingsPanel().prepareNapariCreate([])
   })
 
   afterEach(() => {
@@ -1565,6 +1569,94 @@ describe('MenuBar', () => {
 
       const vm = wrapper.vm as any
       expect(vm.importRenameDialogVisible).toBe(true)
+    })
+
+    it('reports imported viewing requirements without blocking import and stages setup groups', async () => {
+      useSettingsStore().settings = { deployment_mode: 'desktop' } as any
+      const info = {
+        id: 'imported', name: 'imported', display_name: 'Imported',
+        path: '/tmp/imported/workflow.json', results_path: '/tmp/imported/results',
+        last_modified: '2026-09-15T00:00:00Z', identity_generation: 0,
+      }
+      const manifest = {
+        schema: 'bioimageflow.viewing_requirements.v1', complete: true, outputs: {},
+      }
+      const group = {
+        id: `sha256:${'a'.repeat(64)}`,
+        members: ['segment/image'], required_packages: [], recommended_packages: [],
+        napari_version: null,
+        managed_create_prefill: {
+          requested_packages: ['special-reader>=2'], recommended_packages: [],
+          napari_version_constraint: null, package_source: 'unverified',
+          requires_source_confirmation: true,
+        },
+      }
+      apiMocks.post.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows/import') return Promise.resolve({
+          data: { info, missing_packages: [], missing_tools: [], viewing_requirements: manifest },
+        })
+        if (url === '/api/v1/napari/viewing-readiness') return Promise.resolve({
+          data: {
+            manifest_schema: manifest.schema, manifest_complete: true,
+            summary: { total_outputs: 1, covered_outputs: 0, not_covered_outputs: 1, unknown_outputs: 0, outputs_needing_setup: 1, message: '1 output needs viewer setup' },
+            outputs: [{ output_identity: 'segment/image', manifest_status: 'known', status: 'not_covered', reason: 'requirements_not_satisfied', group_id: group.id, effective_reason: 'No compatible environment' }],
+            groups: [group],
+          },
+        })
+        return Promise.resolve({ data: {} })
+      })
+      apiMocks.get.mockResolvedValue({
+        data: { info, graph: makeGraph(), missing_packages: [], missing_tools: [] },
+      })
+      const wrapper = mountMenuBar()
+      const input = wrapper.find('[data-testid="workflow-import-input"]')
+      Object.defineProperty(input.element, 'files', {
+        value: [new File(['zip'], 'imported.bioimageflow.zip', { type: 'application/zip' })],
+        configurable: true,
+      })
+
+      await input.trigger('change')
+      await flushPromises()
+
+      expect(useWorkflowStore().current?.name).toBe('imported')
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'warn', summary: 'Viewing requirements',
+        detail: expect.stringContaining('Workflow execution is unaffected'),
+      }))
+      expect(useSettingsPanel().napariCreatePrefills.value).toEqual([group])
+      expect(useNapariStore().viewingWorkflowId).toBe('imported')
+    })
+
+    it('passively evaluates viewing requirements when a saved workflow opens', async () => {
+      useSettingsStore().settings = { deployment_mode: 'desktop' } as any
+      const info = {
+        id: 'saved', name: 'saved', display_name: 'Saved',
+        path: '/tmp/saved/workflow.json', results_path: '/tmp/saved/results',
+        last_modified: '2026-09-15T00:00:00Z', identity_generation: 0,
+      }
+      const manifest = { schema: 'bioimageflow.viewing_requirements.v1', complete: true, outputs: {} }
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows/saved/viewing-readiness') return Promise.resolve({ data: manifest })
+        return Promise.resolve({ data: { info, graph: makeGraph(), missing_packages: [], missing_tools: [] } })
+      })
+      apiMocks.post.mockResolvedValue({
+        data: {
+          manifest_schema: manifest.schema, manifest_complete: true,
+          summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No declared requirements' },
+          outputs: [], groups: [],
+        },
+      })
+      mountMenuBar()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'open', name: 'saved' },
+      }))
+      await flushPromises()
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/saved/viewing-readiness')
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+      expect(useWorkflowStore().current?.name).toBe('saved')
     })
 
 

@@ -3,11 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
-import { useNapariStore } from '@/stores/napari'
 import { useSettingsStore } from '@/stores/settings'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import { openInFiji } from '@/api/fiji'
 import PathCell from './PathCell.vue'
+import NapariOutputChooser from './NapariOutputChooser.vue'
+import type { ResultArtifactIdentity } from '@/api/types'
 
 const intersectionCallbacks = new WeakMap<Element, () => void>()
 const observedElements = new Set<Element>()
@@ -48,10 +49,22 @@ const props = withDefaults(defineProps<{
   showPath?: boolean
   showImageActions?: boolean
   thumbnailEnabled?: boolean
+  resultIdentity?: ResultArtifactIdentity | null
+  identityGeneration?: number | null
+  nodePath?: string[]
+  outputKey?: string
+  outputName?: string
+  explicitNapariViewer?: boolean
 }>(), {
   showPath: true,
   showImageActions: true,
   thumbnailEnabled: true,
+  resultIdentity: null,
+  identityGeneration: null,
+  nodePath: () => [],
+  outputKey: '',
+  outputName: '',
+  explicitNapariViewer: false,
 })
 
 let toast: ReturnType<typeof useToast> | null = null
@@ -61,8 +74,6 @@ try {
   toast = null
 }
 
-const napariDisabled = ref(false)
-const napari = useNapariStore()
 const settings = useSettingsStore()
 const settingsPanel = useSettingsPanel()
 const fijiPending = ref(false)
@@ -86,6 +97,11 @@ const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const shouldShowPath = computed(() => props.showPath)
 const shouldShowImageActions = computed(() => props.showImageActions)
+const shouldShowNapari = computed(() => (
+  (shouldShowImageActions.value || props.explicitNapariViewer)
+  && props.resultIdentity !== null
+  && (settings.settings === null || settings.isDesktop)
+))
 const shouldShowFiji = computed(() => shouldShowImageActions.value && settings.isDesktop)
 const fijiConfigured = computed(() => (
   settings.fijiConfigured && !fijiConfigurationInvalid.value
@@ -280,32 +296,6 @@ function showError(detail: string) {
   toast?.add({ severity: 'error', summary: 'Action failed', detail, life: 3000 })
 }
 
-async function openNapari(event: MouseEvent) {
-  if (napariDisabled.value) return
-  try {
-    await napari.open({
-      paths: [props.value],
-      clear_layers: event.ctrlKey || event.metaKey,
-      node_id: props.nodeId,
-      row: props.row,
-      col: props.col,
-      workflow_name: props.workflowName ?? null,
-    })
-  } catch (exc: any) {
-    const status = exc?.response?.status
-    if (status === 404) {
-      napariDisabled.value = true
-      toast?.add({
-        severity: 'warn',
-        summary: 'Napari integration not available',
-        life: 3000,
-      })
-      return
-    }
-    showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not open in Napari')
-  }
-}
-
 function configureFiji() {
   settingsPanel.open('viewers')
 }
@@ -441,15 +431,16 @@ async function reveal() {
       :show-actions="false"
     />
     <div class="image-cell__actions">
-      <Button
-        v-if="shouldShowImageActions"
-        icon="pi pi-image"
-        text
-        size="small"
-        title="Open in Napari"
-        :disabled="napariDisabled || napari.requestPending"
-        :data-testid="`open-napari-${row}-${colSlug}`"
-        @click="openNapari"
+      <NapariOutputChooser
+        v-if="shouldShowNapari"
+        :workflow-id="workflowName ?? null"
+        :identity-generation="identityGeneration ?? null"
+        :node-path="nodePath.length > 0 ? nodePath : nodeId.split('/')"
+        :output-key="outputKey || col"
+        :output-name="outputName || col"
+        :result-identity="resultIdentity ?? null"
+        :row="row"
+        :path="value"
       />
       <Button
         v-if="shouldShowFiji"

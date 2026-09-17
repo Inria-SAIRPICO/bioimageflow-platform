@@ -156,9 +156,10 @@ async function fetchDraft(page: Page, workflowName: string) {
 async function expectExactTable(panel: Locator, columns: string[], rows: string[][]) {
   const table = panel.locator('.p-datatable')
   await expect(table).toBeVisible()
-  const headers = await table.locator('.p-datatable-thead [aria-label^="Sort "]')
-    .evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')?.slice(5)))
-  expect(headers).toEqual(columns)
+  await expect.poll(async () => (
+    await table.locator('.p-datatable-thead [aria-label^="Sort "]')
+      .evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')?.slice(5)))
+  ), { timeout: 15_000 }).toEqual(columns)
   await expect(table.locator('.p-datatable-tbody tr')).toHaveCount(rows.length)
   for (let row = 0; row < rows.length; row++) {
     const cells = table.locator('.p-datatable-tbody tr').nth(row).locator('td')

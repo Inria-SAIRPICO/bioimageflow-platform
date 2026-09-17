@@ -61,7 +61,17 @@ Image paths can display preview thumbnails.
 Path actions can reveal a file in the system file manager or copy its full path.
 
 Use **Open in Napari** for local interactive image viewing.
-Its first use can take longer while BioImageFlow prepares the viewer environment.
+The main action uses the compatible environment selected by, in order, the output favorite, first matching filename rule, global default, or another compatible registered environment.
+Open the arrow beside it to see every environment and why it is compatible, incompatible, unknown, or unavailable.
+Choosing an environment there opens only the selected cell once and does not change your preferences.
+
+The star beside an environment sets one favorite for that structural output across all rows and future results; selecting another star replaces it, and selecting the filled star removes it.
+Use **Replace layers and open** to clear layers only in that chosen environment before opening.
+If no environment satisfies declared requirements, open the setup panel or explicitly try a runnable environment anyway.
+Reader failures are reported after the open attempt and are never retried automatically in another environment.
+
+The chooser uses the exact retained result shown in the table, so sorting, pagination, changing tabs, or later workflow edits do not silently redirect the selected cell to a newer result.
+Older results without retained identity remain viewable in the table but cannot use exact environment resolution.
 Use **Open in Avivator** for supported images when the application can reach that external web viewer.
 
 ## Export results

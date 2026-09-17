@@ -18,11 +18,13 @@ from starlette.responses import FileResponse
 
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
 from bioimageflow_server.models.data_table import DataTableFilter
+from bioimageflow_server.models.graph import ViewerSpec
 from bioimageflow_server.models.nodes import (
     NodeDataCsvRequest,
     NodeDataQueryRequest,
     NodeDataResponse,
 )
+from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.dataframe_query import (
     DataFrameQueryError,
     filter_positions,
@@ -30,6 +32,7 @@ from bioimageflow_server.services.dataframe_query import (
 )
 from bioimageflow_server.services.result_store import (
     DATAFRAME_RECORD_DIR_ATTR,
+    DATAFRAME_RESULT_IDENTITY_ATTR,
     ResultDataNotReadyError,
     ResultStoreService,
 )
@@ -82,13 +85,23 @@ def _get_node_dataframe(
     node_id: str,
     result_store: ResultStoreService,
     storage_path: Path | None,
+    result_identity: ResultArtifactIdentity | None = None,
 ) -> pd.DataFrame:
     try:
-        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
+        df = (
+            result_store.get_latest_dataframe(node_id, storage_path=storage_path)
+            if result_identity is None
+            else result_store.load_result_dataframe(
+                result_identity, storage_path=storage_path
+            )
+        )
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
+    identity = df.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
+    if isinstance(identity, ResultArtifactIdentity) and identity.node_key != node_id:
+        raise HTTPException(status_code=422, detail="Result identity does not match node")
     return df
 
 
@@ -102,10 +115,21 @@ def _node_data_response(
     sort_order: Literal["asc", "desc"],
     filters: list[DataTableFilter],
     tool_name: str | None,
+    storage_path: Path | None,
 ) -> NodeDataResponse:
+    identity = dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
     dataframe = dataframe.copy()
     dataframe.columns = [str(column) for column in dataframe.columns]
     column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
+    retained_viewers = (
+        result_store.result_viewers(identity, storage_path=storage_path)
+        if isinstance(identity, ResultArtifactIdentity)
+        else {}
+    )
+    column_viewers = {
+        column: ViewerSpec.from_library(retained_viewers.get(column))
+        for column in dataframe.columns
+    }
     unfiltered_total_rows = len(dataframe)
     try:
         filtered_positions = filter_positions(dataframe, filters)
@@ -131,6 +155,23 @@ def _node_data_response(
         page=page,
         page_size=page_size,
         column_types=column_types,
+        column_viewers=column_viewers,
+        source_identity=(
+            dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
+            if isinstance(
+                dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR),
+                ResultArtifactIdentity,
+            )
+            else None
+        ),
+        identity_status=(
+            "captured"
+            if isinstance(
+                dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR),
+                ResultArtifactIdentity,
+            )
+            else "legacy_unpinned"
+        ),
     )
 
 
@@ -193,7 +234,7 @@ def _coerce_image_path(
             candidate_paths.append(storage_path / image_path)
         candidate_paths.append(image_path)
     for candidate in candidate_paths:
-        if candidate.is_file():
+        if candidate.is_file() or candidate.is_dir():
             return candidate
     raise HTTPException(status_code=404, detail=f"Image file not found: {candidate_paths[0]}")
 
@@ -386,6 +427,7 @@ async def get_node_data(
         sort_order=sort_order,
         filters=[],
         tool_name=tool_name,
+        storage_path=storage_path,
     )
 
 
@@ -398,7 +440,12 @@ async def query_node_data(
 ) -> NodeDataResponse:
     storage_path = _workflow_storage_path(request.workflow_name, workflow_store)
     return _node_data_response(
-        _get_node_dataframe(node_id, result_store, storage_path),
+        _get_node_dataframe(
+            node_id,
+            result_store,
+            storage_path,
+            request.result_identity,
+        ),
         result_store,
         page=request.page,
         page_size=request.page_size,
@@ -406,6 +453,7 @@ async def query_node_data(
         sort_order=request.sort_order,
         filters=request.filters,
         tool_name=request.tool_name,
+        storage_path=storage_path,
     )
 
 

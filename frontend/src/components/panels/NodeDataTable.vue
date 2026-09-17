@@ -13,6 +13,7 @@ import NodeDataPaginator from './NodeDataPaginator.vue'
 import { useDataTableStore } from '@/stores/dataTable'
 import type { DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
+import { useWorkflowStore } from '@/stores/workflow'
 
 const props = defineProps<{
   nodeId: string
@@ -24,6 +25,7 @@ const props = defineProps<{
 }>()
 
 const store = useDataTableStore()
+const workflowStore = useWorkflowStore()
 
 const data = computed(() => store.getNodeData(props.nodeId))
 const loading = computed(() => store.isLoading(props.nodeId))
@@ -59,8 +61,18 @@ function isPathColumn(col: string): boolean {
 }
 
 function hasImageBehavior(col: string, value: unknown): boolean {
-  return isImageColumn(col) || (data.value?.column_types[col] === 'Path' && isImagePath(value))
+  return isImageColumn(col)
+    || (data.value?.column_types[col] === 'Path' && isImagePath(value))
 }
+
+function hasRetainedNapariViewer(col: string): boolean {
+  return data.value?.identity_status === 'captured'
+    && Boolean(data.value.column_viewers?.[col]?.napari)
+}
+
+const identityGeneration = computed(() => props.workflowName
+  ? workflowStore.workflowServerIdentityGeneration(props.workflowName)
+  : null)
 
 const columnLabels = computed(() => Object.fromEntries(
   visibleColumns.value.map(column => [column, displayColumnName(column)]),
@@ -190,7 +202,7 @@ function onPage(page: number): void {
           </template>
           <template #body="slotProps">
             <div
-              v-if="isImageColumn(column.id) || isPathColumn(column.id)"
+              v-if="isImageColumn(column.id) || isPathColumn(column.id) || hasRetainedNapariViewer(column.id)"
               class="node-data-table__image-path"
             >
               <ImageCell
@@ -201,7 +213,13 @@ function onPage(page: number): void {
                 :value="String(slotProps.data[column.id] ?? '')"
                 :show-path="isPathColumn(column.id)"
                 :show-image-actions="hasImageBehavior(column.id, slotProps.data[column.id])"
-                :thumbnail-enabled="hasImageBehavior(column.id, slotProps.data[column.id])"
+                :thumbnail-enabled="isImageColumn(column.id) || (data.column_types[column.id] === 'Path' && isImagePath(slotProps.data[column.id]))"
+                :explicit-napari-viewer="hasRetainedNapariViewer(column.id)"
+                :result-identity="data.source_identity"
+                :identity-generation="identityGeneration"
+                :node-path="nodeId.split('/')"
+                :output-key="column.id"
+                :output-name="displayColumnName(column.id)"
               />
             </div>
             <span v-else class="node-data-cell-text" :title="String(slotProps.data[column.id] ?? '')">{{ slotProps.data[column.id] }}</span>

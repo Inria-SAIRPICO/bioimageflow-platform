@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,7 @@ class _WorkflowApi:
     loaded_paths: list[tuple[Path, Path]] = []
     imported_archives: list[tuple[Path, Path, Path]] = []
     loaded_workflow = _LoadedWorkflow()
+    inspected: list[dict[str, Any]] = []
 
     @classmethod
     def load(cls, path: Path, *, storage_path: Path) -> _LoadedWorkflow:
@@ -54,6 +57,21 @@ class _WorkflowApi:
         cls.loaded_workflow = _LoadedWorkflow(data)
         return cls.loaded_workflow
 
+    @classmethod
+    def inspect_viewing_requirements(cls, data: dict[str, Any]):
+        cls.inspected.append(data)
+        return _ViewingManifest()
+
+
+class _ViewingManifest:
+    def to_dict(self) -> dict[str, Any]:
+        return {"requirements": [], "complete": True, "issues": []}
+
+
+def _write_archive(path: Path, document: dict[str, Any]) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("workflow.json", json.dumps(document))
+
 
 def test_export_archive_delegates_to_bioimageflow_workflow_api(
     monkeypatch,
@@ -72,33 +90,40 @@ def test_export_archive_delegates_to_bioimageflow_workflow_api(
     assert _WorkflowApi.loaded_workflow.exported_to == archive_path
 
 
-def test_read_archive_delegates_to_bioimageflow_workflow_api(
+def test_read_archive_inspects_portable_document_without_loading_it(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _WorkflowApi.loaded_workflow = _LoadedWorkflow({"nodes": [{"name": "n1"}], "edges": []})
     monkeypatch.setattr(workflow_archive, "BioImageFlowWorkflow", _WorkflowApi)
     archive_path = tmp_path / "wf.bioimageflow.zip"
     results_path = tmp_path / "results"
+    document = {"nodes": [{"name": "n1"}], "edges": []}
+    _write_archive(archive_path, document)
+    _WorkflowApi.inspected = []
+    _WorkflowApi.loaded_paths = []
 
     data = BioImageFlowWorkflowArchiveAdapter().read_archive(
         archive_path,
         storage_path=results_path,
     )
 
-    assert _WorkflowApi.loaded_paths[-1] == (archive_path, results_path)
-    assert data == {"nodes": [{"name": "n1"}], "edges": []}
+    assert _WorkflowApi.loaded_paths == []
+    assert _WorkflowApi.inspected == [document]
+    assert data == document
 
 
-def test_read_archive_can_delegate_extraction_to_bioimageflow_workflow_api(
+def test_read_archive_does_not_extract_or_import_packages(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    _WorkflowApi.loaded_workflow = _LoadedWorkflow({"nodes": [{"name": "n1"}], "edges": []})
     monkeypatch.setattr(workflow_archive, "BioImageFlowWorkflow", _WorkflowApi)
     archive_path = tmp_path / "wf.bioimageflow.zip"
     destination = tmp_path / "wf"
     results_path = tmp_path / "results"
+    document = {"nodes": [{"name": "n1"}], "edges": []}
+    _write_archive(archive_path, document)
+    _WorkflowApi.inspected = []
+    _WorkflowApi.imported_archives = []
 
     data = BioImageFlowWorkflowArchiveAdapter().read_archive(
         archive_path,
@@ -106,9 +131,7 @@ def test_read_archive_can_delegate_extraction_to_bioimageflow_workflow_api(
         storage_path=results_path,
     )
 
-    assert _WorkflowApi.imported_archives[-1] == (
-        archive_path,
-        destination,
-        results_path,
-    )
-    assert data == {"nodes": [{"name": "n1"}], "edges": []}
+    assert _WorkflowApi.imported_archives == []
+    assert _WorkflowApi.inspected == [document]
+    assert not destination.exists()
+    assert data == document

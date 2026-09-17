@@ -27,6 +27,7 @@ import {
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
+import { useNapariStore } from '@/stores/napari'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { api } from '@/api/client'
 import {
@@ -70,6 +71,7 @@ const executionStore = useExecutionStore()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const workflowStore = useWorkflowStore()
 const settingsStore = useSettingsStore()
+const napariStore = useNapariStore()
 const toolRegistryStore = useToolRegistryStore()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 const canvasPersistence = useCanvasPersistence()
@@ -273,6 +275,11 @@ function showDraftConflictWarning(action: 'saving' | 'running' | 'exporting' = '
   })
 }
 
+function refreshSavedWorkflowViewingRequirements(workflowName: string): void {
+  if (!settingsStore.isDesktop) return
+  void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
+}
+
 function hasMissingImportDependencies(): boolean {
   return installableMissingPackages.value.length > 0 || workflowStore.missingTools.length > 0
 }
@@ -381,6 +388,7 @@ async function onOpenWorkflow(name: string): Promise<void> {
     if (executionStore.isMutationLocked) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)
+    refreshSavedWorkflowViewingRequirements(name)
   } catch (err: unknown) {
     showError('Open workflow failed', err)
   }
@@ -537,6 +545,7 @@ async function buildWorkflowFromPythonSource(): Promise<void> {
     window.dispatchEvent(new CustomEvent('bioimageflow:replace-root-graph', {
       detail: { workflowId: workflowName, draft: accepted },
     }))
+    refreshSavedWorkflowViewingRequirements(workflowName)
     toast?.add({
       severity: 'success',
       summary: 'Workflow built from Python source',
@@ -566,6 +575,36 @@ async function openImportedWorkflow(name: string): Promise<void> {
 async function finishImport(file: File, nameOverride?: string): Promise<void> {
   const response = await workflowStore.importWorkflow(file, { nameOverride })
   await openImportedWorkflow(workflowId(response.info))
+  if (settingsStore.isDesktop && response.viewing_requirements) {
+    try {
+      const readiness = await napariStore.evaluateViewingReadiness(
+        response.viewing_requirements,
+        workflowId(response.info),
+      )
+      const uncoveredGroupIds = new Set(
+        (readiness.outputs ?? [])
+          .filter(output => output.status === 'not_covered' && output.group_id)
+          .map(output => output.group_id!),
+      )
+      const uncoveredGroups = (readiness.groups ?? []).filter(group => uncoveredGroupIds.has(group.id))
+      useSettingsPanel().prepareNapariCreate(uncoveredGroups)
+      if (readiness.summary.outputs_needing_setup > 0 || readiness.summary.unknown_outputs > 0) {
+        toast?.add({
+          severity: 'warn',
+          summary: 'Viewing requirements',
+          detail: `${readiness.summary.message} Open Preferences → Image Viewers to review setup options. Workflow execution is unaffected.`,
+          life: 8000,
+        })
+      }
+    } catch (error: unknown) {
+      toast?.add({
+        severity: 'warn',
+        summary: 'Viewing requirements not checked',
+        detail: `The workflow was imported successfully. ${error instanceof Error ? error.message : String(error)}`,
+        life: 8000,
+      })
+    }
+  }
   pendingImportFile.value = null
 }
 
@@ -766,6 +805,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
     })
     const loaded = await loadRootWorkflowPresentation(workflowId(info))
     applyGraph(loaded.graph, loaded.dirty, loaded)
+    refreshSavedWorkflowViewingRequirements(workflowId(info))
   } catch (err: unknown) {
     showError('Duplicate workflow failed', err)
   }

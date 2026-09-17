@@ -236,32 +236,43 @@ describe('ImageCell', () => {
     expect(wrapper.find('img.image-cell__thumb').attributes('src')).toBe('blob:mock-url')
   })
 
-  it('keeps Open in Napari enabled after a launch failure so the action can be retried', async () => {
+  it('does not offer napari until its immutable identity is available', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
-    mockedPost.mockRejectedValueOnce({
-      response: {
-        status: 503,
-        data: { error: 'napari_launch_failed', detail: 'solver crashed' },
-      },
-    })
-
     const wrapper = mountCell()
     await flushPromises()
 
-    const button = wrapper.find('[data-testid="open-napari-0-mask"]')
-    await button.trigger('click')
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
+    expect(mockedPost).not.toHaveBeenCalledWith('/api/v1/napari/open', expect.anything())
+  })
+
+  it('offers normal image actions when an exact result captured no specialized viewer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES)))
+    mockedPost.mockRejectedValueOnce(new Error('resolver unavailable in component fixture'))
+    const wrapper = mountCell({
+      resultIdentity: { run_id: 'run', node_key: 'n1', result_key: 'result', record_id: 'record' },
+      explicitNapariViewer: false,
+    })
     await flushPromises()
 
-    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/open', {
-      paths: ['/tmp/m.tif'],
-      clear_layers: false,
-      node_id: 'n1',
-      row: 0,
-      col: 'mask',
-      workflow_name: null,
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').exists()).toBe(true)
+  })
+
+  it('offers napari for an exact specialized non-image viewer without image actions', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    mockedPost.mockRejectedValueOnce(new Error('resolver unavailable in component fixture'))
+    const wrapper = mountCell({
+      value: '/tmp/measurements.custom',
+      resultIdentity: { run_id: 'run', node_key: 'n1', result_key: 'result', record_id: 'record' },
+      thumbnailEnabled: false,
+      showImageActions: false,
+      explicitNapariViewer: true,
     })
-    expect(button.attributes('disabled')).toBeUndefined()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').exists()).toBe(false)
   })
 
   it('opens the selected workflow image in configured Fiji', async () => {
@@ -316,6 +327,7 @@ describe('ImageCell', () => {
 
     expect(wrapper.find('[data-testid="open-fiji-0-mask"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="configure-fiji-0-mask"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
   })
 
   it('returns a stale Fiji configuration to setup mode', async () => {

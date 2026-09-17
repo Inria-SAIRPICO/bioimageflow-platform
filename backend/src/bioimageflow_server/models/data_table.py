@@ -6,6 +6,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bioimageflow_server.models.graph import ViewerSpec
+from bioimageflow_server.models.results import ResultArtifactIdentity
+
 
 DataTableFilterOperator = Literal[
     "contains",
@@ -57,6 +60,7 @@ class DataTableSource(BaseModel):
     tool_name: str | None = None
     columns: list[str] | None = None
     column_aliases: dict[str, str] = Field(default_factory=dict)
+    result_identity: ResultArtifactIdentity | None = None
 
 
 class DataTableQueryRequest(BaseModel):
@@ -105,6 +109,8 @@ class DataTableColumn(BaseModel):
     type: str
     source_node_id: str
     source_column: str
+    viewer: ViewerSpec | None = None
+    viewer_status: Literal["captured", "legacy_unpinned"] = "legacy_unpinned"
 
 
 class DataTableMergedRow(BaseModel):
