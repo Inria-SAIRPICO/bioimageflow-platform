@@ -212,18 +212,36 @@ function parseCsv(csv: string): string[][] {
 async function projectionQueryAfter(
   page: Page,
   action: () => Promise<void>,
+  requestMatches?: (request: Record<string, unknown>) => boolean,
 ) {
-  const responsePromise = page.waitForResponse(response =>
-    response.url().endsWith('/api/v1/data-table/query')
-    && response.request().method() === 'POST'
-    && response.status() === 200,
-  )
+  const responsePromise = page.waitForResponse(response => {
+    if (
+      !response.url().endsWith('/api/v1/data-table/query')
+      || response.request().method() !== 'POST'
+      || response.status() !== 200
+    ) return false
+    if (!requestMatches) return true
+    const request: unknown = response.request().postDataJSON()
+    return request !== null
+      && typeof request === 'object'
+      && requestMatches(request as Record<string, unknown>)
+  })
   await action()
   const response = await responsePromise
   return {
     request: response.request().postDataJSON(),
     result: await response.json(),
   }
+}
+
+function hasKeepLabelFilter(request: Record<string, unknown>): boolean {
+  return Array.isArray(request.filters) && request.filters.some((filter: unknown) => {
+    if (filter === null || typeof filter !== 'object') return false
+    const value = filter as Record<string, unknown>
+    return value.column === 's0:label'
+      && value.operator === 'starts_with'
+      && value.value === 'keep-'
+  })
 }
 
 test.describe('Canvas interactions', () => {
@@ -781,7 +799,7 @@ test.describe('Canvas interactions', () => {
       await page.getByRole('option', { name: 'Starts with' }).click()
       await page.getByRole('textbox', { name: 'Filter value' }).fill('keep-')
       await page.getByRole('button', { name: 'Apply' }).click()
-    })
+    }, hasKeepLabelFilter)
     expect(filtered.request).toMatchObject({
       page: 0,
       page_size: 250,
@@ -1236,7 +1254,7 @@ test.describe('Canvas interactions', () => {
         await page.getByRole('option', { name: 'Starts with' }).click()
         await page.getByRole('textbox', { name: 'Filter value' }).fill('keep-')
         await page.getByRole('button', { name: 'Apply' }).click()
-      })
+      }, request => request.workflow_id === secondWorkflow && hasKeepLabelFilter(request))
       expect(secondFiltered.request).toMatchObject({ workflow_id: secondWorkflow, filters: [{ column: 's0:label', operator: 'starts_with', value: 'keep-' }] })
       await projectionQueryAfter(page, async () => { await secondGrid.getByRole('button', { name: 'Sort score' }).click() })
       const secondSorted = await projectionQueryAfter(page, async () => { await secondGrid.getByRole('button', { name: 'Sort score' }).click() })
