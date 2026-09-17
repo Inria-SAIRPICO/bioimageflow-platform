@@ -170,6 +170,115 @@ async function inspectNodeData(
   await expectExactTable(page.getByTestId('data-table-panel'), columns, rows)
 }
 
+test('Run Selected expands recursive dependencies and refuses an invalid nested boundary', async ({ page }) => {
+  const rootName = workflowId('recursive_selected')
+  const rootDisplayName = `Recursive selected ${rootName}`
+  const graph = nestedExecutionGraph(rootName, rootDisplayName)
+  const invalidChild = nestedExecutionGraph('invalid_child', 'Invalid child').nodes[1]
+  if (invalidChild?.type !== 'workflow') throw new Error('Expected workflow fixture')
+  invalidChild.id = 'unrelated_nested'
+  invalidChild.name = 'Unrelated invalid child'
+  invalidChild.position = [420, 430]
+  invalidChild.workflow.name = 'unrelated_invalid_child'
+  invalidChild.workflow.interface.inputs = []
+  invalidChild.workflow.interface.outputs = []
+  invalidChild.workflow.nodes[0]!.tool_name = 'MissingCampaignTool'
+  graph.nodes.push(invalidChild)
+  await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+  await createSavedWorkflow(page, graph)
+  const siblingName = workflowId('recursive_selected_sibling')
+  await createSavedWorkflow(page, siblingGraph(siblingName, `Recursive selected sibling ${siblingName}`))
+  const siblingBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
+
+  try {
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await expect(page.getByTestId('workflow-title')).toHaveText(rootDisplayName)
+    const draft = await acceptedDraft(page, rootName)
+    expect(draft.graph.name).toBe(rootName)
+    expect(draft.graph.nodes.map(node => node.id)).toEqual([
+      'root_seed', 'nested_step', 'root_increment', 'unrelated_nested',
+    ])
+    expect(draft.graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_node: 'root_seed', target_node: 'nested_step', target_input: 'stable-table-input' }),
+      expect.objectContaining({ source_node: 'nested_step', target_node: 'root_increment', target_position: 0 }),
+    ]))
+    expect(draft.validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'missing_tool', node: 'unrelated_nested/nested_increment' }),
+    ]))
+    const dependencies = page.getByRole('dialog', { name: 'Workflow dependencies' })
+    await expect(dependencies).toContainText('MissingCampaignTool')
+    await dependencies.getByRole('button', { name: 'Close' }).last().click()
+
+    await page.locator('.vue-flow__node[data-id="root_increment"]').click()
+    const selectedRun = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-selected-button').click()
+    const accepted = await selectedRun
+    expect(accepted.status(), await accepted.text()).toBe(202)
+    expect(accepted.request().postDataJSON()).toMatchObject({
+      workflow_name: rootName, draft_revision: draft.draft_revision,
+      nodes: ['root_increment'], graph: draft.graph,
+    })
+    const executionId = (await accepted.json()).execution_id
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30_000 })
+    const completed = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+    expect(completed).toMatchObject({
+      execution_id: executionId, workflow_id: rootName, draft_revision: draft.draft_revision,
+      last_result: { success: true },
+      node_statuses: {
+        root_seed: { status: 'executed' },
+        'nested_step/nested_increment': { status: 'executed' },
+        root_increment: { status: 'executed' },
+      },
+    })
+    expect(completed.node_statuses['unrelated_nested/nested_increment']).toBeUndefined()
+    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+      ['number_plus_one'], [['2'], ['3'], ['4']])
+    await inspectNodeData(page, 'root_increment', 'root_increment',
+      ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
+
+    await page.locator('.vue-flow__node[data-id="unrelated_nested"]').click()
+    const refusedRun = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-selected-button').click()
+    const refused = await refusedRun
+    expect(refused.status()).toBe(422)
+    expect(refused.request().postDataJSON()).toMatchObject({
+      workflow_name: rootName, draft_revision: draft.draft_revision,
+      nodes: ['unrelated_nested'], graph: draft.graph,
+    })
+    expect(await refused.text()).toContain('unrelated_nested/nested_increment')
+    await expect(page.locator('.p-toast')).toContainText('Validation errors')
+    await expect(page.locator('.p-toast')).toContainText('unrelated_nested/nested_increment')
+    const afterRefusal = await acceptedDraft(page, rootName)
+    expect(afterRefusal.graph).toEqual(draft.graph)
+    expect(afterRefusal.draft_revision).toBe(draft.draft_revision)
+    expect(afterRefusal.workflow_id).toBe(draft.workflow_id)
+    expect(afterRefusal.base_saved_revision).toBe(draft.base_saved_revision)
+    expect(await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()).toEqual(completed)
+    const unrelatedResult = await page.request.post(
+      `${API_BASE}/api/v1/nodes/unrelated_nested/nested_increment/data/query`,
+      { data: { workflow_name: rootName } },
+    )
+    expect(unrelatedResult.status()).toBe(404)
+    expect(await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json())
+      .toEqual(siblingBefore)
+    const siblingResult = await page.request.post(`${API_BASE}/api/v1/nodes/sibling_seed/data/query`, {
+      data: { workflow_name: siblingName },
+    })
+    expect(siblingResult.status()).toBe(404)
+    await inspectNodeData(page, 'root_increment', 'root_increment',
+      ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
+  }
+  finally {
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${rootName}`).catch(() => undefined)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${siblingName}`).catch(() => undefined)
+  }
+})
+
 test('executes nested Direct work and preserves scoped results after save and reopen', async ({ page }) => {
   const rootName = workflowId('nested_execution')
   const rootDisplayName = `Nested execution ${rootName}`
