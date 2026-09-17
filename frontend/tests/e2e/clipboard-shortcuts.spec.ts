@@ -112,20 +112,54 @@ test.describe('canvas clipboard and shortcuts', () => {
 
     await page.keyboard.press('Control+c')
 
+    const beforePaste = await fetchDraft(page, workflowName)
+    let failNextWrite = true
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+      if (route.request().method() !== 'PUT' || !failNextWrite) return route.continue()
+      failNextWrite = false
+      await route.fulfill({ status: 500, json: { detail: 'forced clipboard persistence failure' } })
+    })
+    const failedPaste = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    await page.keyboard.press('Control+v')
+    const failedResponse = await failedPaste
+    const attemptedGraph = (failedResponse.request().postDataJSON() as { graph: GraphState }).graph
+    await expect(page.locator('.vue-flow__node')).toHaveCount(5)
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(3)
+    const attemptedNodes = attemptedGraph.nodes.filter(node => ![SOURCE_ID, MIDDLE_ID, OUTSIDE_ID].includes(node.id))
+    expect(attemptedNodes).toHaveLength(2)
+    const attemptedEdge = attemptedGraph.edges.find(edge => ![INTERNAL_EDGE_ID, EXTERNAL_EDGE_ID].includes(edge.id))
+    expect(attemptedEdge).toBeDefined()
+    for (const node of attemptedNodes) {
+      await expect(page.locator(`.vue-flow__node[data-id="${node.id}"]`)).toBeVisible()
+    }
+    await expect(page.locator(`.vue-flow__edge[data-id="${attemptedEdge!.id}"]`)).toHaveCount(1)
+    await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced clipboard persistence failure')
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    const afterFailure = await fetchDraft(page, workflowName)
+    expect(afterFailure.draft_revision).toBe(beforePaste.draft_revision)
+    expect(afterFailure.graph).toEqual(beforePaste.graph)
+
     const acceptedPaste = page.waitForResponse(response => (
       response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
-    await page.keyboard.press('Control+v')
+    await page.getByTestId('canvas-persistence-retry').click()
     await acceptedPaste
+    await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
     await expect(page.locator('.vue-flow__node')).toHaveCount(5)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(3)
 
     const pasted = await fetchDraft(page, workflowName)
+    expect(pasted.draft_revision).toBe(beforePaste.draft_revision + 1)
     expect(pasted.validation).toMatchObject({ valid: true, errors: [] })
     const newNodes = pasted.graph.nodes.filter(node => ![SOURCE_ID, MIDDLE_ID, OUTSIDE_ID].includes(node.id))
     expect(newNodes).toHaveLength(2)
+    expect(newNodes.map(node => node.id)).toEqual(attemptedNodes.map(node => node.id))
     expect(new Set(newNodes.map(node => node.id)).size).toBe(2)
     expect(newNodes.map(node => node.name)).toEqual(['Clipboard source 1', 'Clipboard middle 1'])
     const pastedEdge = pasted.graph.edges.find(edge => ![INTERNAL_EDGE_ID, EXTERNAL_EDGE_ID].includes(edge.id))
@@ -135,6 +169,7 @@ test.describe('canvas clipboard and shortcuts', () => {
       target_node: newNodes[1].id,
       target_position: 0,
     })
+    expect(pastedEdge?.id).toBe(attemptedEdge?.id)
     expect(pasted.graph.edges.filter(edge => (
       newNodes.some(node => node.id === edge.source_node || node.id === edge.target_node)
     ))).toHaveLength(1)

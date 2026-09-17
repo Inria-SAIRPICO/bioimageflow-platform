@@ -368,7 +368,9 @@ describe('ImageCell', () => {
   })
 
   it('requests an Avivator dock panel with an OME-TIFF image_url', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+      .mockResolvedValueOnce(new Response(JSON.stringify([16]), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
 
@@ -376,6 +378,11 @@ describe('ImageCell', () => {
     await flushPromises()
 
     await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+
+    const offsetsUrl = new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost')
+    expect(offsetsUrl.pathname).toBe('/api/v1/nodes/n1/image/mask.offsets.json')
+    expect(offsetsUrl.searchParams.get('workflow_name')).toBe('wf a')
 
     const event = dispatchSpy.mock.calls
       .map(([arg]) => arg)
@@ -394,6 +401,72 @@ describe('ImageCell', () => {
     expect(parsedImageUrl.searchParams.get('col')).toBe('mask')
     expect(parsedImageUrl.searchParams.get('workflow_name')).toBe('wf a')
     expect(parsedImageUrl.searchParams.get('format')).toBe('ome-tiff')
+  })
+
+  it('keeps the Avivator action available after a failed offset response and opens on retry', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([16]), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountCell({ workflowName: 'wf a', value: '/tmp/mask.png' })
+    await flushPromises()
+
+    const button = wrapper.find('[data-testid="open-avivator-0-mask"]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'bioimageflow:open-avivator')).toBe(false)
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'bioimageflow:open-avivator')).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('refuses nonpositive image offsets without opening a viewer', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([0, -1]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([16]), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountCell({ thumbnailEnabled: false, value: '/tmp/mask.png' })
+
+    await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'bioimageflow:open-avivator')).toBe(false)
+
+    await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'bioimageflow:open-avivator')).toBe(true)
+  })
+
+  it('does not open an obsolete image after its cell identity changes during the offset read', async () => {
+    let finishFirstRead!: (response: Response) => void
+    const firstRead = new Promise<Response>((resolve) => { finishFirstRead = resolve })
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(firstRead)
+      .mockResolvedValueOnce(new Response(JSON.stringify([16]), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountCell({ thumbnailEnabled: false, workflowName: 'old', value: '/tmp/old.png' })
+
+    await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ workflowName: 'new', value: '/tmp/new.png' })
+    finishFirstRead(new Response(JSON.stringify([16]), { status: 200 }))
+    await flushPromises()
+    expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'bioimageflow:open-avivator')).toBe(false)
+
+    await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+    const openEvent = dispatchSpy.mock.calls
+      .map(([event]) => event)
+      .find((event): event is CustomEvent => event instanceof CustomEvent
+        && event.type === 'bioimageflow:open-avivator')
+    expect(openEvent?.detail.imageUrl).toContain('workflow_name=new')
+    expect(openEvent?.detail.imageUrl).toContain('new.ome.tif')
   })
 
   it('waits for viewport intersection before requesting a thumbnail', async () => {

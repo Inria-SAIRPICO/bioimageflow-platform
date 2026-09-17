@@ -275,7 +275,25 @@ test.describe('everyday node editing', () => {
     await expect(target).toHaveClass(/selected/)
     await expect(panel.locator('.multi-select')).toContainText('2 nodes selected')
     await expect(panel.getByTestId('bulk-disable-nodes')).toBeVisible()
+    await expect(panel.getByTestId('bulk-enable-nodes')).toBeEnabled()
     await expect(panel.locator('.node-details')).toHaveCount(0)
+
+    const baseline = await fetchDraft(page, workflowName)
+    let draftWrites = 0
+    const countDraftWrites = (request: import('@playwright/test').Request) => {
+      if (request.method() === 'PUT' && request.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)) {
+        draftWrites += 1
+      }
+    }
+    page.on('request', countDraftWrites)
+    await expectUndoDisabled(page)
+    await panel.getByTestId('bulk-enable-nodes').click()
+    await expectUndoDisabled(page)
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+    expect(draftWrites).toBe(0)
+    page.off('request', countDraftWrites)
 
     await waitForAcceptedEdit(page, workflowName, () => panel.getByTestId('bulk-disable-nodes').click())
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
@@ -704,6 +722,162 @@ test.describe('everyday node editing', () => {
       target_input: null,
       target_position: 0,
     }])
+  })
+
+  test('recovers failed pointer disconnect and connection writes without losing edge identity', async ({ page }) => {
+    const baseline = await fetchDraft(page, workflowName)
+    const edgeSelector = `.vue-flow__edge[data-id="${EDGE_ID}"]`
+    const reconnectedEdge = {
+      type: 'dataframe',
+      id: `e-${SOURCE_ID}-bif:v1:dataframe-output-${TARGET_ID}-bif:v1:dataframe-position:0`,
+      source_node: SOURCE_ID,
+      target_node: TARGET_ID,
+      target_input: null,
+      target_position: 0,
+    }
+    let failNextWrite = true
+    let failedWrites = 0
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+      if (route.request().method() !== 'PUT' || !failNextWrite) return route.continue()
+      failNextWrite = false
+      failedWrites += 1
+      await route.fulfill({ status: 500, json: { detail: 'forced edge persistence failure' } })
+    })
+    const failedWrite = () => page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    const retry = async () => {
+      await waitForAcceptedEdit(page, workflowName, () => page.getByTestId('canvas-persistence-retry').click())
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+    }
+
+    const disconnectFailure = failedWrite()
+    await disconnectDataframeToCanvas(page)
+    await disconnectFailure
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced edge persistence failure')
+    const refusedDisconnect = await fetchDraft(page, workflowName)
+    expect(refusedDisconnect.draft_revision).toBe(baseline.draft_revision)
+    expect(refusedDisconnect.graph).toEqual(baseline.graph)
+    await retry()
+    const disconnected = await fetchDraft(page, workflowName)
+    expect(disconnected.draft_revision).toBe(baseline.draft_revision + 1)
+    expect(disconnected.graph.nodes).toEqual(baseline.graph.nodes)
+    expect(disconnected.graph.edges).toEqual([])
+    expect(disconnected.validation.valid).toBe(true)
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await expect(page.locator(edgeSelector)).toHaveCount(1)
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual(baseline.graph.edges)
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+
+    failNextWrite = true
+    const connectionFailure = failedWrite()
+    await connectDataframes(page)
+    await connectionFailure
+    await expect(page.locator(`.vue-flow__edge[data-id="${reconnectedEdge.id}"]`)).toHaveCount(1)
+    await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced edge persistence failure')
+    const refusedConnection = await fetchDraft(page, workflowName)
+    expect(refusedConnection.draft_revision).toBe(disconnected.draft_revision + 2)
+    expect(refusedConnection.graph.edges).toEqual([])
+    await retry()
+    const connected = await fetchDraft(page, workflowName)
+    expect(connected.draft_revision).toBe(refusedConnection.draft_revision + 1)
+    expect(connected.graph.nodes).toEqual(baseline.graph.nodes)
+    expect(connected.graph.edges).toEqual([reconnectedEdge])
+    expect(connected.validation.valid).toBe(true)
+    expect(failedWrites).toBe(2)
+
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([reconnectedEdge])
+    await page.reload()
+    await expect(page.locator(`.vue-flow__edge[data-id="${reconnectedEdge.id}"]`)).toHaveCount(1)
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([reconnectedEdge])
+  })
+
+  test('recovers a failed connected column-input disconnect with its label and edge intact', async ({ page }) => {
+    const initial = await fetchDraft(page, workflowName)
+    const columnEdge = {
+      type: 'column' as const,
+      id: 'everyday_column_edge',
+      source_node: 'image_source',
+      source_output: 'output_image',
+      target_node: 'image_target',
+      target_input: 'input_image',
+    }
+    const graph: GraphState = {
+      ...initial.graph,
+      nodes: [{
+        type: 'tool', id: 'image_source', name: 'Image source', tool_name: 'GaussianBlur',
+        position: [180, 180], parameters: { input_image: '/tmp/e2e-input.tif', sigma: 1 },
+        output_templates: { output_image: '' },
+      }, {
+        type: 'tool', id: 'image_target', name: 'Image target', tool_name: 'GaussianBlur',
+        position: [520, 180], parameters: { sigma: 1 },
+        output_templates: { output_image: '' },
+      }],
+      edges: [columnEdge],
+    }
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`, {
+      data: { graph, expected_revision: initial.draft_revision, updated_by: 'frontend' },
+    })
+    expect(setup.ok()).toBeTruthy()
+    await page.reload()
+    const baseline = await fetchDraft(page, workflowName)
+    expect(baseline.validation.valid).toBe(true)
+    expect(baseline.graph.edges).toEqual([columnEdge])
+    const input = node(page, 'image_target').locator('.body-inputs')
+    await expect(input.locator('.pin-label')).toHaveText('output_image of Image source')
+    await expect(page.locator(`.vue-flow__edge[data-id="${columnEdge.id}"]`)).toHaveCount(1)
+
+    let failedWrites = 0
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+      if (route.request().method() !== 'PUT' || failedWrites > 0) return route.continue()
+      failedWrites += 1
+      await route.fulfill({ status: 500, json: { detail: 'forced column disconnect failure' } })
+    })
+    const failedWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    const canvasBox = await page.locator('.vue-flow').boundingBox()
+    expect(canvasBox).not.toBeNull()
+    await dragPointer(page, input.locator('.vue-flow__handle'), {
+      x: canvasBox!.x + 30,
+      y: canvasBox!.y + canvasBox!.height - 30,
+    })
+    await failedWrite
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    await expect(input.locator('.pin-label')).toHaveText('input_image')
+    await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced column disconnect failure')
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+
+    await waitForAcceptedEdit(page, workflowName, () => page.getByTestId('canvas-persistence-retry').click())
+    await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+    const disconnected = await fetchDraft(page, workflowName)
+    expect(disconnected.draft_revision).toBe(baseline.draft_revision + 1)
+    expect(disconnected.graph.nodes).toEqual(baseline.graph.nodes)
+    expect(disconnected.graph.edges).toEqual([])
+    expect(disconnected.validation.valid).toBe(false)
+    expect(failedWrites).toBe(1)
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await expect(page.locator(`.vue-flow__edge[data-id="${columnEdge.id}"]`)).toHaveCount(1)
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([columnEdge])
+    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+    await page.reload()
+    await expect(input.locator('.pin-label')).toContainText('input_image')
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
+    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
   })
 
   test('refuses a column-to-DataFrame connection without replacing the accepted edge', async ({ page }) => {

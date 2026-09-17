@@ -321,6 +321,65 @@ test.describe('Canvas interactions', () => {
     })
   })
 
+  test('recovers a failed catalog double-click add without duplicating the node', async ({ page }) => {
+    const tool = await seedNumbersRow(page)
+    const baseline = await currentDraft(page, workflowName)
+    expect(baseline.graph.nodes).toEqual([])
+    let failedWrites = 0
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+      if (route.request().method() !== 'PUT' || failedWrites !== 0) return route.continue()
+      failedWrites += 1
+      await route.fulfill({ status: 500, json: { detail: 'forced catalog add failure' } })
+    })
+
+    const failedWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    await tool.dblclick()
+    await failedWrite
+    expect(failedWrites).toBe(1)
+    const localNode = page.locator('.vue-flow__node')
+    await expect(localNode).toHaveCount(1)
+    await expect(localNode.locator('.node-name')).toHaveText('Seed Numbers 1')
+    const nodeId = await localNode.getAttribute('data-id')
+    expect(nodeId).toBeTruthy()
+    await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced catalog add failure')
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    const refused = await currentDraft(page, workflowName)
+    expect(refused.draft_revision).toBe(baseline.draft_revision)
+    expect(refused.graph).toEqual(baseline.graph)
+
+    const acceptedWrite = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await page.getByTestId('canvas-persistence-retry').click()
+    await acceptedWrite
+    await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+    await expect(localNode).toHaveCount(1)
+    const accepted = await currentDraft(page, workflowName)
+    expect(accepted.draft_revision).toBe(baseline.draft_revision + 1)
+    expect(accepted.validation).toMatchObject({ valid: true, errors: [] })
+    expect(accepted.graph.nodes).toMatchObject([{
+      id: nodeId,
+      type: 'tool',
+      name: 'Seed Numbers 1',
+      tool_name: 'SeedNumbers',
+      parameters: {},
+    }])
+    expect(accepted.graph.nodes).toHaveLength(1)
+
+    await page.reload()
+    await expect(page.locator(`.vue-flow__node[data-id="${nodeId}"]`)).toBeVisible()
+    await expect(page.locator('.vue-flow__node')).toHaveCount(1)
+    const reopened = await currentDraft(page, workflowName)
+    expect(reopened.draft_revision).toBe(accepted.draft_revision)
+    expect(reopened.graph).toEqual(accepted.graph)
+  })
+
   test('drags a named catalog tool to the requested canvas position', async ({ page }) => {
     const tool = await seedNumbersRow(page)
     const draftResponse = page.waitForResponse(

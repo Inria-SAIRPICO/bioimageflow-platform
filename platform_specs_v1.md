@@ -75,6 +75,8 @@ There is no `last_valid_workflow` cache and no authoritative backend editor sess
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
 
+The desktop application runtime uses Python 3.12 or 3.13. Python 3.14 is excluded until BioImageFlow Core resolves lazily evaluated class annotations when discovering tool input and output schemas; otherwise an installed tool can appear available with empty ports and parameters.
+
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
 
 **BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
@@ -294,7 +296,7 @@ class CellposeSegmenter(ProcessingTool):
 ]
 ```
 
-**Package installation:** Packages are installed into the tool store via `uv pip install --target <dir>`. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
+**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --target <dir>` to populate the tool store. This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
@@ -674,7 +676,7 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 |--------|----------|-------------|
 | `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str, draft_revision?: int}`). `workflow_name` is required and validated as a workflow ID. Scoped root canvases also send their accepted draft revision. |
 | `POST` | `/execution/stop` | Stop the current execution |
-| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. |
+| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. On validation failure, the response includes the complete node-scoped `errors` list and the confirmation dialog displays it so the user can inspect and copy each cause. |
 
 After a successful Clear, the retained live execution-status snapshot for that same workflow reflects the cleared and downstream statuses, including on browser reconnection. The historical `last_result` remains the result of the completed run and is not rewritten by Clear.
 On a subsequent authoritative `GET /workflow-drafts/{id}`, cache-derived node statuses are projected from the current accepted graph and workflow storage, including after backend restart. The persisted draft validation, graph, revision, writer, timestamp, saved baseline, and historical execution result are not rewritten by this read. An enabled downstream node whose library plan is `pending_upstream` projects `out_of_date` if it retains a latest output, or `unexecuted` if it has none; disabled and other planned statuses retain their ordinary semantics. Compilation occurs outside the workflow mutation lock; the accepted draft, identity generation, and storage path are rechecked before planning and latest-output lookup under the same lock used by Clear's commit, retrying if authority changes.
@@ -1497,7 +1499,7 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 
 Image-valued Node Data cells expose both the managed desktop viewer and a browser viewer action.
 
-**Avivator:** The browser action requests the selected cell through the workflow-scoped node-image endpoint with `format=ome-tiff`, then opens the external Avivator application in a Dockview iframe using that absolute image URL. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
+**Avivator:** The browser action checks the selected cell's workflow-scoped OME-TIFF offsets response through the same-origin backend API before opening the external Avivator application in a Dockview iframe using the absolute node-image URL with `format=ome-tiff`. A failed or malformed offsets response leaves the action available, shows an error, and opens no panel; clicking the action again retries the backend read. An in-flight read cannot open a different cell if its result identity changes before completion. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
 
 **Napari:** The backend uses a legacy `NapariLauncher` plus a registered-environment launcher pool that:
 
@@ -1689,9 +1691,11 @@ App starts
   +--> GET /api/v1/workflow-drafts/{id}
   |
   +--> If backend draft exists or is synthesized:
-  |      Load graph from the draft and record its revision
-  |      Show unsaved indicator when dirty_against_saved is true
-  |      Use the validation/status projection returned with that accepted draft
+  |      Record its revision and validation/status projection
+  |      Prefer a newer IndexedDB recovery snapshot for the same existing workflow,
+  |      keeping the accepted draft revision as the compare-and-swap base
+  |      Otherwise load the accepted draft graph; clear obsolete or older recovery
+  |      Show the unsaved indicator for a recovered graph or dirty accepted draft
   |
   +--> If backend draft load fails but IndexedDB recovery exists:
   |      Load IndexedDB recovery state and schedule a draft save when the backend is available

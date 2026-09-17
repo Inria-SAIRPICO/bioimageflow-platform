@@ -45,6 +45,7 @@ import { fieldDisplayName } from '@/utils/displayNames'
 import { IMAGE_PATH_GLOBS } from '@/utils/imagePaths'
 import { dataframePositions, nextDataframePosition } from '@/utils/dataframeInputs'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
+import { apiGraphValidationErrors } from '@/utils/apiError'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -99,6 +100,7 @@ const destructiveDialog = ref<{
 } | null>(null)
 const destructiveActionPending = ref(false)
 const destructiveActionError = ref('')
+const destructiveValidationErrors = ref<GraphValidationError[]>([])
 const focusedParameterRows = new Map<EventTarget, FieldFocusTarget>()
 
 const selectedNodeErrors = computed(() => {
@@ -293,6 +295,7 @@ function requestDestructiveAction(action: 'delete' | 'clear'): void {
     || (action === 'clear' && !canClearNodeOutputs.value)
   ) return
   destructiveActionError.value = ''
+  destructiveValidationErrors.value = []
   destructiveDialog.value = { action, nodeIds, canvasId }
 }
 
@@ -300,6 +303,7 @@ function closeDestructiveDialog(): void {
   if (destructiveActionPending.value) return
   destructiveDialog.value = null
   destructiveActionError.value = ''
+  destructiveValidationErrors.value = []
 }
 
 async function confirmDestructiveAction(): Promise<void> {
@@ -307,6 +311,7 @@ async function confirmDestructiveAction(): Promise<void> {
   if (request === null || destructiveActionPending.value) return
   destructiveActionPending.value = true
   destructiveActionError.value = ''
+  destructiveValidationErrors.value = []
   try {
     const accepted = request.action === 'delete'
       ? canvasCommands.deleteNodes(request.nodeIds, request.canvasId)
@@ -320,6 +325,7 @@ async function confirmDestructiveAction(): Promise<void> {
     destructiveDialog.value = null
   } catch (error) {
     destructiveActionError.value = error instanceof Error ? error.message : String(error)
+    destructiveValidationErrors.value = apiGraphValidationErrors(error)
   } finally {
     destructiveActionPending.value = false
   }
@@ -1244,6 +1250,17 @@ async function pickFiles(key: string) {
       <p v-if="destructiveActionError" role="alert" data-testid="node-destructive-error">
         {{ destructiveActionError }}
       </p>
+      <ul
+        v-if="destructiveValidationErrors.length"
+        class="node-destructive-validation-errors"
+        data-testid="node-destructive-validation-errors"
+      >
+        <li v-for="(issue, index) in destructiveValidationErrors" :key="index">
+          <strong v-if="issue.node">{{ issue.node }}{{ issue.field ? ` · ${issue.field}` : '' }}: </strong>
+          <strong v-else-if="issue.field">{{ issue.field }}: </strong>
+          {{ issue.detail }}
+        </li>
+      </ul>
       <template #footer>
         <Button
           label="Cancel"
@@ -1271,6 +1288,18 @@ async function pickFiles(key: string) {
   font-size: 13px;
   height: 100%;
   overflow-y: auto;
+}
+
+.node-destructive-validation-errors {
+  max-height: 18rem;
+  overflow: auto;
+  padding-left: 1.5rem;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.node-destructive-validation-errors li + li {
+  margin-top: 0.5rem;
 }
 
 .node-action-bar {

@@ -64,12 +64,14 @@ Do not conflate the following states:
    The envelope contains the canonical graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source identifiers.
 2. An open root canvas edits a durable workflow draft under that workflow directory.
    Draft writes use expected-revision compare-and-swap, record their writer, validate the accepted graph, and track whether the draft differs from the saved artifact.
+   After an interrupted draft write, a newer browser recovery snapshot may temporarily supply the startup canvas graph; it is reconciled through the accepted draft's revision compare-and-swap rather than becoming another backend authority.
 3. An open nested canvas edits a private durable nested snapshot.
    It has its own session identity, ownership chain, revision compare-and-swap, and validation result, and it changes its parent workflow node only when explicitly applied.
 
 Saving a root canvas promotes the accepted root graph to the saved workflow.
 Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
+Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
 Workflow IDs are workspace-relative paths and carry identity generations.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
@@ -107,6 +109,7 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
+The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
 An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
@@ -140,6 +143,7 @@ Building from Python materializes a canonical graph and its allowed source bundl
 
 Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
 They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
+The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 
 Execution operates on one exact accepted graph or draft snapshot.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.

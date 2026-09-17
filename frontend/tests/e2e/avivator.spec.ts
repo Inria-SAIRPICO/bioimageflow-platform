@@ -163,7 +163,17 @@ test.describe('Avivator viewer', () => {
     expect(offsets.length).toBeGreaterThan(0)
     expect(offsets.every((offset) => Number.isInteger(offset) && offset > 0)).toBeTruthy()
 
+    let failNextBackendOffsets = true
+    await page.route('**/api/v1/nodes/*/image/*.offsets.json?**', async (route) => {
+      if (!failNextBackendOffsets) return route.continue()
+      failNextBackendOffsets = false
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"temporary conversion failure"}' })
+    })
     await expect(table.locator('.p-datatable-mask')).toHaveCount(0)
+    await table.getByTestId('open-avivator-0-mask').click()
+    await expect(page.getByText('Could not load image offsets. Try opening it again.')).toBeVisible()
+    await expect(page.locator('[data-testid="avivator-panel"]')).toHaveCount(0)
+    expect(failNextBackendOffsets).toBe(false)
     await table.getByTestId('open-avivator-0-mask').click()
 
     await expect(page.locator('[data-testid="avivator-panel"]')).toBeVisible()
@@ -173,6 +183,22 @@ test.describe('Avivator viewer', () => {
     await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
     await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
 
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+    const reopenedNode = page.locator('.vue-flow__node').filter({ hasText: 'Image Result Fixture' })
+    await expect(reopenedNode).toHaveAttribute('data-id', nodeId!)
+    await reopenedNode.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const reopenedTable = page.getByTestId('merged-data-table')
+    await expect(reopenedTable).toBeVisible()
+    await expect(reopenedTable.getByTestId('path-display').nth(0)).toHaveAttribute('title', result.rows[0].mask)
+    await expect(reopenedTable.getByTestId('path-display').nth(1)).toHaveAttribute('title', result.rows[0].report)
+    await expect(reopenedTable.locator('.p-datatable-mask')).toHaveCount(0)
+    await reopenedTable.getByTestId('open-avivator-0-mask').focus()
+    await page.keyboard.press('Enter')
+    await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
+    await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
+    await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
   })
 })

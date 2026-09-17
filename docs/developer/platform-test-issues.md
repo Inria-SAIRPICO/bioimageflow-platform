@@ -159,20 +159,23 @@ Invalid destination input, duplicate-service failure/rollback, stale identity re
 
 ## ISSUE-011 — Clear status reverts after backend restart
 
-Status: `safe-to-fix` after GPT-6 Astra/high read-only review; a code-traced durable-authority defect remains after the bounded same-process reconnect fix `fe0cf9d`.
+Status: resolved by `0043397` and `58520b5` after a GPT-6 Astra/high `safe-to-fix` read-only review; the earlier same-process reconnect repair was `fe0cf9d`.
 In a two-node Direct workflow, Run followed by Clear on the upstream node removes only its latest result and marks it `unexecuted` with its dependent `out_of_date`; the live UI and same-process browser reload now agree.
-The stored accepted root draft still contains pre-Clear `validation.node_statuses`, because `_read_validated_authority_snapshot()` returns an existing draft verbatim, while a new `ExecutionManager` starts with empty live statuses.
-After stopping and restarting the backend against the same workspace, reopening can therefore display the cleared source as `executed` even though its latest result query returns 404.
-The restart sequence is code-traced, not yet executed as a process-level reproduction; it must be reproduced before closure.
+The stored accepted root draft still contains pre-Clear `validation.node_statuses`, because `_read_validated_authority_snapshot()` returns an existing draft verbatim, while a new `ExecutionManager` starts with empty live statuses; the new read-time projection corrects the response without rewriting that durable draft.
+Before the repair, stopping and restarting the backend against the same workspace could therefore display the cleared source as `executed` even though its latest result query returned 404.
+The pre-fix restart regression reproduced the false `executed` source status; a separate OS Python process then reproduced and verified the repaired HTTP GET against the same workspace with fresh backend services.
 The repair must keep the accepted graph/revision and CAS contract unchanged, preserve historical `last_result`, and avoid resurrecting selected output pointers.
-The specialist recommends fresh cache-status projection on authoritative accepted-draft reads, using the compiled accepted graph, public workflow plan, and retained latest-output metadata rather than persisting Clear-adjusted validation.
+The repair projects fresh cache statuses on authoritative accepted-draft reads, using the compiled accepted graph, public workflow plan, and retained latest-output metadata rather than persisting Clear-adjusted validation.
 An enabled `pending_upstream` node with a retained latest output must present `out_of_date`; without retained output it remains `unexecuted`, so globally remapping that library plan state would be wrong.
 Compile outside the workflow mutation lock, then recheck workflow generation, storage path, accepted graph and revision and project plan/latest status under the same lock used by Clear commit; retry a changed snapshot.
-This is moderate backend correctness work without a new schema or owner decision, but not a one-line fix: writing status into the draft after cache deletion would leave a crash/write-failure gap, and Clear has no accepted draft revision with which to fence that write.
+This was moderate backend correctness work without a new schema or owner decision, not a one-line fix: writing status into the draft after cache deletion would leave a crash/write-failure gap, and Clear has no accepted draft revision with which to fence that write.
 The source revision is `fe0cf9d`; authoritative contracts include v1 §2.4.5, v2 execution/cache semantics, and `PLATFORM_CONTEXT.md` result-lifecycle invariants.
 The first GPT-6 Astra/high request did not execute because of a usage limit; a subsequent read-only review returned `safe-to-fix` on current product revision `d5e45ee` and supplied the bounded design above.
-The `campaign/issue011-durable-status` Sol/medium worker owns a process-restart reproduction, scoped repair, identity/race tests, and exact GUI evidence where feasible.
-The specialist performed no process-level reproduction or tests; do not close this issue until those regressions and affected completion checks pass.
+The Sol/medium worker added process-restart, accepted-revision race, delete/recreate identity, storage-path switch, disabled downstream, slash-scoped latest-record, and exact GUI Clear/rerun regressions; the dedicated worktree was integrated and archived with its branch deleted.
+On integrated `58520b5`, the exact backend restart selector passed 1/1 in 6s and the exact Chromium/Firefox GUI Clear selector passed 2/2 in 29s.
+The worker's `scripts/test check backend` passed 1,618 selected tests plus seven logging-order tests with nine external deselections in 102s; frontend, docs, and Chromium browser-smoke checks passed separately on patch-equivalent content.
+The attempted combined `scripts/test check app` did not pass because the sandbox denied two backend socket binds; those exact fixtures passed 3/3 with authorized local access, followed by the successful backend and browser-smoke checks.
+No single Playwright session spans an actual backend-process restart: process-level HTTP and same-process browser reload evidence are separate; full/external certification and nested-canvas scoped clearing remain separate campaign obligations.
 
 ## ISSUE-012 — Workflow collision suggestion survives a later name edit
 

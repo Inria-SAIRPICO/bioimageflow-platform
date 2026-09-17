@@ -165,6 +165,46 @@ def test_parent_delete_requires_descendant_cleanup(
     service.delete_snapshot(parent.session_id, expected_revision=0)
 
 
+def test_depth_two_refusal_and_ordered_close_preserve_exact_owners_after_restart(
+    store: WorkflowStoreService,
+) -> None:
+    service = NestedWorkflowSnapshotService(lambda: store)
+    parent = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    child = service.open_snapshot(
+        NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
+        "grandchild_1",
+        _graph("deep"),
+    )
+    unrelated = service.open_snapshot(_root("root-b"), "child_1", _graph("other"))
+    edited_child = service.put_snapshot(
+        child.session_id,
+        expected_revision=0,
+        graph=_graph("deep", "private edit"),
+    )
+
+    recovered = NestedWorkflowSnapshotService(lambda: store)
+    assert recovered.get_snapshot(parent.session_id) == parent
+    assert recovered.get_snapshot(child.session_id) == edited_child
+    assert edited_child.owner.session_id == parent.session_id
+    with pytest.raises(NestedSnapshotHasDependents) as refused:
+        recovered.delete_snapshot(parent.session_id, expected_revision=0)
+    assert refused.value.dependent_session_ids == [child.session_id]
+    assert recovered.get_snapshot(parent.session_id) == parent
+    assert recovered.get_snapshot(child.session_id) == edited_child
+    assert recovered.get_snapshot(unrelated.session_id) == unrelated
+
+    recovered.delete_snapshot(child.session_id, expected_revision=1)
+    with pytest.raises(FileNotFoundError):
+        recovered.get_snapshot(child.session_id)
+    recovered.delete_snapshot(parent.session_id, expected_revision=0)
+    with pytest.raises(FileNotFoundError):
+        recovered.get_snapshot(parent.session_id)
+    reopened = recovered.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    assert reopened.session_id not in {parent.session_id, child.session_id}
+    assert reopened.owner == parent.owner
+    assert recovered.get_snapshot(unrelated.session_id) == unrelated
+
+
 def test_root_cleanup_removes_exact_snapshot_tree(
     service: NestedWorkflowSnapshotService,
 ) -> None:
