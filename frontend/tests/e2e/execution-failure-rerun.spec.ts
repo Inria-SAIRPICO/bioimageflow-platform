@@ -88,7 +88,7 @@ function uniqueWorkflowName(): string {
   return `worker_failure_${project}_${Date.now()}_${Math.floor(Math.random() * 10000)}`
 }
 
-function failureGraph(workflowName: string, controlPort: number): GraphState {
+function failureGraph(workflowName: string, controlPort: number, exposedSource = false): GraphState {
   return {
     schema_version: 1,
     name: workflowName,
@@ -109,19 +109,24 @@ function failureGraph(workflowName: string, controlPort: number): GraphState {
       type: 'column', id: 'source-to-controlled-worker', source_node: SOURCE_ID,
       source_output: 'number', target_node: WORKER_ID, target_input: 'value',
     }],
-    interface: { inputs: [], outputs: [] },
+    interface: { inputs: [], outputs: exposedSource ? [{
+      id: 'published-number', name: 'Published number', schema: { type: 'int' },
+      source: { node: SOURCE_ID, column: 'number' },
+    }] : [] },
     config: { engine: 'wetlands', execution: 'sequential' },
   }
 }
 
-async function createAndOpenFixture(page: Page, workflowName: string, controlPort: number) {
+async function createAndOpenFixture(
+  page: Page, workflowName: string, controlPort: number, exposedSource = false,
+) {
   expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
   const tools = await (await page.request.get(`${API_BASE}/api/v1/tools`)).json()
   expect(tools.find((tool: { name: string }) => tool.name === 'HeldWorkerNumbers')).toMatchObject({
     tool_type: 'ProcessingTool', row_consumption: 'mapped',
     inputs: { multiplier: { type: 'int', default: 4, connectable: 'never' } },
   })
-  const graph = failureGraph(workflowName, controlPort)
+  const graph = failureGraph(workflowName, controlPort, exposedSource)
   const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: graph })
   expect(validation.ok()).toBeTruthy()
   expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
@@ -387,6 +392,101 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
       if (workflowCreated && !page.isClosed()) {
         const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
         expect(deletion.ok()).toBeTruthy()
+      }
+    } finally {
+      await control.close()
+    }
+  }
+})
+
+test('refuses exposed-node Delete and Group during a real worker run, then accepts edits', async ({ page }) => {
+  test.setTimeout(180_000)
+  const control = new WorkerControl()
+  const controlPort = await control.listen()
+  const workflowName = uniqueWorkflowName()
+  let workflowCreated = false
+  try {
+    await createAndOpenFixture(page, workflowName, controlPort, true)
+    workflowCreated = true
+    const before = await fetchDraft(page, workflowName)
+    expect(before.graph.interface.outputs).toMatchObject([{
+      id: 'published-number', source: { node: SOURCE_ID, column: 'number' },
+    }])
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
+    await page.getByTestId('run-workflow-button').click()
+    await control.nextStart()
+    expect((await executionStatus(page)).state).toBe('running')
+
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click({ button: 'right' })
+    await page.getByText('Group into workflow', { exact: true }).click()
+    await expect(page.locator('.p-toast')).toContainText('Group into workflow is unavailable')
+    await expect(page.locator('.p-toast')).toContainText('locked while execution is running')
+
+    await page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`).click({ button: 'right' })
+    await page.locator('.node-context-menu').getByText('Delete', { exact: true }).click()
+    await expect(page.locator('.p-toast')).toContainText('Delete is unavailable')
+    await expect(page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`)).toBeVisible()
+    await expect(page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`)).toBeVisible()
+    const refused = await fetchDraft(page, workflowName)
+    expect(refused.graph).toEqual(before.graph)
+    expect(refused.draft_revision).toBe(before.draft_revision)
+
+    control.releaseAll()
+    await expect.poll(async () => (await executionStatus(page)).state, { timeout: 60_000 }).toBe('idle')
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Undo', exact: true })).toBeDisabled()
+    await page.keyboard.press('Escape')
+
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
+    const grouped = page.waitForResponse(response => response.url().endsWith(
+      `/api/v1/workflow-drafts/${workflowName}`,
+    ) && response.request().method() === 'PUT' && response.ok())
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click({ button: 'right' })
+    await page.getByText('Group into workflow', { exact: true }).click()
+    await grouped
+    await expect.poll(async () => (await fetchDraft(page, workflowName)).draft_revision).toBe(
+      before.draft_revision + 1,
+    )
+    const groupedDraft = await fetchDraft(page, workflowName)
+    expect(groupedDraft.graph.nodes.some((node: { type: string }) => node.type === 'workflow')).toBe(true)
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Undo', exact: true }).click()
+    await expect.poll(async () => (await fetchDraft(page, workflowName)).graph).toEqual(before.graph)
+
+    await page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`).click()
+    await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click({ modifiers: ['Shift'] })
+    await expect(page.locator('.vue-flow__node.selected')).toHaveCount(2)
+    await page.locator('.canvas-view').press('Delete')
+    await expect.poll(async () => (await fetchDraft(page, workflowName)).graph.nodes.map(
+      (node: { id: string }) => node.id,
+    )).toEqual([])
+    const deleted = await fetchDraft(page, workflowName)
+    expect(deleted.graph.interface.outputs).toEqual([])
+    expect(deleted.graph.edges).toEqual([])
+    expect(deleted.draft_revision).toBe(before.draft_revision + 3)
+    const saved = page.waitForResponse(response => response.url().endsWith(
+      `/api/v1/workflows/${workflowName}`,
+    ) && response.request().method() === 'PUT')
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    expect((await saved).ok()).toBeTruthy()
+    await page.reload()
+    await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+    await page.getByTestId('workflow-search').fill(workflowName)
+    await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+    await expect(page.locator('.vue-flow__node')).toHaveCount(0)
+    expect((await fetchDraft(page, workflowName)).graph).toEqual(deleted.graph)
+  } finally {
+    control.releaseAll()
+    try {
+      if (!page.isClosed()) {
+        await expect.poll(async () => (await executionStatus(page)).state, {
+          timeout: 60_000,
+        }).toBe('idle')
+        if (workflowCreated) {
+          const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+          expect(deletion.ok()).toBeTruthy()
+        }
       }
     } finally {
       await control.close()

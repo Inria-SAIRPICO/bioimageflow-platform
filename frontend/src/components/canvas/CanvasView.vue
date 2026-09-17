@@ -2577,7 +2577,10 @@ async function onAddWorkflowNode({
 // --- Selection + Keyboard ---
 
 function deleteNodes(nodeIds: string[]): boolean {
-  if (isLocked.value) return false
+  if (isLocked.value) {
+    showLockedCanvasAction('Delete')
+    return false
+  }
   const requestedIds = new Set(nodeIds)
   const selectedNodes = getNodes.value.filter((n: any) => requestedIds.has(n.id))
   if (selectedNodes.length === 0) return false
@@ -2627,7 +2630,10 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
 }
 
 function deleteSelected() {
-  if (isLocked.value) return
+  if (isLocked.value) {
+    showLockedCanvasAction('Delete')
+    return
+  }
   const selectedNodes = getNodes.value.filter((n: any) => n.selected)
   if (selectedNodes.length === 0) {
     // Delete selected edges
@@ -2675,6 +2681,15 @@ function copySelected() {
 
 function ensureClipboardToast(): ReturnType<typeof useToast> | null {
   return clipboardToast
+}
+
+function showLockedCanvasAction(action: string): void {
+  clipboardToast?.add({
+    severity: 'warn',
+    summary: `${action} is unavailable`,
+    detail: 'This action is locked while execution is running.',
+    life: 5000,
+  })
 }
 
 function summarizeNames(names: string[], limit = 3): string {
@@ -2873,7 +2888,10 @@ async function pasteFromClipboard() {
 }
 
 function createSelectedNestedWorkflow() {
-  if (isLocked.value) return
+  if (isLocked.value) {
+    showLockedCanvasAction('Group into workflow')
+    return
+  }
   const selectedIds = new Set(
     getNodes.value.filter((n: any) => n.selected).map((n: any) => n.id),
   )

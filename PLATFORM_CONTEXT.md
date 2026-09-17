@@ -148,6 +148,7 @@ The browser image-viewer action checks its selected result's offsets through the
 Execution operates on one exact accepted graph or draft snapshot.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
+Context-menu Delete and Group refusals during that lock leave the canvas graph and history unchanged and visibly explain the lock.
 Ordinary accepted graph mutations serialize through the same admission gate: a mutation reservation blocks Run, concurrent mutations wait their turn, and only an actually starting or running execution makes a mutation fail as execution-locked.
 Do not rebuild an ad hoc partial graph for Run Selected; compile the complete accepted graph, derive requested root nodes and their transitive upstream roots from its edges, and ignore only diagnostics proven by their scoped node paths to belong to unrelated roots. Selected and upstream workflow boundaries own their descendant diagnostics, while global or unattributable diagnostics, unknown or unresolved targets, and a missing compiled workflow remain blocking. The selected structural boundary and its enabled completion dependencies are resolved by the normal recursive compiler.
 
