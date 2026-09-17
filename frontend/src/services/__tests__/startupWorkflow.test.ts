@@ -115,9 +115,30 @@ describe('resolveStartupWorkflow', () => {
     expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('analysis')
   })
 
-  it('prefers a fresh recovery graph over the last-opened workflow', async () => {
+  it('opens the last workflow even when another workflow has newer recovery', async () => {
     const recoveredInfo = workflowInfo('recovered', '2026-05-21T10:00:00Z')
     const lastInfo = workflowInfo('last-opened')
+    const recoveryGraph = graph('recovery')
+    workflowStoreMock.flattenedWorkflows = [lastInfo, recoveredInfo]
+    workflowStoreMock.workflows = [lastInfo, recoveredInfo]
+    autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
+      name: 'recovered',
+      graph: recoveryGraph,
+      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+    })
+    autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('last-opened')
+    presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(presentation('last-opened'))
+
+    const result = await resolveStartupWorkflow()
+
+    expect(result).toMatchObject({ workflowName: 'last-opened' })
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledTimes(1)
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('last-opened')
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalledWith('recovered')
+  })
+
+  it('uses a newer recovery graph for the last-opened workflow itself', async () => {
+    const info = workflowInfo('recovered', '2026-05-21T10:00:00Z')
     const draftGraph = graph('draft')
     const recoveryGraph = graph('recovery')
     const draft: WorkflowDraftResponse = {
@@ -131,14 +152,14 @@ describe('resolveStartupWorkflow', () => {
       graph: draftGraph,
       validation: { valid: true, node_statuses: {}, errors: [] },
     }
-    workflowStoreMock.flattenedWorkflows = [lastInfo, recoveredInfo]
-    workflowStoreMock.workflows = [lastInfo, recoveredInfo]
+    workflowStoreMock.flattenedWorkflows = [info]
+    workflowStoreMock.workflows = [info]
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'recovered',
       graph: recoveryGraph,
       timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
-    autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('last-opened')
+    autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('recovered')
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(
       presentation('recovered', { graph: draftGraph, dirty: true, draft }),
     )
@@ -150,8 +171,22 @@ describe('resolveStartupWorkflow', () => {
       graph: recoveryGraph,
       dirty: true,
     })
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledTimes(1)
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('recovered')
+  })
+
+  it('uses stable tree order when no last-opened workflow exists', async () => {
+    const first = workflowInfo('first')
+    const recovered = workflowInfo('recovered')
+    workflowStoreMock.flattenedWorkflows = [first, recovered]
+    workflowStoreMock.workflows = [first, recovered]
+    autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
+      name: 'recovered',
+      graph: graph('recovery'),
+      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+    })
+    presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(presentation('first'))
+
+    await expect(resolveStartupWorkflow()).resolves.toMatchObject({ workflowName: 'first' })
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('first')
   })
 
   it('clears a recovery entry that is older than the saved workflow or durable draft', async () => {

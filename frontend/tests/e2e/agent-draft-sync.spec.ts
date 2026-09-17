@@ -445,6 +445,18 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     await page.getByTestId('workflow-search').fill(copyName!)
     await page.getByTestId(`workflow-row-${copyName}`).dblclick()
     await expect(page.getByTestId('workflow-title')).toContainText(copyName!)
+    await expect.poll(() => page.evaluate(async () => {
+      const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+      return useAutoSave().getLastOpenedWorkflow()
+    })).toBe(copyName)
+    await page.evaluate(async ({ originalName, graph }) => {
+      const { writeAutoSaveEntry } = await import('/src/composables/useAutoSave.ts')
+      await writeAutoSaveEntry({
+        name: originalName,
+        graph: graph as Parameters<typeof writeAutoSaveEntry>[0]['graph'],
+        timestamp: Date.now() + 60_000,
+      })
+    }, { originalName: name, graph: agent.graph })
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(copyName!)
 

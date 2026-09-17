@@ -55,7 +55,6 @@ export async function resolveStartupWorkflow(): Promise<RootWorkflowPresentation
   }
 
   const candidates = [
-    recovery?.name,
     knownIds.has(lastOpened ?? '') ? lastOpened : null,
     ...orderedIds,
   ].filter((id): id is string => typeof id === 'string' && id.length > 0)
