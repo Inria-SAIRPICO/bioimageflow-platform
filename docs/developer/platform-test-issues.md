@@ -187,6 +187,14 @@ A focused dialog unit asserts the new preview and submitted ID; a real Chromium/
 At patch-equivalent task revision `4823752`, the focused unit passed in 2s, exact Chromium in 14s, exact Firefox in 19s, `scripts/test check frontend` passed 1,299 units plus lint/typecheck/build in 28s, and cross-browser smoke passed 16/16 in each browser in 109s; the integrated Chromium browser lane passed 89/89 at `4a03750` in 347s.
 V1 workflow-dialog behavior was clarified in the same task.
 
+## ISSUE-013 — Napari probe output bound reports timeout at a one-second deadline
+
+Status: open; separate from Tier 1B export behavior, queued for focused Napari test/implementation ownership before a broad backend certification claim.
+After merge `7b0b937` of the Napari environment feature, the export batch's elevated `scripts/test check backend` passed 1,724 tests with nine external deselections but failed `tests/test_services/test_napari_environments.py::test_probe_runner_enforces_time_and_output_bounds`: the output-bound subcase expected `napari_probe_output_limit` and received `napari_probe_timeout` at its one-second subprocess deadline.
+The exact selector reproduced the mismatch in isolation after browser load ended, so this is not credited as a passing backend lane or dismissed as a one-off export failure.
+No supported GUI user impact or cause is yet established; keep the classification as a test/runtime regression, not a Tier 1B release blocker or a confirmed Napari product defect.
+The next owner should inspect probe output/deadline ordering and reproduce the exact selector on the current revision before changing the Napari-owned implementation or test threshold.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.

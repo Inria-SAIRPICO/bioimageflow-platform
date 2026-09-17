@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **227 V + 224 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **227 / 457 are verified (49.7%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **205 V + 15 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **205 / 220 are verified (93.2%)**.
+- Overall: **229 V + 222 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **229 / 457 are verified (50.1%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **207 V + 13 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **207 / 220 are verified (94.1%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -129,8 +129,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | G | in-progress | `7ab16e6` |
-| RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | G | V | V | in-progress | `7ab16e6` |
+| RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
+| RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `c050207` |
