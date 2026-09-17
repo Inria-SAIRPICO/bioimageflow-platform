@@ -245,11 +245,14 @@ Use `scripts/test focus` without campaign-wide selection flags for exact failing
 After a fix, run the exact test once; use `--repeat-each=5` only for a suspected timing/race defect.
 Run the applicable completion lane from `docs/testing.md` before declaring the batch complete.
 For a localized test-only cross-browser assertion, run its exact Chromium and Firefox selectors, then the documented localized cross-browser completion check; for a browser interaction or persistence implementation change, honor the documented browser completion lane.
-Do not add a complete browser-project run to a passing localized batch solely for reassurance; reserve additional broad browser acceptance for substantial GUI milestones, browser/E2E infrastructure changes, and final certification.
-When a completion check already subsumes an earlier phase, do not run both; if a late browser phase fails, retain the unchanged successful phases and reproduce that exact selector and project before rerunning only invalidated checks.
-Reuse successful unchanged phases after a late failure and state their source revision; rerun only checks invalidated by subsequent edits.
+Do not add a complete browser-project run to a passing localized batch solely for reassurance; reserve broad browser acceptance for substantial GUI milestones, browser/E2E infrastructure changes, and final certification.
+Budget **one broad browser-lane attempt per substantial milestone** unless the owner explicitly requests another or a later broad browser/E2E change itself requires that lane under `docs/testing.md`; a failed attempt is an honest milestone limitation, not an automatic instruction to run the entire lane again.
+When a broad lane fails late, stop broad reruns for that milestone, retain its unchanged successful cases and phase results, reproduce the exact failed selector in its browser, and run only the smallest checks invalidated by a demonstrated fix.
+After a localized test or product repair, use the exact affected browser selectors and the documented scoped completion check; do not restart a full Chromium/Firefox project merely to turn an unrelated prior red result green.
+Revisit broad acceptance at the next scheduled milestone or final certification, or when the changed surface genuinely requires a new broad lane; record the prior red lane, its source revision, first failure, unrun count, and whether any focused reproduction passed.
+Completing all Tier 1B primary-GUI obligation cells is a coverage result distinct from a passing broad browser lane; a red or interrupted broad lane must remain visible as a certification limitation and owned issue, not erase valid cell evidence or be described as a pass.
 Do not stack quick, scoped, and full checks when the later scheduled command subsumes the earlier work.
-Run comprehensive browser acceptance at substantial milestones and final certification, not after every edit.
+Run comprehensive browser acceptance at substantial milestones and final certification, not after every edit or every late-suite flake.
 
 ## Autonomous repair and escalation
 

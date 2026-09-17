@@ -59,6 +59,8 @@ Run exact Chromium and Firefox selectors for a changed GUI journey, then use the
 For localized browser test-only changes, do not add a complete browser-project run solely for reassurance; browser implementation/persistence changes, broad infrastructure changes, major GUI milestones, and final certification retain their documented broader checks.
 Do not overlap browser-heavy completion lanes when shared machine resources could make failures ambiguous.
 After a late failure, reproduce the exact failing selector/project and retain successful unchanged phases; rerun only invalidated checks.
+Limit broad browser acceptance to one attempt per substantial milestone unless I explicitly request another or a later broad browser/E2E change requires it; do not repeatedly restart the full project to chase unrelated or nonreproduced failures.
+Keep Tier 1B obligation closure separate from broad-lane certification: record a red/interrupted lane and its issue honestly, validate repairs with exact selectors and scoped checks, and reserve another broad attempt for the next planned milestone or final certification.
 Use audited per-case exclusions.
 Reuse existing scope selectors; do not build more runner infrastructure without a concrete testing need.
 Make clean changes without backward-compatibility shims; update affected specifications, documentation, fixtures, and tests.

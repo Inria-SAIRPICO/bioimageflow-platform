@@ -221,9 +221,10 @@ On patch-equivalent task content, the focused startup tests passed 8/8 after the
 
 ## ISSUE-017 — Workflow-tree double-click can leave the previous workflow active
 
-Status: open; a dedicated Sol/medium worktree is investigating whether the shared GUI open path has a product race or a test-only interaction problem.
+Status: open, not reproduced in focused follow-up; no product change is justified yet.
 At source `7990c67`, the full Firefox lane passed 23 tests then failed `frontend/tests/e2e/critical-operation-races.spec.ts:377` in its workflow-open prerequisite: after double-clicking the visible first workflow row, the title remained an older clipboard workflow. The remaining 80 tests were not run. A separate repeated Firefox Napari chooser test previously showed a workflow row selected but not opened by double-click, although that Napari-specific test now uses the explicit Open button because workflow opening is only its prerequisite. ISSUE-014's earlier intermittent “No workflow” title may share this cause but is not assumed resolved.
-Next: reproduce the exact Firefox selector and distinguish tree event handling, tab activation, loading, and test readiness. Preserve the real workflow-list double-click contract; do not merely replace primary-GUI double-click coverage with the explicit Open button. Fix and test the product if the action is genuinely lost, or narrow the test if the product path is correct. Then rerun invalidated broad browser acceptance.
+Focused follow-up on source `7990c67` passed the exact Firefox selector 1/1, passed 5/5 timed repetitions, and passed the clipboard-shortcuts-to-critical accumulated sequence 3/3. PrimeVue's keyed TreeNode weakens the initial row-remount hypothesis; the failed snapshot proves first-click selection but not whether the second event, open command, or async load was lost. The worker made no product or test change rather than guessing at a fix.
+If it recurs, capture row click/double-click, emitted workflow-open command, backend workflow/draft requests and responses, execution-lock state, and tab activation on that exact browser run; then fix the proven layer. Preserve the real workflow-list double-click contract and do not merely replace its primary-GUI coverage with the explicit Open button. A passing focused follow-up does not recast the earlier full Firefox lane as green.
 
 ## New issue record template
 
