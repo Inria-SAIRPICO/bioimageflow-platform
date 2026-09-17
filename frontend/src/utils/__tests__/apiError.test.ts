@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiErrorMessage } from '../apiError'
+import { apiErrorMessage, apiGraphValidationErrors } from '../apiError'
 
 describe('apiErrorMessage', () => {
   it('prefers a server detail over the generic HTTP client message', () => {
@@ -45,5 +45,18 @@ describe('apiErrorMessage', () => {
   it('falls back to ordinary errors and strings', () => {
     expect(apiErrorMessage(new Error('Local failure'))).toBe('Local failure')
     expect(apiErrorMessage('Plain failure')).toBe('Plain failure')
+  })
+})
+
+describe('apiGraphValidationErrors', () => {
+  it('retains node-scoped errors from a failed cache clear', () => {
+    const errors = [
+      { type: 'parameter_invalid', node: 'extract_ch2_nuclei', field: 'input_image', detail: 'Unknown input' },
+      { type: 'missing_connection', node: 'cellpose3_nuclei', detail: 'Missing upstream input' },
+    ]
+    const failure = { response: { data: { detail: 'Failed to build workflow: 2 error(s)', errors } } }
+
+    expect(apiGraphValidationErrors(failure)).toEqual(errors)
+    expect(apiGraphValidationErrors(new Error('Network failure'))).toEqual([])
   })
 })

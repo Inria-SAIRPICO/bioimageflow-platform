@@ -1,7 +1,22 @@
+import type { GraphValidationError } from '@/api/types'
+
 interface ApiValidationIssue {
   loc?: unknown
   msg?: unknown
   type?: unknown
+}
+
+/** Structured graph errors returned alongside a workflow build failure. */
+export function apiGraphValidationErrors(error: unknown): GraphValidationError[] {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return []
+  const response = (error as { response?: { data?: { errors?: unknown } } }).response
+  const errors = response?.data?.errors
+  if (!Array.isArray(errors)) return []
+  return errors.filter((issue): issue is GraphValidationError => (
+    typeof issue === 'object'
+    && issue !== null
+    && typeof issue.detail === 'string'
+  ))
 }
 
 function validationLocation(value: unknown): string {

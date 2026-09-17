@@ -30,6 +30,7 @@ import {
 function registerPanelCommands(
   descriptor: CanvasSessionDescriptor,
   canClearNodeOutputs: boolean,
+  clearFailure?: unknown,
 ) {
   return useCanvasCommands({
     descriptor,
@@ -38,7 +39,10 @@ function registerPanelCommands(
     setNodeEnabled: vi.fn(() => true),
     setNodesEnabled: vi.fn(() => true),
     deleteNodes: vi.fn(() => true),
-    clearNodeOutputs: vi.fn(async () => true),
+    clearNodeOutputs: vi.fn(async () => {
+      if (clearFailure) throw clearFailure
+      return true
+    }),
     canClearNodeOutputs,
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
@@ -109,6 +113,7 @@ function makeNodeData(overrides: Record<string, unknown> = {}) {
 function mountWithErrors(
   validationResult: ValidationResult | null,
   nodeDataOverrides: Record<string, unknown> = {},
+  clearFailure?: unknown,
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -129,7 +134,7 @@ function mountWithErrors(
     descriptor: canvas.descriptor,
     getWorkflowId: () => workflowId,
   })
-  registerPanelCommands(canvas.descriptor, true)
+  registerPanelCommands(canvas.descriptor, true, clearFailure)
 
   const uiStore = useUIStore()
   const nodeId = 'node-1'
@@ -145,6 +150,28 @@ function mountWithErrors(
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('shows every server validation error when clearing outputs fails', async () => {
+    const failure = Object.assign(new Error('Failed to build workflow: 2 error(s)'), {
+      response: { data: { errors: [
+        { type: 'parameter_invalid', node: 'extract_ch2_nuclei', field: 'input_image', detail: 'Unknown input' },
+        { type: 'missing_connection', node: 'cellpose3_nuclei', detail: 'Missing upstream input' },
+      ] } },
+    })
+    const wrapper = mountWithErrors(null, {}, failure)
+    await wrapper.get('[data-testid="clear-node-outputs"]').trigger('click')
+    await flushPromises()
+    const confirm = document.body.querySelector<HTMLButtonElement>('[data-testid="node-destructive-confirm"]')
+    expect(confirm).not.toBeNull()
+    confirm!.click()
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="node-destructive-error"]')?.textContent).toContain('2 error(s)')
+    const details = document.body.querySelector('[data-testid="node-destructive-validation-errors"]')?.textContent?.replace(/\s+/g, ' ')
+    expect(details).toContain('extract_ch2_nuclei · input_image: Unknown input')
+    expect(details).toContain('cellpose3_nuclei: Missing upstream input')
+    wrapper.unmount()
+  })
+
   it('disables bulk destructive controls while execution owns the mutation lock', async () => {
     const wrapper = mountWithErrors(null)
     const ui = useUIStore()
