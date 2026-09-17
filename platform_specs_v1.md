@@ -698,6 +698,7 @@ Normal root-canvas runs verify the submitted graph against the accepted draft re
 If `draft_revision` is present, the backend loads that workflow's accepted draft, rejects a stale revision with `draft_revision_conflict`, rejects a different submitted graph with `draft_graph_mismatch`, and compiles the backend-loaded accepted graph after equality is proven. Omitting `draft_revision` retains the request-local execution contract for explicit compatibility callers; it does not authorize the backend to infer graph meaning from request history.
 
 Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
+An attached progress callback may update state and publish messages only while its captured execution context is the active running context; late events from a completed or superseded run are discarded.
 Ordinary accepted workflow and draft mutations serialize through the execution-admission gate instead of reporting one another as running execution: a mutation already holding the gate blocks Run, a concurrent mutation waits, and an actually starting or running execution rejects the mutation with HTTP 423.
 
 A second `POST /execution/run` while one is already running returns HTTP 409 Conflict.

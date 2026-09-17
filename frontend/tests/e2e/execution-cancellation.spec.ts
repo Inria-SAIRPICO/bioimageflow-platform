@@ -1,4 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 import type { GraphState } from '../../src/api/types'
@@ -188,6 +190,30 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
     )).json()
 
+    for (const [targets, detail] of [
+      [[], 'Run Selected requires at least one requested execution target'],
+      [['missing-worker'], 'Requested execution targets do not exist'],
+      [[WORKER_ID, 'missing-worker'], 'Requested execution targets do not exist'],
+    ] as const) {
+      const refusal = await page.request.post(`${API_BASE}/api/v1/execution/run`, {
+        data: {
+          graph: acceptedDraft.graph, workflow_name: workflowName,
+          draft_revision: acceptedDraft.draft_revision, nodes: targets,
+        },
+      })
+      expect(refusal.status()).toBe(422)
+      expect(JSON.stringify(await refusal.json())).toContain(detail)
+      expect(await executionStatus(page)).toMatchObject({ state: 'idle' })
+      expect(await (await page.request.get(
+        `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+      )).json()).toMatchObject({
+        draft_revision: acceptedDraft.draft_revision, graph: acceptedDraft.graph,
+      })
+      expect((await page.request.post(`${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`, {
+        data: { workflow_name: workflowName },
+      })).status()).toBe(404)
+    }
+
     const runResponse = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
     ))
@@ -353,6 +379,21 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     )
     expect(workerPids.size).toBe(1)
     expect(workerPids.has(backendPid.process_id)).toBe(false)
+    const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    expect(workflowResponse.ok()).toBeTruthy()
+    const workflow = await workflowResponse.json()
+    await expect.poll(async () => Promise.all([1, 2, 3].map(async (value) => {
+      try {
+        return await readFile(join(
+          workflow.info.results_path, 'outputs', 'latest', WORKER_ID,
+          `held_number_${value}.txt`,
+        ), 'utf8')
+      } catch {
+        return null
+      }
+    })), { timeout: 10_000 }).toEqual([
+      '1 * 4 = 4\n', '2 * 4 = 8\n', '3 * 4 = 12\n',
+    ])
     await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     await expectExactTable(page.getByTestId('data-table-panel'), result.columns, result.rows.map(

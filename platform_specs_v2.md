@@ -190,6 +190,7 @@ The stateless graph endpoint validates the same canonical graph shape but does n
 ## 9. Execution And Status
 
 Execution compiles the accepted recursive graph to one flat plan.
+Attached progress callbacks are fenced to the active running execution context; a delayed event from an earlier run cannot change a later run's status or emitted progress.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
 Clearing selected outputs updates the matching workflow's retained live node-status snapshot without changing the completed run's historical result; a reconnect therefore preserves the cleared and downstream out-of-date presentation.

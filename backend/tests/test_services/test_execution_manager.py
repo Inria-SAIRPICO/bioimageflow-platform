@@ -821,6 +821,34 @@ class TestExecutionManagerLifecycle:
 
 
 class TestExecutionManagerProgress:
+    async def test_stale_callback_cannot_project_into_a_later_execution(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        first = _FakeWorkflow()
+        _install_fake_builder(monkeypatch, first)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        first_context = await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await _drain(em)
+        assert first.on_progress is not None
+
+        second = _FakeWorkflow()
+        _install_fake_builder(monkeypatch, second)
+        second_context = await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        assert second_context.execution_id != first_context.execution_id
+        before_status = em.get_status()
+        before_retained = em.retained_progress()
+        before_progress = list(bus.progress_events)
+        before_states = list(bus.node_state_events)
+        first.on_progress(_ProgressEventStub("n1", "started"))
+        first.on_progress(_ProgressEventStub("n1", "row_complete", row=2, total_rows=3))
+        assert em.get_status() == before_status
+        assert em.retained_progress() == before_retained
+        assert em.retained_progress_for(first_context) == []
+        assert bus.progress_events == before_progress
+        assert bus.node_state_events == before_states
+        await _drain(em)
+
     async def test_started_publishes_running_and_accumulates(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

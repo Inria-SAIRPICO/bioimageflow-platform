@@ -826,6 +826,12 @@ class ExecutionManager:
         """
 
         def _on_progress(event: Any) -> None:
+            if self.state != "running" or self.context != context:
+                logger.warning(
+                    "Dropping progress event outside its active execution %s",
+                    context.execution_id,
+                )
+                return
             node_id = getattr(event, "node_name", None)
             status = getattr(event, "status", None)
             if node_id is None or status is None:
