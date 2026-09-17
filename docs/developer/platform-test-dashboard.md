@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **218 V + 233 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **218 / 457 are verified (47.7%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **196 V + 24 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **196 / 220 are verified (89.1%)**.
+- Overall: **224 V + 227 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **224 / 457 are verified (49.0%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **202 V + 18 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **202 / 220 are verified (91.8%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -58,7 +58,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-008 | Selection, multiselection, collapse, and enablement | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `30faeb6`, `1d7cbd7` |
 | GUI-EDT-009 | Bulk delete and root output clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6` |
 | GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `e0aa123`, `30faeb6`, `4ec5dbc` |
-| GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | G | V | V | in-progress | `790345a` |
+| GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `26551d6` |
 | GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `4ec5dbc` |
 | GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
@@ -94,7 +94,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | V | V | V | in-progress | `da0ded6`, `152c82b`, `0dc71b5` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
-| WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | V | V | V | V | V | verified | `7575d0e` |
 | WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `f920c9b` |
 | WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `cf794fb` |
