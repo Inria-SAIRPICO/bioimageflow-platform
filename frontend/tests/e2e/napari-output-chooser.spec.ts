@@ -14,12 +14,14 @@ async function openNodeData(page: Page, workflowName: string): Promise<void> {
   await page.goto('/')
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+  await page.getByTestId(`workflow-row-${workflowName}`).click()
+  await page.getByRole('button', { name: 'Open workflow', exact: true }).click()
+  await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+  const seed = page.locator('.vue-flow__node[data-id="seed"]')
+  await expect(seed).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
-  await expect(async () => {
-    await page.locator('.vue-flow__node[data-id="seed"]').click()
-    await expect(page.getByTestId('open-napari-42-mask')).toBeVisible({ timeout: 1000 })
-  }).toPass({ timeout: 10000 })
+  await seed.click()
+  await expect(page.getByTestId('open-napari-42-mask')).toBeVisible({ timeout: 15000 })
 }
 
 test('napari result action resolves the captured identity to the server-selected environment', async ({ page }) => {
