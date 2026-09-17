@@ -44,6 +44,7 @@ export default defineConfig({
     {
       command: `cd ../backend && uv run --frozen uvicorn tests.e2e_app:create_app --factory --host 127.0.0.1 --port ${backendPort}`,
       url: `http://127.0.0.1:${backendPort}/api/v1/health`,
+      timeout: 240_000,
       reuseExistingServer: false,
       env: {
         BIOIMAGEFLOW_E2E_ROOT: e2eRoot,

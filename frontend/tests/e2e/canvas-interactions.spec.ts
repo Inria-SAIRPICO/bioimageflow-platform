@@ -1147,6 +1147,167 @@ test.describe('Canvas interactions', () => {
     expect(await page.evaluate(key => localStorage.getItem(key), widthStorageKeys[0]!)).toBeNull()
   })
 
+  test('keeps result filters, sorting, and manual widths on exact workflow and source identities', async ({ page }) => {
+    test.setTimeout(120_000)
+    const firstWorkflow = workflowName
+    const seed = await addToolNode(page, 'SeedNumbers', { x: 120, y: 160 })
+    const increment = await addToolNode(page, 'IncrementNumbers', { x: 440, y: 160 })
+    await increment.click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const numberRow = page.getByTestId('panel-nodePanel').locator('.param-row')
+      .filter({ hasText: 'Number column to increment' })
+    await numberRow.locator('input.p-inputnumber-input').fill('10')
+    await numberRow.locator('input.p-inputnumber-input').press('Tab')
+    const seedId = (await seed.getAttribute('data-id'))!
+    const incrementId = (await increment.getAttribute('data-id'))!
+    await connectDataFrames(page, seed, increment)
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, firstWorkflow)
+      return { valid: draft.validation.valid, nodes: draft.graph.nodes.map(node => node.id), edges: draft.graph.edges.map(edge => [edge.source_node, edge.target_node]) }
+    }).toEqual({ valid: true, nodes: [seedId, incrementId], edges: [[seedId, incrementId]] })
+    const firstRun = page.waitForResponse(response => response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST')
+    await page.getByTestId('run-workflow-button').click()
+    expect((await firstRun).status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+    await seed.click()
+    await increment.click({ modifiers: ['Shift'] })
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const merged = page.getByTestId('merged-data-table')
+    await expect(merged).toContainText('Seed Numbers 1 → Increment Numbers 1')
+    const seedHeader = merged.locator('.p-datatable-thead th').filter({ hasText: 'Seed Numbers 1: number' })
+    const seedAutomatic = Math.round((await seedHeader.boundingBox())!.width)
+    const seedSeparator = merged.getByRole('separator', { name: 'Resize Seed Numbers 1: number' })
+    await seedSeparator.focus()
+    for (let step = 0; step < 5; step += 1) await seedSeparator.press('ArrowRight')
+    await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width)).toBe(seedAutomatic + 50)
+    const firstWidthKey = (await page.evaluate(() => Object.keys(localStorage)
+      .filter(key => key.startsWith('bif-node-data-widths-v2:'))))[0]!
+    expect(firstWidthKey).toContain(firstWorkflow)
+    expect(firstWidthKey).toContain(seedId)
+    expect(firstWidthKey).toContain(incrementId)
+
+    const firstSorted = await projectionQueryAfter(page, async () => {
+      await merged.getByRole('button', { name: 'Sort Increment Numbers 1: number' }).click()
+    })
+    expect(firstSorted.request).toMatchObject({ workflow_id: firstWorkflow, sort_by: 's1:number', filters: [] })
+    expect(firstSorted.result.rows.map((row: { source_rows: Record<string, number>; values: Record<string, unknown> }) => [
+      row.source_rows[seedId], row.source_rows[incrementId], row.values['s0:number'], row.values['s1:number'],
+    ])).toEqual([[0, 0, 1, 1], [1, 1, 2, 2], [2, 2, 3, 3]])
+
+    await openWorkflowMenuItem(page, 'Save')
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+    const secondDisplay = `Result Identity ${Date.now()} ${Math.floor(Math.random() * 10000)}`
+    const secondWorkflow = deriveWorkflowId(secondDisplay)
+    try {
+      await openWorkflowMenuItem(page, 'New')
+      await page.getByTestId('workflow-display-name-input').fill(secondDisplay)
+      await page.getByTestId('workflow-dialog-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
+      await addToolNode(page, 'ResultTableFixture', { x: 250, y: 180 })
+      await expect.poll(async () => (await currentDraft(page, secondWorkflow)).graph.nodes.length).toBe(1)
+      const secondDraft = await currentDraft(page, secondWorkflow)
+      const collidingGraph = {
+        ...secondDraft.graph,
+        nodes: secondDraft.graph.nodes.map(node => ({ ...node, id: seedId })),
+      }
+      const replacement = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${secondWorkflow}`, {
+        data: { graph: collidingGraph, expected_revision: secondDraft.draft_revision, updated_by: 'frontend' },
+      })
+      expect(replacement.ok()).toBeTruthy()
+      await page.reload()
+      await expect(page.locator(`.vue-flow__node[data-id="${seedId}"]`)).toBeVisible()
+      const secondRun = page.waitForResponse(response => response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST')
+      await page.getByTestId('run-workflow-button').click()
+      expect((await secondRun).status()).toBe(202)
+      await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+      await openWorkflowMenuItem(page, 'Save')
+      await expect(page.getByTestId('workflow-title')).not.toContainText('*')
+      await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click()
+      await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+      const secondTable = page.getByTestId('merged-data-table')
+      await expect(secondTable.locator('.p-datatable-thead th')).toHaveCount(3)
+      const secondGrid = secondTable.locator('.p-datatable')
+      await expect(secondGrid.locator('.p-datatable-tbody tr')).toHaveCount(60)
+      const secondAutomatic = Math.round((await secondGrid.locator('.p-datatable-thead th').first().boundingBox())!.width)
+      expect(secondAutomatic).not.toBe(seedAutomatic + 50)
+      const secondFiltered = await projectionQueryAfter(page, async () => {
+        await secondGrid.getByRole('button', { name: 'Filter label' }).click()
+        await page.getByRole('combobox', { name: 'Filter operator' }).click()
+        await page.getByRole('option', { name: 'Starts with' }).click()
+        await page.getByRole('textbox', { name: 'Filter value' }).fill('keep-')
+        await page.getByRole('button', { name: 'Apply' }).click()
+      })
+      expect(secondFiltered.request).toMatchObject({ workflow_id: secondWorkflow, filters: [{ column: 's0:label', operator: 'starts_with', value: 'keep-' }] })
+      await projectionQueryAfter(page, async () => { await secondGrid.getByRole('button', { name: 'Sort score' }).click() })
+      const secondSorted = await projectionQueryAfter(page, async () => { await secondGrid.getByRole('button', { name: 'Sort score' }).click() })
+      const expected = expectedResultTableRows()
+      expect(secondSorted.result.rows.map((row: { source_rows: Record<string, number>; values: Record<string, unknown> }) => [
+        row.source_rows[seedId], row.values['s0:source_row'], row.values['s0:label'], row.values['s0:score'],
+      ])).toEqual(expected.map(row => [row.sourceRow, row.sourceRow, row.label, row.score]))
+      const visibleSecondRows = secondGrid.locator('.p-datatable-tbody tr')
+      await expect(visibleSecondRows).toHaveCount(expected.length)
+      for (const [position, row] of expected.entries()) {
+        await expect(visibleSecondRows.nth(position).locator('td')).toHaveText([
+          String(row.sourceRow), row.label, String(row.score),
+        ])
+      }
+      const scoreHeader = secondGrid.locator('.p-datatable-thead th').filter({ hasText: 'score' })
+      const scoreAutomatic = Math.round((await scoreHeader.boundingBox())!.width)
+      const scoreSeparator = secondTable.getByRole('separator', { name: 'Resize score' })
+      await scoreSeparator.focus()
+      for (let step = 0; step < 4; step += 1) await scoreSeparator.press('ArrowRight')
+      await expect.poll(async () => Math.round((await scoreHeader.boundingBox())!.width)).toBe(scoreAutomatic + 40)
+      const secondWidthKey = (await page.evaluate(() => Object.keys(localStorage)
+        .filter(key => key.startsWith('bif-node-data-widths-v2:')))).find(key => key.includes(secondWorkflow))!
+      expect(secondWidthKey).not.toBe(firstWidthKey)
+
+      await openWorkflowMenuItem(page, 'Open')
+      await page.getByTestId('workflow-open-search').fill(firstWorkflow)
+      await page.getByTestId(`workflow-open-option-${firstWorkflow}`).click()
+      await page.getByTestId('workflow-open-submit').click()
+      await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click()
+      await page.locator(`.vue-flow__node[data-id="${incrementId}"]`).click({ modifiers: ['Shift'] })
+      await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+      await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width)).toBe(seedAutomatic + 50)
+      const firstRestored = await projectionQueryAfter(page, async () => {
+        await merged.getByRole('button', { name: 'Sort Increment Numbers 1: number' }).click()
+      })
+      expect(firstRestored.request).toMatchObject({ workflow_id: firstWorkflow, filters: [] })
+      expect(firstRestored.result.rows.map((row: { source_rows: Record<string, number> }) => [row.source_rows[seedId], row.source_rows[incrementId]])).toEqual([[0, 0], [1, 1], [2, 2]])
+      await merged.getByRole('button', { name: 'Reset column widths', exact: true }).click()
+      await expect.poll(async () => Math.round((await seedHeader.boundingBox())!.width)).toBe(seedAutomatic)
+      expect(await page.evaluate(key => localStorage.getItem(key), firstWidthKey)).toBeNull()
+      expect(await page.evaluate(key => localStorage.getItem(key), secondWidthKey)).not.toBeNull()
+
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toBeVisible()
+      await openWorkflowMenuItem(page, 'Open')
+      await page.getByTestId('workflow-open-search').fill(secondWorkflow)
+      await page.getByTestId(`workflow-open-option-${secondWorkflow}`).click()
+      await page.getByTestId('workflow-open-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
+      await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click()
+      await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+      await expect.poll(async () => Math.round((await scoreHeader.boundingBox())!.width)).toBe(scoreAutomatic + 40)
+      const secondRestored = await projectionQueryAfter(page, async () => {
+        await secondTable.getByRole('button', { name: 'Sort score' }).click()
+      })
+      expect(secondRestored.request).toMatchObject({ workflow_id: secondWorkflow, sort_by: 's0:score', sort_order: 'asc', filters: [] })
+      const ascendingSourceRows = Array.from({ length: 60 }, (_, index) => index)
+        .sort((left, right) => (left * 17) % 61 - (right * 17) % 61)
+      expect(secondRestored.result.rows.map((row: { source_rows: Record<string, number>; values: Record<string, unknown> }) => [
+        row.source_rows[seedId], row.values['s0:source_row'], row.values['s0:label'], row.values['s0:score'],
+      ])).toEqual(ascendingSourceRows.map(sourceRow => [
+        sourceRow,
+        sourceRow,
+        `${sourceRow % 2 === 0 ? 'keep' : 'drop'}-${String(sourceRow).padStart(2, '0')}`,
+        (sourceRow * 17) % 61,
+      ]))
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${secondWorkflow}`).catch(() => undefined)
+    }
+  })
+
   test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
     await addToolNode(page, 'Generate', { x: 220, y: 180 })
     await addToolNode(page, 'Generate', { x: 520, y: 260 })
