@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **236 V + 215 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **236 / 457 are verified (51.6%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **214 V + 6 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **214 / 220 are verified (97.3%)**.
+- Overall: **238 V + 213 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **238 / 457 are verified (52.1%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **216 V + 4 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **216 / 220 are verified (98.2%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -121,8 +121,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `4208769`, `9698d5b` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f` |
-| RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
-| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
+| RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb`, `f09a8a7` |
+| RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | V | V | V | V | verified | `2c1ff72`, `f09a8a7` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6`, `fe0cf9d`, `0043397`, `58520b5`; ISSUE-011 resolved |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |

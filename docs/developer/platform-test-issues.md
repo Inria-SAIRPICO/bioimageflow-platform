@@ -203,6 +203,14 @@ Earlier Tier 1B smoke runs showed the same late Chromium title symptom, while an
 No supported-path data loss, wrong graph, or root cause has been demonstrated; do not classify this yet as a product identity defect or dismiss the repeated smoke failure as passing.
 Next: isolate the exact Chromium selector after backend startup is stable, then reproduce the preceding suite order or use a five-repeat exact run if timing is suspected; inspect tab/open readiness and distinguish a real workflow-open race from a test oracle race. Keep the smoke lane red until a passing rerun on the relevant revision.
 
+## ISSUE-015 — Late progress callback can overwrite a newer execution's status
+
+Status: resolved by `f09a8a7` with a bounded Sol/medium repair; the execution-context contract was explicit, so no specialist redesign was needed.
+A focused manager reproduction retained the completed first run's progress callback, started a distinct second run, then invoked the first callback: before the fix it changed the second run's status and retained progress.
+The repair checks that the callback's captured immutable execution context is still the active running context before projecting status or publishing progress; stale events are dropped without changing the later run's status or event bus.
+The exact focused regression passed after the repair, and real sequential-worker browser refusal/cancellation/rerun journeys passed Chromium and Firefox. This test injects a late callback and does not assert Wetlands itself emits one.
+The cross-stack app completion command remains red for unrelated ISSUE-013, and browser smoke timed out before collection at the 60s E2E backend startup limit; neither lane is claimed as passing evidence for this fix.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
