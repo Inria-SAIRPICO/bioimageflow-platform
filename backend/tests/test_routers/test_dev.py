@@ -34,7 +34,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     resp = await client.post("/api/v1/dev/seed")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["tools"] == 8
+    assert data["tools"] == 9
     assert data["packages"] == 3
 
     # Now tools and packages are populated
@@ -46,6 +46,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert "ResultTableFixture" in tool_names
     assert "ImageResultFixture" in tool_names
     assert "IncrementNumbers" in tool_names
+    assert "ControlledDirectNumbers" in tool_names
     assert "IncrementAgainNumbers" in tool_names
     assert "CellposeSegmenter" in tool_names
     assert "GaussianBlur" in tool_names
@@ -84,6 +85,10 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert increment_tool["outputs"] == {
         "number_plus_one": {"type": "int", "default": None, "image_spec": None, "viewer": None},
     }
+    controlled_direct = next(t for t in tools if t["name"] == "ControlledDirectNumbers")
+    assert controlled_direct["tool_type"] == "DataFrameTool"
+    assert controlled_direct["inputs"]["fail"]["default"] is False
+    assert controlled_direct["inputs"]["fail"]["connectable"] == "never"
     increment_again = next(t for t in tools if t["name"] == "IncrementAgainNumbers")
     assert increment_again["inputs"]["number_plus_one"]["type"] == "int"
     assert increment_again["outputs"] == {

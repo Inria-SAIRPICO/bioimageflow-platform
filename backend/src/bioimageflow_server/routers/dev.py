@@ -151,6 +151,31 @@ class IncrementNumbers(DataFrameTool):
         return result
 
 
+class ControlledDirectInputs(IOModel):
+    fail: bool = False
+
+
+class ControlledDirectOutputs(IOModel):
+    number_plus_one: int
+
+
+class ControlledDirectNumbers(DataFrameTool):
+    """Fail on demand inside a real Direct DataFrame transformation."""
+
+    display_name = "Controlled Direct Numbers"
+    documentation = "Increment upstream numbers, or raise a controlled execution error."
+    tags = ["transform", "e2e"]
+    Inputs = ControlledDirectInputs
+    Outputs = ControlledDirectOutputs
+
+    def transform(self, df: Any, arguments: Any) -> Any:
+        if arguments.fail:
+            raise RuntimeError("Controlled Direct failure")
+        result = df.copy()
+        result["number_plus_one"] = result["number"] + 1
+        return result
+
+
 class IncrementAgainInputs(IOModel):
     number_plus_one: int
 
@@ -251,6 +276,27 @@ _SEED_TOOLS: list[ToolMetadata] = [
         outputs={
             "number_plus_one": OutputFieldSchema(type="int"),
         },
+    ),
+    ToolMetadata(
+        name="ControlledDirectNumbers",
+        display_name="Controlled Direct Numbers",
+        package="bioimageflow-dev-seed",
+        package_version="0.1.0",
+        tool_type="DataFrameTool",
+        row_consumption=None,
+        documentation=ControlledDirectNumbers.documentation,
+        tags=ControlledDirectNumbers.tags,
+        categories=["Utilities"],
+        inputs={
+            "fail": InputFieldSchema(
+                type="bool",
+                required=False,
+                connectable="never",
+                default=False,
+                description="Raise a controlled execution error",
+            ),
+        },
+        outputs={"number_plus_one": OutputFieldSchema(type="int")},
     ),
     ToolMetadata(
         name="ImageResultFixture",
@@ -401,6 +447,7 @@ _SEED_PACKAGES: list[PackageInfo] = [
                 "SeedNumbers",
                 "ResultTableFixture",
                 "IncrementNumbers",
+                "ControlledDirectNumbers",
                 "IncrementAgainNumbers",
                 "ImageResultFixture",
             ]
@@ -434,6 +481,7 @@ async def seed_tools(
             "SeedNumbers": SeedNumbers,
             "ResultTableFixture": ResultTableFixture,
             "IncrementNumbers": IncrementNumbers,
+            "ControlledDirectNumbers": ControlledDirectNumbers,
             "IncrementAgainNumbers": IncrementAgainNumbers,
             "ImageResultFixture": ImageResultFixture,
             "GaussianBlur": GaussianBlur,

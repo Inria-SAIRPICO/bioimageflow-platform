@@ -622,6 +622,118 @@ test.describe('Canvas interactions', () => {
     }
   })
 
+  test('recovers a real Direct failure without publishing a partial result', { tag: '@critical' }, async ({ page }) => {
+    const source = await addToolNode(page, 'SeedNumbers', { x: 160, y: 180 })
+    const target = await addToolNode(page, 'ControlledDirectNumbers', { x: 450, y: 180 })
+    const sourceId = await source.getAttribute('data-id')
+    const targetId = await target.getAttribute('data-id')
+    expect(sourceId).toBeTruthy()
+    expect(targetId).toBeTruthy()
+    await connectDataFrames(page, source, target)
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+
+    await target.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
+    const failRow = page.getByTestId('panel-nodePanel').locator('.param-row').filter({ hasText: 'Raise a controlled execution error' })
+    await failRow.locator('.p-checkbox').click()
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      return draft.graph.nodes.find(node => node.id === targetId && node.type === 'tool')?.parameters.fail === true
+        ? draft : null
+    }).not.toBeNull()
+    const accepted = await currentDraft(page, workflowName)
+    expect(accepted.validation).toMatchObject({ valid: true, errors: [] })
+    expect(accepted.graph.edges).toMatchObject([{
+      type: 'dataframe', source_node: sourceId, target_node: targetId, target_position: 0,
+    }])
+
+    const firstRunPromise = page.waitForResponse(response => response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST')
+    await page.getByTestId('run-workflow-button').click()
+    const firstRun = await firstRunPromise
+    expect(firstRun.status()).toBe(202)
+    expect(firstRun.request().postDataJSON()).toMatchObject({
+      workflow_name: workflowName, draft_revision: accepted.draft_revision, graph: accepted.graph,
+    })
+    const firstIdentity = (await firstRun.json()).execution_id
+    expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${firstIdentity}`)).json()).toMatchObject({
+      backend: 'direct', workflow_id: workflowName, draft_revision: accepted.draft_revision,
+    })
+    await expect.poll(async () => {
+      const response = await page.request.get(`${API_BASE}/api/v1/execution/status`)
+      const status = await response.json()
+      return [status.state, status.last_result?.success, status.node_statuses?.[targetId!]?.status]
+    }, { timeout: 30_000 }).toEqual(['idle', false, 'failed'])
+    expect(await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()).toMatchObject({
+      execution_id: firstIdentity, workflow_id: workflowName,
+      draft_revision: accepted.draft_revision,
+      node_statuses: { [sourceId!]: { status: 'executed' }, [targetId!]: { status: 'failed' } },
+    })
+    await expect(page.getByTestId('execution-banner-headline')).toContainText('Controlled Direct failure')
+    const failedResult = await page.request.post(`${API_BASE}/api/v1/nodes/${targetId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(failedResult.status()).toBe(404)
+    const sourceResult = await page.request.post(`${API_BASE}/api/v1/nodes/${sourceId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect((await sourceResult.json()).rows).toEqual([
+      { number: 1, label: 'one' }, { number: 2, label: 'two' }, { number: 3, label: 'three' },
+    ])
+
+    await expect(failRow.locator('.p-checkbox')).toBeEnabled()
+    await failRow.locator('.p-checkbox').click()
+    await expect.poll(async () => {
+      const draft = await currentDraft(page, workflowName)
+      return draft.graph.nodes.find(node => node.id === targetId && node.type === 'tool')?.parameters.fail
+    }).toBe(false)
+    const corrected = await currentDraft(page, workflowName)
+    expect(corrected.draft_revision).toBe(accepted.draft_revision + 1)
+    expect(corrected.validation).toMatchObject({ valid: true, errors: [] })
+    const rerunPromise = page.waitForResponse(response => response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST')
+    await page.getByTestId('run-workflow-button').click()
+    const rerun = await rerunPromise
+    expect(rerun.status()).toBe(202)
+    expect(rerun.request().postDataJSON()).toMatchObject({
+      workflow_name: workflowName, draft_revision: corrected.draft_revision, graph: corrected.graph,
+    })
+    const secondIdentity = (await rerun.json()).execution_id
+    expect(secondIdentity).not.toBe(firstIdentity)
+    expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${secondIdentity}`)).json()).toMatchObject({
+      backend: 'direct', workflow_id: workflowName, draft_revision: corrected.draft_revision,
+    })
+    await expect.poll(async () => {
+      const status = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+      return [status.state, status.last_result?.success, status.node_statuses?.[targetId!]?.status]
+    }, { timeout: 30_000 }).toEqual(['idle', true, 'executed'])
+    const targetResult = await page.request.post(`${API_BASE}/api/v1/nodes/${targetId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(await targetResult.json()).toMatchObject({
+      columns: ['number', 'label', 'number_plus_one'],
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      total_rows: 3,
+    })
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    await expect(page.getByTestId('data-table-panel').locator('.p-datatable-tbody tr')).toHaveCount(3)
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toContainText('Canvas Interactions')
+    expect((await currentDraft(page, workflowName)).graph).toEqual(corrected.graph)
+    const retained = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+    expect(retained).toMatchObject({
+      execution_id: secondIdentity, workflow_id: workflowName,
+      draft_revision: corrected.draft_revision,
+      last_result: { success: true },
+    })
+    const retainedResult = await page.request.post(`${API_BASE}/api/v1/nodes/${targetId}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect((await retainedResult.json()).rows.map((row: { number_plus_one: number }) => row.number_plus_one)).toEqual([2, 3, 4])
+  })
+
   test('filters, sorts, pages, and exports an exact real execution result', { tag: '@critical' }, async ({ page }) => {
     const toolsResponse = await page.request.get(`${API_BASE}/api/v1/tools`)
     expect(toolsResponse.ok()).toBeTruthy()
