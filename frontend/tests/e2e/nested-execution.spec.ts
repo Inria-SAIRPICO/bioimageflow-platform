@@ -9,7 +9,7 @@ function workflowId(prefix: string): string {
   return `${prefix}_${test.info().project.name}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
-function nestedExecutionGraph(name: string, displayName: string): GraphState {
+function nestedExecutionGraph(name: string, displayName: string, fail = false): GraphState {
   const child: GraphState = {
     schema_version: 1,
     name: 'stable_child',
@@ -18,9 +18,9 @@ function nestedExecutionGraph(name: string, displayName: string): GraphState {
       type: 'tool',
       id: 'nested_increment',
       name: 'Nested increment',
-      tool_name: 'IncrementNumbers',
+      tool_name: fail ? 'ControlledDirectNumbers' : 'IncrementNumbers',
       position: [260, 160],
-      parameters: { number: 1 },
+      parameters: fail ? { fail: true } : { number: 1 },
     }],
     edges: [],
     interface: {
@@ -293,6 +293,160 @@ test('executes nested Direct work and preserves scoped results after save and re
       { data: { workflow_name: siblingName } },
     )
     expect(siblingResult.status()).toBe(404)
+  }
+  finally {
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${rootName}`).catch(() => undefined)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${siblingName}`).catch(() => undefined)
+  }
+})
+
+test('recovers a failed nested Direct child through an applied GUI correction', async ({ page }) => {
+  const rootName = workflowId('nested_direct_recovery')
+  const rootDisplayName = `Nested recovery ${rootName}`
+  const siblingName = workflowId('nested_direct_sibling')
+  const siblingDisplayName = `Independent sibling ${siblingName}`
+  await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+  await createSavedWorkflow(page, nestedExecutionGraph(rootName, rootDisplayName, true))
+  await createSavedWorkflow(page, siblingGraph(siblingName, siblingDisplayName))
+
+  try {
+    const siblingBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, rootName, rootDisplayName)
+    const initial = await acceptedDraft(page, rootName)
+    expect(initial.validation).toMatchObject({ valid: true, errors: [] })
+    expect(initial.graph.nodes.find(node => node.id === 'nested_step')).toMatchObject({
+      type: 'workflow', workflow: { nodes: [{ id: 'nested_increment', parameters: { fail: true } }] },
+    })
+
+    const firstRunPromise = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    const firstRun = await firstRunPromise
+    expect(firstRun.status()).toBe(202)
+    expect(firstRun.request().postDataJSON()).toMatchObject({
+      workflow_name: rootName, draft_revision: initial.draft_revision, graph: initial.graph,
+    })
+    const firstExecutionId = (await firstRun.json()).execution_id
+    expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${firstExecutionId}`)).json())
+      .toMatchObject({ backend: 'direct', workflow_id: rootName, draft_revision: initial.draft_revision })
+    await expect.poll(async () => {
+      const status = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+      return [status.state, status.last_result?.success, status.node_statuses?.['nested_step/nested_increment']?.status]
+    }, { timeout: 30_000 }).toEqual(['idle', false, 'failed'])
+    const failed = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+    expect(failed).toMatchObject({
+      execution_id: firstExecutionId, workflow_id: rootName, draft_revision: initial.draft_revision,
+      node_statuses: {
+        root_seed: { status: 'executed' },
+        'nested_step/nested_increment': { status: 'failed', error: expect.stringContaining('Controlled Direct failure') },
+      },
+      last_result: { success: false },
+    })
+    expect(failed.node_statuses.root_increment?.status).not.toBe('executed')
+    await expect(page.getByTestId('execution-banner-headline')).toContainText('Controlled Direct failure')
+    for (const nodeId of ['nested_step/nested_increment', 'root_increment']) {
+      const result = await page.request.post(`${API_BASE}/api/v1/nodes/${nodeId}/data/query`, {
+        data: { workflow_name: rootName },
+      })
+      expect(result.status(), `${nodeId} must not publish a result after child failure`).toBe(404)
+    }
+    const source = await page.request.post(`${API_BASE}/api/v1/nodes/root_seed/data/query`, {
+      data: { workflow_name: rootName },
+    })
+    expect((await source.json()).rows).toEqual([
+      { number: 1, label: 'one' }, { number: 2, label: 'two' }, { number: 3, label: 'three' },
+    ])
+    const siblingDuringFailure = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
+    expect(siblingDuringFailure).toEqual(siblingBefore)
+    const siblingResult = await page.request.post(`${API_BASE}/api/v1/nodes/sibling_seed/data/query`, {
+      data: { workflow_name: siblingName },
+    })
+    expect(siblingResult.status()).toBe(404)
+
+    await page.locator('.vue-flow__node[data-id="nested_step"]').dblclick()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    await page.locator('.vue-flow__node[data-id="nested_increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
+    const failRow = page.getByTestId('panel-nodePanel').locator('.param-row')
+      .filter({ hasText: 'Raise a controlled execution error' })
+    await expect(failRow.locator('.p-checkbox')).toBeEnabled()
+    const privateWrite = page.waitForResponse(response => (
+      response.url().includes('/api/v1/nested-workflow-snapshots/')
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await failRow.locator('.p-checkbox').click()
+    const privateSnapshot = await (await privateWrite).json()
+    expect(privateSnapshot.graph.nodes[0].parameters.fail).toBe(false)
+    expect((await acceptedDraft(page, rootName)).graph).toEqual(initial.graph)
+    const applyPromise = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${rootName}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await applyPromise
+    const corrected = await acceptedDraft(page, rootName)
+    const correctedNode = corrected.graph.nodes.find(node => node.id === 'nested_step')
+    expect(correctedNode).toMatchObject({
+      type: 'workflow', workflow: { nodes: [{ id: 'nested_increment', parameters: { fail: false } }] },
+    })
+    expect(corrected.graph.edges).toEqual(initial.graph.edges)
+
+    await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
+    const rerunPromise = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    const rerun = await rerunPromise
+    expect(rerun.status()).toBe(202)
+    expect(rerun.request().postDataJSON()).toMatchObject({
+      workflow_name: rootName, draft_revision: corrected.draft_revision, graph: corrected.graph,
+    })
+    const secondExecutionId = (await rerun.json()).execution_id
+    expect(secondExecutionId).not.toBe(firstExecutionId)
+    expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${secondExecutionId}`)).json())
+      .toMatchObject({ backend: 'direct', workflow_id: rootName, draft_revision: corrected.draft_revision })
+    await expect.poll(async () => {
+      const status = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+      return [status.state, status.last_result?.success, status.node_statuses?.['nested_step/nested_increment']?.status]
+    }, { timeout: 30_000 }).toEqual(['idle', true, 'executed'])
+    expect(await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()).toMatchObject({
+      execution_id: secondExecutionId, workflow_id: rootName, draft_revision: corrected.draft_revision,
+      node_statuses: { root_seed: { status: 'executed' }, 'nested_step/nested_increment': { status: 'executed' }, root_increment: { status: 'executed' } },
+    })
+    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+      ['number_plus_one'], [['2'], ['3'], ['4']])
+    await inspectNodeData(page, 'root_increment', 'root_increment',
+      ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
+
+    const savePromise = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflows/${rootName}`)
+      && response.request().method() === 'PUT' && response.status() === 200
+    ))
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await savePromise
+    const saved = await (await page.request.get(`${API_BASE}/api/v1/workflows/${rootName}`)).json()
+    expect(saved.graph).toEqual(corrected.graph)
+    await page.reload()
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, siblingName, siblingDisplayName)
+    await expect(page.locator('.vue-flow__node[data-id="sibling_seed"]')).toBeVisible()
+    await openWorkflow(page, rootName, rootDisplayName)
+    expect((await acceptedDraft(page, rootName)).graph).toEqual(corrected.graph)
+    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+      ['number_plus_one'], [['2'], ['3'], ['4']])
+    await inspectNodeData(page, 'root_increment', 'root_increment',
+      ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
+    const siblingAfter = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
+    expect(siblingAfter).toEqual(siblingBefore)
+    const siblingAfterResult = await page.request.post(`${API_BASE}/api/v1/nodes/sibling_seed/data/query`, {
+      data: { workflow_name: siblingName },
+    })
+    expect(siblingAfterResult.status()).toBe(404)
   }
   finally {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${rootName}`).catch(() => undefined)
