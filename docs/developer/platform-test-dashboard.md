@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **231 V + 220 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **231 / 457 are verified (50.5%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **209 V + 11 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **209 / 220 are verified (95.0%)**.
+- Overall: **233 V + 218 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **233 / 457 are verified (51.0%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **211 V + 9 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **211 / 220 are verified (95.9%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -96,8 +96,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `af58e4e`, `14582d0` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | V | V | V | V | V | verified | `7575d0e` |
 | WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
-| WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `f920c9b` |
-| WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `cf794fb` |
+| WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `f920c9b`, `6025ee6` |
+| WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `cf794fb`, `6025ee6` |
 | WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | G | V | V | V | in-progress | `fd96f8f`, `8cdc768` |
 | WF-REC-013 | Semantic operation-batch atomicity | P1 | Draft operation API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | G | N (cycle insertion is refused atomically before a recovery lifecycle begins) | G | G | gap | `fcb4408` inspection |
