@@ -29,9 +29,9 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **238 V + 213 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **238 / 457 are verified (52.1%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **216 V + 4 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **216 / 220 are verified (98.2%)**.
-- Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
+- Overall: **238 V + 212 G + 0 I + 0 B + 6 U = 456 applicable obligations**, so **238 / 456 are verified (52.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **216 V + 3 G + 0 I + 0 B + 0 U = 219 applicable obligations**, so **216 / 219 are verified (98.6%)**.
+- Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 34 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
 The integrated image/file/export evidence is credited only for its exact browser, archive-byte, deterministic refusal, rollback, and identity assertions; its remaining recovery, reload, and native-boundary cells stay gaps.
@@ -144,7 +144,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | U | U | U | unassessed | `fcb4408` inspection pending |
 | RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | G | V | in-progress | `4676ffb` |
+| RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | N (session-only Error History and Logger have no reload-retention contract; durable run diagnostics belong to execution history) | V | verified | `4676ffb`; specialist contract review |
 | RT-XCT-004 | Structured HTTP errors and expected-error logging | P1 | REST API/logging | no | G | G | N (request error translation is synchronous and has no cancellation or recovery lifecycle) | N (request-scoped; no persisted user state) | G | gap | `fcb4408` inspection |
 | RT-XCT-005 | MCP typed operations and stable interface IDs | P2 | MCP/API/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-006 | Desktop startup identity, window, and shutdown | P2 | Native desktop/manual | no | G | G | G | N (startup shell has no portable saved state) | G | gap | `fcb4408` inspection |

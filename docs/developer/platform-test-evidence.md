@@ -10,6 +10,10 @@ Use [Campaign progress](platform-test-progress.md) for current status and [Campa
 Append concise per-task evidence here after integration; keep raw logs and traces in ignored artifacts.
 Record the exact command, source revision/diff, result, duration, exclusions/skips/retries, package versions where relevant, and remaining limitations.
 
+## Tier 1B contextual-error persistence contract review — 2026-09-17
+
+A read-only GPT-6 Astra/high specialist reviewed RT-XCT-003 at `f19f226` and found no reload-retention contract for the session Error History or Logger. V1 §2.5 explicitly calls streamed logs ephemeral, v1 §§3.7 and 3.11 specify live error presentation, and v2 §9 makes retained execution history the durable run-diagnostics surface. The frontend error and log stores are memory-only, and execution snapshot restoration intentionally does not republish failures as notifications. Existing real-worker and synthetic GUI evidence still supports S/R/F/B; P is justified `N`, not a passed persistence test. Notification rehydration would change product semantics and requires separate owner direction; no product code or test was changed for this review.
+
 ## Campaign strategy revision — 2026-09-14
 
 At `eb0dc74` plus the campaign-documentation diff, `scripts/test check docs` passed in 5s with no warnings or skipped phases.
