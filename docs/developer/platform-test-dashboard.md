@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **226 V + 225 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **226 / 457 are verified (49.5%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **204 V + 16 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **204 / 220 are verified (92.7%)**.
+- Overall: **227 V + 224 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **227 / 457 are verified (49.7%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **205 V + 15 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **205 / 220 are verified (93.2%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -119,7 +119,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | G | in-progress | `8908388` |
 | RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
-| RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | G | V | V | in-progress | `4208769` |
+| RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `4208769`, `9698d5b` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | G | G | V | V | in-progress | `fd96f8f` |
 | RT-EXE-006 | Real sequential worker isolation and output files | P0 | Local desktop runtime/integration | yes | V | G | V | V | V | in-progress | `da2ced2`, `4676ffb` |
 | RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | G | V | V | V | in-progress | `2c1ff72` |
