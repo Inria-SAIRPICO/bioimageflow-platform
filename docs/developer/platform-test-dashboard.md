@@ -29,8 +29,8 @@ IDs must be unique across the inventories and dashboard.
 
 The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
 
-- Overall: **224 V + 227 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **224 / 457 are verified (49.0%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **202 V + 18 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **202 / 220 are verified (91.8%)**.
+- Overall: **226 V + 225 G + 0 I + 0 B + 6 U = 457 applicable obligations**, so **226 / 457 are verified (49.5%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **204 V + 16 G + 0 I + 0 B + 0 U = 220 applicable obligations**, so **204 / 220 are verified (92.7%)**.
 - Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 33 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
@@ -87,13 +87,13 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | V | V | V | verified | `dd20821`, `301c19c` |
-| WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e`, `bcedaec` |
+| WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `af58e4e`, `bcedaec`, `14582d0` |
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `bcedaec` |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `3422e1c`, `dd9e231` |
 | WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | G | V | V | V | in-progress | `1e84421`, `dd9e231` |
 | WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | G | V | V | V | in-progress | `da0ded6`, `152c82b`, `0dc71b5` |
-| WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | G | V | V | in-progress | `af58e4e` |
+| WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `af58e4e`, `14582d0` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | V | V | V | V | V | verified | `7575d0e` |
 | WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | G | in-progress | `f920c9b` |
