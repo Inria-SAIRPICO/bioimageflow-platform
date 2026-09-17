@@ -361,6 +361,56 @@ def test_bundle_pins_latest_success_once_and_writes_manifest(
     shutil.rmtree(prepared.cleanup_root)
 
 
+def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_source(
+    store: _Store,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow_server.services import workflow_exports
+
+    storage_path = store.workflow_dir("folder/wf") / "results"
+    node_id, run_id = _seed_canonical_results(storage_path)
+    source_files = {
+        path.relative_to(storage_path): path.read_bytes()
+        for path in storage_path.rglob("*")
+        if path.is_file()
+    }
+    failed_root = tmp_path / "failed-bundle"
+    monkeypatch.setattr(workflow_exports, "_temporary_root", lambda: failed_root)
+    real_zip_tree = workflow_exports._zip_tree
+    monkeypatch.setattr(
+        workflow_exports,
+        "_zip_tree",
+        Mock(side_effect=OSError("bundle zip failed")),
+    )
+
+    with pytest.raises(OSError, match="bundle zip failed"):
+        WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+
+    assert not failed_root.exists()
+    assert {
+        path.relative_to(storage_path): path.read_bytes()
+        for path in storage_path.rglob("*")
+        if path.is_file()
+    } == source_files
+
+    monkeypatch.setattr(workflow_exports, "_zip_tree", real_zip_tree)
+    retry_root = tmp_path / "retry-bundle"
+    monkeypatch.setattr(workflow_exports, "_temporary_root", lambda: retry_root)
+    prepared = WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+    with zipfile.ZipFile(prepared.path) as archive:
+        manifest = json.loads(archive.read(RESULTS_BUNDLE_MANIFEST))
+        assert manifest["results"]["run_id"] == run_id
+        prefix = f"results/runs/{run_id}/nodes/{node_id}/outputs/"
+        assert archive.read(f"{prefix}assets/mask.txt") == b"canonical asset"
+        assert json.loads(archive.read(f"{prefix}provenance.json"))["run"]["run_id"] == run_id
+    assert {
+        path.relative_to(storage_path): path.read_bytes()
+        for path in storage_path.rglob("*")
+        if path.is_file()
+    } == source_files
+
+
 def test_bundle_without_successful_run_is_unavailable(
     store: _Store,
     tmp_path: Path,

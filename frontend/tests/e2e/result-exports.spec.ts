@@ -60,7 +60,7 @@ async function createWorkflow(page: Page, displayName: string): Promise<string> 
   return workflowName
 }
 
-async function installExportGraph(page: Page, workflowName: string): Promise<void> {
+async function installExportGraph(page: Page, workflowName: string, marker = 1): Promise<void> {
   await page.goto('about:blank')
   const current = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
   expect(current.ok()).toBeTruthy()
@@ -72,7 +72,7 @@ async function installExportGraph(page: Page, workflowName: string): Promise<voi
       name: 'Generated result',
       tool_name: 'Generate',
       position: [140, 160],
-      parameters: { column_name: 'marker', values: [1] },
+      parameters: { column_name: 'marker', values: [marker] },
     },
     {
       type: 'tool',
@@ -131,8 +131,8 @@ async function openExportDialog(page: Page): Promise<void> {
 }
 
 test.describe('result exports', () => {
-  test('downloads exact mixed-latest and pinned-run bytes after two real GUI runs', async ({ page }) => {
-    test.setTimeout(60_000)
+  test('keeps latest exports workflow-bound and retries a failed pinned bundle without wrong bytes', async ({ page }) => {
+    test.setTimeout(90_000)
     const displayName = `Result export ${test.info().project.name} ${Date.now()}`
     const workflowName = deriveWorkflowId(displayName)
     expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
@@ -196,6 +196,24 @@ test.describe('result exports', () => {
     })
     expect(secondRunId).not.toBe(firstRunId)
 
+    // Save the edited source before switching away, then make another workflow's
+    // completed run the newest run in the workspace. Its marker is deliberately
+    // different so a wrong-workflow export cannot pass by matching filenames.
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    const otherDisplayName = `Other result export ${test.info().project.name} ${Date.now()}`
+    const otherWorkflowName = await createWorkflow(page, otherDisplayName)
+    await installExportGraph(page, otherWorkflowName, 97)
+    const otherRunId = await runAndReadId(
+      page,
+      () => page.getByTestId('run-workflow-button').click(),
+    )
+    expect(otherRunId).not.toBe(secondRunId)
+    await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+    await page.getByTestId('workflow-search').fill(displayName)
+    await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+    await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+
     await openExportDialog(page)
     const latestDownloadPromise = page.waitForEvent('download')
     await page.getByTestId('export-latest-results').click()
@@ -222,8 +240,26 @@ test.describe('result exports', () => {
       .toMatchObject({ run: { run_id: secondRunId } })
     expect(JSON.parse(latest.get('latest/seed_result/provenance.json')!.toString('utf8')))
       .toMatchObject({ run: { run_id: firstRunId } })
+    expect([...latest.values()].some(value => value.toString('utf8').includes('0,97\n'))).toBe(false)
 
     await openExportDialog(page)
+    let unexpectedDownloads = 0
+    const countDownload = () => { unexpectedDownloads += 1 }
+    page.on('download', countDownload)
+    await page.route(`**/api/v1/workflows/${workflowName}/exports/workflow-run-bundle`, async route => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: { error: 'results_export_conflict', detail: 'Result files changed while preparing the bundle. Retry the export.' } }),
+      })
+    }, { times: 1 })
+    await page.getByTestId('export-workflow-with-results').click()
+    await expect(page.getByTestId('workflow-export-error'))
+      .toHaveText('Result files changed while preparing the bundle. Retry the export.')
+    expect(unexpectedDownloads).toBe(0)
+    await expect(page.getByTestId('workflow-export-dialog')).toBeVisible()
+    page.off('download', countDownload)
+
     const bundleDownloadPromise = page.waitForEvent('download')
     await page.getByTestId('export-workflow-with-results').click()
     const bundleDownload = await bundleDownloadPromise
@@ -258,6 +294,21 @@ test.describe('result exports', () => {
     expect(JSON.parse(bundle.get(`${runPrefix}provenance.json`)!.toString('utf8')))
       .toMatchObject({ run: { run_id: secondRunId } })
 
+    // A rejected export must not change the source run or its per-node latest
+    // projection; the retry still carries the original workflow's exact bytes.
+    const sourceStatus = await page.request.get(`${API_BASE}/api/v1/execution/status`)
+    expect(sourceStatus.ok()).toBeTruthy()
+    expect((await sourceStatus.json()).execution_id).toBe(otherRunId)
+    await openExportDialog(page)
+    const afterRetryDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('export-latest-results').click()
+    const afterRetryPath = await (await afterRetryDownloadPromise).path()
+    expect(afterRetryPath).not.toBeNull()
+    const afterRetry = zipEntries(await readFile(afterRetryPath!))
+    expect([...afterRetry.keys()].sort()).toEqual([...latest.keys()].sort())
+    for (const [name, bytes] of latest) expect(afterRetry.get(name)).toEqual(bytes)
+
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${otherWorkflowName}`)
   })
 })
