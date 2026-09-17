@@ -211,6 +211,13 @@ The repair checks that the callback's captured immutable execution context is st
 The exact focused regression passed after the repair, and real sequential-worker browser refusal/cancellation/rerun journeys passed Chromium and Firefox. This test injects a late callback and does not assert Wetlands itself emits one.
 The cross-stack app completion command remains red for unrelated ISSUE-013, and browser smoke timed out before collection at the 60s E2E backend startup limit; neither lane is claimed as passing evidence for this fix.
 
+## ISSUE-016 — Startup selects another workflow's recovery before the valid last-opened workflow
+
+Status: open; a dedicated Sol/medium worktree owns a narrow startup-selection fix and exact browser regressions.
+At integrated source `0ab6bac`, `scripts/test check browser-all` failed Firefox `frontend/tests/e2e/agent-draft-sync.spec.ts:287` after opening an agent-copy workflow: reload showed the original dirty workflow instead of the copy. The same run failed Chromium `frontend/tests/e2e/nested-execution.spec.ts:173` because reload opened an older clipboard workflow rather than the newly chosen recursive workflow. The lane passed 62 Chromium tests before that failure, left 41 unrun, and had an additional runner-level error; Firefox failed early. Neither browser project passed.
+V1 §4.3 requires startup to load the valid last-opened workflow first, then consider a newer IndexedDB recovery snapshot for that same workflow. `frontend/src/services/startupWorkflow.ts` currently puts `loadMostRecentAutoSave().name` ahead of the valid last-opened ID in its candidate list. A focused startup unit regression fails before the fix, selecting `recovered` instead of `last-opened`; same-workflow recovery is separately covered. App tab activation also writes the last-opened preference asynchronously, so the exact contribution of preference-write timing to each browser failure still needs isolated reproduction.
+Next: run the exact failed Firefox selector before editing the product, restore contract ordering while retaining same-workflow recovery, validate exact Chromium/Firefox affected journeys and a scoped completion check, then rerun invalidated milestone browser acceptance. This issue is not a result-table width defect; that test explicitly reopened its intended workflow after reload.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
