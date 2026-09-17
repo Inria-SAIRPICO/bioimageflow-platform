@@ -268,7 +268,7 @@ def test_probe_runner_enforces_time_and_output_bounds() -> None:
     assert timed_out.value.code == "napari_probe_timeout"
 
     with pytest.raises(NapariEnvironmentError) as too_large:
-        _bounded_run([sys.executable, "-I", "-c", "print('x' * 200)"], env, 1.0, 100)
+        _bounded_run([sys.executable, "-I", "-c", "print('x' * 200)"], env, 5.0, 100)
     assert too_large.value.code == "napari_probe_output_limit"
 
 

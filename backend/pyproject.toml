@@ -1,7 +1,7 @@
 [project]
 name = "bioimageflow-server"
 version = "0.1.23"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
@@ -17,7 +17,7 @@ dependencies = [
     "Pillow>=10.0",
     "tifffile>=2024.0",
     "keyring>=25.0",
-    "bioimageflow-core>=0.4.0,<0.5",
+    "bioimageflow-core>=0.4.1,<0.5",
     "bioimageflow[cluster]==0.8.0",
     "wetlands>=2.4.1,<3",
     "mcp>=1.0",

@@ -9,7 +9,7 @@ The [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/b
 This page is the BioImageFlow-specific application and launcher release checklist.
 
 The exact static version in `backend/pyproject.toml` is the release tag.
-The `requires-python` range also controls the launcher-managed application interpreter. Keep its upper bound below Python 3.14 until BioImageFlow Core reads lazily evaluated tool annotations on 3.14; a newer interpreter can make registered tools appear with empty input and output schemas without a package load error.
+The `requires-python` range also controls the launcher-managed application interpreter. Python 3.14 requires BioImageFlow Core 0.4.1 or newer in the 0.4.x line so lazily evaluated tool annotations produce input and output schemas. Keep the dependency floor and lockfile aligned with that requirement, and exclude untested newer Python versions.
 Do not add a `v` prefix: version `0.1.21` produces Git tag `0.1.21`, release assets containing `0.1.21`, and no `v0.1.21` alias.
 The `RELEASE_TAG` variable below only makes filenames readable; launcher commands independently infer and verify the same value from `pyproject.toml`.
 

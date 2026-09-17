@@ -75,7 +75,7 @@ There is no `last_valid_workflow` cache and no authoritative backend editor sess
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
 
-The desktop application runtime uses Python 3.12 or 3.13. Python 3.14 is excluded until BioImageFlow Core resolves lazily evaluated class annotations when discovering tool input and output schemas; otherwise an installed tool can appear available with empty ports and parameters.
+The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.4.1 or newer in the 0.4.x line resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
 
