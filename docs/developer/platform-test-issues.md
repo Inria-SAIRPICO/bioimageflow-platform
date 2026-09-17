@@ -195,6 +195,14 @@ The exact selector reproduced the mismatch in isolation after browser load ended
 No supported GUI user impact or cause is yet established; keep the classification as a test/runtime regression, not a Tier 1B release blocker or a confirmed Napari product defect.
 The next owner should inspect probe output/deadline ordering and reproduce the exact selector on the current revision before changing the Napari-owned implementation or test threshold.
 
+## ISSUE-014 — Workflow title intermittently remains “No workflow” in Chromium smoke
+
+Status: open; source of intermittent behavior is not yet established.
+At task revision `1f0dfb3`, `scripts/test check cross-browser-smoke` passed seven Chromium critical journeys then failed `frontend/tests/e2e/critical-operation-races.spec.ts:453` because the workflow title remained “No workflow” after opening; the same smoke lane passed Firefox 18/18.
+Earlier Tier 1B smoke runs showed the same late Chromium title symptom, while an isolated exact selector passed on a prior batch. The current task's isolated exact attempt never collected the test because backend application startup timed out after 60s, so it does not establish a passing or failing current-revision title behavior.
+No supported-path data loss, wrong graph, or root cause has been demonstrated; do not classify this yet as a product identity defect or dismiss the repeated smoke failure as passing.
+Next: isolate the exact Chromium selector after backend startup is stable, then reproduce the preceding suite order or use a five-repeat exact run if timing is suspected; inspect tab/open readiness and distinguish a real workflow-open race from a test oracle race. Keep the smoke lane red until a passing rerun on the relevant revision.
+
 ## New issue record template
 
 Use a stable ISSUE-NNN heading with status, task/dependency scope, source revision and packages, observed versus expected behavior, authoritative references, exact reproduction/selector/browser, evidence paths, attempted changes, and unresolved question.
