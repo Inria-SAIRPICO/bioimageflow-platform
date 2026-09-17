@@ -881,6 +881,105 @@ test.describe('workflow interface and grouping', () => {
     expectStableParentRoutes(afterDiscard)
   })
 
+  test('retries a failed private interface rename without changing stable parent routes', async ({ page }) => {
+    const name = workflowName('nested_port_retry')
+    const displayName = `Nested port retry ${name}`
+    const initial = nestedInterfaceGraph(name, displayName)
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })).status()).toBe(201)
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
+    expect(setup.ok(), await setup.text()).toBeTruthy()
+
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    const originalParent = await draftState(page, name)
+    expectStableParentRoutes(originalParent.graph)
+    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const portName = page.getByTestId('dataframe-input-name-0')
+    await expect(portName).toHaveValue('Source table')
+
+    let privateSessionId: string | undefined
+    let privateWrites = 0
+    await page.route('**/api/v1/nested-workflow-snapshots/*', async route => {
+      if (route.request().method() !== 'PUT') return route.continue()
+      const body = route.request().postDataJSON() as { graph?: GraphState } | null
+      if (childInputName(body?.graph) !== 'Recovered source table') return route.continue()
+      privateWrites += 1
+      privateSessionId = new URL(route.request().url()).pathname.split('/').at(-1)
+      if (privateWrites === 1) {
+        return route.fulfill({ status: 500, json: { detail: 'forced private port write failure' } })
+      }
+      return route.continue()
+    })
+    const failedWrite = page.waitForResponse(response => (
+      response.url().includes('/api/v1/nested-workflow-snapshots/')
+      && response.request().method() === 'PUT'
+      && response.status() === 500
+    ))
+    await portName.fill('Recovered source table')
+    await failedWrite
+    await expect(portName).toHaveValue('Recovered source table')
+    await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
+    expect(privateSessionId).toBeTruthy()
+    const privateUrl = `${API_BASE}/api/v1/nested-workflow-snapshots/${privateSessionId}`
+    const failedSnapshotResponse = await page.request.get(privateUrl)
+    expect(failedSnapshotResponse.ok(), await failedSnapshotResponse.text()).toBeTruthy()
+    const failedSnapshot = await failedSnapshotResponse.json() as {
+      snapshot_revision: number; graph: GraphState
+    }
+    expect(childInputName(failedSnapshot.graph)).toBe('Source table')
+    expect(failedSnapshot.graph.interface.inputs[0]?.id).toBe('child-table-input')
+    const failedParent = await draftState(page, name)
+    expect(failedParent.draft_revision).toBe(originalParent.draft_revision)
+    expect(failedParent.graph).toEqual(originalParent.graph)
+    expectStableParentRoutes(failedParent.graph)
+
+    const acceptedWrite = page.waitForResponse(response => responseCarriesNestedInputName(response, 'Recovered source table'))
+    await page.getByTestId('canvas-persistence-retry').click()
+    const accepted = await (await acceptedWrite).json() as { snapshot_revision: number; graph: GraphState }
+    expect(privateWrites).toBe(2)
+    expect(accepted.snapshot_revision).toBe(failedSnapshot.snapshot_revision + 1)
+    expect(childInputName(accepted.graph)).toBe('Recovered source table')
+    expect(accepted.graph.interface.inputs[0]?.id).toBe('child-table-input')
+    await expect(page.getByTestId('canvas-persistence-retry')).toHaveCount(0)
+    const durableSnapshotResponse = await page.request.get(privateUrl)
+    expect(durableSnapshotResponse.ok(), await durableSnapshotResponse.text()).toBeTruthy()
+    expect(await durableSnapshotResponse.json()).toMatchObject({
+      snapshot_revision: accepted.snapshot_revision, graph: accepted.graph,
+    })
+    const stillPrivate = await draftState(page, name)
+    expect(stillPrivate.draft_revision).toBe(originalParent.draft_revision)
+    expect(stillPrivate.graph).toEqual(originalParent.graph)
+
+    const parentApplied = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+      && response.status() === 200
+    ))
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await parentApplied
+    const applied = await draftState(page, name)
+    expect(applied.draft_revision).toBe(originalParent.draft_revision + 1)
+    expect(childInputName(childNode(applied.graph).workflow)).toBe('Recovered source table')
+    expect(childNode(applied.graph).workflow.interface.inputs[0]?.id).toBe('child-table-input')
+    expectStableParentRoutes(applied.graph)
+
+    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+    await saveWorkflow(page, name)
+    await page.reload()
+    await openWorkflow(page, name, displayName)
+    const reloaded = await draftState(page, name)
+    expect(reloaded.graph).toEqual(await savedGraph(page, name))
+    expect(childInputName(childNode(reloaded.graph).workflow)).toBe('Recovered source table')
+    expect(childNode(reloaded.graph).workflow.interface.inputs[0]?.id).toBe('child-table-input')
+    expectStableParentRoutes(reloaded.graph)
+  })
+
   test('closes depth-two nested snapshots child-first after refusal and failed delete', async ({ page }) => {
     test.setTimeout(60_000)
     const name = workflowName('nested_depth_two')
