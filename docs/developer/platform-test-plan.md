@@ -61,7 +61,8 @@ Commit each coherent validated issue or feature immediately when resolved, toget
 Do not start another writable task in that checkout until the previous completed task is committed.
 Workers review and commit only their own task changes on their branches; the orchestrator reviews the commit, integrates it, and records the resulting revision and evidence.
 Shared progress/issue records belong to the orchestrator; integrate their updates at the same task boundary and commit them promptly if they cannot be included in the implementation commit.
-At that boundary, update the inventory, dashboard, evidence, and short checkpoint together, run `scripts/test check docs` once on the consolidated documentation diff, and commit the documentation with or immediately after the feature commit.
+At that boundary, update the inventory, dashboard, evidence, and short checkpoint together, run `scripts/test check campaign` once on the consolidated campaign-documentation diff, and commit the documentation with or immediately after the feature commit.
+Run `scripts/test check docs` for a documentation structure/navigation change, a substantial documentation milestone, and final certification; its Sphinx build is not needed for every status or inventory update.
 Use the dashboard verifier for interim count checks; avoid separate administrative ownership, status, and worktree-archival commits when one resolved-batch record suffices.
 An interruption, open defect, remote milestone, or new owner decision still requires an immediate durable record rather than waiting for unrelated work.
 Do not accumulate resolved independent issues, stage another worker's files, or include temporary plans and raw logs in commits.
@@ -243,6 +244,9 @@ If a visible display is unavailable, retain a Playwright trace, video, or screen
 
 Use `scripts/test focus` without campaign-wide selection flags for exact failing selectors.
 After a fix, run the exact test once; use `--repeat-each=5` only for a suspected timing/race defect.
+Follow a strict test ladder: reproduce the exact failure, fix and rerun that selector, then run the next previously unrun check in the smallest applicable completion lane.
+If that next check fails, stop there and focus on its exact failure; do not restart the lane from the beginning merely because an earlier case was repaired.
+Carry forward passing phase results only while their source, fixtures, dependencies, and relevant environment remain unchanged; if a later edit invalidates a phase, rerun that phase before claiming completion.
 Run the applicable completion lane from `docs/testing.md` before declaring the batch complete.
 For a localized test-only cross-browser assertion, run its exact Chromium and Firefox selectors, then the documented localized cross-browser completion check; for a browser interaction or persistence implementation change, honor the documented browser completion lane.
 Do not add a complete browser-project run to a passing localized batch solely for reassurance; reserve broad browser acceptance for substantial GUI milestones, browser/E2E infrastructure changes, and final certification.
@@ -307,7 +311,9 @@ Test counts, line coverage, or completion of only the high-priority wave do not 
 ## Durable state and restart
 
 [Campaign progress](platform-test-progress.md) owns the short current objective, prioritized feature summary, active ownership/worktrees, open decisions, and next three actions.
-[Campaign issues](platform-test-issues.md) owns defect decisions, the coverage inventories own detailed feature obligations, and [Campaign evidence](platform-test-evidence.md) retains completed validation and release history.
+[Campaign issues](platform-test-issues.md) owns open defect decisions, the coverage inventories own detailed feature obligations, and [Campaign evidence](platform-test-evidence.md) owns concise current-task validation.
+Completed checkpoint, issue, and validation history lives in the dated [progress](archive/platform-test-progress-through-tier-1b.md), [issue](archive/platform-test-issues-through-tier-1b.md), and [evidence](archive/platform-test-evidence-through-tier-1b.md) archives.
+Ordinary restarts and worker packets must not load those archives; consult a specific archived entry only when a current claim, invalidated check, or decision needs an audit.
 Keep each fact in its owning record and link to it; remove obsolete next actions when a task is integrated.
 Record historical product contracts as historical, including superseded catalog single-click creation.
 Update durable records at every completed task, escalation, and interruption; do not create administrative commits solely for unchanged status.

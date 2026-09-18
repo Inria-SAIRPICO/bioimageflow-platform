@@ -36,8 +36,8 @@ For conflicting contracts, identity/data-loss risk, semantic redesign, unclear l
 Request another specialist pass only for materially changed safety invariants or an unresolved concrete concern.
 If Astra returns needs-owner on a shared-foundation issue, stop dependent work, record the issue, and ask me one concrete question; otherwise implement the established repair and continue independent work.
 
-Read AGENTS.md and PLATFORM_CONTEXT.md, then docs/developer/platform-test-progress.md, docs/developer/platform-test-plan.md, and the open entries in docs/developer/platform-test-issues.md.
-Read only the relevant coverage inventory and specifications for each assigned task.
+Read AGENTS.md and PLATFORM_CONTEXT.md, then the short docs/developer/platform-test-progress.md checkpoint and only the relevant sections of docs/developer/platform-test-plan.md.
+Read only the assigned feature's inventory row, relevant specifications, and matching open issue; do not load whole inventories, resolved issues, or historical archives by default.
 Inspect git status/log and reconcile the checkpoint with actual files and installed library versions.
 Do not assume historical workers still exist or temporary logs are available.
 Do not repeat completed library releases, audits, or successful checks unless changes invalidate their evidence.
@@ -59,18 +59,19 @@ Run exact Chromium and Firefox selectors for a changed GUI journey, then use the
 For localized browser test-only changes, do not add a complete browser-project run solely for reassurance; browser implementation/persistence changes, broad infrastructure changes, major GUI milestones, and final certification retain their documented broader checks.
 Do not overlap browser-heavy completion lanes when shared machine resources could make failures ambiguous.
 After a late failure, reproduce the exact failing selector/project and retain successful unchanged phases; rerun only invalidated checks.
+Once that selector passes, advance to the next unrun check; if it fails, focus there rather than rerunning already-passing earlier tests or the entire lane.
 Limit broad browser acceptance to one attempt per substantial milestone unless I explicitly request another or a later broad browser/E2E change requires it; do not repeatedly restart the full project to chase unrelated or nonreproduced failures.
 Keep Tier 1B obligation closure separate from broad-lane certification: record a red/interrupted lane and its issue honestly, validate repairs with exact selectors and scoped checks, and reserve another broad attempt for the next planned milestone or final certification.
 Use audited per-case exclusions.
 Reuse existing scope selectors; do not build more runner infrastructure without a concrete testing need.
 Make clean changes without backward-compatibility shims; update affected specifications, documentation, fixtures, and tests.
 Commit each coherent validated task as soon as its issue or bounded task is resolved, including its durable progress update, without staging unrelated files.
-Consolidate that task's inventory, dashboard, evidence, and checkpoint edits; run `scripts/test check docs` once for the batch and commit the documentation with or immediately after its product/test commit.
-Use the dashboard verifier for interim counts instead of repeated full documentation builds; avoid separate administrative ownership and worktree-archival commits when the task-boundary record suffices.
+Consolidate that task's inventory, dashboard, evidence, and checkpoint edits; run `scripts/test check campaign` once for the batch and commit the documentation with or immediately after its product/test commit.
+Use the dashboard verifier only when an interim count is needed; run `scripts/test check docs` for changed documentation structure/navigation, a substantial documentation milestone, and final certification, not each campaign status edit.
 Record an interruption, open defect, remote milestone, or owner decision immediately even when no feature is complete.
 Do not begin another writable task in that checkout until the completed task is committed; keep restart points clean so the campaign can be interrupted safely.
 Maintain the progress file, issue decisions, and feature inventories so another fresh session can continue without this conversation.
-Keep completed validation history in platform-test-evidence.md and keep the active checkpoint short and internally consistent.
+Keep the active evidence and checkpoint short and internally consistent; move completed history to dated archives at milestones and do not read it on ordinary restarts.
 Use the established stable-ID dashboard to report verified applicable obligations over the total, separately for the whole campaign and primary GUI coverage; do not use raw test counts as completion percentages.
 After remote CI, validation, publication, or dependency-availability milestones, update and commit the durable checkpoint/evidence before starting unrelated writable work; after interruption, reconcile the remote state before repeating an operation.
 At each major GUI-wave boundary, run one representative primary Playwright journey headed when a visible display is available, otherwise retain trace/video/screenshots and record that no window was shown.

@@ -29,6 +29,7 @@ Coding-loop commands:
 Completion commands:
   check backend                    Run backend lint, deterministic tests, and logging certification.
   check frontend                   Run frontend lint, type-checking, units, and production build.
+  check campaign                   Verify campaign inventory counts and local links offline.
   check docs                       Build documentation with warnings treated as failures.
   check browser-smoke              Run critical Chromium end-to-end tests.
   check cross-browser-smoke        Run critical Chromium and Firefox tests in parallel.
@@ -366,9 +367,16 @@ frontend_check_lane() {
   printf '\nFrontend check passed. Browser tests were intentionally not run.\n'
 }
 
+campaign_check_lane() {
+  require_command python3
+  phase 'Campaign dashboard' python3 "$repo_root/scripts/verify-platform-test-dashboard.py"
+  phase 'Campaign links' python3 "$repo_root/scripts/verify-platform-test-links.py"
+  printf '\nCampaign documentation check passed.\n'
+}
+
 docs_check_lane() {
+  campaign_check_lane
   require_command uv
-  phase 'Campaign dashboard' uv run --no-project python "$repo_root/scripts/verify-platform-test-dashboard.py"
   phase 'Documentation' uv run --no-project --with-requirements "$repo_root/docs/requirements.txt" -- \
     sphinx-build -W --keep-going "$repo_root/docs" "$repo_root/docs/_build/html"
   printf '\nDocumentation check passed.\n'
@@ -416,6 +424,9 @@ scoped_check_lane() {
       ;;
     frontend)
       frontend_check_lane
+      ;;
+    campaign)
+      campaign_check_lane
       ;;
     docs)
       docs_check_lane

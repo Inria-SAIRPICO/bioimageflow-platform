@@ -79,6 +79,7 @@ Do not run it immediately before a completion check that already includes the sa
 ```bash
 scripts/test check backend
 scripts/test check frontend
+scripts/test check campaign
 scripts/test check docs
 scripts/test check browser-smoke
 scripts/test check cross-browser-smoke
@@ -95,7 +96,8 @@ Use the smallest scope that covers the changed surface:
 | --- | --- |
 | Backend implementation or tests | `check backend` |
 | Frontend logic or unit tests | `check frontend` |
-| Documentation only | `check docs` |
+| Campaign checkpoint, issues, evidence, inventories, or dashboard only | `check campaign` |
+| Other documentation or campaign navigation/structure | `check docs` |
 | Backend/frontend API, schemas, dependencies, or runtime behavior | `check app` |
 | Browser interaction, layout, or persistence | `check frontend` and `check browser` |
 | Localized cross-browser behavior | `check frontend` and `check cross-browser-smoke` |
@@ -104,7 +106,10 @@ Use the smallest scope that covers the changed surface:
 
 `check backend` runs backend lint, every non-external backend test, and the logging-order certification.
 `check frontend` runs frontend lint, type checking, every Vitest project, and the production build.
-`check docs` runs Sphinx with warnings treated as failures.
+`check campaign` verifies dashboard/inventory consistency and active campaign local links offline; it does not replace Sphinx for documentation structure or the final certification.
+`check docs` includes `check campaign`, then runs Sphinx with warnings treated as failures.
+Run `check campaign` once for a consolidated campaign-documentation task, not after each row or sentence edit.
+Run `check docs` when moving/renaming campaign files, changing documentation navigation/extensions, at a substantial documentation milestone, and at final certification; do not repeat it for routine campaign status edits.
 `check browser-smoke` runs only Chromium tests tagged `@critical`, while `check browser` runs the complete Chromium project.
 `check cross-browser-smoke` runs critical Chromium and Firefox tests in isolated parallel processes.
 `check browser-firefox` runs the complete Firefox project.
