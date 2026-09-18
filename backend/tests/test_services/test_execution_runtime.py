@@ -183,6 +183,24 @@ def test_reducer_accepts_public_bioimageflow_diagnostic_value() -> None:
     assert reduced.jobs["nested/tool"].diagnostic.attempt_id == "attempt-1"
 
 
+def test_reducer_retains_environment_phase_without_numeric_progress() -> None:
+    reduced = reduce_progress_events(
+        _snapshot(state="running"),
+        [
+            {"sequence": 1, "kind": "public", "payload": {
+                "node_name": "cellpose", "status": "started", "timestamp": 1.0,
+            }},
+            {"sequence": 2, "kind": "phase", "payload": {
+                "node_name": "cellpose", "message": "Installing cellpose-env: Resolving pixi.lock",
+            }},
+        ],
+    )
+
+    assert reduced.jobs["cellpose"].state == "running"
+    assert reduced.jobs["cellpose"].message == "Installing cellpose-env: Resolving pixi.lock"
+    assert reduced.jobs["cellpose"].current is None
+
+
 def test_remote_reconnect_uses_only_durable_host_root_and_run_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

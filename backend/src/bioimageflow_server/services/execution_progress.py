@@ -73,6 +73,14 @@ def reduce_progress_events(
                     "updated_at": utc_now(),
                 }
             )
+        elif kind == "phase":
+            node_path = payload.get("node_name")
+            message = payload.get("message")
+            if isinstance(node_path, str) and node_path and isinstance(message, str):
+                existing = jobs.get(node_path) or JobSnapshot(scoped_node_path=node_path)
+                jobs[node_path] = existing.model_copy(
+                    update={"message": message, "updated_at": utc_now()}
+                )
         elif kind == "public":
             node_path = payload.get("node_name")
             if isinstance(node_path, str) and node_path:

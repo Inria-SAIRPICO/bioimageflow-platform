@@ -41,6 +41,32 @@ describe('ExecutionPanel', () => {
     })
   })
 
+  it('shows an environment setup message without numeric job progress', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const snapshot = {
+      id: 'install-run', revision: 1, workflow_id: 'workflow',
+      target_id: 'local', target_label: 'Local', target_mode: 'local' as const,
+      backend: 'wetlands' as const, state: 'running' as const,
+      created_at: '2026-09-18T10:00:00Z', child_execution_ids: [],
+      actions: retryActions, observation: reachableObservation,
+      jobs: [{ id: 'cellpose', scoped_node_path: 'cellpose', state: 'running' as const,
+        message: 'Installing cellpose-env: Resolving pixi.lock', progress: null }],
+    }
+    registry.applySnapshot(snapshot)
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot({ ...snapshot, revision: 2 })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('button.job-row').text()).toContain('Installing cellpose-env')
+    await wrapper.get('button.job-row').trigger('click')
+    expect(wrapper.get('[data-testid="execution-job-details"]').text()).toContain('Resolving pixi.lock')
+  })
+
   excluded('renders hierarchical jobs and structured diagnostics from a normalized snapshot', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

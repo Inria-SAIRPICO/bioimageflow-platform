@@ -301,6 +301,7 @@ class CellposeSegmenter(ProcessingTool):
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
 **Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources). Environment status is shown via button color and label (stopped/creating/running). Environments cannot be stopped during execution.
+During local workflow execution, the platform subscribes to BioImageFlow's public provisioning-event callback before Wetlands waits for the environment. Setup stages and sanitized Pixi stdout/stderr lines are streamed as execution-attributed Logger entries; a node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins.
 
 #### 2.4.1b Error Response Format
 

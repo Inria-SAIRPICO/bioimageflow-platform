@@ -154,6 +154,7 @@ Do not rebuild an ad hoc partial graph for Run Selected; compile the complete ac
 
 Recursive graphs compile to scoped jobs while workflow nodes project aggregate descendant status.
 Caching and result attribution remain per internal tool node, and failures preserve their scoped path through nested workflow boundaries.
+Local Wetlands provisioning forwards public BioImageFlow environment-operation events into execution-attributed logs, including sanitized Pixi output. Retained job snapshots carry a setup message independently of numeric row progress, so the Execution panel distinguishes environment installation from tool execution.
 
 The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
 Local execution preserves Direct and Wetlands through the existing local path.

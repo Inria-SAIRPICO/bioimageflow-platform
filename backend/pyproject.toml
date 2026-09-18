@@ -18,7 +18,7 @@ dependencies = [
     "tifffile>=2024.0",
     "keyring>=25.0",
     "bioimageflow-core>=0.4.1,<0.5",
-    "bioimageflow[cluster]==0.8.0",
+    "bioimageflow[cluster]==0.8.2",
     "wetlands>=2.4.1,<3",
     "mcp>=1.0",
 ]

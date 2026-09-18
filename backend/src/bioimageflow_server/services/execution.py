@@ -583,7 +583,7 @@ class ExecutionManager:
             with bind_execution_log_context(context):
                 use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
                 engine = self._make_execution_engine(workflow)
-                self._attach_environment_status_hook(engine)
+                self._attach_environment_status_hook(engine, context)
                 try:
                     if engine is None or not use_explicit_engine:
                         value = workflow.compute(
@@ -1075,7 +1075,9 @@ class ExecutionManager:
             setattr(engine, "_env_manager", shared_manager)
         return engine
 
-    def _attach_environment_status_hook(self, engine: Any) -> None:
+    def _attach_environment_status_hook(
+        self, engine: Any, context: ExecutionContext | None = None
+    ) -> None:
         """Publish Wetlands environment lifecycle changes during execution.
 
         The library owns environment startup inside ``WetlandsEnvManager``.
@@ -1092,17 +1094,26 @@ class ExecutionManager:
         def _get_or_create_with_status(env_spec: Any, *args: Any, **kwargs: Any) -> Any:
             env_name = getattr(env_spec, "name", None)
             already_running = _wetlands_env_is_running(manager, env_name)
+            node_id = self._current_node_id if context == self.context else None
             if isinstance(env_name, str) and env_name:
                 self._publish_environment_status(
                     env_name,
                     "running" if already_running else "creating",
                 )
             try:
+                if node_id is not None and not already_running:
+                    self._publish_environment_phase(context, node_id, f"Preparing {env_name} environment")
+                if context is not None:
+                    kwargs["on_provision_event"] = lambda event: self._on_environment_event(
+                        event, context, node_id, env_name
+                    )
                 env = get_or_create(env_spec, *args, **kwargs)
             except Exception:
                 if isinstance(env_name, str) and env_name and not already_running:
                     self._publish_environment_status(env_name, "stopped")
                 raise
+            if node_id is not None and context == self.context:
+                self._publish_environment_phase(context, node_id, "Executing tool")
             if isinstance(env_name, str) and env_name:
                 self._publish_environment_status(env_name, "running")
             return env
@@ -1122,6 +1133,37 @@ class ExecutionManager:
 
             setattr(manager, "shutdown_all", _shutdown_all_with_status)
         setattr(manager, "_bioimageflow_platform_env_status_hooked", True)
+
+    def _on_environment_event(
+        self, event: Any, context: ExecutionContext, node_id: str | None, env_name: str | None
+    ) -> None:
+        if context != self.context or self.state != "running":
+            return
+        kind = getattr(getattr(event, "kind", None), "value", None)
+        message = getattr(event, "message", None)
+        if not isinstance(message, str) or not message:
+            return
+        stage = getattr(event, "stage", None)
+        if kind == "output":
+            self.event_bus.publish_log("INFO", message, node_id, time.time(), context=context)
+        elif kind in {"step", "progress", "state"}:
+            self.event_bus.publish_log("INFO", message, node_id, time.time(), context=context)
+            if node_id is not None and kind == "step" and stage:
+                label = f"Installing {env_name}: {message}"
+                self._publish_environment_phase(context, node_id, label)
+
+    def _publish_environment_phase(
+        self, context: ExecutionContext, node_id: str, message: str
+    ) -> None:
+        with self._retained_progress_lock:
+            self._retained_progress_sequence += 1
+            self._retained_progress_events.append(
+                {
+                    "sequence": self._retained_progress_sequence,
+                    "kind": "phase",
+                    "payload": {"node_name": node_id, "message": message},
+                }
+            )
 
     def _publish_environment_status(self, env_name: str, status: str) -> None:
         publish = getattr(self.event_bus, "publish_environment_status", None)

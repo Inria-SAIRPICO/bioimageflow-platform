@@ -480,7 +480,7 @@ function closeRetryDialog(): void {
             <span :style="{ paddingLeft: `${indent(job) * 1.1}rem` }" class="job-name">
               {{ job.display_name ?? job.scoped_node_path }}
             </span>
-            <Tag :value="job.state" :severity="stateSeverity(job.state)" />
+            <span class="job-state"><Tag :value="job.state" :severity="stateSeverity(job.state)" /><small v-if="job.state === 'running' && job.message">{{ job.message }}</small></span>
             <span>
               <ProgressBar v-if="progressValue(job) !== null" :value="progressValue(job)!" class="job-progress" />
               <span v-else>—</span>
@@ -500,6 +500,7 @@ function closeRetryDialog(): void {
             </div>
           </header>
           <p v-if="selectedJob.route_reason"><strong>Route:</strong> {{ selectedJob.route_reason }}</p>
+          <p v-if="selectedJob.state === 'running' && selectedJob.message"><strong>Current step:</strong> {{ selectedJob.message }}</p>
           <p v-if="selectedJob.diagnostic" class="diagnostic-message">
             <strong>{{ selectedJob.diagnostic.exception_type ?? selectedJob.diagnostic.category ?? 'Failure' }}:</strong>
             {{ selectedJob.diagnostic.message }}
@@ -590,7 +591,9 @@ function closeRetryDialog(): void {
 .cleanup-plan { display: grid; gap: .5rem; max-height: 18rem; overflow: auto; padding: .75rem; border-radius: 6px; background: var(--p-surface-100); }
 .cleanup-plan article { display: grid; gap: .25rem; padding-bottom: .5rem; border-bottom: 1px solid var(--p-content-border-color); }
 .cleanup-plan p { margin: 0; }
-.job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) 6rem minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
+.job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) minmax(11rem, 1.5fr) minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
+.job-state { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 0.2rem; }
+.job-state small { overflow: hidden; max-width: 100%; text-overflow: ellipsis; white-space: nowrap; color: var(--p-text-muted-color); }
 button.job-row { cursor: pointer; }
 .job-row--active { background: var(--p-highlight-background); }
 .job-header { color: var(--p-text-muted-color); font-size: 0.7rem; text-transform: uppercase; }

@@ -67,6 +67,7 @@ export interface ExecutionJobSnapshot {
   display_name?: string | null
   parent_path?: string | null
   state: ExecutionJobState
+  message?: string | null
   progress?: { current: number; total: number; label?: string | null } | null
   executor_label?: string | null
   resources?: ExecutionResources | null
@@ -288,6 +289,7 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
       id: job.scoped_node_path,
       scoped_node_path: job.scoped_node_path,
       state: job.state,
+      message: job.message,
       progress: job.current != null && job.maximum != null
         ? { current: job.current, total: job.maximum, label: job.message }
         : job.total_rows != null && job.total_rows > 0

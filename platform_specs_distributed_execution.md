@@ -240,6 +240,7 @@ Unavailable profiles remain visible in Preferences with their structured disable
 
 The Execution panel remains the common monitor for Direct, Wetlands, and managed remote runs.
 It shows run identity, target, state, duration, job tree, per-node progress, structured diagnostics, backend allocation information, reload of the latest retained observation, and server-derived availability for cancellation, retry, result download, and cleanup.
+For local Wetlands jobs, the panel shows retained environment-setup messages even before numeric node progress starts, then identifies tool execution after provisioning completes.
 
 Remote actions are enabled only from current public capability and run reports.
 Managed runs omit **Open logs**.

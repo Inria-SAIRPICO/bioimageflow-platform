@@ -249,8 +249,23 @@ class _FakeWetlandsManager:
         self.calls: list[str] = []
         self.raise_exc: BaseException | None = None
 
-    def get_or_create(self, env_spec: _EnvSpecStub) -> object:
+    def get_or_create(
+        self, env_spec: _EnvSpecStub, *, on_provision_event: Any = None
+    ) -> object:
         self.calls.append(env_spec.name)
+        if on_provision_event is not None:
+            on_provision_event(
+                type("Event", (), {
+                    "kind": type("Kind", (), {"value": "step"})(),
+                    "message": "Resolving pixi.lock", "stage": "lock_resolution",
+                })()
+            )
+            on_provision_event(
+                type("Event", (), {
+                    "kind": type("Kind", (), {"value": "output"})(),
+                    "message": "Downloaded cellpose", "stage": "conda_install",
+                })()
+            )
         if self.raise_exc is not None:
             raise self.raise_exc
         env = object()
@@ -526,6 +541,8 @@ class TestExecutionManagerLifecycle:
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 try:
+                    if self.on_progress is not None:
+                        self.on_progress(_ProgressEventStub("n1", "started"))
                     engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
                     return super().compute(*targets, dev_mode=dev_mode)
                 finally:
@@ -552,6 +569,11 @@ class TestExecutionManagerLifecycle:
             ("cellpose-env", "running"),
             ("cellpose-env", "stopped"),
         ]
+        assert any(message == "Downloaded cellpose" for _, message, _, _ in bus.log_events)
+        assert any(
+            event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
+            for event in em.retained_progress()
+        )
 
     async def test_execution_marks_environment_stopped_when_wetlands_start_fails(
         self, monkeypatch: pytest.MonkeyPatch
