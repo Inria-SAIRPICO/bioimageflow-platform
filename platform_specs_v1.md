@@ -1407,6 +1407,7 @@ Displays real-time logs streamed via WebSocket.
 - **Timestamps:** Shown in local time
 - **Log entries include:** timestamp, level, node name (if applicable), message
 - **Color coding:** DEBUG=gray, INFO=default, WARNING=yellow, ERROR=red
+- **Selection and copying:** Users can drag to select text across log rows and copy the native selection with the platform keyboard shortcut. **Copy logs** copies every entry currently shown by the level, node, and search filters in display order without changing stored logs or filters. The plain-text output has one record per entry with the displayed timestamp, full level, node label when present, and complete message; embedded message newlines are preserved. The button is disabled when no entries are visible and reports clipboard success or failure.
 
 ### 3.8 Workflows Panel
 

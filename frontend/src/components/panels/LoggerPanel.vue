@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
@@ -42,6 +42,7 @@ const columnWidths = ref<Record<ResizableLogColumn, number>>({
   node: 192,
 })
 const columnResize = ref<ColumnResizeState | null>(null)
+const copyFeedback = ref<'success' | 'error' | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const logGridStyle = computed(() => ({
@@ -181,6 +182,23 @@ function nodeLabel(entry: LogEntry): string {
   return graphNodeLabels.value.get(entry.nodeId) ?? entry.nodeId
 }
 
+async function copyVisibleLogs() {
+  if (visibleEntries.value.length === 0) return
+  copyFeedback.value = null
+  const text = visibleEntries.value.map((entry) => [
+    formatTimestamp(entry.timestamp),
+    normalizedLevel(entry),
+    ...(entry.nodeId === null ? [] : [nodeLabel(entry)]),
+    entry.message,
+  ].join('  ')).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    copyFeedback.value = 'success'
+  } catch {
+    copyFeedback.value = 'error'
+  }
+}
+
 function setColumnWidth(column: ResizableLogColumn, width: number) {
   columnWidths.value[column] = Math.min(
     MAX_COLUMN_WIDTH,
@@ -247,6 +265,10 @@ watch(
     if (logger.autoScroll) void scrollToBottom()
   },
 )
+
+onBeforeUnmount(() => {
+  if (searchTimer !== null) clearTimeout(searchTimer)
+})
 </script>
 
 <template>
@@ -322,6 +344,17 @@ watch(
           @click="clearSearch"
         />
       </span>
+
+      <Button
+        icon="pi pi-copy"
+        label="Copy logs"
+        text
+        :disabled="visibleEntries.length === 0"
+        data-testid="log-copy"
+        @click="copyVisibleLogs"
+      />
+      <span v-if="copyFeedback === 'success'" class="logger-panel__copy-feedback" role="status" data-testid="log-copy-success">Logs copied</span>
+      <span v-if="copyFeedback === 'error'" class="logger-panel__copy-feedback logger-panel__copy-feedback--error" role="alert" data-testid="log-copy-error">Could not copy logs</span>
 
       <Button
         :icon="logger.autoScroll ? 'pi pi-arrow-down' : 'pi pi-pause'"
@@ -532,12 +565,23 @@ watch(
   min-width: 10rem;
 }
 
+.logger-panel__copy-feedback {
+  color: var(--bif-text-subtle, #4b5563);
+  font-size: 0.8125rem;
+}
+
+.logger-panel__copy-feedback--error {
+  color: var(--p-red-700, #b91c1c);
+}
+
 .logger-panel__list {
   flex: 1;
   min-height: 0;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8125rem;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .logger-panel__grid {
