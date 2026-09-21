@@ -14,7 +14,11 @@ let edgeUpdateHandler: ((event: any) => void) | null = null
 let nodeDragStartHandler: ((event: any) => void) | null = null
 let nodeDragStopHandler: ((event: any) => void) | null = null
 const vueFlowMocks = vi.hoisted(() => ({ updateEdge: vi.fn() }))
-const graphSyncMocks = vi.hoisted(() => ({ syncGraphState: vi.fn() }))
+const graphSyncMocks = vi.hoisted(() => ({
+  syncGraphState: vi.fn(),
+  flushNow: vi.fn(),
+  validationResult: null as any,
+}))
 
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
@@ -120,17 +124,20 @@ vi.mock('@/composables/useGraphSync', () => ({
       execution: 'parallel',
     },
   }),
-  useGraphSync: () => ({
-    syncGraph: vi.fn(),
-    syncGraphState: graphSyncMocks.syncGraphState,
-    flushNow: vi.fn(),
-    dispose: vi.fn(),
-    loadWorkflow: vi.fn().mockResolvedValue(null),
-    validationResult: ref(null),
-    isPending: ref(false),
-    syncState: ref('idle'),
-    lastError: ref(null),
-  }),
+  useGraphSync: () => {
+    graphSyncMocks.validationResult = ref(null)
+    return {
+      syncGraph: vi.fn(),
+      syncGraphState: graphSyncMocks.syncGraphState,
+      flushNow: graphSyncMocks.flushNow,
+      dispose: vi.fn(),
+      loadWorkflow: vi.fn().mockResolvedValue(null),
+      validationResult: graphSyncMocks.validationResult,
+      isPending: ref(false),
+      syncState: ref('idle'),
+      lastError: ref(null),
+    }
+  },
 }))
 
 vi.mock('@/composables/useCanvasPersistence', () => ({
@@ -146,18 +153,23 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 const canvasCommandMocks = vi.hoisted(() => ({
   updateParameter: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
   toggleWorkflowInput: null as null | ((nodeId: string, input: string | number) => unknown),
+  clearNodeOutputs: null as null | ((nodeIds: string[]) => Promise<boolean>),
 }))
 
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: (options?: {
     updateParameter?: (nodeId: string, key: string, value: unknown) => boolean
     toggleWorkflowInput?: (nodeId: string, input: string | number) => unknown
+    clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
   }) => {
     if (options?.updateParameter) {
       canvasCommandMocks.updateParameter = options.updateParameter
     }
     if (options?.toggleWorkflowInput) {
       canvasCommandMocks.toggleWorkflowInput = options.toggleWorkflowInput
+    }
+    if (options?.clearNodeOutputs) {
+      canvasCommandMocks.clearNodeOutputs = options.clearNodeOutputs
     }
     return {
       routeSave: vi.fn().mockResolvedValue('root'),
@@ -277,8 +289,66 @@ describe('CanvasView execution lock', () => {
     nodeDragStopHandler = null
     vueFlowMocks.updateEdge.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
+    graphSyncMocks.flushNow.mockReset()
     canvasCommandMocks.updateParameter = null
     canvasCommandMocks.toggleWorkflowInput = null
+    canvasCommandMocks.clearNodeOutputs = null
+  })
+
+  it('removes a repaired cache-corruption diagnostic after clearing outputs', async () => {
+    const graph = makeGraph({
+      nodes: [makeGraphNode({
+        id: 'download',
+        name: 'Download',
+        tool_name: 'DownloadImages',
+      })],
+    })
+    graphSyncMocks.flushNow.mockResolvedValue({ graph })
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        node_statuses: {
+          download: {
+            node_id: 'download',
+            status: 'unexecuted',
+            cached: false,
+          },
+        },
+      },
+    })
+    const canvas = mountCanvas(graph)
+    graphSyncMocks.validationResult.value = {
+      valid: false,
+      node_statuses: {
+        download: {
+          node_id: 'download',
+          status: 'failed',
+          cached: false,
+          error: 'Record dataframe logical digest mismatch.',
+        },
+      },
+      errors: [{
+        type: 'cache_corrupt',
+        node: 'download',
+        detail: 'Record dataframe logical digest mismatch.',
+      }],
+    }
+
+    expect(canvasCommandMocks.clearNodeOutputs).not.toBeNull()
+    await expect(canvasCommandMocks.clearNodeOutputs!(['download'])).resolves.toBe(true)
+
+    expect(graphSyncMocks.validationResult.value).toMatchObject({
+      valid: true,
+      errors: [],
+      node_statuses: {
+        download: { status: 'unexecuted', cached: false },
+      },
+    })
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
+      graph,
+      nodes: ['download'],
+      workflow_name: 'execution-lock',
+    })
+    canvas.unmount()
   })
 
   it.each(['starting', 'stopping'] as const)(

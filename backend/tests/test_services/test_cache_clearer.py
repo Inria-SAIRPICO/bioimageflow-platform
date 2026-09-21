@@ -3,6 +3,8 @@
 # Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
 # pyright can't evaluate this runtime metadata statically.
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -395,12 +397,20 @@ def test_corrupt_cache_projects_diagnostic_and_clear_repairs_status(
     pointer = storage.load_current(plan.final_result_key)
     assert pointer is not None
     record_dir = storage.result_dir(plan.final_result_key) / "records" / pointer.record_id
-    (record_dir / "dataframe.parquet").write_bytes(b"corrupt")
+    dataframe_path = record_dir / "dataframe.parquet"
+    pd.DataFrame({"x": [2]}).to_parquet(dataframe_path, index=False)
+    manifest_path = record_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["dataframe"]["transport_digest"] = (
+        f"sha256:{hashlib.sha256(dataframe_path.read_bytes()).hexdigest()}"
+    )
+    manifest_path.write_text(json.dumps(manifest))
 
     corrupt = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
     assert corrupt.valid is False
     assert corrupt.node_statuses["a"].status == "failed"
     assert [error.type for error in corrupt.errors] == ["cache_corrupt"]
+    assert corrupt.errors[0].detail == "Record dataframe logical digest mismatch."
 
     cleared = clear_node_cache(["a"], graph, registry, tmp_path)
     assert cleared["a"].status == "unexecuted"

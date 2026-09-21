@@ -100,6 +100,7 @@ import {
 } from '@/sessions/nestedWorkflowApplyCoordinator'
 import { isNestedSnapshotPersistenceConflict } from '@/sessions/nestedSnapshotPersistence'
 import { connectionSourceLabel } from '@/utils/displayNames'
+import { validationAfterCacheClear } from '@/utils/cacheClearValidation'
 import {
   decodeEndpointHandle,
   encodeEndpointHandle,
@@ -2624,7 +2625,14 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  await executionStore.clear(accepted.graph, requestedIds, workflowName)
+  const cleared = await executionStore.clear(accepted.graph, requestedIds, workflowName)
+  if (validationResult.value !== null) {
+    validationResult.value = validationAfterCacheClear(
+      validationResult.value,
+      requestedIds,
+      cleared.node_statuses,
+    )
+  }
   for (const nodeId of requestedIds) dataTableStore.clearCanvasCache(canvasId, nodeId)
   return true
 }
