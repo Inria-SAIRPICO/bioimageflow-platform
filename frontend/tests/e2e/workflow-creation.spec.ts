@@ -204,4 +204,22 @@ test.describe('workflow creation', () => {
     await expect(toolNameCells).toHaveCount(0)
   })
 
+  test('Manage Tools ignores the panel search and exposes environment management', async ({ page }) => {
+    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+    await page.getByTestId('tool-search').fill('Parameter Controls')
+    await expect(page.getByTestId('tool-item-ParameterControls')).toBeVisible()
+    await expect(page.getByTestId('tool-item-Generate')).toHaveCount(0)
+
+    await page.getByTestId('manage-tools-btn').click()
+    const dialog = page.getByTestId('manage-tools-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText('Generate', { exact: true })).toBeVisible()
+    await expect(dialog.getByTestId('tool-env-recreate-ParameterControls')).toBeVisible()
+
+    await dialog.getByTestId('manage-tool-info-ParameterControls').click()
+    await expect(dialog.getByTestId('manage-tool-environment-location')).toContainText(
+      /wetlands[/\\]environments[/\\]bioimageflow-e2e/,
+    )
+  })
+
 })

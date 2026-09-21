@@ -111,6 +111,7 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `DELETE` | `/tools/packages/{package_name}` | Uninstall a package version from the tool store (body: `{version?: str}`) |
 | `POST` | `/tools/environments/{env_name}/start` | Start a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/stop` | Stop a tool's Wetlands environment |
+| `POST` | `/tools/environments/{env_name}/recreate` | Create or replace a tool's managed Wetlands environment |
 
 **Tool metadata response (from `GET /tools`):**
 
@@ -153,6 +154,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
 | `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `bif:v1:dataframe-output` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
 | `row_consumption` | `"mapped" \| "collective" \| null` | Required metadata describing column-edge row semantics. Processing tools use `mapped` when rows are independent and `collective` when one batch operation may combine aligned rows. DataFrame tools use `null`. |
+| `environment.path` | `string` | Platform-resolved absolute managed environment location, added to a declared environment for local display and management. It is not portable tool-definition state. |
 
 **The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
@@ -215,7 +217,11 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     "mask": {"type": "ImageFile", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
     "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
-  "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
+  "environment": {
+    "name": "cellpose",
+    "dependencies": {"conda": ["cellpose"], "pip": []},
+    "path": "/home/user/.bioimageflow/wetlands/environments/cellpose"
+  }
 }
 ```
 
@@ -1229,6 +1235,7 @@ Catalog secondary actions do not toggle documentation or create a node.
 **Manage Tools Dialog:**
 
 The dialog presents a hierarchical **TreeTable** with package rows (parents) and tool rows (children).
+Its contents are independent of the Tools panel search field; opening the dialog always shows the complete package and tool inventory.
 
 **Package rows (parent):**
 
@@ -1249,9 +1256,10 @@ Below the TreeTable, the dialog includes an inline footer explicitly labelled **
 | Element | Description |
 |---------|-------------|
 | **Tool name** | The tool's display name |
-| **Info button** | Show detailed documentation (modal) |
+| **Info button** | Show detailed documentation and the managed environment location when the tool declares an environment |
 | **Env status indicator** | Colored dot: stopped (gray) / creating (yellow) / running (green) |
 | **Start/Stop toggle** | Start or stop the tool's Wetlands environment |
+| **Create/recreate environment** | Create a missing environment or replace the existing managed environment from the tool's declared recipe |
 
 **Important:** Environments are per-tool, not per-package. Each tool row in the TreeTable shows its own env indicator and start/stop toggle, even if multiple tools share the same underlying environment.
 
@@ -1826,6 +1834,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 5b | `POST` | `/api/v1/tools/packages/import-archive` | Inline **Install tool package** footer; `.zip` archive source |
 | 6 | `POST` | `/api/v1/tools/environments/{name}/start` | Start env toggle in Tools Panel / Manage Tools dialog; pre-warming |
 | 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env toggle in Tools Panel / Manage Tools dialog; freeing resources |
+| 7a | `POST` | `/api/v1/tools/environments/{name}/recreate` | Create/recreate action in the Manage Tools dialog |
 | 8 | `GET` | `/api/v1/workspace` | Startup; Settings storage section |
 | 9 | `PATCH` | `/api/v1/workspace` | Desktop workspace path change |
 | 10 | `GET` | `/api/v1/workflows/tree` | Workflows panel tree |

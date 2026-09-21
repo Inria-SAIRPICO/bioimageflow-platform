@@ -54,6 +54,27 @@ class ToolEnvironmentService:
         self._publish(env_name, "running")
         return "running"
 
+    async def recreate(self, env_name: str) -> str:
+        tools = self._tools_for_environment(env_name)
+        spec = next((self._environment_spec(tool) for tool in tools), None)
+        if spec is None:
+            self._publish(env_name, "stopped")
+            return "stopped"
+        self._set_status(tools, "creating")
+        self._publish(env_name, "creating")
+        try:
+            await anyio_to_thread.run_sync(
+                self._recreate_wetlands_environment,
+                spec,
+            )
+        except Exception:
+            self._set_status(tools, "failed")
+            self._publish(env_name, "failed")
+            raise
+        self._set_status(tools, "running")
+        self._publish(env_name, "running")
+        return "running"
+
     async def stop(self, env_name: str) -> str:
         tools = self._tools_for_environment(env_name)
         await anyio_to_thread.run_sync(self._stop_wetlands_environment, env_name)
@@ -93,6 +114,22 @@ class ToolEnvironmentService:
                 matches.append(tool)
         return matches
 
+    def location(self, env_name: str) -> str | None:
+        """Return the managed location for an environment, including before creation."""
+        manager = getattr(self._manager, "_manager", None)
+        managed_environments = getattr(manager, "managed_environments", None)
+        if callable(managed_environments):
+            info = next(
+                (candidate for candidate in managed_environments() if candidate.name == env_name),
+                None,
+            )
+            if info is not None:
+                return str(Path(info.path).expanduser().resolve())
+        environments_root = getattr(manager, "environments_root", None)
+        if environments_root is None:
+            return None
+        return str((Path(environments_root) / env_name).expanduser().resolve())
+
     def _environment_spec(self, tool: Any) -> EnvironmentSpec | None:
         if not tool.environment:
             return None
@@ -122,6 +159,26 @@ class ToolEnvironmentService:
         if not callable(stop):
             raise RuntimeError("Wetlands environment manager does not support stop()")
         stop(env_name)
+
+    def _recreate_wetlands_environment(self, spec: EnvironmentSpec) -> None:
+        wetlands = self._manager
+        manager = getattr(wetlands, "_manager", None)
+        provision = getattr(manager, "provision", None)
+        to_wetlands_spec = getattr(wetlands, "_to_wetlands_spec", None)
+        if not callable(provision) or not callable(to_wetlands_spec):
+            raise RuntimeError("Wetlands environment manager does not support replacement")
+
+        self._stop_wetlands_environment(spec.name)
+        operation = provision(
+            spec.name,
+            to_wetlands_spec(spec),
+            replace_existing=True,
+        )
+        wait_for = getattr(operation, "wait_for", None)
+        if not callable(wait_for):
+            raise RuntimeError("Wetlands provisioning operation does not support wait_for()")
+        wait_for()
+        wetlands.get_or_create(spec)
 
     def _delete_wetlands_environment(
         self,

@@ -439,7 +439,7 @@ describe('ToolsPanel', () => {
     expect(nodes[1].children).toHaveLength(1)
   })
 
-  it('search filtering updates treeNodes', async () => {
+  it('keeps the Manage Tools inventory independent from the panel search', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -448,6 +448,7 @@ describe('ToolsPanel', () => {
 
     const vm = wrapper.vm as unknown as {
       treeNodes: Array<{ key: string; children?: unknown[] }>
+      filteredTools: ToolMetadata[]
       searchQuery: string
     }
 
@@ -455,8 +456,10 @@ describe('ToolsPanel', () => {
     await wrapper.vm.$nextTick()
 
     const nodes = vm.treeNodes
-    expect(nodes).toHaveLength(1)
-    expect(nodes[0].key).toBe('bioimageflow-cellpose')
+    expect(vm.filteredTools.map(tool => tool.name)).toEqual(['cellpose'])
+    expect(nodes).toHaveLength(3)
+    expect(nodes.find(node => node.key === 'bioimageflow-core')?.children).toHaveLength(2)
+    expect(nodes.find(node => node.key === 'bioimageflow-cellpose')?.children).toHaveLength(1)
   })
 
   it('single click on a rendered tool row toggles documentation without creating a node', async () => {
@@ -1454,6 +1457,75 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.post).toHaveBeenCalledWith(
       '/api/v1/tools/environments/cellpose-env/start',
+    )
+  })
+
+  it('creates or recreates a declared environment from the Manage Tools action', async () => {
+    const wrapper = mountPanel({ renderManageTable: true })
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? {
+            ...tool,
+            environment: {
+              name: 'cellpose-env',
+              dependencies: { pip: ['cellpose'] },
+              path: '/wetlands/environments/cellpose-env',
+            },
+          }
+        : tool,
+    )
+    mockedApi.post.mockResolvedValueOnce({ data: { status: 'running' } })
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url === '/api/v1/tools') return Promise.resolve({ data: store.tools })
+      if (url === '/api/v1/tools/packages') return Promise.resolve({ data: mockPackages })
+      return Promise.resolve({ data: {} })
+    })
+
+    const vm = wrapper.vm as unknown as { showManageDialog: boolean }
+    vm.showManageDialog = true
+    await wrapper.vm.$nextTick()
+
+    const action = wrapper.get('[data-testid="tool-env-recreate-cellpose"]')
+    expect(action.attributes('aria-label')).toBe('Create or recreate environment')
+    await action.trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/api/v1/tools/environments/cellpose-env/recreate',
+    )
+  })
+
+  it('shows the managed environment location in tool information', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? {
+            ...tool,
+            environment: {
+              name: 'cellpose-env',
+              dependencies: {},
+              path: '/wetlands/environments/cellpose-env',
+            },
+          }
+        : tool,
+    )
+
+    const vm = wrapper.vm as unknown as { manageActiveDoc: string | null }
+    vm.manageActiveDoc = 'cellpose'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="manage-tool-environment-location"]').text()).toContain(
+      '/wetlands/environments/cellpose-env',
     )
   })
 
