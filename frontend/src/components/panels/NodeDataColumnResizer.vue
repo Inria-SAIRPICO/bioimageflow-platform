@@ -6,6 +6,7 @@ const props = defineProps<{ label: string; getWidth: () => number }>()
 const width = computed(() => props.getWidth())
 const emit = defineEmits<{
   resize: [width: number, commit: boolean]
+  nudge: [delta: number]
   cancel: []
   autosize: []
 }>()
@@ -28,7 +29,7 @@ function keydown(event: KeyboardEvent) {
   if (event.key === 'Enter') { event.preventDefault(); emit('autosize'); return }
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
   event.preventDefault()
-  emit('resize', clampColumnWidth(width.value + (event.key === 'ArrowRight' ? 10 : -10)), true)
+  emit('nudge', event.key === 'ArrowRight' ? 10 : -10)
 }
 </script>
 

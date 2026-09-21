@@ -123,6 +123,7 @@ function setFilters(filters: DataTableFilter[]): void {
           />
           <NodeDataColumnResizer :label="column.label" :get-width="() => width(column)"
             @resize="(value, commit) => resize(column, value, commit)"
+            @nudge="delta => resize(column, width(column) + delta, true)"
             @cancel="cancelResize" @autosize="autoSize(column)" />
         </template>
         <template #body="slotProps">
