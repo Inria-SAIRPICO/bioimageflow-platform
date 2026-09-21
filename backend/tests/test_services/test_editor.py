@@ -1154,6 +1154,7 @@ def test_embedded_manager_launch_prefix_uses_node_executable_on_windows(
         ("darwin", "x86_64", "macos-amd64"),
         ("darwin", "arm64", "macos-arm64"),
         ("win32", "AMD64", "windows-amd64"),
+        ("win32", "ARM64", "windows-amd64"),
     ],
 )
 def test_code_server_asset_mapping_covers_every_pinned_digest(
@@ -1161,6 +1162,12 @@ def test_code_server_asset_mapping_covers_every_pinned_digest(
 ) -> None:
     monkeypatch.setattr(editor.sys, "platform", platform_name)
     monkeypatch.setattr(editor.platform, "machine", lambda: machine)
+    monkeypatch.setattr(
+        editor.sys,
+        "getwindowsversion",
+        lambda: SimpleNamespace(build=editor.WINDOWS_X64_EMULATION_BUILD),
+        raising=False,
+    )
 
     resolved = code_server_asset()
 
@@ -1168,11 +1175,17 @@ def test_code_server_asset_mapping_covers_every_pinned_digest(
     assert CODE_SERVER_SHA256[resolved] == CODE_SERVER_SHA256[asset]
 
 
-def test_unsupported_platform_raises_before_provisioning(
+def test_windows_arm64_without_x64_emulation_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(editor.sys, "platform", "win32")
-    monkeypatch.setattr(editor.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(editor.platform, "machine", lambda: "ARM64")
+    monkeypatch.setattr(
+        editor.sys,
+        "getwindowsversion",
+        lambda: SimpleNamespace(build=editor.WINDOWS_X64_EMULATION_BUILD - 1),
+        raising=False,
+    )
     vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_manager = _EnvironmentManager()
@@ -1181,7 +1194,26 @@ def test_unsupported_platform_raises_before_provisioning(
         environment_manager_provider=lambda: env_manager,
     )
 
-    with pytest.raises(EditorLaunchError, match="not available on win32/arm64"):
+    with pytest.raises(EditorLaunchError, match="not available on win32/ARM64"):
+        manager.launch()
+
+    assert env_manager.provisioned == []
+
+
+def test_unsupported_platform_raises_before_provisioning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(editor.sys, "platform", "linux")
+    monkeypatch.setattr(editor.platform, "machine", lambda: "ppc64le")
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    env_manager = _EnvironmentManager()
+    manager = EmbeddedCodeServerManager(
+        vsix_path=vsix,
+        environment_manager_provider=lambda: env_manager,
+    )
+
+    with pytest.raises(EditorLaunchError, match="not available on linux/ppc64le"):
         manager.launch()
 
     assert env_manager.provisioned == []

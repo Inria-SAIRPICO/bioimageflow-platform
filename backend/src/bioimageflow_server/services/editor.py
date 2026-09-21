@@ -53,6 +53,8 @@ CODE_SERVER_ROOT_RELATIVE = "share/code-server"
 # Wetlands runs provisioning commands from the Pixi environment prefix, which is
 # not `ManagedEnvironment.path` (that property is the Pixi project directory).
 CODE_SERVER_PREFIX_RELATIVE = Path(".pixi") / "envs" / "default"
+# Windows 11 (21H2) is the first release that emulates x64 binaries on ARM64.
+WINDOWS_X64_EMULATION_BUILD = 22000
 DEFAULT_EDITOR_URL = "http://127.0.0.1:32344"
 DEFAULT_CONTROL_URL = "http://127.0.0.1:60351"
 CLIPBOARD_MESSAGE = "Path copied - open in your local editor."
@@ -132,10 +134,20 @@ def default_opener_vsix_path() -> Path:
 
 
 def code_server_asset() -> str | None:
-    """Map the running platform to the upstream release asset suffix."""
+    """Map the running platform to the upstream release asset suffix.
+
+    Upstream publishes no native Windows ARM64 build, so Windows ARM64 hosts use
+    the x64 bundle through the system's x64 emulation; that emulation exists from
+    Windows 11 (build 22000) onwards, matching the x64 Pixi environments Wetlands
+    already creates for every Windows host.
+    """
     machine = platform.machine().lower()
     if sys.platform == "win32":
-        return "windows-amd64" if machine in {"amd64", "x86_64"} else None
+        if machine in {"amd64", "x86_64"}:
+            return "windows-amd64"
+        if machine in {"arm64", "aarch64"} and _windows_x64_emulation_available():
+            return "windows-amd64"
+        return None
     if sys.platform == "darwin":
         return "macos-arm64" if machine in {"arm64", "aarch64"} else (
             "macos-amd64" if machine in {"x86_64", "amd64"} else None
@@ -145,6 +157,15 @@ def code_server_asset() -> str | None:
             "linux-arm64" if machine in {"aarch64", "arm64"} else None
         )
     return None
+
+
+def _windows_x64_emulation_available() -> bool:
+    """Return whether this Windows host can run x64 binaries."""
+    try:
+        version = sys.getwindowsversion()
+    except AttributeError:  # not a Windows interpreter
+        return False
+    return version.build >= WINDOWS_X64_EMULATION_BUILD
 
 
 def code_server_asset_url(asset: str) -> str:
