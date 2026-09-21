@@ -115,6 +115,7 @@ scripts/export_demo_workflows.py --bioimageflow-source /path/to/bioimageflow
 
 This maintainer command explicitly consumes a BioImageFlow source checkout.
 Generation fails if any graph in the bundle is not recursively schema v2.
+Because portable BioImageFlow definitions have no GUI coordinates, export assigns the same deterministic dependency-layered platform layout recursively before calculating each demo's artifact hash.
 Ordinary platform development and CI use registry packages instead.
 The demos download their public inputs into workflow-managed run assets, do not depend on repository-local datasets, and retain normal missing-package diagnostics without installing tool packages automatically.
 An installed demo with matching bundled provenance is never replaced because the application version or bundle version changed, including on restart and explicit install calls; only missing canonical demos are installed.

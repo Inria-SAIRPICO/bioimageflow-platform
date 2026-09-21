@@ -86,7 +86,7 @@ BioImageFlow tool discovery:
 
 Graph mutation:
 
-- `create_node`, `delete_node`, `rename_node`, `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_nodes`, `delete_edge`.
+- `create_tool_node`, `create_workflow_node`, `delete_node`, `rename_node`, `update_tool_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_nodes`, `delete_edge`.
 - `apply_workflow_operations`: applies a small ordered batch of graph operations through backend-owned mutation rules.
 
 Workflow interface:
@@ -96,6 +96,24 @@ Workflow interface:
 Validation and execution:
 
 - `validate_workflow`, `run_workflow`, `get_execution_status`, and `stop_execution`.
+
+## Canvas Layout
+
+Plan the complete topology and initial node positions before creating nodes.
+Lay out each workflow independently from left to right, including every embedded workflow:
+
+- Put source nodes in the first column.
+- Give each downstream node a column one level after its deepest predecessor, so dependency edges do not point left.
+- Use at least 320 canvas units between columns and 220 units between rows; increase either gap for unusually large nodes.
+- Give nodes in the same dependency stage exactly the same horizontal coordinate.
+- Put parallel branches on separate rows and center a merge node between the branches that feed it.
+- Keep coordinates on a consistent grid, avoid overlaps and unnecessary edge crossings, and place disconnected components below the primary graph with an empty row between components.
+- Preserve existing user placement and unrelated components unless the user explicitly asks for a broader rearrangement.
+
+After connecting the graph, inspect the complete workflow again.
+If the planned layout is already clear, do not move the nodes a second time.
+Only when alignment needs correction, send one `move_nodes` call containing every affected node so the correction is accepted as one draft mutation instead of several partially applied movements.
+For a nested workflow, pass `scope.workflow_path` on the `move_nodes` correction.
 
 ## MCP Call Examples
 
@@ -138,7 +156,7 @@ Delete a workflow:
 Create a node:
 
 ```json
-{"tool": "create_node", "arguments": {"node_id": "blur_1", "tool_name": "GaussianBlur", "name": "Blur", "position": [240, 160], "parameters": {"sigma": 2.0}}}
+{"tool": "create_tool_node", "arguments": {"node_id": "blur_1", "tool_name": "GaussianBlur", "name": "Blur", "position": [400, 160], "parameters": {"sigma": 2.0}}}
 ```
 
 Connect nodes by named output and input:
@@ -150,13 +168,13 @@ Connect nodes by named output and input:
 Update parameters:
 
 ```json
-{"tool": "update_node_parameters", "arguments": {"node_id": "blur_1", "parameters": {"sigma": 3.0}}}
+{"tool": "update_tool_parameters", "arguments": {"node_id": "blur_1", "parameters": {"sigma": 3.0}}}
 ```
 
 Apply a batch edit:
 
 ```json
-{"tool": "apply_workflow_operations", "arguments": {"operations": [{"type": "create_tool_node", "node_id": "threshold_1", "tool_name": "Threshold", "name": "Threshold", "position": [480, 160], "parameters": {"method": "otsu"}}, {"type": "connect_column_edge", "source_node": "blur_1", "source_output": "image", "target_node": "threshold_1", "target_input": "image"}]}}
+{"tool": "apply_workflow_operations", "arguments": {"operations": [{"type": "create_tool_node", "node_id": "threshold_1", "tool_name": "Threshold", "name": "Threshold", "position": [720, 160], "parameters": {"method": "otsu"}}, {"type": "connect_column_edge", "source_node": "blur_1", "source_output": "image", "target_node": "threshold_1", "target_input": "image"}]}}
 ```
 
 Validate the latest draft:

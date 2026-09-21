@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:8bee252d1c1893c611893b9f79a06d8efa190a2c7b9764c5eba85318697f9856",
+  "artifact_hash": "sha256:eda3b8696dee2abfde96973403b3fc26c267d840a03669efb12bf7ec56f42ddf",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -124,7 +124,7 @@
         },
         "position": [
           0.0,
-          0.0
+          110.0
         ],
         "resources": {},
         "tool_class": "DownloadImages",
@@ -144,8 +144,8 @@
           "layout": "CYX"
         },
         "position": [
-          280.0,
-          0.0
+          320.0,
+          110.0
         ],
         "resources": {},
         "tool_class": "SelectChannel",
@@ -166,8 +166,8 @@
           "model_type": "nuclei"
         },
         "position": [
-          560.0,
-          0.0
+          640.0,
+          110.0
         ],
         "resources": {},
         "tool_class": "Cellpose3",
@@ -198,7 +198,7 @@
         "id": "fols2_marker_spot_analysis",
         "name": "Marker Spot Analysis",
         "position": [
-          840.0,
+          960.0,
           0.0
         ],
         "resources": {},
@@ -426,7 +426,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                280.0,
+                320.0,
                 0.0
               ],
               "resources": {},
@@ -446,7 +446,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                560.0,
+                640.0,
                 0.0
               ],
               "resources": {},
@@ -466,7 +466,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                840.0,
+                960.0,
                 0.0
               ],
               "resources": {},
@@ -502,8 +502,8 @@
         "id": "csf1r_marker_spot_analysis",
         "name": "Marker Spot Analysis",
         "position": [
-          0.0,
-          180.0
+          960.0,
+          220.0
         ],
         "resources": {},
         "type": "workflow",
@@ -730,7 +730,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                280.0,
+                320.0,
                 0.0
               ],
               "resources": {},
@@ -750,7 +750,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                560.0,
+                640.0,
                 0.0
               ],
               "resources": {},
@@ -770,7 +770,7 @@
               "output_templates": {},
               "parameters": {},
               "position": [
-                840.0,
+                960.0,
                 0.0
               ],
               "resources": {},
@@ -794,8 +794,8 @@
         "output_templates": {},
         "parameters": {},
         "position": [
-          280.0,
-          180.0
+          1280.0,
+          110.0
         ],
         "resources": {},
         "tool_class": "AverageSpotsPerNucleus",

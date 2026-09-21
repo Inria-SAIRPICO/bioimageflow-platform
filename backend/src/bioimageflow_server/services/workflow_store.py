@@ -23,7 +23,7 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
 from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedWorkflowSnapshotResponse,
 )
@@ -2980,24 +2980,31 @@ class WorkflowStoreService:
         translation = graph_state_to_lib_dict(document.graph, self.tool_registry)
         rebound = rebind_lib_dict_versions(translation.lib_dict, self.tool_registry)
         graph = lib_dict_to_graph_state(rebound)
-        # Preserve GUI state from the accepted graph while replacing only tool
-        # dependency identities resolved by the library round trip.
-        positions = {node.id: node for node in document.graph.nodes}
-        graph = graph.model_copy(
-            update={
-                "nodes": [
-                    node.model_copy(
-                        update={
-                            "position": positions[node.id].position,
-                            "collapsed": positions[node.id].collapsed,
-                            "resources": positions[node.id].resources,
-                            "name": positions[node.id].name,
-                        }
+        # The library grammar has no GUI state. Preserve the accepted graph's
+        # presentation recursively while replacing only dependency identities.
+        def preserve_presentation(
+            rebound_graph: GraphState, accepted_graph: GraphState
+        ) -> GraphState:
+            accepted_nodes = {node.id: node for node in accepted_graph.nodes}
+            nodes = []
+            for node in rebound_graph.nodes:
+                accepted = accepted_nodes[node.id]
+                updates: dict[str, Any] = {
+                    "position": accepted.position,
+                    "collapsed": accepted.collapsed,
+                    "resources": accepted.resources,
+                    "name": accepted.name,
+                }
+                if isinstance(node, WorkflowNodeState) and isinstance(
+                    accepted, WorkflowNodeState
+                ):
+                    updates["workflow"] = preserve_presentation(
+                        node.workflow, accepted.workflow
                     )
-                    for node in graph.nodes
-                ]
-            }
-        )
+                nodes.append(node.model_copy(update=updates))
+            return rebound_graph.model_copy(update={"nodes": nodes})
+
+        graph = preserve_presentation(graph, document.graph)
         sources = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(graph)
         updated = document.model_copy(
             update={"graph": graph, "artifact_hash": artifact_hash(graph, sources)}

@@ -976,7 +976,7 @@ def create_mcp_server(
         parameters: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Create one workflow node."""
+        """Create one tool node at a planned canvas position."""
         return await gateway.create_tool_node(
             node_id=node_id,
             tool_name=tool_name,
@@ -1078,7 +1078,7 @@ def create_mcp_server(
         scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Move multiple workflow nodes on the canvas."""
+        """Move multiple nodes in one coherent canvas-layout correction."""
         return await gateway.move_nodes(
             moves=moves,
             scope=scope,

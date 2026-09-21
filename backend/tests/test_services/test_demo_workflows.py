@@ -43,6 +43,25 @@ def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
         assert_schema_v2(payload["graph"])
 
 
+def test_bundled_graphs_flow_left_to_right_without_overlapping_nodes(tmp_path: Path) -> None:
+    service, _store = _service(tmp_path)
+
+    def assert_layered(graph: dict) -> None:
+        positions = {node["id"]: tuple(node["position"]) for node in graph["nodes"]}
+        assert len(positions) == len(set(positions.values()))
+        for edge in graph["edges"]:
+            assert positions[edge["source_node"]][0] < positions[edge["target_node"]][0]
+        for node in graph["nodes"]:
+            if node["type"] == "workflow":
+                assert_layered(node["workflow"])
+
+    for template in service.templates:
+        payload = json.loads(
+            (service.resource_root / template.directory / "workflow.json").read_text()
+        )
+        assert_layered(payload["graph"])
+
+
 def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) -> None:
     service, store = _service(tmp_path)
 
