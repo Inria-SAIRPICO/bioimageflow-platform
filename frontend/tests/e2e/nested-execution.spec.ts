@@ -112,7 +112,10 @@ async function createSavedWorkflow(page: Page, graph: GraphState): Promise<void>
 }
 
 async function openWorkflow(page: Page, name: string, displayName: string): Promise<void> {
-  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  const catalogTabs = page.locator('.dv-tabs-container').filter({
+    has: page.locator('.dv-tab').filter({ hasText: /^Tools$/ }),
+  })
+  await catalogTabs.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   await page.getByTestId('workflow-search').fill(displayName)
   await page.getByTestId(`workflow-row-${name}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toHaveText(displayName)
@@ -185,15 +188,15 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
   invalidChild.workflow.nodes[0]!.tool_name = 'MissingCampaignTool'
   graph.nodes.push(invalidChild)
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+  await page.goto('/')
+  await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await createSavedWorkflow(page, graph)
   const siblingName = workflowId('recursive_selected_sibling')
   await createSavedWorkflow(page, siblingGraph(siblingName, `Recursive selected sibling ${siblingName}`))
   const siblingBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
 
   try {
-    await page.goto('/')
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await expect(page.getByTestId('workflow-title')).toHaveText(rootDisplayName)
+    await openWorkflow(page, rootName, rootDisplayName)
     const draft = await acceptedDraft(page, rootName)
     expect(draft.graph.name).toBe(rootName)
     expect(draft.graph.nodes.map(node => node.id)).toEqual([
