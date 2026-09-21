@@ -43,6 +43,7 @@ packages = ["src/bioimageflow_server"]
 "src/bioimageflow_server/logging.yaml" = "bioimageflow_server/logging.yaml"
 "src/bioimageflow_server/data/agent_workspace_instructions.md" = "bioimageflow_server/data/agent_workspace_instructions.md"
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
+"src/bioimageflow_server/data/code_server_install.py" = "bioimageflow_server/data/code_server_install.py"
 "src/bioimageflow_server/data/cluster_examples/slurm/cluster.py" = "bioimageflow_server/data/cluster_examples/slurm/cluster.py"
 "src/bioimageflow_server/data/cluster_examples/slurm/parsl.py" = "bioimageflow_server/data/cluster_examples/slurm/parsl.py"
 "src/bioimageflow_server/data/cluster_examples/slurm/setup.sh" = "bioimageflow_server/data/cluster_examples/slurm/setup.sh"

@@ -855,9 +855,11 @@ Plain status probes remain side-effect free. `GET /editor/status?launch=true&wor
 
 `EditorStatus` also exposes the current embedded launch phase (`idle`, `preparing`, `installing_extensions`, `starting`, `waiting`, `ready`, or `failed`), a short message, launch start time, and optional current/total extension-installation steps. The launch request remains synchronous and protected by the existing launch lock; concurrent plain status probes report this shared snapshot without starting another launch. During launch, the Code Editor panel polls that side-effect-free status, shows an indeterminate progress bar, phase text, extension step count when available, and elapsed time after five seconds. An **Open Logger** action activates the existing Logger panel, where embedded-editor lifecycle records are streamed as ordinary framework logs. The Logger never opens automatically.
 Startup reuses a matching managed code-server environment and checks the installed extension list before installing anything.
+The editor runtime itself comes from the pinned upstream code-server release bundle for the host platform: environment provisioning downloads that bundle inside the managed environment, verifies its pinned SHA-256 before unpacking, and unpacked-bundle launches do not depend on a Conda build of code-server for the host.
+Failed managed-environment provisioning reports the failing step, command, exit code, and bounded redacted output tails in the launch message and embedded-editor diagnostic instead of an opaque exit summary.
 Only missing extensions are installed; the bundled BioImageFlow integration is updated when its content digest changes or it is absent.
 A successful integration installation records its digest in the managed environment, so reuse survives platform restarts.
-Preparation messages describe environment and extension checks; extension progress counts only the installations actually being performed.
+Preparation messages describe environment, runtime-download, and extension checks; extension progress counts only the installations actually being performed.
 
 #### 2.4.10 Dataset Management
 

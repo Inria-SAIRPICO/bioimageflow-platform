@@ -9,7 +9,15 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from wetlands import EnvironmentSpec
+from wetlands import (
+    EnvironmentSpec,
+    OperationEvent,
+    OperationEventKind,
+    OperationFailure,
+    OperationState,
+    PostInstallCommand,
+    ProvisioningError,
+)
 
 from bioimageflow_server.models.editor import (
     EditorLaunchPhase,
@@ -18,12 +26,19 @@ from bioimageflow_server.models.editor import (
     EditorStatus,
 )
 from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.services import editor
 from bioimageflow_server.services.editor import (
+    CODE_SERVER_INSTALLER_REVISION,
+    CODE_SERVER_SHA256,
+    EMBEDDED_LAUNCH_FAILED,
     EmbeddedCodeServerManager,
     EditorLaunchError,
     EditorPathError,
     EditorPathNotFoundError,
     EditorService,
+    code_server_asset,
+    code_server_asset_url,
+    default_code_server_installer_path,
     default_opener_vsix_path,
 )
 
@@ -131,6 +146,26 @@ class _BlockingLaunchEmbedded(_LaunchableEmbedded):
             self._launched = True
 
 
+class _FailingLaunchEmbedded(_Embedded):
+    def __init__(self, exc: Exception) -> None:
+        super().__init__()
+        self.exc = exc
+        self.phases: list[tuple[EditorLaunchPhase, str | None]] = []
+
+    def launch(self) -> None:
+        raise self.exc
+
+    def set_launch_phase(
+        self,
+        phase: EditorLaunchPhase,
+        message: str | None = None,
+        *,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        self.phases.append((phase, message))
+
+
 class _EnvironmentManager:
     def __init__(self) -> None:
         self.provisioned: list[tuple[str, object, bool]] = []
@@ -150,7 +185,10 @@ class _EnvironmentManager:
         replace_existing: bool = False,
     ) -> object:
         self.provisioned.append((name, spec, replace_existing))
-        return SimpleNamespace(wait_for=lambda: self.environment)
+        return SimpleNamespace(
+            wait_for=lambda: self.environment,
+            listen=lambda callback, replay=True: None,
+        )
 
 
 def _settings(command: str | None = None) -> Settings:
@@ -1021,6 +1059,9 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     vsix.write_bytes(b"vsix")
     env_manager = _EnvironmentManager()
     env_manager.environment.path = tmp_path
+    (tmp_path / ".pixi" / "envs" / "default" / "share" / "code-server").mkdir(parents=True)
+    asset = code_server_asset()
+    assert asset is not None
 
     manager = EmbeddedCodeServerManager(
         vsix_path=vsix,
@@ -1028,26 +1069,177 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     )
     manager.launch()
 
-    assert env_manager.provisioned == [
-        (
-            "codeserver",
-            EnvironmentSpec(
-                python="3.10.*",
-                conda=("code-server==4.106.2",),
+    name, spec, replace_existing = env_manager.provisioned[0]
+    assert name == "codeserver"
+    assert replace_existing is True
+    assert isinstance(spec, EnvironmentSpec)
+    assert spec.python == "3.10.*"
+    assert spec.conda == ()
+    assert spec.post_install == (
+        PostInstallCommand(
+            argv=(
+                "python",
+                str(default_code_server_installer_path()),
+                "--url",
+                code_server_asset_url(asset),
+                "--sha256",
+                CODE_SERVER_SHA256[asset],
+                "--destination",
+                "share/code-server",
+                "--installer-revision",
+                CODE_SERVER_INSTALLER_REVISION,
             ),
-            True,
-        )
-    ]
+            display="Downloading the code editor runtime.",
+        ),
+    )
+    root = tmp_path / ".pixi" / "envs" / "default" / "share" / "code-server"
     run_calls = env_manager.environment.run.call_args_list
     assert run_calls[0].args[0] == [
-        "code-server",
+        str(root / "bin" / "code-server"),
+        "--extensions-dir",
+        str(root / "extensions"),
         "--list-extensions",
     ]
     assert run_calls[0].kwargs == {}
-    assert run_calls[1].args[0] == ["code-server", "--force", "--install-extension", str(vsix)]
+    assert run_calls[1].args[0] == [
+        str(root / "bin" / "code-server"),
+        "--extensions-dir",
+        str(root / "extensions"),
+        "--force",
+        "--install-extension",
+        str(vsix),
+    ]
     launch_call = env_manager.environment.spawn.call_args
     assert launch_call.args[0][-2:] == ["--bind-addr", "127.0.0.1:32344"]
     assert launch_call.kwargs == {"output_limit": 16 * 1024 * 1024}
+
+
+def test_embedded_manager_launch_command_includes_managed_root(tmp_path: Path) -> None:
+    manager = EmbeddedCodeServerManager(vsix_path=tmp_path / "missing.vsix")
+    root = tmp_path / "share" / "code-server"
+
+    command = manager.launch_command(root)
+
+    assert command == [
+        str(root / "bin" / "code-server"),
+        "--extensions-dir",
+        str(root / "extensions"),
+        "--disable-workspace-trust",
+        "--disable-telemetry",
+        "--auth",
+        "none",
+        "--bind-addr",
+        "127.0.0.1:32344",
+    ]
+
+
+def test_embedded_manager_launch_prefix_uses_node_executable_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(editor.sys, "platform", "win32")
+    manager = EmbeddedCodeServerManager(vsix_path=tmp_path / "missing.vsix")
+    root = tmp_path / "share" / "code-server"
+
+    command = manager.launch_command(root)
+
+    assert command[:2] == [str(root / "lib" / "node.exe"), str(root)]
+    assert command[-2:] == ["--bind-addr", "127.0.0.1:32344"]
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "machine", "asset"),
+    [
+        ("linux", "x86_64", "linux-amd64"),
+        ("linux", "aarch64", "linux-arm64"),
+        ("darwin", "x86_64", "macos-amd64"),
+        ("darwin", "arm64", "macos-arm64"),
+        ("win32", "AMD64", "windows-amd64"),
+    ],
+)
+def test_code_server_asset_mapping_covers_every_pinned_digest(
+    monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str, asset: str
+) -> None:
+    monkeypatch.setattr(editor.sys, "platform", platform_name)
+    monkeypatch.setattr(editor.platform, "machine", lambda: machine)
+
+    resolved = code_server_asset()
+
+    assert resolved == asset
+    assert CODE_SERVER_SHA256[resolved] == CODE_SERVER_SHA256[asset]
+
+
+def test_unsupported_platform_raises_before_provisioning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(editor.sys, "platform", "win32")
+    monkeypatch.setattr(editor.platform, "machine", lambda: "arm64")
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    env_manager = _EnvironmentManager()
+    manager = EmbeddedCodeServerManager(
+        vsix_path=vsix,
+        environment_manager_provider=lambda: env_manager,
+    )
+
+    with pytest.raises(EditorLaunchError, match="not available on win32/arm64"):
+        manager.launch()
+
+    assert env_manager.provisioned == []
+    assert manager.status(url_probe=lambda _url: False).launch_phase == EditorLaunchPhase.FAILED
+
+
+def test_status_reports_operation_failure_detail() -> None:
+    embedded = _FailingLaunchEmbedded(
+        ProvisioningError(
+            OperationFailure(
+                operation_id="op",
+                stage="pixi_install",
+                message="Provisioning step 'pixi-install' failed with exit code 1",
+                step_id="pixi-install",
+                command="pixi install",
+                returncode=1,
+                stderr_tail=("No candidates were found for code-server ==4.106.2",),
+            )
+        )
+    )
+    service = _service(embedded=embedded)
+
+    status = service.get_status(launch=True)
+
+    assert status.error_code == EMBEDDED_LAUNCH_FAILED
+    assert status.launch_phase == EditorLaunchPhase.FAILED
+    assert "No candidates were found for code-server ==4.106.2" in (status.error_detail or "")
+    assert "step: pixi_install/pixi-install" in (status.error_detail or "")
+    assert status.launch_message == status.error_detail
+    assert embedded.phases == [(EditorLaunchPhase.FAILED, status.error_detail)]
+
+
+def test_embedded_manager_publishes_post_install_step_phase(tmp_path: Path) -> None:
+    manager = EmbeddedCodeServerManager(vsix_path=tmp_path / "missing.vsix")
+
+    def event(stage: str, message: str) -> OperationEvent:
+        return OperationEvent(
+            sequence=1,
+            timestamp=0.0,
+            operation_id="op",
+            environment="codeserver",
+            kind=OperationEventKind.STEP,
+            state=OperationState.RUNNING,
+            stage=stage,
+            message=message,
+        )
+
+    manager._publish_provisioning_event(event("post_install", "Downloading the code editor runtime."))
+    assert (
+        manager.status(url_probe=lambda _url: False).launch_message
+        == "Downloading the code editor runtime."
+    )
+
+    manager._publish_provisioning_event(event("pixi_install", "Installing the environment."))
+    assert (
+        manager.status(url_probe=lambda _url: False).launch_message
+        == "Downloading the code editor runtime."
+    )
 
 
 def test_embedded_manager_launch_command_uses_configured_editor_url(tmp_path: Path) -> None:

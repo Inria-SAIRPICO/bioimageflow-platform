@@ -75,7 +75,7 @@ The copied text includes each entry's displayed time, level, node when present, 
 Open custom or installed tool source in the embedded or configured external editor.
 Custom source stays with its workflow when the workflow is exported.
 The embedded editor keeps the writable BioImageFlow workspace and read-only installed tool packages together as separate Explorer roots, so opening a package tool does not replace the workspace or close its terminals.
-The first launch may take several minutes while BioImageFlow prepares code-server and installs editor extensions.
+The first launch may take several minutes while BioImageFlow downloads and prepares code-server and installs editor extensions.
 The Code Editor panel reports the current setup or startup phase with an activity bar, extension step count, and elapsed time; use **Open Logger** for installation details or failure diagnostics.
 
 ## Rearrange your workspace

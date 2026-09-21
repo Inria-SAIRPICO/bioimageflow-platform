@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import platform
 import shlex
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -16,7 +18,13 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
-from wetlands import EnvironmentSpec, ManagedProcess
+from wetlands import (
+    EnvironmentSpec,
+    ManagedProcess,
+    OperationEvent,
+    OperationEventKind,
+    PostInstallCommand,
+)
 
 from bioimageflow_server.models.editor import (
     EditorLaunchPhase,
@@ -26,8 +34,25 @@ from bioimageflow_server.models.editor import (
 )
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.editor_workspace import ensure_editor_workspace
+from bioimageflow_server.services.operation_failures import operation_failure_detail
 
-CODE_SERVER_VERSION = "4.106.2"
+CODE_SERVER_VERSION = "4.137.0"  # first upstream release that publishes windows-amd64
+CODE_SERVER_RELEASE_URL = (
+    "https://github.com/coder/code-server/releases/download/v{version}/"
+    "code-server-{version}-{asset}.tar.gz"
+)
+CODE_SERVER_SHA256 = {
+    "linux-amd64": "9303165b7fd43532091922f77e2f119ff2fa109c6b6f1c3c966fb02f3d6d9c8b",
+    "linux-arm64": "0fba760298fe06480d940e218f0873a645ba1e7e3ac4b527059af82d85a90462",
+    "macos-amd64": "f1403dab28a207d61e468f191fd7c41432543724cc57ac5cade4529666187b3a",
+    "macos-arm64": "118604a8245816535d8e538f478d2ee93514bcb8ac75e210d2345a5dc7806f65",
+    "windows-amd64": "f1290d3fe2590b16a9adfb37a66d408e73737e28208ed0011b662b6fa14558c8",
+}
+CODE_SERVER_INSTALLER_REVISION = "1"  # bump whenever code_server_install.py changes
+CODE_SERVER_ROOT_RELATIVE = "share/code-server"
+# Wetlands runs provisioning commands from the Pixi environment prefix, which is
+# not `ManagedEnvironment.path` (that property is the Pixi project directory).
+CODE_SERVER_PREFIX_RELATIVE = Path(".pixi") / "envs" / "default"
 DEFAULT_EDITOR_URL = "http://127.0.0.1:32344"
 DEFAULT_CONTROL_URL = "http://127.0.0.1:60351"
 CLIPBOARD_MESSAGE = "Path copied - open in your local editor."
@@ -104,6 +129,42 @@ def _default_opener_call(url: str, params: dict[str, str]) -> bool:
 
 def default_opener_vsix_path() -> Path:
     return Path(str(files("bioimageflow_server._external.opener") / "bioimageflow-opener-0.1.0.vsix"))
+
+
+def code_server_asset() -> str | None:
+    """Map the running platform to the upstream release asset suffix."""
+    machine = platform.machine().lower()
+    if sys.platform == "win32":
+        return "windows-amd64" if machine in {"amd64", "x86_64"} else None
+    if sys.platform == "darwin":
+        return "macos-arm64" if machine in {"arm64", "aarch64"} else (
+            "macos-amd64" if machine in {"x86_64", "amd64"} else None
+        )
+    if sys.platform.startswith("linux"):
+        return "linux-amd64" if machine in {"x86_64", "amd64"} else (
+            "linux-arm64" if machine in {"aarch64", "arm64"} else None
+        )
+    return None
+
+
+def code_server_asset_url(asset: str) -> str:
+    return CODE_SERVER_RELEASE_URL.format(version=CODE_SERVER_VERSION, asset=asset)
+
+
+def default_code_server_installer_path() -> Path:
+    return Path(str(files("bioimageflow_server.data") / "code_server_install.py"))
+
+
+def _code_server_prefix(root: Path) -> list[str]:
+    """argv prefix that runs the unpacked bundle without a shell wrapper."""
+    if sys.platform == "win32":
+        return [str(root / "lib" / "node.exe"), str(root)]
+    return [str(root / "bin" / "code-server")]
+
+
+def _code_server_root(environment: Any) -> Path:
+    """Return where the provisioning step unpacked the bundle in ``environment``."""
+    return Path(environment.path) / CODE_SERVER_PREFIX_RELATIVE / CODE_SERVER_ROOT_RELATIVE
 
 
 def _default_environment_manager_provider() -> Any:
@@ -233,23 +294,39 @@ class EmbeddedCodeServerManager:
             "control_probe": _url_probe_diagnostic(f"{self.control_url}/open"),
             "opener_vsix_path": str(self.vsix_path),
             "opener_vsix_exists": self.vsix_path.exists(),
+            "code_server_asset": code_server_asset(),
+            "code_server_digest": CODE_SERVER_SHA256.get(code_server_asset() or ""),
+            "code_server_installer": str(default_code_server_installer_path()),
         }
 
-    def install_commands(self) -> list[list[str]]:
+    def _command_prefix(self, root: Path | None) -> list[str]:
+        return _code_server_prefix(root) if root is not None else [self.code_server_binary]
+
+    def _extensions_args(self, root: Path | None) -> list[str]:
+        return ["--extensions-dir", str(root / "extensions")] if root is not None else []
+
+    def install_commands(self, root: Path | None = None) -> list[list[str]]:
+        prefix = [*self._command_prefix(root), *self._extensions_args(root)]
         return [
-            [self.code_server_binary, "--force", "--install-extension", str(self.vsix_path)],
-            [self.code_server_binary, "--install-extension", "ms-python.python"],
-            [self.code_server_binary, "--install-extension", "ms-python.vscode-python-envs"],
-            [self.code_server_binary, "--install-extension", "ms-python.debugpy"],
-            [self.code_server_binary, "--install-extension", "detachhead.basedpyright"],
+            [*prefix, "--force", "--install-extension", str(self.vsix_path)],
+            [*prefix, "--install-extension", "ms-python.python"],
+            [*prefix, "--install-extension", "ms-python.vscode-python-envs"],
+            [*prefix, "--install-extension", "ms-python.debugpy"],
+            [*prefix, "--install-extension", "detachhead.basedpyright"],
         ]
 
-    def legacy_uninstall_command(self) -> list[str]:
-        return [self.code_server_binary, "--uninstall-extension", "sairpico.opener"]
-
-    def launch_command(self) -> list[str]:
+    def legacy_uninstall_command(self, root: Path | None = None) -> list[str]:
         return [
-            self.code_server_binary,
+            *self._command_prefix(root),
+            *self._extensions_args(root),
+            "--uninstall-extension",
+            "sairpico.opener",
+        ]
+
+    def launch_command(self, root: Path | None = None) -> list[str]:
+        return [
+            *self._command_prefix(root),
+            *self._extensions_args(root),
             "--disable-workspace-trust",
             "--disable-telemetry",
             "--auth",
@@ -287,26 +364,35 @@ class EmbeddedCodeServerManager:
             logger.info("Starting code-server process: %s", shlex.join(command))
             self._process = process_launcher(command)
         except Exception as exc:
-            self.set_launch_phase(EditorLaunchPhase.FAILED, _exception_summary(exc))
+            self.set_launch_phase(
+                EditorLaunchPhase.FAILED,
+                operation_failure_detail(exc) or _exception_summary(exc),
+            )
             raise
 
     def _install_extensions(
-        self, runner: CommandRunner, *, integration_stamp: Path | None = None
+        self,
+        runner: CommandRunner,
+        *,
+        integration_stamp: Path | None = None,
+        root: Path | None = None,
     ) -> None:
         self.set_launch_phase(
             EditorLaunchPhase.PREPARING, "Checking installed editor extensions."
         )
-        result = runner([self.code_server_binary, "--list-extensions"])
+        result = runner(
+            [*self._command_prefix(root), *self._extensions_args(root), "--list-extensions"]
+        )
         output = getattr(result, "stdout", "")
         installed = set(output.lower().splitlines()) if isinstance(output, str) else set()
         if "sairpico.opener" in installed:
-            self._uninstall_legacy_opener(runner)
+            self._uninstall_legacy_opener(runner, root=root)
         integration_digest = hashlib.sha256(self.vsix_path.read_bytes()).hexdigest()
         integration_current = False
         if integration_stamp is not None and integration_stamp.is_file():
             integration_current = integration_stamp.read_text() == integration_digest
         commands = [
-            command for command in self.install_commands()
+            command for command in self.install_commands(root)
             if (
                 not integration_current or "bioimageflow.bioimageflow-opener" not in installed
                 if command[-1] == str(self.vsix_path)
@@ -334,36 +420,78 @@ class EmbeddedCodeServerManager:
             if command[-1] == str(self.vsix_path) and integration_stamp is not None:
                 integration_stamp.write_text(integration_digest)
 
-    def _uninstall_legacy_opener(self, install_runner: CommandRunner) -> None:
-        command = self.legacy_uninstall_command()
+    def _uninstall_legacy_opener(
+        self, install_runner: CommandRunner, *, root: Path | None = None
+    ) -> None:
+        command = self.legacy_uninstall_command(root)
         logger.info("Removing legacy code-server opener extension: %s", shlex.join(command))
         try:
             install_runner(command)
         except Exception as exc:
             logger.info("Legacy code-server opener removal skipped or failed: %s", exc)
 
-    def _launch_in_environment(self) -> object:
+    def _launch_in_environment(self) -> ManagedProcess:
         env_manager = self._environment_manager_provider()
         logger.info(
             "Provisioning managed code-server environment: version=%s",
             CODE_SERVER_VERSION,
         )
-        environment = env_manager.provision(
+        asset = code_server_asset()
+        if asset is None:
+            raise EditorLaunchError(
+                f"embedded code editor is not available on {sys.platform}/{platform.machine()}"
+            )
+        operation = env_manager.provision(
             "codeserver",
-            EnvironmentSpec(
-                python="3.10.*",
-                conda=(f"code-server=={CODE_SERVER_VERSION}",),
-            ),
+            self._codeserver_spec(asset),
             replace_existing=True,
-        ).wait_for()
+        )
+        listen = getattr(operation, "listen", None)
+        if callable(listen):
+            listen(self._publish_provisioning_event, replay=True)
+        environment = operation.wait_for()
+        root = _code_server_root(environment)
         self._install_extensions(
             environment.run,
-            integration_stamp=environment.path / ".bioimageflow-opener.sha256",
+            integration_stamp=root / ".bioimageflow-opener.sha256",
+            root=root,
         )
-        command = self.launch_command()
+        command = self.launch_command(root)
         self.set_launch_phase(EditorLaunchPhase.STARTING, "Starting code-server.")
         logger.info("Starting managed code-server process: %s", shlex.join(command))
         return environment.spawn(command, output_limit=16 * 1024 * 1024)
+
+    def _codeserver_spec(self, asset: str) -> EnvironmentSpec:
+        return EnvironmentSpec(
+            python="3.10.*",
+            conda=(),
+            post_install=(
+                PostInstallCommand(
+                    argv=(
+                        "python",
+                        str(default_code_server_installer_path()),
+                        "--url",
+                        code_server_asset_url(asset),
+                        "--sha256",
+                        CODE_SERVER_SHA256[asset],
+                        "--destination",
+                        CODE_SERVER_ROOT_RELATIVE,
+                        "--installer-revision",
+                        CODE_SERVER_INSTALLER_REVISION,
+                    ),
+                    display="Downloading the code editor runtime.",
+                ),
+            ),
+        )
+
+    def _publish_provisioning_event(self, event: OperationEvent) -> None:
+        """Publish managed-environment steps for the post-install download step."""
+        if event.stage != "post_install":
+            return
+        if event.kind is OperationEventKind.STEP:
+            self.set_launch_phase(EditorLaunchPhase.PREPARING, event.message)
+        elif event.kind is OperationEventKind.OUTPUT and event.line:
+            logger.info("Code editor runtime install: %s", event.line)
 
     def shutdown(self) -> None:
         """Close the managed code-server process, if one was launched."""
@@ -494,18 +622,21 @@ class EditorService:
                 try:
                     start()
                 except Exception as exc:
-                    logger.exception("Embedded code-server launch failed")
+                    detail = operation_failure_detail(exc) or _exception_summary(exc)
+                    logger.error(
+                        "Embedded code-server launch failed: %s", detail, exc_info=True
+                    )
                     self._set_embedded_launch_phase(
                         EditorLaunchPhase.FAILED,
-                        _exception_summary(exc),
+                        detail,
                     )
                     return self._embedded.status().model_copy(
                         update={
                             "launch_attempted": True,
                             "launch_phase": EditorLaunchPhase.FAILED,
-                            "launch_message": _exception_summary(exc),
+                            "launch_message": detail,
                             "error_code": EMBEDDED_LAUNCH_FAILED,
-                            "error_detail": _exception_summary(exc),
+                            "error_detail": detail,
                         }
                     )
 
@@ -648,9 +779,11 @@ class EditorService:
                     EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                 )
             except Exception as exc:
-                logger.exception("Embedded code-server launch failed")
+                error_detail = operation_failure_detail(exc) or _exception_summary(exc)
+                logger.error(
+                    "Embedded code-server launch failed: %s", error_detail, exc_info=True
+                )
                 error_code = EMBEDDED_LAUNCH_FAILED
-                error_detail = _exception_summary(exc)
                 self._set_embedded_launch_phase(
                     EditorLaunchPhase.FAILED,
                     error_detail,

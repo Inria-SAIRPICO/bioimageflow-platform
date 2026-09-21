@@ -46,6 +46,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariManagedOperationMutation,
     NapariManagedRecipe,
 )
+from bioimageflow_server.services.operation_failures import operation_failure_detail
 from bioimageflow_server.services.settings_store import SettingsRevisionConflict, SettingsStore
 from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 
@@ -633,7 +634,7 @@ class NapariEnvironmentService:
                 environment_state="failed",
                 operation_state="failed",
                 code="napari_provision_failed",
-                detail=str(exc) or type(exc).__name__,
+                detail=operation_failure_detail(exc) or str(exc) or type(exc).__name__,
             )
             return
         self._wetlands_operations[platform_operation.id] = wetlands_operation
@@ -715,7 +716,7 @@ class NapariEnvironmentService:
                     detail=(
                         exc.detail
                         if isinstance(exc, NapariEnvironmentError)
-                        else str(exc) or type(exc).__name__
+                        else operation_failure_detail(exc) or str(exc) or type(exc).__name__
                     ),
                 )
             finally:
@@ -847,7 +848,7 @@ class NapariEnvironmentService:
                         detail=(
                             exc.detail
                             if isinstance(exc, NapariEnvironmentError)
-                            else str(exc) or type(exc).__name__
+                            else operation_failure_detail(exc) or str(exc) or type(exc).__name__
                         ),
                     )
             finally:
