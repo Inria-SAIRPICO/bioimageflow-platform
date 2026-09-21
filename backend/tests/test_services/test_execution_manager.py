@@ -559,17 +559,32 @@ class TestExecutionManagerLifecycle:
             environment_manager_provider=lambda: shared_manager,
         )
 
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        first_context = await em.start(
+            _graph_with([("n1", True)]), workflow_id="wf-test"
+        )
+        await _drain(em)
+
+        second_context = await em.start(
+            _graph_with([("n1", True)]), workflow_id="wf-test"
+        )
         await _drain(em)
 
         assert wf.private_manager.calls == []
-        assert shared_manager.calls == ["cellpose-env"]
+        assert shared_manager.calls == ["cellpose-env", "cellpose-env"]
         assert bus.environment_events == [
             ("cellpose-env", "creating"),
             ("cellpose-env", "running"),
             ("cellpose-env", "stopped"),
+            ("cellpose-env", "creating"),
+            ("cellpose-env", "running"),
+            ("cellpose-env", "stopped"),
         ]
-        assert any(message == "Downloaded cellpose" for _, message, _, _ in bus.log_events)
+        pixi_logs = [
+            context
+            for event, context in zip(bus.log_events, bus.log_contexts, strict=True)
+            if event[1] == "Downloaded cellpose"
+        ]
+        assert pixi_logs == [first_context, second_context]
         assert any(
             event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
             for event in em.retained_progress()

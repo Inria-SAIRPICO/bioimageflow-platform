@@ -577,7 +577,7 @@ class ExecutionManager:
             with bind_execution_log_context(context):
                 use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
                 engine = self._make_execution_engine(workflow)
-                self._attach_environment_status_hook(engine, context)
+                self._attach_environment_status_hook(engine)
                 try:
                     if engine is None or not use_explicit_engine:
                         value = workflow.compute(
@@ -1069,9 +1069,7 @@ class ExecutionManager:
             setattr(engine, "_env_manager", shared_manager)
         return engine
 
-    def _attach_environment_status_hook(
-        self, engine: Any, context: ExecutionContext | None = None
-    ) -> None:
+    def _attach_environment_status_hook(self, engine: Any) -> None:
         """Publish Wetlands environment lifecycle changes during execution.
 
         The library owns environment startup inside ``WetlandsEnvManager``.
@@ -1082,53 +1080,82 @@ class ExecutionManager:
         get_or_create = getattr(manager, "get_or_create", None)
         if manager is None or not callable(get_or_create):
             return
-        if getattr(manager, "_bioimageflow_platform_env_status_hooked", False):
+        if getattr(manager, "_bioimageflow_platform_env_status_hook_owner", None) is self:
             return
 
+        original_get_or_create = getattr(
+            manager,
+            "_bioimageflow_platform_original_get_or_create",
+            get_or_create,
+        )
+        setattr(
+            manager,
+            "_bioimageflow_platform_original_get_or_create",
+            original_get_or_create,
+        )
+
         def _get_or_create_with_status(env_spec: Any, *args: Any, **kwargs: Any) -> Any:
+            # The shared manager outlives individual runs, so resolve the context
+            # here instead of retaining the run that first installed this hook.
+            active_context = self.context if self.state == "running" else None
             env_name = getattr(env_spec, "name", None)
             already_running = _wetlands_env_is_running(manager, env_name)
-            node_id = self._current_node_id if context == self.context else None
+            node_id = self._current_node_id if active_context is not None else None
             if isinstance(env_name, str) and env_name:
                 self._publish_environment_status(
                     env_name,
                     "running" if already_running else "creating",
                 )
             try:
-                if node_id is not None and not already_running:
+                if active_context is not None and node_id is not None and not already_running:
                     self._publish_environment_phase(
-                        context, node_id, f"Preparing {env_name} environment"
+                        active_context, node_id, f"Preparing {env_name} environment"
                     )
-                if context is not None:
+                if active_context is not None:
                     kwargs["on_provision_event"] = lambda event: self._on_environment_event(
-                        event, context, node_id, env_name
+                        event, active_context, node_id, env_name
                     )
-                env = get_or_create(env_spec, *args, **kwargs)
+                env = original_get_or_create(env_spec, *args, **kwargs)
             except Exception:
                 if isinstance(env_name, str) and env_name and not already_running:
                     self._publish_environment_status(env_name, "stopped")
                 raise
-            if node_id is not None and context == self.context:
-                self._publish_environment_phase(context, node_id, "Executing tool")
+            if (
+                active_context is not None
+                and node_id is not None
+                and active_context == self.context
+                and self.state == "running"
+            ):
+                self._publish_environment_phase(active_context, node_id, "Executing tool")
             if isinstance(env_name, str) and env_name:
                 self._publish_environment_status(env_name, "running")
             return env
 
         setattr(manager, "get_or_create", _get_or_create_with_status)
-        shutdown_all = getattr(manager, "shutdown_all", None)
-        if callable(shutdown_all):
+        current_shutdown_all = getattr(manager, "shutdown_all", None)
+        original_shutdown_all = getattr(
+            manager,
+            "_bioimageflow_platform_original_shutdown_all",
+            current_shutdown_all,
+        )
+        if callable(original_shutdown_all):
+            setattr(
+                manager,
+                "_bioimageflow_platform_original_shutdown_all",
+                original_shutdown_all,
+            )
 
             def _shutdown_all_with_status() -> Any:
                 envs = getattr(manager, "_envs", None)
                 env_names = list(envs) if isinstance(envs, dict) else []
                 try:
-                    return shutdown_all()
+                    return original_shutdown_all()
                 finally:
                     for env_name in env_names:
                         self._publish_environment_status(env_name, "stopped")
 
             setattr(manager, "shutdown_all", _shutdown_all_with_status)
-        setattr(manager, "_bioimageflow_platform_env_status_hooked", True)
+        setattr(manager, "_bioimageflow_platform_env_status_hook_owner", self)
 
     def _on_environment_event(
         self, event: Any, context: ExecutionContext, node_id: str | None, env_name: str | None
