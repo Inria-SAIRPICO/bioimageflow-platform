@@ -31,18 +31,33 @@ For a specific BioImageFlow tool, inspect detailed metadata before using its inp
 {"tool": "describe_bioimageflow_tool", "arguments": {"tool_name": "GaussianBlur"}}
 ```
 
-## Create A Node
+## Plan The Canvas Layout
+
+Plan the complete topology and initial positions before creating nodes.
+Lay out each root or embedded workflow independently from left to right:
+
+- Put source nodes in the first column.
+- Assign every downstream node to one column after its deepest predecessor.
+- Use at least 320 canvas units between columns and 220 units between rows, with larger gaps for unusually large nodes.
+- Give nodes in the same dependency stage the same horizontal coordinate.
+- Put parallel branches on separate rows and center their merge node between those rows.
+- Keep coordinates on a consistent grid, avoid overlaps and unnecessary edge crossings, and put disconnected components below the primary graph with an empty row between components.
+- Preserve existing user placement and unrelated components unless the user asks for a broader rearrangement.
+
+For example, a two-way branch can use source `[80, 220]`, branches `[400, 110]` and `[400, 330]`, and merge `[720, 220]`.
+
+## Create A Tool Node
 
 Use a stable `node_id`, a valid `tool_name`, a display `name`, a two-number `position`, and only parameters that appear in tool metadata.
 
 ```json
 {
-  "tool": "create_node",
+  "tool": "create_tool_node",
   "arguments": {
     "node_id": "blur_1",
     "tool_name": "GaussianBlur",
     "name": "Blur",
-    "position": [240, 160],
+    "position": [400, 160],
     "parameters": {
       "sigma": 2.0
     }
@@ -87,12 +102,12 @@ Confirm them with `list_tools` or `describe_bioimageflow_tool`.
 
 ## Update Parameters
 
-`update_node_parameters` shallow-patches one node parameter mapping.
+`update_tool_parameters` shallow-patches one node parameter mapping.
 Send only the parameters you intend to change.
 
 ```json
 {
-  "tool": "update_node_parameters",
+  "tool": "update_tool_parameters",
   "arguments": {
     "node_id": "blur_1",
     "parameters": {
@@ -102,7 +117,7 @@ Send only the parameters you intend to change.
 }
 ```
 
-## Rename, Enable, Disable, And Layout
+## Rename, Enable, Disable, And Correct Layout
 
 Rename a node:
 
@@ -119,10 +134,12 @@ Disable a node for future runs:
 Move one node:
 
 ```json
-{"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [320, 160]}}
+{"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [400, 160]}}
 ```
 
-Move several nodes without touching parameters, edges, or workflow interfaces:
+After connecting the complete graph, inspect its layout again.
+If the planned positions are already clear, do not move the nodes a second time.
+Only when alignment needs correction, move all affected nodes together without touching parameters, edges, or workflow interfaces:
 
 ```json
 {
@@ -130,7 +147,7 @@ Move several nodes without touching parameters, edges, or workflow interfaces:
   "arguments": {
     "moves": [
       {"node_id": "load_1", "position": [80, 160]},
-      {"node_id": "blur_1", "position": [320, 160]}
+      {"node_id": "blur_1", "position": [400, 160]}
     ]
   }
 }
@@ -152,6 +169,7 @@ For nested workflow layout, pass `scope.workflow_path` as the list of workflow-n
 ```
 
 Scoped graph mutations are layout-only unless `get_bioimageflow_capabilities` explicitly advertises broader scoped edit support.
+Use the same `scope.workflow_path` for the complete nested-layout correction.
 
 ## Apply A Batch Edit
 
@@ -164,11 +182,11 @@ Keep batches focused and let the backend validate mutation semantics.
   "arguments": {
     "operations": [
       {
-        "type": "create_node",
+        "type": "create_tool_node",
         "node_id": "threshold_1",
         "tool_name": "Threshold",
         "name": "Threshold",
-        "position": [520, 160],
+        "position": [720, 160],
         "parameters": {
           "method": "otsu"
         }

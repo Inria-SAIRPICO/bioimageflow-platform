@@ -58,6 +58,10 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
     assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
     assert "bioimageflow-agent" not in instructions
     assert "batch" in normalized_instructions
+    assert "left to right" in normalized_instructions
+    assert "320" in instructions
+    assert "220" in instructions
+    assert "move_nodes" in instructions
     assert "Workflow-local tool authoring" in instructions
     assert "tool_reload" in instructions
     assert "/Users/" not in instructions
@@ -158,3 +162,24 @@ def test_agent_docs_include_workflow_local_tool_authoring() -> None:
         assert "workflow-local tool" in content
         assert "describe_bioimageflow_tool" in content
         assert ".bioimageflow/platform-source/" in content
+
+
+def test_agent_docs_define_consistent_canvas_layout_rules() -> None:
+    docs_root = Path(__file__).parents[3] / "docs" / "agents"
+    workflow_editing = (docs_root / "workflow-editing.md").read_text(encoding="utf-8")
+    api_reference = (docs_root / "api-reference.md").read_text(encoding="utf-8")
+    template = (
+        Path(context.__file__).parents[1] / "data" / context.AGENT_INSTRUCTIONS_TEMPLATE
+    ).read_text(encoding="utf-8")
+
+    for content in (workflow_editing, template):
+        normalized = " ".join(content.lower().split())
+        assert "left to right" in normalized
+        assert "320" in content
+        assert "220" in content
+        assert "move_nodes" in content
+        assert "do not move the nodes a second time" in normalized
+    for content in (workflow_editing, api_reference, template):
+        assert '"tool": "create_node"' not in content
+        assert '"type": "create_node"' not in content
+        assert '"tool": "update_node_parameters"' not in content

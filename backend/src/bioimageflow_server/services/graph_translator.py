@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -271,8 +272,144 @@ def graph_state_to_lib_dict(
     )
 
 
-def _default_position(index: int) -> tuple[float, float]:
-    return (float((index % 4) * 280), float((index // 4) * 180))
+_LAYOUT_COLUMN_GAP = 320.0
+_LAYOUT_ROW_GAP = 220.0
+
+
+def _default_positions(graph_data: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    """Derive one deterministic layout for a position-less library graph.
+
+    Longest-path ranks make dependencies flow left to right. Nodes in a rank
+    retain a stable order, refined by their predecessors' average rows to avoid
+    simple crossings. Weakly disconnected components are stacked below the
+    largest component. Cyclic remnants share a final column so the semantic
+    validator can still report the cycle without layout becoming another error.
+    """
+
+    raw_nodes = graph_data.get("nodes")
+    if not isinstance(raw_nodes, list):
+        return {}
+    node_ids = [
+        str(node.get("name") or "")
+        for node in raw_nodes
+        if isinstance(node, dict)
+    ]
+    order = {node_id: index for index, node_id in enumerate(node_ids)}
+    successors: dict[str, set[str]] = {node_id: set() for node_id in node_ids}
+    predecessors: dict[str, set[str]] = {node_id: set() for node_id in node_ids}
+    neighbours: dict[str, set[str]] = {node_id: set() for node_id in node_ids}
+    raw_edges = graph_data.get("edges")
+    if isinstance(raw_edges, list):
+        for edge in raw_edges:
+            if not isinstance(edge, dict):
+                continue
+            source = edge.get("source_node")
+            target = edge.get("target_node")
+            if (
+                not isinstance(source, str)
+                or not isinstance(target, str)
+                or source == target
+                or source not in order
+                or target not in order
+            ):
+                continue
+            successors[source].add(target)
+            predecessors[target].add(source)
+            neighbours[source].add(target)
+            neighbours[target].add(source)
+
+    components: list[list[str]] = []
+    unseen = set(node_ids)
+    while unseen:
+        seed = min(unseen, key=order.__getitem__)
+        stack = [seed]
+        component: list[str] = []
+        unseen.remove(seed)
+        while stack:
+            node_id = stack.pop()
+            component.append(node_id)
+            for neighbour in sorted(
+                neighbours[node_id], key=order.__getitem__, reverse=True
+            ):
+                if neighbour in unseen:
+                    unseen.remove(neighbour)
+                    stack.append(neighbour)
+        component.sort(key=order.__getitem__)
+        components.append(component)
+    components.sort(key=lambda item: (-len(item), min(order[node_id] for node_id in item)))
+
+    positions: dict[str, tuple[float, float]] = {}
+    component_top = 0.0
+    for component in components:
+        component_set = set(component)
+        indegree = {
+            node_id: len(predecessors[node_id] & component_set)
+            for node_id in component
+        }
+        ranks = {node_id: 0 for node_id in component}
+        ready = [
+            (order[node_id], node_id)
+            for node_id in component
+            if indegree[node_id] == 0
+        ]
+        heapq.heapify(ready)
+        processed: set[str] = set()
+        while ready:
+            _index, node_id = heapq.heappop(ready)
+            processed.add(node_id)
+            for target in sorted(successors[node_id], key=order.__getitem__):
+                if target not in component_set:
+                    continue
+                ranks[target] = max(ranks[target], ranks[node_id] + 1)
+                indegree[target] -= 1
+                if indegree[target] == 0:
+                    heapq.heappush(ready, (order[target], target))
+
+        unresolved = [node_id for node_id in component if node_id not in processed]
+        if unresolved:
+            fallback_rank = max(
+                (ranks[node_id] for node_id in processed), default=-1
+            ) + 1
+            for node_id in unresolved:
+                ranks[node_id] = fallback_rank
+
+        layers: dict[int, list[str]] = {}
+        for node_id in component:
+            layers.setdefault(ranks[node_id], []).append(node_id)
+        row_orders: dict[str, int] = {}
+        for rank in sorted(layers):
+            layer = layers[rank]
+
+            def layer_order(node_id: str) -> tuple[float, int]:
+                upstream_rows = [
+                    row_orders[source]
+                    for source in predecessors[node_id]
+                    if source in row_orders
+                ]
+                barycenter = (
+                    sum(upstream_rows) / len(upstream_rows)
+                    if upstream_rows
+                    else float(order[node_id])
+                )
+                return barycenter, order[node_id]
+
+            layer.sort(key=layer_order)
+            row_orders.update(
+                {node_id: row for row, node_id in enumerate(layer)}
+            )
+
+        widest_layer = max((len(layer) for layer in layers.values()), default=1)
+        for rank, layer in layers.items():
+            layer_top = component_top + (
+                (widest_layer - len(layer)) * _LAYOUT_ROW_GAP / 2
+            )
+            for row, node_id in enumerate(layer):
+                positions[node_id] = (
+                    rank * _LAYOUT_COLUMN_GAP,
+                    layer_top + row * _LAYOUT_ROW_GAP,
+                )
+        component_top += (widest_layer + 1) * _LAYOUT_ROW_GAP
+    return positions
 
 
 def _validate_library_wire_shape(value: dict[str, Any]) -> dict[str, Any]:
@@ -404,6 +541,7 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
     raw_nodes = graph_data.get("nodes")
     if not isinstance(raw_nodes, list):
         raise ValueError("Library workflow nodes must be an array")
+    positions = _default_positions(graph_data)
     nodes: list[dict[str, Any]] = []
     for index, raw in enumerate(raw_nodes):
         if not isinstance(raw, dict):
@@ -419,7 +557,9 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
                     "name": child.display_name or child.name,
                     "workflow": child.model_dump(mode="json", by_alias=True),
                     "bindings": raw.get("bindings", {}),
-                    "position": _default_position(index),
+                    "position": positions.get(
+                        node_id, (float(index) * _LAYOUT_COLUMN_GAP, 0.0)
+                    ),
                     "enabled": raw.get("enabled", True),
                     **(
                         {"viewer_additions": raw["viewer_additions"]}
@@ -438,7 +578,9 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
                 "id": node_id,
                 "name": node_id,
                 "tool_name": str(raw.get("tool_class") or ""),
-                "position": _default_position(index),
+                "position": positions.get(
+                    node_id, (float(index) * _LAYOUT_COLUMN_GAP, 0.0)
+                ),
                 "parameters": {
                     str(key): deserialize_constant(value)
                     for key, value in constants.items()

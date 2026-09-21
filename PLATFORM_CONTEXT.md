@@ -33,6 +33,8 @@ The existence of both modes does not make every proposal in `platform_specs_v3.m
 
 `GraphState` is the single editable workflow definition at every depth.
 A root workflow and a workflow embedded as a node use the same recursive graph schema, validation rules, canvas model, interface model, and execution translation.
+Portable BioImageFlow graphs intentionally carry no canvas coordinates, so their first platform materialization derives a deterministic recursive left-to-right layered layout from dependencies.
+Once materialized, positions belong to the canonical graph and imports, execution, reopening, and ordinary edits never reflow that persisted user layout.
 
 Every graph has required identity and presentation fields, nodes, edges, a workflow interface, and workflow configuration.
 There are two explicit node variants:

@@ -105,6 +105,54 @@ def test_save_and_get_use_the_graph_as_display_authority(tmp_path: Path) -> None
     assert "display_name" not in store._read_raw("demo")["metadata"]
 
 
+def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="demo"))
+    child_payload = _graph("child").model_dump(mode="json", by_alias=True)
+    child_payload["nodes"] = [
+        {
+            "type": "tool",
+            "id": "inner",
+            "name": "Inner label",
+            "tool_name": "ExampleTool",
+            "position": [37, 91],
+            "parameters": {},
+            "collapsed": True,
+            "tool_module": "example_tools",
+            "tool_class": "ExampleTool",
+            "tool_package": "example-tools",
+            "tool_package_version": "1.0.0",
+        }
+    ]
+    child = GraphState.model_validate(child_payload)
+    graph_payload = _graph("root").model_dump(mode="json", by_alias=True)
+    graph_payload["nodes"] = [
+        {
+            "type": "workflow",
+            "id": "child",
+            "name": "Custom child label",
+            "workflow": child,
+            "bindings": {},
+            "position": [401, 233],
+            "collapsed": True,
+        }
+    ]
+    graph = GraphState.model_validate(graph_payload)
+    store.save_workflow("demo", WorkflowSaveBody(graph=graph))
+
+    rebound = store.rebind_versions("demo").graph
+
+    child_node = rebound.nodes[0]
+    assert child_node.position == (401, 233)
+    assert child_node.collapsed is True
+    assert child_node.name == "Custom child label"
+    assert child_node.type == "workflow"
+    inner = child_node.workflow.nodes[0]
+    assert inner.position == (37, 91)
+    assert inner.collapsed is True
+    assert inner.name == "Inner label"
+
+
 def test_unknown_persisted_sections_are_rejected_without_fallback(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="demo"))

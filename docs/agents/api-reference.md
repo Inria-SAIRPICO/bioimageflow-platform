@@ -194,16 +194,16 @@ Sets the active workflow for subsequent MCP calls by refreshing the workflow dra
 
 ## Graph Mutation Tools
 
-`create_node`
+`create_tool_node`
 
 ```json
 {
-  "tool": "create_node",
+  "tool": "create_tool_node",
   "arguments": {
     "node_id": "blur_1",
     "tool_name": "GaussianBlur",
     "name": "Blur",
-    "position": [240, 160],
+    "position": [400, 160],
     "parameters": {
       "sigma": 2.0
     }
@@ -238,10 +238,10 @@ For positional connections:
 }
 ```
 
-`update_node_parameters`
+`update_tool_parameters`
 
 ```json
-{"tool": "update_node_parameters", "arguments": {"node_id": "blur_1", "parameters": {"sigma": 3.0}}}
+{"tool": "update_tool_parameters", "arguments": {"node_id": "blur_1", "parameters": {"sigma": 3.0}}}
 ```
 
 `rename_node`
@@ -259,10 +259,13 @@ For positional connections:
 `move_node`
 
 ```json
-{"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [320, 160]}}
+{"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [400, 160]}}
 ```
 
 `move_nodes`
+
+Plan dependency-aligned positions before creating nodes and preserve existing user placement.
+Use `move_nodes` only when the completed graph needs a coherent correction; the detailed spacing, branch, merge, component, and nested-workflow rules are in [Workflow Editing Cookbook](workflow-editing.md#plan-the-canvas-layout).
 
 ```json
 {
@@ -270,7 +273,7 @@ For positional connections:
   "arguments": {
     "moves": [
       {"node_id": "load_1", "position": [80, 160]},
-      {"node_id": "blur_1", "position": [320, 160]}
+      {"node_id": "blur_1", "position": [400, 160]}
     ]
   }
 }
@@ -298,11 +301,11 @@ For positional connections:
   "arguments": {
     "operations": [
       {
-        "type": "create_node",
+        "type": "create_tool_node",
         "node_id": "threshold_1",
         "tool_name": "Threshold",
         "name": "Threshold",
-        "position": [520, 160],
+        "position": [720, 160],
         "parameters": {
           "method": "otsu"
         }

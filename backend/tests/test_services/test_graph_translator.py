@@ -337,6 +337,82 @@ def test_column_and_dataframe_edges_round_trip_at_workflow_boundary() -> None:
     assert restored.nodes[1].workflow.interface == graph.nodes[1].workflow.interface  # type: ignore[union-attr]
 
 
+def test_library_import_derives_dependency_aligned_canvas_positions() -> None:
+    graph_data = _graph(
+        "layered",
+        [_tool("sink"), _tool("branch_b"), _tool("source"), _tool("branch_a")],
+    )
+    graph_data["edges"] = [
+        {
+            "type": "dataframe",
+            "id": "source-a",
+            "source_node": "source",
+            "target_node": "branch_a",
+            "target_position": 0,
+        },
+        {
+            "type": "dataframe",
+            "id": "source-b",
+            "source_node": "source",
+            "target_node": "branch_b",
+            "target_position": 0,
+        },
+        {
+            "type": "dataframe",
+            "id": "a-sink",
+            "source_node": "branch_a",
+            "target_node": "sink",
+            "target_position": 0,
+        },
+        {
+            "type": "dataframe",
+            "id": "b-sink",
+            "source_node": "branch_b",
+            "target_node": "sink",
+            "target_position": 1,
+        },
+    ]
+    library = graph_state_to_lib_dict(
+        GraphState.model_validate(graph_data), _registry()
+    ).lib_dict
+
+    restored = lib_dict_to_graph_state(library)
+
+    assert {node.id: node.position for node in restored.nodes} == {
+        "sink": (640.0, 110.0),
+        "branch_b": (320.0, 0.0),
+        "source": (0.0, 110.0),
+        "branch_a": (320.0, 220.0),
+    }
+
+
+def test_library_import_stacks_disconnected_components_below_primary_graph() -> None:
+    graph_data = _graph(
+        "components",
+        [_tool("target"), _tool("orphan"), _tool("source")],
+    )
+    graph_data["edges"] = [
+        {
+            "type": "dataframe",
+            "id": "source-target",
+            "source_node": "source",
+            "target_node": "target",
+            "target_position": 0,
+        }
+    ]
+    library = graph_state_to_lib_dict(
+        GraphState.model_validate(graph_data), _registry()
+    ).lib_dict
+
+    restored = lib_dict_to_graph_state(library)
+
+    assert {node.id: node.position for node in restored.nodes} == {
+        "target": (320.0, 0.0),
+        "orphan": (0.0, 440.0),
+        "source": (0.0, 0.0),
+    }
+
+
 def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "unified_workflow_graph.json"
     library = json.loads(fixture.read_text(encoding="utf-8"))
