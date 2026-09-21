@@ -15,7 +15,7 @@ import { campaignExcluded } from '@/test-utils/campaignVitest'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
-    bundle_version: 1,
+    bundle_version: 2,
     status: 'missing',
     workflows: [],
     can_install: true,

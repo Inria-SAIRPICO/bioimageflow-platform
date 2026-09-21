@@ -34,6 +34,7 @@ _PLAN_STATUS_MAP: dict[str, tuple[NodeStatusValue, bool]] = {
     "unexecuted": ("unexecuted", False),
     "skipped": ("unexecuted", False),
     "pending_upstream": ("unexecuted", False),
+    "corrupt": ("failed", False),
 }
 
 
@@ -130,9 +131,23 @@ def _validation_from_compilation(
                 node_id=node_id,
                 status=status,
                 cached=cached,
+                error=getattr(node_plan, "diagnostic", None),
                 result_key=getattr(node_plan, "final_result_key", None),
                 record_id=getattr(node_plan, "selected_record_id", None),
             )
+            if str(node_plan.status.value) == "corrupt":
+                _append_unique_error(
+                    errors,
+                    seen_errors,
+                    GraphValidationError(
+                        type="cache_corrupt",
+                        detail=(
+                            getattr(node_plan, "diagnostic", None)
+                            or "The selected cache record is corrupt"
+                        ),
+                        node=node_id,
+                    ),
+                )
 
     for node in graph.nodes:
         node_statuses.setdefault(

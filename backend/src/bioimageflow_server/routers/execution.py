@@ -46,7 +46,10 @@ from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftRevisionConflict,
     WorkflowDraftService,
 )
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import (
+    WorkflowFormatUpdateRequiredError,
+    WorkflowStoreService,
+)
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -320,6 +323,15 @@ async def run_execution(
                     continue
     except WorkflowDraftRevisionConflict as exc:
         return _draft_revision_conflict_response(exc)
+    except WorkflowFormatUpdateRequiredError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "workflow_format_update_required",
+                "detail": str(exc),
+                "workflow_id": exc.workflow_id,
+            },
+        )
     except _RunDraftGraphChanged as exc:
         return _draft_graph_mismatch_response(
             body.workflow_name,
@@ -441,9 +453,7 @@ async def clear_execution(
         else:
             async with execution_manager.exclusive_idle_mutation():
                 statuses = await clear_in_current_context()
-                execution_manager.apply_cache_clear_statuses(
-                    body.workflow_name, statuses
-                )
+                execution_manager.apply_cache_clear_statuses(body.workflow_name, statuses)
     except ExecutionConflictError as exc:
         raise HTTPException(
             status_code=423,

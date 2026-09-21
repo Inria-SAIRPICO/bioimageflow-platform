@@ -73,6 +73,10 @@ Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
 Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
+Older saved workflows, root drafts, and nested snapshots are discovered by a write-free format scan.
+They remain byte-for-byte unchanged and unavailable until the user confirms the content-derived plan; current unrelated workflows remain usable.
+Confirmation first synchronizes exact backups under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, then replaces all planned authorities through one forward-recoverable journal whose already-confirmed work is completed after restart.
+
 Workflow IDs are workspace-relative paths and carry identity generations.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
 Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
@@ -182,6 +186,8 @@ Clearing selected root-workflow nodes operates on an accepted draft, invalidates
 The matching retained execution-status snapshot tracks a successful Clear across browser reloads, while the completed run's historical result remains unchanged.
 On an authoritative root-draft GET, the backend recomputes cache statuses from the accepted graph and current workflow storage without rewriting the persisted draft or its revision; a dependent waiting on cleared upstream work is out of date only when it retains a latest output, otherwise it is unexecuted.
 The read fences the accepted draft, workflow generation, and storage path against concurrent draft mutation, Clear, and workflow replacement, and performs the final plan and latest-output lookup under the same workflow mutation lock as Clear.
+A corrupt selected cache record projects the affected node as failed with `cache_corrupt` while leaving the draft readable and saveable; execution remains strict and rejects that branch.
+Clearing the affected node removes its current selection, quarantines a safely identified corrupt immutable record, and refreshes the cleared and downstream status projection.
 A workflow-and-results bundle instead pins one successful run.
 These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.
 
@@ -275,7 +281,7 @@ Use this authority order:
 [`platform_specs_napari_environments.md`](platform_specs_napari_environments.md) is the completed Phase A design and phased implementation authority for multiple napari environments: named local environments, portable output viewing requirements, one exclusive toggleable favorite per structural output identity across all rows and future results, filename rules with extension shortcuts, deterministic environment selection, and setup guidance.
 Its package-compatibility contract uses installed Python distribution metadata and PEP 440 constraints independently of npe1/npe2 manifests, plugin discovery, and enabled flags; reader identifiers remain separate launch instructions and actual reader/plugin failures are launch-time outcomes.
 Managed creation uses Python 3.12 from Conda and installs the remaining distributions from PyPI, with napari 0.9.1/PyQt6 as the default matrix and napari 0.6.6/PyQt5 as the older smoke matrix.
-Its coordinated portable contract uses canonical recursive schema-v2 graphs, explicit schema-v1 normalization, strict viewer metadata, normalized artifact hashes, and a forward-recoverable saved-document/root-draft/nested-snapshot migration.
+Its coordinated portable contract uses canonical recursive schema-v2 graphs, explicit schema-v1 normalization, strict viewer metadata, normalized artifact hashes, and a previewed, explicitly confirmed, byte-backed-up, forward-recoverable saved-document/root-draft/nested-snapshot migration.
 Its Phase B backend foundation implements the settings-backed environment registry, explicit immutable launch/managed identity, package-only bounded probes, singleton adoption, revisioned desktop-only routes, and ordered filename rules.
 Phase C implements UUID-keyed lazy launcher processes and locks, frozen registered-environment argv dispatch, public Wetlands generation-owned spawning for recipe-created managed entries with a narrow persisted-interpreter fallback for adopted legacy Wetlands 1 workspaces, per-environment napari settings files, optional explicit reader dispatch, Qt-completion acknowledgements, typed open failures, unknown-outcome no-replay semantics, and attributed lifecycle status/events.
 Its dedicated environment launch route starts an empty viewer without dispatching `viewer.open([])`.

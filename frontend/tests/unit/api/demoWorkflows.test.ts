@@ -13,7 +13,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 const status = {
-  bundle_version: 1,
+  bundle_version: 2,
   status: 'missing' as const,
   workflows: [],
   can_install: true,

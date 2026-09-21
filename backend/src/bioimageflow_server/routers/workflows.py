@@ -25,6 +25,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowFolderInfo,
     WorkflowFolderUpdate,
     WorkflowFormatStatus,
+    WorkflowFormatMigrationApply,
     WorkflowInfo,
     WorkflowImportResponse,
     ViewingRequirementsManifest,
@@ -55,6 +56,8 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowIdentityGenerationConflictError,
     WorkflowIdentityMovePlan,
     WorkflowMoveRecoveryError,
+    WorkflowFormatPlanStaleError,
+    WorkflowFormatUpdateRequiredError,
     WorkflowStoreService,
     WorkflowResultsBundleImportError,
 )
@@ -341,6 +344,23 @@ async def workflow_format_status(
     return store.workflow_format_status()
 
 
+@router.post("/format-migrations/apply", response_model=WorkflowFormatStatus)
+async def apply_workflow_format_migrations(
+    body: WorkflowFormatMigrationApply,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowFormatStatus:
+    try:
+        result = store.apply_workflow_format_migrations(body.pending_plan_id)
+    except WorkflowFormatPlanStaleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "workflow_format_plan_stale", "detail": str(exc)},
+        ) from exc
+    _publish_workflow_tree_changed(connection_manager, action="format_migrated")
+    return result
+
+
 @router.get("/tree", response_model=WorkflowFolderInfo)
 async def workflow_tree(
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -384,9 +404,7 @@ async def rename_folder(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
-    viewer_preferences: ViewerPreferenceStore | None = Depends(
-        get_viewer_preference_store
-    ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
 ) -> WorkflowFolderInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
@@ -449,9 +467,7 @@ async def delete_folder(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
-    viewer_preferences: ViewerPreferenceStore | None = Depends(
-        get_viewer_preference_store
-    ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
 ) -> Any:
     _ensure_unlocked(execution_manager)
     try:
@@ -616,6 +632,15 @@ async def get_workflow(
             status_code=409,
             detail={"error": "workflow_source_missing", "detail": str(exc)},
         ) from exc
+    except WorkflowFormatUpdateRequiredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "workflow_format_update_required",
+                "detail": str(exc),
+                "workflow_id": exc.workflow_id,
+            },
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
@@ -742,7 +767,9 @@ async def prepare_workflow_embedding(
     # canvas insertion uses the ordinary revision- and execution-guarded draft API.
     try:
         return await asyncio.to_thread(
-            service.prepare_embedding, name, body.source_workflow_id,
+            service.prepare_embedding,
+            name,
+            body.source_workflow_id,
             identity_generation=body.identity_generation,
         )
     except WorkflowSourceConflict as exc:
@@ -891,6 +918,15 @@ async def save_workflow(
             status_code=423,
             detail="Workflow editing is locked while execution is in progress",
         ) from exc
+    except WorkflowFormatUpdateRequiredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "workflow_format_update_required",
+                "detail": str(exc),
+                "workflow_id": exc.workflow_id,
+            },
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
@@ -905,9 +941,7 @@ async def delete_workflow(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
-    viewer_preferences: ViewerPreferenceStore | None = Depends(
-        get_viewer_preference_store
-    ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
 ) -> WorkflowDeleteResponse:
     _ensure_unlocked(execution_manager)
     try:
@@ -963,9 +997,7 @@ async def patch_workflow(
     nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
         get_nested_workflow_snapshot_service
     ),
-    viewer_preferences: ViewerPreferenceStore | None = Depends(
-        get_viewer_preference_store
-    ),
+    viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
 ) -> WorkflowInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:

@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:a5486eac673495b6bc77a70915403c7123a3e607d633072247767ca75a7f7ab5",
+  "artifact_hash": "sha256:f583800a6716026d44321abf57e7a8a977a8b777058fea8fba98fc174d24f631",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -200,7 +200,8 @@
         "tool_class": "DownloadImages",
         "tool_module": "tools.download_images",
         "tool_name": "DownloadImages",
-        "type": "tool"
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -224,8 +225,9 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -250,8 +252,9 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -269,8 +272,9 @@
         "tool_module": "bioimageflow_common_tools.merge",
         "tool_name": "CrossJoin",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -290,8 +294,9 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -309,8 +314,9 @@
         "tool_module": "bioimageflow_spot_tools.atlas",
         "tool_name": "AtlasSpotDetection",
         "tool_package": "bioimageflow_spot_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -327,7 +333,8 @@
         "tool_class": "SpotMaskMetrics",
         "tool_module": "tools.metrics",
         "tool_name": "SpotMaskMetrics",
-        "type": "tool"
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -347,8 +354,9 @@
         "tool_module": "bioimageflow_common_tools.mosaic",
         "tool_name": "Mosaic",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -365,15 +373,16 @@
         "tool_class": "ParameterSweepResults",
         "tool_module": "tools.metrics",
         "tool_name": "ParameterSweepResults",
-        "type": "tool"
+        "type": "tool",
+        "viewer_additions": {}
       }
     ],
-    "schema_version": 1
+    "schema_version": 2
   },
   "metadata": {
     "bundled_template": {
       "id": "parameters-space-exploration",
-      "version": 1
+      "version": 2
     },
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },

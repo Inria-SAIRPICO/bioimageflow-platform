@@ -219,23 +219,44 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
 @pytest.mark.parametrize("missing", ["manifest", "python", "legacy"])
 @pytest.mark.parametrize("nested", [False, True])
 async def test_open_workflow_reports_missing_owned_source(
-    client: httpx.AsyncClient, tmp_path: Path, missing: str, nested: bool,
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    missing: str,
+    nested: bool,
 ) -> None:
     created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
     assert created.status_code == 201
     workflow_dir = tmp_path / "workflows/folder/wf"
     document_path = workflow_dir / "workflow.json"
     document = json.loads(document_path.read_text())
-    graph = graph_document(nodes=[{
-        "type": "tool", "id": "custom", "name": "Custom", "tool_name": "Custom",
-        "tool_class": "Custom", "tool_module": "custom", "source_module": "owned_custom",
-        "position": [0, 0], "parameters": {},
-    }])
+    graph = graph_document(
+        nodes=[
+            {
+                "type": "tool",
+                "id": "custom",
+                "name": "Custom",
+                "tool_name": "Custom",
+                "tool_class": "Custom",
+                "tool_module": "custom",
+                "source_module": "owned_custom",
+                "position": [0, 0],
+                "parameters": {},
+            }
+        ]
+    )
     if nested:
-        graph = graph_document(nodes=[{
-            "type": "workflow", "id": "child", "name": "Child", "position": [0, 0],
-            "workflow": graph, "bindings": {},
-        }])
+        graph = graph_document(
+            nodes=[
+                {
+                    "type": "workflow",
+                    "id": "child",
+                    "name": "Child",
+                    "position": [0, 0],
+                    "workflow": graph,
+                    "bindings": {},
+                }
+            ]
+        )
     document["graph"] = graph
     document["owned_source_ids"] = ["owned_custom"]
     document_path.write_text(json.dumps(document))
@@ -298,20 +319,10 @@ async def test_reveal_latest_outputs_opens_the_workflow_projection(
     created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
     assert created.status_code == 201
 
-    response = await client.post(
-        "/api/v1/workflows/folder/wf/outputs/latest/reveal"
-    )
+    response = await client.post("/api/v1/workflows/folder/wf/outputs/latest/reveal")
 
     assert response.status_code == 200, response.text
-    expected = (
-        tmp_path
-        / "workflows"
-        / "folder"
-        / "wf"
-        / "results"
-        / "outputs"
-        / "latest"
-    )
+    expected = tmp_path / "workflows" / "folder" / "wf" / "results" / "outputs" / "latest"
     assert response.json()["path"] == str(expected)
     assert expected.is_dir()
     reveal.assert_called_once_with(str(expected))
@@ -329,6 +340,108 @@ async def test_format_status_reports_hidden_invalid_workflows(
     assert response.status_code == 200
     assert response.json()["notices"][0]["workflow_id"] == "broken"
     assert response.json()["notices"][0]["status"] == "error"
+
+
+async def test_format_preview_defers_without_writes_then_confirmation_updates(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    created = await client.post("/api/v1/workflows", json={"name": "pending"})
+    assert created.status_code == 201
+    workflow_path = tmp_path / "workflows/pending/workflow.json"
+    draft = (await client.get("/api/v1/workflow-drafts/pending")).json()
+    saved_draft = await client.put(
+        "/api/v1/workflow-drafts/pending",
+        json={
+            "graph": draft["graph"],
+            "expected_revision": draft["draft_revision"],
+            "updated_by": "frontend",
+        },
+    )
+    assert saved_draft.status_code == 200
+    draft_path = tmp_path / "workflows/pending/.bioimageflow/draft.json"
+    raw = json.loads(workflow_path.read_text())
+    raw["graph"]["schema_version"] = 1
+    workflow_path.write_text(json.dumps(raw))
+    raw_draft = json.loads(draft_path.read_text())
+    raw_draft["graph"]["schema_version"] = 1
+    draft_path.write_text(json.dumps(raw_draft))
+    originals = {
+        workflow_path: workflow_path.read_bytes(),
+        draft_path: draft_path.read_bytes(),
+    }
+
+    preview = await client.get("/api/v1/workflows/format-status")
+
+    assert preview.status_code == 200
+    plan_id = preview.json()["pending_plan_id"]
+    assert plan_id.startswith("sha256:")
+    assert preview.json()["notices"][0]["status"] == "pending"
+    assert {path: path.read_bytes() for path in originals} == originals
+    assert (await client.get("/api/v1/workflows")).json() == []
+    unavailable = await client.get("/api/v1/workflows/pending")
+    assert unavailable.status_code == 409
+    assert unavailable.json()["error"] == "workflow_format_update_required"
+    unavailable_draft = await client.get("/api/v1/workflow-drafts/pending")
+    assert unavailable_draft.status_code == 409
+    assert unavailable_draft.json()["error"] == "workflow_format_update_required"
+    blocked_draft_save = await client.put(
+        "/api/v1/workflow-drafts/pending",
+        json={
+            "graph": raw_draft["graph"],
+            "expected_revision": raw_draft["draft_revision"],
+            "updated_by": "frontend",
+        },
+    )
+    assert blocked_draft_save.status_code == 409
+    blocked_saved_save = await client.put(
+        "/api/v1/workflows/pending",
+        json={"graph": raw["graph"]},
+    )
+    assert blocked_saved_save.status_code == 409
+
+    applied = await client.post(
+        "/api/v1/workflows/format-migrations/apply",
+        json={"pending_plan_id": plan_id},
+    )
+
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["pending_plan_id"] is None
+    [notice] = applied.json()["notices"]
+    assert notice["status"] == "migrated"
+    assert notice["backup_paths"]
+    assert {Path(path).read_bytes() for path in notice["backup_paths"]} == set(originals.values())
+    assert json.loads(workflow_path.read_text())["graph"]["schema_version"] == 2
+    assert json.loads(draft_path.read_text())["graph"]["schema_version"] == 2
+    assert [workflow["id"] for workflow in (await client.get("/api/v1/workflows")).json()] == [
+        "pending"
+    ]
+
+
+async def test_format_apply_rejects_stale_preview(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    assert (await client.post("/api/v1/workflows", json={"name": "pending"})).status_code == 201
+    workflow_path = tmp_path / "workflows/pending/workflow.json"
+    raw = json.loads(workflow_path.read_text())
+    raw["graph"]["schema_version"] = 1
+    workflow_path.write_text(json.dumps(raw))
+    plan_id = (await client.get("/api/v1/workflows/format-status")).json()["pending_plan_id"]
+    original = workflow_path.read_bytes()
+    raw["graph"]["display_name"] = "Changed after preview"
+    workflow_path.write_text(json.dumps(raw))
+
+    stale = await client.post(
+        "/api/v1/workflows/format-migrations/apply",
+        json={"pending_plan_id": plan_id},
+    )
+
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "workflow_format_plan_stale"
+    assert workflow_path.read_bytes() != original
+    backup_root = tmp_path / ".bioimageflow/backups/workflow-format"
+    assert not backup_root.exists()
 
 
 async def test_empty_folder_promotion_needs_no_move_journal(
@@ -1101,9 +1214,7 @@ async def test_results_download_streams_and_cleans_temporary_archive(
 async def test_results_download_unknown_workflow_returns_stable_404(
     client: httpx.AsyncClient,
 ) -> None:
-    response = await client.post(
-        "/api/v1/workflows/missing/exports/latest-results"
-    )
+    response = await client.post("/api/v1/workflows/missing/exports/latest-results")
 
     assert response.status_code == 404
     assert response.json()["error"] == "workflow_not_found"
@@ -1126,9 +1237,7 @@ async def test_results_download_maps_stable_export_conflict(
         unavailable,
     )
     async for client in _client(tmp_path):
-        response = await client.post(
-            "/api/v1/workflows/wf/exports/latest-results"
-        )
+        response = await client.post("/api/v1/workflows/wf/exports/latest-results")
 
     assert response.status_code == 409
     assert response.json() == {
@@ -1273,12 +1382,22 @@ async def test_import_rejects_renamed_results_bundle_before_archive_adapter(
 
 @pytest.mark.parametrize("new_id", ["Renamed Workflow", "QA/Renamed Workflow"])
 async def test_import_workflow_archive_conflict_and_name_override(
-    tmp_path: Path, new_id: str,
+    tmp_path: Path,
+    new_id: str,
 ) -> None:
     child = {**_library_graph(), "name": "child", "display_name": "Nested Child"}
-    archive_adapter = _FakeArchiveAdapter(library=_library_graph(nodes=[{
-        "type": "workflow", "name": "child_node", "workflow": child, "bindings": {},
-    }]))
+    archive_adapter = _FakeArchiveAdapter(
+        library=_library_graph(
+            nodes=[
+                {
+                    "type": "workflow",
+                    "name": "child_node",
+                    "workflow": child,
+                    "bindings": {},
+                }
+            ]
+        )
+    )
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
         assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
         conflict = await client.post(

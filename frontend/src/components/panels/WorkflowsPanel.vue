@@ -8,10 +8,14 @@ import Tree from 'primevue/tree'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
 import { api } from '@/api/client'
-import { getWorkflowFormatNotices } from '@/api/workflowFormats'
+import {
+  applyWorkflowFormatMigrations,
+  getWorkflowFormatStatus,
+} from '@/api/workflowFormats'
 import type { WorkflowFormatNotice, WorkflowInfo } from '@/api/types'
 import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/workflow'
 import type { TreeNodeDropEvent } from 'primevue/tree'
+import { apiErrorMessage } from '@/utils/apiError'
 import type { TreeNode } from 'primevue/treenode'
 
 const emit = defineEmits<{
@@ -55,6 +59,14 @@ const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
 const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
 const workflowFormatNotices = ref<WorkflowFormatNotice[]>([])
+const pendingFormatPlanId = ref<string | null>(null)
+const formatDialogVisible = ref(false)
+const applyingFormatUpdate = ref(false)
+const formatUpdateError = ref<string | null>(null)
+
+const pendingFormatNotices = computed(() => (
+  workflowFormatNotices.value.filter((notice) => notice.status === 'pending')
+))
 
 const folderDialogVisible = ref(false)
 const folderDialogMode = ref<'create' | 'rename-folder' | 'rename-workflow'>('create')
@@ -308,13 +320,43 @@ watch(
 )
 
 onMounted(() => {
-  void getWorkflowFormatNotices()
-    .then((notices) => { workflowFormatNotices.value = notices })
+  void getWorkflowFormatStatus()
+    .then((status) => {
+      workflowFormatNotices.value = status.notices ?? []
+      pendingFormatPlanId.value = status.pending_plan_id ?? null
+      formatDialogVisible.value = pendingFormatPlanId.value !== null
+    })
     .catch(() => undefined)
   if (workflowStore.workflows.length === 0) {
     void workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
   }
 })
+
+function deferFormatUpdate(): void {
+  formatDialogVisible.value = false
+}
+
+function reviewFormatUpdates(): void {
+  formatUpdateError.value = null
+  formatDialogVisible.value = pendingFormatPlanId.value !== null
+}
+
+async function confirmFormatUpdate(): Promise<void> {
+  if (!pendingFormatPlanId.value || applyingFormatUpdate.value) return
+  applyingFormatUpdate.value = true
+  formatUpdateError.value = null
+  try {
+    const status = await applyWorkflowFormatMigrations(pendingFormatPlanId.value)
+    workflowFormatNotices.value = status.notices ?? []
+    pendingFormatPlanId.value = status.pending_plan_id ?? null
+    formatDialogVisible.value = false
+    await workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
+  } catch (error) {
+    formatUpdateError.value = apiErrorMessage(error)
+  } finally {
+    applyingFormatUpdate.value = false
+  }
+}
 
 function formatModifiedTime(value: string): string {
   const date = new Date(value)
@@ -710,14 +752,27 @@ defineExpose({
         <i class="pi pi-exclamation-triangle workflows-panel__format-warning-icon" aria-hidden="true" />
         <div>
           <strong>Some workflow files needed attention.</strong>
+          <Button
+            v-if="pendingFormatPlanId"
+            label="Review updates"
+            text
+            size="small"
+            data-testid="workflow-format-review"
+            @click="reviewFormatUpdates"
+          />
           <ul>
             <li v-for="notice in workflowFormatNotices" :key="`${notice.status}:${notice.path}`">
               <span v-if="notice.status === 'migrated'">
                 “{{ notice.workflow_id }}” was updated to the current format.
-                A backup was preserved.
+                <template v-if="(notice.backup_paths ?? []).length > 0">
+                  A backup was preserved.
+                </template>
+              </span>
+              <span v-else-if="notice.status === 'pending'">
+                “{{ notice.workflow_id }}” needs a format update and is unavailable until it is updated.
               </span>
               <span v-else>
-                “{{ notice.workflow_id }}” is hidden because its workflow.json is not valid.
+                “{{ notice.workflow_id }}”: {{ notice.detail }}
               </span>
               <details>
                 <summary>Details</summary>
@@ -858,6 +913,42 @@ defineExpose({
         </div>
       </dl>
     </section>
+
+    <Dialog
+      v-model:visible="formatDialogVisible"
+      modal
+      header="Update workflows"
+      :closable="false"
+      :style="{ width: '34rem' }"
+      data-testid="workflow-format-dialog"
+    >
+      <p>The following workflows use an older format and remain unavailable until updated:</p>
+      <ul>
+        <li v-for="notice in pendingFormatNotices" :key="notice.workflow_id">
+          {{ notice.workflow_id }}
+        </li>
+      </ul>
+      <p>Original files will be preserved in a versioned backup directory before any workflow is replaced.</p>
+      <p v-if="formatUpdateError" role="alert" data-testid="workflow-format-error">
+        {{ formatUpdateError }}
+      </p>
+      <template #footer>
+        <Button
+          label="Not now"
+          severity="secondary"
+          text
+          :disabled="applyingFormatUpdate"
+          data-testid="workflow-format-not-now"
+          @click="deferFormatUpdate"
+        />
+        <Button
+          label="Update workflows"
+          :loading="applyingFormatUpdate"
+          data-testid="workflow-format-update"
+          @click="confirmFormatUpdate"
+        />
+      </template>
+    </Dialog>
 
     <Dialog
       v-model:visible="folderDialogVisible"

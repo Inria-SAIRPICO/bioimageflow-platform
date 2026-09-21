@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -58,6 +59,26 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
     store = _store(tmp_path)
     for workflow_id in ("clean", "dirty"):
         store.create_workflow(WorkflowCreate(name=workflow_id))
+
+    clean_graph = store.get_workflow("clean").graph
+    snapshots = NestedWorkflowSnapshotService(lambda: store)
+    opened = snapshots.open_snapshot(
+        NestedSnapshotOwner(
+            kind="root",
+            canvas_id="workflow:clean",
+            workflow_id="clean",
+            identity_generation=store.workflow_generation("clean"),
+        ),
+        "child",
+        clean_graph,
+    )
+    snapshot_path = (
+        store.workspace_dir
+        / ".bioimageflow/nested-workflow-snapshots"
+        / f"{opened.session_id}.json"
+    )
+
+    for workflow_id in ("clean", "dirty"):
         path = store.workflow_dir(workflow_id) / "workflow.json"
         raw = json.loads(path.read_text())
         raw["graph"] = _downgrade(raw["graph"])
@@ -74,32 +95,33 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
             dirty=workflow_id == "dirty",
         )
 
-    snapshots = NestedWorkflowSnapshotService(lambda: store)
-    opened = snapshots.open_snapshot(
-        NestedSnapshotOwner(
-            kind="root",
-            canvas_id="workflow:clean",
-            workflow_id="clean",
-            identity_generation=store.workflow_generation("clean"),
-        ),
-        "child",
-        store.get_workflow("clean").graph,
-    )
-    snapshot_path = (
-        store.workspace_dir
-        / ".bioimageflow/nested-workflow-snapshots"
-        / f"{opened.session_id}.json"
-    )
     raw_snapshot = json.loads(snapshot_path.read_text())
     raw_snapshot["graph"] = _downgrade(raw_snapshot["graph"])
     snapshot_path.write_text(json.dumps(raw_snapshot))
 
-    store.migrate_schema_v2_workflows()
+    migration_sources = [
+        *(store.workflow_dir(workflow_id) / "workflow.json" for workflow_id in ("clean", "dirty")),
+        *(
+            store.workflow_dir(workflow_id) / ".bioimageflow/draft.json"
+            for workflow_id in ("clean", "dirty")
+        ),
+        snapshot_path,
+    ]
+    before = {path: path.read_bytes() for path in migration_sources}
+    preview = store.workflow_format_status()
+    assert preview.pending_plan_id is not None
+    assert {notice.workflow_id for notice in preview.notices if notice.status == "pending"} == {
+        "clean",
+        "dirty",
+    }
+    assert {path: path.read_bytes() for path in before} == before
+
+    applied = store.apply_workflow_format_migrations(preview.pending_plan_id)
+    backup_paths = [Path(path) for notice in applied.notices for path in notice.backup_paths]
+    assert set(path.read_bytes() for path in backup_paths) == set(before.values())
 
     for workflow_id, expected_dirty in (("clean", False), ("dirty", True)):
-        document = json.loads(
-            (store.workflow_dir(workflow_id) / "workflow.json").read_text()
-        )
+        document = json.loads((store.workflow_dir(workflow_id) / "workflow.json").read_text())
         draft = json.loads(
             (store.workflow_dir(workflow_id) / ".bioimageflow/draft.json").read_text()
         )
@@ -121,8 +143,8 @@ def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
     path.write_text(json.dumps(raw))
     real_apply = store._apply_schema_v2_targets
 
-    def interrupt(targets):
-        real_apply(targets[:1])
+    def interrupt(targets, *, plan_id):
+        real_apply(targets[:1], plan_id=plan_id)
         raise OSError("crash after first target")
 
     monkeypatch.setattr(store, "_apply_schema_v2_targets", interrupt)
@@ -131,21 +153,59 @@ def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
     assert store._schema_v2_migration_journal_path.is_file()
 
     restarted = _store(tmp_path)
-    restarted.migrate_schema_v2_workflows()
+    restarted.recover_workflow_format_migration()
     assert not restarted._schema_v2_migration_journal_path.exists()
     assert json.loads(path.read_text())["graph"]["schema_version"] == 2
 
     forged = {
-        "version": 1,
+        "version": 2,
+        "confirmed": True,
+        "plan_id": "sha256:" + "0" * 64,
         "targets": [
             {
                 "kind": "saved_workflow",
                 "path": "settings.json",
-                "payload": {},
-                "digest": "sha256:" + "0" * 64,
+                "source_digest": "sha256:" + "0" * 64,
+                "backup_path": ".bioimageflow/backups/workflow-format/bad/settings.json",
+                "target_payload": {},
+                "target_digest": "sha256:" + "0" * 64,
             }
         ],
     }
     restarted._schema_v2_migration_journal_path.write_text(json.dumps(forged))
     with pytest.raises(WorkflowMoveRecoveryError, match="not an authorized"):
-        restarted.migrate_schema_v2_workflows()
+        restarted.recover_workflow_format_migration()
+
+
+def test_invalid_editing_artifact_is_reported_separately_from_pending_updates(
+    tmp_path,
+) -> None:
+    store = _store(tmp_path)
+    store.create_workflow(WorkflowCreate(name="pending"))
+    store.create_workflow(WorkflowCreate(name="bad-draft"))
+    pending_path = store.workflow_dir("pending") / "workflow.json"
+    raw_pending = json.loads(pending_path.read_text())
+    raw_pending["graph"] = _downgrade(raw_pending["graph"])
+    pending_path.write_text(json.dumps(raw_pending))
+    bad_draft_path = store.workflow_dir("bad-draft") / ".bioimageflow/draft.json"
+    bad_draft_path.parent.mkdir()
+    bad_draft_path.write_text("{not json")
+
+    preview = store.workflow_format_status()
+
+    assert preview.pending_plan_id is not None
+    assert {(notice.status, notice.workflow_id) for notice in preview.notices} == {
+        ("pending", "pending"),
+        ("error", "bad-draft"),
+    }
+    error = next(notice for notice in preview.notices if notice.status == "error")
+    assert error.path == str(bad_draft_path)
+    assert "editing draft" in error.detail
+
+    applied = store.apply_workflow_format_migrations(preview.pending_plan_id)
+
+    assert {(notice.status, notice.workflow_id) for notice in applied.notices} == {
+        ("migrated", "pending"),
+        ("error", "bad-draft"),
+    }
+    assert bad_draft_path.read_text() == "{not json"

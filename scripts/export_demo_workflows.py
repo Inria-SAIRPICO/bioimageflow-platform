@@ -31,7 +31,7 @@ from bioimageflow_server.services.graph_translator import (  # noqa: E402
 from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noqa: E402
 
 
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -178,13 +178,28 @@ def _render_definition(
         storage_path=Path(tempfile.gettempdir()) / "bioimageflow-platform-demo-results",
     )
     exported = workflow.to_dict(include_custom_tools=True)
-    if set(exported) != {"archive_version", "workflow", "custom_sources"}:
+    if set(exported) != {
+        "archive_version",
+        "workflow",
+        "custom_sources",
+        "viewing_requirements",
+    }:
         raise ValueError(f"Expected a portable workflow envelope from {source_path}")
 
     library_graph = json.loads(json.dumps(exported["workflow"]))
     tool_files = _materialize_custom_tools(library_graph, exported["custom_sources"])
     _annotate_package_requirements(library_graph, bioimageflow_source)
     graph = lib_dict_to_graph_state(library_graph)
+    graph_payload = graph.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    def require_schema_v2(value: dict[str, Any]) -> None:
+        if value.get("schema_version") != 2:
+            raise ValueError("Bundled demo graphs must use schema version 2 recursively")
+        for node in value.get("nodes", []):
+            if node.get("type") == "workflow":
+                require_schema_v2(node["workflow"])
+
+    require_schema_v2(graph_payload)
     document = WorkflowDocument(
         graph=graph,
         metadata=WorkspaceWorkflowMetadata(

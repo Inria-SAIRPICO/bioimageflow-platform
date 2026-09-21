@@ -246,26 +246,34 @@ def _legacy_document(raw: dict[str, Any], workflow_id: str) -> WorkflowDocument:
     )
     return WorkflowDocument(
         graph=converted,
-        metadata=WorkspaceWorkflowMetadata(
-            description=metadata.get("description")
-        ),
+        metadata=WorkspaceWorkflowMetadata(description=metadata.get("description")),
         artifact_hash=artifact_hash(converted, []),
     )
 
 
-def _migrate_draft(
-    draft_path: Path,
+def normalize_legacy_workflow_document(
+    raw: dict[str, Any], workflow_id: str
+) -> tuple[WorkflowDocument, dict[str, dict[str, Any]]]:
+    """Convert one recognized pre-recursive saved document without writing it."""
+
+    try:
+        document = WorkflowDocument.model_validate(raw)
+    except ValidationError:
+        return _legacy_document(raw, workflow_id), _legacy_tool_metadata(raw)
+    return document, _document_tool_metadata(document)
+
+
+def normalize_legacy_workflow_draft(
+    raw: dict[str, Any],
     *,
     workflow_id: str,
     document: WorkflowDocument,
     tool_metadata: dict[str, dict[str, Any]],
-) -> Path | None:
-    if not draft_path.exists():
-        return None
-    raw = _read_object(draft_path)
+) -> WorkflowDraftResponse:
+    """Convert one pre-recursive root draft without writing it."""
+
     try:
-        WorkflowDraftResponse.model_validate(raw)
-        return None
+        return WorkflowDraftResponse.model_validate(raw)
     except ValidationError:
         pass
     graph = raw.get("graph")
@@ -289,9 +297,28 @@ def _migrate_draft(
             valid=True, node_statuses=cast(dict[str, Any], node_statuses), errors=[]
         ).model_dump(mode="json"),
     }
-    normalized = WorkflowDraftResponse.model_validate(migrated).model_dump(
-        mode="json", by_alias=True, exclude_none=True
+    return WorkflowDraftResponse.model_validate(migrated)
+
+
+def _migrate_draft(
+    draft_path: Path,
+    *,
+    workflow_id: str,
+    document: WorkflowDocument,
+    tool_metadata: dict[str, dict[str, Any]],
+) -> Path | None:
+    if not draft_path.exists():
+        return None
+    raw = _read_object(draft_path)
+    migrated = normalize_legacy_workflow_draft(
+        raw,
+        workflow_id=workflow_id,
+        document=document,
+        tool_metadata=tool_metadata,
     )
+    normalized = migrated.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if normalized == raw:
+        return None
     backup = _backup(draft_path, "draft.pre-recursive-format")
     _atomic_write_json(draft_path, normalized)
     return backup

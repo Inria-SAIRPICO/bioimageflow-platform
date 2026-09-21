@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:707956fb5dfe449dc7bae4078b6e5d789030534210e14827bcff1111428931c0",
+  "artifact_hash": "sha256:8bee252d1c1893c611893b9f79a06d8efa190a2c7b9764c5eba85318697f9856",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -130,7 +130,8 @@
         "tool_class": "DownloadImages",
         "tool_module": "tools.download_images",
         "tool_name": "DownloadImages",
-        "type": "tool"
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -151,8 +152,9 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.2.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "collapsed": false,
@@ -172,8 +174,9 @@
         "tool_module": "bioimageflow_segmentation_tools.cellpose_v3",
         "tool_name": "Cellpose3",
         "tool_package": "bioimageflow_segmentation_tools",
-        "tool_package_version": "0.2.0",
-        "type": "tool"
+        "tool_package_version": "0.3.1",
+        "type": "tool",
+        "viewer_additions": {}
       },
       {
         "bindings": {
@@ -200,6 +203,7 @@
         ],
         "resources": {},
         "type": "workflow",
+        "viewer_additions": {},
         "workflow": {
           "config": {
             "engine": "wetlands",
@@ -410,8 +414,9 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -429,8 +434,9 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -448,8 +454,9 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -467,11 +474,12 @@
               "tool_module": "bioimageflow_common_tools.label_overlaps",
               "tool_name": "LabelOverlaps",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             }
           ],
-          "schema_version": 1
+          "schema_version": 2
         }
       },
       {
@@ -499,6 +507,7 @@
         ],
         "resources": {},
         "type": "workflow",
+        "viewer_additions": {},
         "workflow": {
           "config": {
             "engine": "wetlands",
@@ -709,8 +718,9 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -728,8 +738,9 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -747,8 +758,9 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             },
             {
               "collapsed": false,
@@ -766,11 +778,12 @@
               "tool_module": "bioimageflow_common_tools.label_overlaps",
               "tool_name": "LabelOverlaps",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.0",
-              "type": "tool"
+              "tool_package_version": "0.2.1",
+              "type": "tool",
+              "viewer_additions": {}
             }
           ],
-          "schema_version": 1
+          "schema_version": 2
         }
       },
       {
@@ -788,15 +801,16 @@
         "tool_class": "AverageSpotsPerNucleus",
         "tool_module": "tools.average_spots_per_nucleus",
         "tool_name": "AverageSpotsPerNucleus",
-        "type": "tool"
+        "type": "tool",
+        "viewer_additions": {}
       }
     ],
-    "schema_version": 1
+    "schema_version": 2
   },
   "metadata": {
     "bundled_template": {
       "id": "fish-analysis",
-      "version": 1
+      "version": 2
     },
     "description": "Analyze FISH marker spots per segmented nucleus."
   },

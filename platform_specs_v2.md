@@ -348,7 +348,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 ### Bundled demo workflows
 
-The application bundle contains versioned platform templates generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**.
+The application loads demo bundle version 2, whose root graph and every recursively embedded graph use canonical schema version 2.
+The versioned platform templates are generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**, and generation fails if any bundled graph is not recursively schema v2.
 The examples are self-contained definitions that download their public input data into workflow-managed run assets and do not reference repository-local datasets.
 
 Initialization installs both templates under `Demo/` only when the active workflow root did not exist before initialization.
@@ -356,7 +357,7 @@ An existing workflow root is not seeded merely because it is empty, and a worksp
 No launcher post-install hook, user-home marker, or demo-folder filesystem watcher participates in this decision.
 
 Demo status is derived from each canonical path and `metadata.bundled_template` identity.
-A matching template identity is installed regardless of its recorded bundle version and is never overwritten automatically; an absent identity is missing; an occupied canonical path without matching provenance is a conflict.
+A matching template identity is installed regardless of its recorded bundle version and is never overwritten by restart, application upgrade, bundle version change, or an explicit install call; an absent identity is missing; an occupied canonical path without matching provenance is a conflict.
 Moving or renaming a demo detaches it from canonical status, so a later install may create a fresh copy at the canonical path.
 
 Settings exposes explicit install and remove actions.

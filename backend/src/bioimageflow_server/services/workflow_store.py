@@ -6,6 +6,7 @@ import json
 import hashlib
 import logging
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -76,6 +77,8 @@ from bioimageflow_server.services.workflow_containment import (
 )
 from bioimageflow_server.services.workflow_format import (
     migrate_legacy_workflow,
+    normalize_legacy_workflow_document,
+    normalize_legacy_workflow_draft,
     workflow_format_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -123,6 +126,18 @@ class WorkflowMoveRecoveryError(RuntimeError):
     """Raised when an interrupted workflow move cannot be trusted or completed."""
 
 
+class WorkflowFormatUpdateRequiredError(RuntimeError):
+    """Raised when a workflow is intentionally deferred in an older format."""
+
+    def __init__(self, workflow_id: str) -> None:
+        self.workflow_id = workflow_id
+        super().__init__(f"Workflow '{workflow_id}' requires a format update")
+
+
+class WorkflowFormatPlanStaleError(RuntimeError):
+    """Raised when confirmation no longer matches the previewed source bytes."""
+
+
 @dataclass(frozen=True)
 class WorkflowIdentityMovePlan:
     """One root workflow identity move captured before filesystem mutation."""
@@ -146,6 +161,16 @@ _WORKFLOW_GENERATION_LEDGER_NAME = "workflow-identity-generations.json"
 _WORKFLOW_MOVE_JOURNAL_NAME = "workflow-move-journal.json"
 _SCHEMA_V2_MIGRATION_JOURNAL_NAME = "schema-v2-migration.json"
 logger = logging.getLogger(__name__)
+
+
+def _schema_v2_json_bytes(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _workflow_format_plan_directory(plan_id: str) -> str:
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", plan_id) is None:
+        raise WorkflowMoveRecoveryError("Workflow-format plan ID is invalid")
+    return plan_id.replace(":", "-")
 
 
 class _WorkflowWorkspaceCoordination:
@@ -185,9 +210,7 @@ class WorkflowArchiveAdapter(Protocol):
         storage_path: Path,
     ) -> dict[str, Any]: ...
 
-    def inspect_viewing_requirements(
-        self, archive_path: Path
-    ) -> dict[str, Any]: ...
+    def inspect_viewing_requirements(self, archive_path: Path) -> dict[str, Any]: ...
 
 
 def _identity_locked(method: Any) -> Any:
@@ -1111,10 +1134,15 @@ class WorkflowStoreService:
         return sorted(names)
 
     def _is_inside_workflow_dir(self, path: Path) -> bool:
-        current = path
-        while current != self.root_dir:
+        current = path.resolve(strict=False)
+        root = self.root_dir.resolve(strict=False)
+        if not current.is_relative_to(root):
+            return False
+        while current != root:
             if (current / "workflow.json").exists():
                 return True
+            if current.parent == current:
+                return False
             current = current.parent
         return False
 
@@ -1175,9 +1203,7 @@ class WorkflowStoreService:
             document = WorkflowDocument.model_validate(self._read_raw(workflow_id))
             graph = rewrite_workspace_source_ids(document.graph, mapping)
             if graph != document.graph:
-                saved_updates.append(
-                    (workflow_id, document.model_copy(update={"graph": graph}))
-                )
+                saved_updates.append((workflow_id, document.model_copy(update={"graph": graph})))
             draft_path = self._workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
             if draft_path.exists():
                 draft = WorkflowDraftResponse.model_validate_json(
@@ -1196,9 +1222,7 @@ class WorkflowStoreService:
                 )
                 graph = rewrite_workspace_source_ids(snapshot.graph, mapping)
                 if graph != snapshot.graph:
-                    snapshot_updates.append(
-                        (path, snapshot.model_copy(update={"graph": graph}))
-                    )
+                    snapshot_updates.append((path, snapshot.model_copy(update={"graph": graph})))
 
         for workflow_id, document in saved_updates:
             self._write_raw(
@@ -1469,9 +1493,7 @@ class WorkflowStoreService:
             data = json.load(handle)
         if not isinstance(data, dict):
             raise ValueError(f"Workflow file {path} must contain a JSON object")
-        return WorkflowDocument.model_validate(data).model_dump(
-            mode="json", by_alias=True
-        )
+        return WorkflowDocument.model_validate(data).model_dump(mode="json", by_alias=True)
 
     def get_storage_path(self, name: str) -> Path:
         """Return the workflow-local runtime results directory."""
@@ -1543,15 +1565,15 @@ class WorkflowStoreService:
     def export_workflow_archive(self, name: str) -> tuple[str, bytes]:
         self._existing_path_for(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
-        export_graph, sources = capture_working_graph(document.graph, self._workflow_dir(name), self.tool_registry)
+        export_graph, sources = capture_working_graph(
+            document.graph, self._workflow_dir(name), self.tool_registry
+        )
         translation = graph_state_to_lib_dict(
             export_graph,
             self.tool_registry,
         )
         if translation.errors:
-            raise WorkflowArchiveError(
-                "; ".join(error.detail for error in translation.errors)
-            )
+            raise WorkflowArchiveError("; ".join(error.detail for error in translation.errors))
         payload = capture_library_sources(translation.lib_dict, sources)
         filename = f"{safe_workflow_export_stem(self._validate_name(name))}.bioimageflow.zip"
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1584,9 +1606,7 @@ class WorkflowStoreService:
     ) -> WorkflowImportResponse:
         try:
             with zipfile.ZipFile(BytesIO(raw_archive)) as archive:
-                is_results_bundle = (
-                    "bioimageflow-results-bundle.json" in archive.namelist()
-                )
+                is_results_bundle = "bioimageflow-results-bundle.json" in archive.namelist()
         except zipfile.BadZipFile:
             is_results_bundle = False
         if is_results_bundle:
@@ -1621,9 +1641,7 @@ class WorkflowStoreService:
             archive_path = Path(tmp_dir) / "workflow.bioimageflow.zip"
             archive_path.write_bytes(raw_archive)
             try:
-                inspect = getattr(
-                    self.archive_adapter, "inspect_viewing_requirements", None
-                )
+                inspect = getattr(self.archive_adapter, "inspect_viewing_requirements", None)
                 viewing_requirements = ViewingRequirementsManifest.model_validate(
                     inspect(archive_path) if callable(inspect) else {}
                 )
@@ -1640,10 +1658,12 @@ class WorkflowStoreService:
             except (TypeError, ValueError, ValidationError) as exc:
                 raise WorkflowArchiveError(str(exc)) from exc
             if rename_graph:
-                graph = graph.model_copy(update={
-                    "name": self._leaf_name(imported_name),
-                    "display_name": self._leaf_name(imported_name),
-                })
+                graph = graph.model_copy(
+                    update={
+                        "name": self._leaf_name(imported_name),
+                        "display_name": self._leaf_name(imported_name),
+                    }
+                )
             self.validate_containment(imported_name, graph)
             source_records = (
                 library.get("custom_sources", [])
@@ -1662,16 +1682,18 @@ class WorkflowStoreService:
                     description=None,
                 ),
                 owned_source_ids=sorted(referenced_source_ids(graph)),
-                artifact_hash=artifact_hash(
-                    graph, cast(list[dict[str, Any]], source_records)
-                ),
+                artifact_hash=artifact_hash(graph, cast(list[dict[str, Any]], source_records)),
             )
             try:
                 staged = sources.stage(cast(list[dict[str, Any]], source_records))
                 sources.publish(staged)
                 sources.collect_for_graph(graph)
                 with (staging / "workflow.json").open("w", encoding="utf-8") as handle:
-                    json.dump(document.model_dump(mode="json", by_alias=True, exclude_none=True), handle, indent=2)
+                    json.dump(
+                        document.model_dump(mode="json", by_alias=True, exclude_none=True),
+                        handle,
+                        indent=2,
+                    )
                     handle.write("\n")
                     handle.flush()
                     os.fsync(handle.fileno())
@@ -1691,6 +1713,7 @@ class WorkflowStoreService:
         if not self.root_dir.exists():
             return []
         workflows: list[WorkflowInfo] = []
+        _plan_id, _targets, pending_ids, _scan_errors = self._plan_schema_v2_workflows()
         names = {
             path.parent.relative_to(self.root_dir).as_posix()
             for path in self.root_dir.glob("**/workflow.json")
@@ -1698,7 +1721,7 @@ class WorkflowStoreService:
             and not self._is_inside_workflow_dir(path.parent.parent)
         }
         for name in sorted(names):
-            if name.startswith("."):
+            if name.startswith(".") or name in pending_ids:
                 continue
             try:
                 with self.workflow_mutation(name):
@@ -1732,153 +1755,306 @@ class WorkflowStoreService:
         self._workflow_format_notices.extend(notices)
         return notices
 
+    def _plan_schema_v2_workflows(
+        self,
+    ) -> tuple[
+        str | None,
+        list[dict[str, Any]],
+        set[str],
+        list[WorkflowFormatNotice],
+    ]:
+        """Build a content-derived migration preview without writing anything."""
+
+        def requires_schema_v2(raw_graph: Any) -> bool:
+            if not isinstance(raw_graph, dict):
+                return False
+            if raw_graph.get("schema_version") == 1:
+                return True
+            nodes = raw_graph.get("nodes")
+            return isinstance(nodes, list) and any(
+                isinstance(node, dict)
+                and node.get("type") == "workflow"
+                and requires_schema_v2(node.get("workflow"))
+                for node in nodes
+            )
+
+        if not self.root_dir.exists():
+            return None, [], set(), []
+
+        paths = [
+            path
+            for path in sorted(self.root_dir.glob("**/workflow.json"))
+            if not self._is_inside_workflow_dir(path.parent.parent)
+        ]
+        raw_documents: dict[str, dict[str, Any]] = {}
+        documents: dict[str, WorkflowDocument] = {}
+        tool_metadata: dict[str, dict[str, dict[str, Any]]] = {}
+        saved_requires_update: set[str] = set()
+        for path in paths:
+            workflow_id = path.parent.relative_to(self.root_dir).as_posix()
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(raw, dict) or "graph" not in raw:
+                continue
+            try:
+                document = WorkflowDocument.model_validate(raw)
+            except ValidationError:
+                try:
+                    document, legacy_tool_metadata = normalize_legacy_workflow_document(
+                        raw, workflow_id
+                    )
+                except (ValidationError, ValueError):
+                    continue
+                tool_metadata[workflow_id] = legacy_tool_metadata
+                saved_requires_update.add(workflow_id)
+            else:
+                _document, current_tool_metadata = normalize_legacy_workflow_document(
+                    raw, workflow_id
+                )
+                tool_metadata[workflow_id] = current_tool_metadata
+            raw_documents[workflow_id] = raw
+            documents[workflow_id] = document
+            if requires_schema_v2(raw.get("graph")):
+                saved_requires_update.add(workflow_id)
+
+        old_to_new_hash: dict[str, str] = {}
+        new_hashes: dict[str, str] = {}
+        for workflow_id, document in documents.items():
+            if workflow_id in saved_requires_update:
+                sources = OwnedWorkflowSources(self._workflow_dir(workflow_id)).collect_for_graph(
+                    document.graph
+                )
+                new_hash = artifact_hash(document.graph, sources)
+            else:
+                new_hash = document.artifact_hash
+            new_hashes[workflow_id] = new_hash
+            old_hash = raw_documents[workflow_id].get("artifact_hash")
+            if isinstance(old_hash, str):
+                old_to_new_hash[old_hash] = new_hash
+
+        targets: list[dict[str, Any]] = []
+        migrated_ids: set[str] = set()
+        scan_errors: list[WorkflowFormatNotice] = []
+        for workflow_id, document in documents.items():
+            workflow_path = self._path_for(workflow_id)
+            graph = rewrite_workspace_source_hashes(document.graph, old_to_new_hash)
+            migrated_document = document.model_copy(
+                update={
+                    "graph": graph,
+                    "artifact_hash": new_hashes[workflow_id],
+                }
+            ).model_dump(mode="json", by_alias=True, exclude_none=True)
+            if workflow_id in saved_requires_update or graph != document.graph:
+                migrated_ids.add(workflow_id)
+                targets.append(self._schema_v2_target(workflow_path, migrated_document))
+
+            draft_path = workflow_path.parent / ".bioimageflow" / "draft.json"
+            if not draft_path.is_file():
+                continue
+            try:
+                raw_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+                try:
+                    draft = WorkflowDraftResponse.model_validate(raw_draft)
+                    legacy_draft = False
+                except ValidationError:
+                    draft = normalize_legacy_workflow_draft(
+                        raw_draft,
+                        workflow_id=workflow_id,
+                        document=document,
+                        tool_metadata=tool_metadata[workflow_id],
+                    )
+                    legacy_draft = True
+            except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                scan_errors.append(
+                    WorkflowFormatNotice(
+                        status="error",
+                        workflow_id=workflow_id,
+                        path=str(draft_path),
+                        detail=f"The editing draft could not be prepared for update: {exc}",
+                    )
+                )
+                continue
+            draft_graph = rewrite_workspace_source_hashes(draft.graph, old_to_new_hash)
+            draft_requires_update = (
+                legacy_draft
+                or requires_schema_v2(raw_draft.get("graph"))
+                or draft_graph != draft.graph
+                or workflow_id in saved_requires_update
+            )
+            if not draft_requires_update:
+                continue
+            sources = OwnedWorkflowSources(workflow_path.parent).collect_for_graph(draft_graph)
+            dirty = artifact_hash(draft_graph, sources) != new_hashes[workflow_id]
+            base_saved_revision = old_to_new_hash.get(
+                draft.base_saved_revision,
+                new_hashes[workflow_id]
+                if not draft.dirty_against_saved
+                else draft.base_saved_revision,
+            )
+            migrated_draft = draft.model_copy(
+                update={
+                    "graph": draft_graph,
+                    "base_saved_revision": base_saved_revision,
+                    "dirty_against_saved": dirty,
+                }
+            ).model_dump(mode="json", by_alias=True, exclude_none=True)
+            if draft_requires_update:
+                migrated_ids.add(workflow_id)
+                targets.append(self._schema_v2_target(draft_path, migrated_draft))
+
+        snapshot_dir = self.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots"
+        if snapshot_dir.is_dir():
+            snapshots: dict[UUID, NestedWorkflowSnapshotResponse] = {}
+            raw_snapshots: dict[UUID, tuple[Path, dict[str, Any]]] = {}
+            for snapshot_path in sorted(snapshot_dir.glob("*.json")):
+                try:
+                    raw_snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                    if not isinstance(raw_snapshot, dict) or "graph" not in raw_snapshot:
+                        raise ValueError("snapshot does not contain a graph")
+                    snapshot = NestedWorkflowSnapshotResponse.model_validate(raw_snapshot)
+                except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                    scan_errors.append(
+                        WorkflowFormatNotice(
+                            status="error",
+                            workflow_id="nested snapshot",
+                            path=str(snapshot_path),
+                            detail=f"A nested editing snapshot could not be prepared for update: {exc}",
+                        )
+                    )
+                    continue
+                snapshots[snapshot.session_id] = snapshot
+                raw_snapshots[snapshot.session_id] = (snapshot_path, raw_snapshot)
+
+            def root_workflow_id(
+                snapshot: NestedWorkflowSnapshotResponse,
+            ) -> str | None:
+                seen: set[UUID] = set()
+                current = snapshot
+                while current.owner.kind == "nested":
+                    parent_id = current.owner.session_id
+                    if parent_id is None or parent_id in seen:
+                        return None
+                    seen.add(parent_id)
+                    parent = snapshots.get(parent_id)
+                    if parent is None:
+                        return None
+                    current = parent
+                return current.owner.workflow_id
+
+            for session_id, snapshot in snapshots.items():
+                snapshot_path, raw_snapshot = raw_snapshots[session_id]
+                migrated_snapshot = snapshot.model_copy(
+                    update={
+                        "graph": rewrite_workspace_source_hashes(snapshot.graph, old_to_new_hash)
+                    }
+                ).model_dump(mode="json", by_alias=True, exclude_none=True)
+                if requires_schema_v2(raw_snapshot.get("graph")) or migrated_snapshot[
+                    "graph"
+                ] != snapshot.graph.model_dump(mode="json", by_alias=True, exclude_none=True):
+                    targets.append(self._schema_v2_target(snapshot_path, migrated_snapshot))
+                    owner_workflow_id = root_workflow_id(snapshot)
+                    if owner_workflow_id is not None:
+                        migrated_ids.add(owner_workflow_id)
+
+        if not targets:
+            return None, [], set(), scan_errors
+        plan_material = [
+            {
+                "kind": target["kind"],
+                "path": target["path"],
+                "source_digest": target["source_digest"],
+                "target_digest": target["target_digest"],
+            }
+            for target in targets
+        ]
+        plan_id = f"sha256:{hashlib.sha256(canonical_json_bytes(plan_material)).hexdigest()}"
+        backup_root = (
+            Path(".bioimageflow")
+            / "backups"
+            / "workflow-format"
+            / _workflow_format_plan_directory(plan_id)
+        )
+        for target in targets:
+            target["backup_path"] = (backup_root / target["path"]).as_posix()
+        return plan_id, targets, migrated_ids, scan_errors
+
     def migrate_schema_v2_workflows(self) -> list[WorkflowFormatNotice]:
-        """Plan and forward-complete canonical recursive schema-v2 migration."""
+        """Compatibility helper that explicitly confirms the current preview."""
+
+        status = self.workflow_format_status()
+        if status.pending_plan_id is None:
+            return []
+        applied = self.apply_workflow_format_migrations(status.pending_plan_id)
+        return [notice for notice in applied.notices if notice.status == "migrated"]
+
+    def apply_workflow_format_migrations(
+        self,
+        pending_plan_id: str,
+    ) -> WorkflowFormatStatus:
+        """Apply exactly one previewed plan as a forward-recoverable transaction."""
 
         with self.workflow_structure_mutation():
             self._recover_schema_v2_migration()
-            if not self.root_dir.exists():
-                return []
-
-            paths = [
-                path
-                for path in sorted(self.root_dir.glob("**/workflow.json"))
-                if not self._is_inside_workflow_dir(path.parent.parent)
-            ]
-            raw_documents: dict[str, dict[str, Any]] = {}
-            documents: dict[str, WorkflowDocument] = {}
-            for path in paths:
-                workflow_id = path.parent.relative_to(self.root_dir).as_posix()
-                raw = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(raw, dict) or "graph" not in raw:
-                    continue
-                raw_documents[workflow_id] = raw
-                documents[workflow_id] = WorkflowDocument.model_validate(raw)
-
-            old_to_new_hash: dict[str, str] = {}
-            new_hashes: dict[str, str] = {}
-            for workflow_id, document in documents.items():
-                sources = OwnedWorkflowSources(
-                    self._workflow_dir(workflow_id)
-                ).collect_for_graph(document.graph)
-                new_hash = artifact_hash(document.graph, sources)
-                new_hashes[workflow_id] = new_hash
-                old_hash = raw_documents[workflow_id].get("artifact_hash")
-                if isinstance(old_hash, str):
-                    old_to_new_hash[old_hash] = new_hash
-
-            targets: list[dict[str, Any]] = []
-            migrated_ids: set[str] = set()
-            for workflow_id, document in documents.items():
-                workflow_path = self._path_for(workflow_id)
-                graph = rewrite_workspace_source_hashes(
-                    document.graph, old_to_new_hash
+            plan_id, targets, migrated_ids, _scan_errors = self._plan_schema_v2_workflows()
+            if plan_id != pending_plan_id or plan_id is None:
+                raise WorkflowFormatPlanStaleError(
+                    "Workflow files changed after the format update preview; review again."
                 )
-                migrated_document = document.model_copy(
-                    update={
-                        "graph": graph,
-                        "artifact_hash": new_hashes[workflow_id],
-                    }
-                ).model_dump(mode="json", by_alias=True, exclude_none=True)
-                if raw_documents[workflow_id] != migrated_document:
-                    migrated_ids.add(workflow_id)
-                    targets.append(
-                        self._schema_v2_target(workflow_path, migrated_document)
-                    )
-
-                draft_path = workflow_path.parent / ".bioimageflow" / "draft.json"
-                if not draft_path.is_file():
-                    continue
-                raw_draft = json.loads(draft_path.read_text(encoding="utf-8"))
-                draft = WorkflowDraftResponse.model_validate(raw_draft)
-                draft_graph = rewrite_workspace_source_hashes(
-                    draft.graph, old_to_new_hash
-                )
-                sources = OwnedWorkflowSources(workflow_path.parent).collect_for_graph(
-                    draft_graph
-                )
-                dirty = artifact_hash(draft_graph, sources) != new_hashes[workflow_id]
-                base_saved_revision = old_to_new_hash.get(
-                    draft.base_saved_revision,
-                    new_hashes[workflow_id]
-                    if not draft.dirty_against_saved
-                    else draft.base_saved_revision,
-                )
-                migrated_draft = draft.model_copy(
-                    update={
-                        "graph": draft_graph,
-                        "base_saved_revision": base_saved_revision,
-                        "dirty_against_saved": dirty,
-                    }
-                ).model_dump(mode="json", by_alias=True, exclude_none=True)
-                if raw_draft != migrated_draft:
-                    migrated_ids.add(workflow_id)
-                    targets.append(self._schema_v2_target(draft_path, migrated_draft))
-
-            snapshot_dir = (
-                self.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots"
-            )
-            if snapshot_dir.is_dir():
-                for snapshot_path in sorted(snapshot_dir.glob("*.json")):
-                    raw_snapshot = json.loads(
-                        snapshot_path.read_text(encoding="utf-8")
-                    )
-                    if not isinstance(raw_snapshot, dict) or "graph" not in raw_snapshot:
-                        continue
-                    snapshot = NestedWorkflowSnapshotResponse.model_validate(raw_snapshot)
-                    migrated_snapshot = snapshot.model_copy(
-                        update={
-                            "graph": rewrite_workspace_source_hashes(
-                                snapshot.graph, old_to_new_hash
-                            )
-                        }
-                    ).model_dump(mode="json", by_alias=True, exclude_none=True)
-                    if raw_snapshot != migrated_snapshot:
-                        targets.append(
-                            self._schema_v2_target(snapshot_path, migrated_snapshot)
-                        )
-
-            if not targets:
-                return []
-            journal = {"version": 1, "targets": targets}
-            self._write_schema_v2_json(
-                self._schema_v2_migration_journal_path, journal
-            )
-            self._apply_schema_v2_targets(targets)
+            self._create_schema_v2_backups(plan_id, targets)
+            journal = {
+                "version": 2,
+                "confirmed": True,
+                "plan_id": plan_id,
+                "targets": targets,
+            }
+            self._write_schema_v2_json(self._schema_v2_migration_journal_path, journal)
+            self._apply_schema_v2_targets(targets, plan_id=plan_id)
             self._schema_v2_migration_journal_path.unlink()
             self._fsync_directory(self._schema_v2_migration_journal_path.parent)
+            all_backups = [str(self.workspace_dir / target["backup_path"]) for target in targets]
             notices = [
                 WorkflowFormatNotice(
                     status="migrated",
                     workflow_id=workflow_id,
                     path=str(self._path_for(workflow_id)),
-                    detail=(
-                        "Normalized the recursive workflow and draft baseline "
-                        "to schema v2."
-                    ),
+                    detail="Updated the saved workflow and editing state to schema v2.",
+                    backup_paths=[
+                        backup
+                        for target, backup in zip(targets, all_backups, strict=True)
+                        if target["path"].startswith(
+                            self._workflow_dir(workflow_id)
+                            .relative_to(self.workspace_dir)
+                            .as_posix()
+                            + "/"
+                        )
+                    ],
                 )
                 for workflow_id in sorted(migrated_ids)
             ]
-            self._workflow_format_notices.extend(notices)
-            return notices
+            assigned = {path for notice in notices for path in notice.backup_paths}
+            if notices:
+                notices[0].backup_paths.extend(path for path in all_backups if path not in assigned)
+            self._workflow_format_notices = notices
+            return self.workflow_format_status()
 
-    def _schema_v2_target(
-        self, path: Path, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _schema_v2_target(self, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
         kind = self._schema_v2_target_kind(path)
         return {
             "kind": kind,
             "path": path.relative_to(self.workspace_dir).as_posix(),
-            "payload": payload,
-            "digest": f"sha256:{hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}",
+            "source_digest": f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}",
+            "target_payload": payload,
+            "target_digest": f"sha256:{hashlib.sha256(_schema_v2_json_bytes(payload)).hexdigest()}",
         }
 
     def _schema_v2_target_kind(self, path: Path) -> str:
         resolved = path.resolve(strict=False)
         root = self.root_dir.resolve(strict=False)
-        snapshots = (
-            self.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots"
-        ).resolve(strict=False)
+        snapshots = (self.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots").resolve(
+            strict=False
+        )
         if resolved.name == "workflow.json" and resolved.is_relative_to(root):
             workflow_dir = resolved.parent
             if workflow_dir != root and not self._is_inside_workflow_dir(workflow_dir.parent):
@@ -1908,52 +2084,127 @@ class WorkflowStoreService:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if (
             not isinstance(raw, dict)
-            or set(raw) != {"version", "targets"}
-            or raw.get("version") != 1
+            or set(raw) != {"version", "confirmed", "plan_id", "targets"}
+            or raw.get("version") != 2
+            or raw.get("confirmed") is not True
+            or not isinstance(raw.get("plan_id"), str)
             or not isinstance(raw.get("targets"), list)
         ):
-            raise WorkflowMoveRecoveryError(
-                f"Cannot trust schema-v2 migration journal: {path}"
-            )
-        self._apply_schema_v2_targets(raw["targets"])
+            raise WorkflowMoveRecoveryError(f"Cannot trust schema-v2 migration journal: {path}")
+        _workflow_format_plan_directory(raw["plan_id"])
+        self._apply_schema_v2_targets(raw["targets"], plan_id=raw["plan_id"])
         path.unlink()
         self._fsync_directory(path.parent)
 
-    def _apply_schema_v2_targets(self, targets: list[Any]) -> None:
+    def recover_workflow_format_migration(self) -> None:
+        """Finish an already-confirmed format transaction after a crash."""
+
+        with self.workflow_structure_mutation():
+            self._recover_schema_v2_migration()
+
+    def _create_schema_v2_backups(
+        self,
+        plan_id: str,
+        targets: list[dict[str, Any]],
+    ) -> None:
+        for target in targets:
+            source = self.workspace_dir / str(target["path"])
+            content = source.read_bytes()
+            source_digest = f"sha256:{hashlib.sha256(content).hexdigest()}"
+            if source_digest != target["source_digest"]:
+                raise WorkflowFormatPlanStaleError(
+                    "Workflow files changed after the format update preview; review again."
+                )
+            backup = self.workspace_dir / str(target["backup_path"])
+            expected_root = (
+                self.workspace_dir
+                / ".bioimageflow"
+                / "backups"
+                / "workflow-format"
+                / _workflow_format_plan_directory(plan_id)
+            )
+            if not backup.resolve(strict=False).is_relative_to(expected_root.resolve(strict=False)):
+                raise WorkflowMoveRecoveryError(
+                    "Schema-v2 migration backup escapes its plan directory"
+                )
+            self._ensure_directory_durable(backup.parent)
+            if backup.exists():
+                if backup.read_bytes() != content:
+                    raise WorkflowMoveRecoveryError(
+                        f"Schema-v2 migration backup collision: {backup}"
+                    )
+                continue
+            descriptor, temporary = tempfile.mkstemp(
+                dir=str(backup.parent), prefix=f".{backup.name}.", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, backup)
+                self._fsync_directory(backup.parent)
+            except Exception:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
+                raise
+
+    def _apply_schema_v2_targets(
+        self,
+        targets: list[Any],
+        *,
+        plan_id: str,
+    ) -> None:
         for target in targets:
             if not isinstance(target, dict) or set(target) != {
                 "kind",
                 "path",
-                "payload",
-                "digest",
+                "source_digest",
+                "backup_path",
+                "target_payload",
+                "target_digest",
             }:
-                raise WorkflowMoveRecoveryError(
-                    "Cannot trust schema-v2 migration target"
-                )
+                raise WorkflowMoveRecoveryError("Cannot trust schema-v2 migration target")
             relative = Path(str(target["path"]))
             if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-                raise WorkflowMoveRecoveryError(
-                    "Schema-v2 migration target escapes workspace"
-                )
+                raise WorkflowMoveRecoveryError("Schema-v2 migration target escapes workspace")
             destination = self.workspace_dir / relative
             if not destination.resolve(strict=False).is_relative_to(
                 self.workspace_dir.resolve(strict=False)
             ):
-                raise WorkflowMoveRecoveryError(
-                    "Schema-v2 migration target escapes workspace"
-                )
-            payload = target["payload"]
-            if not isinstance(payload, dict):
-                raise WorkflowMoveRecoveryError(
-                    "Schema-v2 migration payload is invalid"
-                )
+                raise WorkflowMoveRecoveryError("Schema-v2 migration target escapes workspace")
             kind = self._schema_v2_target_kind(destination)
             if target["kind"] != kind:
                 raise WorkflowMoveRecoveryError(
                     "Schema-v2 migration target kind does not match its authority"
                 )
-            expected_digest = f"sha256:{hashlib.sha256(canonical_json_bytes(payload)).hexdigest()}"
-            if target["digest"] != expected_digest:
+            backup = self.workspace_dir / str(target["backup_path"])
+            expected_backup_root = (
+                self.workspace_dir
+                / ".bioimageflow"
+                / "backups"
+                / "workflow-format"
+                / _workflow_format_plan_directory(plan_id)
+            )
+            if (
+                not backup.resolve(strict=False).is_relative_to(
+                    expected_backup_root.resolve(strict=False)
+                )
+                or not backup.is_file()
+            ):
+                raise WorkflowMoveRecoveryError("Schema-v2 migration backup is missing or unsafe")
+            source_digest = f"sha256:{hashlib.sha256(backup.read_bytes()).hexdigest()}"
+            if source_digest != target["source_digest"]:
+                raise WorkflowMoveRecoveryError(
+                    "Schema-v2 migration backup digest does not match its source"
+                )
+            payload = target["target_payload"]
+            if not isinstance(payload, dict):
+                raise WorkflowMoveRecoveryError("Schema-v2 migration payload is invalid")
+            expected_digest = f"sha256:{hashlib.sha256(_schema_v2_json_bytes(payload)).hexdigest()}"
+            if target["target_digest"] != expected_digest:
                 raise WorkflowMoveRecoveryError(
                     "Schema-v2 migration target digest does not match its payload"
                 )
@@ -1962,9 +2213,7 @@ class WorkflowStoreService:
                     validated = WorkflowDocument.model_validate(payload)
                 elif kind == "root_draft":
                     validated = WorkflowDraftResponse.model_validate(payload)
-                    workflow_id = destination.parent.parent.relative_to(
-                        self.root_dir
-                    ).as_posix()
+                    workflow_id = destination.parent.parent.relative_to(self.root_dir).as_posix()
                     if validated.workflow_id != workflow_id:
                         raise ValueError("Draft workflow identity does not match its path")
                 else:
@@ -1973,9 +2222,7 @@ class WorkflowStoreService:
                         raise ValueError("Snapshot session identity does not match its path")
                 if validated.graph.schema_version != 2:
                     raise ValueError("Migration target graph is not canonical schema v2")
-                normalized = validated.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                )
+                normalized = validated.model_dump(mode="json", by_alias=True, exclude_none=True)
             except (ValidationError, ValueError) as exc:
                 raise WorkflowMoveRecoveryError(
                     f"Schema-v2 migration {kind} payload is invalid"
@@ -1983,6 +2230,17 @@ class WorkflowStoreService:
             if normalized != payload:
                 raise WorkflowMoveRecoveryError(
                     f"Schema-v2 migration {kind} payload is not canonical"
+                )
+            current_digest = (
+                f"sha256:{hashlib.sha256(destination.read_bytes()).hexdigest()}"
+                if destination.is_file()
+                else None
+            )
+            if current_digest == target["target_digest"]:
+                continue
+            if current_digest != target["source_digest"]:
+                raise WorkflowMoveRecoveryError(
+                    "Schema-v2 migration source changed after confirmation"
                 )
             self._write_schema_v2_json(destination, payload)
 
@@ -2007,18 +2265,37 @@ class WorkflowStoreService:
             raise
 
     def workflow_format_status(self) -> WorkflowFormatStatus:
-        """Return startup migrations and currently invalid workflow files."""
+        """Preview pending migrations and report invalid workflow files."""
 
         notices = list(self._workflow_format_notices)
+        plan_id, _targets, pending_ids, scan_errors = self._plan_schema_v2_workflows()
+        notices.extend(scan_errors)
+        notices.extend(
+            WorkflowFormatNotice(
+                status="pending",
+                workflow_id=workflow_id,
+                path=str(self._path_for(workflow_id)),
+                detail="This workflow must be updated to schema v2 before it can be opened.",
+            )
+            for workflow_id in sorted(pending_ids)
+        )
         if self.root_dir.exists():
             for path in sorted(self.root_dir.glob("**/workflow.json")):
                 if self._is_inside_workflow_dir(path.parent.parent):
                     continue
                 workflow_id = path.parent.relative_to(self.root_dir).as_posix()
                 issue = workflow_format_error(path, workflow_id)
-                if issue is not None:
+                if issue is not None and workflow_id not in pending_ids:
                     notices.append(issue)
-        return WorkflowFormatStatus(notices=notices)
+        return WorkflowFormatStatus(notices=notices, pending_plan_id=plan_id)
+
+    def ensure_workflow_format_current(self, name: str) -> None:
+        """Reject editable access to one workflow covered by a pending plan."""
+
+        safe_name = self._validate_name(name)
+        _plan_id, _targets, pending_ids, _scan_errors = self._plan_schema_v2_workflows()
+        if safe_name in pending_ids:
+            raise WorkflowFormatUpdateRequiredError(safe_name)
 
     def workflow_tree(self) -> WorkflowFolderInfo:
         """Return workflows grouped by workspace-relative folders."""
@@ -2431,6 +2708,7 @@ class WorkflowStoreService:
     @_identity_locked
     def get_workflow(self, name: str) -> WorkflowFile:
         path = self._existing_path_for(name)
+        self.ensure_workflow_format_current(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
         self.tool_registry.watch_owned_sources(self._workflow_dir(name), document.graph)
         translation = graph_state_to_lib_dict(
@@ -2444,7 +2722,10 @@ class WorkflowStoreService:
                 path,
             ),
             graph=document.graph,
-            artifact_hash=artifact_hash(document.graph, OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(document.graph)),
+            artifact_hash=artifact_hash(
+                document.graph,
+                OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(document.graph),
+            ),
             authoring_source=document.authoring_source,
             missing_packages=_detect_missing_packages(
                 translation.lib_dict,
@@ -2468,13 +2749,12 @@ class WorkflowStoreService:
             partial=True,
             auto_install=False,
         )
-        return ViewingRequirementsManifest.model_validate(
-            workflow.viewing_requirements().to_dict()
-        )
+        return ViewingRequirementsManifest.model_validate(workflow.viewing_requirements().to_dict())
 
     @_identity_locked
     def save_workflow(self, name: str, data: WorkflowSaveBody) -> WorkflowInfo:
         self.ensure_workflow_mutations_available()
+        self.ensure_workflow_format_current(name)
         path = self._existing_path_for(name)
         self.validate_containment(name, data.graph)
         current = WorkflowDocument.model_validate(self._read_raw(name))
@@ -2671,9 +2951,7 @@ class WorkflowStoreService:
                 update={"display_name": patch.display_name}
             )
             raw["graph"] = graph.model_dump(mode="json", by_alias=True)
-            source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
-                graph
-            )
+            source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(graph)
             raw["artifact_hash"] = artifact_hash(graph, source_records)
         if patch.description is not None:
             metadata["description"] = patch.description

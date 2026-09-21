@@ -44,6 +44,16 @@ Correct its missing parameter, invalid path, incompatible connection, or unavail
 For a path such as `outer_workflow/inner_workflow/tool`, open each workflow node in order.
 A cycle error means one workflow would contain itself; change how the workflows are grouped or reused.
 
+## A workflow format update is waiting
+
+BioImageFlow previews older workflow files without changing them.
+Choose **Not now** to leave every affected saved workflow, draft, and nested editing snapshot untouched; those workflows remain unavailable, but current workflows continue working.
+
+Use **Review updates** in the Workflows warning when you are ready, then choose **Update workflows**.
+BioImageFlow verifies that the previewed files did not change, preserves their exact bytes under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, and shows every backup path after the update.
+If the preview became stale, review it again instead of overwriting newer edits.
+An interrupted confirmed update completes forward on restart from its journal and backups.
+
 ## An existing workflow cannot open because custom-tool files are missing
 
 The message identifies the missing file relative to the workflow's folder.
@@ -106,6 +116,15 @@ Use **Workflow with results** when every copied output must come from one succes
 
 If pointer files appear, open **Edit → Preferences... → Storage** and read **Latest output view**.
 Use an export when you need ordinary file copies.
+
+## A node reports a corrupt cache
+
+A `cache_corrupt` error means the selected cached record failed an integrity check.
+The workflow draft remains available for editing and saving, but BioImageFlow blocks execution through the affected branch so it cannot reuse damaged data.
+
+Open the affected node's menu and choose **Clear cached outputs**.
+BioImageFlow removes the current cache selection, moves a safely identified damaged immutable record into the cache quarantine area for diagnosis, and refreshes the node and downstream statuses.
+The cleared node becomes unexecuted and can be recomputed normally.
 
 ## A managed cluster action failed
 

@@ -3,7 +3,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { api } from '@/api/client'
-import { getWorkflowFormatNotices } from '@/api/workflowFormats'
+import {
+  applyWorkflowFormatMigrations,
+  getWorkflowFormatStatus,
+} from '@/api/workflowFormats'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -23,7 +26,8 @@ vi.mock('@/api/client', () => ({
 }))
 
 vi.mock('@/api/workflowFormats', () => ({
-  getWorkflowFormatNotices: vi.fn(),
+  getWorkflowFormatStatus: vi.fn(),
+  applyWorkflowFormatMigrations: vi.fn(),
 }))
 
 const workflows: WorkflowInfo[] = [
@@ -121,8 +125,12 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.post).mockReset()
     vi.mocked(api.patch).mockReset()
     vi.mocked(api.delete).mockReset()
-    vi.mocked(getWorkflowFormatNotices).mockReset()
-    vi.mocked(getWorkflowFormatNotices).mockResolvedValue([])
+    vi.mocked(getWorkflowFormatStatus).mockReset()
+    vi.mocked(applyWorkflowFormatMigrations).mockReset()
+    vi.mocked(getWorkflowFormatStatus).mockResolvedValue({
+      notices: [],
+      pending_plan_id: null,
+    })
   })
 
   it('warns when workflow files were migrated or cannot be loaded', async () => {
@@ -130,8 +138,10 @@ describe('WorkflowsPanel', () => {
     setActivePinia(pinia)
     const store = useWorkflowStore()
     vi.spyOn(store, 'fetchWorkflowTree').mockResolvedValue([])
-    vi.mocked(getWorkflowFormatNotices).mockResolvedValueOnce(
-      [
+    vi.mocked(getWorkflowFormatStatus).mockResolvedValueOnce(
+      {
+        pending_plan_id: null,
+        notices: [
         {
           status: 'migrated',
           workflow_id: 'Demo/fish',
@@ -146,7 +156,8 @@ describe('WorkflowsPanel', () => {
           detail: 'The workflow document is invalid.',
           backup_paths: [],
         },
-      ],
+        ],
+      },
     )
     const wrapper = mountPanel([], pinia)
 
@@ -156,7 +167,87 @@ describe('WorkflowsPanel', () => {
     expect(warning.text()).toContain('Demo/fish')
     expect(warning.text()).toContain('updated to the current format')
     expect(warning.text()).toContain('broken')
-    expect(warning.text()).toContain('hidden')
+    expect(warning.text()).toContain('The workflow document is invalid.')
+  })
+
+  it('defers and later confirms a pending workflow format update', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useWorkflowStore()
+    vi.spyOn(store, 'fetchWorkflowTree').mockResolvedValue([])
+    vi.mocked(getWorkflowFormatStatus).mockResolvedValueOnce({
+      pending_plan_id: `sha256:${'1'.repeat(64)}`,
+      notices: [{
+        status: 'pending',
+        workflow_id: 'Old workflow',
+        path: '/workspace/workflows/Old workflow/workflow.json',
+        detail: 'Update required.',
+        backup_paths: [],
+      }],
+    })
+    vi.mocked(applyWorkflowFormatMigrations).mockResolvedValueOnce({
+      pending_plan_id: null,
+      notices: [{
+        status: 'migrated',
+        workflow_id: 'Old workflow',
+        path: '/workspace/workflows/Old workflow/workflow.json',
+        detail: 'Updated.',
+        backup_paths: ['/workspace/.bioimageflow/backups/workflow-format/plan/workflow.json'],
+      }],
+    })
+    const wrapper = mountPanel([], pinia)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workflow-format-dialog"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="workflow-format-not-now"]').trigger('click')
+    expect(wrapper.find('[data-testid="workflow-format-dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workflow-format-warning"]').text()).toContain(
+      'unavailable until it is updated',
+    )
+
+    await wrapper.get('[data-testid="workflow-format-review"]').trigger('click')
+    await wrapper.get('[data-testid="workflow-format-update"]').trigger('click')
+    await flushPromises()
+
+    expect(applyWorkflowFormatMigrations).toHaveBeenCalledWith(`sha256:${'1'.repeat(64)}`)
+    expect(wrapper.find('[data-testid="workflow-format-dialog"]').exists()).toBe(false)
+    const warning = wrapper.get('[data-testid="workflow-format-warning"]').text()
+    expect(warning).toContain('A backup was preserved')
+    expect(warning).toContain('/workspace/.bioimageflow/backups/workflow-format/plan/workflow.json')
+  })
+
+  it('keeps a stale migration preview open with the server detail', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useWorkflowStore()
+    vi.spyOn(store, 'fetchWorkflowTree').mockResolvedValue([])
+    vi.mocked(getWorkflowFormatStatus).mockResolvedValueOnce({
+      pending_plan_id: `sha256:${'2'.repeat(64)}`,
+      notices: [{
+        status: 'pending',
+        workflow_id: 'Changed workflow',
+        path: '/workspace/workflows/Changed workflow/workflow.json',
+        detail: 'Update required.',
+        backup_paths: [],
+      }],
+    })
+    vi.mocked(applyWorkflowFormatMigrations).mockRejectedValueOnce({
+      response: {
+        data: {
+          detail: 'Workflow files changed after the preview; review again.',
+        },
+      },
+    })
+    const wrapper = mountPanel([], pinia)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="workflow-format-update"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="workflow-format-dialog"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="workflow-format-error"]').text()).toBe(
+      'Workflow files changed after the preview; review again.',
+    )
   })
 
   it('renders compact workflow rows with display name and modified time only', async () => {

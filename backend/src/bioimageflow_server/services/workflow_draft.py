@@ -583,6 +583,7 @@ class WorkflowDraftService:
         workflow_id: str,
     ) -> WorkflowDraftResponse | None:
         store.ensure_workflow_mutations_available()
+        store.ensure_workflow_format_current(workflow_id)
         raw = normalize_workflow_draft_identity(
             store.workflow_dir(workflow_id),
             workflow_id,

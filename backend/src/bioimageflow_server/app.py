@@ -322,8 +322,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ),
             preference_store=viewer_preference_store,
             environment_manager_provider=(
-                config.napari_environment_manager_provider
-                or get_shared_environment_manager
+                config.napari_environment_manager_provider or get_shared_environment_manager
             ),
             reference_cleanup=(
                 config.napari_environment_reference_cleanup
@@ -382,9 +381,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         root_dir=workflow_root,
         tool_registry=registry,
     )
-    workflow_store_cache: dict[str, WorkflowStoreService] = {
-        str(workflow_root): workflow_store
-    }
+    workflow_store_cache: dict[str, WorkflowStoreService] = {str(workflow_root): workflow_store}
     workflow_store_initializer: Callable[[WorkflowStoreService], None] | None = None
 
     def _register_workflow_custom_tools(store: WorkflowStoreService) -> None:
@@ -404,9 +401,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     def _current_stateless_storage_path() -> Path:
         live_storage_path = normalize_workflow_storage_path(
             config.storage_path
-            or _current_workspace_service().workspace_path()
-            / ".bioimageflow"
-            / "runtime"
+            or _current_workspace_service().workspace_path() / ".bioimageflow" / "runtime"
         )
         assert live_storage_path is not None
         return live_storage_path
@@ -456,6 +451,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     distributed_registrar: PlatformPreparedRunRegistrar | None = None
     distributed_downloads: ExecutionDownloadDestinationResolver | None = None
     if execution_profile_store is not None:
+
         def managed_execution_results() -> Path:
             return (
                 _current_workspace_service().workspace_path()
@@ -497,9 +493,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ),
             tokens=distributed_tokens,
         )
-        distributed_downloads = ExecutionDownloadDestinationResolver(
-            managed_execution_results
-        )
+        distributed_downloads = ExecutionDownloadDestinationResolver(managed_execution_results)
         distributed_registrar = PlatformPreparedRunRegistrar(
             distributed_coordinator,
             profile_resolver,
@@ -508,9 +502,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     workflow_source_service = WorkflowSourceService(
         _current_workflow_store,
         deployment_mode_provider=lambda: config.deployment_mode,
-        unsafe_webapp_features_provider=lambda: bool(
-            _live_settings().unsafe_webapp_features
-        ),
+        unsafe_webapp_features_provider=lambda: bool(_live_settings().unsafe_webapp_features),
         has_open_nested_editor=nested_workflow_snapshot_service.has_open_at_or_below,
     )
     workflow_move_recovery_service = WorkflowMoveRecoveryService(
@@ -538,8 +530,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return
         is_new_workspace = not store.root_dir.exists()
         workflow_move_recovery_service.recover_pending_move()
-        store.migrate_legacy_workflows()
-        store.migrate_schema_v2_workflows()
+        store.recover_workflow_format_migration()
+        store.workflow_format_status()
         try:
             nested_workflow_snapshot_service.cleanup_orphaned_snapshots()
         except Exception as exc:  # noqa: BLE001
@@ -618,9 +610,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             environment_manager_provider=_tool_environment_manager,
             retained_execution_started=_retain_local_execution,
             managed_result_root=(
-                distributed_downloads.resolve
-                if distributed_downloads is not None
-                else None
+                distributed_downloads.resolve if distributed_downloads is not None else None
             ),
         )
 
@@ -648,10 +638,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 else None
             ),
         )
-    if (
-        napari_environment_service is not None
-        and isinstance(napari_lifecycle, NapariLauncherPool)
-    ):
+    if napari_environment_service is not None and isinstance(napari_lifecycle, NapariLauncherPool):
         napari_environment_service.set_launcher_pool(napari_lifecycle)
     fiji_launcher = config.fiji_launcher or FijiLauncher(settings_provider=_live_settings)
 
@@ -805,16 +792,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # manager. A Run only bypasses the workspace request lock when that
         # admission is already occupied, allowing the router to report the
         # conflict immediately. The first Run remains serialized with moves.
-        internally_admitted = (
-            request.url.path.startswith("/api/v1/workflow-drafts/")
-            or (
-                request.url.path == "/api/v1/execution/run"
-                and bool(getattr(execution_manager, "is_running", False))
-            )
+        internally_admitted = request.url.path.startswith("/api/v1/workflow-drafts/") or (
+            request.url.path == "/api/v1/execution/run"
+            and bool(getattr(execution_manager, "is_running", False))
         )
-        request_lock = (
-            nullcontext() if internally_admitted else workspace_mutation_request_lock
-        )
+        request_lock = nullcontext() if internally_admitted else workspace_mutation_request_lock
         async with request_lock:
             try:
                 _current_workflow_store().ensure_workflow_mutations_available()
@@ -946,17 +928,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(napari_router, prefix="/api/v1")
     if napari_environment_service is not None:
         app.include_router(napari_environments_router, prefix="/api/v1")
-        app.dependency_overrides[get_napari_environment_service] = (
-            lambda: napari_environment_service
+        app.dependency_overrides[get_napari_environment_service] = lambda: (
+            napari_environment_service
         )
         if viewer_preference_store is not None:
-            app.dependency_overrides[napari_get_viewer_preference_store] = (
-                lambda: viewer_preference_store
+            app.dependency_overrides[napari_get_viewer_preference_store] = lambda: (
+                viewer_preference_store
             )
         if napari_resolver_service is not None:
-            app.dependency_overrides[get_napari_resolver_service] = (
-                lambda: napari_resolver_service
-            )
+            app.dependency_overrides[get_napari_resolver_service] = lambda: napari_resolver_service
     app.include_router(fiji_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.include_router(data_table_router, prefix="/api/v1")
@@ -967,9 +947,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: config.settings_store
-        app.dependency_overrides[
-            settings_get_output_view_probe_path
-        ] = _current_stateless_storage_path
+        app.dependency_overrides[settings_get_output_view_probe_path] = (
+            _current_stateless_storage_path
+        )
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -1008,13 +988,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_nested_workflow_snapshot_service] = lambda: (
         nested_workflow_snapshot_service
     )
-    app.dependency_overrides[nested_get_viewer_preference_store] = lambda: (
-        viewer_preference_store
-    )
+    app.dependency_overrides[nested_get_viewer_preference_store] = lambda: viewer_preference_store
     app.dependency_overrides[nested_get_workflow_store] = _current_workflow_store
-    app.dependency_overrides[nested_get_workflow_draft_service] = lambda: (
-        workflow_draft_service
-    )
+    app.dependency_overrides[nested_get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[nested_snapshots_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager

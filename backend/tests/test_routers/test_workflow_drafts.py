@@ -13,11 +13,17 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pandas as pd
 import pytest
 from tests.graph_factory import graph_document, graph_state
 
+from bioimageflow.cache import dataframe_publish
+from bioimageflow.dataframe_tool import DataFrameTool
+from bioimageflow.storage import Storage
+from bioimageflow_core.tool import IOModel
+
 from bioimageflow_server.app import create_app
-from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
@@ -29,6 +35,7 @@ from bioimageflow_server.routers.workflow_drafts import (
     get_workflow_draft_service as drafts_get_workflow_draft_service,
 )
 from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
+from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -58,6 +65,14 @@ def anyio_backend() -> str:
 class _ExecutionManager:
     def __init__(self, *, is_running: bool = False) -> None:
         self.is_running = is_running
+
+
+class _CachedFrameInputs(IOModel):
+    threshold: float = 0.5
+
+
+class _CachedFrameTool(DataFrameTool):
+    Inputs = _CachedFrameInputs
 
 
 async def _client(
@@ -123,6 +138,124 @@ def _graph(node_id: str = "bad") -> dict[str, Any]:
             }
         ]
     )
+
+
+async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
+    tmp_path: Path,
+) -> None:
+    registry = ToolRegistryService()
+    registry.register_tool(
+        "CachedFrameTool",
+        ToolMetadata(
+            name="CachedFrameTool",
+            display_name="CachedFrameTool",
+            package="tests",
+            package_version="1",
+            tool_type="DataFrameTool",
+            row_consumption=None,
+        ),
+        tool_class=_CachedFrameTool,
+    )
+    store = WorkflowStoreService(tmp_path / "workspace/workflows", registry)
+    settings = Settings(deployment_mode="desktop")
+    manager = ExecutionManager(NullEventBus(), registry, settings)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=manager,
+            settings=settings,
+            storage_path=tmp_path / "fallback-results",
+            disable_hot_reload=True,
+        )
+    )
+    graph = graph_state(
+        nodes=[
+            {
+                "type": "tool",
+                "id": "source",
+                "name": "Source",
+                "tool_name": "CachedFrameTool",
+                "position": [0, 0],
+                "parameters": {"threshold": 0.5},
+            }
+        ]
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+        assert (
+            await client.put(
+                "/api/v1/workflows/wf",
+                json={"graph": graph.model_dump(mode="json")},
+            )
+        ).status_code == 200
+        storage_path = store.get_storage_path("wf")
+        workflow, errors, _disabled = build_workflow(
+            graph,
+            registry,
+            storage_path=storage_path,
+        )
+        assert errors == []
+        node_plan = workflow.plan(dev_mode=True)["source"]
+        dataframe_publish(
+            storage_path,
+            "source",
+            node_plan.logical_signature,
+            pd.DataFrame({"value": [1]}),
+            run_id="run_7123456789abcdef0123456789abcdef",
+            engine="direct:parallel",
+            tool_identity="tests:CachedFrameTool",
+        )
+        storage = Storage(storage_path)
+        pointer = storage.load_current(node_plan.final_result_key)
+        assert pointer is not None
+        record_dir = storage.result_dir(node_plan.final_result_key) / "records" / pointer.record_id
+        (record_dir / "dataframe.parquet").write_bytes(b"corrupt")
+
+        draft_response = await client.get("/api/v1/workflow-drafts/wf")
+        assert draft_response.status_code == 200
+        draft = draft_response.json()
+        assert draft["validation"]["node_statuses"]["source"]["status"] == "failed"
+
+        saved = await client.put(
+            "/api/v1/workflow-drafts/wf",
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "expected_revision": draft["draft_revision"],
+                "updated_by": "frontend",
+            },
+        )
+        assert saved.status_code == 200
+        accepted = saved.json()
+        assert accepted["validation"]["errors"][0]["type"] == "cache_corrupt"
+
+        blocked = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "workflow_name": "wf",
+                "draft_revision": accepted["draft_revision"],
+            },
+        )
+        assert blocked.status_code == 422
+        assert blocked.json()["errors"][0]["type"] == "cache_corrupt"
+
+        cleared = await client.post(
+            "/api/v1/execution/clear",
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "nodes": ["source"],
+                "workflow_name": "wf",
+            },
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["node_statuses"]["source"]["status"] == "unexecuted"
+        assert not record_dir.exists()
+
+        repaired = await client.get("/api/v1/workflow-drafts/wf")
+        assert repaired.status_code == 200
+        assert repaired.json()["validation"]["node_statuses"]["source"]["status"] == ("unexecuted")
 
 
 async def test_get_synthesizes_draft_from_saved_workflow(

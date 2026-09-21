@@ -59,7 +59,7 @@ describe('StorageSection demo workflows', () => {
 
   it('shows derived demo status and explicit install/remove actions', async () => {
     vi.mocked(getDemoWorkflowsStatus).mockResolvedValue({
-      bundle_version: 1,
+      bundle_version: 2,
       status: 'partial',
       workflows: [
         {

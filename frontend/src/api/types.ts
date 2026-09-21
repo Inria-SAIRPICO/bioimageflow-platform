@@ -1053,6 +1053,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/format-migrations/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Workflow Format Migrations */
+        post: operations["apply_workflow_format_migrations_api_v1_workflows_format_migrations_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/tree": {
         parameters: {
             query?: never;
@@ -3012,7 +3029,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id" | "source_tool_upstream";
+            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id" | "source_tool_upstream" | "cache_corrupt";
             /** Detail */
             detail: string;
             /** Node */
@@ -5354,6 +5371,14 @@ export interface components {
             new_path: string;
         };
         /**
+         * WorkflowFormatMigrationApply
+         * @description Confirmation for the exact workflow-format plan shown to the user.
+         */
+        WorkflowFormatMigrationApply: {
+            /** Pending Plan Id */
+            pending_plan_id: string;
+        };
+        /**
          * WorkflowFormatNotice
          * @description Migration or validation notice for a persisted workflow file.
          */
@@ -5362,7 +5387,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "migrated" | "error";
+            status: "pending" | "migrated" | "error";
             /** Workflow Id */
             workflow_id: string;
             /** Path */
@@ -5379,6 +5404,8 @@ export interface components {
         WorkflowFormatStatus: {
             /** Notices */
             notices?: components["schemas"]["WorkflowFormatNotice"][];
+            /** Pending Plan Id */
+            pending_plan_id?: string | null;
         };
         /**
          * WorkflowImportResponse
@@ -5952,6 +5979,7 @@ export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate']
 export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
 export type WorkflowFolderInfo = components['schemas']['WorkflowFolderInfo'];
 export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate'];
+export type WorkflowFormatMigrationApply = components['schemas']['WorkflowFormatMigrationApply'];
 export type WorkflowFormatNotice = components['schemas']['WorkflowFormatNotice'];
 export type WorkflowFormatStatus = components['schemas']['WorkflowFormatStatus'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
@@ -8285,6 +8313,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+        };
+    };
+    apply_workflow_format_migrations_api_v1_workflows_format_migrations_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFormatMigrationApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

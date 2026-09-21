@@ -1,18 +1,18 @@
 {
-  "bundle_version": 1,
+  "bundle_version": 2,
   "workflows": [
     {
       "directory": "fish-analysis",
       "id": "fish-analysis",
       "source": "example_workflows/fish_analysis/workflow.py",
-      "version": 1,
+      "version": 2,
       "workflow_id": "Demo/Fish Analysis"
     },
     {
       "directory": "parameters-space-exploration",
       "id": "parameters-space-exploration",
       "source": "example_workflows/parameter_space_exploration/workflow.py",
-      "version": 1,
+      "version": 2,
       "workflow_id": "Demo/Parameters Space Exploration"
     }
   ]

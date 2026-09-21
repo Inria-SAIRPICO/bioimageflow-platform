@@ -334,9 +334,7 @@ class ExecutionManager:
             **context_fields,
         )
 
-    def apply_cache_clear_statuses(
-        self, workflow_id: str, statuses: dict[str, NodeStatus]
-    ) -> None:
+    def apply_cache_clear_statuses(self, workflow_id: str, statuses: dict[str, NodeStatus]) -> None:
         """Keep the live status snapshot current without rewriting run history."""
 
         if self.context is not None and self.context.workflow_id == workflow_id:
@@ -496,9 +494,7 @@ class ExecutionManager:
         if ensure_context_current is not None:
             await ensure_context_current()
 
-        selected_scope = (
-            _selected_root_scope(build_graph, nodes) if nodes is not None else None
-        )
+        selected_scope = _selected_root_scope(build_graph, nodes) if nodes is not None else None
         validation_errors = validation_output.validation.errors
         if selected_scope is not None:
             validation_errors = _selected_validation_errors(
@@ -521,9 +517,7 @@ class ExecutionManager:
             )
         node_map = dict(workflow.nodes)
         if nodes is not None:
-            unresolved = sorted(
-                {node_id for node_id in nodes if node_id not in node_map}
-            )
+            unresolved = sorted({node_id for node_id in nodes if node_id not in node_map})
             if unresolved:
                 raise WorkflowBuildError(
                     [
@@ -1102,7 +1096,9 @@ class ExecutionManager:
                 )
             try:
                 if node_id is not None and not already_running:
-                    self._publish_environment_phase(context, node_id, f"Preparing {env_name} environment")
+                    self._publish_environment_phase(
+                        context, node_id, f"Preparing {env_name} environment"
+                    )
                 if context is not None:
                     kwargs["on_provision_event"] = lambda event: self._on_environment_event(
                         event, context, node_id, env_name
@@ -1513,6 +1509,10 @@ class NodeCacheClearPlan:
     valid_node_ids: tuple[str, ...]
     downstream_node_ids: frozenset[str]
     storage_path: Path | None
+    graph: GraphState
+    compilation: Any
+    dev_mode: bool
+    registry: ToolRegistryService
 
 
 def prepare_node_cache_clear(
@@ -1545,8 +1545,16 @@ def prepare_node_cache_clear(
                 )
             ]
         ) from exc
-    if not validation_output.validation.valid:
-        raise WorkflowBuildError(validation_output.validation.errors)
+    requested_roots = {node_id.split("/", 1)[0] for node_id in node_ids}
+    blocking_errors = [
+        error
+        for error in validation_output.validation.errors
+        if error.type != "cache_corrupt"
+        or error.node is None
+        or error.node.split("/", 1)[0] not in requested_roots
+    ]
+    if blocking_errors:
+        raise WorkflowBuildError(blocking_errors)
     workflow = validation_output.compilation.workflow
 
     # Filter to valid node IDs known to the workflow.
@@ -1565,6 +1573,10 @@ def prepare_node_cache_clear(
         valid_node_ids=valid_ids,
         downstream_node_ids=frozenset(downstream),
         storage_path=storage_path,
+        graph=graph,
+        compilation=validation_output.compilation,
+        dev_mode=dev_mode,
+        registry=registry,
     )
 
 
@@ -1579,7 +1591,7 @@ def commit_node_cache_clear(plan: NodeCacheClearPlan) -> dict[str, NodeStatus]:
         cascade=False,
     )
     downstream = set(plan.downstream_node_ids)
-    downstream -= directly_cleared
+    downstream -= {selection.node_name for selection in directly_cleared}
     if downstream:
         plan.workflow.invalidate(list(downstream), cascade=False)
 
@@ -1588,17 +1600,40 @@ def commit_node_cache_clear(plan: NodeCacheClearPlan) -> dict[str, NodeStatus]:
 
         remove_latest_node_outputs(plan.storage_path, list(plan.valid_node_ids))
 
-    result: dict[str, NodeStatus] = {}
+    from bioimageflow_server.services.result_store import ResultStoreService
 
-    # Directly requested nodes → unexecuted.
-    for nid in plan.valid_node_ids:
-        result[nid] = NodeStatus(node_id=nid, status="unexecuted", cached=False)
-
-    # Downstream nodes → out_of_date.
-    for nid in downstream:
-        result[nid] = NodeStatus(node_id=nid, status="out_of_date", cached=False)
-
-    return result
+    results = (
+        ResultStoreService(plan.storage_path, plan.registry)
+        if plan.storage_path is not None
+        else None
+    )
+    refreshed = GraphValidationService.validation_from_compilation(
+        plan.graph,
+        plan.compilation,
+        dev_mode=plan.dev_mode,
+        has_retained_latest=(
+            None
+            if results is None
+            else lambda node_id: (
+                results.get_latest_record_dir(
+                    node_id,
+                    storage_path=plan.storage_path,
+                )
+                is not None
+            )
+        ),
+    )
+    affected = set(plan.valid_node_ids) | downstream
+    statuses = {
+        node_id: status
+        for node_id, status in refreshed.node_statuses.items()
+        if node_id in affected
+    }
+    for node_id in downstream:
+        status = statuses.get(node_id)
+        if status is not None and status.status == "unexecuted":
+            statuses[node_id] = status.model_copy(update={"status": "out_of_date"})
+    return statuses
 
 
 def clear_node_cache(

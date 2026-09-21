@@ -21,6 +21,7 @@ from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftService,
 )
 from bioimageflow_server.services.execution import ExecutionConflictError
+from bioimageflow_server.services.workflow_store import WorkflowFormatUpdateRequiredError
 
 router = APIRouter(prefix="/workflow-drafts", tags=["workflow-drafts"])
 
@@ -82,6 +83,17 @@ def _conflict_response(exc: WorkflowDraftRevisionConflict) -> JSONResponse:
     return JSONResponse(status_code=409, content=body.model_dump())
 
 
+def _format_update_response(exc: WorkflowFormatUpdateRequiredError) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "error": "workflow_format_update_required",
+            "detail": str(exc),
+            "workflow_id": exc.workflow_id,
+        },
+    )
+
+
 def _publish_workflow_draft_changed(
     connection_manager: Any | None,
     draft: WorkflowDraftResponse,
@@ -102,7 +114,7 @@ async def get_workflow_draft(
     workflow_id: str,
     request: Request,
     service: WorkflowDraftService = Depends(get_workflow_draft_service),
-) -> WorkflowDraftResponse:
+) -> WorkflowDraftResponse | JSONResponse:
     try:
         return await service.get_draft_async(
             workflow_id,
@@ -110,6 +122,8 @@ async def get_workflow_draft(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    except WorkflowFormatUpdateRequiredError as exc:
+        return _format_update_response(exc)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -151,6 +165,8 @@ async def put_workflow_draft(
         )
     except WorkflowDraftRevisionConflict as exc:
         return _conflict_response(exc)
+    except WorkflowFormatUpdateRequiredError as exc:
+        return _format_update_response(exc)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except ValueError as exc:
@@ -192,6 +208,8 @@ async def reset_workflow_draft_to_saved(
         )
     except WorkflowDraftRevisionConflict as exc:
         return _conflict_response(exc)
+    except WorkflowFormatUpdateRequiredError as exc:
+        return _format_update_response(exc)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except ValueError as exc:

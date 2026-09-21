@@ -15,6 +15,8 @@ Its default location is `~/BioImageFlow/workspace/`, and the user can select ano
 ```text
 workspace/
   .bioimageflow/
+    backups/
+      workflow-format/
     executions/
       retry_plans/
       cleanup_plans/
@@ -33,6 +35,11 @@ Each workflow derives its runtime storage from `<workflow-directory>/results`; t
 Moving or deleting a workflow carries or removes its results.
 Duplicating a workflow copies the reusable definition and workflow-local tools but starts without the source workflow's results.
 Stateless graph services use `<workspace>/.bioimageflow/runtime`.
+
+Workflow-format startup handling is scan-only unless a previously confirmed migration journal needs forward completion.
+The preview covers saved workflow documents, root drafts, and nested snapshots and derives its plan ID from their source and target content.
+Confirmation creates and synchronizes exact source-byte backups beneath `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/` before atomically replacing any authority.
+Deferred workflows stay out of the editable tree; unrelated current workflows remain available.
 
 Managed execution snapshots and their retry or cleanup journals use `<workspace>/.bioimageflow/executions`.
 Verified managed result bundles use the deterministic `<workspace>/.bioimageflow/execution_exports/<execution-id>` destination and can be reused after restart or confirmed remote cleanup.
@@ -87,6 +94,8 @@ The workflow archive inside its `workflow/` directory can be imported separately
 
 Invalidation changes which retained records can be selected for reuse.
 It does not immediately delete those records or reclaim their disk space.
+When the selected record is corrupt, diagnostic planning reports `cache_corrupt` without making the draft unavailable, while execution remains strict.
+Clearing that node removes `current.json` and moves a safely identified damaged record from `records/` into the result key's `quarantine/` directory before recomputation.
 
 ## Bundled demos
 
@@ -97,6 +106,7 @@ The **Storage** preferences report whether the recognized demos are installed an
 Removing demos preserves unrelated workflows under `Demo/`.
 Switching to another existing workspace does not copy demos into it automatically.
 
+The runtime bundle is version 2, and every root and recursively embedded graph is canonical schema v2.
 The maintained Python examples are exported to bundled workflow definitions with:
 
 ```bash
@@ -104,5 +114,7 @@ scripts/export_demo_workflows.py --bioimageflow-source /path/to/bioimageflow
 ```
 
 This maintainer command explicitly consumes a BioImageFlow source checkout.
+Generation fails if any graph in the bundle is not recursively schema v2.
 Ordinary platform development and CI use registry packages instead.
 The demos download their public inputs into workflow-managed run assets, do not depend on repository-local datasets, and retain normal missing-package diagnostics without installing tool packages automatically.
+An installed demo with matching bundled provenance is never replaced because the application version or bundle version changed, including on restart and explicit install calls; only missing canonical demos are installed.

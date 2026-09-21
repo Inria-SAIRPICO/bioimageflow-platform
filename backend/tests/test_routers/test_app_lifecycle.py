@@ -85,14 +85,22 @@ async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refre
         recover_move,
     )
 
-    def migrate_workflows(_service: WorkflowStoreService) -> list[Any]:
+    def recover_workflow_migration(_service: WorkflowStoreService) -> None:
         order.append("workflow_migration")
-        return []
 
     monkeypatch.setattr(
         WorkflowStoreService,
-        "migrate_legacy_workflows",
-        migrate_workflows,
+        "recover_workflow_format_migration",
+        recover_workflow_migration,
+    )
+
+    def scan_workflow_migrations(_service: WorkflowStoreService) -> None:
+        order.append("workflow_migration_scan")
+
+    monkeypatch.setattr(
+        WorkflowStoreService,
+        "workflow_format_status",
+        scan_workflow_migrations,
     )
 
     def cleanup_snapshots(_service: NestedWorkflowSnapshotService) -> list[Any]:
@@ -126,6 +134,7 @@ async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refre
         "load",
         "move_recovery",
         "workflow_migration",
+        "workflow_migration_scan",
         "snapshot_cleanup",
         "refresh",
     ], order

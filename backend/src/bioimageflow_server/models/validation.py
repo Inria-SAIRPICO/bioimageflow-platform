@@ -41,6 +41,7 @@ class GraphValidationError(BaseModel):
         "invalid_node_id",
         "invalid_edge_id",
         "source_tool_upstream",
+        "cache_corrupt",
     ]
     detail: str
     node: str | None = None

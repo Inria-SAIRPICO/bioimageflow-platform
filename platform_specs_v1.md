@@ -362,6 +362,8 @@ Renaming or moving a workflow or containing folder changes every affected path-d
 | `PATCH` | `/workflows/folders/{path}` | Rename or move a workflow folder (body: `{new_path: str}`). |
 | `DELETE` | `/workflows/folders/{path}` | Delete a folder. Body: `{policy: "empty" \| "delete_children" \| "move_children_up"}`. `empty` rejects non-empty folders with **409 Conflict**. |
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
+| `GET` | `/workflows/format-status` | Scan saved workflows, root drafts, and nested snapshots without writing them; return pending/error notices and a content-derived `pending_plan_id`. |
+| `POST` | `/workflows/format-migrations/apply` | Confirm and apply the exact previewed format plan. A changed source makes the plan stale and returns HTTP 409. |
 | `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same path-derived name already exists, with a suggested alternative. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
 | `PUT` | `/workflows/{id}` | Save workflow from the current graph/draft path. UI save flows flush/promote the backend draft first. Always succeeds even if graph validation errors exist. |
@@ -369,6 +371,12 @@ Renaming or moving a workflow or containing folder changes every affected path-d
 | `PATCH` | `/workflows/{id}` | Update or duplicate a workflow (body: `{action: "update" \| "duplicate", display_name?: str, description?: str, new_name?: str, folder?: str, new_id?: str}`). Rename and move are update operations. Duplication starts without runtime results. |
 | `POST` | `/workflows/{id}/rebind-versions` | Rebind package references to currently active installed versions and return the refreshed workflow plus remaining dependency issues. |
 | `POST` | `/workflows/{id}/activate` | Publish the external active-workflow context and return the workflow; this does not select graph meaning for validation or execution. |
+
+Startup only scans for unconfirmed workflow-format updates and forward-completes a transaction whose confirmed journal already exists.
+Pending workflows are omitted from the editable tree, and direct saved-workflow or draft access returns HTTP 409 with `workflow_format_update_required`; current unrelated workflows remain usable.
+The frontend initially offers **Update workflows** and **Not now**, and a deferred warning retains **Review updates**.
+Confirmation rechecks the content-derived plan, preserves every original byte under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/...`, synchronizes all backups before replacing any authority, and updates saved workflows, root drafts, and nested snapshots through one forward-recoverable journal.
+The result lists every exact backup path; a stale plan or a migration error does not claim that an update or backup succeeded.
 
 Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow ids use the same slash-separated path rules as workflow endpoints.
 `PATCH /workflows/{id}` with `action: "duplicate"` optionally accepts `graph` to copy a captured draft instead of the saved graph, and `expected_identity_generation` to reject a recreated source identity.
@@ -606,6 +614,10 @@ The backend:
 4. Checks cache status for each node (compares current parameters + upstream signature against stored hashes)
 5. Returns the `ValidationResult` with per-node status
 
+Cache projection is diagnostic rather than all-or-nothing.
+If one selected immutable record is corrupt, planning reports that node as failed with a `cache_corrupt` validation error and continues projecting the rest of the graph, so the draft remains readable and saveable.
+Normal cache reads and execution remain strict and reject the corrupt branch.
+
 **Validation timing and debouncing:** Each canvas publishes a complete immutable graph snapshot to its own synchronization coordinator. A root canvas queues validated draft persistence, while a nested canvas queues a validated private-snapshot replacement. The transport is debounced so newer snapshots supersede older pending work without sharing state between canvases.
 
 Parameter edit commands first update the owning canvas graph, synchronously publish that complete graph snapshot, mark the edited node provisionally `unexecuted`, and mark existing status projections provisional. Draft or nested-snapshot persistence then runs through the canvas coordinator. `NodeState` itself never receives these provisional or derived status fields.
@@ -677,7 +689,7 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 |--------|----------|-------------|
 | `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str, draft_revision?: int}`). `workflow_name` is required and validated as a workflow ID. Scoped root canvases also send their accepted draft revision. |
 | `POST` | `/execution/stop` | Stop the current execution |
-| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. On validation failure, the response includes the complete node-scoped `errors` list and the confirmation dialog displays it so the user can inspect and copy each cause. |
+| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects unrelated errors before invalidating cache. `cache_corrupt` diagnostics are permitted only when owned by the requested roots. Clear removes the current selection, quarantines a safely identified corrupt immutable record, and returns freshly projected `NodeStatus` for the cleared nodes and all downstream dependents. On other validation failures, the response includes the complete node-scoped `errors` list and the confirmation dialog displays it so the user can inspect and copy each cause. |
 
 After a successful Clear, the retained live execution-status snapshot for that same workflow reflects the cleared and downstream statuses, including on browser reconnection. The historical `last_result` remains the result of the completed run and is not rewritten by Clear.
 On a subsequent authoritative `GET /workflow-drafts/{id}`, cache-derived node statuses are projected from the current accepted graph and workflow storage, including after backend restart. The persisted draft validation, graph, revision, writer, timestamp, saved baseline, and historical execution result are not rewritten by this read. An enabled downstream node whose library plan is `pending_upstream` projects `out_of_date` if it retains a latest output, or `unexecuted` if it has none; disabled and other planned statuses retain their ordinary semantics. Compilation occurs outside the workflow mutation lock; the accepted draft, identity generation, and storage path are rechecked before planning and latest-output lookup under the same lock used by Clear's commit, retrying if authority changes.

@@ -38,7 +38,6 @@ class _SrcOutputs(IOModel):
 
 
 class SrcTool(ProcessingTool):
-
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _SrcInputs
@@ -57,7 +56,6 @@ class _DstOutputs(IOModel):
 
 
 class DstTool(ProcessingTool):
-
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _DstInputs
@@ -73,7 +71,6 @@ class _TwoInputDstInputs(IOModel):
 
 
 class TwoInputDstTool(ProcessingTool):
-
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _TwoInputDstInputs
@@ -102,8 +99,10 @@ def registry() -> ToolRegistryService:
         reg.register_tool(
             name,
             ToolMetadata(
-                name=name, display_name=name,
-                package="test-pkg", package_version="1.0.0",
+                name=name,
+                display_name=name,
+                package="test-pkg",
+                package_version="1.0.0",
                 tool_type="ProcessingTool",
                 row_consumption="mapped",
             ),
@@ -122,7 +121,8 @@ def _clear_active_workflow() -> Any:
 
 
 def _node(id: str, tool: str = "SrcTool") -> ToolNodeState:
-    return ToolNodeState(type="tool",
+    return ToolNodeState(
+        type="tool",
         id=id,
         name=id,
         tool_name=tool,
@@ -132,7 +132,8 @@ def _node(id: str, tool: str = "SrcTool") -> ToolNodeState:
 
 
 def _edge(source: str, target: str, idx: int = 0) -> ColumnEdge:
-    return ColumnEdge(type="column",
+    return ColumnEdge(
+        type="column",
         id=f"{source}->{target}-{idx}",
         source_node=source,
         target_node=target,
@@ -141,20 +142,17 @@ def _edge(source: str, target: str, idx: int = 0) -> ColumnEdge:
     )
 
 
-def _make_graph(
-    nodes: list[tuple[str, str]], edges: list[tuple[str, str]]
-) -> GraphState:
+def _make_graph(nodes: list[tuple[str, str]], edges: list[tuple[str, str]]) -> GraphState:
     tools_by_node = dict(nodes)
     return graph_state(
         nodes=[_node(n, tool) for n, tool in nodes],
         edges=[
-            ColumnEdge(type="column",
+            ColumnEdge(
+                type="column",
                 id=f"{source}->{target}-{index}",
                 source_node=source,
                 target_node=target,
-                source_output=(
-                    "mask" if tools_by_node[source] == "SrcTool" else "result"
-                ),
+                source_output=("mask" if tools_by_node[source] == "SrcTool" else "result"),
                 target_input="mask_input",
             )
             for index, (source, target) in enumerate(edges)
@@ -163,7 +161,8 @@ def _make_graph(
 
 
 def test_clear_single_node_returns_unexecuted(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     graph = _make_graph([("a", "SrcTool")], [])
     result = clear_node_cache(["a"], graph, registry, tmp_path)
@@ -192,7 +191,8 @@ def test_clear_derives_downstream_statuses_from_submitted_graph(
 
 
 def test_clear_propagates_out_of_date_to_downstream(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     # a -> b -> c
     graph = _make_graph(
@@ -206,7 +206,8 @@ def test_clear_propagates_out_of_date_to_downstream(
 
 
 def test_clear_node_with_no_downstream(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     graph = _make_graph(
         [("a", "SrcTool"), ("b", "DstTool")],
@@ -218,7 +219,8 @@ def test_clear_node_with_no_downstream(
 
 
 def test_clear_multiple_nodes_shared_downstream(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     # a -> c, b -> c
     graph = graph_state(
@@ -228,14 +230,16 @@ def test_clear_multiple_nodes_shared_downstream(
             _node("c", "TwoInputDstTool"),
         ],
         edges=[
-            ColumnEdge(type="column",
+            ColumnEdge(
+                type="column",
                 id="a->c-left",
                 source_node="a",
                 target_node="c",
                 source_output="mask",
                 target_input="left_mask",
             ),
-            ColumnEdge(type="column",
+            ColumnEdge(
+                type="column",
                 id="b->c-right",
                 source_node="b",
                 target_node="c",
@@ -253,7 +257,8 @@ def test_clear_multiple_nodes_shared_downstream(
 
 
 def test_non_existent_node_id_is_skipped(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     graph = _make_graph([("a", "SrcTool")], [])
     result = clear_node_cache(["ghost"], graph, registry, tmp_path)
@@ -261,7 +266,8 @@ def test_non_existent_node_id_is_skipped(
 
 
 def test_non_existent_cache_dir_is_idempotent(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     graph = _make_graph([("a", "SrcTool")], [])
     result = clear_node_cache(["a"], graph, registry, tmp_path)
@@ -269,7 +275,8 @@ def test_non_existent_cache_dir_is_idempotent(
 
 
 def test_cleared_node_takes_priority_over_out_of_date(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     # a -> b. Clear both a and b: b should be "unexecuted", not "out_of_date".
     graph = _make_graph(
@@ -282,7 +289,8 @@ def test_cleared_node_takes_priority_over_out_of_date(
 
 
 def test_clear_removes_current_cache_selection(
-    tmp_path: Path, registry: ToolRegistryService,
+    tmp_path: Path,
+    registry: ToolRegistryService,
 ) -> None:
     from bioimageflow.cache import dataframe_publish
     from bioimageflow.storage import Storage
@@ -302,7 +310,8 @@ def test_clear_removes_current_cache_selection(
     )
     graph = graph_state(
         nodes=[
-            ToolNodeState(type="tool",
+            ToolNodeState(
+                type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -332,6 +341,77 @@ def test_clear_removes_current_cache_selection(
     assert storage.load_current(plan.final_result_key) is None
 
 
+def test_corrupt_cache_projects_diagnostic_and_clear_repairs_status(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow.cache import dataframe_publish
+    from bioimageflow.storage import Storage
+    from bioimageflow_server.services.graph_builder import build_workflow
+    from bioimageflow_server.services.graph_validator import validate_graph
+
+    registry.register_tool(
+        "DFTool",
+        ToolMetadata(
+            name="DFTool",
+            display_name="DFTool",
+            package="test-pkg",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+            row_consumption=None,
+        ),
+        tool_class=DFTool,
+    )
+    graph = graph_state(
+        nodes=[
+            ToolNodeState(
+                type="tool",
+                id="a",
+                name="a",
+                tool_name="DFTool",
+                position=(0, 0),
+                parameters={"threshold": 0.5},
+            )
+        ],
+        edges=[],
+    )
+    workflow, errors, _disabled = build_workflow(
+        graph,
+        registry,
+        storage_path=tmp_path,
+    )
+    assert errors == []
+    plan = workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(
+        tmp_path,
+        "a",
+        plan.logical_signature,
+        pd.DataFrame({"x": [1]}),
+        run_id="run_6123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
+    )
+    storage = Storage(tmp_path)
+    pointer = storage.load_current(plan.final_result_key)
+    assert pointer is not None
+    record_dir = storage.result_dir(plan.final_result_key) / "records" / pointer.record_id
+    (record_dir / "dataframe.parquet").write_bytes(b"corrupt")
+
+    corrupt = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
+    assert corrupt.valid is False
+    assert corrupt.node_statuses["a"].status == "failed"
+    assert [error.type for error in corrupt.errors] == ["cache_corrupt"]
+
+    cleared = clear_node_cache(["a"], graph, registry, tmp_path)
+    assert cleared["a"].status == "unexecuted"
+    assert not record_dir.exists()
+    assert len(list((storage.result_dir(plan.final_result_key) / "quarantine").iterdir())) == 1
+
+    repaired = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
+    assert repaired.valid is True
+    assert repaired.node_statuses["a"].status == "unexecuted"
+
+
 def test_invalid_graph_does_not_clear_existing_cache(
     tmp_path: Path,
     registry: ToolRegistryService,
@@ -354,7 +434,8 @@ def test_invalid_graph_does_not_clear_existing_cache(
     )
     valid_graph = graph_state(
         nodes=[
-            ToolNodeState(type="tool",
+            ToolNodeState(
+                type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -386,7 +467,8 @@ def test_invalid_graph_does_not_clear_existing_cache(
     invalid_graph = graph_state(
         nodes=[
             *valid_graph.nodes,
-            ToolNodeState(type="tool",
+            ToolNodeState(
+                type="tool",
                 id="broken",
                 name="broken",
                 tool_name="MissingTool",
@@ -425,7 +507,8 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
     )
     valid_graph = graph_state(
         nodes=[
-            ToolNodeState(type="tool",
+            ToolNodeState(
+                type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -456,9 +539,7 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
 
     invalid_graph = graph_state(
         nodes=[
-            valid_graph.nodes[0].model_copy(
-                update={"parameters": {"threshold": "not-a-float"}}
-            )
+            valid_graph.nodes[0].model_copy(update={"parameters": {"threshold": "not-a-float"}})
         ],
         edges=[],
     )
@@ -501,8 +582,10 @@ def test_positional_edges_count_as_downstream(
         reg.register_tool(
             name,
             ToolMetadata(
-                name=name, display_name=name,
-                package="test-pkg", package_version="1.0.0",
+                name=name,
+                display_name=name,
+                package="test-pkg",
+                package_version="1.0.0",
                 tool_type="DataFrameTool" if name == "DFTool" else "ProcessingTool",
                 row_consumption=None if name == "DFTool" else "mapped",
             ),
@@ -510,13 +593,20 @@ def test_positional_edges_count_as_downstream(
         )
 
     graph = graph_state(
-        nodes=[_node("a", "SrcTool"), ToolNodeState(type="tool",
-            id="b", name="b", tool_name="DFTool",
-            position=(0, 0), parameters={},
-        )],
+        nodes=[
+            _node("a", "SrcTool"),
+            ToolNodeState(
+                type="tool",
+                id="b",
+                name="b",
+                tool_name="DFTool",
+                position=(0, 0),
+                parameters={},
+            ),
+        ],
         edges=[
-            DataFrameEdge(type="dataframe",
-                id="e1", source_node="a", target_node="b", target_position=0
+            DataFrameEdge(
+                type="dataframe", id="e1", source_node="a", target_node="b", target_position=0
             )
         ],
     )

@@ -182,3 +182,50 @@ def test_refuses_ambiguous_legacy_published_interfaces(tmp_path: Path) -> None:
     assert store.migrate_legacy_workflows() == []
     assert json.loads(workflow_path.read_text()) == legacy
     assert store.workflow_format_status().notices[0].status == "error"
+
+
+def test_legacy_workflow_and_draft_wait_for_confirmed_format_plan(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    workflow_dir = store.root_dir / "legacy"
+    workflow_dir.mkdir(parents=True)
+    workflow_path = workflow_dir / "workflow.json"
+    draft_path = workflow_dir / ".bioimageflow" / "draft.json"
+    draft_path.parent.mkdir()
+    workflow_path.write_text(json.dumps(_legacy_document()), encoding="utf-8")
+    draft_path.write_text(
+        json.dumps(
+            {
+                "draft_version": 1,
+                "workflow_id": "legacy",
+                "base_saved_revision": "sha256:" + "0" * 64,
+                "draft_revision": 3,
+                "updated_at": "2026-07-20T12:00:00Z",
+                "updated_by": "frontend",
+                "dirty_against_saved": True,
+                "graph": _legacy_graph(parameter=12),
+                "validation": {"valid": False, "node_statuses": {}, "errors": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = {workflow_path: workflow_path.read_bytes(), draft_path: draft_path.read_bytes()}
+
+    preview = store.workflow_format_status()
+
+    assert preview.pending_plan_id is not None
+    assert [(notice.status, notice.workflow_id) for notice in preview.notices] == [
+        ("pending", "legacy")
+    ]
+    assert {path: path.read_bytes() for path in before} == before
+    assert store.list_workflows() == []
+
+    applied = store.apply_workflow_format_migrations(preview.pending_plan_id)
+
+    document = WorkflowDocument.model_validate_json(workflow_path.read_text())
+    draft = WorkflowDraftResponse.model_validate_json(draft_path.read_text())
+    assert document.graph.nodes[0].parameters == {"threshold": 3}
+    assert draft.graph.nodes[0].parameters == {"threshold": 12}
+    assert draft.dirty_against_saved is True
+    assert {Path(path).read_bytes() for path in applied.notices[0].backup_paths} == set(
+        before.values()
+    )

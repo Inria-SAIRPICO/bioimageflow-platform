@@ -80,7 +80,7 @@ class WorkflowInfo(BaseModel):
 class WorkflowFormatNotice(BaseModel):
     """Migration or validation notice for a persisted workflow file."""
 
-    status: Literal["migrated", "error"]
+    status: Literal["pending", "migrated", "error"]
     workflow_id: str
     path: str
     detail: str
@@ -91,6 +91,13 @@ class WorkflowFormatStatus(BaseModel):
     """Format notices that should be visible to the workspace user."""
 
     notices: list[WorkflowFormatNotice] = Field(default_factory=list)
+    pending_plan_id: str | None = None
+
+
+class WorkflowFormatMigrationApply(BaseModel):
+    """Confirmation for the exact workflow-format plan shown to the user."""
+
+    pending_plan_id: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class WorkflowDeleteResponse(BaseModel):

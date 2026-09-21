@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -24,6 +26,23 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
     return DemoWorkflowService(store, registry), store
 
 
+def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
+    service, _store = _service(tmp_path)
+    assert service.bundle_version == 2
+
+    def assert_schema_v2(graph: dict) -> None:
+        assert graph["schema_version"] == 2
+        for node in graph["nodes"]:
+            if node["type"] == "workflow":
+                assert_schema_v2(node["workflow"])
+
+    for template in service.templates:
+        payload = json.loads(
+            (service.resource_root / template.directory / "workflow.json").read_text()
+        )
+        assert_schema_v2(payload["graph"])
+
+
 def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) -> None:
     service, store = _service(tmp_path)
 
@@ -43,7 +62,9 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
             store.workflow_dir(item.workflow_id) / "results"
         )
         assert list(store.workflow_tools_dir(item.workflow_id).glob("*.py"))
-        assert all(node.source_module is None for node in document.graph.nodes if node.type == "tool")
+        assert all(
+            node.source_module is None for node in document.graph.nodes if node.type == "tool"
+        )
     assert store.get_workflow("Demo/Fish Analysis").graph.interface.inputs == []
     parameter_inputs = store.get_workflow(
         "Demo/Parameters Space Exploration"
@@ -57,9 +78,7 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
         "bioimageflow_spot_tools",
     }
     assert "DownloadImages" not in {item.tool_name for item in fish.missing_tools}
-    assert "AverageSpotsPerNucleus" not in {
-        item.tool_name for item in fish.missing_tools
-    }
+    assert "AverageSpotsPerNucleus" not in {item.tool_name for item in fish.missing_tools}
 
 
 def test_install_is_idempotent_and_never_overwrites_installed_demo(tmp_path: Path) -> None:
@@ -72,11 +91,23 @@ def test_install_is_idempotent_and_never_overwrites_installed_demo(tmp_path: Pat
     store.save_workflow("Demo/Fish Analysis", WorkflowSaveBody(graph=edited))
     edited_bytes = fish_path.read_bytes()
 
-    result = service.install()
+    restarted = DemoWorkflowService(store, service.registry)
+    result = restarted.install()
 
     assert result.status == "installed"
     assert fish_path.read_bytes() == edited_bytes
     assert fish_path.read_bytes() != before
+
+    changed_bundle = tmp_path / "changed-bundle"
+    shutil.copytree(service.resource_root, changed_bundle)
+    manifest_path = changed_bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["bundle_version"] = service.bundle_version + 1
+    manifest_path.write_text(json.dumps(manifest))
+
+    upgraded = DemoWorkflowService(store, service.registry, resource_root=changed_bundle)
+    assert upgraded.install().status == "installed"
+    assert fish_path.read_bytes() == edited_bytes
 
 
 def test_missing_demo_can_be_reinstalled_without_touching_other_demo(tmp_path: Path) -> None:

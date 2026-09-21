@@ -49,7 +49,7 @@ class DemoWorkflowService:
         self.store = store
         self.registry = registry
         self.resource_root = resource_root or Path(
-            str(files("bioimageflow_server.data").joinpath("demo_workflows", "v1"))
+            str(files("bioimageflow_server.data").joinpath("demo_workflows", "v2"))
         )
         manifest = self._read_json(self.resource_root / "manifest.json")
         self.bundle_version = int(manifest["bundle_version"])
@@ -157,14 +157,10 @@ class DemoWorkflowService:
 
     def install(self) -> DemoWorkflowsStatus:
         current = self.status()
-        conflicts = [
-            item.workflow_id for item in current.workflows if item.status == "conflict"
-        ]
+        conflicts = [item.workflow_id for item in current.workflows if item.status == "conflict"]
         if conflicts:
             raise DemoWorkflowConflictError(conflicts)
-        missing_ids = {
-            item.id for item in current.workflows if item.status == "missing"
-        }
+        missing_ids = {item.id for item in current.workflows if item.status == "missing"}
         templates = [
             self._workflow_template(template)
             for template in self.templates
