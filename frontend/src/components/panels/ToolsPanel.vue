@@ -40,6 +40,7 @@ const toast = useToast()
 /** Per-row in-flight keys, ``${pkg}@${version}``. Replaced (not mutated)
  * on change so the ref stays reactive. */
 const busy = ref(new Set<string>())
+const recreatingEnvironments = ref(new Set<string>())
 
 const packageInstallUrl = ref('')
 const packageArchiveFile = ref<File | null>(null)
@@ -242,7 +243,7 @@ function packageDisplayName(name: string): string {
 
 const treeNodes = computed<TreeNode[]>(() => {
   const grouped: Record<string, ToolMetadata[]> = {}
-  for (const tool of filteredTools.value) {
+  for (const tool of toolRegistry.tools) {
     if (!grouped[tool.package]) {
       grouped[tool.package] = []
     }
@@ -253,13 +254,9 @@ const treeNodes = computed<TreeNode[]>(() => {
   // known-but-not-installed packages still appear as tree nodes (the user
   // needs them to install from a clean tool store).
   //
-  // While a search query is active, hide package rows that have no tool
-  // children — the user is looking for a tool, not browsing packages.
   const names = new Set<string>(Object.keys(grouped))
-  if (!isSearchActive.value) {
-    for (const pkg of toolRegistry.packages) {
-      names.add(pkg.name)
-    }
+  for (const pkg of toolRegistry.packages) {
+    names.add(pkg.name)
   }
 
   return Array.from(names).map((pkg) => {
@@ -543,6 +540,11 @@ function getDocumentation(toolName: string): string {
   return tool?.documentation ?? ''
 }
 
+function getToolEnvironmentLocation(toolName: string): string {
+  const path = toolRegistry.getToolByName(toolName)?.environment?.path
+  return typeof path === 'string' ? path : ''
+}
+
 function getToolDisplayName(toolName: string): string {
   const tool = toolRegistry.getToolByName(toolName)
   return tool?.display_name ?? toolName
@@ -728,6 +730,58 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
   }
 }
 
+function isEnvironmentRecreating(tool: ToolMetadata): boolean {
+  const envName = getToolEnvName(tool)
+  return Boolean(envName && recreatingEnvironments.value.has(envName))
+}
+
+async function recreateToolEnvironment(tool: ToolMetadata) {
+  if (executionStore.isRunning) return
+  const envName = getToolEnvName(tool)
+  if (!envName || recreatingEnvironments.value.has(envName)) return
+
+  recreatingEnvironments.value = new Set(recreatingEnvironments.value).add(envName)
+  uiStore.openLoggerPanel()
+  toolRegistry.applyEnvironmentStatus({
+    type: 'environment_status',
+    env_name: envName,
+    status: 'creating',
+  })
+  try {
+    const { data } = await api.post(`/api/v1/tools/environments/${envName}/recreate`)
+    toolRegistry.applyEnvironmentStatus({
+      type: 'environment_status',
+      env_name: envName,
+      status: data?.status ?? 'running',
+    })
+    await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+    toast.add({
+      severity: 'success',
+      summary: 'Environment ready',
+      detail: envName,
+      life: 3000,
+    })
+  } catch (e: unknown) {
+    const message = extractApiError(e)
+    toolRegistry.error = message
+    toolRegistry.applyEnvironmentStatus({
+      type: 'environment_status',
+      env_name: envName,
+      status: 'failed',
+    })
+    toast.add({
+      severity: 'error',
+      summary: 'Environment setup failed',
+      detail: message,
+      life: 5000,
+    })
+  } finally {
+    const next = new Set(recreatingEnvironments.value)
+    next.delete(envName)
+    recreatingEnvironments.value = next
+  }
+}
+
 onMounted(async () => {
   await Promise.all([toolRegistry.fetchTools(), toolRegistry.fetchPackages()])
   document.addEventListener('click', onDocumentClick)
@@ -752,12 +806,14 @@ defineExpose({
   toggleDocumentation,
   toggleManageDocumentation,
   getDocumentation,
+  getToolEnvironmentLocation,
   getToolDisplayName,
   parentPath,
   openInEditor,
   isEditableTool,
   renameCustomTool,
   requestDeleteCustomTool,
+  recreateToolEnvironment,
   getEnvStatus,
   getToolEnvName,
   getToolEnvStatus,
@@ -948,6 +1004,14 @@ defineExpose({
         />
       </div>
       <p>{{ getDocumentation(activeDoc) }}</p>
+      <p
+        v-if="getToolEnvironmentLocation(activeDoc)"
+        class="tool-environment-location"
+        data-testid="tool-environment-location"
+      >
+        <strong>Environment location:</strong>
+        <code>{{ getToolEnvironmentLocation(activeDoc) }}</code>
+      </p>
     </div>
 
     <!-- Manage Tools modal dialog with full TreeTable -->
@@ -1153,6 +1217,17 @@ defineExpose({
                   {{ getToolEnvStatus(node.data.tool) }}
                 </span>
                 <Button
+                  v-if="getToolEnvName(node.data.tool)"
+                  :icon="isEnvironmentRecreating(node.data.tool) ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
+                  text
+                  size="small"
+                  aria-label="Create or recreate environment"
+                  :title="executionStore.isRunning ? 'Environment controls are disabled during execution' : 'Create or recreate environment'"
+                  :disabled="executionStore.isRunning || isEnvironmentRecreating(node.data.tool)"
+                  :data-testid="`tool-env-recreate-${node.data.name}`"
+                  @click.stop="recreateToolEnvironment(node.data.tool)"
+                />
+                <Button
                   icon="pi pi-power-off"
                   text
                   size="small"
@@ -1256,6 +1331,14 @@ defineExpose({
             />
           </div>
           <p>{{ getDocumentation(manageActiveDoc) }}</p>
+          <p
+            v-if="getToolEnvironmentLocation(manageActiveDoc)"
+            class="tool-environment-location"
+            data-testid="manage-tool-environment-location"
+          >
+            <strong>Environment location:</strong>
+            <code>{{ getToolEnvironmentLocation(manageActiveDoc) }}</code>
+          </p>
         </div>
       </template>
     </Dialog>
@@ -1675,6 +1758,15 @@ defineExpose({
 .tool-doc-close-btn {
   width: 24px;
   height: 24px;
+}
+
+.tool-environment-location {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-environment-location code {
+  color: inherit;
 }
 
 .manage-tool-documentation {

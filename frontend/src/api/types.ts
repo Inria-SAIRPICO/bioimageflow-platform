@@ -244,6 +244,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tools/environments/{env_name}/recreate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recreate Environment */
+        post: operations["recreate_environment_api_v1_tools_environments__env_name__recreate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tools/environments/{env_name}": {
         parameters: {
             query?: never;
@@ -6474,6 +6491,39 @@ export interface operations {
         };
     };
     stop_environment_api_v1_tools_environments__env_name__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                env_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recreate_environment_api_v1_tools_environments__env_name__recreate_post: {
         parameters: {
             query?: never;
             header?: never;

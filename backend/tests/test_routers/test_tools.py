@@ -844,7 +844,11 @@ class _FakeToolEnvironmentService:
     def __init__(self) -> None:
         self.started: list[str] = []
         self.stopped: list[str] = []
+        self.recreated: list[str] = []
         self.deleted: list[tuple[str, str, str]] = []
+
+    def location(self, env_name: str) -> str:
+        return f"/wetlands/environments/{env_name}"
 
     async def start(self, env_name: str) -> str:
         self.started.append(env_name)
@@ -853,6 +857,10 @@ class _FakeToolEnvironmentService:
     async def stop(self, env_name: str) -> str:
         self.stopped.append(env_name)
         return "stopped"
+
+    async def recreate(self, env_name: str) -> str:
+        self.recreated.append(env_name)
+        return "running"
 
     async def delete(
         self,
@@ -878,6 +886,30 @@ async def test_start_environment_delegates_to_environment_service():
     assert envs.started == ["myenv"]
 
 
+async def test_get_tools_includes_managed_environment_location():
+    registry = ToolRegistryService()
+    tool = _make_tool("Cellpose")
+    tool.environment = {"name": "cellpose-env", "dependencies": {}}
+    registry.register_tool("Cellpose", tool)
+    envs = _FakeToolEnvironmentService()
+    config = AppConfig(
+        tool_registry=registry,
+        tool_environment_service=envs,
+    )
+
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["environment"]["path"] == (
+        "/wetlands/environments/cellpose-env"
+    )
+    assert registry.get_tool("Cellpose").environment == {
+        "name": "cellpose-env",
+        "dependencies": {},
+    }
+
+
 async def test_stop_environment_delegates_to_environment_service():
     envs = _FakeToolEnvironmentService()
     config = AppConfig(
@@ -889,6 +921,19 @@ async def test_stop_environment_delegates_to_environment_service():
     assert resp.status_code == 200
     assert resp.json() == {"environment": "myenv", "status": "stopped"}
     assert envs.stopped == ["myenv"]
+
+
+async def test_recreate_environment_delegates_to_environment_service():
+    envs = _FakeToolEnvironmentService()
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        tool_environment_service=envs,
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/environments/myenv/recreate")
+    assert resp.status_code == 200
+    assert resp.json() == {"environment": "myenv", "status": "running"}
+    assert envs.recreated == ["myenv"]
 
 
 async def test_delete_environment_delegates_to_environment_service():

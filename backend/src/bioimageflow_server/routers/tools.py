@@ -229,8 +229,28 @@ def _installed_package_source_path(
 @router.get("")
 async def list_tools(
     registry: ToolRegistryService = Depends(get_tool_registry),
+    environment_service: Any = Depends(get_tool_environment_service),
 ) -> list[ToolMetadata]:
-    return registry.list_tools()
+    tools = registry.list_tools()
+    location = getattr(environment_service, "location", None)
+    if not callable(location):
+        return tools
+
+    enriched: list[ToolMetadata] = []
+    for tool in tools:
+        environment = tool.environment
+        env_name = environment.get("name") if environment else None
+        if not isinstance(env_name, str) or not env_name:
+            enriched.append(tool)
+            continue
+        env_path = location(env_name)
+        if env_path is None:
+            enriched.append(tool)
+            continue
+        enriched.append(
+            tool.model_copy(update={"environment": {**environment, "path": env_path}})
+        )
+    return enriched
 
 
 @router.get("/packages")
@@ -606,6 +626,17 @@ async def stop_environment(
     if service is None:
         return {"environment": env_name, "status": "stopped"}
     status = await service.stop(env_name)
+    return {"environment": env_name, "status": status}
+
+
+@router.post("/environments/{env_name}/recreate")
+async def recreate_environment(
+    env_name: str,
+    service: Any = Depends(get_tool_environment_service),
+) -> dict[str, str]:
+    if service is None:
+        return {"environment": env_name, "status": "creating"}
+    status = await service.recreate(env_name)
     return {"environment": env_name, "status": status}
 
 

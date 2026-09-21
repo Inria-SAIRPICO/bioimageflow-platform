@@ -36,6 +36,11 @@ class _FakeWetlandsManager:
             recipe_hash="sha256:old",
         )
         self.removed: list[str] = []
+        self.provisioned: list[tuple[str, object, bool]] = []
+
+    @property
+    def environments_root(self) -> Path:
+        return Path(self.info.path).parent
 
     def managed_environments(self) -> tuple[object, ...]:
         return (self.info,)
@@ -51,6 +56,21 @@ class _FakeWetlandsManager:
 
         return _Removal()
 
+    def provision(
+        self,
+        name: str,
+        spec: object,
+        *,
+        replace_existing: bool = False,
+    ) -> object:
+        self.provisioned.append((name, spec, replace_existing))
+
+        class _Provisioning:
+            def wait_for(self) -> object:
+                return SimpleNamespace(name=name)
+
+        return _Provisioning()
+
 
 class _FakeWetlandsWrapper:
     def __init__(self, manager: _FakeWetlandsManager) -> None:
@@ -61,6 +81,9 @@ class _FakeWetlandsWrapper:
         env_name = str(getattr(env_spec, "name"))
         self._envs[env_name] = self._manager.env
         return self._manager.env
+
+    def _to_wetlands_spec(self, env_spec: object) -> object:
+        return getattr(env_spec, "dependencies")
 
     def stop(self, env_name: str) -> bool:
         env = self._envs.pop(env_name, None)
@@ -100,6 +123,40 @@ async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> 
     assert await service.stop("cellpose-env") == "stopped"
     assert env.exited is True
     assert wetlands._envs == {}
+
+
+async def test_location_reports_existing_and_expected_managed_paths(tmp_path: Path) -> None:
+    env = _FakeEnvironment()
+    env_path = tmp_path / "environments" / "cellpose-env"
+    manager = _FakeWetlandsManager(env, env_path)
+    wetlands = _FakeWetlandsWrapper(manager)
+    service = ToolEnvironmentService(
+        registry=_registry(),
+        wetlands_manager=wetlands,
+    )
+
+    assert service.location("cellpose-env") == str(env_path.resolve())
+    assert service.location("new-env") == str((env_path.parent / "new-env").resolve())
+
+
+async def test_recreate_replaces_environment_and_starts_new_pool(tmp_path: Path) -> None:
+    env = _FakeEnvironment()
+    env_path = tmp_path / "environments" / "cellpose-env"
+    manager = _FakeWetlandsManager(env, env_path)
+    wetlands = _FakeWetlandsWrapper(manager)
+    wetlands._envs["cellpose-env"] = env
+    registry = _registry()
+    service = ToolEnvironmentService(
+        registry=registry,
+        wetlands_manager=wetlands,
+    )
+
+    assert await service.recreate("cellpose-env") == "running"
+
+    assert env.exited is True
+    assert wetlands._envs == {"cellpose-env": env}
+    assert manager.provisioned == [("cellpose-env", {}, True)]
+    assert registry.get_package.return_value.environment_status == "running"
 
 
 async def test_delete_environment_deletes_cached_environment(tmp_path: Path) -> None:

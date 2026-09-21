@@ -16,6 +16,7 @@ An available tool may still need an environment to be prepared before its first 
 
 Click **Manage tools** at the top of **Tools**.
 The dialog lists known packages, available and installed versions, the tools in each version, and environment status.
+The dialog always shows the full inventory independently of text in **Search tools...**.
 
 Use a version's row action to install, select, or uninstall it.
 A workflow uses one selected version of each package.
@@ -25,6 +26,8 @@ If changing the selection affects existing nodes, BioImageFlow asks before updat
 
 The environment status shows whether a package environment is stopped, being created, running, ready, failed, or unavailable.
 Use the power action to start or stop an environment.
+Use the recreate action in **Manage tools** to create a missing environment or replace it from the tool's declared recipe.
+The tool information area shows where that managed environment is stored.
 Environment controls are unavailable during workflow execution.
 
 If a run cannot use an environment, follow the recovery dialog to restart or rebuild it, wait until it is ready, and retry the workflow.
