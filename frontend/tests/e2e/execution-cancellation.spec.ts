@@ -311,11 +311,13 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const firstRerunStart = await control.nextStart()
     expect(firstRerunStart).toMatchObject({ value: 1 })
     expect(firstRerunStart.process_id).not.toBe(backendPid.process_id)
-    expect(executionEvents.some(event => event.type === 'node_state'
+    await expect.poll(() => executionEvents.some(event => event.type === 'node_state'
       && event.status === 'running' && event.node_id === WORKER_ID
       && event.execution_id === rerunContext.execution_id
       && event.workflow_id === workflowName
-      && event.draft_revision === acceptedDraft.draft_revision)).toBe(true)
+      && event.draft_revision === acceptedDraft.draft_revision), {
+      timeout: 5_000,
+    }).toBe(true)
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
     control.releaseAll()
     await expect.poll(async () => {
