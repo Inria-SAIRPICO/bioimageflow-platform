@@ -263,7 +263,7 @@ class _FakeWetlandsManager:
             on_provision_event(
                 type("Event", (), {
                     "kind": type("Kind", (), {"value": "output"})(),
-                    "message": "Downloaded cellpose", "stage": "conda_install",
+                    "message": "Downloaded atlas", "stage": "conda_install",
                 })()
             )
         if self.raise_exc is not None:
@@ -522,16 +522,30 @@ class TestExecutionManagerLifecycle:
         assert bus.log_contexts
         assert all(item == context for item in bus.log_contexts)
 
-    async def test_execution_publishes_environment_status_from_wetlands_start(
+    async def test_public_engine_streams_environment_events_across_runs_without_stacking_hooks(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _WorkflowWithWetlands(_FakeWorkflow):
             def __init__(self) -> None:
                 super().__init__()
-                self.private_manager = _FakeWetlandsManager()
+                self.engine_type = "wetlands"
+                self.create_engine_calls: list[dict[str, Any]] = []
+                self.get_or_create_wrappers: list[Any] = []
+                self.shutdown_all_wrappers: list[Any] = []
 
-            def _make_engine(self) -> Any:
-                return type("Engine", (), {"_env_manager": self.private_manager})()
+            def create_engine(
+                self,
+                *,
+                resource_lifetime: str = "execution",
+                env_manager: Any = None,
+            ) -> Any:
+                self.create_engine_calls.append(
+                    {
+                        "resource_lifetime": resource_lifetime,
+                        "env_manager": env_manager,
+                    }
+                )
+                return type("Engine", (), {"environment_manager": env_manager})()
 
             def compute(
                 self,
@@ -540,13 +554,13 @@ class TestExecutionManagerLifecycle:
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
-                try:
-                    if self.on_progress is not None:
-                        self.on_progress(_ProgressEventStub("n1", "started"))
-                    engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
-                    return super().compute(*targets, dev_mode=dev_mode)
-                finally:
-                    engine._env_manager.shutdown_all()
+                manager = engine.environment_manager
+                self.get_or_create_wrappers.append(manager.get_or_create)
+                self.shutdown_all_wrappers.append(manager.shutdown_all)
+                if self.on_progress is not None:
+                    self.on_progress(_ProgressEventStub("n1", "started"))
+                manager.get_or_create(_EnvSpecStub("atlas"))
+                return super().compute(*targets, dev_mode=dev_mode)
 
         bus = RecordingEventBus()
         wf = _WorkflowWithWetlands()
@@ -569,22 +583,25 @@ class TestExecutionManagerLifecycle:
         )
         await _drain(em)
 
-        assert wf.private_manager.calls == []
-        assert shared_manager.calls == ["cellpose-env", "cellpose-env"]
+        assert wf.create_engine_calls == [
+            {"resource_lifetime": "external", "env_manager": shared_manager},
+            {"resource_lifetime": "external", "env_manager": shared_manager},
+        ]
+        assert shared_manager.calls == ["atlas", "atlas"]
         assert bus.environment_events == [
-            ("cellpose-env", "creating"),
-            ("cellpose-env", "running"),
-            ("cellpose-env", "stopped"),
-            ("cellpose-env", "creating"),
-            ("cellpose-env", "running"),
-            ("cellpose-env", "stopped"),
+            ("atlas", "creating"),
+            ("atlas", "running"),
+            ("atlas", "running"),
+            ("atlas", "running"),
         ]
         pixi_logs = [
             context
             for event, context in zip(bus.log_events, bus.log_contexts, strict=True)
-            if event[1] == "Downloaded cellpose"
+            if event[1] == "Downloaded atlas"
         ]
         assert pixi_logs == [first_context, second_context]
+        assert wf.get_or_create_wrappers[0] is wf.get_or_create_wrappers[1]
+        assert wf.shutdown_all_wrappers[0] is wf.shutdown_all_wrappers[1]
         assert any(
             event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
             for event in em.retained_progress()

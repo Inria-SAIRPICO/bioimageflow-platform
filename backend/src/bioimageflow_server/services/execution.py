@@ -575,7 +575,9 @@ class ExecutionManager:
 
         def _run_sync() -> Any:
             with bind_execution_log_context(context):
-                use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
+                use_explicit_engine = callable(
+                    getattr(workflow, "create_engine", None)
+                ) or callable(getattr(workflow, "_make_engine", None))
                 engine = self._make_execution_engine(workflow)
                 self._attach_environment_status_hook(engine)
                 try:
@@ -1055,12 +1057,28 @@ class ExecutionManager:
 
     def _make_execution_engine(self, workflow: Any) -> Any | None:
         """Create the engine before execution so its environment lifecycle is observable."""
+        create_engine = getattr(workflow, "create_engine", None)
+        if callable(create_engine):
+            if (
+                getattr(workflow, "engine_type", None) == "wetlands"
+                and self._environment_manager_provider is not None
+            ):
+                shared_manager = self._environment_manager_provider()
+                if shared_manager is not None:
+                    return create_engine(
+                        resource_lifetime="external",
+                        env_manager=shared_manager,
+                    )
+            return create_engine()
+
         make_engine = getattr(workflow, "_make_engine", None)
         if not callable(make_engine):
             return getattr(workflow, "_engine", None)
 
         engine = make_engine()
-        manager = getattr(engine, "_env_manager", None)
+        manager = getattr(engine, "environment_manager", None)
+        if manager is None:
+            manager = getattr(engine, "_env_manager", None)
         if manager is None or self._environment_manager_provider is None:
             return engine
 
@@ -1076,7 +1094,9 @@ class ExecutionManager:
         Hooking the execution engine's manager keeps the platform UI in sync
         for automatic starts and shutdowns triggered by ``workflow.compute()``.
         """
-        manager = getattr(engine, "_env_manager", None)
+        manager = getattr(engine, "environment_manager", None)
+        if manager is None:
+            manager = getattr(engine, "_env_manager", None)
         get_or_create = getattr(manager, "get_or_create", None)
         if manager is None or not callable(get_or_create):
             return
