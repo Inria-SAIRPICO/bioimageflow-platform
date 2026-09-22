@@ -62,14 +62,21 @@ OpenAPI docs: <http://localhost:8000/docs>.
 ### Local BioImageFlow core in Wetlands workers
 
 Wetlands creates separate Python environments for tools, so a backend running from the editable checkout can still dispatch workers that import the published `bioimageflow-core` wheel.
-For source development across `bioimageflow-core` and tool packages, launch the backend with:
+Normal **Desktop**, **Backend**, and **Backend-worktree** VS Code profiles explicitly clear local-core source configuration and use the locked published core.
+For regular core development, clone BioImageFlow beside this repository and choose **Desktop (local core)** or **Backend (local core)**.
+Those profiles import core from the sibling checkout, validate and inject the same project into Wetlands workers, and isolate all local-core Wetlands state under `.bioimageflow/wetlands-local-core`.
+
+The equivalent command from `backend/` is:
 
 ```bash
-BIOIMAGEFLOW_USE_LOCAL_CORE=1 uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
+PYTHONPATH=../../bioimageflow/packages/bioimageflow-core \
+BIOIMAGEFLOW_CORE_SOURCE=../../bioimageflow/packages/bioimageflow-core \
+BIOIMAGEFLOW_WETLANDS=../.bioimageflow/wetlands-local-core \
+uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
 ```
 
-The VS Code launch profiles already set `BIOIMAGEFLOW_USE_LOCAL_CORE=1`.
-Normal CLI and desktop commands omit it by default so released/runtime sessions keep pinned, reproducible worker dependencies.
+`BIOIMAGEFLOW_CORE_SOURCE` is strict: the path must be a `bioimageflow-core` project with a valid version and import package, or startup fails instead of silently using a wheel.
+The legacy `BIOIMAGEFLOW_USE_LOCAL_CORE=1` mode remains supported by BioImageFlow but requires core to be installed editably in the backend environment; the platform profiles no longer depend on it.
 Wetlands 2 stores immutable environment generations under `~/.bioimageflow/wetlands/environments/`. BioImageFlow inspects each requested processing recipe and replaces a stale BioImageFlow-owned environment through Wetlands after closing its pool. Other environment owners, including Napari and adopted or external environments, retain their independent lifecycles.
 
 The platform requires Wetlands 2.4.1 or newer for managed external processes and provisioning subprocess cleanup.

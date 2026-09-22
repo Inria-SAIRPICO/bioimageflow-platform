@@ -20,7 +20,31 @@
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],
             "env": {
-                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1"
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "0",
+                "BIOIMAGEFLOW_CORE_SOURCE": "",
+                "PYTHONPATH": ""
+            }
+        },
+        {
+            "name": "Desktop (local core)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "bioimageflow_server",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/backend",
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "preLaunchTask": "Frontend: dev",
+            "args": [
+                "--desktop",
+                "--dev",
+                "--log-config",
+                "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
+            ],
+            "env": {
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "0",
+                "BIOIMAGEFLOW_CORE_SOURCE": "${workspaceFolder}/../bioimageflow/packages/bioimageflow-core",
+                "BIOIMAGEFLOW_WETLANDS": "${workspaceFolder}/.bioimageflow/wetlands-local-core",
+                "PYTHONPATH": "${workspaceFolder}/../bioimageflow/packages/bioimageflow-core"
             }
         },
         {
@@ -42,12 +66,49 @@
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],
             "env": {
-                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1",
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "0",
+                "BIOIMAGEFLOW_CORE_SOURCE": "",
+                "PYTHONPATH": "",
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
             },
             "python": "${workspaceFolder}/backend/.venv/bin/python",
             "justMyCode": false,
             // "console": "integratedTerminal",
+            "autoReload": {
+                "enable": true
+            },
+            "console": "integratedTerminal",
+            "logToFile": true,
+            "windows": {
+                "python": "${workspaceFolder}/backend/.venv/bin/python3.exe",
+            }
+        },
+        {
+            "name": "Backend (local core)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "bioimageflow_server.app:create_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8008",
+                "--reload",
+                "--reload-dir",
+                "${workspaceFolder}/backend/src",
+                "--log-config",
+                "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
+            ],
+            "env": {
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "0",
+                "BIOIMAGEFLOW_CORE_SOURCE": "${workspaceFolder}/../bioimageflow/packages/bioimageflow-core",
+                "BIOIMAGEFLOW_WETLANDS": "${workspaceFolder}/.bioimageflow/wetlands-local-core",
+                "PYTHONPATH": "${workspaceFolder}/../bioimageflow/packages/bioimageflow-core"
+            },
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "justMyCode": false,
             "autoReload": {
                 "enable": true
             },
@@ -77,7 +138,9 @@
             ],
             "cwd": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend",
             "env": {
-                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1",
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "0",
+                "BIOIMAGEFLOW_CORE_SOURCE": "",
+                "PYTHONPATH": "",
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
             },
             "python": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend/.venv/bin/python",

@@ -11,13 +11,37 @@ def _launch_profile_block(text: str, name: str) -> str:
     return text[start:] if next_profile == -1 else text[start:next_profile]
 
 
-def test_vscode_python_launch_profiles_enable_local_core_dependency() -> None:
+def test_vscode_standard_launch_profiles_force_published_core() -> None:
     launch_path = Path(__file__).resolve().parents[2] / ".vscode" / "launch.json"
     text = launch_path.read_text()
 
     for name in ("Desktop", "Backend", "Backend-worktree"):
         block = _launch_profile_block(text, name)
-        assert '"BIOIMAGEFLOW_USE_LOCAL_CORE": "1"' in block
+        assert '"BIOIMAGEFLOW_USE_LOCAL_CORE": "0"' in block
+        assert '"BIOIMAGEFLOW_CORE_SOURCE": ""' in block
+        assert '"PYTHONPATH": ""' in block
+        assert '"BIOIMAGEFLOW_WETLANDS"' not in block
+
+
+def test_vscode_local_core_profiles_use_explicit_isolated_source() -> None:
+    launch_path = Path(__file__).resolve().parents[2] / ".vscode" / "launch.json"
+    text = launch_path.read_text()
+
+    for name in ("Desktop (local core)", "Backend (local core)"):
+        block = _launch_profile_block(text, name)
+        assert '"BIOIMAGEFLOW_USE_LOCAL_CORE": "0"' in block
+        assert (
+            '"BIOIMAGEFLOW_CORE_SOURCE": '
+            '"${workspaceFolder}/../bioimageflow/packages/bioimageflow-core"'
+        ) in block
+        assert (
+            '"BIOIMAGEFLOW_WETLANDS": '
+            '"${workspaceFolder}/.bioimageflow/wetlands-local-core"'
+        ) in block
+        assert (
+            '"PYTHONPATH": '
+            '"${workspaceFolder}/../bioimageflow/packages/bioimageflow-core"'
+        ) in block
 
 
 def test_vscode_uses_backend_virtual_environment_for_python_analysis() -> None:
@@ -27,24 +51,28 @@ def test_vscode_uses_backend_virtual_environment_for_python_analysis() -> None:
     assert settings["python.defaultInterpreterPath"] == "${workspaceFolder}/backend/.venv"
 
 
-def test_vscode_desktop_launch_profile_enables_development_mode() -> None:
+def test_vscode_desktop_launch_profiles_enable_development_mode() -> None:
     launch_path = Path(__file__).resolve().parents[2] / ".vscode" / "launch.json"
-    desktop_block = _launch_profile_block(launch_path.read_text(), "Desktop")
+    text = launch_path.read_text()
 
-    assert '"--desktop"' in desktop_block
-    assert '"--dev"' in desktop_block
+    for name in ("Desktop", "Desktop (local core)"):
+        desktop_block = _launch_profile_block(text, name)
+        assert '"--desktop"' in desktop_block
+        assert '"--dev"' in desktop_block
 
 
-def test_vscode_desktop_launch_profile_starts_vite_on_expected_port() -> None:
+def test_vscode_desktop_launch_profiles_start_vite_on_expected_port() -> None:
     repository_root = Path(__file__).resolve().parents[2]
     launch_path = repository_root / ".vscode" / "launch.json"
-    desktop_block = _launch_profile_block(launch_path.read_text(), "Desktop")
+    text = launch_path.read_text()
     tasks = json.loads((repository_root / ".vscode" / "tasks.json").read_text())
     frontend_task = next(
         task for task in tasks["tasks"] if task["label"] == "Frontend: dev"
     )
 
-    assert '"preLaunchTask": "Frontend: dev"' in desktop_block
+    for name in ("Desktop", "Desktop (local core)"):
+        desktop_block = _launch_profile_block(text, name)
+        assert '"preLaunchTask": "Frontend: dev"' in desktop_block
     assert frontend_task["options"]["cwd"] == "${workspaceFolder}/frontend"
     assert frontend_task["isBackground"] is True
     assert "--strictPort" in frontend_task["args"]

@@ -131,16 +131,25 @@ Restore the ordinary published environment with `cd backend && uv sync --group d
 
 Wetlands tool environments install `bioimageflow-core` separately from the backend environment.
 They use a pinned published version by default so user and runtime environments remain reproducible.
+The normal **Desktop**, **Backend**, and **Backend-worktree** VS Code launch profiles explicitly clear local-core source settings and use that published mode.
 
-For cross-repository development, clone the BioImageFlow library alongside this repository and set `BIOIMAGEFLOW_USE_LOCAL_CORE=1` before starting the backend:
+For regular `bioimageflow-core` development, clone the BioImageFlow library alongside this repository and choose **Desktop (local core)** or **Backend (local core)** in VS Code.
+These profiles add the sibling core package to the platform process's `PYTHONPATH`, pass its project directory to BioImageFlow through `BIOIMAGEFLOW_CORE_SOURCE`, and set `BIOIMAGEFLOW_WETLANDS` to the ignored `.bioimageflow/wetlands-local-core` directory.
+The platform process and Wetlands workers therefore use the same source checkout without modifying `backend/.venv`, and switching back to a normal profile does not rebuild the normal Wetlands environments.
+
+The equivalent command is:
 
 ```bash
 cd backend
-BIOIMAGEFLOW_USE_LOCAL_CORE=1 \
+PYTHONPATH=../../bioimageflow/packages/bioimageflow-core \
+BIOIMAGEFLOW_CORE_SOURCE=../../bioimageflow/packages/bioimageflow-core \
+BIOIMAGEFLOW_WETLANDS=../.bioimageflow/wetlands-local-core \
   uv run python -m bioimageflow_server --desktop --dev
 ```
 
-The VS Code launch profiles set this variable automatically.
+BioImageFlow validates that the configured directory exists, declares the `bioimageflow-core` project and a valid version in `pyproject.toml`, and contains the `bioimageflow_core` package.
+An invalid explicit source fails clearly and never falls back to the published wheel.
+The legacy `BIOIMAGEFLOW_USE_LOCAL_CORE=1` mode remains available when core is already installed editably, but it is no longer the platform default.
 On the next processing use, an existing BioImageFlow-owned Wetlands environment whose stored recipe no longer matches is replaced through Wetlands after its pool is closed. The platform also refreshes an already-existing stale `bioimageflow-general` environment in the background after startup. It does not rewrite external, adopted, Napari, thumbnail, or code-server environments.
 
 ## Use an editable tool package
