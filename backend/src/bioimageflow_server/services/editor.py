@@ -34,7 +34,10 @@ from bioimageflow_server.models.editor import (
 )
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.editor_workspace import ensure_editor_workspace
-from bioimageflow_server.services.operation_failures import operation_failure_detail
+from bioimageflow_server.services.operation_failures import (
+    normalize_operation_text,
+    operation_failure_detail,
+)
 
 CODE_SERVER_VERSION = "4.137.0"  # first upstream release that publishes windows-amd64
 CODE_SERVER_RELEASE_URL = (
@@ -510,9 +513,13 @@ class EmbeddedCodeServerManager:
         if event.stage != "post_install":
             return
         if event.kind is OperationEventKind.STEP:
-            self.set_launch_phase(EditorLaunchPhase.PREPARING, event.message)
+            self.set_launch_phase(
+                EditorLaunchPhase.PREPARING, normalize_operation_text(event.message)
+            )
         elif event.kind is OperationEventKind.OUTPUT and event.line:
-            logger.info("Code editor runtime install: %s", event.line)
+            logger.info(
+                "Code editor runtime install: %s", normalize_operation_text(event.line)
+            )
 
     def shutdown(self) -> None:
         """Close the managed code-server process, if one was launched."""

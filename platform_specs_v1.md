@@ -841,6 +841,7 @@ The desktop-only passive viewing-readiness route accepts the manifest returned b
 It does not reread a workflow, probe or mutate environments, launch a viewer, or execute archive content; its response retains structural output identities, unknown reasons, candidates, effective environments, normalized requirement groups, honest managed-setup prefill, and covered/not-covered/unknown summary counts.
 Phase C extends `/napari/open`, `/napari/status`, and `/napari/shutdown` with optional registered environment IDs while preserving their no-ID compatibility behavior.
 Managed creation provisions an immutable UUID-addressed Wetlands name with `replace_existing=False` and an `EnvironmentSpec` containing only Python 3.12 through Conda plus napari, Qt, and requested distributions through PyPI.
+The persisted recipe retains a PEP 440 Python constraint, but the Wetlands boundary receives the equivalent Pixi/Conda `3.12.*` version specifier; Windows provisioning messages and structured output tails preserve Pixi's UTF-8 diagnostics.
 Each operation is persisted before provisioning/removal and has typed state, progress, message, and error fields; startup recovers published ready generations but never represents interrupted progress as live.
 Managed removal verifies the public Wetlands name, project path, and generation, stops only the addressed launcher, and retains recoverable `removing` intent until registry and local-reference cleanup complete.
 

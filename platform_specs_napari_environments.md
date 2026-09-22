@@ -78,7 +78,8 @@ Conda supplies only Python for these managed recipes; napari, Qt, the bridge, an
 Package distribution names and napari plugin IDs are not shell commands or Conda package mappings, and the platform does not maintain Conda-name translations for requested packages.
 For automatic installation, resolve reviewed Python distribution requirements from PyPI.
 Constraints requiring unavailable builds, system libraries, or incompatible Python/Qt versions produce a solvability error with the affected packages.
-The backend recipe is a Wetlands `EnvironmentSpec` with a Python-3.12-only constraint, empty `conda`, PyPI `napari==<exact version>`, the selected Qt distribution, normalized requested PEP 508 distributions, and the `conda-forge` channel.
+The durable backend recipe stores its Python-3.12-only constraint as PEP 440, while the Wetlands `EnvironmentSpec` receives the equivalent Pixi/Conda `3.12.*` version specifier, empty `conda`, PyPI `napari==<exact version>`, the selected Qt distribution, normalized requested PEP 508 distributions, and the `conda-forge` channel.
+Provisioning diagnostics preserve Pixi's UTF-8 stdout and stderr on Windows, including live operation messages and structured failure tails.
 Direct URLs, environment markers, duplicate normalized names, and requests for recipe-controlled napari, Qt, Python, BioImageFlow, or Wetlands distributions are rejected before provisioning.
 
 The durable operation shows pending, resolving, installing, validating, completed, failed, or cancelled state with progress, message, structured error, and the public Wetlands operation identity where available; Wetlands output continues through the platform logging stream.

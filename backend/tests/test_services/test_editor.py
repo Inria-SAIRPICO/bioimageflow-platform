@@ -1261,16 +1261,18 @@ def test_embedded_manager_publishes_post_install_step_phase(tmp_path: Path) -> N
             message=message,
         )
 
-    manager._publish_provisioning_event(event("post_install", "Downloading the code editor runtime."))
+    manager._publish_provisioning_event(
+        event("post_install", "Downloading the code editor runtime â”‚ 1/2")
+    )
     assert (
         manager.status(url_probe=lambda _url: False).launch_message
-        == "Downloading the code editor runtime."
+        == "Downloading the code editor runtime │ 1/2"
     )
 
     manager._publish_provisioning_event(event("pixi_install", "Installing the environment."))
     assert (
         manager.status(url_probe=lambda _url: False).launch_message
-        == "Downloading the code editor runtime."
+        == "Downloading the code editor runtime │ 1/2"
     )
 
 

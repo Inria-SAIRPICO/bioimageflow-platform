@@ -46,7 +46,10 @@ from bioimageflow_server.models.napari_environments import (
     NapariManagedOperationMutation,
     NapariManagedRecipe,
 )
-from bioimageflow_server.services.operation_failures import operation_failure_detail
+from bioimageflow_server.services.operation_failures import (
+    normalize_operation_text,
+    operation_failure_detail,
+)
 from bioimageflow_server.services.settings_store import SettingsRevisionConflict, SettingsStore
 from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 
@@ -1016,7 +1019,7 @@ class NapariEnvironmentService:
             environment_id=operation.environment_id,
             state=state,
             progress=min(progress, 80),
-            message=event.message,
+            message=normalize_operation_text(event.message),
             wetlands_operation_id=event.operation_id,
         )
 
@@ -1289,7 +1292,11 @@ class NapariEnvironmentService:
             )
         assert recipe.python is not None and recipe.napari is not None and recipe.qt is not None
         return EnvironmentSpec(
-            python=recipe.python,
+            # The durable recipe uses PEP 440 (``==3.12.*``), while Pixi's
+            # dependency table accepts a Conda version specifier without the
+            # equality operator. Recipe validation already proves that the
+            # constraint selects exactly Python 3.12.
+            python="3.12.*",
             conda=(),
             pypi=(
                 f"napari=={recipe.napari}",

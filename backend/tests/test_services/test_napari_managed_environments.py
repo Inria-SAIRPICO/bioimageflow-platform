@@ -214,23 +214,32 @@ async def _wait_terminal(
 
 
 @pytest.mark.parametrize(
-    ("selection", "pypi"),
+    ("selection", "pypi", "stored_python"),
     [
-        (NapariManagedRecipeSelection(), ("napari==0.9.1", "PyQt6")),
+        (NapariManagedRecipeSelection(), ("napari==0.9.1", "PyQt6"), "==3.12.*"),
         (
             NapariManagedRecipeSelection(preset="legacy", requested_packages=["legacy-reader<2"]),
             ("napari==0.6.6", "PyQt5", "legacy-reader<2"),
+            "==3.12.*",
         ),
         (
             NapariManagedRecipeSelection(
-                preset="advanced", napari="0.9.2", qt="PyQt6", requested_packages=["reader>=1"]
+                preset="advanced",
+                python=">=3.12,<3.13",
+                napari="0.9.2",
+                qt="PyQt6",
+                requested_packages=["reader>=1"],
             ),
             ("napari==0.9.2", "PyQt6", "reader>=1"),
+            ">=3.12,<3.13",
         ),
     ],
 )
 async def test_create_uses_exact_pypi_only_environment_spec_and_public_managed_path(
-    tmp_path: Path, selection: NapariManagedRecipeSelection, pypi: tuple[str, ...]
+    tmp_path: Path,
+    selection: NapariManagedRecipeSelection,
+    pypi: tuple[str, ...],
+    stored_python: str,
 ) -> None:
     manager = FakeManager()
     service = await _service(tmp_path, manager)
@@ -244,7 +253,8 @@ async def test_create_uses_exact_pypi_only_environment_spec_and_public_managed_p
     assert started.operation.state == "resolving"
     wetlands_name, spec, replace_existing = manager.provision_calls[0]
     assert wetlands_name == started.environment.managed.wetlands_name
-    assert spec.python == "==3.12.*"
+    assert started.environment.managed.recipe.python == stored_python
+    assert spec.python == "3.12.*"
     assert spec.conda == ()
     assert spec.pypi == pypi
     assert spec.channels == ("conda-forge",)
@@ -258,7 +268,9 @@ async def test_create_uses_exact_pypi_only_environment_spec_and_public_managed_p
         persisted.napari_environment_operations[0].wetlands_operation_id
         == started.operation.wetlands_operation_id
     )
-    manager.provision_operations[wetlands_name].emit_progress(1, 2, "Installing packages")
+    manager.provision_operations[wetlands_name].emit_progress(
+        1, 2, "Installing packages â”‚ 1/2"
+    )
     for _ in range(20):
         progress = service.managed_operation(
             started.environment.id, started.operation.id
@@ -268,7 +280,7 @@ async def test_create_uses_exact_pypi_only_environment_spec_and_public_managed_p
         await asyncio.sleep(0.01)
     assert progress.state == "installing"
     assert progress.progress == 45
-    assert progress.message == "Installing packages"
+    assert progress.message == "Installing packages │ 1/2"
 
     project = _managed_project(tmp_path / "wetlands" / wetlands_name)
     public_environment = manager.complete_provision(wetlands_name, project)
