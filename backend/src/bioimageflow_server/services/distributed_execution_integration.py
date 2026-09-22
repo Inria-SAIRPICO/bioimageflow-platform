@@ -263,7 +263,7 @@ class PlatformPreparedRunRegistrar:
         )
         return await self._coordinator.register(
             snapshot,
-            LegacyExecutionManagerAdapter(
+            LocalExecutionManagerAdapter(
                 manager,
                 context,
                 loop,
@@ -345,7 +345,7 @@ class ExecutionDownloadDestinationResolver:
         return root / execution_id
 
 
-class LegacyExecutionManagerAdapter:
+class LocalExecutionManagerAdapter:
     def __init__(
         self,
         manager: ExecutionManager,

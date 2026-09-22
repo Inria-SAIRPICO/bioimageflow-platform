@@ -211,6 +211,10 @@ class _FakeWorkflow:
         self.cancel_called = False
         self.targets_received: tuple = ()
         self.dev_mode_received: bool | None = None
+        self.engine_type = "direct"
+
+    def create_engine(self, **_kwargs: Any) -> Any:
+        return type("Engine", (), {"environment_manager": None})()
 
     def validate(self, *, dev_mode: bool = True) -> list:
         return list(self.validation_errors)
@@ -222,6 +226,7 @@ class _FakeWorkflow:
         self,
         *targets: Any,
         dev_mode: bool = False,
+        engine: Any = None,
         run_context: Any = None,
     ) -> dict[str, Any]:
         self.compute_calls += 1
@@ -613,17 +618,21 @@ class TestExecutionManagerLifecycle:
         class _WorkflowWithFailingWetlands(_FakeWorkflow):
             def __init__(self) -> None:
                 super().__init__()
+                self.engine_type = "wetlands"
                 self.manager = _FakeWetlandsManager()
                 self.manager.raise_exc = RuntimeError("solve failed")
-                self._engine = type("Engine", (), {"_env_manager": self.manager})()
+
+            def create_engine(self, **_kwargs: Any) -> Any:
+                return type("Engine", (), {"environment_manager": self.manager})()
 
             def compute(
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
-                self._engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
+                engine.environment_manager.get_or_create(_EnvSpecStub("cellpose-env"))
                 return {}
 
         bus = RecordingEventBus()
@@ -663,6 +672,7 @@ class TestExecutionManagerLifecycle:
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 self.go.wait(timeout=3.0)
@@ -1293,6 +1303,7 @@ class TestExecutionManagerResult:
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 self.stdout_was_original = sys.stdout is original_stdout
@@ -1694,6 +1705,7 @@ class TestExecutionManagerStop:
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 self._go.wait(timeout=5.0)
@@ -1727,6 +1739,7 @@ class TestExecutionManagerStop:
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 self._go.wait(timeout=5.0)
@@ -1785,6 +1798,7 @@ class TestExecutionManagerIsRunning:
                 self,
                 *targets: Any,
                 dev_mode: bool = False,
+                engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 self.go.wait(timeout=2.0)
