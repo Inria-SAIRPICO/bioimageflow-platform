@@ -117,15 +117,6 @@ export type ExecutionPhase = 'idle' | 'starting' | 'running' | 'stopping'
 
 const PROVISIONAL_STATUS_POLL_MS = 250
 
-export interface EnvironmentRecoveryAction {
-  kind: 'delete_environment'
-  envName: string
-  path?: string
-  existingHash?: string
-  requestedHash?: string
-  nodeId?: string
-}
-
 interface RunError {
   status?: number
   response?: {
@@ -151,58 +142,6 @@ function stringifyExecutionErrorWithTraceback(err: Record<string, unknown>): str
   const summary = stringifyExecutionError(err)
   const tb = typeof err.traceback === 'string' ? err.traceback : null
   return tb ? `${summary}\n${tb}` : summary
-}
-
-function failedNodeIdFromResult(result: ExecutionResult): string | undefined {
-  const failed = Object.values(result.node_statuses ?? {}).find(
-    (status) => status.status === 'failed',
-  )
-  return failed?.node_id
-}
-
-function stringField(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined
-}
-
-function recoveryActionKey(action: EnvironmentRecoveryAction): string {
-  return [
-    action.kind,
-    action.envName,
-    action.path ?? '',
-    action.existingHash ?? '',
-    action.requestedHash ?? '',
-  ].join('\n')
-}
-
-function extractEnvironmentRecoveryAction(
-  result: ExecutionResult | null,
-): EnvironmentRecoveryAction | null {
-  if (!result || result.success) return null
-  for (const error of result.errors ?? []) {
-    const recovery = error.recovery_action
-    if (typeof recovery !== 'object' || recovery === null) continue
-    const action = recovery as Record<string, unknown>
-    if (action.kind !== 'delete_environment') continue
-    const envName = stringField(action.env_name)
-    if (!envName) continue
-    return {
-      kind: 'delete_environment',
-      envName,
-      ...(stringField(action.path) ? { path: stringField(action.path) } : {}),
-      ...(stringField(action.existing_hash)
-        ? { existingHash: stringField(action.existing_hash) }
-        : {}),
-      ...(stringField(action.requested_hash)
-        ? { requestedHash: stringField(action.requested_hash) }
-        : {}),
-      ...(stringField(action.node_id)
-        ? { nodeId: stringField(action.node_id) }
-        : failedNodeIdFromResult(result)
-          ? { nodeId: failedNodeIdFromResult(result) }
-          : {}),
-    }
-  }
-  return null
 }
 
 function hasExistingFailureLog(
@@ -279,8 +218,6 @@ export const useExecutionStore = defineStore('execution', () => {
   const isConflict = ref(false)
   const conflictCode = ref<string | null>(null)
   const validationErrors = ref<GraphValidationError[]>([])
-  const environmentRecoveryAction = ref<EnvironmentRecoveryAction | null>(null)
-  const dismissedEnvironmentRecoveryKey = ref<string | null>(null)
   const executionId = ref<string | null>(null)
   const executionWorkflowId = ref<string | null>(null)
   const executionDraftRevision = ref<number | null>(null)
@@ -315,27 +252,6 @@ export const useExecutionStore = defineStore('execution', () => {
     && Object.values(lastResult.value?.node_statuses ?? {})
       .some(status => status.status === 'failed')
   ))
-  const isEnvironmentRecoveryDialogVisible = computed(() => {
-    const action = environmentRecoveryAction.value
-    if (action === null) return false
-    return dismissedEnvironmentRecoveryKey.value !== recoveryActionKey(action)
-  })
-
-  function updateEnvironmentRecovery(result: ExecutionResult | null): void {
-    environmentRecoveryAction.value = extractEnvironmentRecoveryAction(result)
-  }
-
-  function clearEnvironmentRecovery(): void {
-    environmentRecoveryAction.value = null
-    dismissedEnvironmentRecoveryKey.value = null
-  }
-
-  function dismissEnvironmentRecovery(): void {
-    const action = environmentRecoveryAction.value
-    if (action === null) return
-    dismissedEnvironmentRecoveryKey.value = recoveryActionKey(action)
-  }
-
   function currentExecutionContext(): ExecutionWireContext | null {
     if (executionId.value === null || executionWorkflowId.value === null) return null
     return {
@@ -369,7 +285,6 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function clearRuntimeResult(): void {
-    clearEnvironmentRecovery()
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
@@ -791,7 +706,6 @@ export const useExecutionStore = defineStore('execution', () => {
       && pendingRun?.executionId === incoming.execution_id
     if (!applyBackendPhase(snapshot.state, ownsPendingRun)) return
     lastResult.value = snapshot.last_result
-    updateEnvironmentRecovery(snapshot.last_result)
     progress.value = snapshot.progress
     if (snapshot.node_statuses) {
       nodeStatuses.value = { ...snapshot.node_statuses }
@@ -807,7 +721,6 @@ export const useExecutionStore = defineStore('execution', () => {
     state.value = 'idle'
     terminalFence = true
     lastResult.value = payload
-    updateEnvironmentRecovery(payload)
     progress.value = null
     if (payload.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...payload.node_statuses }
@@ -891,8 +804,6 @@ export const useExecutionStore = defineStore('execution', () => {
     isConflict,
     conflictCode,
     validationErrors,
-    environmentRecoveryAction,
-    isEnvironmentRecoveryDialogVisible,
     isStarting,
     isRunning,
     isStopping,
@@ -913,7 +824,6 @@ export const useExecutionStore = defineStore('execution', () => {
     run,
     stop,
     clear,
-    dismissEnvironmentRecovery,
     applyProgress,
     applyNodeState,
     applyStatusSnapshot,

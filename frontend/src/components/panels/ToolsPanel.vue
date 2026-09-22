@@ -730,22 +730,30 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
   }
 }
 
-function isEnvironmentRecreating(tool: ToolMetadata): boolean {
+function isEnvironmentBusy(tool: ToolMetadata): boolean {
   const envName = getToolEnvName(tool)
-  return Boolean(envName && recreatingEnvironments.value.has(envName))
+  const status = getToolEnvStatus(tool)
+  return Boolean(
+    envName
+    && (
+      recreatingEnvironments.value.has(envName)
+      || status === 'creating'
+      || status === 'updating'
+    )
+  )
 }
 
 async function recreateToolEnvironment(tool: ToolMetadata) {
   if (executionStore.isRunning) return
   const envName = getToolEnvName(tool)
-  if (!envName || recreatingEnvironments.value.has(envName)) return
+  if (!envName || isEnvironmentBusy(tool)) return
 
   recreatingEnvironments.value = new Set(recreatingEnvironments.value).add(envName)
   uiStore.openLoggerPanel()
   toolRegistry.applyEnvironmentStatus({
     type: 'environment_status',
     env_name: envName,
-    status: 'creating',
+    status: 'updating',
   })
   try {
     const { data } = await api.post(`/api/v1/tools/environments/${envName}/recreate`)
@@ -1218,12 +1226,12 @@ defineExpose({
                 </span>
                 <Button
                   v-if="getToolEnvName(node.data.tool)"
-                  :icon="isEnvironmentRecreating(node.data.tool) ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
-                  text
+                  :icon="isEnvironmentBusy(node.data.tool) ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
+                  :label="isEnvironmentBusy(node.data.tool) ? 'Updating…' : 'Create / recreate'"
                   size="small"
                   aria-label="Create or recreate environment"
                   :title="executionStore.isRunning ? 'Environment controls are disabled during execution' : 'Create or recreate environment'"
-                  :disabled="executionStore.isRunning || isEnvironmentRecreating(node.data.tool)"
+                  :disabled="executionStore.isRunning || isEnvironmentBusy(node.data.tool)"
                   :data-testid="`tool-env-recreate-${node.data.name}`"
                   @click.stop="recreateToolEnvironment(node.data.tool)"
                 />
@@ -1233,7 +1241,7 @@ defineExpose({
                   size="small"
                   class="tool-list-power-btn"
                   :class="`env-${getToolEnvStatus(node.data.tool)}`"
-                  :disabled="executionStore.isRunning || getToolEnvStatus(node.data.tool) === 'unavailable'"
+                  :disabled="executionStore.isRunning || isEnvironmentBusy(node.data.tool) || getToolEnvStatus(node.data.tool) === 'unavailable'"
                   :title="executionStore.isRunning ? 'Environment controls are disabled during execution' : getToolEnvStatus(node.data.tool)"
                   :data-testid="`tool-env-toggle-${node.data.name}`"
                   @click="toggleToolEnvironment(node.data.tool)"
@@ -1549,7 +1557,8 @@ defineExpose({
 .env-stopped {
   color: var(--p-surface-400);
 }
-.env-creating {
+.env-creating,
+.env-updating {
   color: var(--p-yellow-500);
 }
 .env-running,
@@ -1561,7 +1570,8 @@ defineExpose({
 .tool-list-power-btn.env-stopped {
   color: var(--p-surface-400);
 }
-.tool-list-power-btn.env-creating {
+.tool-list-power-btn.env-creating,
+.tool-list-power-btn.env-updating {
   color: var(--p-yellow-500);
 }
 .tool-list-power-btn.env-running,
@@ -1571,6 +1581,7 @@ defineExpose({
 
 .tool-list-power-btn.env-stopped :deep(.p-button-icon),
 .tool-list-power-btn.env-creating :deep(.p-button-icon),
+.tool-list-power-btn.env-updating :deep(.p-button-icon),
 .tool-list-power-btn.env-running :deep(.p-button-icon),
 .tool-list-power-btn.env-ready :deep(.p-button-icon) {
   color: inherit;

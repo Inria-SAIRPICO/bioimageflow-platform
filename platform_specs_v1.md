@@ -306,8 +306,8 @@ class CellposeSegmenter(ProcessingTool):
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
-**Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources). Environment status is shown via button color and label (stopped/creating/running). Environments cannot be stopped during execution.
-During local workflow execution, the platform subscribes to BioImageFlow's public provisioning-event callback before Wetlands waits for the environment. Setup stages and sanitized Pixi stdout/stderr lines are streamed as execution-attributed Logger entries; a node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins.
+**Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. Before first use, BioImageFlow compares the requested recipe with Wetlands-managed state. A stale BioImageFlow-owned processing environment is closed and replaced lazily through the public managed `replace_existing=True` path; a matching environment is reused, and a missing environment is created. The platform never implements this by deleting directories or editing `pixi.toml`. Existing user-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their lifecycle owners and are not replaced by processing execution. After application startup, an already-existing stale `bioimageflow-general` environment is refreshed in the background, but a missing one is not proactively created. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources), and the labeled Create/recreate button is the explicit user-authorized force-rebuild action. Environment status is shown via button color and label (stopped/creating/updating/running). Environment controls are disabled during execution or another operation on the same environment.
+During local workflow execution, the platform subscribes to BioImageFlow's public preparation and provisioning callbacks before Wetlands waits for the environment. Replacement publishes `updating` and retains “Updating execution environment” for the affected node. Setup stages and sanitized Pixi stdout/stderr lines are streamed as execution-attributed Logger entries; a node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins. A tool may constrain `bioimageflow-core` only compatibly with the platform's exact runtime dependency; an explicit divergent requirement is reported as `environment_incompatible` during graph validation and is never silently replaced with another core version.
 
 #### 2.4.1b Error Response Format
 
@@ -971,7 +971,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
-| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "running"}` | Environment state change (asynchronous creation, manual start/stop) |
+| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "running" | "failed"}` | Environment state change (asynchronous creation or replacement, manual start/stop) |
 | `workflow_tree_changed` | `{action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
@@ -1217,7 +1217,7 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
    | Element | Description |
    |---------|-------------|
    | **Tool display_name** | Primary label. A single click toggles that tool's documentation panel at the bottom of the Tools panel; a double-click creates a node at a default canvas position; the row is also draggable onto the canvas. |
-   | **Env status dot** | Colored indicator for the tool's environment state: stopped (gray), creating (yellow), running (green). |
+   | **Env status dot** | Colored indicator for the tool's environment state: stopped (gray), creating or updating (yellow), running (green). |
    | **Category label** | Shown below the tool name. |
    | **Tags labels** | Shown below the tool name, next to category. |
 
@@ -1259,7 +1259,7 @@ Below the TreeTable, the dialog includes an inline footer explicitly labelled **
 | **Info button** | Show detailed documentation and the managed environment location when the tool declares an environment |
 | **Env status indicator** | Colored dot: stopped (gray) / creating (yellow) / running (green) |
 | **Start/Stop toggle** | Start or stop the tool's Wetlands environment |
-| **Create/recreate environment** | Create a missing environment or replace the existing managed environment from the tool's declared recipe |
+| **Create / recreate environment** | Labeled action that creates a missing environment or intentionally force-rebuilds the existing managed processing environment from the tool's declared recipe; all controls sharing that environment show the same busy state |
 
 **Important:** Environments are per-tool, not per-package. Each tool row in the TreeTable shows its own env indicator and start/stop toggle, even if multiple tools share the same underlying environment.
 

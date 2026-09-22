@@ -49,7 +49,6 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
-import EnvironmentRecoveryDialog from './components/execution/EnvironmentRecoveryDialog.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetsStore } from './stores/datasets'
 import { useNapariStore } from './stores/napari'
@@ -1569,7 +1568,6 @@ defineExpose({ dockviewApi })
     </p>
     <ExecutionBanner />
     <NapariProgressBanner />
-    <EnvironmentRecoveryDialog />
     <div class="dockview-wrapper">
       <DockviewVue
         :theme="dockviewTheme"

@@ -845,7 +845,6 @@ class _FakeToolEnvironmentService:
         self.started: list[str] = []
         self.stopped: list[str] = []
         self.recreated: list[str] = []
-        self.deleted: list[tuple[str, str, str]] = []
 
     def location(self, env_name: str) -> str:
         return f"/wetlands/environments/{env_name}"
@@ -861,17 +860,6 @@ class _FakeToolEnvironmentService:
     async def recreate(self, env_name: str) -> str:
         self.recreated.append(env_name)
         return "running"
-
-    async def delete(
-        self,
-        env_name: str,
-        *,
-        expected_path: str,
-        expected_existing_hash: str,
-    ) -> str:
-        self.deleted.append((env_name, expected_path, expected_existing_hash))
-        return "deleted"
-
 
 async def test_start_environment_delegates_to_environment_service():
     envs = _FakeToolEnvironmentService()
@@ -934,29 +922,6 @@ async def test_recreate_environment_delegates_to_environment_service():
     assert resp.status_code == 200
     assert resp.json() == {"environment": "myenv", "status": "running"}
     assert envs.recreated == ["myenv"]
-
-
-async def test_delete_environment_delegates_to_environment_service():
-    envs = _FakeToolEnvironmentService()
-    config = AppConfig(
-        tool_registry=ToolRegistryService(),
-        tool_environment_service=envs,
-    )
-    async for client in _client(config):
-        resp = await client.request(
-            "DELETE",
-            "/api/v1/tools/environments/myenv",
-            json={
-                "path": "/wetlands/pixi/workspaces/myenv/pixi.toml",
-                "existing_hash": "sha256:old",
-                "requested_hash": "sha256:new",
-            },
-        )
-    assert resp.status_code == 200
-    assert resp.json() == {"environment": "myenv", "status": "deleted"}
-    assert envs.deleted == [
-        ("myenv", "/wetlands/pixi/workspaces/myenv/pixi.toml", "sha256:old")
-    ]
 
 
 async def test_start_environment_for_tool_without_environment_returns_stopped():

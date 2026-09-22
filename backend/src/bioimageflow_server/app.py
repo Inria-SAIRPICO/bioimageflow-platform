@@ -583,10 +583,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     catalog = config.package_catalog or PackageCatalogService(
         registry=registry, known=known, pypi=pypi
     )
+    def _protected_tool_environment_names() -> set[str]:
+        if napari_environment_service is None:
+            return set()
+        protected: set[str] = set()
+        for item in napari_environment_service.snapshot().environments:
+            protected.add(item.name)
+            if item.managed is not None:
+                protected.add(item.managed.wetlands_name)
+        return protected
+
     tool_environment_service = config.tool_environment_service or ToolEnvironmentService(
         registry=registry,
         catalog=catalog,
         connection_manager=ws_manager,
+        protected_environment_names=_protected_tool_environment_names,
     )
 
     if config.execution_manager is not None:
@@ -608,6 +619,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             storage_path=stateless_storage_path,
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
+            environment_replacement_authorizer=getattr(
+                tool_environment_service,
+                "can_replace_processing_environment",
+                None,
+            ),
             retained_execution_started=_retain_local_execution,
             managed_result_root=(
                 distributed_downloads.resolve if distributed_downloads is not None else None
@@ -700,6 +716,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ws_manager._loop = loop
             ws_log_handler = attach_ws_log_handler(ws_manager, loop)
 
+        start_standard_refresh = getattr(
+            tool_environment_service,
+            "start_standard_environment_refresh",
+            None,
+        )
+        if callable(start_standard_refresh):
+            start_standard_refresh()
+
         # Hot-reload watcher starts AFTER the registry has been populated
         # by scan_tool_store() (which runs synchronously above) so the
         # observer never races the initial load.
@@ -719,6 +743,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
+            close_tool_environments = getattr(tool_environment_service, "close", None)
+            if callable(close_tool_environments):
+                await close_tool_environments()
             if distributed_coordinator is not None:
                 await distributed_coordinator.close()
             if distributed_tokens is not None:

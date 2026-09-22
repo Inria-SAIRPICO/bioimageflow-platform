@@ -141,7 +141,7 @@ BIOIMAGEFLOW_USE_LOCAL_CORE=1 \
 ```
 
 The VS Code launch profiles set this variable automatically.
-Existing Wetlands environments are not rewritten when the flag changes.
+On the next processing use, an existing BioImageFlow-owned Wetlands environment whose stored recipe no longer matches is replaced through Wetlands after its pool is closed. The platform also refreshes an already-existing stale `bioimageflow-general` environment in the background after startup. It does not rewrite external, adopted, Napari, thumbnail, or code-server environments.
 
 ## Use an editable tool package
 

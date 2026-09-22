@@ -264,6 +264,7 @@ class ExecutionManager:
         storage_path: Path | None = None,
         settings_provider: Callable[[], Settings] | None = None,
         environment_manager_provider: Callable[[], Any | None] | None = None,
+        environment_replacement_authorizer: Callable[[Any], bool] | None = None,
         retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
         managed_result_root: Path | Callable[[str], Path] | None = None,
     ) -> None:
@@ -275,6 +276,7 @@ class ExecutionManager:
         # effect on the next run without restarting the app.
         self._settings_provider = settings_provider
         self._environment_manager_provider = environment_manager_provider
+        self._environment_replacement_authorizer = environment_replacement_authorizer
         self._retained_execution_started = retained_execution_started
         self._managed_result_root = managed_result_root
         self.storage_path = storage_path
@@ -1089,26 +1091,50 @@ class ExecutionManager:
             # here instead of retaining the run that first installed this hook.
             active_context = self.context if self.state == "running" else None
             env_name = getattr(env_spec, "name", None)
-            already_running = _wetlands_env_is_running(manager, env_name)
             node_id = self._current_node_id if active_context is not None else None
-            if isinstance(env_name, str) and env_name:
-                self._publish_environment_status(
-                    env_name,
-                    "running" if already_running else "creating",
-                )
-            try:
-                if active_context is not None and node_id is not None and not already_running:
-                    self._publish_environment_phase(
-                        active_context, node_id, f"Preparing {env_name} environment"
-                    )
+            caller_preparation = kwargs.get("on_preparation")
+            caller_provision_event = kwargs.get("on_provision_event")
+
+            def _on_preparation(preparation: Any) -> None:
+                action = getattr(preparation, "action", None)
+                if isinstance(env_name, str) and env_name:
+                    status = "updating" if action == "updating" else "creating"
+                    if action == "reusing":
+                        status = "running"
+                    self._publish_environment_status(env_name, status)
+                if active_context is not None and node_id is not None:
+                    phase = {
+                        "updating": f"Updating execution environment {env_name}",
+                        "creating": f"Creating execution environment {env_name}",
+                        "starting": f"Starting execution environment {env_name}",
+                    }.get(action)
+                    if phase is not None:
+                        self._publish_environment_phase(active_context, node_id, phase)
+                if callable(caller_preparation):
+                    caller_preparation(preparation)
+
+            def _on_provision_event(event: Any) -> None:
                 if active_context is not None:
-                    kwargs["on_provision_event"] = lambda event: self._on_environment_event(
-                        event, active_context, node_id, env_name
-                    )
+                    self._on_environment_event(event, active_context, node_id, env_name)
+                if callable(caller_provision_event):
+                    caller_provision_event(event)
+
+            try:
+                kwargs["on_preparation"] = _on_preparation
+                kwargs["on_provision_event"] = _on_provision_event
+                if (
+                    self._environment_replacement_authorizer is not None
+                    and self._environment_replacement_authorizer(env_spec)
+                ):
+                    inspect_environment = getattr(manager, "inspect_environment", None)
+                    if callable(inspect_environment):
+                        recipe_state = inspect_environment(env_spec)
+                        if getattr(recipe_state, "value", None) == "stale":
+                            kwargs["replace_existing"] = True
                 env = original_get_or_create(env_spec, *args, **kwargs)
             except Exception:
-                if isinstance(env_name, str) and env_name and not already_running:
-                    self._publish_environment_status(env_name, "stopped")
+                if isinstance(env_name, str) and env_name:
+                    self._publish_environment_status(env_name, "failed")
                 raise
             if (
                 active_context is not None
@@ -1232,9 +1258,6 @@ class ExecutionManager:
                         "traceback": tb,
                     }
                 )
-                recovery_action = _environment_reuse_recovery_action(exc)
-                if recovery_action is not None:
-                    errors[-1]["recovery_action"] = recovery_action
                 logger.error(
                     "Workflow execution failed: %s",
                     exc,
@@ -1380,13 +1403,6 @@ def _single_failed_node_without_error(
     return failed[0] if len(failed) == 1 else None
 
 
-def _wetlands_env_is_running(manager: Any, env_name: Any) -> bool:
-    if not isinstance(env_name, str) or not env_name:
-        return False
-    envs = getattr(manager, "_envs", None)
-    return isinstance(envs, dict) and env_name in envs
-
-
 def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str, str]:
     """Return a short UI detail plus formatted diagnostics for ``exc``.
 
@@ -1412,31 +1428,6 @@ def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str
     if local_tb:
         detail_parts.append(f"Local traceback:\n{local_tb.rstrip()}")
     return summary, "\n\n".join(detail_parts)
-
-
-def _environment_reuse_recovery_action(exc: BaseException) -> dict[str, str] | None:
-    if type(exc).__name__ != "EnvironmentReuseError":
-        return None
-    message = str(exc)
-    if "it was created with a different recipe" not in message:
-        return None
-    match = re.search(
-        r"Environment '(?P<env>[^']+)' already exists at (?P<path>.+?) "
-        r"but cannot be reused: it was created with a different recipe\.\n"
-        r"Existing hash: (?P<existing>\S+)\n"
-        r"Requested hash: (?P<requested>\S+)",
-        message,
-        flags=re.DOTALL,
-    )
-    if match is None:
-        return None
-    return {
-        "kind": "delete_environment",
-        "env_name": match.group("env"),
-        "path": match.group("path"),
-        "existing_hash": match.group("existing"),
-        "requested_hash": match.group("requested"),
-    }
 
 
 def _extract_remote_exception_payload(exc: BaseException) -> dict[str, Any] | None:

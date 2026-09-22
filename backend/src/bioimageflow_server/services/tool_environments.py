@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import anyio.to_thread as anyio_to_thread
-from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow import EnvironmentRecipeState
+from bioimageflow_core.environment import GENERAL_ENV, EnvironmentSpec
 
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+logger = logging.getLogger(__name__)
 
 
 class ToolEnvironmentService:
@@ -19,11 +24,14 @@ class ToolEnvironmentService:
         catalog: Any = None,
         connection_manager: Any = None,
         wetlands_manager: Any = None,
+        protected_environment_names: Callable[[], set[str]] | None = None,
     ) -> None:
         self._registry = registry
         self._catalog = catalog
         self._connection_manager = connection_manager
         self._wetlands = wetlands_manager
+        self._protected_environment_names = protected_environment_names
+        self._standard_refresh_task: asyncio.Task[None] | None = None
 
     @property
     def _manager(self) -> Any:
@@ -47,9 +55,17 @@ class ToolEnvironmentService:
         if spec is None:
             self._publish(env_name, "stopped")
             return "stopped"
-        self._set_status(tools, "creating")
-        self._publish(env_name, "creating")
-        await anyio_to_thread.run_sync(self._manager.get_or_create, spec)
+        self._require_processing_replacement_allowed(env_name)
+        state = await anyio_to_thread.run_sync(self._manager.inspect_environment, spec)
+        status = "updating" if state is EnvironmentRecipeState.STALE else "creating"
+        self._set_status(tools, status)
+        self._publish(env_name, status)
+        await anyio_to_thread.run_sync(
+            lambda: self._manager.get_or_create(
+                spec,
+                replace_existing=state is EnvironmentRecipeState.STALE,
+            )
+        )
         self._set_status(tools, "running")
         self._publish(env_name, "running")
         return "running"
@@ -60,8 +76,9 @@ class ToolEnvironmentService:
         if spec is None:
             self._publish(env_name, "stopped")
             return "stopped"
-        self._set_status(tools, "creating")
-        self._publish(env_name, "creating")
+        self._require_processing_replacement_allowed(env_name)
+        self._set_status(tools, "updating")
+        self._publish(env_name, "updating")
         try:
             await anyio_to_thread.run_sync(
                 self._recreate_wetlands_environment,
@@ -75,34 +92,63 @@ class ToolEnvironmentService:
         self._publish(env_name, "running")
         return "running"
 
+    def start_standard_environment_refresh(self) -> None:
+        """Warm an already-existing stale general processing environment."""
+
+        if self._standard_refresh_task is not None and not self._standard_refresh_task.done():
+            return
+        self._standard_refresh_task = asyncio.create_task(
+            self._refresh_standard_environment(),
+            name="bioimageflow-general-refresh",
+        )
+
+    async def close(self) -> None:
+        task = self._standard_refresh_task
+        self._standard_refresh_task = None
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _refresh_standard_environment(self) -> None:
+        env_name = GENERAL_ENV.name
+        try:
+            self._require_processing_replacement_allowed(env_name)
+            state = await anyio_to_thread.run_sync(
+                self._manager.inspect_environment,
+                GENERAL_ENV,
+            )
+            if state is not EnvironmentRecipeState.STALE:
+                return
+            tools = self._tools_for_environment(env_name)
+            self._set_status(tools, "updating")
+            self._publish(env_name, "updating")
+            await anyio_to_thread.run_sync(
+                lambda: self._manager.get_or_create(
+                    GENERAL_ENV,
+                    replace_existing=True,
+                )
+            )
+            self._set_status(tools, "running")
+            self._publish(env_name, "running")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            tools = self._tools_for_environment(env_name)
+            self._set_status(tools, "failed")
+            self._publish(env_name, "failed")
+            logger.exception("Failed to refresh the bioimageflow-general environment")
+
     async def stop(self, env_name: str) -> str:
         tools = self._tools_for_environment(env_name)
         await anyio_to_thread.run_sync(self._stop_wetlands_environment, env_name)
         self._set_status(tools, "stopped")
         self._publish(env_name, "stopped")
         return "stopped"
-
-    async def delete(
-        self,
-        env_name: str,
-        *,
-        expected_path: str,
-        expected_existing_hash: str,
-    ) -> str:
-        tools = self._tools_for_environment(env_name)
-        if not tools:
-            raise FileNotFoundError(
-                f"Environment '{env_name}' is not associated with a registered tool"
-            )
-        await anyio_to_thread.run_sync(
-            self._delete_wetlands_environment,
-            env_name,
-            expected_path,
-            expected_existing_hash,
-        )
-        self._set_status(tools, "stopped")
-        self._publish(env_name, "stopped")
-        return "deleted"
 
     def _tools_for_environment(self, env_name: str) -> list[Any]:
         matches = []
@@ -139,6 +185,22 @@ class ToolEnvironmentService:
             return None
         return EnvironmentSpec(name=name, dependencies=dependencies)
 
+    def can_replace_processing_environment(self, env_spec: Any) -> bool:
+        name = getattr(env_spec, "name", None)
+        return isinstance(name, str) and bool(name) and not self._is_protected(name)
+
+    def _is_protected(self, env_name: str) -> bool:
+        protected = {"napari", "codeserver", "thumbnail"}
+        if self._protected_environment_names is not None:
+            protected.update(self._protected_environment_names())
+        return env_name in protected
+
+    def _require_processing_replacement_allowed(self, env_name: str) -> None:
+        if self._is_protected(env_name):
+            raise PermissionError(
+                f"Environment '{env_name}' is owned by another platform lifecycle"
+            )
+
     def _set_status(self, tools: list[Any], status: str) -> None:
         for package_name in {tool.package for tool in tools}:
             package = self._registry.get_package(package_name)
@@ -161,62 +223,8 @@ class ToolEnvironmentService:
         stop(env_name)
 
     def _recreate_wetlands_environment(self, spec: EnvironmentSpec) -> None:
-        wetlands = self._manager
-        manager = getattr(wetlands, "_manager", None)
-        provision = getattr(manager, "provision", None)
-        to_wetlands_spec = getattr(wetlands, "_to_wetlands_spec", None)
-        if not callable(provision) or not callable(to_wetlands_spec):
-            raise RuntimeError("Wetlands environment manager does not support replacement")
-
         self._stop_wetlands_environment(spec.name)
-        operation = provision(
-            spec.name,
-            to_wetlands_spec(spec),
+        self._manager.get_or_create(
+            spec,
             replace_existing=True,
         )
-        wait_for = getattr(operation, "wait_for", None)
-        if not callable(wait_for):
-            raise RuntimeError("Wetlands provisioning operation does not support wait_for()")
-        wait_for()
-        wetlands.get_or_create(spec)
-
-    def _delete_wetlands_environment(
-        self,
-        env_name: str,
-        expected_path: str,
-        expected_existing_hash: str,
-    ) -> None:
-        wetlands = self._manager
-        manager = getattr(wetlands, "_manager", None)
-        managed_environments = getattr(manager, "managed_environments", None)
-        remove = getattr(manager, "remove", None)
-        if not callable(managed_environments) or not callable(remove):
-            raise RuntimeError("Wetlands environment manager does not support managed removal")
-
-        info = next(
-            (candidate for candidate in managed_environments() if candidate.name == env_name),
-            None,
-        )
-        if info is None:
-            raise FileNotFoundError(f"Managed environment '{env_name}' does not exist")
-        if Path(expected_path).expanduser().resolve() != Path(info.path).expanduser().resolve():
-            raise PermissionError(
-                "Environment deletion was refused because the recovery path no longer "
-                "matches the default managed environment path."
-            )
-        if not info.ready:
-            raise PermissionError(
-                "Environment deletion was refused because Wetlands metadata is unavailable."
-            )
-        if info.recipe_hash != expected_existing_hash:
-            raise PermissionError(
-                "Environment deletion was refused because the environment recipe changed. "
-                "Retry the run to refresh the recovery details."
-            )
-
-        self._stop_wetlands_environment(env_name)
-        operation = remove(env_name)
-        wait_for = getattr(operation, "wait_for", None)
-        if not callable(wait_for):
-            raise RuntimeError("Wetlands removal operation does not support wait_for()")
-        wait_for()

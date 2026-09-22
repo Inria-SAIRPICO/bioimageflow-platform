@@ -1492,12 +1492,43 @@ describe('ToolsPanel', () => {
 
     const action = wrapper.get('[data-testid="tool-env-recreate-cellpose"]')
     expect(action.attributes('aria-label')).toBe('Create or recreate environment')
+    expect(action.attributes('label')).toBe('Create / recreate')
     await action.trigger('click')
     await flushPromises()
 
     expect(mockedApi.post).toHaveBeenCalledWith(
       '/api/v1/tools/environments/cellpose-env/recreate',
     )
+  })
+
+  it('shares updating busy state between tools using the same environment', async () => {
+    const wrapper = mountPanel({ renderManageTable: true })
+    await vi.waitFor(() => {
+      expect(useToolRegistryStore().tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      ['cellpose', 'gaussian_blur'].includes(tool.name)
+        ? { ...tool, environment: { name: 'shared-env', dependencies: {} } }
+        : tool,
+    )
+
+    const vm = wrapper.vm as unknown as { showManageDialog: boolean }
+    vm.showManageDialog = true
+    store.applyEnvironmentStatus({
+      type: 'environment_status',
+      env_name: 'shared-env',
+      status: 'updating',
+    })
+    await wrapper.vm.$nextTick()
+
+    for (const toolName of ['cellpose', 'gaussian_blur']) {
+      const action = wrapper.get(`[data-testid="tool-env-recreate-${toolName}"]`)
+      expect(action.attributes('disabled')).toBeDefined()
+      expect(action.attributes('label')).toBe('Updating…')
+      expect(wrapper.get(`[data-testid="tool-env-toggle-${toolName}"]`).attributes('disabled'))
+        .toBeDefined()
+    }
   })
 
   it('shows the managed environment location in tool information', async () => {

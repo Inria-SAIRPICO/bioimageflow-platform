@@ -12,6 +12,7 @@ import asyncio
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -252,12 +253,39 @@ class _FakeWetlandsManager:
     def __init__(self) -> None:
         self._envs: dict[str, object] = {}
         self.calls: list[str] = []
+        self.replace_existing_calls: list[bool] = []
+        self.recipe_state = "current"
         self.raise_exc: BaseException | None = None
 
+    def inspect_environment(self, env_spec: _EnvSpecStub) -> object:
+        return SimpleNamespace(value=self.recipe_state)
+
     def get_or_create(
-        self, env_spec: _EnvSpecStub, *, on_provision_event: Any = None
+        self,
+        env_spec: _EnvSpecStub,
+        *,
+        on_provision_event: Any = None,
+        on_preparation: Any = None,
+        replace_existing: bool = False,
     ) -> object:
+        if on_preparation is not None:
+            on_preparation(
+                type(
+                    "Preparation",
+                    (),
+                    {
+                        "action": (
+                            "updating"
+                            if replace_existing
+                            else "reusing"
+                            if env_spec.name in self._envs
+                            else "creating"
+                        )
+                    },
+                )()
+            )
         self.calls.append(env_spec.name)
+        self.replace_existing_calls.append(replace_existing)
         if on_provision_event is not None:
             on_provision_event(
                 type("Event", (), {
@@ -273,6 +301,9 @@ class _FakeWetlandsManager:
             )
         if self.raise_exc is not None:
             raise self.raise_exc
+        value = object()
+        self._envs[env_spec.name] = value
+        return value
         env = object()
         self._envs[env_spec.name] = env
         return env
@@ -612,7 +643,7 @@ class TestExecutionManagerLifecycle:
             for event in em.retained_progress()
         )
 
-    async def test_execution_marks_environment_stopped_when_wetlands_start_fails(
+    async def test_execution_marks_environment_failed_when_wetlands_start_fails(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         class _WorkflowWithFailingWetlands(_FakeWorkflow):
@@ -645,7 +676,29 @@ class TestExecutionManagerLifecycle:
 
         assert bus.environment_events == [
             ("cellpose-env", "creating"),
-            ("cellpose-env", "stopped"),
+            ("cellpose-env", "failed"),
+        ]
+
+    async def test_owned_stale_environment_is_replaced_lazily(self) -> None:
+        bus = RecordingEventBus()
+        manager = _FakeWetlandsManager()
+        manager.recipe_state = "stale"
+        em = ExecutionManager(
+            bus,
+            MagicMock(),
+            _settings(),
+            environment_replacement_authorizer=lambda _spec: True,
+        )
+        em._attach_environment_status_hook(
+            SimpleNamespace(environment_manager=manager)
+        )
+
+        manager.get_or_create(_EnvSpecStub("cellpose-env"))
+
+        assert manager.replace_existing_calls == [True]
+        assert bus.environment_events == [
+            ("cellpose-env", "updating"),
+            ("cellpose-env", "running"),
         ]
 
     async def test_start_clears_previous_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1133,7 +1186,7 @@ class TestExecutionManagerResult:
         assert em.last_result.errors
         assert "kaboom" in str(em.last_result.errors[0])
 
-    async def test_environment_recipe_mismatch_adds_recovery_action(
+    async def test_environment_recipe_mismatch_does_not_offer_manual_deletion(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bus = RecordingEventBus()
@@ -1159,13 +1212,7 @@ class TestExecutionManagerResult:
         error = em.last_result.errors[0]
         assert error["type"] == "EnvironmentReuseError"
         assert error["detail"].startswith("Environment 'segmentation-cellpose-v3' already exists")
-        assert error["recovery_action"] == {
-            "kind": "delete_environment",
-            "env_name": "segmentation-cellpose-v3",
-            "path": "/Users/amasson/.bioimageflow/wetlands/pixi/workspaces/segmentation-cellpose-v3/pixi.toml",
-            "existing_hash": "sha256:12825e7c20f47da18ba92c11cb9179dd2df35fbb6b4f54050c157abbc1a3425f",
-            "requested_hash": "sha256:61bc60ebf72d2fe1c24c29f363954fd68100ece113ccaa80b5beea5605b867ce",
-        }
+        assert "recovery_action" not in error
 
     async def test_environment_reuse_error_without_recipe_mismatch_has_no_recovery_action(
         self, monkeypatch: pytest.MonkeyPatch

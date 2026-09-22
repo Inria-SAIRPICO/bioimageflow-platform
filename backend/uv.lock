@@ -57,24 +57,20 @@ wheels = [
 
 [[package]]
 name = "bioimageflow"
-version = "0.8.3"
+version = "0.8.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bioimageflow-core" },
     { name = "numpy" },
+    { name = "packaging" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/3b/30b28f579db054063867504c1c8e2ff1a0e9938ddf5ba6d6b321a918d052/bioimageflow-0.8.3.tar.gz", hash = "sha256:7d9d385d115a1ccb0a40fdc97ebc79168f9bdb4348984595a2282c61be09437d", size = 389448, upload-time = "2026-09-21T10:35:43.999Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/51/e22ce537012af0d9af5e6239a50d5de3f902c0da54fdbefb43d788486bb9/bioimageflow-0.8.4.tar.gz", hash = "sha256:4da939d3cf3f25251853bb860d4edd0e4cc390500f091ee266454d6b8c74d39d", size = 391628, upload-time = "2026-09-22T12:03:46.523Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/25/40aa169713f89a3ab1ef50ba3961803d7321ee401893c4a75b2d96ba2dd7/bioimageflow-0.8.3-py3-none-any.whl", hash = "sha256:2986bd74922dd5e05baed2534b6681031f4e99ebbf17af75f02bea1728a1fbbe", size = 493189, upload-time = "2026-09-21T10:35:45.09Z" },
-]
-
-[package.optional-dependencies]
-cluster = [
-    { name = "packaging" },
+    { url = "https://files.pythonhosted.org/packages/a5/77/d565f88f0e7ea432c365ba43f5c6b904ebb0b7dadbe10a1de188ffa56c38/bioimageflow-0.8.4-py3-none-any.whl", hash = "sha256:018f47785b96b6dc8b9d0fe3f86d21d7fbee344921ca81b26bcee12e31b5a19b", size = 495428, upload-time = "2026-09-22T12:03:47.548Z" },
 ]
 
 [[package]]
@@ -95,7 +91,7 @@ name = "bioimageflow-server"
 version = "0.1.28"
 source = { editable = "." }
 dependencies = [
-    { name = "bioimageflow", extra = ["cluster"] },
+    { name = "bioimageflow" },
     { name = "bioimageflow-core" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -133,7 +129,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioimageflow", extras = ["cluster"], specifier = "==0.8.3" },
+    { name = "bioimageflow", extras = ["cluster"], specifier = "==0.8.4" },
     { name = "bioimageflow-core", specifier = ">=0.4.1,<0.5" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

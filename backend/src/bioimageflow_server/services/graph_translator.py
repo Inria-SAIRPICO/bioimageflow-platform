@@ -793,6 +793,7 @@ _KIND_TO_TYPE = {
     "duplicate_name": "invalid_node_id",
     "construction_failed": "parameter_invalid",
     "source_tool_upstream": "source_tool_upstream",
+    "environment_incompatible": "environment_incompatible",
 }
 
 

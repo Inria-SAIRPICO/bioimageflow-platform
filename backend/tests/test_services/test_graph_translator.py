@@ -577,3 +577,19 @@ def test_library_validation_paths_are_preserved() -> None:
 
     assert mapped.node == "outer/inner/tool"
     assert mapped.detail == "in workflow 'outer/inner': value is required"
+
+
+def test_incompatible_environment_validation_kind_is_preserved() -> None:
+    error = SimpleNamespace(
+        kind="environment_incompatible",
+        message="bioimageflow-core requirement conflicts with the active runtime",
+        node="tool",
+        field=None,
+        edge_id=None,
+        path=(),
+    )
+
+    mapped = lib_validation_error_to_graph_error(error)
+
+    assert mapped.type == "environment_incompatible"
+    assert mapped.node == "tool"

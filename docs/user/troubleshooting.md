@@ -31,7 +31,8 @@ For nested content, save the nested tab into its parent and run the root workflo
 ## A tool or environment is missing
 
 Open **Manage tools**, locate the requested package version, and install it.
-If its environment is stopped or failed, use the environment action or recovery dialog to restart or rebuild it.
+If its environment is stopped or failed, use the power action to start it or the labeled **Create / recreate** action in **Manage tools** to rebuild it.
+If the environment is updating, wait for the managed replacement to finish and inspect the Logger panel if it fails.
 
 Do not choose another version unless you intend to change the workflow dependency and review affected nodes.
 See [Find and Manage Tools](data-and-tools.md#resolve-missing-tools).

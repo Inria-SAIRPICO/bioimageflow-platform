@@ -132,7 +132,15 @@ class PackageInstallMessage(_MessageBase):
 class EnvironmentStatusMessage(_MessageBase):
     type: Literal["environment_status"] = "environment_status"
     env_name: str
-    status: Literal["stopped", "creating", "opening", "running", "failed", "restart_required"]
+    status: Literal[
+        "stopped",
+        "creating",
+        "updating",
+        "opening",
+        "running",
+        "failed",
+        "restart_required",
+    ]
     environment_id: str | None = None
     environment_name: str | None = None
 

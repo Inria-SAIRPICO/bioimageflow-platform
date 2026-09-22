@@ -70,7 +70,7 @@ BIOIMAGEFLOW_USE_LOCAL_CORE=1 uv run python -m bioimageflow_server --host 127.0.
 
 The VS Code launch profiles already set `BIOIMAGEFLOW_USE_LOCAL_CORE=1`.
 Normal CLI and desktop commands omit it by default so released/runtime sessions keep pinned, reproducible worker dependencies.
-Wetlands 2 stores immutable environment generations under `~/.bioimageflow/wetlands/environments/` and replaces a managed environment when its declared recipe changes.
+Wetlands 2 stores immutable environment generations under `~/.bioimageflow/wetlands/environments/`. BioImageFlow inspects each requested processing recipe and replaces a stale BioImageFlow-owned environment through Wetlands after closing its pool. Other environment owners, including Napari and adopted or external environments, retain their independent lifecycles.
 
 The platform requires Wetlands 2.4.1 or newer for managed external processes and provisioning subprocess cleanup.
 Napari and code-server are supervised through `ManagedEnvironment.spawn()`, while thumbnail generation uses a managed `WorkerPool`.

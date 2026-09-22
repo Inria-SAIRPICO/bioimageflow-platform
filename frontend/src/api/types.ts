@@ -261,23 +261,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/tools/environments/{env_name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Environment */
-        delete: operations["delete_environment_api_v1_tools_environments__env_name__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/fs/reveal": {
         parameters: {
             query?: never;
@@ -2646,15 +2629,6 @@ export interface components {
             /** Error Detail */
             error_detail?: string | null;
         };
-        /** EnvironmentDeleteRequest */
-        EnvironmentDeleteRequest: {
-            /** Path */
-            path: string;
-            /** Existing Hash */
-            existing_hash: string;
-            /** Requested Hash */
-            requested_hash?: string | null;
-        };
         /**
          * ExecutionActionAvailability
          * @description Capability- and state-derived availability for one execution action.
@@ -3046,7 +3020,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id" | "source_tool_upstream" | "cache_corrupt";
+            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id" | "source_tool_upstream" | "cache_corrupt" | "environment_incompatible";
             /** Detail */
             detail: string;
             /** Node */
@@ -5832,7 +5806,6 @@ export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
 export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
 export type EditorOpenToolRequest = components['schemas']['EditorOpenToolRequest'];
 export type EditorStatus = components['schemas']['EditorStatus'];
-export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
 export type ExecutionActionAvailability = components['schemas']['ExecutionActionAvailability'];
 export type ExecutionActionResponse = components['schemas']['ExecutionActionResponse'];
 export type ExecutionActions = components['schemas']['ExecutionActions'];
@@ -6533,43 +6506,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_environment_api_v1_tools_environments__env_name__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                env_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EnvironmentDeleteRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {

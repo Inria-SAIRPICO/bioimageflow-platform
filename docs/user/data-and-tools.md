@@ -24,13 +24,13 @@ If changing the selection affects existing nodes, BioImageFlow asks before updat
 
 ## Prepare environments
 
-The environment status shows whether a package environment is stopped, being created, running, ready, failed, or unavailable.
+The environment status shows whether a package environment is stopped, being created or updated, running, ready, failed, or unavailable.
 Use the power action to start or stop an environment.
-Use the recreate action in **Manage tools** to create a missing environment or replace it from the tool's declared recipe.
+Use the labeled **Create / recreate** action in **Manage tools** to create a missing environment or intentionally rebuild it from the tool's declared recipe.
 The tool information area shows where that managed environment is stored.
 Environment controls are unavailable during workflow execution.
 
-If a run cannot use an environment, follow the recovery dialog to restart or rebuild it, wait until it is ready, and retry the workflow.
+When an application update changes the processing recipe, the platform updates an owned environment automatically on first use. The Execution panel shows **Updating execution environment** while this happens. An incompatible `bioimageflow-core` requirement in a tool is reported as a validation error and must be corrected in the tool definition.
 
 ```{note}
 Installing a package or preparing its environment can download dependencies and take several minutes.
