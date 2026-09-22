@@ -46,6 +46,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariManagedOperationMutation,
     NapariManagedRecipe,
 )
+from bioimageflow_server.services.environment_logging import log_environment_operation_event
 from bioimageflow_server.services.operation_failures import (
     normalize_operation_text,
     operation_failure_detail,
@@ -993,6 +994,8 @@ class NapariEnvironmentService:
     async def _record_wetlands_event(
         self, platform_operation_id: UUID, event: OperationEvent
     ) -> None:
+        environment = getattr(event, "environment", None) or "napari"
+        log_environment_operation_event(event, owner=f"Napari environment {environment}")
         operation = next(
             (
                 item

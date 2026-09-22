@@ -38,6 +38,7 @@ from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
+from bioimageflow_server.services.environment_logging import environment_log_entry
 from bioimageflow_server.services.graph_validator import GraphValidationService
 from bioimageflow_server.services.log_context import bind_execution_log_context
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -1178,18 +1179,21 @@ class ExecutionManager:
     ) -> None:
         if context != self.context or self.state != "running":
             return
-        kind = getattr(getattr(event, "kind", None), "value", None)
-        message = getattr(event, "message", None)
-        if not isinstance(message, str) or not message:
+        entry = environment_log_entry(event)
+        if entry is None:
             return
+        kind = getattr(getattr(event, "kind", None), "value", None)
         stage = getattr(event, "stage", None)
-        if kind == "output":
-            self.event_bus.publish_log("INFO", message, node_id, time.time(), context=context)
-        elif kind in {"step", "progress", "state"}:
-            self.event_bus.publish_log("INFO", message, node_id, time.time(), context=context)
-            if node_id is not None and kind == "step" and stage:
-                label = f"Installing {env_name}: {message}"
-                self._publish_environment_phase(context, node_id, label)
+        self.event_bus.publish_log(
+            entry.level,
+            entry.message,
+            node_id,
+            entry.timestamp,
+            context=context,
+        )
+        if node_id is not None and kind == "step" and stage:
+            label = f"Installing {env_name}: {entry.message}"
+            self._publish_environment_phase(context, node_id, label)
 
     def _publish_environment_phase(
         self, context: ExecutionContext, node_id: str, message: str

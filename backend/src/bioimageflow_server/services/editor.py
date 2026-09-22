@@ -34,6 +34,7 @@ from bioimageflow_server.models.editor import (
 )
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.editor_workspace import ensure_editor_workspace
+from bioimageflow_server.services.environment_logging import log_environment_operation_event
 from bioimageflow_server.services.operation_failures import (
     normalize_operation_text,
     operation_failure_detail,
@@ -509,16 +510,13 @@ class EmbeddedCodeServerManager:
         )
 
     def _publish_provisioning_event(self, event: OperationEvent) -> None:
-        """Publish managed-environment steps for the post-install download step."""
+        """Publish every setup record while retaining the post-install UI phase."""
+        log_environment_operation_event(event, owner="Code editor environment")
         if event.stage != "post_install":
             return
         if event.kind is OperationEventKind.STEP:
             self.set_launch_phase(
                 EditorLaunchPhase.PREPARING, normalize_operation_text(event.message)
-            )
-        elif event.kind is OperationEventKind.OUTPUT and event.line:
-            logger.info(
-                "Code editor runtime install: %s", normalize_operation_text(event.line)
             )
 
     def shutdown(self) -> None:

@@ -11,6 +11,7 @@ import anyio.to_thread as anyio_to_thread
 from bioimageflow import EnvironmentRecipeState
 from bioimageflow_core.environment import GENERAL_ENV, EnvironmentSpec
 
+from bioimageflow_server.services.environment_logging import log_environment_operation_event
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class ToolEnvironmentService:
             lambda: self._manager.get_or_create(
                 spec,
                 replace_existing=state is EnvironmentRecipeState.STALE,
+                on_provision_event=self._log_provision_event,
             )
         )
         self._set_status(tools, "running")
@@ -131,6 +133,7 @@ class ToolEnvironmentService:
                 lambda: self._manager.get_or_create(
                     GENERAL_ENV,
                     replace_existing=True,
+                    on_provision_event=self._log_provision_event,
                 )
             )
             self._set_status(tools, "running")
@@ -227,4 +230,11 @@ class ToolEnvironmentService:
         self._manager.get_or_create(
             spec,
             replace_existing=True,
+            on_provision_event=self._log_provision_event,
         )
+
+    @staticmethod
+    def _log_provision_event(event: Any) -> None:
+        environment = getattr(event, "environment", None)
+        owner = f"Environment {environment}" if isinstance(environment, str) else "Environment"
+        log_environment_operation_event(event, owner=owner)

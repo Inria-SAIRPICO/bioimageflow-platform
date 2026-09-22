@@ -1246,7 +1246,9 @@ def test_status_reports_operation_failure_detail() -> None:
     assert embedded.phases == [(EditorLaunchPhase.FAILED, status.error_detail)]
 
 
-def test_embedded_manager_publishes_post_install_step_phase(tmp_path: Path) -> None:
+def test_embedded_manager_logs_all_provisioning_events_but_only_updates_post_install_phase(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     manager = EmbeddedCodeServerManager(vsix_path=tmp_path / "missing.vsix")
 
     def event(stage: str, message: str) -> OperationEvent:
@@ -1261,19 +1263,29 @@ def test_embedded_manager_publishes_post_install_step_phase(tmp_path: Path) -> N
             message=message,
         )
 
-    manager._publish_provisioning_event(
-        event("post_install", "Downloading the code editor runtime â”‚ 1/2")
-    )
-    assert (
-        manager.status(url_probe=lambda _url: False).launch_message
-        == "Downloading the code editor runtime │ 1/2"
-    )
+    with caplog.at_level("INFO", logger="bioimageflow.environment"):
+        manager._publish_provisioning_event(
+            event("post_install", "Downloading the code editor runtime â”‚ 1/2")
+        )
+        assert (
+            manager.status(url_probe=lambda _url: False).launch_message
+            == "Downloading the code editor runtime │ 1/2"
+        )
 
-    manager._publish_provisioning_event(event("pixi_install", "Installing the environment."))
+        manager._publish_provisioning_event(event("pixi_install", "Installing the environment."))
     assert (
         manager.status(url_probe=lambda _url: False).launch_message
         == "Downloading the code editor runtime │ 1/2"
     )
+    environment_messages = [
+        record.message
+        for record in caplog.records
+        if record.name == "bioimageflow.environment"
+    ]
+    assert environment_messages == [
+        "Code editor environment: Downloading the code editor runtime │ 1/2",
+        "Code editor environment: Installing the environment.",
+    ]
 
 
 def test_embedded_manager_launch_command_uses_configured_editor_url(tmp_path: Path) -> None:

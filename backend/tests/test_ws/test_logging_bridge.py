@@ -564,6 +564,32 @@ async def test_emit_editor_logger_triggers_broadcast_with_null_node() -> None:
         _remove_handler("wetlands", handler)
 
 
+async def test_emit_environment_logger_triggers_broadcast_with_null_node() -> None:
+    """Managed Pixi operation events reach the frontend Logger panel."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("bioimageflow.environment").info("Environment atlas: pixi output")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert len(mgr.broadcast_calls) == 1
+        level, message, node_id, _, context = mgr.broadcast_calls[0]
+        assert level == "INFO"
+        assert message == "Environment atlas: pixi output"
+        assert node_id is None
+        assert context is None
+    finally:
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
+
+
 async def test_emit_wetlands_logger_triggers_broadcast_with_null_node() -> None:
     """Wetlands environment/process records should reach the frontend logger."""
     from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler

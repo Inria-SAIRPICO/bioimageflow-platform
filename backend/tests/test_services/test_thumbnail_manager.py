@@ -435,6 +435,7 @@ def test_launch_provisions_environment_and_starts_worker_pool(
         EnvironmentSpec(python="3.12.*", pypi=module._THUMBNAIL_ENV_PIP),
         replace_existing=True,
     )
+    operation.listen.assert_called_once()
     operation.wait_for.assert_called_once_with()
     environment.start.assert_called_once_with(workers=8)
     assert thumbnails._pool is pool

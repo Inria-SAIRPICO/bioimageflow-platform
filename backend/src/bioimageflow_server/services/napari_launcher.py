@@ -36,6 +36,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariEnvironment,
     NapariEnvironmentList,
 )
+from bioimageflow_server.services.environment_logging import log_environment_operation_event
 
 if TYPE_CHECKING:
     from multiprocessing.connection import Connection
@@ -438,7 +439,7 @@ class NapariLauncher:
             # immediately launch Napari from an existing one.
             self._broadcast_status(launch_status)
 
-            environment = env_manager.provision(
+            operation = env_manager.provision(
                 "napari",
                 EnvironmentSpec(
                     python="3.12.*",
@@ -446,7 +447,11 @@ class NapariLauncher:
                     channels=("conda-forge",),
                 ),
                 replace_existing=True,
-            ).wait_for()
+            )
+            operation.listen(
+                lambda event: log_environment_operation_event(event, owner="Napari environment")
+            )
+            environment = operation.wait_for()
 
             # Step 6: per-launch authkey (32 random bytes, hex-encoded for
             # safe transit through the env var).

@@ -65,7 +65,7 @@ Inspect completed tables, filter rows, preview images, and use path or viewer ac
 ### Execution and Logger
 
 **Execution** shows current and previous runs and the status of each node.
-**Logger** filters application, workflow, and tool messages by severity, run, node, or text.
+**Logger** filters application, workflow, tool, and managed-environment setup messages by severity, run, node, or text. Pixi setup output appears here for workflow tools, managed tool environments, Napari, thumbnails, and the embedded code editor.
 Drag across log rows to select and copy part of the output with your normal keyboard shortcut, or choose **Copy logs** to copy all entries currently shown by the level, node, and search filters.
 The copied text includes each entry's displayed time, level, node when present, and full message, including line breaks.
 **Copy logs** is disabled when the filtered view is empty and shows whether copying succeeded.

@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 from wetlands import EnvironmentSpec, ExecutionTask, ManagedEnvironment, WorkerPool
 
+from bioimageflow_server.services.environment_logging import log_environment_operation_event
+
 if TYPE_CHECKING:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -291,11 +293,15 @@ class ThumbnailManager:
 
             em = get_shared_environment_manager()
             self._publish_log("INFO", "Provisioning thumbnail environment")
-            env = em.provision(
+            operation = em.provision(
                 "thumbnail",
                 EnvironmentSpec(python="3.12.*", pypi=_THUMBNAIL_ENV_PIP),
                 replace_existing=True,
-            ).wait_for()
+            )
+            operation.listen(
+                lambda event: log_environment_operation_event(event, owner="Thumbnail environment")
+            )
+            env = operation.wait_for()
             pool = env.start(workers=8)
             self._env = env
             self._pool = pool

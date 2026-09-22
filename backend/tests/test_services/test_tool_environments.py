@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -46,6 +47,7 @@ class _FakeWetlandsWrapper:
         self._envs: dict[str, _FakeEnvironment] = {}
         self.state = EnvironmentRecipeState.CURRENT
         self.get_calls: list[tuple[str, bool]] = []
+        self.provision_callbacks: list[Any] = []
 
     def inspect_environment(self, env_spec: object) -> EnvironmentRecipeState:
         return self.state
@@ -55,9 +57,22 @@ class _FakeWetlandsWrapper:
         env_spec: object,
         *,
         replace_existing: bool = False,
+        on_provision_event: Any = None,
     ) -> _FakeEnvironment:
         env_name = str(getattr(env_spec, "name"))
         self.get_calls.append((env_name, replace_existing))
+        if on_provision_event is not None:
+            self.provision_callbacks.append(on_provision_event)
+            on_provision_event(
+                SimpleNamespace(
+                    kind=SimpleNamespace(value="output"),
+                    state=SimpleNamespace(value="running"),
+                    timestamp=123.0,
+                    environment=env_name,
+                    message="pixi output",
+                    line="pixi output",
+                )
+            )
         self._envs[env_name] = self._env
         return self._env
 
@@ -96,6 +111,18 @@ async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> 
     assert await service.stop("cellpose-env") == "stopped"
     assert wetlands._env.exited is True
     assert wetlands._envs == {}
+
+
+async def test_start_logs_pixi_operation_output(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env"))
+    service = ToolEnvironmentService(registry=_registry(), wetlands_manager=wetlands)
+
+    with caplog.at_level("INFO", logger="bioimageflow.environment"):
+        await service.start("cellpose-env")
+
+    assert "Environment cellpose-env: pixi output" in caplog.messages
 
 
 async def test_start_replaces_only_a_stale_managed_recipe(tmp_path: Path) -> None:
