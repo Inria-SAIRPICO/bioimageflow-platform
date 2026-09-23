@@ -215,6 +215,9 @@ def _coerce_image_path(
     value: object,
     storage_path: Path | None,
     record_dir: Path | None = None,
+    *,
+    result_store: ResultStoreService | None = None,
+    result_identity: ResultArtifactIdentity | None = None,
 ) -> Path:
     is_missing = value is None
     if not is_missing and not isinstance(value, (str, Path)):
@@ -225,6 +228,13 @@ def _coerce_image_path(
     if is_missing:
         raise HTTPException(status_code=422, detail="Selected image path is empty")
     image_path = Path(str(value)).expanduser()
+    if not image_path.is_absolute() and result_store is not None and result_identity is not None:
+        asset_path = result_store.resolve_result_asset(
+            result_identity, image_path.as_posix(), storage_path=storage_path
+        )
+        if asset_path.is_file() or asset_path.is_dir():
+            return asset_path
+        raise HTTPException(status_code=404, detail=f"Image file not found: {asset_path}")
     candidate_paths = [image_path]
     if not image_path.is_absolute():
         candidate_paths = []
@@ -237,6 +247,22 @@ def _coerce_image_path(
         if candidate.is_file() or candidate.is_dir():
             return candidate
     raise HTTPException(status_code=404, detail=f"Image file not found: {candidate_paths[0]}")
+
+
+def _dataframe_image_path(
+    value: object,
+    dataframe: pd.DataFrame,
+    result_store: ResultStoreService,
+    storage_path: Path | None,
+) -> Path:
+    identity = dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
+    return _coerce_image_path(
+        value,
+        storage_path,
+        _dataframe_record_dir(dataframe),
+        result_store=result_store,
+        result_identity=identity if isinstance(identity, ResultArtifactIdentity) else None,
+    )
 
 
 def _guess_image_media_type(path: Path) -> str:
@@ -524,7 +550,7 @@ def _node_image_response(
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
-    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
+    image_path = _dataframe_image_path(value, df, result_store, storage_path)
     media_type = _guess_image_media_type(image_path)
     filename = response_filename or image_path.name
     if output_format == "ome-tiff":
@@ -607,7 +633,7 @@ async def reveal_node_image(
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
-    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
+    image_path = _dataframe_image_path(value, df, result_store, storage_path)
     try:
         reveal_in_file_browser(str(image_path))
     except OSError as exc:
@@ -629,7 +655,7 @@ async def get_node_thumbnail(
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
-    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
+    image_path = _dataframe_image_path(value, df, result_store, storage_path)
     png = await thumbnail_manager.get_or_queue(
         image_path, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
     )

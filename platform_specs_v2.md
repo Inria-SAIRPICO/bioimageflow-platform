@@ -310,6 +310,7 @@ This path is not configurable or persisted in `GraphState` or workspace metadata
 Moving and deleting a workflow naturally carry or remove its results, while duplication copies only the reusable workflow definition and workflow-local tools.
 
 Every direct or merged result-table response pins each displayed source to the library's public `(run_id, node_key, result_key, record_id)` identity captured before the page or projection is built.
+Node-image, thumbnail, and Reveal requests capture their requested node's current result before reading its DataFrame and resolve relative owned-asset values through that exact record's library manifest; absolute external-path values remain absolute, and legacy unpinned values retain their existing lookup rules.
 For each displayed structural column, the same response carries the viewer declaration captured by that exact retained identity; a captured `null` declaration is distinct from legacy unpinned metadata whose viewer status is explicitly unknown.
 Pagination and selected-cell viewer requests reuse that exact identity and never resolve `latest` again; displayed row offsets select only a cell within the pinned artifact and never participate in preference identity.
 Legacy retained views without valid provenance remain readable as explicitly unpinned tables, but they cannot use exact selected-cell viewer resolution.

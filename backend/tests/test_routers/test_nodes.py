@@ -720,6 +720,71 @@ async def test_thumbnail_endpoint_resolves_record_relative_asset_paths(tmp_path:
     assert args[1] == 64
 
 
+@pytest.mark.parametrize("endpoint", ["image", "reveal", "thumbnail"])
+async def test_node_image_actions_resolve_exact_record_asset_without_record_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    image_path = tmp_path / "assets" / "mask.png"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"image")
+    identity = ResultArtifactIdentity(
+        run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old"
+    )
+    df = pd.DataFrame({"mask": ["assets/mask.png"]})
+    df.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = df
+    store.resolve_result_asset.return_value = image_path
+    thumbs = _default_thumbnail_mock()
+    thumbs.get_or_queue = AsyncMock(return_value=b"rendered")
+    reveal = MagicMock()
+    monkeypatch.setattr(nodes_router, "reveal_in_file_browser", reveal)
+
+    async with await _client(store, thumbs) as client:
+        if endpoint == "reveal":
+            response = await client.post("/api/v1/nodes/n1/reveal", params={"col": "mask"})
+        else:
+            response = await client.get(f"/api/v1/nodes/n1/{endpoint}", params={"col": "mask"})
+
+    assert response.status_code == 200, response.text
+    store.resolve_result_asset.assert_called_once_with(
+        identity, "assets/mask.png", storage_path=None
+    )
+    if endpoint == "image":
+        assert response.content == b"image"
+    elif endpoint == "reveal":
+        reveal.assert_called_once_with(str(image_path))
+    else:
+        assert response.content == b"rendered"
+        thumbs.get_or_queue.assert_awaited_once_with(
+            image_path, 128, wait_timeout=nodes_router._THUMBNAIL_WAIT_TIMEOUT_SECONDS
+        )
+
+
+async def test_thumbnail_endpoint_keeps_exact_external_path(tmp_path: Path) -> None:
+    image_path = tmp_path / "external.tif"
+    image_path.write_bytes(b"tif")
+    identity = ResultArtifactIdentity(
+        run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old"
+    )
+    df = pd.DataFrame({"mask": [str(image_path)]})
+    df.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = df
+    thumbs = _default_thumbnail_mock()
+
+    async with await _client(store, thumbs) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask"})
+
+    assert response.status_code == 200
+    store.resolve_result_asset.assert_not_called()
+    assert thumbs.get_or_queue.call_args.args[0] == image_path
+
+
 async def test_thumbnail_endpoint_validation() -> None:
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": ["m.tif"]})

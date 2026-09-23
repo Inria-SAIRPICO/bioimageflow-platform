@@ -846,7 +846,7 @@ The persisted recipe retains a PEP 440 Python constraint, but the Wetlands bound
 Each operation is persisted before provisioning/removal and has typed state, progress, message, and error fields; startup recovers published ready generations but never represents interrupted progress as live.
 Managed removal verifies the public Wetlands name, project path, and generation, stops only the addressed launcher, and retains recoverable `removing` intent until registry and local-reference cleanup complete.
 
-The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
+The node-image endpoints resolve the requested result inside the explicit workflow storage context. For a captured result identity, record-relative image values resolve through that exact immutable record's declared assets; absolute external paths retain their declared location. Legacy unpinned results retain record-directory and workflow-storage-relative lookup. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
 The backend uses an authenticated `multiprocessing.connection` Client/Listener channel to a helper running napari's Qt loop. The no-ID compatibility path lazily provisions the legacy Wetlands `napari` environment. An explicit registered ID instead uses that environment's persisted argv prefix without provisioning or package mutation, owns an independent process/lock/configuration file, and may pass `reader_id` separately as napari's `plugin=` argument. Success is returned only after the Qt-thread operation completes. A timeout or disconnect after dispatch reports an unknown outcome, invalidates the channel, and never replays the open automatically.
 
@@ -1005,11 +1005,11 @@ This ensures the frontend can reconstruct the correct state even if `node_state`
 
 ### 2.6 Thumbnail Generation
 
-The server generates thumbnails on demand for image files referenced in output DataFrames. Thumbnails are cached on disk in the workflow's storage directory.
+The server generates thumbnails on demand for image files referenced in output DataFrames. Thumbnail and Reveal actions use the same captured-record asset resolution as the node-image endpoints, so an owned asset is read from its immutable record and an absolute external path remains external. Thumbnails are cached under the workspace runtime directory.
 
 - **Supported formats:** TIFF, PNG, JPEG, NIfTI (max-projection for 3D)
 - **Size:** 128x128 pixels (configurable via query param)
-- **Cache key:** `SHA256(file_path + file_mtime)` -- invalidates when the file changes
+- **Cache key:** SHA-256 of the absolute file path, file modification time, and requested size; it invalidates when the file changes
 
 ### 2.7 Tool Hot-Reload
 
