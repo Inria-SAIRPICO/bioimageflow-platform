@@ -30,6 +30,8 @@ class ProgressMessage(_MessageBase):
     status: str
     row: int
     total_rows: int
+    task_current: int | None = None
+    task_maximum: int | None = None
     timestamp: float
     result_key: str | None = None
     record_id: str | None = None
@@ -88,6 +90,8 @@ class ExecutionCompleteMessage(_MessageBase):
     success: bool
     errors: list[dict[str, Any]] = []
     node_statuses: dict[str, Any]
+    planned_node_ids: list[str] = Field(default_factory=list)
+    planned_node_names: dict[str, str] = Field(default_factory=dict)
     execution_id: str
     workflow_id: str
     draft_revision: int | None = None
@@ -99,6 +103,8 @@ class StatusSnapshotMessage(_MessageBase):
     last_result: dict[str, Any] | None = None
     progress: dict[str, Any] | None = None
     node_statuses: dict[str, Any] = {}
+    planned_node_ids: list[str] = Field(default_factory=list)
+    planned_node_names: dict[str, str] = Field(default_factory=dict)
     execution_id: str | None = None
     workflow_id: str | None = None
     draft_revision: int | None = None

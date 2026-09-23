@@ -307,6 +307,9 @@ test.describe('execution lifecycle', () => {
     await expect(selected.locator('.tool-node')).toHaveClass(/status-executed/)
     await expect(unrelated.locator('.tool-node')).toHaveClass(/status-unexecuted/)
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('2/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '100')
+    await expect(page.getByTestId('execution-banner-row-progress')).toHaveCount(0)
 
     const result = await page.request.post(
       `${API_BASE}/api/v1/nodes/increment_valid/data/query`,

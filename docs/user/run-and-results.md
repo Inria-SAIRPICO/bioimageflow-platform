@@ -18,7 +18,9 @@ If a tool changed after a node was added, BioImageFlow lists the out-of-date nod
 
 ## Follow execution
 
-The execution banner reports overall progress.
+The execution banner shows one bar for the number of steps completed out of the steps planned for this run, including steps inside nested workflows.
+It names a running step and, when the tool reports them, shows its row position or rows completed and any separate task progress.
+The count stays tied to the run if you switch workflow tabs and reaches 100% when the run succeeds.
 Nodes show states such as waiting, running, completed, reused, failed, or cancelled.
 Editing is locked during a run, but you can still select nodes, read logs, and inspect earlier data.
 

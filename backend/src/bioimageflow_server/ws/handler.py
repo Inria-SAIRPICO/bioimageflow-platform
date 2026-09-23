@@ -175,6 +175,8 @@ class ConnectionManager:
         result_key: str | None = None,
         record_id: str | None = None,
         *,
+        task_current: int | None = None,
+        task_maximum: int | None = None,
         context: ExecutionContext,
     ) -> None:
         payload = {
@@ -183,6 +185,8 @@ class ConnectionManager:
             "status": status,
             "row": row,
             "total_rows": total_rows,
+            "task_current": task_current,
+            "task_maximum": task_maximum,
             "timestamp": timestamp,
             "result_key": result_key,
             "record_id": record_id,
@@ -257,6 +261,8 @@ class ConnectionManager:
                 k: v.model_dump() if hasattr(v, "model_dump") else v
                 for k, v in node_statuses.items()
             },
+            "planned_node_ids": context.planned_node_ids,
+            "planned_node_names": context.planned_node_names,
             **_context_payload(context),
         }
         self._enqueue_all(payload)
@@ -416,6 +422,8 @@ class ConnectionManager:
         result_key: str | None = None,
         record_id: str | None = None,
         *,
+        task_current: int | None = None,
+        task_maximum: int | None = None,
         context: ExecutionContext,
     ) -> None:
         self._schedule(
@@ -427,6 +435,8 @@ class ConnectionManager:
                 timestamp,
                 result_key,
                 record_id,
+                task_current=task_current,
+                task_maximum=task_maximum,
                 context=context,
             ),
             "progress",
@@ -707,6 +717,8 @@ def _status_snapshot_payload(status: Any) -> dict[str, Any]:
         "last_result": _dump_plain(payload.get("last_result")),
         "progress": _dump_plain(payload.get("progress")),
         "node_statuses": _dump_plain(node_statuses or {}),
+        "planned_node_ids": payload.get("planned_node_ids", []),
+        "planned_node_names": payload.get("planned_node_names", {}),
     }
     execution_id = payload.get("execution_id")
     workflow_id = payload.get("workflow_id")

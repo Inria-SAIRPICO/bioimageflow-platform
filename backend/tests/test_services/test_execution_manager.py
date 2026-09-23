@@ -129,6 +129,8 @@ class RecordingEventBus:
         result_key: str | None = None,
         record_id: str | None = None,
         *,
+        task_current: int | None = None,
+        task_maximum: int | None = None,
         context: ExecutionContext,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
@@ -767,7 +769,7 @@ class TestExecutionManagerLifecycle:
         )
         em.context = prior_context
         prior_result = ExecutionResult(success=True)
-        prior_progress = ProgressInfo(node_id="prior-node", row=1, total_rows=1)
+        prior_progress = ProgressInfo(node_id="prior-node", status="row_complete", row=1, total_rows=1)
         prior_node_status = NodeStatus(
             node_id="prior-node",
             status="executed",
@@ -925,8 +927,11 @@ class TestExecutionManagerLifecycle:
             ],
         )
 
-        await em.start(graph, nodes=["selected"], workflow_id="wf-test")
+        context = await em.start(graph, nodes=["selected"], workflow_id="wf-test")
         await _drain(em)
+
+        assert context.planned_node_ids == ["source", "selected"]
+        assert em.get_status().planned_node_ids == context.planned_node_ids
 
         built_graph = builder.call_args.args[0]
         assert {node.id for node in built_graph.nodes} == {
@@ -985,15 +990,19 @@ class TestExecutionManagerProgress:
     ) -> None:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(
-            events=[_ProgressEventStub("n1", "row_progress", current=3, maximum=10, timestamp=1.0)]
+            events=[_ProgressEventStub("n1", "row_progress", row=2, total_rows=5, current=3, maximum=10, timestamp=1.0)]
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
         await _drain(em)
         assert any(
-            e[0] == "n1" and e[1] == "row_progress" and e[2] == 3 and e[3] == 10
+            e[0] == "n1" and e[1] == "row_progress" and e[2] == 2 and e[3] == 5
             for e in bus.progress_events
+        )
+        assert em.progress == ProgressInfo(
+            node_id="n1", status="row_progress", row=2, total_rows=5,
+            task_current=3, task_maximum=10,
         )
         assert any(
             e[0] == "DEBUG" and e[2] == "n1" and "Node n1 row progress 3/10" in e[1]
@@ -1434,7 +1443,7 @@ class TestExecutionManagerResult:
             errors=[],
             node_statuses={"previous": prior_status},
         )
-        prior_progress = ProgressInfo(node_id="previous", row=1, total_rows=1)
+        prior_progress = ProgressInfo(node_id="previous", status="row_complete", row=1, total_rows=1)
         em.last_result = prior_result
         em.progress = prior_progress
         em._node_statuses = {"previous": prior_status}
@@ -1481,12 +1490,17 @@ class TestExecutionManagerResult:
         )
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
 
-        await em.start(
+        context = await em.start(
             _selected_graph(),
             nodes=["selected"],
             workflow_id="wf-test",
         )
         await _drain(em)
+
+        assert context.planned_node_ids == ["upstream/internal", "selected/internal"]
+        assert context.planned_node_names == {
+            "upstream/internal": "internal", "selected/internal": "internal",
+        }
 
         assert wf.compute_calls == 1
         assert wf.targets_received == (wf.nodes["selected"],)

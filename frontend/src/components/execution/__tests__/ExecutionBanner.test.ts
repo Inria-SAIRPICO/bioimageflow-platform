@@ -31,6 +31,11 @@ function establishExecution(
     last_result: null,
     progress: null,
     node_statuses: {},
+    planned_node_ids: ['group/prepare', 'group/analyze'],
+    planned_node_names: {
+      'group/prepare': 'Prepare images',
+      'group/analyze': 'Analyze cells',
+    },
   })
   execution.state = phase
 }
@@ -98,7 +103,7 @@ describe('ExecutionBanner', () => {
     expect(wrapper.find('[data-testid="execution-banner-headline"]').text())
       .toContain('Stopping')
     expect(wrapper.find('[data-testid="execution-banner-overall-progress"]').exists())
-      .toBe(false)
+      .toBe(true)
 
     exec.applyStatusSnapshot({
       ...EXECUTION_CONTEXT,
@@ -112,41 +117,182 @@ describe('ExecutionBanner', () => {
       .toContain('stopped')
   })
 
-  it('displays current node name when running with progress', async () => {
+  it('displays the active scoped node name and genuine row and task progress', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
-    exec.progress = { node_id: 'my_node', row: 3, total_rows: 10 }
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    exec.progress = {
+      node_id: 'group/analyze', status: 'row_progress', row: 24, total_rows: 100,
+      task_current: 3, task_maximum: 7,
+    }
     await nextTick()
     const el = wrapper.find('[data-testid="execution-banner-current-node"]')
     expect(el.exists()).toBe(true)
-    expect(el.text()).toContain('my_node')
+    expect(el.text()).toBe('Running: Analyze cells · Processing row 25/100 · Task progress 3/7')
   })
 
-  it('shows overall progress bar when running', async () => {
+  it('counts only planned executable scoped nodes, including cached work, independently of the open canvas', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
     const ui = useUIStore()
-    ui.setGraphNodes([{ id: 'a' }, { id: 'b' }])
-    exec.state = 'running'
+    establishExecution(exec)
+    ui.setGraphNodes([{ id: 'unrelated-tab-node' }])
     exec.nodeStatuses = {
-      a: { node_id: 'a', status: 'executed', cached: false },
+      'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: true },
+      unrelated: { node_id: 'unrelated', status: 'executed', cached: false },
     }
     await nextTick()
-    expect(
-      wrapper.find('[data-testid="execution-banner-overall-progress"]').exists(),
-    ).toBe(true)
+    const bar = wrapper.get('[data-testid="execution-banner-overall-progress"]')
+    expect(bar.attributes('aria-valuenow')).toBe('50')
+    expect(wrapper.get('[data-testid="execution-banner-node-count"]').text()).toBe('1/2 nodes complete')
+    expect(wrapper.findAll('[role="progressbar"]')).toHaveLength(1)
   })
 
-  it('shows row progress bar when row progress is present', async () => {
+  it('keeps only one bar and reports completed rows accurately', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
-    exec.progress = { node_id: 'n1', row: 5, total_rows: 10 }
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    exec.progress = { node_id: 'group/analyze', status: 'row_complete', row: 24, total_rows: 100 }
     await nextTick()
-    expect(
-      wrapper.find('[data-testid="execution-banner-row-progress"]').exists(),
-    ).toBe(true)
+    expect(wrapper.findAll('[role="progressbar"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="execution-banner-current-node"]').text())
+      .toBe('Running: Analyze cells · 25/100 rows complete')
+  })
+
+  it('reports task progress without inventing a row count', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    exec.progress = {
+      node_id: 'group/analyze', status: 'row_progress', row: -1, total_rows: 0,
+      task_current: 3, task_maximum: 7,
+    }
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-current-node"]').text())
+      .toBe('Running: Analyze cells · Task progress 3/7')
+  })
+
+  it('does not present stale progress for a node that finished while another runs', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: false },
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    exec.progress = { node_id: 'group/prepare', status: 'row_complete', row: 99, total_rows: 100 }
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-current-node"]').text())
+      .toBe('Running: Analyze cells')
+  })
+
+  it('attributes progress to the emitting node while parallel nodes are running', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/prepare': { node_id: 'group/prepare', status: 'running', cached: false },
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    exec.progress = {
+      node_id: 'group/analyze', status: 'row_progress', row: 24, total_rows: 100,
+      task_current: 3, task_maximum: 7,
+    }
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-current-node"]').text())
+      .toBe('Running: Analyze cells · Processing row 25/100 · Task progress 3/7')
+  })
+
+  it('retains partial completion on failure', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: false },
+    }
+    await nextTick()
+    exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT, success: false, errors: [],
+      node_statuses: {}, planned_node_ids: ['group/prepare', 'group/analyze'],
+    })
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-overall-progress"]').attributes('aria-valuenow'))
+      .toBe('50')
+  })
+
+  it('shows a cancelled completion as stopped with the achieved partial count', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.nodeStatuses = {
+      'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: false },
+      'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+    }
+    await nextTick()
+    exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
+      success: false,
+      errors: [{ type: 'cancelled', detail: 'Workflow execution cancelled' }],
+      node_statuses: {
+        'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: false },
+        'group/analyze': { node_id: 'group/analyze', status: 'unexecuted', cached: false },
+      },
+      planned_node_ids: ['group/prepare', 'group/analyze'],
+    })
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-headline"]').text())
+      .toBe('Execution stopped')
+    expect(wrapper.get('[data-testid="execution-banner-overall-progress"]').attributes('aria-valuenow'))
+      .toBe('50')
+    expect(wrapper.get('[data-testid="execution-banner-node-count"]').text())
+      .toBe('1/2 nodes complete')
+  })
+
+  it('restores a cancelled terminal snapshot as stopped', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    exec.applyStatusSnapshot({
+      ...EXECUTION_CONTEXT,
+      state: 'idle',
+      last_result: {
+        success: false,
+        errors: [{ type: 'cancelled', detail: 'Workflow execution cancelled' }],
+        node_statuses: {},
+      },
+      progress: null,
+      planned_node_ids: ['group/prepare', 'group/analyze'],
+      node_statuses: {
+        'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: false },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-headline"]').text())
+      .toBe('Execution stopped')
+    expect(wrapper.get('[data-testid="execution-banner-node-count"]').text())
+      .toBe('1/2 nodes complete')
+  })
+
+  it('fills the bar on success', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    await nextTick()
+    exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT, success: true, errors: [],
+      node_statuses: {}, planned_node_ids: ['group/prepare', 'group/analyze'],
+    })
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-banner-overall-progress"]').attributes('aria-valuenow'))
+      .toBe('100')
   })
 
   it('does not render a duplicate Stop button in the running banner', async () => {

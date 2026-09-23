@@ -98,6 +98,47 @@ describe('execution store', () => {
     expect(store.nodeStatuses.n2.status).toBe('running')
   })
 
+  it('recovers the fixed scoped plan and row and task progress from a reconnect snapshot', () => {
+    const store = useExecutionStore()
+    const progress = {
+      node_id: 'group/analyze', status: 'row_progress' as const,
+      row: 24, total_rows: 100, task_current: 3, task_maximum: 7,
+    }
+    store.applyStatusSnapshot(contextual({
+      state: 'running', last_result: null, progress,
+      planned_node_ids: ['group/prepare', 'group/analyze'],
+      planned_node_names: {
+        'group/prepare': 'Prepare images', 'group/analyze': 'Analyze cells',
+      },
+      node_statuses: {
+        'group/prepare': { node_id: 'group/prepare', status: 'executed', cached: true },
+        'group/analyze': { node_id: 'group/analyze', status: 'running', cached: false },
+      },
+    }))
+
+    expect(store.plannedNodeIds).toEqual(['group/prepare', 'group/analyze'])
+    expect(store.plannedNodeNames['group/analyze']).toBe('Analyze cells')
+    expect(store.progress).toMatchObject(progress)
+  })
+
+  it('replaces one run plan when a new execution context arrives', () => {
+    const store = useExecutionStore()
+    store.applyStatusSnapshot(contextual({
+      state: 'running', last_result: null, progress: null,
+      planned_node_ids: ['old'], planned_node_names: { old: 'Old' },
+    }))
+    store.applyExecutionComplete(contextual({
+      success: true, errors: [], node_statuses: {}, planned_node_ids: ['old'],
+    }))
+    store.applyStatusSnapshot(contextual({
+      state: 'running', last_result: null, progress: null,
+      planned_node_ids: ['new'], planned_node_names: { new: 'New' },
+    }, 'exec-2'))
+
+    expect(store.plannedNodeIds).toEqual(['new'])
+    expect(store.plannedNodeNames).toEqual({ new: 'New' })
+  })
+
   it('run sends POST, resets nodeStatuses, preserves logs, and waits for backend logs', async () => {
     const graph = { nodes: [], edges: [] }
     mockedApi.post.mockResolvedValueOnce({

@@ -35,7 +35,7 @@ from bioimageflow_server.models.execution import (
     ProgressInfo,
 )
 from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
-from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.environment_logging import environment_log_entry
@@ -79,6 +79,8 @@ class ExecutionEventBus(Protocol):
         result_key: str | None = None,
         record_id: str | None = None,
         *,
+        task_current: int | None = None,
+        task_maximum: int | None = None,
         context: ExecutionContext,
     ) -> None: ...
 
@@ -130,6 +132,8 @@ class NullEventBus:
         result_key: str | None = None,
         record_id: str | None = None,
         *,
+        task_current: int | None = None,
+        task_maximum: int | None = None,
         context: ExecutionContext,
     ) -> None:
         return None
@@ -230,6 +234,32 @@ def _selected_root_scope(graph: GraphState, nodes: list[str]) -> set[str]:
                 scope.add(predecessor)
                 pending.append(predecessor)
     return scope
+
+
+def _planned_leaf_nodes(
+    graph: GraphState, targets: list[str] | None
+) -> tuple[list[str], dict[str, str]]:
+    """Freeze the enabled tool paths reached by this run's root targets."""
+
+    root_scope = _selected_root_scope(graph, targets) if targets is not None else None
+    ids: list[str] = []
+    names: dict[str, str] = {}
+
+    def visit(current: GraphState, prefix: str = "") -> None:
+        for node in current.nodes:
+            if prefix == "" and root_scope is not None and node.id not in root_scope:
+                continue
+            if not node.enabled:
+                continue
+            path = f"{prefix}/{node.id}" if prefix else node.id
+            if isinstance(node, WorkflowNodeState):
+                visit(node.workflow, path)
+            else:
+                ids.append(path)
+                names[path] = node.name
+
+    visit(graph)
+    return ids, names
 
 
 def _selected_validation_errors(
@@ -471,6 +501,13 @@ class ExecutionManager:
         live_settings = self._settings_provider() if self._settings_provider else self.settings
         run_storage_path = storage_path if storage_path is not None else self.storage_path
         build_graph = graph
+        planned_node_ids, planned_node_names = _planned_leaf_nodes(build_graph, nodes)
+        context = context.model_copy(
+            update={
+                "planned_node_ids": planned_node_ids,
+                "planned_node_names": planned_node_names,
+            }
+        )
         on_progress = self._make_progress_callback(context)
         try:
             validation_output = await GraphValidationService(
@@ -879,23 +916,32 @@ class ExecutionManager:
                 return
 
             if status == "row_progress":
-                current = int(getattr(event, "current", 0) or 0)
-                maximum = int(getattr(event, "maximum", 0) or 0)
+                raw_current = getattr(event, "current", None)
+                raw_maximum = getattr(event, "maximum", None)
+                current = int(raw_current) if raw_current is not None else None
+                maximum = int(raw_maximum) if raw_maximum is not None else None
+                row = int(getattr(event, "row", 0) or 0)
+                total_rows = int(getattr(event, "total_rows", 0) or 0)
                 self.progress = ProgressInfo(
                     node_id=node_id,
-                    row=current,
-                    total_rows=maximum,
+                    status="row_progress",
+                    row=row,
+                    total_rows=total_rows,
+                    task_current=current,
+                    task_maximum=maximum,
                     result_key=result_key,
                     record_id=record_id,
                 )
                 self.event_bus.publish_progress(
                     node_id,
                     "row_progress",
-                    current,
-                    maximum,
+                    row,
+                    total_rows,
                     timestamp,
                     result_key,
                     record_id,
+                    task_current=current,
+                    task_maximum=maximum,
                     context=context,
                 )
                 self.event_bus.publish_log(
@@ -912,6 +958,7 @@ class ExecutionManager:
                 total_rows = int(getattr(event, "total_rows", 0) or 0)
                 self.progress = ProgressInfo(
                     node_id=node_id,
+                    status="row_complete",
                     row=row,
                     total_rows=total_rows,
                     result_key=result_key,

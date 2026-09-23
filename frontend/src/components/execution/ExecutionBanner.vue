@@ -36,6 +36,11 @@ function scheduleDismiss(ms: number) {
   }, ms)
 }
 
+function resultMode(result: { success: boolean; errors: Array<Record<string, unknown>> }): BannerMode {
+  if (result.success) return 'success'
+  return result.errors.some((error) => error.type === 'cancelled') ? 'stopped' : 'failure'
+}
+
 watch(
   () => exec.state,
   (next, prev) => {
@@ -55,17 +60,16 @@ watch(
         // Explicit stop without a last_result yet.
         terminalMode.value = 'stopped'
         scheduleDismiss(DISMISS_STOPPED_MS)
-      } else if (result.success) {
-        terminalMode.value = 'success'
-        scheduleDismiss(DISMISS_SUCCESS_MS)
       } else {
-        terminalMode.value = 'failure'
-        scheduleDismiss(DISMISS_FAILURE_MS)
-        const failedNodeId = Object.values(result.node_statuses ?? {}).find(
-          (ns) => ns.status === 'failed',
-        )?.node_id
-        if (failedNodeId) {
-          ui.setSelectedNodes([failedNodeId])
+        terminalMode.value = resultMode(result)
+        scheduleDismiss(terminalMode.value === 'stopped'
+          ? DISMISS_STOPPED_MS
+          : terminalMode.value === 'success' ? DISMISS_SUCCESS_MS : DISMISS_FAILURE_MS)
+        if (terminalMode.value === 'failure') {
+          const failedNodeId = Object.values(result.node_statuses ?? {}).find(
+            (ns) => ns.status === 'failed',
+          )?.node_id
+          if (failedNodeId) ui.setSelectedNodes([failedNodeId])
         }
       }
     }
@@ -79,7 +83,7 @@ const mode = computed<BannerMode>(() => {
   if (exec.state === 'stopping') return 'stopping'
   if (terminalMode.value) return terminalMode.value
   if (exec.lastResult) {
-    return exec.lastResult.success ? 'success' : 'failure'
+    return resultMode(exec.lastResult)
   }
   return 'hidden'
 })
@@ -114,21 +118,48 @@ const headline = computed(() => {
   }
 })
 
-const currentNodeId = computed(() => exec.progress?.node_id ?? null)
-
-const rowProgress = computed(() => {
-  const p = exec.progress
-  if (!p || !p.total_rows) return null
-  return Math.round((p.row / p.total_rows) * 100)
-})
-
-const overallProgress = computed(() => {
-  const total = ui.graphNodes.length || 0
-  const executed = Object.values(exec.nodeStatuses).filter(
-    (ns) => ns.status === 'executed',
+const plannedNodes = computed(() => new Set(exec.plannedNodeIds))
+const totalNodes = computed(() => plannedNodes.value.size)
+const completedNodes = computed(() => {
+  if (mode.value === 'success') return totalNodes.value
+  return [...plannedNodes.value].filter(
+    (id) => exec.nodeStatuses[id]?.status === 'executed',
   ).length
-  if (total === 0) return 0
-  return Math.round((executed / total) * 100)
+})
+const overallProgress = computed(() => totalNodes.value === 0
+  ? 0
+  : Math.round((completedNodes.value / totalNodes.value) * 100))
+const nodeCountLabel = computed(() => `${completedNodes.value}/${totalNodes.value} nodes complete`)
+
+const currentNodeId = computed(() => {
+  const preferred = exec.progress?.node_id
+  if (preferred && plannedNodes.value.has(preferred)
+    && exec.nodeStatuses[preferred]?.status === 'running') return preferred
+  return [...plannedNodes.value].find(
+    (id) => exec.nodeStatuses[id]?.status === 'running',
+  ) ?? null
+})
+const currentNodeName = computed(() => currentNodeId.value
+  ? exec.plannedNodeNames[currentNodeId.value] || currentNodeId.value
+  : null)
+
+const detail = computed(() => {
+  if (mode.value !== 'running' || !currentNodeId.value) return null
+  const parts = [`Running: ${currentNodeName.value}`]
+  const p = exec.progress
+  if (p?.node_id === currentNodeId.value && p.total_rows > 0
+    && Number.isInteger(p.row) && p.row >= 0) {
+    const rowNumber = Math.min(p.row + 1, p.total_rows)
+    parts.push(p.status === 'row_complete'
+      ? `${rowNumber}/${p.total_rows} rows complete`
+      : `Processing row ${rowNumber}/${p.total_rows}`)
+  }
+  if (p?.node_id === currentNodeId.value && p.status === 'row_progress'
+    && p.task_maximum && p.task_maximum > 0
+    && p.task_current !== null && p.task_current !== undefined) {
+    parts.push(`Task progress ${p.task_current}/${p.task_maximum}`)
+  }
+  return parts.join(' · ')
 })
 
 const modeClass = computed(() => {
@@ -177,13 +208,6 @@ defineExpose({ mode, isVisible })
         <span class="execution-banner__headline" data-testid="execution-banner-headline">
           {{ headline }}
         </span>
-        <span
-          v-if="mode === 'running' && currentNodeId"
-          class="execution-banner__current-node"
-          data-testid="execution-banner-current-node"
-        >
-          {{ currentNodeId }}
-        </span>
         <button
           type="button"
           class="execution-banner__open"
@@ -193,18 +217,23 @@ defineExpose({ mode, isVisible })
           Open Execution
         </button>
       </div>
-      <div v-if="mode === 'running'" class="execution-banner__progress">
+      <div
+        v-if="totalNodes > 0 && (mode === 'running' || mode === 'stopping' || mode === 'success' || mode === 'failure' || mode === 'stopped')"
+        class="execution-banner__progress"
+      >
         <ProgressBar
           :value="overallProgress"
+          :show-value="false"
+          :aria-label="nodeCountLabel"
           data-testid="execution-banner-overall-progress"
           class="execution-banner__bar"
         />
-        <ProgressBar
-          v-if="rowProgress !== null"
-          :value="rowProgress"
-          data-testid="execution-banner-row-progress"
-          class="execution-banner__bar"
-        />
+        <span class="execution-banner__bar-label" data-testid="execution-banner-node-count">
+          <span>{{ nodeCountLabel }}</span>
+        </span>
+        <span v-if="detail" class="execution-banner__detail" data-testid="execution-banner-current-node">
+          {{ detail }}
+        </span>
       </div>
     </div>
   </Transition>
@@ -259,13 +288,37 @@ defineExpose({ mode, isVisible })
 
 .execution-banner__progress {
   margin-top: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  position: relative;
 }
 
 .execution-banner__bar {
   height: 1.25rem;
+}
+
+.execution-banner__bar-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: white;
+  font-size: 0.8rem;
+}
+
+.execution-banner__bar-label span {
+  background: rgba(0, 0, 0, 0.75);
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+
+.execution-banner__detail {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
 }
 
 .execution-banner-enter-active,

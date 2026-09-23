@@ -238,6 +238,9 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     })
     expect(heldStatus.execution_id).toMatch(/^run_/)
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
+    await expect(page.getByTestId('execution-banner-row-progress')).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
@@ -268,6 +271,9 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     ))
     await page.getByTestId('stop-execution-button').click()
     expect((await stopResponse).status()).toBe(200)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution stopped')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
     await expect.poll(async () => ({
       state: (await executionStatus(page)).state,
       cancellationAcknowledged: control.cancellationAcknowledged,

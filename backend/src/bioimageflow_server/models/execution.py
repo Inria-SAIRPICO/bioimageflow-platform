@@ -65,6 +65,8 @@ class ExecutionContext(BaseModel):
     mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
     requested_nodes: list[str] | None = None
     retry_of_execution_id: str | None = None
+    planned_node_ids: list[str] = Field(default_factory=list)
+    planned_node_names: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("workflow_id")
     @classmethod
@@ -76,8 +78,11 @@ class ProgressInfo(BaseModel):
     """Progress information for a running node."""
 
     node_id: str
+    status: Literal["row_progress", "row_complete"]
     row: int
     total_rows: int
+    task_current: int | None = None
+    task_maximum: int | None = None
     result_key: str | None = None
     record_id: str | None = None
 
@@ -103,3 +108,5 @@ class ExecutionStatus(BaseModel):
     mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
     requested_nodes: list[str] | None = None
     retry_of_execution_id: str | None = None
+    planned_node_ids: list[str] = Field(default_factory=list)
+    planned_node_names: dict[str, str] = Field(default_factory=dict)

@@ -156,6 +156,7 @@ Node-image, thumbnail, and Reveal requests resolve relative owned image paths ag
 
 Execution operates on one exact accepted graph or draft snapshot.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
+The execution banner's single overall bar uses the run's retained scoped executable leaf-node plan, including cached and selected dependencies, rather than the active canvas node count. Its text distinguishes completed nodes, current row position or completed rows, and per-row task progress; a successful run reaches 100%.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
 Context-menu Delete and Group refusals during that lock leave the canvas graph and history unchanged and visibly explain the lock.
 Ordinary accepted graph mutations serialize through the same admission gate: a mutation reservation blocks Run, concurrent mutations wait their turn, and only an actually starting or running execution makes a mutation fail as execution-locked.

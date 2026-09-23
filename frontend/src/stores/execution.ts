@@ -16,8 +16,11 @@ import type {
 
 export interface ProgressInfo {
   node_id: string
+  status?: 'row_progress' | 'row_complete'
   row: number
   total_rows: number
+  task_current?: number | null
+  task_maximum?: number | null
   result_key?: string | null
   record_id?: string | null
 }
@@ -41,6 +44,8 @@ interface ExecutionContextFields {
   mode?: ExecutionMode
   requested_nodes?: string[] | null
   retry_of_execution_id?: string | null
+  planned_node_ids?: string[]
+  planned_node_names?: Record<string, string>
 }
 
 interface RequiredExecutionContextFields {
@@ -77,6 +82,8 @@ interface ExecutionStatusSnapshot extends ExecutionStatus, ExecutionContextField
 
 interface ExecutionCompletePayload extends ExecutionResult, RequiredExecutionContextFields {
   type?: 'execution_complete'
+  planned_node_ids?: string[]
+  planned_node_names?: Record<string, string>
 }
 
 interface ProgressPayload extends ProgressInfo, RequiredExecutionContextFields {
@@ -214,6 +221,8 @@ export const useExecutionStore = defineStore('execution', () => {
   const lastResult = ref<ExecutionResult | null>(null)
   const progress = ref<ProgressInfo | null>(null)
   const nodeStatuses = ref<Record<string, NodeStatus>>({})
+  const plannedNodeIds = ref<string[]>([])
+  const plannedNodeNames = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
   const isConflict = ref(false)
   const conflictCode = ref<string | null>(null)
@@ -288,6 +297,8 @@ export const useExecutionStore = defineStore('execution', () => {
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
+    plannedNodeIds.value = []
+    plannedNodeNames.value = {}
   }
 
   function clearProvisionalContext(): void {
@@ -368,6 +379,12 @@ export const useExecutionStore = defineStore('execution', () => {
     }
     if (value.retry_of_execution_id !== undefined) {
       retryOfExecutionId.value = value.retry_of_execution_id
+    }
+    if (value.planned_node_ids !== undefined) {
+      plannedNodeIds.value = [...value.planned_node_ids]
+    }
+    if (value.planned_node_names !== undefined) {
+      plannedNodeNames.value = { ...value.planned_node_names }
     }
   }
 
@@ -718,6 +735,7 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function applyExecutionComplete(payload: ExecutionCompletePayload) {
     if (!acceptPayloadContext(payload, 'event')) return
+    adoptExecutionIntent(payload)
     state.value = 'idle'
     terminalFence = true
     lastResult.value = payload
@@ -800,6 +818,8 @@ export const useExecutionStore = defineStore('execution', () => {
     lastResult,
     progress,
     nodeStatuses,
+    plannedNodeIds,
+    plannedNodeNames,
     error,
     isConflict,
     conflictCode,

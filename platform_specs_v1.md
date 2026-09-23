@@ -717,7 +717,7 @@ Normal root-canvas runs verify the submitted graph against the accepted draft re
 
 If `draft_revision` is present, the backend loads that workflow's accepted draft, rejects a stale revision with `draft_revision_conflict`, rejects a different submitted graph with `draft_graph_mismatch`, and compiles the backend-loaded accepted graph after equality is proven. Omitting `draft_revision` retains the request-local execution contract for explicit compatibility callers; it does not authorize the backend to infer graph meaning from request history.
 
-Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
+Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context plus the fixed `planned_node_ids` and `planned_node_names`, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
 An attached progress callback may update state and publish messages only while its captured execution context is the active running context; late events from a completed or superseded run are discarded.
 Ordinary accepted workflow and draft mutations serialize through the execution-admission gate instead of reporting one another as running execution: a mutation already holding the gate blocks Run, a concurrent mutation waits, and an actually starting or running execution rejects the mutation with HTTP 423.
 
@@ -743,6 +743,8 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
     }
   },
   "progress": null,
+  "planned_node_ids": ["cellpose_segmenter_1"],
+  "planned_node_names": {"cellpose_segmenter_1": "Cellpose segmenter"},
   "node_statuses": {
     "cellpose_segmenter_1": {"node_id": "cellpose_segmenter_1", "status": "executed", "cached": true}
   }
@@ -751,9 +753,11 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `state` | `"running" \| "idle"` | Whether an execution is in progress |
+| `state` | `"starting" \| "running" \| "idle"` | Whether an execution is starting, in progress, or idle |
 | `last_result` | `ExecutionResult \| null` | Final result of the last execution (same result fields as `execution_complete`). Persists after execution ends and is cleared only when the next Run has been accepted after compilation. `null` if no execution has run since server start. |
-| `progress` | `ProgressInfo \| null` | Current progress (only when `state` is `"running"`): `{node_id, row, total_rows, result_key?, record_id?}` |
+| `progress` | `ProgressInfo \| null` | Latest running-node progress: `{node_id, status, row, total_rows, task_current, task_maximum, result_key?, record_id?}`. Row fields retain the library's zero-based row index and total row count; `row_progress` task units remain separate from `row_complete` row completion. |
+| `planned_node_ids` | `list[str]` | Immutable scoped executable tool-node paths in this run's target and dependency closure, excluding disabled nodes and aggregate workflow boundaries. Cached nodes remain in the plan. |
+| `planned_node_names` | `dict[str, str]` | Display names keyed by the planned scoped tool-node paths. |
 | `node_statuses` | `dict[str, NodeStatus]` | Current or final statuses for the retained execution context |
 | `execution_id` | `str \| null` | Unique accepted execution identity |
 | `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
@@ -963,11 +967,11 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `progress` | `{node_id, status, row, total_rows, timestamp, execution_id, workflow_id, result_key?, record_id?, draft_revision?}` | Progress for one accepted execution context |
+| `progress` | `{node_id, status, row, total_rows, task_current?, task_maximum?, timestamp, execution_id, workflow_id, result_key?, record_id?, draft_revision?}` | Progress for one accepted execution context; row index/count and sub-row task units remain distinct |
 | `node_state` | `{node_id, status, cached, execution_id, workflow_id, error?, traceback?, result_key?, record_id?, draft_revision?}` | Node state change for one accepted execution context; status fields use the shared `NodeStatus` schema |
 | `log` | `{level, message, node_id?, timestamp, execution_id?, workflow_id?, draft_revision?}` | BioImageFlow and Wetlands records attributable to an execution carry that execution's immutable context; non-execution tool, environment, thumbnail, and platform logs omit it and remain global |
-| `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], execution_id, workflow_id, errors?: [...], draft_revision?}` | Workflow execution finished with final statuses for one accepted execution context |
-| `status_snapshot` | `{state, last_result?, progress?, node_statuses, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state sent on connection and used for context-aware recovery |
+| `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision?}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
+| `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
 | `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
@@ -1514,7 +1518,7 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 
 Instead of a blocking modal, the GUI shows a **persistent execution banner** at the top of the canvas. The user can inspect completed nodes, view Node Data, and browse the Logger Panel while execution is in progress. Graph **mutations** are locked (node/edge creation, deletion, parameter changes, drag-to-reorder), but read-only inspection is allowed.
 
-- **Banner content:** "Executing workflow..." + overall progress bar (nodes completed / total) + current node name + row progress bar + **Stop** button.
+- **Banner content:** "Executing workflow..." and one progress bar for completed or cached executable tool nodes out of the fixed run plan. Text identifies the completed count, a currently running node, and its actual row position or completed row count when available; separate task progress is identified as task progress rather than rows. The count uses the accepted run identity and does not change when the user switches canvases. Parallel nodes can run at once, so the count says "nodes complete" rather than implying one sequential current-node ordinal. The bar shows 100% on successful completion and keeps the achieved partial count on failure or stop. **Stop** remains available in the execution controls.
 - **Canvas overlay:** Running nodes show a pulsing blue border. Completed nodes turn green in real-time.
 - **Locked interactions during execution:** Adding/removing nodes or edges, changing parameters, enable/disable toggle, clear outputs, save workflow, undo/redo. These actions are grayed out with a tooltip: "Locked during execution."
 - **Allowed interactions during execution:** Selecting nodes, viewing the Node Panel (read-only), browsing Node Data (completed nodes show their output), scrolling the Logger Panel, panning/zooming the canvas, opening images in Napari.

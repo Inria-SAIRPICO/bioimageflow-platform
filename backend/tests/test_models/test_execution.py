@@ -77,7 +77,7 @@ class TestExecutionContext:
 
 class TestProgressInfo:
     def test_construction(self) -> None:
-        p = ProgressInfo(node_id="n1", row=5, total_rows=100)
+        p = ProgressInfo(node_id="n1", status="row_complete", row=5, total_rows=100)
         assert p.node_id == "n1"
         assert p.row == 5
         assert p.total_rows == 100
@@ -104,7 +104,7 @@ class TestExecutionResult:
 
 class TestExecutionStatus:
     def test_running(self) -> None:
-        p = ProgressInfo(node_id="n1", row=3, total_rows=10)
+        p = ProgressInfo(node_id="n1", status="row_complete", row=3, total_rows=10)
         es = ExecutionStatus(state="running", progress=p)
         assert es.state == "running"
         assert es.last_result is None
@@ -123,7 +123,7 @@ class TestExecutionStatus:
             ExecutionStatus.model_validate({"state": "paused"})
 
     def test_roundtrip(self) -> None:
-        p = ProgressInfo(node_id="n1", row=1, total_rows=5)
+        p = ProgressInfo(node_id="n1", status="row_complete", row=1, total_rows=5)
         es = ExecutionStatus(state="running", progress=p)
         dumped = json.loads(es.model_dump_json())
         es2 = ExecutionStatus.model_validate(dumped)
@@ -150,4 +150,6 @@ class TestExecutionStatus:
             "mode": "normal",
             "requested_nodes": None,
             "retry_of_execution_id": None,
+            "planned_node_ids": [],
+            "planned_node_names": {},
         }

@@ -411,12 +411,17 @@ async def test_execution_messages_and_snapshot_share_one_context() -> None:
         execution_id="exec-123",
         workflow_id="wf_a",
         draft_revision=7,
+        planned_node_ids=["n1"],
+        planned_node_names={"n1": "Analyze cells"},
     )
     mgr = ConnectionManager(loop=asyncio.get_running_loop())
     ws = MockWebSocket()
     await mgr.connect(ws)
 
-    await mgr.broadcast_progress("n1", "row_progress", 1, 2, 1.0, context=context)
+    await mgr.broadcast_progress(
+        "n1", "row_progress", 1, 2, 1.0,
+        task_current=3, task_maximum=10, context=context,
+    )
     await mgr.broadcast_node_state("n1", "executed", False, context=context)
     await mgr.broadcast_execution_complete(True, [], {}, context=context)
     await mgr.send_status_snapshot(
@@ -426,9 +431,18 @@ async def test_execution_messages_and_snapshot_share_one_context() -> None:
             execution_id=context.execution_id,
             workflow_id=context.workflow_id,
             draft_revision=context.draft_revision,
+            planned_node_ids=context.planned_node_ids,
+            planned_node_names=context.planned_node_names,
         ),
     )
     await _drain(mgr)
+
+    assert ws.sent[0]["row"] == 1
+    assert ws.sent[0]["total_rows"] == 2
+    assert ws.sent[0]["task_current"] == 3
+    assert ws.sent[0]["task_maximum"] == 10
+    assert ws.sent[2]["planned_node_ids"] == ["n1"]
+    assert ws.sent[3]["planned_node_names"] == {"n1": "Analyze cells"}
 
     assert [payload["type"] for payload in ws.sent] == [
         "progress",
@@ -519,6 +533,8 @@ async def test_send_status_snapshot_serializes_pydantic_node_statuses() -> None:
         "state": "running",
         "last_result": None,
         "progress": {"node_id": "n1", "row": 2, "total_rows": 5},
+        "planned_node_ids": [],
+        "planned_node_names": {},
         "node_statuses": {
             "n1": {
                 "node_id": "n1",

@@ -316,6 +316,8 @@ async def test_run_returns_202(idle_client) -> None:
             "mode": "normal",
             "requested_nodes": None,
             "retry_of_execution_id": None,
+            "planned_node_ids": [],
+            "planned_node_names": {},
         }
     em.start.assert_awaited_once()
     assert em.start.await_args.kwargs["workflow_id"] == "wf"
@@ -1387,7 +1389,7 @@ async def test_status_running_with_progress(tmp_path: Path) -> None:
     status = ExecutionStatus(
         state="running",
         last_result=None,
-        progress=ProgressInfo(node_id="n1", row=1, total_rows=10),
+        progress=ProgressInfo(node_id="n1", status="row_complete", row=1, total_rows=10),
         execution_id="exec-123",
         workflow_id="wf",
         draft_revision=7,
