@@ -236,6 +236,7 @@ class SettingsStore:
                 "napari_default_environment_id",
                 "napari_filename_rules",
                 "napari_environment_operations",
+                "napari_suppressed_legacy_roots",
             }
             if not set(changes).issubset(allowed):
                 raise ValueError("patch_napari_registry received a non-registry field")
@@ -264,6 +265,7 @@ class SettingsStore:
                 "napari_default_environment_id",
                 "napari_filename_rules",
                 "napari_environment_operations",
+                "napari_suppressed_legacy_roots",
             }
             if not set(changes).issubset(allowed):
                 raise ValueError("mutate_napari_registry received a non-registry field")

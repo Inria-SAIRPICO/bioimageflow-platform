@@ -4562,6 +4562,8 @@ export interface components {
             napari_filename_rules?: components["schemas"]["NapariFilenameRule"][];
             /** Napari Environment Operations */
             napari_environment_operations?: components["schemas"]["NapariEnvironmentOperation"][];
+            /** Napari Suppressed Legacy Roots */
+            napari_suppressed_legacy_roots?: string[];
             /**
              * Omero Instances
              * @default []

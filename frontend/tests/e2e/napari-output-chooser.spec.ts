@@ -15,6 +15,7 @@ async function openNodeData(page: Page, workflowName: string): Promise<void> {
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
   await page.getByTestId(`workflow-row-${workflowName}`).click()
+  await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(workflowName)
   await page.getByRole('button', { name: 'Open workflow', exact: true }).click()
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   const seed = page.locator('.vue-flow__node[data-id="seed"]')
@@ -89,8 +90,8 @@ test('napari result action resolves the captured identity to the server-selected
     resolveBodies.push(request)
     identityGeneration = request.identity_generation
     const candidates = [
-      { environment_id: environmentA, name: 'Microscopy', status: 'compatible', label: 'Required packages installed', reason: favorite === environmentA ? 'Selected favorite' : 'Selected by global default', preference: favorite === environmentA ? 'favorite' : 'global_default', issues: [], missing_recommended_packages: [] },
-      { environment_id: environmentB, name: 'Tracking', status: 'compatible', label: 'Required packages installed', reason: favorite === environmentB ? 'Selected favorite' : 'Compatible fallback', preference: favorite === environmentB ? 'favorite' : 'other', issues: [], missing_recommended_packages: [] },
+      { environment_id: environmentA, name: 'Microscopy', status: 'compatible', label: 'Required packages installed', reason: favorite === environmentA ? 'Selected favorite' : 'Selected by global default', preference: favorite === environmentA ? 'favorite' : 'global_default', issues: [], missing_recommended_packages: [], reader_id: 'retained.reader' },
+      { environment_id: environmentB, name: 'Tracking', status: 'compatible', label: 'Required packages installed', reason: favorite === environmentB ? 'Selected favorite' : 'Compatible fallback', preference: favorite === environmentB ? 'favorite' : 'other', issues: [], missing_recommended_packages: [], reader_id: 'retained.reader' },
     ]
     await route.fulfill({ json: {
       artifact_identity: request.result_identity,
@@ -128,4 +129,25 @@ test('napari result action resolves the captured identity to the server-selected
     result_identity: resultIdentity,
   })
   expect(openBodies).toHaveLength(0)
+
+  await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+  const chooser = page.getByTestId('choose-napari-42-mask')
+  await expect(page.locator('.p-datatable-mask')).toBeHidden()
+  await chooser.scrollIntoViewIfNeeded()
+  await expect(chooser).toBeInViewport()
+  await chooser.click()
+  const picker = page.getByTestId('napari-environment-picker')
+  await expect(picker).toContainText('Will open in Microscopy')
+  await expect(picker).not.toContainText('Selected by global default')
+  await expect(picker.getByRole('button', { name: 'Unset favorite', exact: true })).toHaveCount(0)
+  const clearAndOpen = picker.getByRole('button', { name: 'Clear layers, then open' })
+  await expect(clearAndOpen).toHaveAttribute('title', 'Clear all layers in Microscopy, then open mask')
+  await clearAndOpen.click()
+  expect(openBodies).toHaveLength(1)
+  expect(openBodies[0]).toMatchObject({
+    environment_id: environmentA,
+    clear_layers: true,
+    reader_id: 'retained.reader',
+    result_identity: resultIdentity,
+  })
 })

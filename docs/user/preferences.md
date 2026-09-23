@@ -25,21 +25,28 @@ Desktop mode can keep several named Napari environments side by side.
 Use **Add existing** to register a Conda environment or virtual environment without changing its packages, or **Create environment** to let BioImageFlow create an isolated managed environment.
 Each entry shows its detected Python, Napari, Qt, and installed-distribution inventory.
 Use **Refresh** after changing packages outside BioImageFlow, and **Launch empty viewer** when you want to start or focus that environment without opening an image.
+If BioImageFlow says the Python executable changed since registration, the previous package check may be out of date and opening is blocked until the installation is verified.
+For an external environment, use **Locate environment** to select its current folder, even if the path is unchanged, then **Refresh**.
+For an adopted legacy installation, use **Forget** to remove the old registration permanently and add the installation as an existing environment, or create a new managed environment.
+Forgetting removes that environment's default, filename rules, and output favorites without deleting its files.
 
 Choose a global default for outputs that have no more-specific preference.
-Optional file-opening rules match the complete file or directory name from top to bottom; the first match wins.
+Optional file-opening rules match the complete file or directory name from top to bottom; the first matching enabled rule selects the preferred environment.
+Put a specific pattern such as `*_labels.tif` above a broad one such as `*.tif`.
 The **Extension** shortcut turns values such as `.ome.tif` into `*.ome.tif`, while **Filename pattern** accepts `*`, `?`, and bracket character classes.
-Use the filename test before saving or reordering a broad rule.
-An environment preference never overrides a tool output's required packages, and a reader ID is attempted only for opens selected by that rule.
+If no rule matches, BioImageFlow uses the global default or another compatible environment.
+An environment preference never overrides a tool output's required packages.
+The optional **Reader plugin ID** tells napari which plugin should read a matching file; leave it blank for automatic reader choice.
+It does not install a plugin or replace a package requirement, and an output's declared reader ID takes precedence over a filename rule's reader ID.
 
 Managed environment creation uses an isolated recipe.
 The default recipe installs Python 3.12, Napari 0.9.1, and PyQt6; the legacy recipe installs Napari 0.6.6 and PyQt5.
-Creating a modified copy leaves the original installation unchanged.
+Enter the Python distributions for any plugins needed to view an output, such as a segmentation-refinement plugin, in **Plugin packages to install**.
+An output's required packages must be installed in a compatible environment, but an installed distribution does not guarantee that its napari plugin is enabled or works at runtime.
 Setup, retry, cancellation, and removal progress appears with the affected environment.
 
-The viewing requirements report compares every declared output requirement in the saved workflow with the current registered inventories.
-It is informational: unknown or uncovered requirements do not block editing or running, and checking them does not install packages or launch Napari.
-When requirements are uncovered, use a setup action on one requirement group to prefill a separate managed environment recipe.
+After importing a workflow, BioImageFlow checks declared viewing requirements without installing packages or launching napari.
+Unknown or uncovered requirements do not block editing or running; an import warning can prefill the creation form with one requirement group.
 
 Fiji is installed separately from BioImageFlow.
 [Download Fiji](https://imagej.net/software/fiji/downloads), unpack it, then choose the `Fiji.app` folder in **Preferences → Image Viewers**.

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import Select from 'primevue/select'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -122,13 +123,15 @@ describe('ImageViewersSection', () => {
     })
     await flushPromises()
 
-    await wrapper.get('select[aria-label="Filename rule mode"]').setValue('pattern')
+    const mode = wrapper.findAllComponents(Select).find(component => component.attributes('id') === 'filename-rule-mode')!
+    mode.vm.$emit('update:modelValue', 'pattern')
+    await flushPromises()
     await wrapper.get('input[aria-label="Extension or filename pattern"]').setValue('*')
     expect(wrapper.text()).toContain('catch-all * rule wins before every later rule')
 
     await wrapper.get('button[title="Edit rule"]').trigger('click')
     await wrapper.get('input[aria-label="Edit filename pattern"]').setValue('*.ome.tif')
-    await wrapper.get('input[aria-label="Edit optional reader ID"]').setValue('reader-id')
+    await wrapper.get('input[aria-label="Edit reader plugin ID"]').setValue('reader-id')
     await wrapper.get('button[title="Save rule"]').trigger('click')
     await flushPromises()
 
@@ -155,7 +158,7 @@ describe('ImageViewersSection', () => {
     expect(launch.attributes('disabled')).toBeDefined()
   })
 
-  it('renders an honest non-modal per-output readiness report with candidate issues', async () => {
+  it('omits the large readiness report but retains setup prefills and concise guidance', async () => {
     const napari = useNapariStore()
     napari.viewingManifest = { schema: 'bioimageflow.viewing_requirements.v1', complete: false, outputs: {} }
     napari.viewingReadiness = {
@@ -183,13 +186,38 @@ describe('ImageViewersSection', () => {
     })
     await flushPromises()
 
-    const report = wrapper.get('[aria-labelledby="viewing-requirements-heading"]')
-    expect(report.text()).toContain('nested/segment/image')
-    expect(report.text()).toContain('Not verified')
-    expect(report.text()).toContain('Activity')
-    expect(report.text()).toContain('Not reported by the portable manifest')
-    expect(report.text()).toContain('Refresh the environment inventory')
-    expect(report.text()).toContain('Unknown outputs are not treated as compatible')
-    expect(wrapper.find('.p-dialog').exists()).toBe(false)
+    expect(wrapper.find('[aria-labelledby="viewing-requirements-heading"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Create a napari environment')
+    expect(wrapper.text()).toContain('checks the complete file or folder name from top to bottom')
+    expect(wrapper.text()).toContain('Reader plugin ID (optional)')
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.find('input[aria-label="Test filename"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Create modified copy')
+  })
+
+  it('explains a replaced adopted interpreter without offering an unsupported locate action', async () => {
+    const adopted = {
+      ...environment,
+      name: 'Old napari',
+      state: 'replaced',
+      last_error: 'The Python executable at the saved environment path changed since registration.',
+      managed: { ...environment.managed, recipe: { ...environment.managed.recipe, source: 'adopted' } },
+    }
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/api/v1/napari/status') return Promise.reject(new Error('unavailable'))
+      return Promise.resolve({ data: { revision: 4, environments: [adopted], default_environment_id: 'env-a', filename_rules: [], operations: [] } })
+    })
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('previous package check may no longer apply')
+    expect(wrapper.text()).toContain('Installed packages (last checked)')
+    expect(wrapper.find('button[aria-label="Locate environment"]').exists()).toBe(false)
+    await wrapper.get('button[aria-label="Forget"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('will not be registered automatically again')
   })
 })

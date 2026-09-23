@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import ProgressBar from 'primevue/progressbar'
+import Select from 'primevue/select'
+import Textarea from 'primevue/textarea'
 import type { Settings } from '@/stores/settings'
 import { selectFolder } from '@/utils/nativeDialogs'
 import { useNapariStore } from '@/stores/napari'
@@ -17,10 +20,12 @@ const error = ref<string | null>(null)
 const external = reactive({ name: '', path: '' })
 const create = reactive({ name: '', preset: 'default' as 'default' | 'legacy' | 'advanced', python: '==3.12.*', napari: '0.9.1', qt: 'PyQt6' as 'PyQt5' | 'PyQt6', packages: '' })
 const rule = reactive({ mode: 'extension' as 'extension' | 'pattern', value: '', environmentId: '', readerId: '' })
-const testFilename = ref('')
-const preview = ref<{ matching_rule_ids: string[]; winner_rule_id?: string | null } | null>(null)
 const lifecycle = reactive<Record<string, string>>({})
-const copyFromId = ref<string | null>(null)
+const renameTarget = ref<{ id: string; name: string } | null>(null)
+const renameOpen = ref(false)
+const renameDraft = ref('')
+const removalTarget = ref<{ id: string; name: string; managed: boolean; adopted: boolean } | null>(null)
+const removalOpen = ref(false)
 const setupGroupId = ref('')
 const selectedRecommendations = ref<string[]>([])
 const sourceConfirmed = ref(false)
@@ -30,15 +35,25 @@ const fijiPath = ref(props.modelValue.fiji_path ?? '')
 watch(() => props.modelValue.fiji_path, value => { fijiPath.value = value ?? '' })
 
 const visibleOperations = computed(() => napari.operations.filter(item => item.state !== 'completed'))
+const environmentOptions = computed(() => napari.environments.map(item => ({ label: item.name, value: item.id })))
+const defaultOptions = computed(() => [{ label: 'Automatic', value: null }, ...environmentOptions.value])
+const recipeOptions = [
+  { label: 'Default — napari 0.9.1 / PyQt6', value: 'default' },
+  { label: 'Legacy smoke — napari 0.6.6 / PyQt5', value: 'legacy' },
+  { label: 'Advanced', value: 'advanced' },
+]
+const qtOptions = [{ label: 'PyQt6', value: 'PyQt6' }, { label: 'PyQt5', value: 'PyQt5' }]
+const ruleModeOptions = [{ label: 'Extension', value: 'extension' }, { label: 'Filename pattern', value: 'pattern' }]
 const extensionPreview = computed(() => {
   const value = rule.value.trim()
   if (rule.mode !== 'extension' || !value) return value
   return `*.${value.replace(/^\.+/, '')}`
 })
-const previewMatches = computed(() => (preview.value?.matching_rule_ids ?? []).map(id => (
-  napari.filenameRules.find(item => item.id === id)?.pattern ?? id
-)))
 const selectedSetupGroup = computed(() => settingsPanel.napariCreatePrefills.value.find(group => group.id === setupGroupId.value) ?? null)
+const setupGroupOptions = computed(() => settingsPanel.napariCreatePrefills.value.map((group, index) => ({
+  label: `Set ${index + 1} — ${group.members?.length ?? 0} output${group.members?.length === 1 ? '' : 's'}`,
+  value: group.id,
+})))
 const recommendedPackages = computed(() => selectedSetupGroup.value?.managed_create_prefill.recommended_packages ?? [])
 const activeOperationStates = new Set(['pending', 'resolving', 'installing', 'validating', 'removing'])
 const catchAllWarning = computed(() => {
@@ -47,7 +62,6 @@ const catchAllWarning = computed(() => {
   if (!newCatchAll && (existingCatchAll < 0 || existingCatchAll === napari.filenameRules.length - 1)) return null
   return 'A catch-all * rule wins before every later rule. A global default is usually clearer.'
 })
-const readinessOutputs = computed(() => napari.viewingReadiness?.outputs ?? [])
 
 watch(settingsPanel.napariCreatePrefills, groups => {
   if (groups.length === 0) return
@@ -66,9 +80,9 @@ function detail(exc: any): string {
   return exc?.response?.data?.detail?.detail ?? exc?.response?.data?.detail ?? exc?.message ?? String(exc)
 }
 
-async function run(action: () => Promise<void>) {
+async function run(action: () => Promise<void>): Promise<boolean> {
   error.value = null
-  try { await action() } catch (exc) { error.value = detail(exc) }
+  try { await action(); return true } catch (exc) { error.value = detail(exc); return false }
 }
 
 async function addExisting() {
@@ -96,52 +110,27 @@ async function createManaged() {
     const recipe = create.preset === 'advanced'
       ? { preset: create.preset, python: create.python, napari: create.napari, qt: create.qt, requested_packages: packageList() }
       : { preset: create.preset, requested_packages: packageList() }
-    const operation = copyFromId.value
-      ? await napari.copyManagedEnvironment(copyFromId.value, {
-          name: create.name,
-          ...copyMatrixOverrides(copyFromId.value),
-          requested_packages: packageList(),
-        })
-      : await napari.createManagedEnvironment({ name: create.name, recipe })
+    const operation = await napari.createManagedEnvironment({ name: create.name, recipe })
     if (setupGroupId.value) settingsPanel.consumeNapariCreatePrefill(setupGroupId.value)
-    copyFromId.value = null
     void napari.watchOperation(operation.environment_id, operation.id).catch(exc => { error.value = detail(exc) })
   })
 }
 
-function resolvedCreateMatrix() {
-  if (create.preset === 'default') return { python: '==3.12.*', napari: '0.9.1', qt: 'PyQt6' as const }
-  if (create.preset === 'legacy') return { python: '==3.12.*', napari: '0.6.6', qt: 'PyQt5' as const }
-  return { python: create.python, napari: create.napari, qt: create.qt }
+function openRename(id: string, name: string) {
+  error.value = null
+  renameTarget.value = { id, name }
+  renameDraft.value = name
+  renameOpen.value = true
 }
 
-function copyMatrixOverrides(id: string) {
-  const source = napari.environments.find(item => item.id === id)?.managed?.recipe
-  const desired = resolvedCreateMatrix()
-  return {
-    python: desired.python === source?.python ? undefined : desired.python,
-    napari: desired.napari === source?.napari ? undefined : desired.napari,
-    qt: desired.qt === source?.qt ? undefined : desired.qt,
+async function saveRename() {
+  const target = renameTarget.value
+  const name = renameDraft.value.trim()
+  if (!target || !name || name === target.name) return
+  if (await run(async () => napari.updateEnvironment(target.id, { name }))) {
+    renameOpen.value = false
+    renameTarget.value = null
   }
-}
-
-function prepareCopy(id: string) {
-  const environment = napari.environments.find(item => item.id === id)
-  if (!environment?.managed) return
-  const recipe = environment.managed.recipe
-  copyFromId.value = id
-  create.name = `${environment.name} copy`
-  create.preset = recipe.preset ?? 'advanced'
-  create.python = recipe.python ?? '==3.12.*'
-  create.napari = recipe.napari ?? '0.9.1'
-  create.qt = recipe.qt ?? 'PyQt6'
-  create.packages = (recipe.requested_packages ?? []).join('\n')
-}
-
-async function rename(id: string, currentName: string) {
-  const name = prompt('Environment name', currentName)?.trim()
-  if (!name || name === currentName) return
-  await run(async () => napari.updateEnvironment(id, { name }))
 }
 
 async function locate(id: string) {
@@ -161,17 +150,38 @@ async function launch(id: string) {
   })
 }
 
-async function forget(id: string) {
-  if (!confirm('Forget this external environment and clear its defaults, rules, and favorites?')) return
-  await run(async () => napari.forgetEnvironment(id))
+function askForget(environment: typeof napari.environments[number]) {
+  error.value = null
+  removalTarget.value = {
+    id: environment.id,
+    name: environment.name,
+    managed: false,
+    adopted: environment.managed?.recipe.source === 'adopted',
+  }
+  removalOpen.value = true
 }
 
-async function removeManaged(id: string) {
-  if (!confirm('Delete this BioImageFlow-managed installation? Its running viewer will be closed.')) return
-  await run(async () => {
-    const operation = await napari.deleteManagedEnvironment(id)
+function askDeleteManaged(environment: typeof napari.environments[number]) {
+  error.value = null
+  removalTarget.value = { id: environment.id, name: environment.name, managed: true, adopted: false }
+  removalOpen.value = true
+}
+
+async function confirmRemoval() {
+  const target = removalTarget.value
+  if (!target) return
+  const succeeded = await run(async () => {
+    if (!target.managed) {
+      await napari.forgetEnvironment(target.id)
+      return
+    }
+    const operation = await napari.deleteManagedEnvironment(target.id)
     void napari.watchOperation(operation.environment_id, operation.id).catch(exc => { error.value = detail(exc) })
   })
+  if (succeeded) {
+    removalOpen.value = false
+    removalTarget.value = null
+  }
 }
 
 async function retry(id: string) {
@@ -181,8 +191,7 @@ async function retry(id: string) {
   })
 }
 
-async function setDefault(event: Event) {
-  const value = (event.target as HTMLSelectElement).value || null
+async function setDefault(value: string | null) {
   await run(async () => napari.setDefaultEnvironment(value))
 }
 
@@ -191,7 +200,6 @@ async function addRule() {
   await run(async () => {
     await napari.addFilenameRule({ value: rule.value, mode: rule.mode, environment_id: rule.environmentId, reader_id: rule.readerId || null, enabled: true })
     rule.value = ''; rule.readerId = ''
-    preview.value = null
   })
 }
 
@@ -200,23 +208,19 @@ async function moveRule(index: number, delta: number) {
   const target = index + delta
   if (target < 0 || target >= rules.length) return
   ;[rules[index], rules[target]] = [rules[target]!, rules[index]!]
-  await run(async () => { await napari.replaceFilenameRules(rules); preview.value = null })
+  await run(async () => napari.replaceFilenameRules(rules))
 }
 
 async function deleteRule(index: number) {
   const rules = napari.filenameRules.filter((_, item) => item !== index)
-  await run(async () => { await napari.replaceFilenameRules(rules); preview.value = null })
+  await run(async () => napari.replaceFilenameRules(rules))
 }
 
 async function toggleRule(index: number) {
   const rules = napari.filenameRules.map((item, itemIndex) => itemIndex === index
     ? { ...item, enabled: !item.enabled }
     : item)
-  await run(async () => { await napari.replaceFilenameRules(rules); preview.value = null })
-}
-
-async function testRules() {
-  await run(async () => { preview.value = await napari.previewFilename(testFilename.value) })
+  await run(async () => napari.replaceFilenameRules(rules))
 }
 
 async function cancel(environmentId: string, operationId: string) {
@@ -273,32 +277,11 @@ async function saveRuleEdit(index: number) {
   await run(async () => {
     await napari.replaceFilenameRules(rules)
     editingRuleId.value = null
-    preview.value = null
   })
 }
 
 function stateLabel(state: string): string {
   return state.replace(/_/g, ' ').replace(/^./, (value: string) => value.toUpperCase())
-}
-
-function readinessLabel(status: string): string {
-  if (status === 'covered') return 'Covered'
-  if (status === 'not_covered') return 'Needs viewer setup'
-  return 'Not verified'
-}
-
-function effectiveEnvironmentName(id: string | null | undefined): string {
-  if (!id) return 'None selected'
-  return napari.environments.find(environment => environment.id === id)?.name ?? id
-}
-
-function prepareRequirementGroup(groupId: string | null | undefined) {
-  if (!groupId) return
-  const group = napari.viewingReadiness?.groups?.find(item => item.id === groupId)
-  if (!group) return
-  const groups = settingsPanel.napariCreatePrefills.value
-  settingsPanel.prepareNapariCreate(groups.some(item => item.id === group.id) ? groups : [...groups, group])
-  setupGroupId.value = group.id
 }
 
 function commitFiji() {
@@ -330,15 +313,12 @@ onMounted(() => {
       <div class="heading">
         <h3>napari environments</h3>
       </div>
-      <label>
-        Default
-        <select :value="napari.defaultEnvironmentId ?? ''" @change="setDefault">
-          <option value="">Automatic</option>
-          <option v-for="environment in napari.environments" :key="environment.id" :value="environment.id">
-            {{ environment.name }}
-          </option>
-        </select>
-      </label>
+      <p class="help-text">Register an existing installation or create an isolated napari environment. Each environment has its own viewer and installed plugins.</p>
+      <div class="field">
+        <label for="napari-default-environment">Default environment</label>
+        <Select id="napari-default-environment" aria-label="Default environment" :model-value="napari.defaultEnvironmentId" :options="defaultOptions" option-label="label" option-value="value" @update:model-value="setDefault" />
+        <small class="help-text">Used when no favorite or filename rule selects a compatible environment. Automatic chooses an available compatible environment.</small>
+      </div>
       <p v-if="napari.environments.length === 0" class="help-text">No napari environments are registered.</p>
       <article
         v-for="environment in napari.environments"
@@ -350,6 +330,18 @@ onMounted(() => {
           <strong>{{ environment.name }}</strong>
           <span>napari {{ environment.inventory?.napari_version ?? 'unknown' }} · {{ stateLabel(lifecycle[environment.id] ?? environment.state) }}</span>
         </div>
+        <p v-if="environment.state === 'replaced'" class="environment-warning" role="status">
+          The Python executable at this saved path changed since registration, so the previous package check may no longer apply.
+          <template v-if="environment.ownership === 'external'">Use <strong>Locate environment</strong> to verify the current installation, then <strong>Refresh</strong> its packages.</template>
+          <template v-else-if="!isPlatformManaged(environment)">This legacy installation cannot be relocated here. You can forget its registration and add it as an existing environment, or create a new one.</template>
+          <template v-else>Create a new managed environment, then delete this installation when it is no longer needed.</template>
+        </p>
+        <p v-else-if="environment.state === 'missing'" class="environment-warning" role="status">
+          The saved Python executable is missing.
+          <template v-if="environment.ownership === 'external'">Use <strong>Locate environment</strong> to reconnect this registration.</template>
+          <template v-else-if="!isPlatformManaged(environment)">You can forget this legacy registration and add an existing installation, or create a new environment.</template>
+          <template v-else>Create a new managed environment if this installation is gone.</template>
+        </p>
         <details>
           <summary>Details</summary>
           <dl>
@@ -366,7 +358,7 @@ onMounted(() => {
             </template>
           </dl>
           <p v-if="lifecycle[environment.id] === 'restart_required'">Running viewer restart required to use the current installed packages.</p>
-          <h4>Installed packages</h4>
+          <h4>{{ ['missing', 'replaced'].includes(environment.state) ? 'Installed packages (last checked)' : 'Installed packages' }}</h4>
           <p v-if="!environment.inventory?.distributions.length" class="help-text">No inventory is available.</p>
           <ul v-else class="packages">
             <li v-for="pkg in environment.inventory.distributions" :key="pkg.name">{{ pkg.name }} {{ pkg.version }}</li>
@@ -374,12 +366,11 @@ onMounted(() => {
           <div class="actions">
             <Button label="Refresh" size="small" @click="refresh(environment.id)" />
             <Button label="Launch empty viewer" size="small" :disabled="!canLaunch(environment)" @click="launch(environment.id)" />
-            <Button label="Rename" size="small" @click="rename(environment.id, environment.name)" />
-            <Button v-if="!isPlatformManaged(environment) && (environment.state === 'missing' || environment.state === 'replaced')" label="Locate environment" size="small" @click="locate(environment.id)" />
-            <Button v-if="!isPlatformManaged(environment)" label="Forget" severity="secondary" size="small" @click="forget(environment.id)" />
-            <Button v-if="isPlatformManaged(environment)" label="Create modified copy" size="small" :disabled="environment.state !== 'ready' && environment.state !== 'drifted'" @click="prepareCopy(environment.id)" />
+            <Button label="Rename" size="small" @click="openRename(environment.id, environment.name)" />
+            <Button v-if="environment.ownership === 'external' && (environment.state === 'missing' || environment.state === 'replaced')" label="Locate environment" size="small" @click="locate(environment.id)" />
+            <Button v-if="!isPlatformManaged(environment)" label="Forget" severity="secondary" size="small" @click="askForget(environment)" />
             <Button v-if="isPlatformManaged(environment) && ['failed', 'cancelled', 'setup_needed'].includes(environment.state)" label="Retry" size="small" @click="retry(environment.id)" />
-            <Button v-if="isPlatformManaged(environment)" label="Delete managed installation" severity="danger" size="small" @click="removeManaged(environment.id)" />
+            <Button v-if="isPlatformManaged(environment)" label="Delete managed installation" severity="danger" size="small" @click="askDeleteManaged(environment)" />
           </div>
         </details>
       </article>
@@ -390,75 +381,58 @@ onMounted(() => {
       </div>
     </section>
 
-    <section class="readiness-report" aria-labelledby="viewing-requirements-heading">
-      <div class="heading">
-        <h3 id="viewing-requirements-heading">Viewing requirements</h3>
-        <Button label="Refresh report" size="small" :loading="napari.viewingReadinessPending" :disabled="!napari.viewingManifest" @click="napari.refreshViewingReadiness()" />
-      </div>
-      <p v-if="napari.viewingReadinessError" class="error" role="status">{{ napari.viewingReadinessError }}</p>
-      <p v-if="!napari.viewingReadiness" class="help-text">Open or import a saved workflow to inspect its passive viewer requirements.</p>
-      <template v-else>
-        <p class="readiness-summary">{{ napari.viewingReadiness.summary.message }}</p>
-        <p v-if="!napari.viewingReadiness.manifest_complete" class="warning">This report is incomplete. Unknown outputs are not treated as compatible.</p>
-        <article v-for="output in readinessOutputs" :key="output.output_identity" class="readiness-output">
-          <div class="heading">
-            <code>{{ output.output_identity }}</code>
-            <strong :class="`readiness-${output.status}`">{{ readinessLabel(output.status) }}</strong>
-          </div>
-          <dl>
-            <dt>Declaration</dt><dd>{{ output.manifest_status === 'known' ? 'Known' : 'Unknown' }}</dd>
-            <dt>Activity</dt><dd>Not reported by the portable manifest</dd>
-            <dt>Reason</dt><dd>{{ output.manifest_reason ?? output.effective_reason }}</dd>
-            <dt>Effective environment</dt><dd>{{ effectiveEnvironmentName(output.effective_environment_id) }}</dd>
-          </dl>
-          <Button v-if="output.status === 'not_covered' && output.group_id" label="Prepare managed environment" size="small" @click="prepareRequirementGroup(output.group_id)" />
-          <details v-if="output.candidates?.length">
-            <summary>Environment compatibility</summary>
-            <div v-for="candidate in output.candidates" :key="candidate.environment_id" class="readiness-candidate">
-              <strong>{{ candidate.name }} — {{ stateLabel(candidate.status) }}</strong>
-              <span>{{ candidate.reason }}</span>
-              <ul v-if="candidate.issues?.length">
-                <li v-for="issue in candidate.issues" :key="`${issue.code}:${issue.distribution ?? ''}`">{{ issue.detail }}</li>
-              </ul>
-            </div>
-          </details>
-        </article>
-      </template>
-    </section>
-
     <section class="form">
       <h4>Add existing environment</h4>
-      <InputText v-model="external.name" aria-label="Existing environment name" placeholder="Name" />
-      <div class="path-row">
-        <InputText v-model="external.path" aria-label="Environment path" placeholder="Environment folder or Python executable" />
-        <Button label="Browse…" @click="browseEnvironment" />
+      <p class="help-text">Connect a Conda or Python virtual environment that you already manage. BioImageFlow checks its installed packages without changing them.</p>
+      <div class="field">
+        <label for="existing-environment-name">Name</label>
+        <InputText id="existing-environment-name" v-model="external.name" aria-label="Existing environment name" placeholder="My napari" />
       </div>
-      <p class="help-text">Registration checks the environment but never installs or updates packages.</p>
+      <div class="field">
+        <label for="existing-environment-path">Environment folder or Python executable</label>
+        <div class="path-row">
+          <InputText id="existing-environment-path" v-model="external.path" aria-label="Environment path" placeholder="Choose an environment folder" />
+          <Button label="Browse…" @click="browseEnvironment" />
+        </div>
+      </div>
       <Button label="Add existing" :disabled="!external.name.trim() || !external.path.trim()" @click="addExisting" />
     </section>
     <section class="form">
-      <h4>{{ copyFromId ? 'Create modified copy' : 'Create environment' }}</h4>
-      <label v-if="settingsPanel.napariCreatePrefills.value.length">
-        Viewing requirement set
-        <select v-model="setupGroupId">
-          <option v-for="(group, index) in settingsPanel.napariCreatePrefills.value" :key="group.id" :value="group.id">
-            Set {{ index + 1 }} — {{ group.members?.length ?? 0 }} output{{ group.members?.length === 1 ? '' : 's' }}
-          </option>
-        </select>
-      </label>
+      <h4>Create a napari environment</h4>
+      <p class="help-text">Create a separate installation with napari, Qt, and any requested plugin packages. Existing environments are left in place.</p>
+      <div v-if="setupGroupOptions.length" class="field">
+        <label for="napari-requirement-set">Workflow package requirements</label>
+        <Select id="napari-requirement-set" v-model="setupGroupId" aria-label="Workflow package requirements" :options="setupGroupOptions" option-label="label" option-value="value" />
+      </div>
       <p v-if="selectedSetupGroup" class="help-text">Prefilled from portable workflow requirements. Package availability on PyPI is not yet verified.</p>
-      <InputText v-model="create.name" aria-label="Managed environment name" placeholder="Name" />
-      <select v-model="create.preset" aria-label="Managed environment recipe">
-        <option value="default">Default — napari 0.9.1 / PyQt6</option>
-        <option value="legacy">Legacy smoke — napari 0.6.6 / PyQt5</option>
-        <option value="advanced">Advanced</option>
-      </select>
+      <div class="field">
+        <label for="managed-environment-name">Name</label>
+        <InputText id="managed-environment-name" v-model="create.name" aria-label="Managed environment name" placeholder="My napari" />
+      </div>
+      <div class="field">
+        <label for="managed-environment-recipe">Recipe</label>
+        <Select id="managed-environment-recipe" v-model="create.preset" aria-label="Managed environment recipe" :options="recipeOptions" option-label="label" option-value="value" />
+        <small class="help-text">Choose Default for a new installation. Use Legacy only for plugins that need the older napari and Qt versions.</small>
+      </div>
       <template v-if="create.preset === 'advanced'">
-        <InputText v-model="create.python" aria-label="Python constraint" />
-        <InputText v-model="create.napari" aria-label="napari version" />
-        <select v-model="create.qt" aria-label="Qt distribution"><option>PyQt6</option><option>PyQt5</option></select>
+        <div class="field">
+          <label for="managed-python-constraint">Python version constraint</label>
+          <InputText id="managed-python-constraint" v-model="create.python" aria-label="Python constraint" />
+        </div>
+        <div class="field">
+          <label for="managed-napari-version">napari version</label>
+          <InputText id="managed-napari-version" v-model="create.napari" aria-label="napari version" />
+        </div>
+        <div class="field">
+          <label for="managed-qt-distribution">Qt distribution</label>
+          <Select id="managed-qt-distribution" v-model="create.qt" aria-label="Qt distribution" :options="qtOptions" option-label="label" option-value="value" />
+        </div>
       </template>
-      <textarea v-model="create.packages" aria-label="Required Python distributions" placeholder="Required Python distributions, one per line" />
+      <div class="field">
+        <label for="managed-packages">Plugin packages to install</label>
+        <Textarea id="managed-packages" v-model="create.packages" aria-label="Required Python distributions" placeholder="One Python distribution per line, for example napari-nninteractive" rows="4" />
+        <small class="help-text">Enter Python distribution names and optional version constraints. These packages are installed from PyPI.</small>
+      </div>
       <fieldset v-if="recommendedPackages.length">
         <legend>Optional recommended distributions</legend>
         <label v-for="requirement in recommendedPackages" :key="requirement">
@@ -469,101 +443,126 @@ onMounted(() => {
         <input v-model="sourceConfirmed" type="checkbox">
         I confirmed these workflow-declared requirements are available from PyPI. Unknown or private packages must be installed manually in an external environment.
       </label>
-      <p class="help-text">Managed recipes use Python 3.12 and install napari, Qt, and these reviewed requirements from PyPI.</p>
-      <Button :label="copyFromId ? 'Create modified copy' : 'Create environment'" :disabled="!create.name.trim() || (Boolean(selectedSetupGroup?.managed_create_prefill.requires_source_confirmation) && !sourceConfirmed)" @click="createManaged()" />
+      <Button label="Create environment" :disabled="!create.name.trim() || (Boolean(selectedSetupGroup?.managed_create_prefill.requires_source_confirmation) && !sourceConfirmed)" @click="createManaged()" />
     </section>
 
-    <section>
-      <h4>File opening rules <small>(first match wins)</small></h4>
-      <p v-if="napari.filenameRules.length === 0" class="help-text">No filename rules. Compatible outputs use the global default and backend selection.</p>
+    <section class="form">
+      <h4>File opening rules</h4>
+      <p class="help-text">Use these optional rules to prefer an environment for particular filenames, including files without workflow viewer requirements. BioImageFlow checks the complete file or folder name from top to bottom and uses the first matching enabled rule. Put specific patterns such as <code>*_labels.tif</code> above broad ones such as <code>*.tif</code>. If none matches, the default or another compatible environment is used.</p>
+      <p class="help-text">A rule selects an environment; it does not prove that a reader can open the file or override a workflow's required plugin packages.</p>
+      <p v-if="napari.filenameRules.length === 0" class="help-text">No filename rules yet.</p>
       <div v-for="(item, index) in napari.filenameRules" :key="item.id" class="rule">
         <label><input type="checkbox" :checked="item.enabled" @change="toggleRule(index)"> Enabled</label>
         <template v-if="editingRuleId === item.id">
           <InputText v-model="ruleEdit.pattern" class="rule-value" aria-label="Edit filename pattern" />
-          <select v-model="ruleEdit.environmentId" class="rule-environment" aria-label="Edit preferred environment">
-            <option v-for="environment in napari.environments" :key="environment.id" :value="environment.id">{{ environment.name }}</option>
-          </select>
-          <InputText v-model="ruleEdit.readerId" class="rule-reader" aria-label="Edit optional reader ID" placeholder="Automatic" />
+          <Select v-model="ruleEdit.environmentId" class="rule-environment" aria-label="Edit preferred environment" :options="environmentOptions" option-label="label" option-value="value" />
+          <InputText v-model="ruleEdit.readerId" class="rule-reader" aria-label="Edit reader plugin ID" placeholder="Automatic reader" />
           <Button icon="pi pi-check" title="Save rule" text :disabled="!ruleEdit.pattern.trim() || !ruleEdit.environmentId" @click="saveRuleEdit(index)" />
           <Button icon="pi pi-times" title="Cancel rule editing" text @click="cancelRuleEdit" />
         </template>
         <template v-else>
           <code class="rule-value">{{ item.pattern }}</code>
           <span class="rule-environment">{{ napari.environments.find(env => env.id === item.environment_id)?.name }}</span>
-          <span class="rule-reader">{{ item.reader_id ?? 'Automatic' }}</span>
+          <span class="rule-reader">{{ item.reader_id ? `Reader: ${item.reader_id}` : 'Automatic reader' }}</span>
           <Button icon="pi pi-pencil" title="Edit rule" text @click="beginRuleEdit(item)" />
           <Button icon="pi pi-arrow-up" title="Move rule up" text :disabled="index === 0" @click="moveRule(index, -1)" />
           <Button icon="pi pi-arrow-down" title="Move rule down" text :disabled="index === napari.filenameRules.length - 1" @click="moveRule(index, 1)" />
           <Button icon="pi pi-trash" title="Delete rule" text @click="deleteRule(index)" />
         </template>
       </div>
-      <div class="form">
-        <select v-model="rule.mode" aria-label="Filename rule mode"><option value="extension">Extension</option><option value="pattern">Filename pattern</option></select>
-        <InputText v-model="rule.value" aria-label="Extension or filename pattern" :placeholder="rule.mode === 'extension' ? '.tif' : '*_labels.tif'" />
-        <span v-if="extensionPreview">Saves as <code>{{ extensionPreview }}</code></span>
-        <select v-model="rule.environmentId" aria-label="Preferred environment">
-          <option value="">Environment</option>
-          <option v-for="environment in napari.environments" :key="environment.id" :value="environment.id">{{ environment.name }}</option>
-        </select>
-        <InputText v-model="rule.readerId" aria-label="Optional reader ID" placeholder="Reader ID (optional)" />
+      <div class="form rule-form">
+        <div class="field">
+          <label for="filename-rule-mode">Match by</label>
+          <Select id="filename-rule-mode" v-model="rule.mode" aria-label="Filename rule mode" :options="ruleModeOptions" option-label="label" option-value="value" />
+        </div>
+        <div class="field">
+          <label for="filename-rule-value">{{ rule.mode === 'extension' ? 'Extension' : 'Filename pattern' }}</label>
+          <InputText id="filename-rule-value" v-model="rule.value" aria-label="Extension or filename pattern" :placeholder="rule.mode === 'extension' ? '.tif' : '*_labels.tif'" />
+          <small v-if="extensionPreview" class="help-text">Saves as <code>{{ extensionPreview }}</code></small>
+        </div>
+        <div class="field">
+          <label for="filename-rule-environment">Preferred environment</label>
+          <Select id="filename-rule-environment" v-model="rule.environmentId" aria-label="Preferred environment" :options="environmentOptions" option-label="label" option-value="value" placeholder="Choose an environment" />
+        </div>
+        <div class="field">
+          <label for="filename-rule-reader">Reader plugin ID (optional)</label>
+          <InputText id="filename-rule-reader" v-model="rule.readerId" aria-label="Reader plugin ID (optional)" placeholder="Let napari choose" />
+          <small class="help-text">Leave blank for napari to choose. Use a napari reader ID only when one specific plugin must read matching files. This does not install the plugin; declare its Python distribution as a required package when needed.</small>
+        </div>
         <Button label="Add rule" :disabled="!rule.value.trim() || !rule.environmentId" @click="addRule" />
       </div>
       <p v-if="catchAllWarning" class="warning">{{ catchAllWarning }}</p>
-      <div class="path-row">
-        <InputText v-model="testFilename" aria-label="Test filename" placeholder="Test filename" />
-        <Button label="Test" :disabled="!testFilename.trim()" @click="testRules" />
-      </div>
-      <p v-if="preview">Matching rules: {{ previewMatches.join(', ') || 'none' }}. Winner: {{ napari.filenameRules.find(item => item.id === preview?.winner_rule_id)?.pattern ?? 'none' }}</p>
     </section>
 
     <section>
       <h3>Fiji</h3>
       <p class="help-text">Fiji is installed separately. <a :href="FIJI_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">Download Fiji</a></p>
       <div class="path-row">
-        <InputText v-model="fijiPath" placeholder="/Applications/Fiji.app" data-testid="fiji-path-input" @blur="commitFiji" @keydown.enter="commitFiji" />
+        <InputText v-model="fijiPath" aria-label="Fiji installation folder" placeholder="/Applications/Fiji.app" data-testid="fiji-path-input" @blur="commitFiji" @keydown.enter="commitFiji" />
         <Button label="Browse…" data-testid="fiji-path-browse" @click="browseFiji" />
         <Button label="Clear" data-testid="fiji-path-clear" @click="clearFiji" />
       </div>
     </section>
+    <Dialog v-model:visible="renameOpen" modal header="Rename napari environment" :style="{ width: 'min(28rem, calc(100vw - 2rem))' }">
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <div class="field">
+        <label for="rename-environment-name">Environment name</label>
+        <InputText id="rename-environment-name" v-model="renameDraft" autofocus @keydown.enter="saveRename" />
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="renameOpen = false" />
+        <Button label="Save name" :disabled="!renameDraft.trim() || renameDraft.trim() === renameTarget?.name" @click="saveRename" />
+      </template>
+    </Dialog>
+    <Dialog v-model:visible="removalOpen" modal :header="removalTarget?.managed ? 'Delete managed installation' : 'Forget napari environment'" :style="{ width: 'min(30rem, calc(100vw - 2rem))' }">
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="removalTarget?.managed">Delete <strong>{{ removalTarget.name }}</strong> and close its running viewer? This removes the BioImageFlow-managed installation.</p>
+      <p v-else>Forget <strong>{{ removalTarget?.name }}</strong>? This removes its default, filename rules, and saved favorites. It does not delete the installation.</p>
+      <p v-if="removalTarget?.adopted" class="help-text">This legacy installation will not be registered automatically again on startup. You can still add it later as an existing environment.</p>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="removalOpen = false" />
+        <Button :label="removalTarget?.managed ? 'Delete installation' : 'Forget environment'" severity="danger" @click="confirmRemoval" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <style scoped>
 .settings-section,
-.form {
+.form,
+.field {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
-.settings-section > section { border-top: 1px solid var(--bif-border-muted); padding-top: 0.75rem; }
+.field { gap: 0.35rem; min-width: 0; }
+.field > label { font-weight: 600; }
+.field > :is(input, textarea, .p-select) { width: 100%; }
+.settings-section > section { display: flex; flex-direction: column; gap: 0.75rem; border-top: 1px solid var(--bif-border-muted); padding-top: 1rem; }
 .heading,
 .actions,
 .rule,
 .path-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .heading { justify-content: space-between; }
 .environment { padding: 0.6rem; border: 1px solid var(--bif-border-muted); border-radius: 0.4rem; margin: 0.5rem 0; }
+.environment-warning { color: var(--p-orange-700); padding: 0.5rem 0.65rem; background: var(--p-orange-50); border-radius: 0.35rem; }
 .environment dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }
 .environment dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .packages { max-height: 10rem; overflow: auto; }
 .rule { display: grid; grid-template-columns: auto minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(5rem, 1fr) repeat(4, auto); margin: 0.25rem 0; }
 .rule-value { min-width: 0; overflow-wrap: anywhere; }
+.rule-form { margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--bif-border-muted); }
+.rule-form > button,
+.form > button { align-self: flex-start; }
 .path-row > :first-child { flex: 1; min-width: 10rem; }
 .operation { display: grid; grid-template-columns: 1fr minmax(8rem, 1fr) auto; align-items: center; gap: 0.5rem; }
 .help-text { color: var(--p-text-muted-color); }
 .error { color: var(--p-red-600); }
 .warning { color: var(--p-orange-600); }
 .source-confirmation { display: flex; align-items: flex-start; gap: 0.5rem; }
-.readiness-output { margin: 0.5rem 0; padding: 0.6rem; border: 1px solid var(--bif-border-muted); border-radius: 0.4rem; }
-.readiness-output dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }
-.readiness-output dd { margin: 0; overflow-wrap: anywhere; }
-.readiness-candidate { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.5rem 0; }
-.readiness-covered { color: var(--p-green-600); }
-.readiness-not_covered { color: var(--p-orange-600); }
-.readiness-unknown { color: var(--p-text-muted-color); }
 h3,
 h4,
 p { margin: 0.25rem 0; }
-textarea { min-height: 4rem; }
 @media (max-width: 520px) {
   .rule { grid-template-columns: 1fr repeat(4, auto); }
   .rule-value,

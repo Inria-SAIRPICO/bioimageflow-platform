@@ -592,7 +592,7 @@ async function finishImport(file: File, nameOverride?: string): Promise<void> {
         toast?.add({
           severity: 'warn',
           summary: 'Viewing requirements',
-          detail: `${readiness.summary.message} Open Preferences → Image Viewers to review setup options. Workflow execution is unaffected.`,
+          detail: `${readiness.summary.message} Open Preferences → Image Viewers to add or create a napari environment. Workflow execution is unaffected.`,
           life: 8000,
         })
       }

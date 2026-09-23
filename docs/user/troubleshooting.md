@@ -142,6 +142,8 @@ Confirmed remote cleanup does not remove a verified local archive that was alrea
 ## A viewer is unavailable
 
 For Napari, open **Preferences → Image Viewers** and inspect the selected environment's state and package inventory.
+If an environment says its Python executable changed since registration, the file at its saved path no longer matches the recorded executable and the old package inventory is only a last-known check.
+Use **Locate environment** and **Refresh** for an external installation; for an adopted legacy installation, forget its registration and add it again as an existing environment or create a new managed environment.
 Use **Refresh** after external package changes, **Retry** for an eligible failed managed setup, or **Locate** when a registered installation moved.
 If the result chooser reports unmet requirements, select another compatible environment or create an isolated environment from the offered requirement group.
 An explicit reader can still reject a file after package compatibility passes; inspect the launch error and correct the reader or rule instead of repeatedly opening other environments.
