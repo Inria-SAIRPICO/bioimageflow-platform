@@ -128,6 +128,7 @@ async def patch_settings(
         "napari_default_environment_id",
         "napari_filename_rules",
         "napari_environment_operations",
+        "napari_suppressed_legacy_roots",
     }
     if napari_registry_fields.intersection(body):
         raise HTTPException(

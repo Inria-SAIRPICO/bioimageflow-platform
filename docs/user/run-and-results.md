@@ -68,7 +68,7 @@ Open the arrow beside it to see every environment and why it is compatible, inco
 Choosing an environment there opens only the selected cell once and does not change your preferences.
 
 The star beside an environment sets one favorite for that structural output across all rows and future results; selecting another star replaces it, and selecting the filled star removes it.
-Use **Replace layers and open** to clear layers only in that chosen environment before opening.
+Use **Clear layers, then open** to clear layers only in the selected environment before opening the image.
 If no environment satisfies declared requirements, open the setup panel or explicitly try a runnable environment anyway.
 Reader failures are reported after the open attempt and are never retried automatically in another environment.
 

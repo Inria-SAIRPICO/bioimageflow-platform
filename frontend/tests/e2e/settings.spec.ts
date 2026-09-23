@@ -57,6 +57,49 @@ test.describe('Settings Panel', () => {
     await expect(section.locator('[data-testid="fiji-path-input"]')).toBeVisible()
   })
 
+  test('Image Viewers explains a changed legacy interpreter and uses application dialogs', async ({ page }) => {
+    await page.route('**/api/v1/napari/environments', route => route.fulfill({ json: {
+      revision: 1,
+      environments: [{
+        id: '68ff94c5-b649-4dc5-9d98-605e82736e3b', registration_order: 0,
+        name: 'Old napari', ownership: 'managed', kind: 'conda', root: '/old/napari',
+        interpreter: '/old/napari/bin/python', interpreter_identity: '/old/napari/bin/python',
+        interpreter_fingerprint: 'old-fingerprint', launch: { strategy: 'wetlands-managed', argv_prefix: ['/old/napari/bin/python'] },
+        managed: { wetlands_name: 'napari', installation_generation: 'f5f7bc30-9065-4f40-a88f-e7ee4842d7f1', recipe: { source: 'adopted' } },
+        state: 'replaced', last_error: 'The Python executable at the saved environment path changed since registration.',
+        inventory: null,
+      }],
+      default_environment_id: null, filename_rules: [], operations: [],
+    } }))
+    await page.route('**/api/v1/napari/status?environment_id=*', route => route.fulfill({ status: 503, json: { detail: 'Unavailable' } }))
+    await page.goto('/')
+    await openSettings(page)
+    const dialog = page.locator('[data-testid="settings-panel"]')
+    await dialog.getByText('Image Viewers', { exact: true }).click()
+    const section = dialog.locator('[data-testid="image-viewers-section"]')
+
+    await expect(section).toContainText('previous package check may no longer apply')
+    await expect(section).toContainText('Create a napari environment')
+    await expect(section).toContainText('Reader plugin ID (optional)')
+    await expect(section.getByRole('button', { name: 'Locate environment' })).toHaveCount(0)
+    await expect(section.getByRole('button', { name: 'Create modified copy' })).toHaveCount(0)
+    await expect(section.getByRole('button', { name: 'Test', exact: true })).toHaveCount(0)
+    await expect(section.getByRole('heading', { name: 'Viewing requirements' })).toHaveCount(0)
+    await expect(section.locator('select')).toHaveCount(0)
+    await expect(section.getByRole('combobox', { name: 'Default environment' })).toBeVisible()
+
+    await section.getByText('Details', { exact: true }).click()
+    await section.getByRole('button', { name: 'Rename' }).click()
+    const rename = page.getByRole('dialog', { name: 'Rename napari environment' })
+    await expect(rename).toBeVisible()
+    await expect(rename.getByLabel('Environment name')).toHaveValue('Old napari')
+    await rename.getByRole('button', { name: 'Cancel' }).click()
+
+    await section.getByRole('button', { name: 'Forget', exact: true }).click()
+    const forget = page.getByRole('dialog', { name: 'Forget napari environment' })
+    await expect(forget).toContainText('will not be registered automatically again')
+  })
+
   test('Display exposes the persisted Node Data page-size preference', async ({ page }) => {
     await page.goto('/')
     await openSettings(page)

@@ -595,6 +595,8 @@ class NapariEnvironmentService:
             except NapariEnvironmentError:
                 continue
             canonical_root = _canonical_path(resolved[0])
+            if canonical_root in settings.napari_suppressed_legacy_roots:
+                continue
             if any(
                 item.root.casefold() == canonical_root.casefold()
                 for item in settings.napari_environments
@@ -1116,14 +1118,19 @@ class NapariEnvironmentService:
             rule for rule in settings.napari_filename_rules if rule.environment_id != environment_id
         ]
         changes = {
-                "napari_environments": environments,
-                "napari_filename_rules": rules,
-                "napari_default_environment_id": (
-                    None
-                    if settings.napari_default_environment_id == environment_id
-                    else settings.napari_default_environment_id
-                ),
-            }
+            "napari_environments": environments,
+            "napari_filename_rules": rules,
+            "napari_default_environment_id": (
+                None
+                if settings.napari_default_environment_id == environment_id
+                else settings.napari_default_environment_id
+            ),
+        }
+        if environment.managed is not None and environment.managed.recipe.source == "adopted":
+            changes["napari_suppressed_legacy_roots"] = [
+                *settings.napari_suppressed_legacy_roots,
+                environment.root,
+            ]
         if self.preference_store is not None:
             self.preference_store.prepare_environment_forget(
                 environment_id, registry_revision=expected_revision
@@ -1151,6 +1158,7 @@ class NapariEnvironmentService:
         assert environment_id is not None
         settings = self.store.get()
         if any(item.id == environment_id for item in settings.napari_environments):
+            forgotten = self._get(environment_id)
             environments = [
                 item for item in settings.napari_environments if item.id != environment_id
             ]
@@ -1159,18 +1167,21 @@ class NapariEnvironmentService:
                 for rule in settings.napari_filename_rules
                 if rule.environment_id != environment_id
             ]
-            await self._patch(
-                settings.napari_registry_revision,
-                {
-                    "napari_environments": environments,
-                    "napari_filename_rules": rules,
-                    "napari_default_environment_id": (
-                        None
-                        if settings.napari_default_environment_id == environment_id
-                        else settings.napari_default_environment_id
-                    ),
-                },
-            )
+            changes = {
+                "napari_environments": environments,
+                "napari_filename_rules": rules,
+                "napari_default_environment_id": (
+                    None
+                    if settings.napari_default_environment_id == environment_id
+                    else settings.napari_default_environment_id
+                ),
+            }
+            if forgotten.managed is not None and forgotten.managed.recipe.source == "adopted":
+                changes["napari_suppressed_legacy_roots"] = [
+                    *settings.napari_suppressed_legacy_roots,
+                    forgotten.root,
+                ]
+            await self._patch(settings.napari_registry_revision, changes)
         self.preference_store.complete_environment_forget()
 
     async def set_default(
@@ -1688,7 +1699,13 @@ class NapariEnvironmentService:
             )
         if fingerprint != environment.interpreter_fingerprint:
             return environment.model_copy(
-                update={"state": "replaced", "last_error": "registered interpreter was replaced"}
+                update={
+                    "state": "replaced",
+                    "last_error": (
+                        "The Python executable at the saved environment path changed since "
+                        "registration. Verify this installation before opening it."
+                    ),
+                }
             )
         return environment
 

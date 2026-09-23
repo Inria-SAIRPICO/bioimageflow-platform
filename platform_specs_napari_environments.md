@@ -39,6 +39,9 @@ The backend resolves and records the actual interpreter, environment kind, canon
 Support Conda environments and Python virtual environments on the supported desktop operating systems.
 Detect duplicate canonical installations and offer the existing entry rather than registering the same interpreter twice.
 Moving an installation requires **Locate environment** and a fresh probe; replacing the interpreter at the same path also invalidates its observed inventory.
+The changed-interpreter state explains that the Python executable at the saved path changed since registration and that its installed-package list is only the last checked inventory.
+**Locate environment** is offered only for external registrations; selecting the current folder again refreshes the recorded interpreter identity, after which **Refresh** checks its packages.
+For an adopted legacy installation, **Forget** durably suppresses automatic adoption of that root on later startups, so users may add it as an external environment or create a new managed one.
 
 **Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, and installed Python distribution metadata.
 Environment registration and probing never install packages.
@@ -90,7 +93,7 @@ A restart never claims that live progress survived: a public Wetlands generation
 
 ### 2.3 Add plugins and update managed environments
 
-Provide **Create modified copy** from a managed environment's details, using the same creation form with its declared recipe prefilled.
+The recipe-based managed copy route remains available for API compatibility, but Settings does not show **Create modified copy**; users create a separate managed environment through **Create a napari environment**.
 Adding, removing, or updating plugins produces a new installation and entry; the original remains usable and keeps its existing defaults.
 Describe this as a recipe-based recreation, not a byte-for-byte clone of every manual change.
 After validation, users may explicitly change their defaults to the new environment.
@@ -99,7 +102,7 @@ Automatic in-place upgrades are not part of this feature.
 Napari's own plugin manager remains available, but changes made there are external changes from the platform's perspective.
 Detect inventory drift, display “Modified outside BioImageFlow,” and evaluate the observed installation rather than its old recipe.
 Never silently reinstall the recipe to undo those changes.
-Offer a refreshed inventory and a new managed copy containing supported observed requirements; unrepresentable local packages must be reported before creation.
+Offer a refreshed inventory; any API-created managed copy must report unrepresentable local packages before creation.
 
 **Remove from list** and **Delete managed installation** are distinct actions.
 Deletion is available only for a platform-owned installation, reports affected defaults, and requires closing its running viewer first.
@@ -291,10 +294,10 @@ Default: [Microscopy v]
 
 Microscopy       napari <detected>    Ready                 [Details ...]
 Tracking         napari <detected>    Running               [Details ...]
-Legacy viewer    napari <detected>    Environment missing   [Locate ...]
+Legacy viewer    napari <detected>    Environment changed   [Forget ...]
 
-File opening rules (optional; first match wins)            [Add rule]
-Filename pattern        Preferred environment       Reader (optional)
+File opening rules                                      [Add rule]
+Filename pattern        Preferred environment       Reader plugin ID (optional)
 *_labels.tif            Microscopy                  Selected reader
 *.ome.zarr              Multiscale                  Selected reader
 *.tif                   Microscopy                  Automatic
@@ -303,7 +306,8 @@ Filename pattern        Preferred environment       Reader (optional)
 Version placeholders and format examples illustrate the layout, not guaranteed package support.
 Details show path, ownership (“Managed by BioImageFlow” or “External”), detected versions, installed Python distributions, last check, and relevant actions.
 The **Launch empty viewer** action uses a dedicated environment launch request and does not emulate launch by sending an empty artifact list to `viewer.open()`.
-Provide Refresh and Launch empty viewer; managed entries also offer Create modified copy.
+Provide Refresh and Launch empty viewer; managed entries also offer retry or deletion when applicable.
+Rename and destructive confirmations use application dialogs, and selectors use the same PrimeVue components as other Settings tabs.
 Long paths collapse without hiding their full selectable text, and actions remain usable in a narrow settings window.
 
 ### 5.2 Filename rules and extension shortcuts
@@ -328,11 +332,11 @@ Directory names such as `sample.ome.zarr` are eligible, but the reader must stil
 Full-path and workspace-relative patterns are deferred because moves and platform differences would change their meaning.
 
 Evaluate enabled rules from top to bottom; the first matching rule wins.
-Provide Move up/down actions and a “Test filename” field that shows every matching rule and identifies the winner.
-Show the first-match rule beside the table and preview overlaps for the edited example or currently selected artifact; do not claim exhaustive detection of overlapping glob languages.
+Provide Move up/down actions and explanatory text that rules match the complete file or directory basename.
+The Settings UI does not show a separate filename test field; the preview endpoint remains available to integrations and artifact-specific authoring flows.
 Reject duplicate normalized patterns, including an extension shorthand and its equivalent simple glob.
 For example, place `*_labels.tif` and `*.ome.tif` above `*.tif`; there is no additional implicit longest-suffix or glob-specificity ranking.
-When authoring a rule for an actual image, preview its effective winner before saving so an earlier broad rule cannot silently hide the new rule.
+Integrations that author a rule for an actual image can use the retained preview endpoint to show its effective winner before saving.
 Only the winning rule participates in environment selection; if its environment is unavailable or incompatible, explain that and continue to the global/default candidate fallback rather than trying hidden lower-priority matching rules.
 Paths with no matching rule fall back to output requirements and normal environment/reader selection.
 
@@ -360,11 +364,11 @@ Use one exclusive, toggleable star beside each environment for the addressed str
 - At most one star is filled in the visible list, and no star is filled when the output identity has no explicit favorite.
 - Clicking the environment row or its open control opens the currently selected artifact once in that environment without saving a preference; clicking a star never launches anything.
 
-The green check describes installed package requirements; the star describes the explicit favorite; a separate **Will open in …** line shows the effective environment and reason.
+The green check describes installed package requirements; the star describes the explicit favorite; a separate **Will open in …** line names the effective environment without preference-ranking jargon.
 Never fill a star merely because an environment was selected by a filename rule, the global default, or fallback ranking.
 Use accessible labels such as **Set favorite for this output** and **Unset favorite for this output**; star buttons expose their pressed state to assistive technology.
 
-Provide **Unset favorite**, **Manage environments**, and **Create environment for these requirements**.
+Provide **Manage environments** and **Create environment for these requirements**; the filled star is the sole unset control.
 An incompatible saved favorite remains visible with its warning and can always be unset; setting a new incompatible persistent favorite is disallowed under the normal requirements contract.
 Do not embed a button inside another button or a menuitem with conflicting keyboard semantics; use a popover list with independently focusable launch and preference controls.
 
@@ -373,7 +377,7 @@ Opening one cell still opens only that selected artifact; favorite coverage is n
 Filename rules and the global default in Settings are the other persisted selection preferences; neither creates another favorite scope.
 Node-wide defaults, workflow-wide defaults, and batch-setting selected rows are deferred until a concrete need justifies their additional interaction and inheritance rules.
 The existing Ctrl+Click replace action clears layers only in the selected environment's viewer.
-Expose an explicit **Replace layers and open** action as well so replacement does not depend solely on a modifier key.
+Expose an explicit **Clear layers, then open** action as well so replacement does not depend solely on a modifier key; its tooltip names the selected environment and image.
 Setup, failure, or a menu selection must not clear another environment's viewer.
 
 ## 6. Local preference persistence
@@ -423,15 +427,15 @@ Preference changes are atomic local UI state and do not acquire a graph executio
 
 ## 7. Workflow import and setup guidance
 
-After import, show a non-blocking **Viewing requirements** report with coverage per structural output identity, including nested nodes.
+After import, run the passive viewing-requirements check and show a non-blocking summary when setup may be needed; keep normalized requirement groups available to prefill the environment-creation form.
 Run the same check on workflow open, requirement changes, and relevant environment inventory changes, without reopening a modal repeatedly.
-Include inactive nodes in the report, marked inactive, but preselect only the active workflow's unmet output requirements in setup.
+Preserve inactive and unknown outputs in the backend report, but do not render a per-output report in Image Viewers Settings.
 Imported workflows with no declarations continue to work through automatic readers and local format rules.
 
 Report precise compatibility failures: missing distribution, installed version outside the PEP 440 constraint, unknown distribution metadata, unsupported viewer, or required packages split across environments.
 Two required packages installed in different environments do not satisfy one output that needs both.
 Conversely, two incompatible package sets used by different outputs are acceptable when separate environments cover them.
-Reader IDs, manifest discovery, enabled flags, and actual plugin loading do not participate in this passive report; any resulting failure is reported when napari handles the selected open request.
+Reader IDs, manifest discovery, enabled flags, and actual plugin loading do not participate in this passive check; any resulting failure is reported when napari handles the selected open request.
 Summaries should say “2 outputs need viewer setup,” rather than claiming that the workflow cannot run.
 
 For each uncovered requirement set, offer:
@@ -504,7 +508,7 @@ Delivery advanced in three independently verifiable increments:
 
 1. Registry, environment probes, isolated launcher/configuration state, settings list, split button, and one-time selection; existing opening was preserved and the singleton migrated.
 2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
-3. Managed environment creation and Create modified copy using the same requirements report and resolver.
+3. Managed environment creation with requirement-group prefills, plus the retained recipe-based copy API.
 
 The feature is complete only when all three increments are available, and all three are now delivered.
 The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.

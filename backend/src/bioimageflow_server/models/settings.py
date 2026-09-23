@@ -86,6 +86,7 @@ class Settings(BaseModel):
     napari_default_environment_id: UUID | None = None
     napari_filename_rules: list[NapariFilenameRule] = Field(default_factory=list)
     napari_environment_operations: list[NapariEnvironmentOperation] = Field(default_factory=list)
+    napari_suppressed_legacy_roots: list[str] = Field(default_factory=list)
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"

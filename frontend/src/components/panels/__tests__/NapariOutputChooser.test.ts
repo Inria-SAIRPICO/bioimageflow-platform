@@ -132,7 +132,7 @@ describe('NapariOutputChooser', () => {
 
     const primary = wrapper.get('[data-testid="open-napari-42-labels"]')
     expect(primary.attributes('aria-label')).toBe('Open in Microscopy')
-    expect(primary.attributes('title')).toContain('Selected by the global default')
+    expect(primary.attributes('title')).toBe('Open in Microscopy.')
     await primary.trigger('click')
 
     expect(openInNapari).toHaveBeenCalledWith({
@@ -193,6 +193,9 @@ describe('NapariOutputChooser', () => {
     await flushPromises()
     await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
     await flushPromises()
+    expect(document.body.textContent).toContain('Will open in Microscopy')
+    expect(document.body.textContent).not.toContain('Registration order fallback')
+    expect([...document.querySelectorAll<HTMLButtonElement>('button')].some(button => button.textContent === 'Unset favorite')).toBe(false)
 
     let stars = [...document.querySelectorAll<HTMLButtonElement>('button[aria-pressed="false"]')]
     stars[0]!.click()
@@ -281,7 +284,8 @@ describe('NapariOutputChooser', () => {
     await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
     await flushPromises()
     const replace = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.includes('Replace layers and open'))!
+      .find(button => button.textContent?.includes('Clear layers, then open'))!
+    expect(replace.title).toContain('Clear all layers in Microscopy')
     replace.click()
     await flushPromises()
 

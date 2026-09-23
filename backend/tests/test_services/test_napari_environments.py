@@ -130,7 +130,9 @@ async def test_missing_replaced_and_located_external_interpreter(tmp_path: Path)
     assert service.snapshot().environments[0].state == "missing"
 
     (original_root / "bin" / "python").symlink_to("/bin/sh")
-    assert service.snapshot().environments[0].state == "replaced"
+    replaced = service.snapshot().environments[0]
+    assert replaced.state == "replaced"
+    assert "changed since registration" in (replaced.last_error or "")
 
     replacement_root = _venv(tmp_path / "replacement")
     located = await service.update(environment.id, path=str(replacement_root), expected_revision=1)
@@ -177,6 +179,22 @@ async def test_legacy_wetlands_workspace_is_adopted_without_probe(tmp_path: Path
     assert persisted.managed.installation_generation == adopted.managed.installation_generation
     assert persisted.managed.recipe == adopted.managed.recipe
     assert persisted.launch == adopted.launch
+
+
+async def test_forgotten_legacy_installation_stays_forgotten_after_restart(tmp_path: Path) -> None:
+    workspace = tmp_path / "wetlands" / "pixi" / "workspaces" / "napari"
+    _conda(workspace / ".pixi" / "envs" / "default")
+    service = await _service(tmp_path, managed_singleton_roots=[workspace])
+    await service.adopt_managed_singleton()
+    adopted = service.snapshot().environments[0]
+
+    forgotten = await service.forget(adopted.id, expected_revision=1)
+    assert forgotten.environments == []
+    assert service.store.get().napari_suppressed_legacy_roots == [adopted.root]
+
+    reloaded = await _service(tmp_path, managed_singleton_roots=[workspace])
+    await reloaded.adopt_managed_singleton()
+    assert reloaded.snapshot().environments == []
 
 
 async def test_probe_is_package_metadata_only_and_detects_drift(tmp_path: Path) -> None:

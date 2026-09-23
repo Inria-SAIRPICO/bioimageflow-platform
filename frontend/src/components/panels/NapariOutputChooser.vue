@@ -74,7 +74,6 @@ const favoriteUnavailable = computed(() => (
   favoriteCandidate.value !== null
   && favoriteCandidate.value.environment_id !== resolution.value?.effective_environment_id
 ))
-const currentFavoriteEnvironmentId = computed(() => favoriteEnvironmentId())
 const primaryLabel = computed(() => effectiveCandidate.value
   ? `Open in ${effectiveCandidate.value.name}`
   : canResolve.value ? 'Choose a napari environment' : 'Result identity unavailable')
@@ -85,7 +84,7 @@ const primaryTitle = computed(() => {
   const savedWarning = favoriteUnavailable.value
     ? ` Saved preference unavailable: ${favoriteCandidate.value?.reason}.`
     : ''
-  return `${primaryLabel.value} — ${resolution.value.effective_reason}.${savedWarning}`
+  return `${primaryLabel.value}.${savedWarning}`
 })
 
 function errorDetail(error: unknown, fallback: string): string {
@@ -292,7 +291,7 @@ function createEnvironment(): void {
       :aria-label="primaryLabel"
       :disabled="!canResolve || resolving || napari.environmentState(resolution?.effective_environment_id).pending"
       :data-testid="`open-napari-${row}-${outputSlug}`"
-      @click="primaryOpen"
+      @click.stop="primaryOpen"
     />
     <Button
       icon="pi pi-chevron-down"
@@ -302,7 +301,7 @@ function createEnvironment(): void {
       aria-label="Choose napari environment"
       :disabled="!canResolve"
       :data-testid="`choose-napari-${row}-${outputSlug}`"
-      @click="toggleMenu"
+      @click.stop="toggleMenu"
     />
     <Popover ref="popover">
       <section class="napari-picker" data-testid="napari-environment-picker" aria-label="Napari environments">
@@ -311,7 +310,7 @@ function createEnvironment(): void {
           <div class="napari-picker__identity">{{ nodePath.join(' › ') }} › {{ outputKey }}</div>
         </header>
         <p v-if="resolution" class="napari-picker__effective">
-          <template v-if="effectiveCandidate">Will open in {{ effectiveCandidate.name }} — {{ resolution.effective_reason }}</template>
+          <template v-if="effectiveCandidate">Will open in {{ effectiveCandidate.name }}</template>
           <template v-else>{{ resolution.effective_reason }}</template>
         </p>
         <p v-if="favoriteUnavailable" class="napari-picker__warning" role="status">
@@ -333,7 +332,7 @@ function createEnvironment(): void {
             <div class="napari-picker__status">
               <span :class="`napari-picker__indicator napari-picker__indicator--${candidate.status}`" aria-hidden="true" />
               <span>{{ candidate.label }}</span>
-              <small>{{ candidate.reason }}</small>
+              <small v-if="candidate.status !== 'compatible' && !candidate.issues?.length">{{ candidate.reason }}</small>
               <small v-for="issue in candidate.issues" :key="`${issue.code}:${issue.distribution ?? ''}`">{{ issue.detail }}</small>
             </div>
             <Button
@@ -360,18 +359,11 @@ function createEnvironment(): void {
         <footer class="napari-picker__actions">
           <Button
             v-if="effectiveCandidate"
-            label="Replace layers and open"
+            label="Clear layers, then open"
             text
             size="small"
+            :title="`Clear all layers in ${effectiveCandidate.name}, then open ${outputName}`"
             @click="openCandidate(effectiveCandidate, $event, true)"
-          />
-          <Button
-            v-if="currentFavoriteEnvironmentId"
-            label="Unset favorite"
-            text
-            size="small"
-            :disabled="favoritePending"
-            @click="updateFavorite(currentFavoriteEnvironmentId)"
           />
           <Button label="Manage environments" link size="small" @click="manageEnvironments" />
           <Button

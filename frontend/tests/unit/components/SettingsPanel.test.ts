@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
@@ -84,6 +84,12 @@ const mountOpts = {
 }
 
 describe('SettingsPanel', () => {
+  afterAll(async () => {
+    // PrimeVue TabList schedules an ink-bar update 150 ms after mount.
+    // Let it finish while jsdom is still available before Vitest tears it down.
+    await new Promise(resolve => setTimeout(resolve, 175))
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
