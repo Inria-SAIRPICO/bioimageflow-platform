@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import (
@@ -22,10 +22,6 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-
-if TYPE_CHECKING:
-    from bioimageflow_server.models.settings import Settings
-
 
 _PLAN_STATUS_MAP: dict[str, tuple[NodeStatusValue, bool]] = {
     "cached": ("executed", True),
@@ -214,14 +210,12 @@ class GraphValidationService:
         *,
         storage_path: Path,
         dev_mode: bool = True,
-        settings: Settings | None = None,
         on_progress: Callable[[Any], None] | None = None,
     ) -> GraphValidationOutput:
         compilation = self._compiler.compile(
             graph,
             storage_path=storage_path,
             on_progress=on_progress,
-            settings=settings,
         )
         validation = _validation_from_compilation(
             graph,
@@ -239,14 +233,12 @@ class GraphValidationService:
         *,
         storage_path: Path,
         dev_mode: bool = True,
-        settings: Settings | None = None,
         on_progress: Callable[[Any], None] | None = None,
     ) -> ValidationResult:
         return self.validate_with_compilation(
             graph,
             storage_path=storage_path,
             dev_mode=dev_mode,
-            settings=settings,
             on_progress=on_progress,
         ).validation
 
@@ -256,7 +248,6 @@ class GraphValidationService:
         *,
         storage_path: Path,
         dev_mode: bool = True,
-        settings: Settings | None = None,
         on_progress: Callable[[Any], None] | None = None,
     ) -> GraphValidationOutput:
         """Compile and validate without occupying the application event loop."""
@@ -268,7 +259,6 @@ class GraphValidationService:
                 graph,
                 storage_path=storage_path,
                 dev_mode=dev_mode,
-                settings=settings,
                 on_progress=on_progress,
             )
         )
@@ -279,7 +269,6 @@ class GraphValidationService:
         *,
         storage_path: Path,
         dev_mode: bool = True,
-        settings: Settings | None = None,
         on_progress: Callable[[Any], None] | None = None,
     ) -> ValidationResult:
         """Validate without occupying the application event loop."""
@@ -291,7 +280,6 @@ class GraphValidationService:
                 graph,
                 storage_path=storage_path,
                 dev_mode=dev_mode,
-                settings=settings,
                 on_progress=on_progress,
             )
         )
@@ -303,12 +291,10 @@ def validate_graph(
     *,
     storage_path: Path,
     dev_mode: bool = True,
-    settings: Settings | None = None,
 ) -> ValidationResult:
     """Validate one complete graph snapshot in its explicit storage context."""
     return GraphValidationService(registry).validate(
         graph,
         storage_path=storage_path,
         dev_mode=dev_mode,
-        settings=settings,
     )

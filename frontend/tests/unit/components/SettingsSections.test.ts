@@ -65,7 +65,8 @@ const baseSettings = {
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
-  execution_engine: 'sequential' as const,
+  new_workflow_execution: 'sequential' as const,
+  default_execution_target_id: 'local',
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,
@@ -167,20 +168,15 @@ describe('ImageViewersSection', () => {
 })
 
 describe('ExecutionSection', () => {
-  it('summarizes direct/sequential execution', () => {
+  it('shows the scheduling preference for new workflows', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: {
-        modelValue: {
-          ...baseSettings,
-          engine: 'direct',
-          execution: 'sequential',
-        },
+        modelValue: baseSettings,
       },
     })
 
-    expect(wrapper.find('[data-testid="execution-backend-value"]').text()).toBe('Direct')
-    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Sequential')
+    expect(wrapper.text()).toContain('New workflow scheduling')
     expect(
       wrapper.find('[data-testid="cache-max-executions-input"]').exists(),
     ).toBe(false)
@@ -201,14 +197,6 @@ describe('ExecutionSection', () => {
     expect(wrapper.text()).not.toContain('Trusted Parsl configuration factories')
   })
 
-  campaignExcluded('parallel-scheduling')('maps current parallel scheduling setting to parallel wording', () => {
-    const wrapper = mount(ExecutionSection, {
-      ...globalOpts,
-      props: { modelValue: { ...baseSettings, execution_engine: 'parallel' } },
-    })
-
-    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
-  })
 })
 
 describe('StorageSection', () => {

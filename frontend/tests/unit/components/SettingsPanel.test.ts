@@ -67,7 +67,7 @@ const baseSettings = {
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
-  execution_engine: 'sequential' as const,
+  new_workflow_execution: 'sequential' as const,
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,
@@ -115,9 +115,10 @@ describe('SettingsPanel', () => {
   })
 
   it('does not fetch on mount when closed', async () => {
-    mount(SettingsPanel, mountOpts)
+    const wrapper = mount(SettingsPanel, mountOpts)
     await flushPromises()
     expect(mockedApi.get).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('forwards section update events to settingsStore.updateSettings', async () => {
@@ -139,7 +140,7 @@ describe('SettingsPanel', () => {
   })
 
   it('panel.close hides the dialog', async () => {
-    mount(SettingsPanel, mountOpts)
+    const wrapper = mount(SettingsPanel, mountOpts)
     const panel = useSettingsPanel()
     panel.open()
     await flushPromises()
@@ -147,6 +148,7 @@ describe('SettingsPanel', () => {
     panel.close()
     await flushPromises()
     expect(panel.isOpen.value).toBe(false)
+    wrapper.unmount()
   })
 
   it('opens directly on the Image Viewers tab', async () => {

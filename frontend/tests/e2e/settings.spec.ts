@@ -67,7 +67,7 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
   })
 
-  test('execution settings show the local runtime summary', async ({
+  test('execution settings show the new-workflow scheduling preference', async ({
     page,
   }) => {
     await page.goto('/')
@@ -77,8 +77,8 @@ test.describe('Settings Panel', () => {
 
     await dialog.getByText('Execution', { exact: true }).click()
 
-    await expect(dialog.locator('[data-testid="execution-backend-value"]')).toBeVisible()
-    await expect(dialog.locator('[data-testid="execution-scheduling-value"]')).toBeVisible()
+    await expect(dialog).toContainText('New workflow scheduling')
+    await expect(dialog.locator('#new-workflow-execution')).toContainText('Sequential')
     await expect(dialog.locator('[data-testid="cache-unlimited-checkbox"]')).toHaveCount(0)
     await expect(
       dialog.locator('[data-testid="cache-max-executions-input"]'),

@@ -670,7 +670,7 @@ test.describe('Canvas interactions', () => {
     const firstRun = await firstRunPromise
     expect(firstRun.status()).toBe(202)
     expect(firstRun.request().postDataJSON()).toMatchObject({
-      workflow_name: workflowName, draft_revision: accepted.draft_revision, graph: accepted.graph,
+      workflow_id: workflowName, draft_revision: accepted.draft_revision,
     })
     const firstIdentity = (await firstRun.json()).execution_id
     expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${firstIdentity}`)).json()).toMatchObject({
@@ -712,7 +712,7 @@ test.describe('Canvas interactions', () => {
     const rerun = await rerunPromise
     expect(rerun.status()).toBe(202)
     expect(rerun.request().postDataJSON()).toMatchObject({
-      workflow_name: workflowName, draft_revision: corrected.draft_revision, graph: corrected.graph,
+      workflow_id: workflowName, draft_revision: corrected.draft_revision,
     })
     const secondIdentity = (await rerun.json()).execution_id
     expect(secondIdentity).not.toBe(firstIdentity)

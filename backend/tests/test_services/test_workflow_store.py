@@ -7,7 +7,7 @@ import json
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from pydantic import ValidationError
@@ -89,6 +89,22 @@ def test_create_persists_one_canonical_document(tmp_path: Path) -> None:
     assert info.results_path == str(
         tmp_path / "workflows" / "folder" / "demo" / "results"
     )
+
+
+def test_new_workflow_scheduling_is_captured_once(tmp_path: Path) -> None:
+    preference: Literal["sequential", "parallel"] = "sequential"
+    store = WorkflowStoreService(
+        tmp_path / "workflows",
+        ToolRegistryService(),
+        new_workflow_execution=lambda: preference,
+    )
+
+    store.create_workflow(WorkflowCreate(name="first"))
+    preference = "parallel"
+    store.create_workflow(WorkflowCreate(name="second"))
+
+    assert store.get_workflow("first").graph.config.execution == "sequential"
+    assert store.get_workflow("second").graph.config.execution == "parallel"
 
 
 def test_save_and_get_use_the_graph_as_display_authority(tmp_path: Path) -> None:

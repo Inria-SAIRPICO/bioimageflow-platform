@@ -127,24 +127,24 @@ describe('execution store', () => {
     })
   })
 
-  it('posts workflow_name when starting execution', async () => {
+  it('posts workflow_id when starting execution', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       data: {
         status: 'started',
         execution_id: 'exec-post',
         workflow_id: 'wf_a',
-        draft_revision: null,
+        draft_revision: 7,
       },
     })
     const execution = useExecutionStore()
     const graph = makeGraph()
 
-    await execution.run(graph, undefined, 'wf_a')
+    await execution.run(graph, undefined, 'wf_a', { canvasId: null, draftRevision: 7 })
 
     expect(api.post).toHaveBeenCalledWith('/api/v1/execution/run', {
-      graph,
       nodes: undefined,
-      workflow_name: 'wf_a',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
       mode: 'normal',
     })
   })
@@ -168,9 +168,8 @@ describe('execution store', () => {
     })
 
     expect(api.post).toHaveBeenCalledWith('/api/v1/execution/run', {
-      graph,
       nodes: undefined,
-      workflow_name: 'wf_a',
+      workflow_id: 'wf_a',
       mode: 'normal',
       draft_revision: 7,
     })
@@ -181,7 +180,7 @@ describe('execution store', () => {
     expect(execution.originGraph).toEqual(graph)
   })
 
-  it.each(['draft_revision_conflict', 'draft_graph_mismatch'])(
+  it.each(['draft_revision_conflict'])(
     'retains the machine-readable Run conflict code %s',
     async (errorCode) => {
       vi.mocked(api.post).mockRejectedValueOnce({
@@ -193,7 +192,7 @@ describe('execution store', () => {
       const execution = useExecutionStore()
 
       await expect(
-        execution.run(makeGraph(), undefined, 'wf_a'),
+        execution.run(makeGraph(), undefined, 'wf_a', { canvasId: null, draftRevision: 7 }),
       ).rejects.toBeTruthy()
 
       expect(execution.isConflict).toBe(true)
@@ -849,17 +848,16 @@ describe('execution store', () => {
     expect(execution.lastResult?.success).toBe(true)
   })
 
-  it('posts workflow_name when clearing cache', async () => {
+  it('posts workflow_id when clearing cache', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { node_statuses: {} } })
     const execution = useExecutionStore()
-    const graph = makeGraph()
 
-    await execution.clear(graph, ['n1'], 'wf_a')
+    await execution.clear(['n1'], 'wf_a', 7)
 
     expect(api.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
-      graph,
       nodes: ['n1'],
-      workflow_name: 'wf_a',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
     })
   })
 

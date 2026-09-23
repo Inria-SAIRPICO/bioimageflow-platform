@@ -1146,7 +1146,9 @@ test.describe('workflow interface and grouping', () => {
     expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${grandchild.session_id}`)).status()).toBe(404)
     await parentTab.locator('.dv-default-tab-action').click()
     await expect(parentTab).toHaveCount(0)
-    expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${parent.session_id}`)).status()).toBe(404)
+    await expect.poll(async () => (
+      await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${parent.session_id}`)
+    ).status()).toBe(404)
     expect((await draftState(page, name)).graph).toEqual(rootBefore.graph)
     expect((await savedGraph(page, name))).toEqual(rootBefore.graph)
     const unrelatedAfter = await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${unrelated.session_id}`)

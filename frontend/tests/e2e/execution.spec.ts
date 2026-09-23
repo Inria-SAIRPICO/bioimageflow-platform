@@ -289,17 +289,11 @@ test.describe('execution lifecycle', () => {
     await page.getByTestId('run-selected-button').click()
     const request = await runRequest
     expect(request.postDataJSON()).toMatchObject({
-      workflow_name: workflowName,
+      workflow_id: workflowName,
       draft_revision: draftRevision,
       nodes: ['increment_valid'],
-      graph: {
-        nodes: expect.arrayContaining([
-          expect.objectContaining({ id: 'seed_valid' }),
-          expect.objectContaining({ id: 'increment_valid' }),
-          expect.objectContaining({ id: 'unrelated_invalid', tool_name: 'MissingCampaignTool' }),
-        ]),
-      },
     })
+    expect(request.postDataJSON()).not.toHaveProperty('graph')
     expect((await runResponse).status()).toBe(202)
 
     await waitForExecutionComplete(page, 'increment_valid')

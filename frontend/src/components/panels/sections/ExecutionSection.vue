@@ -11,10 +11,6 @@ const emit = defineEmits<{
 }>()
 const executionRegistry = useExecutionRegistryStore()
 
-const distributedSettings = computed(() => props.modelValue as Settings & {
-  new_workflow_execution?: 'sequential' | 'parallel'
-  default_execution_target_id?: string
-})
 const schedulingOptions = [
   { label: 'Sequential', value: 'sequential' },
   { label: 'Parallel', value: 'parallel' },
@@ -24,20 +20,6 @@ const targetOptions = computed(() => executionRegistry.targets.map(target => ({
   value: target.id,
   disabled: !target.enabled,
 })))
-
-const backendLabel = computed(() => {
-  const engine = props.modelValue.engine
-  if (engine === 'wetlands') return 'Wetlands'
-  if (engine === 'direct') return 'Direct'
-  return 'Automatic'
-})
-
-const schedulingLabel = computed(() => {
-  const execution = props.modelValue.execution
-  if (execution === 'parallel') return 'Parallel'
-  if (execution === 'sequential') return 'Sequential'
-  return props.modelValue.execution_engine === 'parallel' ? 'Parallel' : 'Sequential'
-})
 
 const profilesEditable = computed(() => props.modelValue.deployment_mode === 'desktop')
 
@@ -50,23 +32,11 @@ onMounted(() => void executionRegistry.loadTargets())
 
 <template>
   <div class="settings-section">
-    <div class="field" data-testid="execution-runtime-summary">
-      <span class="field-label">Execution backend</span>
-      <span class="value" data-testid="execution-backend-value">{{ backendLabel }}</span>
-    </div>
-
-    <div class="field">
-      <span class="field-label">Scheduling</span>
-      <span class="value" data-testid="execution-scheduling-value">
-        {{ schedulingLabel }}
-      </span>
-    </div>
-
     <div class="field">
       <label class="field-label" for="new-workflow-execution">New workflow scheduling</label>
       <Select
         id="new-workflow-execution"
-        :model-value="distributedSettings.new_workflow_execution ?? 'sequential'"
+        :model-value="props.modelValue.new_workflow_execution"
         :options="schedulingOptions"
         option-label="label"
         option-value="value"
@@ -79,7 +49,7 @@ onMounted(() => void executionRegistry.loadTargets())
       <label class="field-label" for="default-execution-target">Default execution target</label>
       <Select
         id="default-execution-target"
-        :model-value="distributedSettings.default_execution_target_id ?? 'local'"
+        :model-value="props.modelValue.default_execution_target_id"
         :options="targetOptions"
         option-label="label"
         option-value="value"

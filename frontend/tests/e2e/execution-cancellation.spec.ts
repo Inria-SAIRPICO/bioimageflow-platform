@@ -197,7 +197,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     ] as const) {
       const refusal = await page.request.post(`${API_BASE}/api/v1/execution/run`, {
         data: {
-          graph: acceptedDraft.graph, workflow_name: workflowName,
+          workflow_id: workflowName,
           draft_revision: acceptedDraft.draft_revision, nodes: targets,
         },
       })

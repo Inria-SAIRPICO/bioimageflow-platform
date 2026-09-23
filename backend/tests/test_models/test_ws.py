@@ -220,6 +220,7 @@ class TestLogMessage:
             timestamp=1.0,
             execution_id="exec-123",
             workflow_id=r"folder\workflow",
+            draft_revision=1,
         )
 
         assert msg.workflow_id == "folder/workflow"

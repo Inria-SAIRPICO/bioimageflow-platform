@@ -19,10 +19,9 @@ export interface LockForExecutionOptions {
   validationResult: ValidationResult | null
   workflowName: string
   canvasId?: CanvasId | null
-  acceptedDraftRevision?: number | null
+  acceptedDraftRevision: number
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
-  targetId?: string
   isTargetActive?: () => boolean
 }
 
@@ -68,22 +67,14 @@ export function useExecutionLock() {
     }
 
     // Kick off the exact prepared input.
-    if (
-      options.canvasId !== undefined
-      || options.acceptedDraftRevision !== undefined
-    ) {
-      await exec.run(graph, nodes, workflowName, {
-        canvasId: options.canvasId ?? null,
-        draftRevision: options.acceptedDraftRevision ?? null,
-        ...(options.mode ? { mode: options.mode } : {}),
-        ...(options.retryOfExecutionId
-          ? { retryOfExecutionId: options.retryOfExecutionId }
-          : {}),
-        ...(options.targetId ? { targetId: options.targetId } : {}),
-      })
-    } else {
-      await exec.run(graph, nodes, workflowName)
-    }
+    await exec.run(graph, nodes, workflowName, {
+      canvasId: options.canvasId ?? null,
+      draftRevision: options.acceptedDraftRevision,
+      ...(options.mode ? { mode: options.mode } : {}),
+      ...(options.retryOfExecutionId
+        ? { retryOfExecutionId: options.retryOfExecutionId }
+        : {}),
+    })
     return true
   }
 

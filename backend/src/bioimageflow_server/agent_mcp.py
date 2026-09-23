@@ -730,8 +730,7 @@ class BioImageFlowMCPGateway:
         if _is_error(graph):
             return graph
         payload: dict[str, Any] = {
-            "graph": graph,
-            "workflow_name": state.active_workflow_id,
+            "workflow_id": state.active_workflow_id,
             "draft_revision": draft.get("draft_revision"),
         }
         if nodes is not None:

@@ -30,8 +30,6 @@ function input(
     executionStatus: null,
     validationStatus: null,
     executionOriginMatches: false,
-    executionIsContextless: false,
-    allowContextlessLegacyExecution: false,
     executionDraftRevision: null,
     acceptedDraftRevision: null,
     ...overrides,
@@ -99,15 +97,13 @@ describe('projectNodeStatus', () => {
       },
     },
     {
-      name: 'explicitly owned contextless legacy execution remains compatible',
+      name: 'execution without an accepted revision never applies',
       value: input({
         executionStatus: status('same', 'running'),
         validationStatus: status('same', 'unexecuted'),
         executionOriginMatches: true,
-        executionIsContextless: true,
-        allowContextlessLegacyExecution: true,
       }),
-      expected: { status: 'running', presentationStatus: 'running', source: 'execution' },
+      expected: { status: 'unexecuted', presentationStatus: 'unexecuted', source: 'validation' },
     },
     {
       name: 'unowned contextless execution never applies',
@@ -115,8 +111,6 @@ describe('projectNodeStatus', () => {
         executionStatus: status('same', 'running'),
         validationStatus: status('same', 'unexecuted'),
         executionOriginMatches: false,
-        executionIsContextless: true,
-        allowContextlessLegacyExecution: true,
       }),
       expected: {
         status: 'unexecuted',

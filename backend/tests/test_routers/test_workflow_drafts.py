@@ -233,8 +233,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         blocked = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph.model_dump(mode="json"),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": accepted["draft_revision"],
             },
         )
@@ -244,9 +243,9 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         cleared = await client.post(
             "/api/v1/execution/clear",
             json={
-                "graph": graph.model_dump(mode="json"),
                 "nodes": ["source"],
-                "workflow_name": "wf",
+                "workflow_id": "wf",
+                "draft_revision": accepted["draft_revision"],
             },
         )
         assert cleared.status_code == 200
@@ -751,8 +750,7 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
             run = await client.post(
                 "/api/v1/execution/run",
                 json={
-                    "graph": graph_a.model_dump(mode="json"),
-                    "workflow_name": "wf",
+                    "workflow_id": "wf",
                     "draft_revision": accepted.draft_revision,
                 },
             )
@@ -817,8 +815,7 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
     app.dependency_overrides[execution_get_workflow_draft_service] = lambda: drafts
     transport = httpx.ASGITransport(app=app)
     payload = {
-        "graph": store.get_workflow("wf").graph.model_dump(mode="json", by_alias=True),
-        "workflow_name": "wf",
+        "workflow_id": "wf",
         "draft_revision": 0,
     }
 
@@ -903,8 +900,8 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
         run = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph_state(nodes=[], edges=[]).model_dump(mode="json"),
-                "workflow_name": "run-wf",
+                "workflow_id": "run-wf",
+                "draft_revision": 0,
             },
         )
 

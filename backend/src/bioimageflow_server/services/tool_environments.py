@@ -25,12 +25,14 @@ class ToolEnvironmentService:
         catalog: Any = None,
         connection_manager: Any = None,
         wetlands_manager: Any = None,
+        managed_environment_manager: Any = None,
         protected_environment_names: Callable[[], set[str]] | None = None,
     ) -> None:
         self._registry = registry
         self._catalog = catalog
         self._connection_manager = connection_manager
         self._wetlands = wetlands_manager
+        self._managed_environments = managed_environment_manager
         self._protected_environment_names = protected_environment_names
         self._standard_refresh_task: asyncio.Task[None] | None = None
 
@@ -165,19 +167,25 @@ class ToolEnvironmentService:
 
     def location(self, env_name: str) -> str | None:
         """Return the managed location for an environment, including before creation."""
-        manager = getattr(self._manager, "_manager", None)
-        managed_environments = getattr(manager, "managed_environments", None)
-        if callable(managed_environments):
-            info = next(
-                (candidate for candidate in managed_environments() if candidate.name == env_name),
-                None,
-            )
-            if info is not None:
-                return str(Path(info.path).expanduser().resolve())
-        environments_root = getattr(manager, "environments_root", None)
-        if environments_root is None:
-            return None
-        return str((Path(environments_root) / env_name).expanduser().resolve())
+        manager = self._managed_environments
+        if manager is None:
+            # Construct the BioImageFlow wrapper first so it configures the
+            # process-wide Wetlands root before the public manager is requested.
+            _ = self.manager
+            from bioimageflow.env_manager import get_shared_environment_manager
+
+            manager = self._managed_environments = get_shared_environment_manager()
+        info = next(
+            (
+                candidate
+                for candidate in manager.managed_environments()
+                if candidate.name == env_name
+            ),
+            None,
+        )
+        if info is not None:
+            return str(Path(info.path).expanduser().resolve())
+        return str((Path(manager.environments_root) / env_name).expanduser().resolve())
 
     def _environment_spec(self, tool: Any) -> EnvironmentSpec | None:
         if not tool.environment:
@@ -220,10 +228,7 @@ class ToolEnvironmentService:
             publish(env_name, status)
 
     def _stop_wetlands_environment(self, env_name: str) -> None:
-        stop = getattr(self._manager, "stop", None)
-        if not callable(stop):
-            raise RuntimeError("Wetlands environment manager does not support stop()")
-        stop(env_name)
+        self._manager.stop(env_name)
 
     def _recreate_wetlands_environment(self, spec: EnvironmentSpec) -> None:
         self._stop_wetlands_environment(spec.name)

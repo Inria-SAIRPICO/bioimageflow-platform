@@ -221,6 +221,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store.create_workflow(WorkflowCreate(name="wf"))
+    initial_saved_graph = store.get_workflow("wf").graph
     drafts = WorkflowDraftService(lambda: store)
     first_validation_entered = threading.Event()
     release_first_validation = threading.Event()
@@ -259,7 +260,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
     accepted = await reset
     assert accepted.graph == replacement_saved_graph
     assert accepted.dirty_against_saved is False
-    assert validated_graphs == [_graph(), replacement_saved_graph]
+    assert validated_graphs == [initial_saved_graph, replacement_saved_graph]
 
 
 async def test_stale_nested_validation_cannot_commit_over_newer_revision(

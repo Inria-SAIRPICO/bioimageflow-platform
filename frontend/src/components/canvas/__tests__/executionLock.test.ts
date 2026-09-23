@@ -344,9 +344,9 @@ describe('CanvasView execution lock', () => {
       },
     })
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
-      graph,
       nodes: ['download'],
-      workflow_name: 'execution-lock',
+      workflow_id: 'execution-lock',
+      draft_revision: 7,
     })
     canvas.unmount()
   })

@@ -16,7 +16,6 @@ from bioimageflow_server.models.graph import (
     GraphValidationRequest,
     NodeOutputSchemaResponse,
 )
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.execution import ExecutionConflictError
@@ -59,11 +58,6 @@ def get_workflow_store() -> WorkflowStoreService | None:
     return None
 
 
-def get_settings() -> Settings | None:
-    """Live Settings or None when the app is configured without one."""
-    return None
-
-
 def _ensure_unlocked(execution_manager: Any | None) -> None:
     if execution_manager is None:
         return
@@ -103,7 +97,6 @@ async def validate_graph_endpoint(
     storage_path: Path | None = Depends(get_storage_path),
     execution_manager: Any | None = Depends(get_execution_manager),
     dev_mode: bool = Depends(get_dev_mode),
-    settings: Settings | None = Depends(get_settings),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ValidationResult:
     if isinstance(body, GraphValidationRequest):
@@ -129,7 +122,6 @@ async def validate_graph_endpoint(
                     graph,
                     storage_path=context.storage_path,
                     dev_mode=dev_mode,
-                    settings=settings,
                 )
                 await run_graph_work(
                     partial(

@@ -65,7 +65,6 @@ class _SrcOutputs(IOModel):
 
 
 class SrcTool(ProcessingTool):
-
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _SrcInputs
@@ -84,7 +83,6 @@ class _DstOutputs(IOModel):
 
 
 class DstTool(ProcessingTool):
-
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(name="test", dependencies={})
     Inputs = _DstInputs
@@ -208,7 +206,7 @@ class _FakeExecutionManager:
         return self._status
 
     def apply_cache_clear_statuses(
-        self, workflow_id: str, statuses: dict[str, NodeStatus]
+        self, workflow_id: str, statuses: dict[str, NodeStatus], draft_revision: int
     ) -> None:
         self._status.node_statuses.update(statuses)
 
@@ -257,7 +255,21 @@ async def _make_client(
     tool_registry: ToolRegistryService | None = None,
     workflow_store: Any = None,
     workflow_draft_service: Any = None,
+    accepted_graph: dict[str, Any] | None = None,
 ) -> httpx.AsyncClient:
+    if workflow_draft_service is None and isinstance(workflow_store, MagicMock):
+        workflow_draft_service = MagicMock()
+
+        async def read_authority(workflow_id: str) -> WorkflowDraftAuthoritySnapshot:
+            return _authority(
+                _accepted_draft(accepted_graph, workflow_id=workflow_id),
+                workflow_store.get_storage_path(workflow_id),
+            )
+
+        workflow_draft_service.get_draft_authority_async = AsyncMock(side_effect=read_authority)
+        workflow_draft_service.get_draft_authority_snapshot.side_effect = lambda workflow_id: (
+            _accepted_draft(accepted_graph, workflow_id=workflow_id)
+        )
     config = AppConfig(
         storage_path=tmp_path,
         execution_manager=execution_manager,
@@ -302,8 +314,7 @@ async def test_run_returns_202(idle_client) -> None:
     resp = await client.post(
         "/api/v1/execution/run",
         json={
-            "graph": _minimal_graph(),
-            "workflow_name": "wf",
+            "workflow_id": "wf",
             "draft_revision": 7,
         },
     )
@@ -311,14 +322,14 @@ async def test_run_returns_202(idle_client) -> None:
     assert resp.json() == {
         "status": "started",
         "execution_id": "exec-123",
-            "workflow_id": "wf",
-            "draft_revision": 7,
-            "mode": "normal",
-            "requested_nodes": None,
-            "retry_of_execution_id": None,
-            "planned_node_ids": [],
-            "planned_node_names": {},
-        }
+        "workflow_id": "wf",
+        "draft_revision": 7,
+        "mode": "normal",
+        "requested_nodes": None,
+        "retry_of_execution_id": None,
+        "planned_node_ids": [],
+        "planned_node_names": {},
+    }
     em.start.assert_awaited_once()
     assert em.start.await_args.kwargs["workflow_id"] == "wf"
     assert em.start.await_args.kwargs["draft_revision"] == 7
@@ -343,9 +354,8 @@ async def test_run_selected_uses_accepted_draft_graph(tmp_path: Path) -> None:
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": accepted.graph.model_dump(mode="json"),
                 "nodes": ["n1"],
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -390,8 +400,7 @@ async def test_run_rejects_stale_draft_before_execution_side_effects(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -411,7 +420,7 @@ async def test_run_rejects_stale_draft_before_execution_side_effects(
     assert cache_sentinel.read_text() == "retained"
 
 
-async def test_run_rejects_same_revision_graph_mismatch(tmp_path: Path) -> None:
+async def test_run_rejects_inline_graph_even_with_valid_revision(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
@@ -432,19 +441,13 @@ async def test_run_rejects_same_revision_graph_mismatch(tmp_path: Path) -> None:
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
+                "graph": _minimal_graph(),
             },
         )
 
-    assert response.status_code == 409
-    assert response.json() == {
-        "error": "draft_graph_mismatch",
-        "detail": ("Submitted graph does not match accepted draft revision 7 for workflow 'wf'"),
-        "workflow_id": "wf",
-        "draft_revision": 7,
-    }
+    assert response.status_code == 422
     em.start.assert_not_awaited()
     workflow_store.get_storage_path.assert_not_called()
 
@@ -476,8 +479,7 @@ async def test_run_final_recheck_rejects_draft_advance(tmp_path: Path) -> None:
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": accepted.graph.model_dump(mode="json"),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -520,15 +522,14 @@ async def test_run_final_recheck_rejects_changed_revision_zero_graph(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph_a,
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 0,
             },
         )
 
     assert response.status_code == 409
-    assert response.json()["error"] == "draft_graph_mismatch"
-    assert response.json()["draft_revision"] == 0
+    assert response.json()["error"] == "draft_revision_conflict"
+    assert response.json()["current_revision"] == 0
 
 
 async def test_run_cannot_accept_same_id_replacement(
@@ -564,8 +565,7 @@ async def test_run_cannot_accept_same_id_replacement(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": accepted.graph.model_dump(mode="json"),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -610,8 +610,7 @@ async def test_run_storage_retry_retains_one_pending_execution_identity(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": accepted.graph.model_dump(mode="json"),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -623,12 +622,12 @@ async def test_run_storage_retry_retains_one_pending_execution_identity(
     assert em.start.await_args.kwargs["storage_path"] == new_storage
 
 
-async def test_run_without_revision_preserves_inline_execution(tmp_path: Path) -> None:
+async def test_run_without_revision_is_rejected(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     em.start.return_value = ExecutionContext(
         execution_id="exec-inline",
         workflow_id="wf",
-        draft_revision=None,
+        draft_revision=0,
     )
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
@@ -644,13 +643,12 @@ async def test_run_without_revision_preserves_inline_execution(tmp_path: Path) -
     async with client:
         response = await client.post(
             "/api/v1/execution/run",
-            json={"graph": _minimal_graph(), "workflow_name": "wf"},
+            json={"workflow_id": "wf"},
         )
 
-    assert response.status_code == 202, response.text
+    assert response.status_code == 422, response.text
     draft_service.get_draft_authority_async.assert_not_awaited()
-    assert em.start.await_args.args[0] == GraphState.model_validate(_minimal_graph())
-    assert em.start.await_args.kwargs["draft_revision"] is None
+    em.start.assert_not_awaited()
 
 
 async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) -> None:
@@ -665,9 +663,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         tool_registry=ToolRegistryService(),
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
-    saved_graph = workflow_store.get_workflow("wf").graph.model_dump(
-        mode="json", by_alias=True
-    )
+    saved_graph = workflow_store.get_workflow("wf").graph.model_dump(mode="json", by_alias=True)
     draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
     assert not draft_path.exists()
     client = await _make_client(
@@ -680,8 +676,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": saved_graph,
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 0,
             },
         )
@@ -693,7 +688,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
     assert not draft_path.exists()
 
 
-async def test_run_rejects_revision_zero_graph_mismatch_without_materializing_draft(
+async def test_run_rejects_inline_revision_zero_without_materializing_draft(
     tmp_path: Path,
 ) -> None:
     em = _FakeExecutionManager(running=False)
@@ -713,15 +708,13 @@ async def test_run_rejects_revision_zero_graph_mismatch_without_materializing_dr
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 0,
+                "graph": _minimal_graph(),
             },
         )
 
-    assert response.status_code == 409
-    assert response.json()["error"] == "draft_graph_mismatch"
-    assert response.json()["draft_revision"] == 0
+    assert response.status_code == 422
     em.start.assert_not_awaited()
     assert not draft_path.exists()
 
@@ -755,8 +748,7 @@ async def test_run_returns_not_found_when_workflow_disappears_before_start(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -793,9 +785,8 @@ async def test_run_selected_defers_invalid_full_draft_validation_to_execution_sc
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": invalid_graph,
                 "nodes": ["n1"],
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -839,8 +830,7 @@ async def test_run_recompiles_draft_instead_of_trusting_retained_validation(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
                 "draft_revision": 7,
             },
         )
@@ -869,7 +859,7 @@ async def test_run_conflict_returns_409(tmp_path: Path) -> None:
     async with c:
         resp = await c.post(
             "/api/v1/execution/run",
-            json={"graph": _minimal_graph(), "workflow_name": "wf"},
+            json={"workflow_id": "wf", "draft_revision": 7},
         )
     assert resp.status_code == 409
 
@@ -889,7 +879,7 @@ async def test_run_build_failure_returns_422(tmp_path: Path) -> None:
     async with c:
         resp = await c.post(
             "/api/v1/execution/run",
-            json={"graph": _minimal_graph(), "workflow_name": "wf"},
+            json={"workflow_id": "wf", "draft_revision": 7},
         )
     assert resp.status_code == 422
     body = resp.json()
@@ -901,9 +891,9 @@ async def test_run_passes_nodes_subset(idle_client) -> None:
     resp = await client.post(
         "/api/v1/execution/run",
         json={
-            "graph": _minimal_graph(),
             "nodes": ["n1"],
-            "workflow_name": "wf",
+            "workflow_id": "wf",
+            "draft_revision": 7,
         },
     )
     assert resp.status_code == 202
@@ -920,8 +910,7 @@ async def test_retry_reuses_the_server_resolved_original_targets(idle_client) ->
     response = await client.post(
         "/api/v1/execution/run",
         json={
-            "graph": _minimal_graph(),
-            "workflow_name": "wf",
+            "workflow_id": "wf",
             "draft_revision": 7,
             "mode": "retry",
             "retry_of_execution_id": "exec-failed",
@@ -968,8 +957,7 @@ async def test_recompute_invalidates_all_enabled_nodes_before_start(
     response = await client.post(
         "/api/v1/execution/run",
         json={
-            "graph": _minimal_graph(),
-            "workflow_name": "wf",
+            "workflow_id": "wf",
             "draft_revision": 7,
             "mode": "recompute",
         },
@@ -977,7 +965,7 @@ async def test_recompute_invalidates_all_enabled_nodes_before_start(
 
     assert response.status_code == 202, response.text
     assert prepare.call_args.args[0] == ["n1"]
-    assert commit.call_args.args[-1] is plan
+    assert commit.call_args.args[4] is plan
     assert em.start.await_count == 1
     assert em.reserved_intents[-1]["mode"] == "recompute"
 
@@ -995,7 +983,7 @@ async def test_run_resolves_workflow_storage_path(tmp_path: Path) -> None:
     async with c:
         resp = await c.post(
             "/api/v1/execution/run",
-            json={"graph": _minimal_graph(), "workflow_name": "wf_a"},
+            json={"workflow_id": "wf_a", "draft_revision": 7},
         )
 
     assert resp.status_code == 202
@@ -1039,8 +1027,8 @@ async def test_run_requires_workflow_store(tmp_path: Path) -> None:
         resp = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": "wf",
+                "workflow_id": "wf",
+                "draft_revision": 7,
             },
         )
 
@@ -1064,8 +1052,7 @@ async def test_run_rejects_invalid_workflow_identity(
         resp = await c.post(
             "/api/v1/execution/run",
             json={
-                "graph": _minimal_graph(),
-                "workflow_name": workflow_name,
+                "workflow_id": workflow_name,
             },
         )
 
@@ -1086,6 +1073,49 @@ async def test_stop_returns_200(idle_client) -> None:
 
 
 # ---- POST /execution/clear --------------------------------------------------
+
+
+@pytest.mark.parametrize("advanced_before_compile", [True, False])
+async def test_clear_rejects_draft_advance_before_cache_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    advanced_before_compile: bool,
+) -> None:
+    store = MagicMock()
+    store.get_storage_path.return_value = tmp_path
+    service = MagicMock()
+    service.get_draft_authority_async = AsyncMock(
+        return_value=_authority(
+            _accepted_draft(revision=8 if advanced_before_compile else 7),
+            tmp_path,
+        )
+    )
+    service.get_draft_authority_snapshot.return_value = _accepted_draft(revision=8)
+    prepare = MagicMock(return_value=object())
+    commit = MagicMock(return_value={})
+    monkeypatch.setattr("bioimageflow_server.routers.execution.prepare_node_cache_clear", prepare)
+    monkeypatch.setattr("bioimageflow_server.routers.execution.commit_node_cache_clear", commit)
+    client = await _make_client(
+        tmp_path,
+        execution_manager=_FakeExecutionManager(),
+        workflow_store=store,
+        workflow_draft_service=service,
+    )
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/clear",
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 7,
+                "nodes": ["n1"],
+            },
+        )
+    assert response.status_code == 409
+    assert response.json()["error"] == "draft_revision_conflict"
+    assert prepare.call_count == (0 if advanced_before_compile else 1)
+    if not advanced_before_compile:
+        assert prepare.call_args.args[1] == _accepted_draft().graph
+    commit.assert_not_called()
 
 
 async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
@@ -1110,11 +1140,12 @@ async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
         execution_manager=em,
         tool_registry=reg,
         workflow_store=workflow_store,
+        accepted_graph=graph,
     )
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
+            json={"nodes": ["a"], "workflow_id": "wf", "draft_revision": 7},
         )
     assert resp.status_code == 200
     body = resp.json()
@@ -1122,13 +1153,13 @@ async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
     assert body["node_statuses"]["a"]["status"] == "unexecuted"
 
 
-async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
+async def test_clear_without_revision_returns_422(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     c = await _make_client(tmp_path, execution_manager=em)
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"nodes": ["n1"], "workflow_name": "wf"},
+            json={"nodes": ["n1"], "workflow_id": "wf"},
         )
     assert resp.status_code == 422
 
@@ -1136,23 +1167,11 @@ async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
 async def test_clear_while_running_returns_423(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=True)
     reg = _make_registry()
-    graph = graph_document(
-        nodes=[
-            {
-                "type": "tool",
-                "id": "a",
-                "name": "a",
-                "tool_name": "SrcTool",
-                "position": [0, 0],
-                "parameters": {"input_image": "/a"},
-            },
-        ]
-    )
     c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
+            json={"nodes": ["a"], "workflow_id": "wf", "draft_revision": 7},
         )
     assert resp.status_code == 423
 
@@ -1167,7 +1186,7 @@ async def test_clear_requires_workflow_identity(tmp_path: Path) -> None:
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": _minimal_graph(), "nodes": ["n1"]},
+            json={"nodes": ["n1"]},
         )
 
     assert resp.status_code == 422
@@ -1187,9 +1206,8 @@ async def test_clear_rejects_invalid_workflow_identity(
         resp = await c.post(
             "/api/v1/execution/clear",
             json={
-                "graph": _minimal_graph(),
                 "nodes": ["n1"],
-                "workflow_name": workflow_name,
+                "workflow_id": workflow_name,
             },
         )
 
@@ -1236,11 +1254,12 @@ async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
         execution_manager=em,
         tool_registry=reg,
         workflow_store=workflow_store,
+        accepted_graph=graph,
     )
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
+            json={"nodes": ["a"], "workflow_id": "wf", "draft_revision": 7},
         )
     assert resp.status_code == 200
     body = resp.json()
@@ -1258,10 +1277,9 @@ async def test_clear_resolves_workflow_storage_path(
     workflow_store.get_storage_path.return_value = workflow_storage
     seen: dict[str, Path | None] = {}
 
-    def _fake_prepare(nodes, graph, registry, storage_path, *, dev_mode, settings):
+    def _fake_prepare(nodes, graph, registry, storage_path, *, dev_mode):
         seen["storage_path"] = storage_path
         seen["dev_mode"] = dev_mode
-        seen["settings"] = settings
         return object()
 
     def _fake_commit(_plan):
@@ -1287,9 +1305,9 @@ async def test_clear_resolves_workflow_storage_path(
         resp = await c.post(
             "/api/v1/execution/clear",
             json={
-                "graph": _minimal_graph(),
                 "nodes": ["a"],
-                "workflow_name": "wf_a",
+                "workflow_id": "wf_a",
+                "draft_revision": 7,
             },
         )
 
@@ -1298,7 +1316,6 @@ async def test_clear_resolves_workflow_storage_path(
     workflow_store.get_storage_path.assert_called_with("wf_a")
     assert seen["storage_path"] == workflow_storage
     assert seen["dev_mode"] is True
-    assert seen["settings"] is not None
 
 
 async def test_clear_cannot_commit_against_same_id_replacement(
@@ -1344,9 +1361,9 @@ async def test_clear_cannot_commit_against_same_id_replacement(
             client.post(
                 "/api/v1/execution/clear",
                 json={
-                    "graph": _minimal_graph(),
                     "nodes": ["n1"],
-                    "workflow_name": "wf",
+                    "workflow_id": "wf",
+                    "draft_revision": 0,
                 },
             )
         )
@@ -1366,8 +1383,6 @@ async def test_clear_cannot_commit_against_same_id_replacement(
     assert response.status_code == 404
     assert commit_called is False
     assert workflow_store.get_workflow("wf").info.display_name == "Replacement"
-
-
 
 
 # ---- GET /execution/status --------------------------------------------------

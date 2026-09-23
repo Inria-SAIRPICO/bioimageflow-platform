@@ -680,8 +680,7 @@ test.describe('critical operation race contracts', () => {
     await waitForDraftParameter(page, workflowName, nodeId, 2, true)
 
     let executionPayload: {
-      graph: GraphState
-      workflow_name: string
+      workflow_id: string
       draft_revision: number
     } | null = null
     await page.route('**/api/v1/execution/run', async (route) => {
@@ -691,7 +690,7 @@ test.describe('critical operation race contracts', () => {
         json: {
           status: 'started',
           execution_id: `confirmation-e2e-${Date.now()}`,
-          workflow_id: executionPayload!.workflow_name,
+          workflow_id: executionPayload!.workflow_id,
           draft_revision: executionPayload!.draft_revision,
         },
       })
@@ -733,9 +732,10 @@ test.describe('critical operation race contracts', () => {
     await page.getByTestId('out-of-date-continue').click()
     await runResponse
     expect(executionPayload).not.toBeNull()
-    expect(executionPayload!.workflow_name).toBe(workflowName)
+    expect(executionPayload!.workflow_id).toBe(workflowName)
     expect(executionPayload!.draft_revision).toBe(latestDraft.draft_revision)
-    expect(graphParameter(executionPayload!.graph, nodeId, 'sigma')).toBe(3)
+    expect(executionPayload).not.toHaveProperty('graph')
+    expect(graphParameter(latestDraft.graph, nodeId, 'sigma')).toBe(3)
   })
 
   test('delayed parameter persistence keeps node presentation stable and success quiet', async ({ page }) => {
@@ -934,8 +934,7 @@ test.describe('critical operation race contracts', () => {
     const sigmaInput = await selectSigmaField(page, nodeId)
 
     let executionPayload: {
-      graph: GraphState
-      workflow_name: string
+      workflow_id: string
       draft_revision: number
     } | null = null
     await page.route('**/api/v1/execution/run', async (route) => {
@@ -945,7 +944,7 @@ test.describe('critical operation race contracts', () => {
         json: {
           status: 'started',
           execution_id: `parameter-e2e-${Date.now()}`,
-          workflow_id: executionPayload!.workflow_name,
+          workflow_id: executionPayload!.workflow_id,
           draft_revision: executionPayload!.draft_revision,
         },
       })
@@ -961,8 +960,8 @@ test.describe('critical operation race contracts', () => {
     await runResponse
 
     expect(executionPayload).not.toBeNull()
-    expect(executionPayload!.workflow_name).toBe(workflowName)
-    expect(graphParameter(executionPayload!.graph, nodeId, 'sigma')).toBe(4.5)
+    expect(executionPayload!.workflow_id).toBe(workflowName)
+    expect(executionPayload).not.toHaveProperty('graph')
     const acceptedDraft = await waitForDraftParameter(
       page,
       workflowName,
@@ -971,5 +970,6 @@ test.describe('critical operation race contracts', () => {
       true,
     )
     expect(executionPayload!.draft_revision).toBe(acceptedDraft.draft_revision)
+    expect(graphParameter(acceptedDraft.graph, nodeId, 'sigma')).toBe(4.5)
   })
 })

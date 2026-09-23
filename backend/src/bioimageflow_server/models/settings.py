@@ -89,7 +89,6 @@ class Settings(BaseModel):
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
-    execution_engine: Literal["sequential", "parallel"] = "sequential"
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     default_execution_target_id: str = "local"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
@@ -107,32 +106,6 @@ class Settings(BaseModel):
         if isinstance(value, str):
             value = value.strip()
             return value or None
-        return value
-
-    @model_validator(mode="before")
-    @classmethod
-    def _synchronize_execution_preferences(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        payload = dict(value)
-        legacy = payload.get("execution_engine")
-        if legacy == "parsl":
-            legacy = "parallel"
-            payload["execution_engine"] = legacy
-        preferred = payload.get("new_workflow_execution")
-        if legacy is not None and preferred is None:
-            payload["new_workflow_execution"] = legacy
-        elif preferred is not None and legacy is None:
-            payload["execution_engine"] = preferred
-        elif legacy is not None and preferred is not None and legacy != preferred:
-            raise ValueError("execution_engine and new_workflow_execution must match")
-        return payload
-
-    @field_validator("execution_engine", mode="before")
-    @classmethod
-    def _migrate_legacy_execution_engine(cls, value: object) -> object:
-        if value == "parsl":
-            return "parallel"
         return value
 
     @field_validator("default_execution_target_id", mode="before")

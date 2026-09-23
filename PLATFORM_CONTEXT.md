@@ -154,7 +154,7 @@ They measure only visible, font-ready content and persist deliberate user widths
 The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 Node-image, thumbnail, and Reveal requests resolve relative owned image paths against the immutable record captured for that request through the library's public asset API; absolute external image paths keep their declared location, and legacy unpinned results retain their existing lookup rules.
 
-Execution operates on one exact accepted graph or draft snapshot.
+Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
 The execution banner's single overall bar uses the run's retained scoped executable leaf-node plan, including cached and selected dependencies, rather than the active canvas node count. Its text distinguishes completed nodes, current row position or completed rows, and per-row task progress; a successful run reaches 100%.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
@@ -165,7 +165,7 @@ Do not rebuild an ad hoc partial graph for Run Selected; compile the complete ac
 Recursive graphs compile to scoped jobs while workflow nodes project aggregate descendant status.
 Caching and result attribution remain per internal tool node, and failures preserve their scoped path through nested workflow boundaries.
 An opened nested canvas maps its local node IDs through its durable owner chain to the root execution's scoped IDs for status, progress, and Node Data; private edits use the nested editor's validation until applied.
-Every platform-owned Wetlands provisioning path forwards public environment-operation events, including sanitized Pixi output, to the Logger panel. Workflow-triggered provisioning keeps its execution and node attribution. Retained job snapshots carry a setup message independently of numeric row progress, so the Execution panel distinguishes environment installation from tool execution.
+Every platform-owned Wetlands provisioning path forwards public environment-operation events, including sanitized Pixi output, to the Logger panel. Local workflow execution passes a run-scoped environment observer to the public engine API, keeping the shared Wetlands manager's methods unchanged while attributing provisioning to the correct execution and node. Retained job snapshots carry a setup message independently of numeric row progress, so the Execution panel distinguishes environment installation from tool execution.
 BioImageFlow compares requested processing recipes with Wetlands-managed state before use. Stale platform-owned processing environments are closed and replaced lazily through Wetlands, while an already-existing stale `bioimageflow-general` environment is refreshed in the background after startup. User-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their own lifecycle owners. An explicit tool requirement that cannot use the platform's exact `bioimageflow-core` runtime is a graph validation error.
 Normal development launch profiles use the locked published core. Explicit `(local core)` profiles select and import the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory so switching modes does not churn normal managed environments.
 
@@ -176,7 +176,7 @@ DataFrameTool execution stays in the orchestrator in either case, while platform
 Direct remains useful for focused library tests and does not certify worker serialization, isolation, or lifecycle behavior.
 Managed remote execution delegates deployment, validation, Parsl orchestration, scheduler submission, attachment, progress, diagnostics, cancellation, retry, result transfer, and cleanup to the public `bioimageflow.cluster` API.
 Execution targets and retained run state are platform-owned and must not be persisted in portable `GraphState`.
-Workflow scheduling policy remains part of `GraphState`, while a selected execution target is run intent or application preference.
+Workflow scheduling policy remains part of `GraphState`; the application scheduling preference seeds newly created workflows and does not override an accepted graph at execution time. A selected execution target is run intent or application preference.
 
 Managed remote profiles select one trusted Python script whose top level defines `cluster = RemoteCluster(...)`.
 Profiles persist non-secret identity, name, enabled state, script path, observed digest, cluster host, and normalized root; target listing uses those observations and capabilities without executing the script, while profile validation, describe, and submission load the trusted code.

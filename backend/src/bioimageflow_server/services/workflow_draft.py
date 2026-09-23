@@ -290,12 +290,10 @@ class WorkflowDraftService:
         workflow_store_provider: Callable[[], WorkflowStoreService],
         *,
         dev_mode_provider: Callable[[], bool] | None = None,
-        settings_provider: Callable[[], Any | None] | None = None,
         server_boot_id: str | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self._dev_mode_provider = dev_mode_provider or (lambda: True)
-        self._settings_provider = settings_provider or (lambda: None)
         self.server_boot_id = server_boot_id or uuid.uuid4().hex
 
     def get_draft(
@@ -631,7 +629,6 @@ class WorkflowDraftService:
             compilation = GraphCompiler(store.tool_registry).compile(
                 draft.graph,
                 storage_path=authority.storage_path,
-                settings=self._settings_provider(),
             )
             with store.workflow_mutation(workflow_id):
                 if (
@@ -874,7 +871,6 @@ class WorkflowDraftService:
             store.tool_registry,
             storage_path=store.get_storage_path(workflow_id),
             dev_mode=self._dev_mode_provider(),
-            settings=self._settings_provider(),
         )
 
     @staticmethod

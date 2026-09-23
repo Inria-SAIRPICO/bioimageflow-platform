@@ -2,9 +2,7 @@
 
 Exposes ``/api/v1/execution/{run,stop,clear,status}``.
 
-Runs without a draft revision remain request-local compatibility calls.
-Revision-addressed runs verify and load the accepted backend draft before
-delegating to :class:`ExecutionManager`.
+Run and Clear load the accepted backend draft identified by the request.
 """
 
 from __future__ import annotations
@@ -16,19 +14,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from bioimageflow_server.models.execution import (
-    DraftGraphMismatchResponse,
     ExecutionRequest,
 )
 from bioimageflow_server.models.graph import GraphState
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow import validate_workflow_id
 from bioimageflow_server.models.workflow_draft import (
     WorkflowDraftConflictResponse,
-    WorkflowDraftResponse,
 )
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
@@ -54,20 +49,8 @@ from bioimageflow_server.services.workflow_store import (
 router = APIRouter(prefix="/execution", tags=["execution"])
 
 
-class _ClearWorkflowContextChanged(RuntimeError):
-    """Signal that cache-clear compilation must restart in a newer context."""
-
-
 class _RunWorkflowContextChanged(RuntimeError):
     """Signal that Run compilation must restart in a newer context."""
-
-
-class _RunDraftGraphChanged(RuntimeError):
-    """Signal that a revision now names a different accepted graph."""
-
-    def __init__(self, current: WorkflowDraftResponse) -> None:
-        self.current = current
-        super().__init__("Accepted draft graph changed during Run preparation")
 
 
 @dataclass(frozen=True)
@@ -100,10 +83,6 @@ def get_dev_mode() -> bool:
     return True
 
 
-def get_settings() -> Settings | None:
-    return None
-
-
 def _draft_revision_conflict_response(
     exc: WorkflowDraftRevisionConflict,
 ) -> JSONResponse:
@@ -117,27 +96,14 @@ def _draft_revision_conflict_response(
     return JSONResponse(status_code=409, content=conflict.model_dump())
 
 
-def _draft_graph_mismatch_response(
-    workflow_id: str,
-    draft_revision: int,
-) -> JSONResponse:
-    mismatch = DraftGraphMismatchResponse(
-        detail=(
-            "Submitted graph does not match accepted draft revision "
-            f"{draft_revision} for workflow '{workflow_id}'"
-        ),
-        workflow_id=workflow_id,
-        draft_revision=draft_revision,
-    )
-    return JSONResponse(status_code=409, content=mismatch.model_dump())
-
-
 class ClearRequest(BaseModel):
-    graph: GraphState
-    nodes: list[str]
-    workflow_name: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("workflow_name")
+    nodes: list[str]
+    workflow_id: str = Field(min_length=1)
+    draft_revision: int = Field(ge=0)
+
+    @field_validator("workflow_id")
     @classmethod
     def validate_workflow_name(cls, value: str) -> str:
         return validate_workflow_id(value)
@@ -149,7 +115,7 @@ class ClearRequest(BaseModel):
     response_model=None,
     responses={
         409: {
-            "model": WorkflowDraftConflictResponse | DraftGraphMismatchResponse,
+            "model": WorkflowDraftConflictResponse,
         },
     },
 )
@@ -161,24 +127,18 @@ async def run_execution(
     workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
     registry: ToolRegistryService = Depends(get_tool_registry),
     dev_mode: bool = Depends(get_dev_mode),
-    settings: Settings | None = Depends(get_settings),
 ) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
             status_code=503,
             detail="Execution manager is not configured",
         )
-    try:
-        graph = GraphState.model_validate(body.graph)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid graph: {exc}") from exc
-
     if workflow_store is None:
         raise HTTPException(
             status_code=503,
             detail="Workflow store is required for execution",
         )
-    if body.draft_revision is not None and workflow_draft_service is None:
+    if workflow_draft_service is None:
         raise HTTPException(
             status_code=503,
             detail="Workflow draft service is required for revision-addressed execution",
@@ -186,7 +146,7 @@ async def run_execution(
 
     try:
         async with execution_manager.reserve_start(
-            body.workflow_name,
+            body.workflow_id,
             body.draft_revision,
             mode=body.mode,
             requested_nodes=body.nodes,
@@ -198,33 +158,18 @@ async def run_execution(
             # state changes. Recheck the durable move fence while this
             # reservation prevents a workflow move from being admitted.
             workflow_store.ensure_workflow_mutations_available()
-            runtime_context: _WorkflowRuntimeContext | None = None
-            if body.draft_revision is not None:
-                assert workflow_draft_service is not None
-                authority = await workflow_draft_service.get_draft_authority_async(
-                    body.workflow_name
+            authority = await workflow_draft_service.get_draft_authority_async(body.workflow_id)
+            draft = authority.draft
+            runtime_context = _WorkflowRuntimeContext(
+                identity_generation=authority.identity_generation,
+                storage_path=authority.storage_path,
+            )
+            if body.draft_revision != draft.draft_revision:
+                raise WorkflowDraftRevisionConflict(
+                    expected_revision=body.draft_revision,
+                    current=draft,
                 )
-                draft = authority.draft
-                runtime_context = _WorkflowRuntimeContext(
-                    identity_generation=authority.identity_generation,
-                    storage_path=authority.storage_path,
-                )
-                if body.draft_revision != draft.draft_revision:
-                    raise WorkflowDraftRevisionConflict(
-                        expected_revision=body.draft_revision,
-                        current=draft,
-                    )
-                if graph.model_dump(mode="json") != draft.graph.model_dump(mode="json"):
-                    return _draft_graph_mismatch_response(
-                        body.workflow_name,
-                        draft.draft_revision,
-                    )
-
-                # Compile the backend-loaded value, never the client object whose
-                # equality merely proved that the caller addressed this revision.
-                graph = draft.graph
-
-            graph = graph.model_copy(deep=True)
+            graph = draft.graph.model_copy(deep=True)
             invalidate_node_ids: list[str] = []
             if body.mode == "invalidate_failed":
                 assert execution_manager.last_result is not None
@@ -248,15 +193,6 @@ async def run_execution(
                         + ", ".join(missing_targets)
                     )
             while True:
-                if runtime_context is None:
-                    runtime_context = await run_graph_work(
-                        partial(
-                            _capture_workflow_runtime_context,
-                            workflow_store,
-                            body.workflow_name,
-                            storage_path,
-                        )
-                    )
                 attempt_context = runtime_context
 
                 async def ensure_context_current() -> None:
@@ -264,7 +200,7 @@ async def run_execution(
                         partial(
                             _ensure_run_workflow_context,
                             workflow_store,
-                            body.workflow_name,
+                            body.workflow_id,
                             storage_path,
                             attempt_context,
                             workflow_draft_service,
@@ -283,7 +219,6 @@ async def run_execution(
                                 registry,
                                 attempt_context.storage_path,
                                 dev_mode=dev_mode,
-                                settings=settings,
                             )
                         )
                         await ensure_context_current()
@@ -291,35 +226,35 @@ async def run_execution(
                             partial(
                                 _commit_clear_workflow_context,
                                 workflow_store,
-                                body.workflow_name,
+                                body.workflow_id,
                                 storage_path,
                                 attempt_context,
                                 plan,
+                                workflow_draft_service,
+                                body.draft_revision,
+                                graph,
                             )
                         )
                     context = await execution_manager.start(
                         graph,
                         nodes=effective_nodes,
                         storage_path=attempt_context.storage_path,
-                        workflow_id=body.workflow_name,
+                        workflow_id=body.workflow_id,
                         draft_revision=body.draft_revision,
                         ensure_context_current=ensure_context_current,
                         reserved_context=reserved_context,
                     )
                     return {"status": "started", **context.model_dump()}
-                except (_RunWorkflowContextChanged, _ClearWorkflowContextChanged):
-                    if body.draft_revision is None:
-                        runtime_context = None
-                    else:
-                        runtime_context = await run_graph_work(
-                            partial(
-                                _refresh_workflow_runtime_context,
-                                workflow_store,
-                                body.workflow_name,
-                                storage_path,
-                                attempt_context.identity_generation,
-                            )
+                except _RunWorkflowContextChanged:
+                    runtime_context = await run_graph_work(
+                        partial(
+                            _refresh_workflow_runtime_context,
+                            workflow_store,
+                            body.workflow_id,
+                            storage_path,
+                            attempt_context.identity_generation,
                         )
+                    )
                     continue
     except WorkflowDraftRevisionConflict as exc:
         return _draft_revision_conflict_response(exc)
@@ -332,15 +267,10 @@ async def run_execution(
                 "workflow_id": exc.workflow_id,
             },
         )
-    except _RunDraftGraphChanged as exc:
-        return _draft_graph_mismatch_response(
-            body.workflow_name,
-            exc.current.draft_revision,
-        )
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404,
-            detail=f"Workflow '{body.workflow_name}' not found",
+            detail=f"Workflow '{body.workflow_id}' not found",
         ) from exc
     except ExecutionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -382,8 +312,8 @@ async def clear_execution(
     storage_path: Path | None = Depends(get_storage_path),
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+    workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
     dev_mode: bool = Depends(get_dev_mode),
-    settings: Settings | None = Depends(get_settings),
 ) -> dict | JSONResponse:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
@@ -395,18 +325,21 @@ async def clear_execution(
             status_code=503,
             detail="Workflow store is required for cache clearing",
         )
-    graph = body.graph.model_copy(deep=True)
+    if workflow_draft_service is None:
+        raise HTTPException(
+            status_code=503, detail="Workflow draft service is required for cache clearing"
+        )
 
     async def clear_in_current_context() -> dict[str, NodeStatus]:
-        while True:
-            context = await run_graph_work(
-                partial(
-                    _capture_workflow_runtime_context,
-                    workflow_store,
-                    body.workflow_name,
-                    storage_path,
-                )
+        authority = await workflow_draft_service.get_draft_authority_async(body.workflow_id)
+        draft = authority.draft
+        if draft.draft_revision != body.draft_revision:
+            raise WorkflowDraftRevisionConflict(
+                expected_revision=body.draft_revision, current=draft
             )
+        graph = draft.graph.model_copy(deep=True)
+        context = _WorkflowRuntimeContext(authority.identity_generation, authority.storage_path)
+        while True:
             try:
                 plan = await run_graph_work(
                     partial(
@@ -416,21 +349,32 @@ async def clear_execution(
                         registry,
                         context.storage_path,
                         dev_mode=dev_mode,
-                        settings=settings,
                     )
                 )
             except WorkflowBuildError:
                 try:
                     await run_graph_work(
                         partial(
-                            _ensure_clear_workflow_context,
+                            _ensure_run_workflow_context,
                             workflow_store,
-                            body.workflow_name,
+                            body.workflow_id,
                             storage_path,
                             context,
+                            workflow_draft_service,
+                            body.draft_revision,
+                            graph,
                         )
                     )
-                except _ClearWorkflowContextChanged:
+                except _RunWorkflowContextChanged:
+                    context = await run_graph_work(
+                        partial(
+                            _refresh_workflow_runtime_context,
+                            workflow_store,
+                            body.workflow_id,
+                            storage_path,
+                            context.identity_generation,
+                        )
+                    )
                     continue
                 raise
             try:
@@ -438,13 +382,25 @@ async def clear_execution(
                     partial(
                         _commit_clear_workflow_context,
                         workflow_store,
-                        body.workflow_name,
+                        body.workflow_id,
                         storage_path,
                         context,
                         plan,
+                        workflow_draft_service,
+                        body.draft_revision,
+                        graph,
                     )
                 )
-            except _ClearWorkflowContextChanged:
+            except _RunWorkflowContextChanged:
+                context = await run_graph_work(
+                    partial(
+                        _refresh_workflow_runtime_context,
+                        workflow_store,
+                        body.workflow_id,
+                        storage_path,
+                        context.identity_generation,
+                    )
+                )
                 continue
 
     try:
@@ -453,7 +409,11 @@ async def clear_execution(
         else:
             async with execution_manager.exclusive_idle_mutation():
                 statuses = await clear_in_current_context()
-                execution_manager.apply_cache_clear_statuses(body.workflow_name, statuses)
+                execution_manager.apply_cache_clear_statuses(
+                    body.workflow_id, statuses, body.draft_revision
+                )
+    except WorkflowDraftRevisionConflict as exc:
+        return _draft_revision_conflict_response(exc)
     except ExecutionConflictError as exc:
         raise HTTPException(
             status_code=423,
@@ -462,7 +422,7 @@ async def clear_execution(
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404,
-            detail=f"Workflow '{body.workflow_name}' not found",
+            detail=f"Workflow '{body.workflow_id}' not found",
         ) from exc
     except WorkflowBuildError as exc:
         return JSONResponse(
@@ -474,22 +434,6 @@ async def clear_execution(
             },
         )
     return {"node_statuses": {nid: ns.model_dump() for nid, ns in statuses.items()}}
-
-
-def _capture_workflow_runtime_context(
-    workflow_store: WorkflowStoreService,
-    workflow_name: str,
-    fallback_storage_path: Path | None,
-) -> _WorkflowRuntimeContext:
-    with workflow_store.workflow_mutation(workflow_name):
-        return _WorkflowRuntimeContext(
-            identity_generation=workflow_store.workflow_generation(workflow_name),
-            storage_path=resolve_workflow_storage_path(
-                workflow_name,
-                workflow_store,
-                fallback_storage_path,
-            ),
-        )
 
 
 def _refresh_workflow_runtime_context(
@@ -519,40 +463,21 @@ def _commit_clear_workflow_context(
     fallback_storage_path: Path | None,
     expected: _WorkflowRuntimeContext,
     plan: NodeCacheClearPlan,
+    workflow_draft_service: WorkflowDraftService,
+    expected_draft_revision: int,
+    expected_graph: GraphState,
 ) -> dict[str, NodeStatus]:
     with workflow_store.workflow_mutation(workflow_name):
-        workflow_store.ensure_workflow_generation(
-            workflow_name,
-            expected.identity_generation,
-        )
-        current_storage_path = resolve_workflow_storage_path(
-            workflow_name,
+        _ensure_run_workflow_context(
             workflow_store,
+            workflow_name,
             fallback_storage_path,
+            expected,
+            workflow_draft_service,
+            expected_draft_revision,
+            expected_graph,
         )
-        if current_storage_path != expected.storage_path:
-            raise _ClearWorkflowContextChanged
         return commit_node_cache_clear(plan)
-
-
-def _ensure_clear_workflow_context(
-    workflow_store: WorkflowStoreService,
-    workflow_name: str,
-    fallback_storage_path: Path | None,
-    expected: _WorkflowRuntimeContext,
-) -> None:
-    with workflow_store.workflow_mutation(workflow_name):
-        workflow_store.ensure_workflow_generation(
-            workflow_name,
-            expected.identity_generation,
-        )
-        current_storage_path = resolve_workflow_storage_path(
-            workflow_name,
-            workflow_store,
-            fallback_storage_path,
-        )
-        if current_storage_path != expected.storage_path:
-            raise _ClearWorkflowContextChanged
 
 
 def _ensure_run_workflow_context(
@@ -560,8 +485,8 @@ def _ensure_run_workflow_context(
     workflow_name: str,
     fallback_storage_path: Path | None,
     expected: _WorkflowRuntimeContext,
-    workflow_draft_service: WorkflowDraftService | None,
-    expected_draft_revision: int | None,
+    workflow_draft_service: WorkflowDraftService,
+    expected_draft_revision: int,
     expected_graph: GraphState,
 ) -> None:
     with workflow_store.workflow_mutation(workflow_name):
@@ -576,9 +501,6 @@ def _ensure_run_workflow_context(
         )
         if current_storage_path != expected.storage_path:
             raise _RunWorkflowContextChanged
-        if expected_draft_revision is None:
-            return
-        assert workflow_draft_service is not None
         current = workflow_draft_service.get_draft_authority_snapshot(workflow_name)
         if current.draft_revision != expected_draft_revision:
             raise WorkflowDraftRevisionConflict(
@@ -586,7 +508,10 @@ def _ensure_run_workflow_context(
                 current=current,
             )
         if current.graph.model_dump(mode="json") != expected_graph.model_dump(mode="json"):
-            raise _RunDraftGraphChanged(current)
+            raise WorkflowDraftRevisionConflict(
+                expected_revision=expected_draft_revision,
+                current=current,
+            )
 
 
 @router.get("/status")

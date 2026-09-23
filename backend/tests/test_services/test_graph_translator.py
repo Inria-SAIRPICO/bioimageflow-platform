@@ -119,6 +119,15 @@ def _graph(name: str, nodes: list[dict[str, Any]] | None = None) -> dict[str, An
     }
 
 
+def test_translation_preserves_workflow_scheduling() -> None:
+    graph = _graph("sequential")
+    graph["config"]["execution"] = "sequential"
+
+    translated = graph_state_to_lib_dict(GraphState.model_validate(graph), _registry())
+
+    assert translated.lib_dict["config"]["execution"] == "sequential"
+
+
 def test_recursive_translation_uses_one_library_grammar() -> None:
     child = _graph("child", [_tool("inner")])
     child["interface"] = {

@@ -62,6 +62,21 @@ def test_capability_inventory_uses_only_recursive_workflow_operations() -> None:
     assert "connect_dataframe_edge" in SUPPORTED_OPERATION_TYPES
 
 
+async def test_run_addresses_accepted_draft_without_submitting_graph(tmp_path: Path) -> None:
+    posted: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json=_draft(revision=5))
+        assert request.url.path == "/api/v1/execution/run"
+        posted.append(json.loads(request.content))
+        return httpx.Response(202, json={"status": "started"})
+
+    result = await _gateway(tmp_path, handler).run_workflow(nodes=["selected"])
+    assert result["ok"] is True
+    assert posted == [{"workflow_id": "wf", "draft_revision": 5, "nodes": ["selected"]}]
+
+
 async def test_create_tool_and_workflow_nodes_send_typed_operations(tmp_path: Path) -> None:
     posted: list[dict[str, Any]] = []
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import heapq
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from bioimageflow import deserialize_constant, serialize_constant
 
@@ -24,10 +24,6 @@ from bioimageflow_server.models.workflow import (
     RequiredPackage,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-
-if TYPE_CHECKING:
-    from bioimageflow_server.models.settings import Settings
-
 
 @dataclass
 class TranslationResult:
@@ -106,7 +102,6 @@ def _graph_to_library(
     *,
     scope: tuple[str, ...] = (),
     root_engine: str | None = None,
-    root_execution: str | None = None,
 ) -> dict[str, Any]:
     nodes: list[dict[str, Any]] = []
     for node in graph.nodes:
@@ -204,9 +199,6 @@ def _graph_to_library(
     config = graph.config.model_dump(mode="json", by_alias=True, exclude_none=True)
     if root_engine is not None:
         config["engine"] = root_engine
-    if root_execution is not None:
-        config["execution"] = root_execution
-
     return {
         "schema_version": 2,
         "name": graph.name,
@@ -249,9 +241,6 @@ def graph_requires_wetlands(
 def graph_state_to_lib_dict(
     graph: GraphState,
     registry: ToolRegistryService,
-    *,
-    engine: str | None = None,
-    settings: Settings | None = None,
 ) -> TranslationResult:
     """Translate the accepted recursive graph through one code path."""
 
@@ -259,14 +248,12 @@ def graph_state_to_lib_dict(
     resolved_engine = (
         "wetlands" if graph_requires_wetlands(graph, registry) else "direct"
     )
-    execution = settings.execution_engine if settings is not None else engine
     return TranslationResult(
         lib_dict=_graph_to_library(
             graph,
             registry,
             errors,
             root_engine=resolved_engine,
-            root_execution=execution,
         ),
         errors=errors,
     )

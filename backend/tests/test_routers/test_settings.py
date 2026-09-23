@@ -123,7 +123,8 @@ class TestGetSettings:
         body = response.json()
         # Wrapper contains the Settings fields plus the resolved-path helpers.
         assert body["deployment_mode"] == "desktop"
-        assert body["execution_engine"] == "sequential"
+        assert body["new_workflow_execution"] == "sequential"
+        assert "execution_engine" not in body
         assert body["node_data_page_size"] == 250
         assert "cache_max_executions" not in body
         assert "cache_max_age" not in body
@@ -222,7 +223,7 @@ class TestPatchSettings:
 
     async def test_patch_invalid_value(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch(
-            "/api/v1/settings", json={"execution_engine": "dask"}
+            "/api/v1/settings", json={"new_workflow_execution": "dask"}
         )
         assert response.status_code == 422
 
@@ -329,14 +330,13 @@ class TestPatchSettings:
         assert response.json()["external_editor"] is None
 
     @pytest.mark.campaign_excluded(reason="parsl")
-    async def test_patch_legacy_execution_engine_parsl_migrates_to_parallel(
+    async def test_patch_old_execution_engine_is_rejected(
         self, settings_client: httpx.AsyncClient
     ) -> None:
         response = await settings_client.patch(
             "/api/v1/settings", json={"execution_engine": "parsl"}
         )
-        assert response.status_code == 200
-        assert response.json()["execution_engine"] == "parallel"
+        assert response.status_code == 422
 
     async def test_patch_cache_max_executions_is_deprecated(
         self, settings_client: httpx.AsyncClient

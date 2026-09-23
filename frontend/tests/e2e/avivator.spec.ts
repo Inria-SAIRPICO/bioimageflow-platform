@@ -96,7 +96,11 @@ test.describe('Avivator viewer', () => {
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     const table = page.getByTestId('merged-data-table')
     await expect(table).toBeVisible()
-    await expect(table.getByTestId('image-thumbnail')).toHaveAttribute('src', /^blob:/)
+    const thumbnail = table.getByTestId('image-thumbnail')
+    await expect(async () => {
+      await thumbnail.scrollIntoViewIfNeeded()
+    }).toPass()
+    await expect(thumbnail).toHaveAttribute('src', /^blob:/)
     const displayedPaths = table.getByTestId('path-display')
     await expect(displayedPaths).toHaveCount(2)
     await expect(table.getByText('mask.png', { exact: true })).toBeVisible()

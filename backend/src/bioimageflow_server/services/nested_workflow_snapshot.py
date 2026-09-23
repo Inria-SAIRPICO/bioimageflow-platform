@@ -21,7 +21,6 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedSnapshotOwner,
     NestedWorkflowSnapshotResponse,
 )
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.models.workflow import validate_workflow_id
 from bioimageflow_server.services.filesystem_durability import fsync_directory
@@ -100,7 +99,6 @@ class NestedWorkflowSnapshotService:
         *,
         fallback_storage_path_provider: Callable[[], Path | None] | None = None,
         dev_mode_provider: Callable[[], bool] | None = None,
-        settings_provider: Callable[[], Settings | None] | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self._fallback_storage_path_provider = (
@@ -112,7 +110,6 @@ class NestedWorkflowSnapshotService:
             )
         )
         self._dev_mode_provider = dev_mode_provider or (lambda: True)
-        self._settings_provider = settings_provider or (lambda: None)
         self._lock = threading.RLock()
 
     @contextmanager
@@ -992,7 +989,6 @@ class NestedWorkflowSnapshotService:
             store.tool_registry,
             storage_path=storage_path,
             dev_mode=self._dev_mode_provider(),
-            settings=self._settings_provider(),
         )
 
     @staticmethod
