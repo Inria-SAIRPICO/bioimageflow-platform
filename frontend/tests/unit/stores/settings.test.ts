@@ -306,7 +306,7 @@ describe('settings store', () => {
       isAxiosError: true,
       response: {
         status: 422,
-        data: { error: 'validation_error', detail: 'execution_engine must be valid' },
+        data: { error: 'validation_error', detail: 'new_workflow_execution must be valid' },
       },
     })
     Object.setPrototypeOf(axiosError, (await import('axios')).AxiosError.prototype)
@@ -314,9 +314,9 @@ describe('settings store', () => {
 
     const store = useSettingsStore()
     await store.fetchSettings()
-    await store.updateSettings({ execution_engine: 'bad' as 'parallel' })
+    await store.updateSettings({ new_workflow_execution: 'bad' as 'parallel' })
 
-    expect(store.error).toContain('execution_engine')
+    expect(store.error).toContain('new_workflow_execution')
   })
 
   it('updateSettings serializes rapid concurrent calls', async () => {

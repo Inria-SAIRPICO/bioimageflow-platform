@@ -200,6 +200,107 @@ class WorkflowBuildError(RuntimeError):
         self.errors = errors
 
 
+class _ExecutionEnvironmentManager:
+    """Observe one run's use of a shared Wetlands manager without changing it."""
+
+    def __init__(
+        self,
+        manager: Any,
+        *,
+        context: ExecutionContext,
+        current_node_id: Callable[[], str | None],
+        on_preparation: Callable[[Any, ExecutionContext, str | None, str], None],
+        on_provision_event: Callable[[Any, ExecutionContext, str | None, str], None],
+        on_ready: Callable[[ExecutionContext, str | None, str], None],
+        on_failure: Callable[[str], None],
+        on_stopped: Callable[[str], None],
+        replacement_authorizer: Callable[[Any], bool] | None,
+    ) -> None:
+        self._manager = manager
+        self._context = context
+        self._current_node_id = current_node_id
+        self._on_preparation = on_preparation
+        self._on_provision_event = on_provision_event
+        self._on_ready = on_ready
+        self._on_failure = on_failure
+        self._on_stopped = on_stopped
+        self._replacement_authorizer = replacement_authorizer
+
+    def get_or_create(
+        self,
+        env_spec: Any,
+        max_workers: int = 1,
+        worker_timeout: float | None = None,
+        *,
+        on_provision_event: Callable[[Any], None] | None = None,
+        replace_existing: bool = False,
+        on_preparation: Callable[[Any], None] | None = None,
+    ) -> Any:
+        env_name = env_spec.name
+        node_id = self._current_node_id()
+
+        def preparation_callback(preparation: Any) -> None:
+            self._on_preparation(preparation, self._context, node_id, env_name)
+            if on_preparation is not None:
+                on_preparation(preparation)
+
+        def provision_callback(event: Any) -> None:
+            self._on_provision_event(event, self._context, node_id, env_name)
+            if on_provision_event is not None:
+                on_provision_event(event)
+
+        try:
+            if self._replacement_authorizer is not None and self._replacement_authorizer(env_spec):
+                recipe_state = self._manager.inspect_environment(env_spec)
+                if getattr(recipe_state, "value", None) == "stale":
+                    replace_existing = True
+            environment = self._manager.get_or_create(
+                env_spec,
+                max_workers=max_workers,
+                worker_timeout=worker_timeout,
+                on_provision_event=provision_callback,
+                replace_existing=replace_existing,
+                on_preparation=preparation_callback,
+            )
+        except Exception:
+            self._on_failure(env_name)
+            raise
+        self._on_ready(self._context, node_id, env_name)
+        return environment
+
+    def submit_processing_task(
+        self,
+        env_spec: Any,
+        payload: dict[str, Any],
+        max_workers: int = 1,
+        worker_timeout: float | None = None,
+    ) -> Any:
+        # WetlandsBackend.prepare_node calls the observed get_or_create before dispatch.
+        return self._manager.submit_processing_task(
+            env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout
+        )
+
+    def map_processing_tasks(
+        self,
+        env_spec: Any,
+        payloads: list[dict[str, Any]],
+        max_workers: int = 1,
+        worker_timeout: float | None = None,
+    ) -> list[Any]:
+        return self._manager.map_processing_tasks(
+            env_spec, payloads, max_workers=max_workers, worker_timeout=worker_timeout
+        )
+
+    def shutdown_all(self) -> None:
+        names = self._manager.running_environments()
+        try:
+            self._manager.shutdown_all()
+        finally:
+            for name in names:
+                if not self._manager.is_running(name):
+                    self._on_stopped(name)
+
+
 def _selected_root_scope(graph: GraphState, nodes: list[str]) -> set[str]:
     """Return requested root nodes and their transitive graph predecessors."""
 
@@ -367,10 +468,16 @@ class ExecutionManager:
             **context_fields,
         )
 
-    def apply_cache_clear_statuses(self, workflow_id: str, statuses: dict[str, NodeStatus]) -> None:
+    def apply_cache_clear_statuses(
+        self, workflow_id: str, statuses: dict[str, NodeStatus], draft_revision: int
+    ) -> None:
         """Keep the live status snapshot current without rewriting run history."""
 
-        if self.context is not None and self.context.workflow_id == workflow_id:
+        if (
+            self.context is not None
+            and self.context.workflow_id == workflow_id
+            and self.context.draft_revision == draft_revision
+        ):
             self._node_statuses.update(statuses)
 
     # ---- Lifecycle ---------------------------------------------------------
@@ -382,7 +489,7 @@ class ExecutionManager:
         storage_path: Path | None = None,
         *,
         workflow_id: str,
-        draft_revision: int | None = None,
+        draft_revision: int,
         ensure_context_current: Callable[[], Awaitable[None]] | None = None,
         reserved_context: ExecutionContext | None = None,
     ) -> ExecutionContext:
@@ -427,7 +534,7 @@ class ExecutionManager:
     async def reserve_start(
         self,
         workflow_id: str,
-        draft_revision: int | None,
+        draft_revision: int,
         *,
         mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal",
         requested_nodes: list[str] | None = None,
@@ -517,7 +624,6 @@ class ExecutionManager:
                 storage_path=run_storage_path,
                 on_progress=on_progress,
                 dev_mode=bool(live_settings.dev_mode),
-                settings=live_settings,
             )
         except Exception as exc:
             if ensure_context_current is not None:
@@ -615,8 +721,7 @@ class ExecutionManager:
 
         def _run_sync() -> Any:
             with bind_execution_log_context(context):
-                engine = self._create_execution_engine(workflow)
-                self._attach_environment_status_hook(engine)
+                engine = self._create_execution_engine(workflow, context)
                 try:
                     value = workflow.compute(
                         *targets,
@@ -1095,131 +1200,60 @@ class ExecutionManager:
 
         return _on_progress
 
-    def _create_execution_engine(self, workflow: Any) -> Any:
+    def _create_execution_engine(self, workflow: Any, context: ExecutionContext) -> Any:
         """Create the engine before execution so its environment lifecycle is observable."""
-        if (
-            workflow.engine_type == "wetlands"
-            and self._environment_manager_provider is not None
-        ):
-            shared_manager = self._environment_manager_provider()
-            if shared_manager is not None:
-                return workflow.create_engine(
-                    resource_lifetime="external",
-                    env_manager=shared_manager,
-                )
-        return workflow.create_engine()
+        if workflow.engine_type != "wetlands":
+            return workflow.create_engine()
+        if self._environment_manager_provider is None:
+            raise RuntimeError("Wetlands execution requires a shared environment manager")
+        shared_manager = self._environment_manager_provider()
+        if shared_manager is None:
+            raise RuntimeError("Wetlands execution requires a shared environment manager")
+        return workflow.create_engine(
+            resource_lifetime="external",
+            env_manager=_ExecutionEnvironmentManager(
+                shared_manager,
+                context=context,
+                current_node_id=lambda: self._current_node_id,
+                on_preparation=self._on_environment_preparation,
+                on_provision_event=self._on_environment_event,
+                on_ready=self._on_environment_ready,
+                on_failure=self._on_environment_failure,
+                on_stopped=lambda name: self._publish_environment_status(name, "stopped"),
+                replacement_authorizer=self._environment_replacement_authorizer,
+            ),
+        )
 
-    def _attach_environment_status_hook(self, engine: Any) -> None:
-        """Publish Wetlands environment lifecycle changes during execution.
-
-        The library owns environment startup inside ``WetlandsEnvManager``.
-        Hooking the execution engine's manager keeps the platform UI in sync
-        for automatic starts and shutdowns triggered by ``workflow.compute()``.
-        """
-        manager = engine.environment_manager
-        get_or_create = getattr(manager, "get_or_create", None)
-        if manager is None or not callable(get_or_create):
+    def _on_environment_preparation(
+        self, preparation: Any, context: ExecutionContext, node_id: str | None, env_name: str
+    ) -> None:
+        if context != self.context or self.state != "running":
             return
-        if getattr(manager, "_bioimageflow_platform_env_status_hook_owner", None) is self:
+        action = preparation.action
+        status = (
+            "running" if action == "reusing" else "updating" if action == "updating" else "creating"
+        )
+        self._publish_environment_status(env_name, status)
+        if node_id is not None:
+            phase = {
+                "updating": f"Updating execution environment {env_name}",
+                "creating": f"Creating execution environment {env_name}",
+                "starting": f"Starting execution environment {env_name}",
+            }.get(action)
+            if phase is not None:
+                self._publish_environment_phase(context, node_id, phase)
+
+    def _on_environment_ready(
+        self, context: ExecutionContext, node_id: str | None, env_name: str
+    ) -> None:
+        if context != self.context or self.state != "running":
             return
+        if node_id is not None:
+            self._publish_environment_phase(context, node_id, "Executing tool")
+        self._publish_environment_status(env_name, "running")
 
-        original_get_or_create = getattr(
-            manager,
-            "_bioimageflow_platform_original_get_or_create",
-            get_or_create,
-        )
-        setattr(
-            manager,
-            "_bioimageflow_platform_original_get_or_create",
-            original_get_or_create,
-        )
-
-        def _get_or_create_with_status(env_spec: Any, *args: Any, **kwargs: Any) -> Any:
-            # The shared manager outlives individual runs, so resolve the context
-            # here instead of retaining the run that first installed this hook.
-            active_context = self.context if self.state == "running" else None
-            env_name = getattr(env_spec, "name", None)
-            node_id = self._current_node_id if active_context is not None else None
-            caller_preparation = kwargs.get("on_preparation")
-            caller_provision_event = kwargs.get("on_provision_event")
-
-            def _on_preparation(preparation: Any) -> None:
-                action = getattr(preparation, "action", None)
-                if isinstance(env_name, str) and env_name:
-                    status = "updating" if action == "updating" else "creating"
-                    if action == "reusing":
-                        status = "running"
-                    self._publish_environment_status(env_name, status)
-                if active_context is not None and node_id is not None:
-                    phase = {
-                        "updating": f"Updating execution environment {env_name}",
-                        "creating": f"Creating execution environment {env_name}",
-                        "starting": f"Starting execution environment {env_name}",
-                    }.get(action)
-                    if phase is not None:
-                        self._publish_environment_phase(active_context, node_id, phase)
-                if callable(caller_preparation):
-                    caller_preparation(preparation)
-
-            def _on_provision_event(event: Any) -> None:
-                if active_context is not None:
-                    self._on_environment_event(event, active_context, node_id, env_name)
-                if callable(caller_provision_event):
-                    caller_provision_event(event)
-
-            try:
-                kwargs["on_preparation"] = _on_preparation
-                kwargs["on_provision_event"] = _on_provision_event
-                if (
-                    self._environment_replacement_authorizer is not None
-                    and self._environment_replacement_authorizer(env_spec)
-                ):
-                    inspect_environment = getattr(manager, "inspect_environment", None)
-                    if callable(inspect_environment):
-                        recipe_state = inspect_environment(env_spec)
-                        if getattr(recipe_state, "value", None) == "stale":
-                            kwargs["replace_existing"] = True
-                env = original_get_or_create(env_spec, *args, **kwargs)
-            except Exception:
-                if isinstance(env_name, str) and env_name:
-                    self._publish_environment_status(env_name, "failed")
-                raise
-            if (
-                active_context is not None
-                and node_id is not None
-                and active_context == self.context
-                and self.state == "running"
-            ):
-                self._publish_environment_phase(active_context, node_id, "Executing tool")
-            if isinstance(env_name, str) and env_name:
-                self._publish_environment_status(env_name, "running")
-            return env
-
-        setattr(manager, "get_or_create", _get_or_create_with_status)
-        current_shutdown_all = getattr(manager, "shutdown_all", None)
-        original_shutdown_all = getattr(
-            manager,
-            "_bioimageflow_platform_original_shutdown_all",
-            current_shutdown_all,
-        )
-        if callable(original_shutdown_all):
-            setattr(
-                manager,
-                "_bioimageflow_platform_original_shutdown_all",
-                original_shutdown_all,
-            )
-
-            def _shutdown_all_with_status() -> Any:
-                envs = getattr(manager, "_envs", None)
-                env_names = list(envs) if isinstance(envs, dict) else []
-                try:
-                    return original_shutdown_all()
-                finally:
-                    for env_name in env_names:
-                        self._publish_environment_status(env_name, "stopped")
-
-            setattr(manager, "shutdown_all", _shutdown_all_with_status)
-        setattr(manager, "_bioimageflow_platform_env_status_hook_owner", self)
+    def _on_environment_failure(self, env_name: str) -> None:
+        self._publish_environment_status(env_name, "failed")
 
     def _on_environment_event(
         self, event: Any, context: ExecutionContext, node_id: str | None, env_name: str | None
@@ -1581,7 +1615,6 @@ def prepare_node_cache_clear(
     storage_path: Path | None,
     *,
     dev_mode: bool = True,
-    settings: Settings | None = None,
 ) -> NodeCacheClearPlan:
     """Compile and validate an immutable cache-clear request.
 
@@ -1593,7 +1626,6 @@ def prepare_node_cache_clear(
             graph,
             storage_path=storage_path,
             dev_mode=dev_mode,
-            settings=settings,
         )
     except Exception as exc:
         raise WorkflowBuildError(
@@ -1702,7 +1734,6 @@ def clear_node_cache(
     storage_path: Path | None,
     *,
     dev_mode: bool = True,
-    settings: Settings | None = None,
 ) -> dict[str, NodeStatus]:
     """Compile, validate, and clear cache for synchronous callers."""
 
@@ -1713,6 +1744,5 @@ def clear_node_cache(
             registry,
             storage_path,
             dev_mode=dev_mode,
-            settings=settings,
         )
     )

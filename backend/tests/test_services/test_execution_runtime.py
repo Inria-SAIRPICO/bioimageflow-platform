@@ -893,7 +893,7 @@ async def test_regular_terminal_sidecar_recovers_failure_and_cancellation(
     from bioimageflow.engine import WorkflowCancelledError
 
     execution_id = f"run_{uuid4().hex}"
-    context = ExecutionContext(execution_id=execution_id, workflow_id="demo")
+    context = ExecutionContext(execution_id=execution_id, workflow_id="demo", draft_revision=1)
     manager = ExecutionManager(
         event_bus=NullEventBus(),
         tool_registry=ToolRegistryService(),
@@ -1396,6 +1396,7 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
     context = ExecutionContext(
         execution_id=f"run_{uuid4().hex}",
         workflow_id="demo",
+        draft_revision=1,
     )
 
     class _Context:

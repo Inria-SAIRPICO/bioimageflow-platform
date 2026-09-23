@@ -58,7 +58,7 @@ The backend is stateless between request-local validation calls except for workf
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
 | `napari_launcher: NapariLauncher or NapariLauncherPool | None` | Manages the legacy process and UUID-keyed registered-environment processes (lazily created) |
 
-There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Execution without a draft revision does the same as an explicit compatibility operation; revision-addressed execution first proves the submitted graph matches the named accepted draft revision and then compiles the backend-loaded draft. Run Selected also compiles that complete graph, then derives the requested root node IDs plus their transitive upstream root IDs from its edges. A diagnostic is ignored only when its scoped node path proves that it belongs to a root node outside this selected execution scope; diagnostics owned by a selected or upstream workflow boundary, including descendant paths, remain blocking, as do global or otherwise unattributable diagnostics.
+There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation of root edits persists an accepted draft, and Run and Clear load that exact draft by workflow ID and revision before compiling it. Run Selected compiles the complete accepted graph, then derives the requested root node IDs plus their transitive upstream root IDs from its edges. A diagnostic is ignored only when its scoped node path proves that it belongs to a root node outside this selected execution scope; diagnostics owned by a selected or upstream workflow boundary, including descendant paths, remain blocking, as do global or otherwise unattributable diagnostics.
 
 **Key design points:**
 - **Backend draft source of truth.** Open workflow state is persisted as a backend draft under the workflow directory. Frontend memory and IndexedDB are fallback/local interaction state, not the authoritative saved draft.
@@ -308,6 +308,7 @@ class CellposeSegmenter(ProcessingTool):
 
 **Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. Before first use, BioImageFlow compares the requested recipe with Wetlands-managed state. A stale BioImageFlow-owned processing environment is closed and replaced lazily through the public managed `replace_existing=True` path; a matching environment is reused, and a missing environment is created. The platform never implements this by deleting directories or editing `pixi.toml`. Existing user-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their lifecycle owners and are not replaced by processing execution. After application startup, an already-existing stale `bioimageflow-general` environment is refreshed in the background, but a missing one is not proactively created. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources), and the labeled Create/recreate button is the explicit user-authorized force-rebuild action. Environment status is shown via button color and label (stopped/creating/updating/running). Environment controls are disabled during execution or another operation on the same environment.
 Every platform-owned Wetlands provisioning path subscribes to its public operation events before waiting for the environment and streams setup stages and sanitized Pixi stdout/stderr lines to the Logger panel. During local workflow execution, those entries retain their execution and node attribution; replacement publishes `updating` and retains “Updating execution environment” for the affected node. A node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins. A tool may constrain `bioimageflow-core` only compatibly with the platform's exact runtime dependency; an explicit divergent requirement is reported as `environment_incompatible` during graph validation and is never silently replaced with another core version.
+Workflow execution passes a run-scoped observer to the engine through the public environment-manager API; the process-wide shared manager keeps its original methods across successive runs.
 Normal development launch profiles explicitly use the installed published core. Separately named `(local core)` profiles set `BIOIMAGEFLOW_CORE_SOURCE` to the sibling source project, expose that same package to the platform process through `PYTHONPATH`, and use a repository-local `BIOIMAGEFLOW_WETLANDS` root. An invalid source is a configuration error, and local-core recipes never share lifecycle state with the normal Wetlands root.
 
 #### 2.4.1b Error Response Format
@@ -694,28 +695,27 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str, draft_revision?: int}`). `workflow_name` is required and validated as a workflow ID. Scoped root canvases also send their accepted draft revision. |
+| `POST` | `/execution/run` | Run an accepted root draft (body: `{workflow_id: str, draft_revision: int, nodes?: [str], mode?: str, retry_of_execution_id?: str}`). The backend loads the graph identified by the required workflow ID and revision. |
 | `POST` | `/execution/stop` | Stop the current execution |
-| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects unrelated errors before invalidating cache. `cache_corrupt` diagnostics are permitted only when owned by the requested roots. Clear removes the current selection, quarantines a safely identified corrupt immutable record, and returns freshly projected `NodeStatus` for the cleared nodes and all downstream dependents. On other validation failures, the response includes the complete node-scoped `errors` list and the confirmation dialog displays it so the user can inspect and copy each cause. |
+| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{workflow_id: str, draft_revision: int, nodes: [str]}`). The server loads and validates that accepted draft in its workflow storage context before invalidating cache. `cache_corrupt` diagnostics are permitted only when owned by the requested roots. Clear removes the current selection, quarantines a safely identified corrupt immutable record, and returns freshly projected `NodeStatus` for the cleared nodes and all downstream dependents. On other validation failures, the response includes the complete node-scoped `errors` list and the confirmation dialog displays it so the user can inspect and copy each cause. |
 
 After a successful Clear, the retained live execution-status snapshot for that same workflow reflects the cleared and downstream statuses, including on browser reconnection. The historical `last_result` remains the result of the completed run and is not rewritten by Clear.
 On a subsequent authoritative `GET /workflow-drafts/{id}`, cache-derived node statuses are projected from the current accepted graph and workflow storage, including after backend restart. The persisted draft validation, graph, revision, writer, timestamp, saved baseline, and historical execution result are not rewritten by this read. An enabled downstream node whose library plan is `pending_upstream` projects `out_of_date` if it retains a latest output, or `unexecuted` if it has none; disabled and other planned statuses retain their ordinary semantics. Compilation occurs outside the workflow mutation lock; the accepted draft, identity generation, and storage path are rechecked before planning and latest-output lookup under the same lock used by Clear's commit, retrying if authority changes.
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
-The `run` endpoint has no implicit backend editor session. Without `draft_revision`, it validates and compiles the complete submitted graph in the required workflow's storage context. With `draft_revision`, it explicitly loads the named accepted draft after using the submitted graph to prove equality with that revision. For either source, both full Run and Run Selected compile the complete graph. Full Run rejects every validation diagnostic. Run Selected derives the requested root node IDs plus all transitive upstream root IDs from the accepted graph edges and filters out only diagnostics whose scoped node path proves ownership by an unrelated root node. A selected or upstream workflow node owns all of its descendant diagnostic paths for this purpose. An empty target list, any unknown requested root ID, any requested target unresolved in the partial compiled workflow, a missing compiled workflow, and every global or unattributable diagnostic reject the request; mixed valid and invalid target lists never degrade to an untargeted run.
+The `run` endpoint loads the named accepted root draft; it does not infer graph meaning from an editor session or a previously submitted request. Full Run and Run Selected compile that complete graph. Full Run rejects every validation diagnostic. Run Selected derives the requested root node IDs plus all transitive upstream root IDs from the accepted graph edges and filters out only diagnostics whose scoped node path proves ownership by an unrelated root node. A selected or upstream workflow node owns all of its descendant diagnostic paths for this purpose. An empty target list, any unknown requested root ID, any requested target unresolved in the partial compiled workflow, a missing compiled workflow, and every global or unattributable diagnostic reject the request; mixed valid and invalid target lists never degrade to an untargeted run.
 
-Normal root-canvas runs verify the submitted graph against the accepted draft revision:
+Normal root-canvas runs address the accepted draft revision:
 
 ```json
 {
-  "graph": {"nodes": [], "edges": []},
-  "workflow_name": "segmentation/nuclei",
+  "workflow_id": "segmentation/nuclei",
   "draft_revision": 12,
   "nodes": null
 }
 ```
 
-If `draft_revision` is present, the backend loads that workflow's accepted draft, rejects a stale revision with `draft_revision_conflict`, rejects a different submitted graph with `draft_graph_mismatch`, and compiles the backend-loaded accepted graph after equality is proven. Omitting `draft_revision` retains the request-local execution contract for explicit compatibility callers; it does not authorize the backend to infer graph meaning from request history.
+The backend rejects a stale revision with `draft_revision_conflict` and compiles the backend-loaded accepted graph. A request without `draft_revision` or with an inline graph fails request validation.
 
 Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context plus the fixed `planned_node_ids` and `planned_node_names`, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
 An attached progress callback may update state and publish messages only while its captured execution context is the active running context; late events from a completed or superseded run are discarded.
@@ -761,7 +761,7 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 | `node_statuses` | `dict[str, NodeStatus]` | Current or final statuses for the retained execution context |
 | `execution_id` | `str \| null` | Unique accepted execution identity |
 | `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
-| `draft_revision` | `int \| null` | Accepted root draft revision supplied by the originating canvas, when available |
+| `draft_revision` | `int \| null` | Accepted root draft revision for the retained execution; null only before any run has been accepted |
 
 The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose server wire context `{execution_id, workflow_id, draft_revision}` matches the locally captured originating canvas. Canvas ID is frontend-local correlation and is not a WebSocket field. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
 
@@ -793,7 +793,7 @@ class Settings(BaseModel):
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
-    execution_engine: Literal["sequential", "parallel"] = "sequential"
+    new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
@@ -806,7 +806,7 @@ class Settings(BaseModel):
 
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
-Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji and all previous settings.
+Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji. The settings store reads the former `execution_engine` preference from existing files when `new_workflow_execution` is absent; the live model, API, and new writes use only `new_workflow_execution`.
 The generic `PATCH /settings` route returns these fields but rejects direct napari registry or durable-operation mutation; revision-checked typed routes own environment registration, rename/locate/forget, managed create/copy/retry/removal, operation polling/cancellation, default selection, probe, rule creation/reordering, and first-match preview.
 Every registry mutation carries and increments `napari_registry_revision` so stale clients cannot overwrite another window's changes.
 
@@ -967,10 +967,10 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `progress` | `{node_id, status, row, total_rows, task_current?, task_maximum?, timestamp, execution_id, workflow_id, result_key?, record_id?, draft_revision?}` | Progress for one accepted execution context; row index/count and sub-row task units remain distinct |
-| `node_state` | `{node_id, status, cached, execution_id, workflow_id, error?, traceback?, result_key?, record_id?, draft_revision?}` | Node state change for one accepted execution context; status fields use the shared `NodeStatus` schema |
+| `progress` | `{node_id, status, row, total_rows, task_current?, task_maximum?, timestamp, execution_id, workflow_id, result_key?, record_id?, draft_revision}` | Progress for one accepted execution context; row index/count and sub-row task units remain distinct |
+| `node_state` | `{node_id, status, cached, execution_id, workflow_id, error?, traceback?, result_key?, record_id?, draft_revision}` | Node state change for one accepted execution context; status fields use the shared `NodeStatus` schema |
 | `log` | `{level, message, node_id?, timestamp, execution_id?, workflow_id?, draft_revision?}` | BioImageFlow and Wetlands records attributable to an execution carry that execution's immutable context; non-execution tool, environment, thumbnail, and platform logs omit it and remain global |
-| `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision?}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
+| `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
 | `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
@@ -982,7 +982,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
-Progress, node-state, and completion messages always carry `execution_id` and `workflow_id`; `draft_revision` remains nullable for inline compatibility executions. Execution-attributed log messages carry the same three fields together, while global log messages omit all three. An idle `status_snapshot` may omit execution context before any execution has been accepted.
+Progress, node-state, and completion messages always carry `execution_id`, `workflow_id`, and `draft_revision`. Execution-attributed log messages carry the same three fields together, while global log messages omit all three. An idle `status_snapshot` may omit execution context before any execution has been accepted.
 
 `workflow_tree_changed` and `active_workflow_changed` are current runtime compatibility notifications emitted by the connection manager, but they are not yet members of the backend's typed `ServerMessage` union or generated frontend API types. Consumers must narrow them by their literal `type` until that schema gap is closed.
 
@@ -1510,7 +1510,7 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 ### 3.9 Execution Panel (Menu / Toolbar)
 
 **Buttons:**
-- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" Pending validation or draft persistence is a command barrier rather than a disabled state: Run flushes the owning canvas, checks draft revision freshness, waits for accepted validation, and then submits that exact graph and revision. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
+- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" Pending validation or draft persistence is a command barrier rather than a disabled state: Run flushes the owning canvas, checks draft revision freshness, waits for accepted validation, and then submits the workflow ID and accepted revision. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
 - **Run Selected:** Always visible as a separate toolbar button, disabled when no nodes are selected or execution is unavailable; it does not require opening the Run dropdown. Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected stable node IDs. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
@@ -1586,7 +1586,7 @@ A dedicated panel or modal for application configuration. Settings are persisted
 #### 3.12.3 Execution
 
 - **Execution backend:** Read-only summary of the effective backend (`Automatic`, `Wetlands`, or `Direct`) when supplied by the runtime settings contract.
-- **Scheduling:** Read-only summary of `Sequential` or `Parallel`, derived from the effective execution settings and the compatibility `execution_engine` field.
+- **Scheduling:** Read-only summary of `Sequential` or `Parallel` for new workflows. This setting is copied into the new workflow's `config.execution`; changing it does not alter existing workflows.
 
 #### 3.12.4 Display
 
@@ -1656,7 +1656,7 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 3. A root canvas debounces validated full-graph `PUT /workflow-drafts/{id}` writes with `expected_revision`; a nested canvas debounces revision-CAS snapshot writes.
 4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
 5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas or flush the active private snapshot and wait for acceptance for an active nested canvas. Every production graph owner is a registered canvas session; state-free menu and editor shell adapters only delegate to that active registered session.
-6. Run submits that canvas's exact graph plus workflow id and accepted draft revision. Full Run and Run Selected both compile the complete submitted graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches, without pruning or rebuilding the graph.
+6. Run submits the workflow ID and accepted draft revision after the canvas freshness barrier. Full Run and Run Selected both compile the complete backend-loaded graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches, without pruning or rebuilding the graph.
 7. During execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas.
 8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
 
@@ -1702,7 +1702,7 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 - **Cache is unaffected.** The `enabled` flag is NOT part of the signature hash. Re-enabling a node with unchanged parameters hits existing cache.
 - **Serialization:** The `enabled` flag is persisted in the workflow JSON (`"enabled": false` when disabled, omitted when enabled).
 
-**Out-of-date detection:** Out-of-date status is server-authoritative. The server compares the submitted graph's current parameters and upstream signatures against cached results and returns the result in the accepted draft or nested-snapshot validation response (or direct `/graph` compatibility response). The frontend does not maintain `last_execution_params` for out-of-date detection. A parameter command immediately projects its target as provisional `unexecuted`; the accepted validation may then classify it as `out_of_date` when a stale cache entry exists.
+**Out-of-date detection:** Out-of-date status is server-authoritative. The server compares the accepted graph's current parameters and upstream signatures against cached results and returns the result in the accepted draft or nested-snapshot validation response (or direct `/graph` compatibility response). The frontend does not maintain `last_execution_params` for out-of-date detection. A parameter command immediately projects its target as provisional `unexecuted`; the accepted validation may then classify it as `out_of_date` when a stale cache entry exists.
 
 ### 4.3 Auto-Save and Startup Recovery
 

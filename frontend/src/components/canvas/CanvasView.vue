@@ -2622,10 +2622,12 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   if (workflowName === null) return false
   const accepted = await flushNow()
   if (accepted === null || isLocked.value) return false
+  const draftRevision = canvasPersistence.acceptedDraftRevision.value
+  if (draftRevision === null) return false
   const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  const cleared = await executionStore.clear(accepted.graph, requestedIds, workflowName)
+  const cleared = await executionStore.clear(requestedIds, workflowName, draftRevision)
   if (validationResult.value !== null) {
     validationResult.value = validationAfterCacheClear(
       validationResult.value,

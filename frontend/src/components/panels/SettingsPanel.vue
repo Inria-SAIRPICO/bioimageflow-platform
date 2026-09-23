@@ -77,7 +77,6 @@ const fallback: WorkspaceSettings & {
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto',
-  execution_engine: 'sequential',
   new_workflow_execution: 'sequential',
   default_execution_target_id: 'local',
   node_data_page_size: 250,

@@ -221,8 +221,8 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
     const accepted = await selectedRun
     expect(accepted.status(), await accepted.text()).toBe(202)
     expect(accepted.request().postDataJSON()).toMatchObject({
-      workflow_name: rootName, draft_revision: draft.draft_revision,
-      nodes: ['root_increment'], graph: draft.graph,
+      workflow_id: rootName, draft_revision: draft.draft_revision,
+      nodes: ['root_increment'],
     })
     const executionId = (await accepted.json()).execution_id
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30_000 })
@@ -250,8 +250,8 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
     const refused = await refusedRun
     expect(refused.status()).toBe(422)
     expect(refused.request().postDataJSON()).toMatchObject({
-      workflow_name: rootName, draft_revision: draft.draft_revision,
-      nodes: ['unrelated_nested'], graph: draft.graph,
+      workflow_id: rootName, draft_revision: draft.draft_revision,
+      nodes: ['unrelated_nested'],
     })
     expect(await refused.text()).toContain('unrelated_nested/nested_increment')
     await expect(page.locator('.p-toast')).toContainText('Validation errors')
@@ -333,9 +333,8 @@ test('executes nested Direct work and preserves scoped results after save and re
     ))
     await page.getByTestId('run-workflow-button').click()
     expect((await runRequest).postDataJSON()).toMatchObject({
-      workflow_name: rootName,
+      workflow_id: rootName,
       draft_revision: draft.draft_revision,
-      graph: { name: rootName },
     })
     expect((await runResponse).status()).toBe(202)
     await expect(page.getByTestId('execution-banner-headline')).toHaveText(
@@ -439,7 +438,7 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
     const firstRun = await firstRunPromise
     expect(firstRun.status()).toBe(202)
     expect(firstRun.request().postDataJSON()).toMatchObject({
-      workflow_name: rootName, draft_revision: initial.draft_revision, graph: initial.graph,
+      workflow_id: rootName, draft_revision: initial.draft_revision,
     })
     const firstExecutionId = (await firstRun.json()).execution_id
     expect(await (await page.request.get(`${API_BASE}/api/v1/executions/${firstExecutionId}`)).json())
@@ -515,7 +514,7 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
     const rerun = await rerunPromise
     expect(rerun.status()).toBe(202)
     expect(rerun.request().postDataJSON()).toMatchObject({
-      workflow_name: rootName, draft_revision: corrected.draft_revision, graph: corrected.graph,
+      workflow_id: rootName, draft_revision: corrected.draft_revision,
     })
     const secondExecutionId = (await rerun.json()).execution_id
     expect(secondExecutionId).not.toBe(firstExecutionId)

@@ -12,13 +12,13 @@ import tempfile
 import threading
 import zipfile
 from io import BytesIO
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -305,6 +305,7 @@ class WorkflowStoreService:
         tool_registry: ToolRegistryService,
         *,
         archive_adapter: WorkflowArchiveAdapter | None = None,
+        new_workflow_execution: Callable[[], Literal["sequential", "parallel"]] | None = None,
     ) -> None:
         self.root_dir = self._normalize_storage_path(root_dir)
         self.workspace_dir = (
@@ -312,6 +313,7 @@ class WorkflowStoreService:
         )
         self.tool_registry = tool_registry
         self.archive_adapter = archive_adapter or BioImageFlowWorkflowArchiveAdapter()
+        self._new_workflow_execution = new_workflow_execution or (lambda: "sequential")
         self._workflow_format_notices: list[WorkflowFormatNotice] = []
         self._workflow_generation_ledger_path = (
             self.workspace_dir / ".bioimageflow" / _WORKFLOW_GENERATION_LEDGER_NAME
@@ -1535,7 +1537,7 @@ class WorkflowStoreService:
             nodes=[],
             edges=[],
             interface={"inputs": [], "outputs": []},
-            config={},
+            config={"execution": self._new_workflow_execution()},
         )
         return WorkflowDocument(
             graph=graph,

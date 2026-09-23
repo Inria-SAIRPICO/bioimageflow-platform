@@ -139,8 +139,13 @@ async def test_start_replaces_only_a_stale_managed_recipe(tmp_path: Path) -> Non
 
 async def test_location_reports_existing_and_expected_managed_paths(tmp_path: Path) -> None:
     env_path = tmp_path / "environments" / "cellpose-env"
-    wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(env_path))
-    service = ToolEnvironmentService(registry=_registry(), wetlands_manager=wetlands)
+    managed = _FakeWetlandsManager(env_path)
+    wetlands = _FakeWetlandsWrapper(managed)
+    service = ToolEnvironmentService(
+        registry=_registry(),
+        wetlands_manager=wetlands,
+        managed_environment_manager=managed,
+    )
 
     assert service.location("cellpose-env") == str(env_path.resolve())
     assert service.location("new-env") == str((env_path.parent / "new-env").resolve())

@@ -101,7 +101,7 @@ class TestLoad:
         store = SettingsStore(path=path)
         result = await store.load()
         assert result.external_editor == "code {file_path}"
-        assert result.execution_engine == "sequential"  # default
+        assert result.new_workflow_execution == "sequential"
 
     @pytest.mark.campaign_excluded(reason="parsl")
     async def test_legacy_execution_engine_parsl_loads_as_parallel(
@@ -119,7 +119,6 @@ class TestLoad:
         )
         store = SettingsStore(path=path)
         result = await store.load()
-        assert result.execution_engine == "parallel"
         assert result.new_workflow_execution == "parallel"
 
     @pytest.mark.campaign_excluded(reason="parallel-scheduling")
@@ -288,23 +287,24 @@ class TestPatch:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)
         await store.load()
-        result = await store.patch({"execution_engine": "parallel"})
-        assert result.execution_engine == "parallel"
+        result = await store.patch({"new_workflow_execution": "parallel"})
+        assert result.new_workflow_execution == "parallel"
         on_disk = _read_disk(path)
         assert on_disk["settings_version"] == 3
-        assert on_disk["execution_engine"] == "parallel"
-        assert store.get().execution_engine == "parallel"
+        assert "execution_engine" not in on_disk
+        assert on_disk["new_workflow_execution"] == "parallel"
+        assert store.get().new_workflow_execution == "parallel"
 
     @pytest.mark.campaign_excluded(reason="parsl")
-    async def test_patch_legacy_execution_engine_parsl_migrates_to_parallel(
+    async def test_patch_old_execution_engine_is_rejected(
         self, tmp_path: Path
     ) -> None:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)
         await store.load()
-        result = await store.patch({"execution_engine": "parsl"})
-        assert result.execution_engine == "parallel"
-        assert _read_disk(path)["execution_engine"] == "parallel"
+        with pytest.raises(ValidationError):
+            await store.patch({"execution_engine": "parsl"})
+        assert "execution_engine" not in _read_disk(path)
 
     async def test_patch_rejects_invalid_value(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
@@ -312,10 +312,10 @@ class TestPatch:
         await store.load()
         before = path.read_text()
         with pytest.raises(ValidationError):
-            await store.patch({"execution_engine": "dask"})
+            await store.patch({"new_workflow_execution": "dask"})
         # Disk unchanged.
         assert path.read_text() == before
-        assert store.get().execution_engine == "sequential"
+        assert store.get().new_workflow_execution == "sequential"
 
     async def test_patch_rejects_unknown_keys(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"

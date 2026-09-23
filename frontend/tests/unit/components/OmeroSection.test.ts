@@ -43,7 +43,7 @@ const baseSettings = {
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
-  execution_engine: 'sequential' as const,
+  new_workflow_execution: 'sequential' as const,
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,

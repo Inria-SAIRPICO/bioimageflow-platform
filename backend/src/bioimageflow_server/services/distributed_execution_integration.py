@@ -119,11 +119,9 @@ class DraftWorkflowResolver:
         self,
         drafts: WorkflowDraftService,
         registry: ToolRegistryService,
-        settings: Callable[[], Any],
     ) -> None:
         self._drafts = drafts
         self._registry = registry
-        self._settings = settings
 
     def resolve_workflow(
         self,
@@ -139,7 +137,6 @@ class DraftWorkflowResolver:
             authority.draft.graph.model_copy(deep=True),
             self._registry,
             storage_path=target_storage,
-            settings=self._settings(),
         )
         if output.errors:
             details = "; ".join(error.detail for error in output.errors[:5])

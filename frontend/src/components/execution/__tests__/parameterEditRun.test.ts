@@ -116,7 +116,7 @@ describe('parameter edit followed immediately by Run', () => {
     })
   })
 
-  it('submits the parameter emitted by the real NodePanel field', async () => {
+  it('persists the parameter emitted by the real NodePanel field before Run', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useWorkflowStore().current = {
@@ -268,12 +268,8 @@ describe('parameter edit followed immediately by Run', () => {
     expect(mockedApi.post).toHaveBeenCalledWith(
       '/api/v1/execution/run',
       expect.objectContaining({
+        workflow_id: 'parameter_edit',
         draft_revision: 2,
-        graph: expect.objectContaining({
-          nodes: expect.arrayContaining([
-            expect.objectContaining({ parameters: { path: '/data/new' } }),
-          ]),
-        }),
       }),
     )
     expect(persistence.putDraft).toHaveBeenCalledOnce()

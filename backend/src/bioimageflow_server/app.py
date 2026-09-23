@@ -53,7 +53,6 @@ from bioimageflow_server.routers.editor import (
 from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
-    get_settings as graph_get_settings,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     get_workflow_store as graph_get_workflow_store,
@@ -62,7 +61,6 @@ from bioimageflow_server.routers.graph import (
 from bioimageflow_server.routers.execution import (
     get_dev_mode as execution_get_dev_mode,
     get_execution_manager as execution_get_manager,
-    get_settings as execution_get_settings,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
     get_workflow_draft_service as execution_get_workflow_draft_service,
@@ -380,6 +378,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     workflow_store = config.workflow_store or WorkflowStoreService(
         root_dir=workflow_root,
         tool_registry=registry,
+        new_workflow_execution=lambda: _live_settings().new_workflow_execution,
     )
     workflow_store_cache: dict[str, WorkflowStoreService] = {str(workflow_root): workflow_store}
     workflow_store_initializer: Callable[[WorkflowStoreService], None] | None = None
@@ -416,6 +415,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             cached = WorkflowStoreService(
                 root_dir=current_root,
                 tool_registry=registry,
+                new_workflow_execution=lambda: _live_settings().new_workflow_execution,
             )
             workflow_store_cache[cache_key] = cached
             try:
@@ -436,13 +436,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     workflow_draft_service = WorkflowDraftService(
         _current_workflow_store,
         dev_mode_provider=_live_dev_mode,
-        settings_provider=_live_settings,
     )
     nested_workflow_snapshot_service = NestedWorkflowSnapshotService(
         _current_workflow_store,
         fallback_storage_path_provider=_current_stateless_storage_path,
         dev_mode_provider=_live_dev_mode,
-        settings_provider=_live_settings,
     )
     distributed_tokens: PreparedSubmissionTokenManager | None = None
     distributed_coordinator: ExecutionCoordinator | None = None
@@ -484,7 +482,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             workflows=DraftWorkflowResolver(
                 workflow_draft_service,
                 registry,
-                _live_settings,
             ),
             profiles=profile_resolver,
             uploads=AuthorizedUploadResolver(
@@ -992,7 +989,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
-    app.dependency_overrides[execution_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[get_workflow_source_service] = lambda: workflow_source_service
     app.dependency_overrides[workflows_get_nested_snapshot_service] = lambda: (
@@ -1029,7 +1025,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[workflow_draft_operations_get_connection_manager] = lambda: ws_manager
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
-    app.dependency_overrides[graph_get_settings] = _live_settings
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_result_store] = lambda: result_store

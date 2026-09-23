@@ -18,6 +18,7 @@ pytestmark = pytest.mark.anyio
 _TEST_CONTEXT = ExecutionContext(
     execution_id="exec-test",
     workflow_id="wf-test",
+    draft_revision=1,
 )
 
 
@@ -247,7 +248,7 @@ async def test_broadcast_node_state_shape() -> None:
         "record_id": None,
         "execution_id": "exec-test",
         "workflow_id": "wf-test",
-        "draft_revision": None,
+        "draft_revision": 1,
     }
 
 

@@ -13,32 +13,50 @@ from bioimageflow_server.models.execution import (
     ProgressInfo,
 )
 from bioimageflow_server.models.validation import NodeStatus
+from bioimageflow_server.routers.execution import ClearRequest
+
+
+@pytest.mark.parametrize("model", [ExecutionRequest, ClearRequest])
+@pytest.mark.parametrize(
+    "invalid", [{"graph": {}}, {"workflow_name": "wf"}, {"draft_revision": None}]
+)
+def test_commands_reject_legacy_fields_and_null_revision(model, invalid) -> None:
+    with pytest.raises(ValidationError):
+        model.model_validate({"workflow_id": "wf", "draft_revision": 0, "nodes": ["n1"], **invalid})
+
+
+@pytest.mark.parametrize("model", [ExecutionRequest, ClearRequest])
+@pytest.mark.parametrize("missing", ["workflow_id", "draft_revision"])
+def test_commands_require_accepted_draft_identity(model, missing) -> None:
+    payload = {"workflow_id": "wf", "draft_revision": 0, "nodes": ["n1"]}
+    del payload[missing]
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
 
 
 class TestExecutionRequest:
     def test_full(self) -> None:
         er = ExecutionRequest(
-            graph={"nodes": [], "edges": []},
             nodes=["n1", "n2"],
-            workflow_name="wf_a",
+            workflow_id="wf_a",
             draft_revision=7,
         )
-        assert er.graph == {"nodes": [], "edges": []}
+
         assert er.nodes == ["n1", "n2"]
-        assert er.workflow_name == "wf_a"
+        assert er.workflow_id == "wf_a"
         assert er.draft_revision == 7
 
     def test_selective_none(self) -> None:
-        er = ExecutionRequest(graph={"nodes": []}, workflow_name="wf_a")
+        er = ExecutionRequest(draft_revision=0, workflow_id="wf_a")
         assert er.nodes is None
 
     def test_retry_requires_an_execution_id_and_reuses_server_targets(self) -> None:
         with pytest.raises(ValidationError):
-            ExecutionRequest(graph={"nodes": []}, workflow_name="wf_a", mode="retry")
+            ExecutionRequest(draft_revision=0, workflow_id="wf_a", mode="retry")
         with pytest.raises(ValidationError):
             ExecutionRequest(
-                graph={"nodes": []},
-                workflow_name="wf_a",
+                draft_revision=0,
+                workflow_id="wf_a",
                 mode="retry",
                 retry_of_execution_id="exec-1",
                 nodes=["client-target"],
@@ -47,14 +65,18 @@ class TestExecutionRequest:
     def test_recompute_rejects_a_selected_subset(self) -> None:
         with pytest.raises(ValidationError):
             ExecutionRequest(
-                graph={"nodes": []},
-                workflow_name="wf_a",
+                draft_revision=0,
+                workflow_id="wf_a",
                 mode="recompute",
                 nodes=["selected"],
             )
 
 
 class TestExecutionContext:
+    def test_requires_accepted_revision(self) -> None:
+        with pytest.raises(ValidationError):
+            ExecutionContext.model_validate({"execution_id": "exec", "workflow_id": "wf"})
+
     def test_roundtrip(self) -> None:
         context = ExecutionContext(
             execution_id="exec-123",

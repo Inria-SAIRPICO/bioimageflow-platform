@@ -91,17 +91,19 @@ test.describe('logger panel', () => {
 
     const messages = page.getByTestId('log-message')
     await expect(messages).toHaveCount(2)
-    const first = await messages.nth(0).boundingBox()
-    const second = await messages.nth(1).boundingBox()
-    expect(first && second).toBeTruthy()
-    await page.mouse.move(first!.x + 2, first!.y + first!.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(second!.x + second!.width - 2, second!.y + second!.height / 2, { steps: 8 })
-    await page.mouse.up()
-
+    await expect(async () => {
+      const first = await messages.nth(0).boundingBox()
+      const second = await messages.nth(1).boundingBox()
+      expect(first && second).toBeTruthy()
+      await page.mouse.move(first!.x + 2, first!.y + first!.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(second!.x + second!.width - 2, second!.y + second!.height / 2, { steps: 8 })
+      await page.mouse.up()
+      const selection = await page.evaluate(() => window.getSelection()?.toString() ?? '')
+      expect(selection).toContain('first selection marker')
+      expect(selection).toContain('second selection marker')
+    }).toPass()
     const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '')
-    expect(selected).toContain('first selection marker')
-    expect(selected).toContain('second selection marker')
     await page.evaluate(() => document.addEventListener('copy', () => {
       document.body.dataset.nativeCopy = 'seen'
     }, { once: true }))

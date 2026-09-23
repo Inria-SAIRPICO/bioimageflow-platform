@@ -80,9 +80,10 @@ describe('useExecutionLock', () => {
       graph,
       validationResult: validationResult.value,
       workflowName: 'wf_a',
+      acceptedDraftRevision: 7,
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a', { canvasId: null, draftRevision: 7 })
   })
 
   it('submits the prepared accepted draft revision', async () => {
@@ -120,6 +121,7 @@ describe('useExecutionLock', () => {
       graph: makeGraph(),
       validationResult: validationResult.value,
       workflowName: 'wf_a',
+      acceptedDraftRevision: 7,
       isTargetActive: () => false,
     })).resolves.toBe(false)
 
@@ -150,6 +152,7 @@ describe('useExecutionLock', () => {
         graph: makeGraph(),
         validationResult: validationResult.value,
         workflowName: 'wf_a',
+      acceptedDraftRevision: 7,
       }),
     ).rejects.toThrow(/validation/i)
 
@@ -173,9 +176,10 @@ describe('useExecutionLock', () => {
       nodes: ['n1', 'n2'],
       validationResult: validationResult.value,
       workflowName: 'wf_a',
+      acceptedDraftRevision: 7,
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], 'wf_a', { canvasId: null, draftRevision: 7 })
   })
 
   it('lockForExecution ignores validation errors outside the selected execution set', async () => {
@@ -213,9 +217,10 @@ describe('useExecutionLock', () => {
       nodes: ['selected'],
       validationResult: validationResult.value,
       workflowName: 'wf_a',
+      acceptedDraftRevision: 7,
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], 'wf_a', { canvasId: null, draftRevision: 7 })
   })
 
 })

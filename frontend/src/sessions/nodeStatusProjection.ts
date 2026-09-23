@@ -19,8 +19,6 @@ export interface NodeStatusProjectionInput {
   executionStatus: NodeStatus | null
   validationStatus: NodeStatus | null
   executionOriginMatches: boolean
-  executionIsContextless: boolean
-  allowContextlessLegacyExecution: boolean
   executionDraftRevision: number | null
   acceptedDraftRevision: number | null
 }
@@ -54,9 +52,6 @@ export function projectNodeStatus(
 
 function executionMatchesCanvasDraft(input: NodeStatusProjectionInput): boolean {
   if (!input.executionOriginMatches) return false
-  if (input.executionIsContextless) {
-    return input.allowContextlessLegacyExecution
-  }
   return input.executionDraftRevision !== null
     && input.acceptedDraftRevision !== null
     && input.executionDraftRevision === input.acceptedDraftRevision

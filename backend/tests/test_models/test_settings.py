@@ -60,7 +60,6 @@ class TestSettings:
         assert s.omero_instances == []
         assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
         assert s.update_mode == "auto"
-        assert s.execution_engine == "sequential"
         assert s.new_workflow_execution == "sequential"
         assert s.default_execution_target_id == "local"
         assert s.node_data_page_size == 250
@@ -84,34 +83,27 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings.model_validate({"deployment_mode": "cloud"})
 
-    def test_invalid_execution_engine(self):
+    def test_invalid_new_workflow_execution(self):
         with pytest.raises(ValidationError):
             Settings.model_validate(
                 {
                     "deployment_mode": "desktop",
-                    "execution_engine": "spark",
+                    "new_workflow_execution": "spark",
                 }
             )
 
-    def test_execution_engine_dask_rejected(self):
+    def test_new_workflow_execution_dask_rejected(self):
         with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", execution_engine="dask")
+            Settings(deployment_mode="desktop", new_workflow_execution="dask")
 
     @pytest.mark.campaign_excluded(reason="parallel-scheduling")
-    def test_execution_engine_parallel_is_valid(self):
-        s = Settings(deployment_mode="desktop", execution_engine="parallel")
-        assert s.execution_engine == "parallel"
-
-    @pytest.mark.campaign_excluded(reason="parsl")
-    def test_legacy_execution_engine_parsl_migrates_to_parallel(self):
-        s = Settings(deployment_mode="desktop", execution_engine="parsl")
-        assert s.execution_engine == "parallel"
+    def test_new_workflow_execution_parallel_is_valid(self):
+        s = Settings(deployment_mode="desktop", new_workflow_execution="parallel")
         assert s.new_workflow_execution == "parallel"
 
-    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
-    def test_new_workflow_execution_synchronizes_compatibility_field(self):
-        s = Settings(deployment_mode="desktop", new_workflow_execution="parallel")
-        assert s.execution_engine == "parallel"
+    def test_old_execution_engine_is_not_a_live_field(self):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", execution_engine="parallel")
 
     def test_with_omero_instances(self):
         s = Settings(

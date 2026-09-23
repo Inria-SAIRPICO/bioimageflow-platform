@@ -51,13 +51,13 @@ interface ExecutionContextFields {
 interface RequiredExecutionContextFields {
   execution_id: string
   workflow_id: string
-  draft_revision: number | null
+  draft_revision: number
 }
 
 interface ExecutionWireContext {
   execution_id: string
   workflow_id: string
-  draft_revision: number | null
+  draft_revision: number
 }
 
 interface NodeStateMessage extends RequiredExecutionContextFields {
@@ -92,10 +92,9 @@ interface ProgressPayload extends ProgressInfo, RequiredExecutionContextFields {
 
 export interface RunExecutionOptions {
   canvasId: CanvasId | null
-  draftRevision: number | null
+  draftRevision: number
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
-  targetId?: string
 }
 
 export type ExecutionMode = 'normal' | 'retry' | 'invalidate_failed' | 'recompute'
@@ -110,7 +109,7 @@ export type ExecutionCommand =
 interface PendingRun {
   requestId: number
   workflowId: string
-  draftRevision: number | null | undefined
+  draftRevision: number
   canvasId: CanvasId | null
   graph: GraphState
   executionId: string | null
@@ -187,14 +186,9 @@ function executionContextFrom(
     || value.execution_id.length === 0
     || typeof value.workflow_id !== 'string'
     || value.workflow_id.length === 0
-    || (
-      value.draft_revision !== null
-      && (
-        typeof value.draft_revision !== 'number'
-        || !Number.isInteger(value.draft_revision)
-        || value.draft_revision < 0
-      )
-    )
+    || typeof value.draft_revision !== 'number'
+    || !Number.isInteger(value.draft_revision)
+    || value.draft_revision < 0
   ) return null
   return {
     execution_id: value.execution_id,
@@ -262,7 +256,7 @@ export const useExecutionStore = defineStore('execution', () => {
       .some(status => status.status === 'failed')
   ))
   function currentExecutionContext(): ExecutionWireContext | null {
-    if (executionId.value === null || executionWorkflowId.value === null) return null
+    if (executionId.value === null || executionWorkflowId.value === null || executionDraftRevision.value === null) return null
     return {
       execution_id: executionId.value,
       workflow_id: executionWorkflowId.value,
@@ -272,8 +266,7 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function matchesPendingRunContext(incoming: ExecutionWireContext): boolean {
     if (pendingRun === null) return false
-    const revisionMatches = pendingRun.draftRevision === undefined
-      || incoming.draft_revision === pendingRun.draftRevision
+    const revisionMatches = incoming.draft_revision === pendingRun.draftRevision
     return incoming.workflow_id === pendingRun.workflowId
       && revisionMatches
       && (
@@ -505,7 +498,7 @@ export const useExecutionStore = defineStore('execution', () => {
     graph: GraphState,
     nodes: string[] | undefined,
     workflowName: string,
-    options?: RunExecutionOptions,
+    options: RunExecutionOptions,
   ) {
     if (workflowName.trim().length === 0) {
       throw new Error('Workflow identity is required for execution')
@@ -513,14 +506,12 @@ export const useExecutionStore = defineStore('execution', () => {
     if (state.value !== 'idle') {
       throw new Error('already running')
     }
-    if (options?.canvasId !== null && options?.canvasId !== undefined) {
-      if (
-        typeof options.draftRevision !== 'number'
-        || !Number.isInteger(options.draftRevision)
-        || options.draftRevision < 0
-      ) {
-        throw new Error('An accepted draft revision is required for execution')
-      }
+    if (
+      typeof options.draftRevision !== 'number'
+      || !Number.isInteger(options.draftRevision)
+      || options.draftRevision < 0
+    ) {
+      throw new Error('An accepted draft revision is required for execution')
     }
     const requestId = ++requestSequence
     const previousTerminalFence = terminalFence
@@ -529,8 +520,8 @@ export const useExecutionStore = defineStore('execution', () => {
     pendingRun = {
       requestId,
       workflowId: workflowName,
-      draftRevision: options?.draftRevision,
-      canvasId: options?.canvasId ?? null,
+      draftRevision: options.draftRevision,
+      canvasId: options.canvasId,
       graph: cloneGraph(graph),
       executionId: null,
     }
@@ -541,17 +532,13 @@ export const useExecutionStore = defineStore('execution', () => {
     validationErrors.value = []
     try {
       const payload = {
-        graph,
         nodes,
-        workflow_name: workflowName,
-        mode: options?.mode ?? 'normal',
-        ...(options?.retryOfExecutionId
+        workflow_id: workflowName,
+        draft_revision: options.draftRevision,
+        mode: options.mode ?? 'normal',
+        ...(options.retryOfExecutionId
           ? { retry_of_execution_id: options.retryOfExecutionId }
           : {}),
-        ...(options?.draftRevision !== undefined
-          ? { draft_revision: options.draftRevision }
-          : {}),
-        ...(options?.targetId ? { target_id: options.targetId } : {}),
       }
       const { data } = await api.post<ExecutionContextFields & { status: string }>(
         '/api/v1/execution/run',
@@ -625,18 +612,21 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   async function clear(
-    graph: GraphState,
     nodeIds: string[],
     workflowName: string,
+    draftRevision: number,
   ) {
     if (workflowName.trim().length === 0) {
       throw new Error('Workflow identity is required for cache clearing')
     }
+    if (!Number.isInteger(draftRevision) || draftRevision < 0) {
+      throw new Error('An accepted draft revision is required for cache clearing')
+    }
     const { data } = await api.post<ClearResponse>(
       '/api/v1/execution/clear',
-      { graph, nodes: nodeIds, workflow_name: workflowName },
+      { nodes: nodeIds, workflow_id: workflowName, draft_revision: draftRevision },
     )
-    if (data?.node_statuses) {
+    if (data?.node_statuses && executionWorkflowId.value === workflowName && executionDraftRevision.value === draftRevision) {
       originCanvasId.value = resolveOriginCanvas(workflowName)
       nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }
     }

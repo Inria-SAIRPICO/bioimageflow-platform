@@ -196,10 +196,10 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const firstAccepted = await runResponse.json()
     const firstRequest = runResponse.request().postDataJSON()
     expect(firstRequest).toMatchObject({
-      workflow_name: workflowName,
+      workflow_id: workflowName,
       draft_revision: initialDraft.draft_revision,
-      graph: initialDraft.graph,
     })
+    expect(firstRequest).not.toHaveProperty('graph')
     expect(firstAccepted).toMatchObject({
       execution_id: expect.stringMatching(/^run_/),
       workflow_id: workflowName,
@@ -306,10 +306,10 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     expect(rerunResponse.status()).toBe(202)
     const rerunAccepted = await rerunResponse.json()
     expect(rerunResponse.request().postDataJSON()).toMatchObject({
-      workflow_name: workflowName,
+      workflow_id: workflowName,
       draft_revision: acceptedCorrection.draft_revision,
-      graph: acceptedCorrection.graph,
     })
+    expect(rerunResponse.request().postDataJSON()).not.toHaveProperty('graph')
     expect(rerunAccepted).toMatchObject({
       execution_id: expect.stringMatching(/^run_/),
       workflow_id: workflowName,

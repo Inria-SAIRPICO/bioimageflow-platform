@@ -31,6 +31,7 @@ from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionEventBus,
     ExecutionManager,
+    _ExecutionEnvironmentManager,
     NullEventBus,
     WorkflowBuildError,
     ExecutionRetryError,
@@ -46,6 +47,7 @@ pytestmark = pytest.mark.anyio
 _TEST_CONTEXT = ExecutionContext(
     execution_id="exec-test",
     workflow_id="wf-test",
+    draft_revision=1,
 )
 
 
@@ -265,6 +267,8 @@ class _FakeWetlandsManager:
     def get_or_create(
         self,
         env_spec: _EnvSpecStub,
+        max_workers: int = 1,
+        worker_timeout: float | None = None,
         *,
         on_provision_event: Any = None,
         on_preparation: Any = None,
@@ -290,25 +294,38 @@ class _FakeWetlandsManager:
         self.replace_existing_calls.append(replace_existing)
         if on_provision_event is not None:
             on_provision_event(
-                type("Event", (), {
-                    "kind": type("Kind", (), {"value": "step"})(),
-                    "message": "Resolving pixi.lock", "stage": "lock_resolution",
-                })()
+                type(
+                    "Event",
+                    (),
+                    {
+                        "kind": type("Kind", (), {"value": "step"})(),
+                        "message": "Resolving pixi.lock",
+                        "stage": "lock_resolution",
+                    },
+                )()
             )
             on_provision_event(
-                type("Event", (), {
-                    "kind": type("Kind", (), {"value": "output"})(),
-                    "message": "Downloaded atlas", "stage": "conda_install",
-                })()
+                type(
+                    "Event",
+                    (),
+                    {
+                        "kind": type("Kind", (), {"value": "output"})(),
+                        "message": "Downloaded atlas",
+                        "stage": "conda_install",
+                    },
+                )()
             )
         if self.raise_exc is not None:
             raise self.raise_exc
         value = object()
         self._envs[env_spec.name] = value
         return value
-        env = object()
-        self._envs[env_spec.name] = env
-        return env
+
+    def is_running(self, env_name: str) -> bool:
+        return env_name in self._envs
+
+    def running_environments(self) -> tuple[str, ...]:
+        return tuple(self._envs)
 
     def shutdown_all(self) -> None:
         self._envs.clear()
@@ -350,9 +367,7 @@ def _selected_graph() -> GraphState:
                     "id": "dataframe_in",
                     "name": "DataFrame in",
                     "kind": "dataframe",
-                    "targets": [
-                        {"node": "internal", "port": {"kind": "positional", "index": 0}}
-                    ],
+                    "targets": [{"node": "internal", "port": {"kind": "positional", "index": 0}}],
                 }
             ]
         if output_port:
@@ -468,11 +483,11 @@ async def _drain(manager: ExecutionManager, timeout: float = 2.0) -> None:
 
 
 class TestExecutionManagerLifecycle:
-    async def test_cache_clear_updates_matching_live_status_without_rewriting_run_history(self) -> None:
+    async def test_cache_clear_updates_matching_live_status_without_rewriting_run_history(
+        self,
+    ) -> None:
         em = ExecutionManager(NullEventBus(), MagicMock(), _settings())
-        em.context = ExecutionContext(
-            execution_id="run-1", workflow_id="wf", draft_revision=2
-        )
+        em.context = ExecutionContext(execution_id="run-1", workflow_id="wf", draft_revision=2)
         executed = NodeStatus(node_id="source", status="executed", cached=True)
         em._node_statuses = {"source": executed}
         em.last_result = ExecutionResult(
@@ -480,9 +495,11 @@ class TestExecutionManagerLifecycle:
         )
 
         cleared = NodeStatus(node_id="source", status="unexecuted", cached=False)
-        em.apply_cache_clear_statuses("other", {"source": cleared})
+        em.apply_cache_clear_statuses("other", {"source": cleared}, 2)
         assert em.get_status().node_statuses["source"].status == "executed"
-        em.apply_cache_clear_statuses("wf", {"source": cleared})
+        em.apply_cache_clear_statuses("wf", {"source": cleared}, 3)
+        assert em.get_status().node_statuses["source"].status == "executed"
+        em.apply_cache_clear_statuses("wf", {"source": cleared}, 2)
         assert em.get_status().node_statuses["source"].status == "unexecuted"
         assert em.get_status().last_result.node_statuses["source"].status == "executed"
 
@@ -499,7 +516,7 @@ class TestExecutionManagerLifecycle:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.state == "running"
         await _drain(em)
         assert em.state == "idle"
@@ -603,6 +620,8 @@ class TestExecutionManagerLifecycle:
         bus = RecordingEventBus()
         wf = _WorkflowWithWetlands()
         shared_manager = _FakeWetlandsManager()
+        original_get_or_create = shared_manager.get_or_create.__func__
+        original_shutdown_all = shared_manager.shutdown_all.__func__
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(
             bus,
@@ -612,19 +631,24 @@ class TestExecutionManagerLifecycle:
         )
 
         first_context = await em.start(
-            _graph_with([("n1", True)]), workflow_id="wf-test"
+            _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
         )
         await _drain(em)
 
         second_context = await em.start(
-            _graph_with([("n1", True)]), workflow_id="wf-test"
+            _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
         )
         await _drain(em)
 
-        assert wf.create_engine_calls == [
-            {"resource_lifetime": "external", "env_manager": shared_manager},
-            {"resource_lifetime": "external", "env_manager": shared_manager},
+        assert [call["resource_lifetime"] for call in wf.create_engine_calls] == [
+            "external",
+            "external",
         ]
+        adapters = [call["env_manager"] for call in wf.create_engine_calls]
+        assert all(isinstance(adapter, _ExecutionEnvironmentManager) for adapter in adapters)
+        assert adapters[0] is not adapters[1]
+        assert shared_manager.get_or_create.__func__ is original_get_or_create
+        assert shared_manager.shutdown_all.__func__ is original_shutdown_all
         assert shared_manager.calls == ["atlas", "atlas"]
         assert bus.environment_events == [
             ("atlas", "creating"),
@@ -638,8 +662,8 @@ class TestExecutionManagerLifecycle:
             if event[1] == "Downloaded atlas"
         ]
         assert pixi_logs == [first_context, second_context]
-        assert wf.get_or_create_wrappers[0] is wf.get_or_create_wrappers[1]
-        assert wf.shutdown_all_wrappers[0] is wf.shutdown_all_wrappers[1]
+        assert wf.get_or_create_wrappers[0] is not wf.get_or_create_wrappers[1]
+        assert wf.shutdown_all_wrappers[0] is not wf.shutdown_all_wrappers[1]
         assert any(
             event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
             for event in em.retained_progress()
@@ -655,8 +679,8 @@ class TestExecutionManagerLifecycle:
                 self.manager = _FakeWetlandsManager()
                 self.manager.raise_exc = RuntimeError("solve failed")
 
-            def create_engine(self, **_kwargs: Any) -> Any:
-                return type("Engine", (), {"environment_manager": self.manager})()
+            def create_engine(self, **kwargs: Any) -> Any:
+                return type("Engine", (), {"environment_manager": kwargs["env_manager"]})()
 
             def compute(
                 self,
@@ -671,9 +695,14 @@ class TestExecutionManagerLifecycle:
         bus = RecordingEventBus()
         wf = _WorkflowWithFailingWetlands()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(
+            bus,
+            MagicMock(),
+            _settings(),
+            environment_manager_provider=lambda: wf.manager,
+        )
 
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert bus.environment_events == [
@@ -691,11 +720,21 @@ class TestExecutionManagerLifecycle:
             _settings(),
             environment_replacement_authorizer=lambda _spec: True,
         )
-        em._attach_environment_status_hook(
-            SimpleNamespace(environment_manager=manager)
+        em.context = _TEST_CONTEXT
+        em.state = "running"
+        adapter = _ExecutionEnvironmentManager(
+            manager,
+            context=_TEST_CONTEXT,
+            current_node_id=lambda: None,
+            on_preparation=em._on_environment_preparation,
+            on_provision_event=em._on_environment_event,
+            on_ready=em._on_environment_ready,
+            on_failure=em._on_environment_failure,
+            on_stopped=lambda name: em._publish_environment_status(name, "stopped"),
+            replacement_authorizer=em._environment_replacement_authorizer,
         )
 
-        manager.get_or_create(_EnvSpecStub("cellpose-env"))
+        adapter.get_or_create(_EnvSpecStub("cellpose-env"))
 
         assert manager.replace_existing_calls == [True]
         assert bus.environment_events == [
@@ -707,13 +746,13 @@ class TestExecutionManagerLifecycle:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
         wf2 = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf2)
         # progress should reset immediately upon next start
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.progress is None
         await _drain(em)
 
@@ -736,9 +775,9 @@ class TestExecutionManagerLifecycle:
         wf = _BlockingWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         with pytest.raises(ExecutionConflictError):
-            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         wf.go.set()
         await _drain(em, timeout=3.0)
 
@@ -769,7 +808,9 @@ class TestExecutionManagerLifecycle:
         )
         em.context = prior_context
         prior_result = ExecutionResult(success=True)
-        prior_progress = ProgressInfo(node_id="prior-node", status="row_complete", row=1, total_rows=1)
+        prior_progress = ProgressInfo(
+            node_id="prior-node", status="row_complete", row=1, total_rows=1
+        )
         prior_node_status = NodeStatus(
             node_id="prior-node",
             status="executed",
@@ -816,6 +857,7 @@ class TestExecutionManagerLifecycle:
                 await em.start(
                     _graph_with([("n2", True)]),
                     workflow_id="other-workflow",
+                    draft_revision=1,
                 )
             await asyncio.wait_for(asyncio.sleep(0), timeout=0.1)
         finally:
@@ -830,9 +872,9 @@ class TestExecutionManagerLifecycle:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         with pytest.raises(ExecutionConflictError):
-            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
     async def test_idle_mutation_lease_blocks_run_without_reporting_starting(self) -> None:
@@ -847,6 +889,7 @@ class TestExecutionManagerLifecycle:
                 await em.start(
                     _graph_with([("n1", True)]),
                     workflow_id="wf-test",
+                    draft_revision=1,
                 )
 
         assert em.is_running is False
@@ -927,7 +970,7 @@ class TestExecutionManagerLifecycle:
             ],
         )
 
-        context = await em.start(graph, nodes=["selected"], workflow_id="wf-test")
+        context = await em.start(graph, nodes=["selected"], workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert context.planned_node_ids == ["source", "selected"]
@@ -950,13 +993,17 @@ class TestExecutionManagerProgress:
         first = _FakeWorkflow()
         _install_fake_builder(monkeypatch, first)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        first_context = await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        first_context = await em.start(
+            _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
+        )
         await _drain(em)
         assert first.on_progress is not None
 
         second = _FakeWorkflow()
         _install_fake_builder(monkeypatch, second)
-        second_context = await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        second_context = await em.start(
+            _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
+        )
         assert second_context.execution_id != first_context.execution_id
         before_status = em.get_status()
         before_retained = em.retained_progress()
@@ -978,7 +1025,7 @@ class TestExecutionManagerProgress:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "started")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "running", False, None, None) in bus.node_state_events
         n1_states = [e for e in bus.node_state_events if e[0] == "n1"]
@@ -990,19 +1037,27 @@ class TestExecutionManagerProgress:
     ) -> None:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(
-            events=[_ProgressEventStub("n1", "row_progress", row=2, total_rows=5, current=3, maximum=10, timestamp=1.0)]
+            events=[
+                _ProgressEventStub(
+                    "n1", "row_progress", row=2, total_rows=5, current=3, maximum=10, timestamp=1.0
+                )
+            ]
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert any(
             e[0] == "n1" and e[1] == "row_progress" and e[2] == 2 and e[3] == 5
             for e in bus.progress_events
         )
         assert em.progress == ProgressInfo(
-            node_id="n1", status="row_progress", row=2, total_rows=5,
-            task_current=3, task_maximum=10,
+            node_id="n1",
+            status="row_progress",
+            row=2,
+            total_rows=5,
+            task_current=3,
+            task_maximum=10,
         )
         assert any(
             e[0] == "DEBUG" and e[2] == "n1" and "Node n1 row progress 3/10" in e[1]
@@ -1026,7 +1081,7 @@ class TestExecutionManagerProgress:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert em.progress is not None
@@ -1043,7 +1098,7 @@ class TestExecutionManagerProgress:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.progress is not None
         assert em.progress.row == 2
@@ -1071,7 +1126,7 @@ class TestExecutionManagerProgress:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "executed", False, None, None) in bus.node_state_events
         assert ("n1", "rk_done", "rec_done") in bus.node_state_identity_events
@@ -1088,7 +1143,7 @@ class TestExecutionManagerProgress:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "cached")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "executed", True, None, None) in bus.node_state_events
         assert em._node_statuses["n1"].cached is True
@@ -1103,7 +1158,7 @@ class TestExecutionManagerProgress:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         n1_failed = [e for e in bus.node_state_events if e[0] == "n1" and e[1] == "failed"]
         assert n1_failed
@@ -1131,7 +1186,7 @@ class TestExecutionManagerProgress:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
@@ -1146,7 +1201,7 @@ class TestExecutionManagerProgress:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "cancelled")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "unexecuted", False, None, None) in bus.node_state_events
         assert em._node_statuses["n1"].status == "unexecuted"
@@ -1161,7 +1216,7 @@ class TestExecutionManagerProgress:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
         with caplog.at_level(logging.WARNING):
-            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
             await _drain(em)
         assert em.state == "idle"
         assert not any(e[1] == "future_status" for e in bus.node_state_events)
@@ -1173,7 +1228,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
         assert em.last_result.success is True
@@ -1188,7 +1243,7 @@ class TestExecutionManagerResult:
         wf.raise_exc = RuntimeError("kaboom")
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
         assert em.last_result.success is False
@@ -1213,7 +1268,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
 
-        await em.start(_graph_with([("cellpose_1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("cellpose_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert em.last_result is not None
@@ -1235,7 +1290,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
 
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert em.last_result is not None
@@ -1263,7 +1318,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
 
-        await em.start(_graph_with([("atlas_1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("atlas_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert em.last_result is not None
@@ -1302,7 +1357,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
 
-        await em.start(_graph_with([("chameau2_1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("chameau2_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert em.last_result is not None
@@ -1336,7 +1391,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
         with caplog.at_level(logging.ERROR):
-            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
             await _drain(em)
         assert any("Workflow execution failed: kaboom" in rec.message for rec in caplog.records)
         assert bus.log_events
@@ -1370,7 +1425,7 @@ class TestExecutionManagerResult:
         wf = _ProbeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
         assert wf.stdout_was_original is True
@@ -1389,7 +1444,7 @@ class TestExecutionManagerResult:
         wf.raise_exc = RuntimeError("boom")
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
         assert len(error_logs) == 1
@@ -1400,7 +1455,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert bus.complete_events
         success, errors, node_statuses = bus.complete_events[-1]
@@ -1413,7 +1468,7 @@ class TestExecutionManagerResult:
         _install_fake_builder(monkeypatch, None, errors=[MagicMock(detail="bad")])
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
         with pytest.raises(WorkflowBuildError):
-            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+            await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.state == "idle"
 
     async def test_validation_error_rejects_run_before_compute(
@@ -1443,7 +1498,9 @@ class TestExecutionManagerResult:
             errors=[],
             node_statuses={"previous": prior_status},
         )
-        prior_progress = ProgressInfo(node_id="previous", status="row_complete", row=1, total_rows=1)
+        prior_progress = ProgressInfo(
+            node_id="previous", status="row_complete", row=1, total_rows=1
+        )
         em.last_result = prior_result
         em.progress = prior_progress
         em._node_statuses = {"previous": prior_status}
@@ -1474,9 +1531,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         builder = _install_fake_builder(
             monkeypatch,
             wf,
@@ -1494,12 +1549,14 @@ class TestExecutionManagerResult:
             _selected_graph(),
             nodes=["selected"],
             workflow_id="wf-test",
+            draft_revision=1,
         )
         await _drain(em)
 
         assert context.planned_node_ids == ["upstream/internal", "selected/internal"]
         assert context.planned_node_names == {
-            "upstream/internal": "internal", "selected/internal": "internal",
+            "upstream/internal": "internal",
+            "selected/internal": "internal",
         }
 
         assert wf.compute_calls == 1
@@ -1529,6 +1586,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors == [error]
@@ -1542,9 +1600,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch, requested: list[str]
     ) -> None:
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
 
@@ -1553,6 +1609,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=requested,
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert wf.compute_calls == 0
@@ -1570,6 +1627,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors[0].node == "selected"
@@ -1581,9 +1639,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch, node: str
     ) -> None:
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         error = GraphValidationError(
             type="parameter_invalid",
             detail="invalid workflow descendant",
@@ -1597,6 +1653,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors == [error]
@@ -1606,9 +1663,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         _install_fake_builder(
             monkeypatch,
             wf,
@@ -1626,6 +1681,7 @@ class TestExecutionManagerResult:
             _selected_graph(),
             nodes=["selected"],
             workflow_id="wf-test",
+            draft_revision=1,
         )
         await _drain(em)
 
@@ -1636,9 +1692,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch, node: str | None
     ) -> None:
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         error = GraphValidationError(
             type="parameter_invalid",
             detail="unattributable error",
@@ -1652,6 +1706,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors == [error]
@@ -1672,9 +1727,7 @@ class TestExecutionManagerResult:
         )
         graph.edges.append(edge)
         wf = _FakeWorkflow()
-        wf.nodes = {
-            node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")
-        }
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         error = GraphValidationError(
             type="invalid_edge_id",
             detail=f"Edge has an unknown {dangling_endpoint} endpoint",
@@ -1688,6 +1741,7 @@ class TestExecutionManagerResult:
                 graph,
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors == [error]
@@ -1714,6 +1768,7 @@ class TestExecutionManagerResult:
                 _selected_graph(),
                 nodes=["selected"],
                 workflow_id="wf-test",
+                draft_revision=1,
             )
 
         assert exc_info.value.errors[0].node is None
@@ -1723,7 +1778,9 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True), ("n2", False)]), workflow_id="wf-test")
+        await em.start(
+            _graph_with([("n1", True), ("n2", False)]), workflow_id="wf-test", draft_revision=1
+        )
         await _drain(em)
         assert em._node_statuses["n2"].status == "disabled"
         assert em._node_statuses["n2"].cached is False
@@ -1743,7 +1800,9 @@ class TestExecutionManagerResult:
         wf.raise_exc = WorkflowCancelledError("cancelled")
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True), ("n2", True)]), workflow_id="wf-test")
+        await em.start(
+            _graph_with([("n1", True), ("n2", True)]), workflow_id="wf-test", draft_revision=1
+        )
         await _drain(em)
         assert em._node_statuses["n1"].status == "executed"
         assert em._node_statuses["n2"].status == "unexecuted"
@@ -1781,7 +1840,7 @@ class TestExecutionManagerStop:
         wf = _CancellableWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await asyncio.sleep(0.01)
         await em.stop()
         assert wf.cancel_called is True
@@ -1814,7 +1873,7 @@ class TestExecutionManagerStop:
         wf = _CancellableWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await asyncio.sleep(0.01)
         await em.stop()
         await _drain(em)
@@ -1839,7 +1898,7 @@ class TestExecutionManagerStatus:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         status = em.get_status()
         assert status.state == "idle"
@@ -1868,7 +1927,7 @@ class TestExecutionManagerIsRunning:
         wf = _BlockWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.is_running is True
         wf.go.set()
         await _drain(em)
@@ -1888,7 +1947,7 @@ class TestExecutionManagerSettingsProvider:
             _settings(dev_mode=True),
             settings_provider=lambda: _settings(dev_mode=False),
         )
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert wf.compute_calls == 1
         assert wf.dev_mode_received is False
@@ -1897,7 +1956,7 @@ class TestExecutionManagerSettingsProvider:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings(dev_mode=True))
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert wf.compute_calls == 1
         assert wf.dev_mode_received is True
@@ -1919,6 +1978,7 @@ class TestExecutionManagerStoragePath:
             _graph_with([("n1", True)]),
             storage_path=Path("/tmp/workflows/wf_a"),
             workflow_id="wf-test",
+            draft_revision=1,
         )
         await _drain(em)
         assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/wf_a")
@@ -1938,6 +1998,7 @@ class TestExecutionManagerStoragePath:
             _graph_with([("n1", True)]),
             storage_path=Path("/tmp/workflows/new"),
             workflow_id="wf-test",
+            draft_revision=1,
         )
         await _drain(em)
 
@@ -1951,6 +2012,7 @@ class TestExecutionRetryIntent:
         manager.context = ExecutionContext(
             execution_id="failed-run",
             workflow_id="wf-test",
+            draft_revision=1,
             requested_nodes=["selected"],
         )
         manager.last_result = ExecutionResult(success=False)
@@ -1969,6 +2031,7 @@ class TestExecutionRetryIntent:
         manager.context = ExecutionContext(
             execution_id="successful-run",
             workflow_id="wf-test",
+            draft_revision=1,
         )
         manager.last_result = ExecutionResult(success=True)
 
@@ -1985,6 +2048,7 @@ class TestExecutionRetryIntent:
         manager.context = ExecutionContext(
             execution_id="failed-run",
             workflow_id="wf-test",
+            draft_revision=1,
             requested_nodes=["selected"],
         )
         manager.last_result = ExecutionResult(success=False)

@@ -9,24 +9,24 @@ from bioimageflow_server.models.workflow import validate_workflow_id
 
 
 class ExecutionRequest(BaseModel):
-    """Execute an inline graph or verify it against an accepted draft revision."""
+    """Execute one accepted root draft."""
 
-    graph: dict[str, Any]
+    model_config = ConfigDict(extra="forbid")
+
     nodes: list[str] | None = None
-    workflow_name: str = Field(min_length=1)
-    draft_revision: int | None = Field(
-        default=None,
+    workflow_id: str = Field(min_length=1)
+    draft_revision: int = Field(
         ge=0,
         description=(
             "Current accepted root-draft revision to verify. Revision 0 is the "
             "non-historical view synthesized from the current saved workflow when "
-            "no draft file exists; the submitted graph must still match that view."
+            "no draft file exists."
         ),
     )
     mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
     retry_of_execution_id: str | None = Field(default=None, min_length=1)
 
-    @field_validator("workflow_name")
+    @field_validator("workflow_id")
     @classmethod
     def validate_workflow_name(cls, value: str) -> str:
         return validate_workflow_id(value)
@@ -45,15 +45,6 @@ class ExecutionRequest(BaseModel):
         return self
 
 
-class DraftGraphMismatchResponse(BaseModel):
-    """Conflict returned when a revision is paired with a different graph."""
-
-    error: Literal["draft_graph_mismatch"] = "draft_graph_mismatch"
-    detail: str
-    workflow_id: str
-    draft_revision: int = Field(ge=0)
-
-
 class ExecutionContext(BaseModel):
     """Stable identity for one accepted execution."""
 
@@ -61,7 +52,7 @@ class ExecutionContext(BaseModel):
 
     execution_id: str = Field(min_length=1)
     workflow_id: str = Field(min_length=1)
-    draft_revision: int | None = Field(default=None, ge=0)
+    draft_revision: int = Field(ge=0)
     mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
     requested_nodes: list[str] | None = None
     retry_of_execution_id: str | None = None

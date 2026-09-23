@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import Any, NamedTuple
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.graph import WorkflowNodeState
@@ -23,10 +23,6 @@ from bioimageflow_server.services.graph_translator import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_artifacts import capture_working_graph, capture_library_sources
-
-if TYPE_CHECKING:
-    from bioimageflow_server.models.settings import Settings
-
 
 class BuildOutput(NamedTuple):
     """Return type of :func:`build_workflow`."""
@@ -42,11 +38,10 @@ def build_workflow(
     *,
     storage_path: Path,
     on_progress: Callable[[Any], None] | None = None,
-    settings: "Settings | None" = None,
 ) -> BuildOutput:
     try:
         return _build_workflow(graph, registry, storage_path=storage_path,
-                               on_progress=on_progress, settings=settings)
+                               on_progress=on_progress)
     except (SyntaxError, ImportError, OSError) as exc:
         return BuildOutput(None, [GraphValidationError(
             type="missing_tool", detail=f"Cannot load workflow tool source: {exc}",
@@ -59,7 +54,6 @@ def _build_workflow(
     *,
     storage_path: Path,
     on_progress: Callable[[Any], None] | None = None,
-    settings: "Settings | None" = None,
 ) -> BuildOutput:
     """Translate ``graph`` into a library :class:`Workflow`.
 
@@ -70,9 +64,7 @@ def _build_workflow(
 
     graph, sources = capture_working_graph(graph, storage_path.parent, registry)
     registry.watch_owned_sources(storage_path.parent, graph)
-    translation = graph_state_to_lib_dict(
-        graph, registry, settings=settings,
-    )
+    translation = graph_state_to_lib_dict(graph, registry)
     errors: list[GraphValidationError] = list(translation.errors)
     # Named workflows own their sources beside their results directory. Nested
     # graphs use that same root storage context and archive-level source table.

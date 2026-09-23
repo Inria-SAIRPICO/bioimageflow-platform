@@ -9,11 +9,11 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import httpx
 import pandas as pd
 import pytest
+from bioimageflow.env_manager import WetlandsEnvManager
 from tests.graph_factory import graph_state
 from tests.platform_fixtures import dataframe_chain, local_registry
 from bioimageflow.cache import cache_load
@@ -234,7 +234,6 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
         registry,
         storage_path=tmp_path,
         dev_mode=False,
-        settings=_settings(),
     )
     assert validation.valid is True
     assert validation.errors == []
@@ -250,7 +249,7 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     store = WorkflowStoreService(root_dir=root, tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+        lambda: store, dev_mode_provider=lambda: False
     )
     graph = dataframe_chain()
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -269,7 +268,7 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     before = accepted.model_dump(mode="json")
 
     cleared = clear_node_cache(
-        ["source"], edited, registry, storage, dev_mode=False, settings=_settings()
+        ["source"], edited, registry, storage, dev_mode=False
     )
     assert cleared["source"].status == "unexecuted"
     assert cleared["offset"].status == "out_of_date"
@@ -278,7 +277,7 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     restarted_registry = local_registry()
     restarted_store = WorkflowStoreService(root_dir=root, tool_registry=restarted_registry)
     restarted_drafts = WorkflowDraftService(
-        lambda: restarted_store, dev_mode_provider=lambda: False, settings_provider=_settings
+        lambda: restarted_store, dev_mode_provider=lambda: False
     )
     restarted = restarted_drafts.get_draft("wf")
     assert restarted.validation.node_statuses["source"].status == "unexecuted"
@@ -345,7 +344,7 @@ asyncio.run(main())
 
     # Once no downstream latest output remains, pending_upstream means unexecuted.
     clear_node_cache(
-        ["offset"], edited, restarted_registry, storage, dev_mode=False, settings=_settings()
+        ["offset"], edited, restarted_registry, storage, dev_mode=False
     )
     without_output = restarted_drafts.get_draft("wf")
     assert without_output.validation.node_statuses["offset"].status == "unexecuted"
@@ -369,7 +368,7 @@ async def test_draft_status_before_any_run_has_no_false_downstream_staleness(
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+        lambda: store, dev_mode_provider=lambda: False
     )
     graph = dataframe_chain()
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -381,14 +380,12 @@ async def test_draft_status_before_any_run_has_no_false_downstream_staleness(
         registry,
         store.get_storage_path("wf"),
         dev_mode=False,
-        settings=_settings(),
     )
     restarted = WorkflowDraftService(
         lambda: WorkflowStoreService(
             root_dir=tmp_path / "workflows", tool_registry=local_registry()
         ),
         dev_mode_provider=lambda: False,
-        settings_provider=_settings,
     ).get_draft("wf")
     assert restarted.validation.node_statuses["source"].status == "unexecuted"
     assert restarted.validation.node_statuses["offset"].status == "unexecuted"
@@ -402,7 +399,7 @@ async def test_draft_get_retries_when_accepted_revision_changes_during_compile(
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False, settings_provider=_settings
+        lambda: store, dev_mode_provider=lambda: False
     )
     graph = dataframe_chain()
     first = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -529,10 +526,11 @@ async def test_execution_manager_run_selected_executes_valid_branch_with_unrelat
         local_registry(),
         _settings(),
         storage_path=tmp_path,
+        environment_manager_provider=WetlandsEnvManager,
     )
 
     with pytest.raises(WorkflowBuildError) as full_error:
-        await manager.start(graph, workflow_id="integration-workflow")
+        await manager.start(graph, workflow_id="integration-workflow", draft_revision=7)
     assert full_error.value.errors
     assert {
         (error.type, error.node) for error in full_error.value.errors
@@ -557,7 +555,7 @@ async def test_execution_manager_run_selected_executes_valid_branch_with_unrelat
     assert not (tmp_path / "views" / "latest" / "unrelated_invalid.bioimageflow-link.json").exists()
 
 
-async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
+async def test_execution_manager_recomputes_after_accepted_graph_changes(
     tmp_path: Path,
 ) -> None:
     registry = local_registry()
@@ -595,17 +593,16 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
         registry,
         storage_path=tmp_path,
         dev_mode=False,
-        settings=_settings(),
     )
     assert validation.valid is True
 
-    await manager.start(original, workflow_id="integration-workflow")
+    await manager.start(original, workflow_id="integration-workflow", draft_revision=1)
     await _drain_manager(manager)
     assert manager.last_result is not None
     assert manager.last_result.node_statuses["source"].cached is False
     assert _cached_dataframe(tmp_path, "source")["value"].tolist() == [2, 3, 4]
 
-    await manager.start(modified, workflow_id="integration-workflow")
+    await manager.start(modified, workflow_id="integration-workflow", draft_revision=2)
     await _drain_manager(manager)
 
     assert manager.last_result is not None
@@ -619,11 +616,22 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     }
 
 
+def _accepted_workflow(
+    tmp_path: Path,
+    registry: Any,
+    graph: GraphState,
+) -> tuple[WorkflowStoreService, int, Path]:
+    store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
+    store.create_workflow(WorkflowCreate(name="test-workflow"))
+    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    accepted = drafts.put_draft("test-workflow", graph=graph, expected_revision=0)
+    return store, accepted.draft_revision, store.get_storage_path("test-workflow")
+
+
 async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path) -> None:
     registry = local_registry()
     graph = dataframe_chain()
-    workflow_store = MagicMock()
-    workflow_store.get_storage_path.return_value = tmp_path
+    workflow_store, draft_revision, storage_path = _accepted_workflow(tmp_path, registry, graph)
     app = create_app(
         AppConfig(
             storage_path=tmp_path,
@@ -639,12 +647,9 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
     )
 
     async with client:
-        validation_response = await client.put(
-            "/api/v1/graph",
-            json=graph.model_dump(mode="json"),
-        )
+        validation_response = await client.get("/api/v1/workflow-drafts/test-workflow")
         assert validation_response.status_code == 200, validation_response.text
-        validation = validation_response.json()
+        validation = validation_response.json()["validation"]
         assert validation["valid"] is True
         assert validation["node_statuses"]["source"]["status"] == "unexecuted"
         assert validation["node_statuses"]["offset"]["status"] == "unexecuted"
@@ -652,8 +657,8 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
         run_response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph.model_dump(mode="json"),
-                "workflow_name": "test-workflow",
+                "workflow_id": "test-workflow",
+                "draft_revision": draft_revision,
             },
         )
         assert run_response.status_code == 202, run_response.text
@@ -666,13 +671,13 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
         assert status["last_result"]["node_statuses"]["offset"]["status"] == "executed"
         assert status["last_result"]["node_statuses"]["offset"]["cached"] is False
 
-        _assert_shifted_cache(tmp_path)
+        _assert_shifted_cache(storage_path)
 
         cached_response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph.model_dump(mode="json"),
-                "workflow_name": "test-workflow",
+                "workflow_id": "test-workflow",
+                "draft_revision": draft_revision,
             },
         )
         assert cached_response.status_code == 202, cached_response.text
@@ -690,8 +695,7 @@ async def test_api_real_dataframe_tool_failure_propagates_node_error(
 ) -> None:
     registry = local_registry()
     graph = _failure_graph()
-    workflow_store = MagicMock()
-    workflow_store.get_storage_path.return_value = tmp_path
+    workflow_store, draft_revision, _storage_path = _accepted_workflow(tmp_path, registry, graph)
     app = create_app(
         AppConfig(
             storage_path=tmp_path,
@@ -710,8 +714,8 @@ async def test_api_real_dataframe_tool_failure_propagates_node_error(
         run_response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph.model_dump(mode="json"),
-                "workflow_name": "test-workflow",
+                "workflow_id": "test-workflow",
+                "draft_revision": draft_revision,
             },
         )
         assert run_response.status_code == 202, run_response.text

@@ -137,8 +137,8 @@ function createCanvasStatusProjectionResource(
     if (disposed.value) return null
     const ownedScoped = node === undefined && isOwnedScopedNodeId(nodeId)
     if (node === undefined && !ownedScoped) return null
-    const contextless = execution.executionId === null
     const originMatches = options.descriptor.kind === 'root'
+      && execution.executionId !== null
       && execution.appliesToCanvas(options.descriptor.canvasId)
     const projected = projectNodeStatus({
       nodeId,
@@ -150,8 +150,6 @@ function createCanvasStatusProjectionResource(
       validationStatus:
         options.validationResult.value?.node_statuses?.[nodeId] ?? null,
       executionOriginMatches: originMatches,
-      executionIsContextless: contextless,
-      allowContextlessLegacyExecution: contextless && originMatches,
       executionDraftRevision: execution.executionDraftRevision,
       acceptedDraftRevision: options.acceptedDraftRevision.value,
     })

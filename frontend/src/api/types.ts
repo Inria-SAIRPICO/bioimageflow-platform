@@ -1982,11 +1982,12 @@ export interface components {
         };
         /** ClearRequest */
         ClearRequest: {
-            graph: components["schemas"]["GraphState"];
             /** Nodes */
             nodes: string[];
-            /** Workflow Name */
-            workflow_name: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision: number;
         };
         /** ClusterConnectionValue */
         ClusterConnectionValue: {
@@ -2503,24 +2504,6 @@ export interface components {
             cluster_root: string;
         };
         /**
-         * DraftGraphMismatchResponse
-         * @description Conflict returned when a revision is paired with a different graph.
-         */
-        DraftGraphMismatchResponse: {
-            /**
-             * Error
-             * @default draft_graph_mismatch
-             * @constant
-             */
-            error: "draft_graph_mismatch";
-            /** Detail */
-            detail: string;
-            /** Workflow Id */
-            workflow_id: string;
-            /** Draft Revision */
-            draft_revision: number;
-        };
-        /**
          * EditorLaunchPhase
          * @enum {string}
          */
@@ -2848,22 +2831,18 @@ export interface components {
         };
         /**
          * ExecutionRequest
-         * @description Execute an inline graph or verify it against an accepted draft revision.
+         * @description Execute one accepted root draft.
          */
         ExecutionRequest: {
-            /** Graph */
-            graph: {
-                [key: string]: unknown;
-            };
             /** Nodes */
             nodes?: string[] | null;
-            /** Workflow Name */
-            workflow_name: string;
+            /** Workflow Id */
+            workflow_id: string;
             /**
              * Draft Revision
-             * @description Current accepted root-draft revision to verify. Revision 0 is the non-historical view synthesized from the current saved workflow when no draft file exists; the submitted graph must still match that view.
+             * @description Current accepted root-draft revision to verify. Revision 0 is the non-historical view synthesized from the current saved workflow when no draft file exists.
              */
-            draft_revision?: number | null;
+            draft_revision: number;
             /**
              * Mode
              * @default normal
@@ -4599,12 +4578,6 @@ export interface components {
              */
             update_mode: ("auto" | "manual") | string;
             /**
-             * Execution Engine
-             * @default sequential
-             * @enum {string}
-             */
-            execution_engine: "sequential" | "parallel";
-            /**
              * New Workflow Execution
              * @default sequential
              * @enum {string}
@@ -5797,7 +5770,6 @@ export type DemoWorkflowStatus = components['schemas']['DemoWorkflowStatus'];
 export type DemoWorkflowsStatus = components['schemas']['DemoWorkflowsStatus'];
 export type DetachWorkflowSourceOperation = components['schemas']['DetachWorkflowSourceOperation'];
 export type DistributedExecutionProfile = components['schemas']['DistributedExecutionProfile'];
-export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
 export type EditorLaunchPhase = components['schemas']['EditorLaunchPhase'];
 export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
 export type EditorOpenNodeRequest = components['schemas']['EditorOpenNodeRequest'];
@@ -7135,7 +7107,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"] | components["schemas"]["DraftGraphMismatchResponse"];
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
                 };
             };
             /** @description Validation Error */

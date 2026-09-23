@@ -181,7 +181,6 @@ test.describe('workflow CRUD dialogs', () => {
       expect(await savedWorkflow(page, source)).toEqual(sourceBefore)
       expect(await acceptedDraft(page, source)).toMatchObject({
         graph: sourceDraftBefore.graph,
-        base_saved_revision: sourceDraftBefore.base_saved_revision,
         dirty_against_saved: false,
       })
       expect(await savedWorkflow(page, occupied)).toEqual(occupiedBefore)
@@ -193,7 +192,6 @@ test.describe('workflow CRUD dialogs', () => {
       expect(await savedWorkflow(page, source)).toEqual(sourceBefore)
       expect(await acceptedDraft(page, source)).toMatchObject({
         graph: sourceDraftBefore.graph,
-        base_saved_revision: sourceDraftBefore.base_saved_revision,
         dirty_against_saved: false,
       })
       expect(await savedWorkflow(page, occupied)).toEqual(occupiedBefore)

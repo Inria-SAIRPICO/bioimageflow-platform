@@ -331,7 +331,7 @@ async function runCore(command: ExecutionCommand) {
       const preparedGraph = cloneJson(currentExecutionGraph())
       const preparedValidation = cloneJson(props.graphSync.validationResult.value)
       const preparedDraftRevision = canvasPersistence.acceptedDraftRevision.value
-      if (targetCanvasId !== null && preparedDraftRevision === null) {
+      if (preparedDraftRevision === null) {
         throw new Error('An accepted draft revision is required for execution')
       }
       const nodes = validationNodes(command)
@@ -374,12 +374,8 @@ async function runCore(command: ExecutionCommand) {
             : {}
         ),
         isTargetActive,
-        ...(targetCanvasId !== null
-          ? {
-              canvasId: targetCanvasId,
-              acceptedDraftRevision: preparedDraftRevision,
-            }
-          : {}),
+        canvasId: targetCanvasId,
+        acceptedDraftRevision: preparedDraftRevision,
       })
       if (!started || !isTargetActive()) return
       emit('run-started')
@@ -393,10 +389,7 @@ async function runCore(command: ExecutionCommand) {
     const status = err?.response?.status
     if (status === 409) {
       const conflictCode = err.response?.data?.error ?? exec.conflictCode
-      if (
-        conflictCode === 'draft_revision_conflict'
-        || conflictCode === 'draft_graph_mismatch'
-      ) {
+      if (conflictCode === 'draft_revision_conflict') {
         emit('toast', {
           severity: 'warn',
           summary: 'Workflow changed before execution',

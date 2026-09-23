@@ -728,7 +728,7 @@ describe('RunButton', () => {
     })
   })
 
-  it.each(['draft_revision_conflict', 'draft_graph_mismatch'])(
+  it.each(['draft_revision_conflict'])(
     'emits a workflow-changed warning for %s',
     async (errorCode) => {
       const { wrapper } = mountButton()

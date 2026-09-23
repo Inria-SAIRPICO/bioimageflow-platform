@@ -924,8 +924,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
         blocked_run = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": graph_document(),
-                "workflow_name": "new",
+                "workflow_id": "new",
                 "draft_revision": 0,
             },
         )
@@ -1614,8 +1613,7 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
             run = await client.post(
                 "/api/v1/execution/run",
                 json={
-                    "graph": saved_graph,
-                    "workflow_name": "wf",
+                    "workflow_id": "wf",
                     "draft_revision": 0,
                 },
             )
