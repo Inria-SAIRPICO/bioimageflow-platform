@@ -1,9 +1,9 @@
 schema_version: 1
 launcher_downloads:
   macos-arm64:
-    version: 0.1.20
-    asset: BioImageFlow-launcher-0.1.20-macos-arm64.zip
-    url: https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases/download/0.1.20/BioImageFlow-launcher-0.1.20-macos-arm64.zip
+    version: 0.1.30
+    asset: BioImageFlow-launcher-0.1.30-macos-arm64.zip
+    url: https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases/download/0.1.30/BioImageFlow-launcher-0.1.30-macos-arm64.zip
   windows-x64:
     version: 0.1.29
     asset: BioImageFlow-launcher-0.1.29-windows-x64.zip
