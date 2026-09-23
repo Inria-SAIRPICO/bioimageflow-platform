@@ -13,6 +13,7 @@ from bioimageflow_server.services.demo_workflows import (
     DemoWorkflowConflictError,
     DemoWorkflowService,
 )
+from bioimageflow_server.services.workflow_artifacts import artifact_hash
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -28,7 +29,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 2
+    assert service.bundle_version == 3
 
     def assert_schema_v2(graph: dict) -> None:
         assert graph["schema_version"] == 2
@@ -90,6 +91,24 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     ).graph.interface.inputs
     assert [item.name for item in parameter_inputs] == ["marker_channel"]
     fish = store.get_workflow("Demo/Fish Analysis")
+    fish_document = store.read_workflow_document("Demo/Fish Analysis")
+    assert fish_document.artifact_hash == artifact_hash(fish_document.graph, [])
+    branches = {
+        node.id: node
+        for node in fish_document.graph.nodes
+        if node.type == "workflow"
+    }
+    assert {
+        node_id: (node.name, node.workflow.display_name)
+        for node_id, node in branches.items()
+    } == {
+        "fols2_marker_spot_analysis": (
+            "FOLS2 Marker Spot Analysis", "FOLS2 Marker Spot Analysis"
+        ),
+        "csf1r_marker_spot_analysis": (
+            "CSF1R Marker Spot Analysis", "CSF1R Marker Spot Analysis"
+        ),
+    }
     assert {item.package_name for item in fish.missing_packages} == {
         "bioimageflow_common_tools",
         "bioimageflow_io_tools",

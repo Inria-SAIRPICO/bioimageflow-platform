@@ -23,6 +23,7 @@ The error indicator opens error history, the theme button selects the appearance
 Each open workflow has a canvas tab.
 Double-click a workflow node to open its contents in another tab.
 The active tab determines what **Nodes**, **Node Data**, Save, undo, redo, and clipboard actions affect.
+After a run, opening a workflow node also shows that instance's internal node statuses; select an internal node to inspect its intermediate results in **Node Data**.
 
 On the canvas you can:
 

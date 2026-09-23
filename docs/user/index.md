@@ -48,7 +48,8 @@ The first run can take longer while BioImageFlow prepares tool environments and 
 2. Follow node status on the canvas and messages in the **Logger** panel.
 3. Select a completed node.
 4. Open **View → Node Data** to inspect its table, image previews, and output paths.
-5. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files.
+5. Double-click **FOLS2 Marker Spot Analysis** or **CSF1R Marker Spot Analysis**, then select an internal node to inspect that branch's intermediate results.
+6. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files.
 
 The latest-output folder can combine the latest successful result from different runs.
 Use **Workflow → Export** when you need independent copies or one complete workflow-and-results bundle.

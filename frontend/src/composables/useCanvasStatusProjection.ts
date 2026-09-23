@@ -20,6 +20,9 @@ import {
   type ProjectedNodeStatus,
 } from '@/sessions/nodeStatusProjection'
 import { useExecutionStore } from '@/stores/execution'
+import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import { resolveNestedExecutionScope, scopedExecutionNodeId } from '@/sessions/nestedExecutionScope'
 
 const CANVAS_STATUS_RESOURCE = 'canvas-status-projection'
 
@@ -108,6 +111,7 @@ function createCanvasStatusProjectionResource(
   options: CanvasStatusProjectionOptions,
 ): CanvasStatusProjectionResource {
   const execution = useExecutionStore()
+  const nestedSessions = useNestedWorkflowSessionsStore()
   const semanticOverrides = ref<Record<string, {
     value: NodeStatus
     presentationStatus: NodeStatus['status']
@@ -138,6 +142,25 @@ function createCanvasStatusProjectionResource(
     const ownedScoped = node === undefined && isOwnedScopedNodeId(nodeId)
     if (node === undefined && !ownedScoped) return null
     const contextless = execution.executionId === null
+    const nestedScope = options.descriptor.kind === 'nested'
+      ? resolveNestedExecutionScope(options.descriptor.sessionId, nestedSessions.sessions)
+      : null
+    const nestedMatchesApplied = nestedScope !== null
+      && nestedScope.sessions.every(session => graphDocumentsEqual(session.draft, session.savedSnapshot))
+    const rootProjection = nestedScope && nestedMatchesApplied
+      ? getCanvasStatusProjection(nestedScope.rootCanvasId)
+      : null
+    const scopedId = scopedExecutionNodeId(nestedScope, nodeId)
+    const rootStatus = rootProjection?.statusForNode(scopedId) ?? null
+    if (
+      semanticOverrides.value[nodeId] === undefined
+      && (rootStatus?.source === 'execution' || rootStatus?.source === 'validation')
+    ) {
+      return {
+        ...rootStatus,
+        node_id: nodeId,
+      }
+    }
     const originMatches = options.descriptor.kind === 'root'
       && execution.appliesToCanvas(options.descriptor.canvasId)
     const projected = projectNodeStatus({
@@ -164,6 +187,10 @@ function createCanvasStatusProjectionResource(
 
   function scopedStatusIds(): Set<string> {
     const ids = new Set<string>()
+    const nestedScope = options.descriptor.kind === 'nested'
+      ? resolveNestedExecutionScope(options.descriptor.sessionId, nestedSessions.sessions)
+      : null
+    const prefix = nestedScope ? `${nestedScope.path.join('/')}/` : ''
     for (const candidates of [
       Object.keys(options.validationResult.value?.node_statuses ?? {}),
       Object.keys(execution.nodeStatuses),
@@ -171,6 +198,10 @@ function createCanvasStatusProjectionResource(
     ]) {
       for (const nodeId of candidates) {
         if (isOwnedScopedNodeId(nodeId)) ids.add(nodeId)
+        if (prefix && nodeId.startsWith(prefix)) {
+          const localId = nodeId.slice(prefix.length)
+          if (isOwnedScopedNodeId(localId)) ids.add(localId)
+        }
       }
     }
     return ids
@@ -232,7 +263,10 @@ function createCanvasStatusProjectionResource(
       const status = statuses.value[nodeId] ?? statusForNode(nodeId)
       if (status?.source !== 'execution') return null
       const current = execution.progress
-      return current?.node_id === nodeId ? current : null
+      const nestedScope = options.descriptor.kind === 'nested'
+        ? resolveNestedExecutionScope(options.descriptor.sessionId, nestedSessions.sessions)
+        : null
+      return current?.node_id === scopedExecutionNodeId(nestedScope, nodeId) ? current : null
     },
     stageSemanticStatus,
     stageCurrentSemanticStatuses,

@@ -49,7 +49,7 @@ class DemoWorkflowService:
         self.store = store
         self.registry = registry
         self.resource_root = resource_root or Path(
-            str(files("bioimageflow_server.data").joinpath("demo_workflows", "v2"))
+            str(files("bioimageflow_server.data").joinpath("demo_workflows", "v3"))
         )
         manifest = self._read_json(self.resource_root / "manifest.json")
         self.bundle_version = int(manifest["bundle_version"])

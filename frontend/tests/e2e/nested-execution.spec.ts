@@ -412,6 +412,99 @@ test('executes nested Direct work and preserves scoped results after save and re
   }
 })
 
+test('opened nested canvases inspect the results of their own instance', async ({ page }) => {
+  const rootName = workflowId('nested_instance_results')
+  const rootDisplayName = `Nested instance results ${rootName}`
+  const graph = nestedExecutionGraph(rootName, rootDisplayName)
+  const first = graph.nodes.find(node => node.id === 'nested_step')
+  if (first?.type !== 'workflow') throw new Error('Expected nested workflow node')
+  first.name = 'First marker analysis'
+  first.workflow.interface.inputs = []
+  first.workflow.nodes.push({
+    type: 'tool',
+    id: 'internal_seed',
+    name: 'Unpublished intermediate',
+    tool_name: 'SeedNumbers',
+    position: [40, 160],
+    parameters: {},
+  })
+  first.workflow.edges.push({
+    type: 'dataframe',
+    id: 'internal-seed-to-increment',
+    source_node: 'internal_seed',
+    target_node: 'nested_increment',
+    target_position: 0,
+  })
+  graph.edges = graph.edges.filter(edge => edge.target_node !== 'nested_step')
+  const second = structuredClone(first)
+  second.id = 'second_nested_step'
+  second.name = 'Second marker analysis'
+  second.position = [410, 410]
+  graph.nodes.push(second)
+  await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+  await createSavedWorkflow(page, graph)
+
+  try {
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, rootName, rootDisplayName)
+    await page.getByTestId('run-workflow-button').click()
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText(
+      'Execution complete', { timeout: 30_000 },
+    )
+
+    for (const instance of [
+      { id: 'nested_step', name: 'First marker analysis', rows: [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']] },
+      { id: 'second_nested_step', name: 'Second marker analysis', rows: [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']] },
+    ]) {
+      await page.locator(`.vue-flow__node[data-id="${instance.id}"]:visible`).dblclick()
+      await expect(page.locator('.dv-tab').filter({ hasText: instance.name })).toBeVisible()
+      const internal = page.locator('.vue-flow__node[data-id="nested_increment"]:visible')
+      await expect(internal.locator('.status-indicator')).toHaveClass(/status-executed/)
+      const projectionRequest = page.waitForRequest(request => (
+        request.url().endsWith('/api/v1/data-table/query')
+        && request.method() === 'POST'
+        && request.postDataJSON()?.sources?.some((source: { node_id: string }) => (
+          source.node_id === `${instance.id}/nested_increment`
+        ))
+      ))
+      await internal.click()
+      await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+      await projectionRequest
+      await expectExactTable(page.getByTestId('data-table-panel'), ['number', 'label', 'number_plus_one'], instance.rows)
+      const intermediate = page.locator('.vue-flow__node[data-id="internal_seed"]:visible')
+      await expect(intermediate.locator('.status-indicator')).toHaveClass(/status-executed/)
+      const intermediateRequest = page.waitForRequest(request => (
+        request.url().endsWith('/api/v1/data-table/query')
+        && request.method() === 'POST'
+        && request.postDataJSON()?.sources?.some((source: { node_id: string }) => (
+          source.node_id === `${instance.id}/internal_seed`
+        ))
+      ))
+      await intermediate.click()
+      await intermediateRequest
+      await expectExactTable(page.getByTestId('data-table-panel'),
+        ['number', 'label'], [['1', 'one'], ['2', 'two'], ['3', 'three']])
+      await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
+    }
+    await page.reload()
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, rootName, rootDisplayName)
+    await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
+    await page.locator('.vue-flow__node[data-id="second_nested_step"]:visible').dblclick()
+    await expect(page.locator('.nested-workflow-editor:visible')).toBeVisible()
+    const reopened = page.locator('.vue-flow__node[data-id="nested_increment"]:visible')
+    await expect(reopened.locator('.status-indicator')).toHaveClass(/status-executed/)
+    await reopened.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    await expectExactTable(page.getByTestId('data-table-panel'),
+      ['number', 'label', 'number_plus_one'],
+      [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']])
+  } finally {
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${rootName}`).catch(() => undefined)
+  }
+})
+
 test('recovers a failed nested Direct child through an applied GUI correction', async ({ page }) => {
   const rootName = workflowId('nested_direct_recovery')
   const rootDisplayName = `Nested recovery ${rootName}`
@@ -480,7 +573,9 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
 
     await page.locator('.vue-flow__node[data-id="nested_step"]').dblclick()
     await expect(page.locator('.nested-workflow-editor')).toBeVisible()
-    await page.locator('.vue-flow__node[data-id="nested_increment"]:visible').click()
+    const nestedIncrement = page.locator('.vue-flow__node[data-id="nested_increment"]:visible')
+    await expect(nestedIncrement.locator('.status-indicator')).toHaveClass(/status-failed/)
+    await nestedIncrement.click()
     await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
     const failRow = page.getByTestId('panel-nodePanel').locator('.param-row')
       .filter({ hasText: 'Raise a controlled execution error' })
@@ -529,6 +624,14 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
       execution_id: secondExecutionId, workflow_id: rootName, draft_revision: corrected.draft_revision,
       node_statuses: { root_seed: { status: 'executed' }, 'nested_step/nested_increment': { status: 'executed' }, root_increment: { status: 'executed' } },
     })
+    await page.locator('.dv-tab').filter({ hasText: 'Stable child' }).click()
+    await expect(nestedIncrement.locator('.status-indicator')).toHaveClass(/status-executed/)
+    await nestedIncrement.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    await expectExactTable(page.getByTestId('data-table-panel'),
+      ['number', 'label', 'number_plus_one'],
+      [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']])
+    await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
     await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']])
     await inspectNodeData(page, 'root_increment', 'root_increment',

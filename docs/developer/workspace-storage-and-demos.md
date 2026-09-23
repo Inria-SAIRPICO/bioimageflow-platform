@@ -106,7 +106,8 @@ The **Storage** preferences report whether the recognized demos are installed an
 Removing demos preserves unrelated workflows under `Demo/`.
 Switching to another existing workspace does not copy demos into it automatically.
 
-The runtime bundle is version 2, and every root and recursively embedded graph is canonical schema v2.
+The runtime bundle is version 3, and every root and recursively embedded graph is canonical schema v2.
+New Fish Analysis installations give the FOLS2 and CSF1R embedded instances distinct display names; existing installed demos remain unchanged.
 The maintained Python examples are exported to bundled workflow definitions with:
 
 ```bash

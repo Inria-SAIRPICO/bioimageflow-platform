@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
 import { useSettingsStore } from '@/stores/settings'
+import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
 import type {
   ToolNodeState,
   WorkflowNodeState,
@@ -26,6 +27,7 @@ import {
   selectedAnchorsAreRelated,
 } from '@/utils/dataTableSources'
 import { canvasSessionRegistry, type CanvasId } from '@/sessions/canvasSessionRegistry'
+import { resolveNestedExecutionScope, scopedExecutionNodeId } from '@/sessions/nestedExecutionScope'
 
 type NodeState = ToolNodeState | WorkflowNodeState
 
@@ -35,6 +37,7 @@ const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
 const settingsStore = useSettingsStore()
+const nestedSessionsStore = useNestedWorkflowSessionsStore()
 const { currentGraph } = useGraphSync()
 const showAll = ref(false)
 const settingsReady = ref(settingsStore.isLoaded)
@@ -43,6 +46,7 @@ interface DataTableEntry {
   key: string
   displayNodeId: string
   dataNodeId: string
+  statusNodeId: string
   label: string
   subtitle: string
   toolName: string | null
@@ -65,6 +69,13 @@ interface DataTableTarget {
 
 const graphNodes = computed(() => currentGraph.value.nodes)
 const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
+const nestedScope = computed(() => {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  const descriptor = canvasId === null ? null : canvasSessionRegistry.get(canvasId)?.descriptor
+  return descriptor?.kind === 'nested'
+    ? resolveNestedExecutionScope(descriptor.sessionId, nestedSessionsStore.sessions)
+    : null
+})
 const displayedNodeIds = computed(() => [...uiStore.selectedNodeIds])
 const nodeById = computed<Record<string, NodeState>>(() => Object.fromEntries(
   graphNodes.value.map((node) => [node.id, node]),
@@ -133,7 +144,8 @@ function entriesForNestedWorkflow(node: NodeState): DataTableEntry[] {
     const entry = byDataNode.get(resolved.dataNodeId) ?? {
       key: `${node.id}:${resolved.dataNodeId}`,
       displayNodeId: node.id,
-      dataNodeId: resolved.dataNodeId,
+      dataNodeId: scopedExecutionNodeId(nestedScope.value, resolved.dataNodeId),
+      statusNodeId: resolved.dataNodeId,
       label: nodeLabel(node.id),
       subtitle: resolved.dataNodeId,
       toolName: resolved.toolName,
@@ -155,7 +167,8 @@ function entryForNode(nodeId: string): DataTableEntry[] {
   return [{
     key: node.id,
     displayNodeId: node.id,
-    dataNodeId: node.id,
+    dataNodeId: scopedExecutionNodeId(nestedScope.value, node.id),
+    statusNodeId: node.id,
     label: nodeLabel(node.id),
     subtitle: node.id,
     toolName: node.type === 'tool' ? node.tool_name : null,
@@ -247,7 +260,7 @@ watch(sourceEntries, (entries) => {
     for (const entry of entries) {
       if (statusProjection === null) continue
       watch(
-        () => statusProjection.statusForNode(entry.dataNodeId)?.status,
+        () => statusProjection.statusForNode(entry.statusNodeId)?.status,
         (next, previous) => {
           if (previous !== 'executed' && next === 'executed') refreshProjection()
           if (next === 'out_of_date' || next === 'unexecuted') {

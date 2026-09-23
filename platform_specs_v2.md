@@ -353,7 +353,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 ### Bundled demo workflows
 
-The application loads demo bundle version 2, whose root graph and every recursively embedded graph use canonical schema version 2.
+The application loads demo bundle version 3, whose root graph and every recursively embedded graph use canonical schema version 2.
+New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The versioned platform templates are generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**, and generation fails if any bundled graph is not recursively schema v2.
 The examples are self-contained definitions that download their public input data into workflow-managed run assets and do not reference repository-local datasets.
 
@@ -384,6 +385,8 @@ Width persistence stores only explicit user choices by workflow/table and stable
 
 Node Data is a read-only inspection surface during execution.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
+In an opened nested canvas, selecting an internal node queries its own result using the full root-relative instance path and root workflow storage identity.
+Nested node status and progress are projected from the same scoped root execution when that editor still presents the applied instance; private edits retain the ordinary validation and cached-result behavior until applied and rerun.
 
 ## 14. API Surface
 

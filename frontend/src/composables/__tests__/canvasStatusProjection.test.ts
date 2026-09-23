@@ -17,6 +17,9 @@ import {
 } from '@/sessions/canvasSessionRegistry'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useNestedWorkflowSessionsStore, type NestedWorkflowSession } from '@/stores/nestedWorkflowSessions'
+import { emptyGraph } from '@/sessions/graphDocument'
+import { resolveNestedExecutionScope, scopedExecutionNodeId } from '@/sessions/nestedExecutionScope'
 
 function node(id: string, enabled = true): CanvasStatusNode {
   return { id, enabled }
@@ -324,6 +327,82 @@ describe('canvas status projection resource', () => {
       status: 'out_of_date',
       source: 'validation',
     })
+  })
+
+  it('projects each nested instance from its own scoped root results', () => {
+    const rootId = canvasIdFromPanelId('workflow:a')
+    const root = useCanvasStatusProjection({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'wf_a' },
+      nodes: ref([node('first'), node('second')]),
+      validationResult: ref(null),
+      acceptedDraftRevision: ref(4),
+    })
+    useUIStore().setCanvasWorkflow(rootId, 'wf_a', 'Workflow A')
+    const sessions = useNestedWorkflowSessionsStore()
+    const graph = emptyGraph('child', 'Child')
+    function session(id: string, parentNodeId: string): NestedWorkflowSession {
+      return {
+        id,
+        owner: { kind: 'root', canvas_id: rootId, workflow_id: 'wf_a' },
+        parentCanvasId: rootId,
+        parentWorkflowName: 'wf_a',
+        parentSourceWorkflowName: null,
+        parentNodeId,
+        parentNodeName: parentNodeId,
+        draft: structuredClone(graph),
+        savedSnapshot: structuredClone(graph),
+        acceptedSnapshot: structuredClone(graph),
+        parentApplyConflict: null,
+        snapshotRevision: 0,
+        updatedAt: '2026-01-01T00:00:00Z',
+        validation: validation({}),
+      }
+    }
+    sessions.sessions = [session('session-first', 'first'), session('session-second', 'second')]
+    sessions.sessions.push({
+      ...session('session-deep', 'inner'),
+      owner: { kind: 'nested', session_id: 'session-first' },
+      parentCanvasId: canvasIdFromPanelId('nested:session-first'),
+    })
+    function childProjection(id: string) {
+      return useCanvasStatusProjection({
+        descriptor: {
+          kind: 'nested',
+          canvasId: canvasIdFromPanelId(`nested:${id}`),
+          sessionId: id,
+          parentCanvasId: rootId,
+        },
+        nodes: ref([node('shared')]),
+        validationResult: ref(validation({ shared: status('shared', 'unexecuted') })),
+        acceptedDraftRevision: ref(null),
+      })
+    }
+    const first = childProjection('session-first')
+    const second = childProjection('session-second')
+    expect(resolveNestedExecutionScope('session-first', sessions.sessions)?.path).toEqual(['first'])
+    expect(scopedExecutionNodeId(
+      resolveNestedExecutionScope('session-deep', sessions.sessions), 'leaf',
+    )).toBe('first/inner/leaf')
+
+    useExecutionStore().applyStatusSnapshot({
+      execution_id: 'exec-a',
+      workflow_id: 'wf_a',
+      draft_revision: 4,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        'first/shared': status('first/shared', 'executed'),
+        'second/shared': status('second/shared', 'failed'),
+      },
+    })
+    expect(first.statusForNode('shared')).toMatchObject({ status: 'executed', source: 'execution' })
+    expect(second.statusForNode('shared')).toMatchObject({ status: 'failed', source: 'execution' })
+    expect(root.statusForNode('first/shared')?.status).toBe('executed')
+
+    sessions.sessions[0]!.draft.display_name = 'Edited child'
+    expect(first.statusForNode('shared')).toMatchObject({ status: 'unexecuted', source: 'validation' })
+    expect(second.statusForNode('shared')).toMatchObject({ status: 'failed', source: 'execution' })
   })
 
   it('does not activate canvases and disposal leaves another resource intact', () => {

@@ -31,7 +31,7 @@ from bioimageflow_server.services.graph_translator import (  # noqa: E402
 from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noqa: E402
 
 
-BUNDLE_VERSION = 2
+BUNDLE_VERSION = 3
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -190,6 +190,15 @@ def _render_definition(
     tool_files = _materialize_custom_tools(library_graph, exported["custom_sources"])
     _annotate_package_requirements(library_graph, bioimageflow_source)
     graph = lib_dict_to_graph_state(library_graph)
+    if definition.template_id == "fish-analysis":
+        branch_names = {
+            "fols2_marker_spot_analysis": "FOLS2 Marker Spot Analysis",
+            "csf1r_marker_spot_analysis": "CSF1R Marker Spot Analysis",
+        }
+        for node in graph.nodes:
+            if node.id in branch_names and node.type == "workflow":
+                node.name = branch_names[node.id]
+                node.workflow.display_name = branch_names[node.id]
     graph_payload = graph.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     def require_schema_v2(value: dict[str, Any]) -> None:
