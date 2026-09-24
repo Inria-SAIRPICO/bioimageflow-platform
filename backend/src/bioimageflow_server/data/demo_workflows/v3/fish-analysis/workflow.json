@@ -1,9 +1,9 @@
 {
-  "artifact_hash": "sha256:cbbacc9e647f1c4e6d3a2e38f4fa0e2b638d84cd787b9b0413afb2497f59be75",
+  "artifact_hash": "sha256:45fd6c3ae0adb2e9812b88f4f2641ef8f2d006982cee7a4d098b6a29bdf0df74",
   "graph": {
     "config": {
       "engine": "wetlands",
-      "execution": "parallel"
+      "execution": "sequential"
     },
     "display_name": "Fish Analysis",
     "edges": [

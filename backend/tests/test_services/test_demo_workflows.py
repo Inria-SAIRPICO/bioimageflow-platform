@@ -94,7 +94,7 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     fish = store.get_workflow("Demo/Fish Analysis")
     fish_document = store.read_workflow_document("Demo/Fish Analysis")
     assert fish_document.artifact_hash == artifact_hash(fish_document.graph, [])
-    assert fish_document.graph.config.execution == "parallel"
+    assert fish_document.graph.config.execution == "sequential"
     branches = {
         node.id: node
         for node in fish_document.graph.nodes

@@ -109,7 +109,7 @@ Switching to another existing workspace does not copy demos into it automaticall
 The runtime bundle is version 3, and every root and recursively embedded graph is canonical schema v2.
 New Fish Analysis installations give the FOLS2 and CSF1R embedded instances distinct display names; existing installed demos remain unchanged.
 Their overlap tables include the source image filename on each row, and the final statistics table includes per-image rows followed by a weighted Global average row.
-The Fish Analysis marker branches use distinct internal node IDs so the currently pinned BioImageFlow runtime can run them in parallel while its branch workers lack nested node path propagation.
+The Fish Analysis marker branches use distinct internal node IDs and sequential execution so the currently pinned BioImageFlow runtime retains scoped result identities and Node Data views; its parallel workers do not yet propagate nested node paths.
 The maintained Python examples and platform-owned Fish Analysis tool sources are exported to bundled workflow definitions with:
 
 ```bash

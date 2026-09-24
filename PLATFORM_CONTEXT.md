@@ -273,7 +273,7 @@ For an API change, trace the backend model and service, router, generated type, 
 - `docs/developer/platform-test-start.md` is the restart entry point for the scoped feature-coverage campaign; its linked plan makes the current agent the focused orchestrator, requires high-reasoning specialist planning and independent review for stale code or refactors, prioritizes main GUI journeys, and retains systematic coverage of every implemented in-scope feature.
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
 - `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
-- Fish Analysis gives its two marker branches distinct internal node IDs to avoid collisions in the pinned BioImageFlow runtime's parallel workers until its nested-node name propagation fix is released.
+- Fish Analysis gives its marker branches distinct internal node IDs and runs sequentially with the pinned BioImageFlow runtime so nested result identities and Node Data views retain their full scoped paths until the library's parallel scope propagation fix is released.
 - `bioimageflow/` may be a local library checkout or link used to inspect the library source and specification; the installed dependency remains the runtime authority selected by the lockfile.
 - `external/wetlands-src` is an optional source-browsing link and must not become a package or runtime dependency.
 
