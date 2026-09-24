@@ -30,7 +30,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **251 V + 243 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **251 / 500 are verified (50.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **254 V + 240 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **254 / 500 are verified (50.8%)**; blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
