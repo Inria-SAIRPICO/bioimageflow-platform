@@ -122,7 +122,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| RT-EXE-016 | Overall execution plan progress and setup phase | P1 | Desktop and webapp GUI/runtime | yes | G | G | V | V | V | in-progress | `9b3cb22`, `7f56806` implementation; `6a3c5df` focused GUI evidence; setup and stale-event gaps remain |
+| RT-EXE-016 | Overall execution plan progress and setup phase | P1 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `9b3cb22`, `7f56806` implementation; `6a3c5df`, `18aa760` focused GUI evidence; setup presentation uses a controlled local retained-run fixture |
 | RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | G | G | G | G | G | gap | `4a2a344`, `2dbdd7f` implementation; scenario audit pending |
 | RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | G | G | G | G | G | gap | `bfd1ab5` implementation; scenario audit pending |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f`; accepted-draft router selectors `71b82da` |
