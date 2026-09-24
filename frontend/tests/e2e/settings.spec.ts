@@ -100,6 +100,145 @@ test.describe('Settings Panel', () => {
     await expect(forget).toContainText('will not be registered automatically again')
   })
 
+  test('Image Viewers saves an ordered desktop settings journey and restores it after reopen', async ({ page }) => {
+    type Environment = Record<string, any>
+    type Rule = { id: string; pattern: string; environment_id: string; enabled: boolean; reader_id: string | null }
+    const environments: Environment[] = []
+    const rules: Rule[] = []
+    const operations: Record<string, any>[] = []
+    const requests: { path: string; method: string; body: any }[] = []
+    let revision = 0
+    let defaultId: string | null = null
+    const snapshot = () => ({ revision, environments, default_environment_id: defaultId, filename_rules: rules, operations })
+    const makeEnvironment = (name: string, path: string, ownership: 'external' | 'managed', id: string): Environment => ({
+      id, registration_order: environments.length, name, ownership, kind: ownership === 'managed' ? 'conda' : 'venv',
+      root: path, interpreter: `${path}/bin/python`, interpreter_identity: `${path}/bin/python`,
+      interpreter_fingerprint: `fingerprint-${id}`, launch: { strategy: ownership === 'managed' ? 'wetlands-managed' : 'direct', argv_prefix: [`${path}/bin/python`] },
+      managed: ownership === 'managed' ? {
+        wetlands_name: `napari-${id}`, installation_generation: null,
+        recipe: { source: 'managed', preset: 'default', python: '==3.12.*', napari: '0.9.1', qt: 'PyQt6', requested_packages: [], channels: ['conda-forge'] },
+      } : null,
+      state: ownership === 'managed' ? 'failed' : 'ready', inventory: null,
+    })
+    await page.route('**/api/v1/napari/**', async route => {
+      const url = new URL(route.request().url())
+      const path = url.pathname
+      const method = route.request().method()
+      if (!path.startsWith('/api/v1/napari/environments') && !path.startsWith('/api/v1/napari/environment-settings') && path !== '/api/v1/napari/status') {
+        await route.continue()
+        return
+      }
+      const body = route.request().postDataJSON() ?? null
+      requests.push({ path, method, body })
+      if (path === '/api/v1/napari/status') {
+        await route.fulfill({ json: { status: 'stopped', running: false } })
+      } else if (path === '/api/v1/napari/environments' && method === 'GET') {
+        await route.fulfill({ json: snapshot() })
+      } else if (path === '/api/v1/napari/environments' && method === 'POST') {
+        if (environments.some(item => item.name.toLowerCase() === body.name.toLowerCase())) {
+          await route.fulfill({ status: 409, json: { error: 'duplicate_environment_name', detail: 'environment name is already registered' } })
+          return
+        }
+        const environment = makeEnvironment(body.name, body.path, 'external', `00000000-0000-4000-8000-00000000000${environments.length + 1}`)
+        environments.push(environment)
+        await route.fulfill({ status: 201, json: { revision: ++revision, environment } })
+      } else if (path === '/api/v1/napari/environments/managed' && method === 'POST') {
+        const environment = makeEnvironment(body.name, 'managed-pending:viewer', 'managed', '00000000-0000-4000-8000-000000000003')
+        const operation = { id: '00000000-0000-4000-8000-000000000004', environment_id: environment.id, kind: 'create', state: 'failed', progress: 0, message: 'Setup failed', error: { code: 'napari_provision_failed', detail: 'solver unavailable' } }
+        environments.push(environment)
+        operations.push(operation)
+        revision += 2
+        await route.fulfill({ status: 202, json: { revision, environment, operation } })
+      } else if (path.endsWith('/retry') && method === 'POST') {
+        const environment = environments.find(item => path.includes(item.id))!
+        const operation = { ...operations[0], id: '00000000-0000-4000-8000-000000000005', kind: 'retry' }
+        operations.push(operation)
+        revision += 2
+        await route.fulfill({ status: 202, json: { revision, environment, operation } })
+      } else if (path.includes('/operations/') && method === 'GET') {
+        const operation = operations.find(item => path.endsWith(item.id))!
+        await route.fulfill({ json: { revision, environment: environments.find(item => item.id === operation.environment_id), operation } })
+      } else if (path === '/api/v1/napari/environment-settings/default' && method === 'PUT') {
+        defaultId = body.environment_id
+        await route.fulfill({ json: { ...snapshot(), revision: ++revision } })
+      } else if (path === '/api/v1/napari/environment-settings/filename-rules' && method === 'POST') {
+        const created = { id: `00000000-0000-4000-8000-00000000001${rules.length + 1}`, pattern: body.mode === 'pattern' ? body.value : `*.${body.value.replace(/^\./, '')}`, environment_id: body.environment_id, enabled: true, reader_id: body.reader_id }
+        rules.push(created)
+        await route.fulfill({ status: 201, json: { revision: ++revision, rule: created } })
+      } else if (path === '/api/v1/napari/environment-settings/filename-rules' && method === 'PUT') {
+        rules.splice(0, rules.length, ...body.rules)
+        await route.fulfill({ json: { ...snapshot(), revision: ++revision } })
+      } else {
+        await route.continue()
+      }
+    })
+
+    await page.goto('/')
+    await openSettings(page)
+    const dialog = page.locator('[data-testid="settings-panel"]')
+    await dialog.getByText('Image Viewers', { exact: true }).click()
+    const section = dialog.locator('[data-testid="image-viewers-section"]')
+    await expect(section.getByText('No napari environments are registered.')).toBeVisible()
+
+    for (const [name, path] of [['Microscopy', '/viewer with spaces'], ['Labels', '/labels-viewer']]) {
+      await section.getByRole('textbox', { name: 'Existing environment name' }).fill(name)
+      await section.getByRole('textbox', { name: 'Environment path' }).fill(path)
+      await section.getByRole('button', { name: 'Add existing', exact: true }).click()
+      await expect(section.getByText(name, { exact: true }).first()).toBeVisible()
+    }
+    await section.getByRole('combobox', { name: 'Default environment' }).click()
+    await page.getByRole('option', { name: 'Microscopy' }).click()
+    await expect.poll(() => defaultId).toBe(environments[0]!.id)
+
+    await section.getByRole('textbox', { name: 'Extension or filename pattern' }).fill('.tif')
+    await section.getByRole('combobox', { name: 'Preferred environment', exact: true }).click()
+    await page.getByRole('option', { name: 'Microscopy' }).last().click()
+    await section.getByRole('button', { name: 'Add rule' }).click()
+    await expect(section.locator('.rule').first()).toContainText('*.tif')
+    await section.getByRole('combobox', { name: 'Filename rule mode' }).click()
+    await page.getByRole('option', { name: 'Filename pattern' }).click()
+    await section.getByRole('textbox', { name: 'Extension or filename pattern' }).fill('*_labels.tif')
+    await section.getByRole('combobox', { name: 'Preferred environment', exact: true }).click()
+    await page.getByRole('option', { name: 'Labels' }).last().click()
+    await section.getByRole('textbox', { name: 'Reader plugin ID (optional)' }).fill('labels-reader')
+    await section.getByRole('button', { name: 'Add rule' }).click()
+    await section.locator('.rule').nth(1).locator('button[title="Move rule up"]').click()
+    await expect(section.locator('.rule').first()).toContainText('*_labels.tif')
+    expect(rules.map(rule => [rule.pattern, rule.environment_id, rule.reader_id])).toEqual([
+      ['*_labels.tif', environments[1]!.id, 'labels-reader'], ['*.tif', environments[0]!.id, null],
+    ])
+
+    await section.getByRole('textbox', { name: 'Existing environment name' }).fill('microscopy')
+    await section.getByRole('textbox', { name: 'Environment path' }).fill('/other-viewer')
+    await section.getByRole('button', { name: 'Add existing', exact: true }).click()
+    await expect(section.getByRole('alert')).toContainText('environment name is already registered')
+    expect(environments).toHaveLength(2)
+
+    await section.getByRole('textbox', { name: 'Managed environment name' }).fill('Managed retry')
+    await section.getByRole('button', { name: 'Create environment' }).click()
+    await expect(section).toContainText('solver unavailable')
+    const managed = section.locator('[data-testid="napari-environment-card-00000000-0000-4000-8000-000000000003"]')
+    await managed.getByText('Details').click()
+    await expect(managed.getByRole('button', { name: 'Retry' })).toBeVisible()
+    await expect(managed.getByRole('button', { name: 'Delete managed installation' })).toBeVisible()
+    await expect(managed.getByRole('button', { name: 'Forget' })).toHaveCount(0)
+    await managed.getByRole('button', { name: 'Retry' }).click()
+    await expect.poll(() => operations.filter(item => item.kind === 'retry').length).toBe(1)
+    expect(environments).toHaveLength(3)
+    const external = section.locator('[data-testid="napari-environment-card-00000000-0000-4000-8000-000000000001"]')
+    await external.getByText('Details').click()
+    await expect(external.getByRole('button', { name: 'Forget' })).toBeVisible()
+    await expect(external.getByRole('button', { name: 'Delete managed installation' })).toHaveCount(0)
+
+    await dialog.locator('[data-testid="settings-close"]').click()
+    await openSettings(page)
+    await dialog.getByText('Image Viewers', { exact: true }).click()
+    await expect(section.locator('.rule').first()).toContainText('*_labels.tif')
+    await expect(section.getByRole('combobox', { name: 'Default environment' })).toContainText('Microscopy')
+    await expect(section.locator('[data-testid="napari-environment-card-00000000-0000-4000-8000-000000000003"]')).toContainText('Managed retry')
+    expect(requests.some(request => request.path.endsWith('/retry') && request.body.expected_revision > 0)).toBe(true)
+  })
+
   test('Display exposes the persisted Node Data page-size preference', async ({ page }) => {
     await page.goto('/')
     await openSettings(page)

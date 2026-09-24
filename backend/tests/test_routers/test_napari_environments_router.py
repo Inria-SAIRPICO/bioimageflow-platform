@@ -36,7 +36,7 @@ def _venv(root: Path) -> Path:
 
 
 async def _client(
-    tmp_path: Path, mode: str, probe_runner=None
+    tmp_path: Path, mode: str, probe_runner=None, manager=None
 ) -> tuple[httpx.AsyncClient, SettingsStore]:
     store = SettingsStore(
         tmp_path / f"{mode}-settings.json",
@@ -44,7 +44,9 @@ async def _client(
     )
     await store.load()
     service = NapariEnvironmentService(
-        store, **({"probe_runner": probe_runner} if probe_runner else {})
+        store,
+        **({"probe_runner": probe_runner} if probe_runner else {}),
+        **({"environment_manager_provider": lambda: manager} if manager else {}),
     )
     app = create_app(
         AppConfig(
@@ -94,6 +96,146 @@ async def test_routes_return_typed_revisioned_mutations(tmp_path: Path) -> None:
         listing = await client.get("/api/v1/napari/environments")
         assert listing.status_code == 200
         assert listing.json()["revision"] == 2
+
+
+async def test_settings_journey_persists_rules_and_recovers_failed_managed_setup(
+    tmp_path: Path,
+) -> None:
+    class FailingManager:
+        def provision(self, *_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("solver unavailable")
+
+        def managed_environments(self) -> tuple[object, ...]:
+            return ()
+
+    manager = FailingManager()
+    external_path = _venv(tmp_path / "external viewer")
+    labels_path = _venv(tmp_path / "labels viewer")
+    client, _store = await _client(tmp_path, "desktop", manager=manager)
+    async with client:
+        first = await client.post(
+            "/api/v1/napari/environments",
+            json={"name": "Microscopy", "path": str(external_path), "expected_revision": 0},
+        )
+        assert first.status_code == 201
+        first_id = first.json()["environment"]["id"]
+        first_identity = first.json()["environment"]["interpreter_identity"]
+        second = await client.post(
+            "/api/v1/napari/environments",
+            json={"name": "Labels", "path": str(labels_path), "expected_revision": 1},
+        )
+        assert second.status_code == 201
+        second_id = second.json()["environment"]["id"]
+
+        default = await client.put(
+            "/api/v1/napari/environment-settings/default",
+            json={"environment_id": first_id, "expected_revision": 2},
+        )
+        assert default.status_code == 200
+        broad = await client.post(
+            "/api/v1/napari/environment-settings/filename-rules",
+            json={"value": ".tif", "environment_id": first_id, "expected_revision": 3},
+        )
+        assert broad.status_code == 201
+        specific = await client.post(
+            "/api/v1/napari/environment-settings/filename-rules",
+            json={
+                "value": "*_labels.tif",
+                "mode": "pattern",
+                "environment_id": second_id,
+                "reader_id": "labels-reader",
+                "expected_revision": 4,
+            },
+        )
+        assert specific.status_code == 201
+        broad_rule = broad.json()["rule"]
+        specific_rule = specific.json()["rule"]
+        ordered = await client.put(
+            "/api/v1/napari/environment-settings/filename-rules",
+            json={"rules": [specific_rule, broad_rule], "expected_revision": 5},
+        )
+        assert ordered.status_code == 200
+        assert [rule["id"] for rule in ordered.json()["filename_rules"]] == [
+            specific_rule["id"],
+            broad_rule["id"],
+        ]
+        preview = await client.post(
+            "/api/v1/napari/environment-settings/filename-rules/preview",
+            json={"filename": "SAMPLE_LABELS.TIF"},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["winner_rule_id"] == specific_rule["id"]
+
+        duplicate = await client.post(
+            "/api/v1/napari/environment-settings/filename-rules",
+            json={"value": ".TIF", "environment_id": second_id, "expected_revision": 6},
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["error"] == "duplicate_filename_pattern"
+        assert (await client.get("/api/v1/napari/environments")).json()["revision"] == 6
+
+        failed = await client.post(
+            "/api/v1/napari/environments/managed",
+            json={"name": "Managed retry", "expected_revision": 6},
+        )
+        assert failed.status_code == 202
+        failed_body = failed.json()
+        managed_id = failed_body["environment"]["id"]
+        assert failed_body["environment"]["state"] == "failed"
+        assert failed_body["operation"]["error"]["code"] == "napari_provision_failed"
+        assert failed_body["environment"]["managed"]["installation_generation"] is None
+
+        external_delete = await client.delete(
+            f"/api/v1/napari/environments/managed/{first_id}"
+            f"?expected_revision={failed_body['revision']}"
+        )
+        assert external_delete.status_code == 422
+        assert external_delete.json()["error"] == "napari_managed_delete_forbidden"
+        managed_forget = await client.delete(
+            f"/api/v1/napari/environments/{managed_id}?expected_revision={failed_body['revision']}"
+        )
+        assert managed_forget.status_code == 422
+        assert managed_forget.json()["error"] == "napari_managed_forget_forbidden"
+
+    reopened, _store = await _client(tmp_path, "desktop", manager=manager)
+    async with reopened:
+        listing = (await reopened.get("/api/v1/napari/environments")).json()
+        assert listing["default_environment_id"] == first_id
+        assert [rule["id"] for rule in listing["filename_rules"]] == [
+            specific_rule["id"],
+            broad_rule["id"],
+        ]
+        assert [(item["id"], item["ownership"]) for item in listing["environments"]] == [
+            (first_id, "external"),
+            (second_id, "external"),
+            (managed_id, "managed"),
+        ]
+        assert listing["environments"][0]["interpreter_identity"] == first_identity
+        assert listing["environments"][2]["state"] == "failed"
+
+        retried = await reopened.post(
+            f"/api/v1/napari/environments/{managed_id}/retry",
+            json={"expected_revision": listing["revision"]},
+        )
+        assert retried.status_code == 202
+        assert retried.json()["environment"]["id"] == managed_id
+        assert retried.json()["operation"]["kind"] == "retry"
+        assert retried.json()["operation"]["state"] == "failed"
+        after_retry = (await reopened.get("/api/v1/napari/environments")).json()
+        assert after_retry["default_environment_id"] == first_id
+        assert [rule["id"] for rule in after_retry["filename_rules"]] == [
+            specific_rule["id"],
+            broad_rule["id"],
+        ]
+        assert len(after_retry["environments"]) == 3
+
+        forgotten = await reopened.delete(
+            f"/api/v1/napari/environments/{second_id}?expected_revision={after_retry['revision']}"
+        )
+        assert forgotten.status_code == 200
+        assert [rule["id"] for rule in forgotten.json()["filename_rules"]] == [broad_rule["id"]]
+        assert forgotten.json()["default_environment_id"] == first_id
+        assert labels_path.exists()
 
 
 async def test_openapi_exposes_typed_managed_operation_routes(tmp_path: Path) -> None:
