@@ -222,6 +222,21 @@ def _render_definition(
                            tool_module="tools.fish_label_overlaps")
             overlap.pop("tool_package", None)
             overlap.pop("tool_package_version", None)
+            # The pinned runtime loses nested scope in parallel worker threads.
+            # Give each branch distinct structural node IDs so provider results
+            # remain distinct while the branches execute concurrently.
+            prefix = branch["id"].split("_", 1)[0]
+            renamed = {node["id"]: f"{prefix}_{node['id']}" for node in child["nodes"]}
+            for node in child["nodes"]:
+                node["id"] = renamed[node["id"]]
+            for edge in child["edges"]:
+                edge["source_node"] = renamed[edge["source_node"]]
+                edge["target_node"] = renamed[edge["target_node"]]
+            for input_port in child["interface"]["inputs"]:
+                for target in input_port["targets"]:
+                    target["node"] = renamed[target["node"]]
+            for output_port in child["interface"]["outputs"]:
+                output_port["source"]["node"] = renamed[output_port["source"]["node"]]
         graph_payload["interface"]["outputs"].append({
             "id": "output-source-image", "name": "source_image",
             "schema": {"type": "str", "image_spec": None},

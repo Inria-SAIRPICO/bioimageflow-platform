@@ -94,6 +94,7 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     fish = store.get_workflow("Demo/Fish Analysis")
     fish_document = store.read_workflow_document("Demo/Fish Analysis")
     assert fish_document.artifact_hash == artifact_hash(fish_document.graph, [])
+    assert fish_document.graph.config.execution == "parallel"
     branches = {
         node.id: node
         for node in fish_document.graph.nodes
@@ -120,9 +121,11 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     assert "AverageSpotsPerNucleus" not in {item.tool_name for item in fish.missing_tools}
     assert "FishLabelOverlaps" not in {item.tool_name for item in fish.missing_tools}
     for branch in branches.values():
-        overlap = next(node for node in branch.workflow.nodes if node.id == "measure_nucleus_overlaps")
+        overlap = next(node for node in branch.workflow.nodes if node.id.endswith("measure_nucleus_overlaps"))
         assert overlap.tool_name == "FishLabelOverlaps"
         assert any(output.name == "source_image" for output in branch.workflow.interface.outputs)
+    branch_node_ids = [node.id for branch in branches.values() for node in branch.workflow.nodes]
+    assert len(branch_node_ids) == len(set(branch_node_ids))
 
 
 def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> None:
