@@ -30,7 +30,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **256 V + 238 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **256 / 500 are verified (51.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **261 V + 233 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **261 / 500 are verified (52.2%)**; blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -41,7 +41,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GUI-SHL-009 | Image Viewers environment settings, defaults, and filename rules | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `dfb5cb3` implementation; scenario audit pending |
+| GUI-SHL-009 | Image Viewers environment settings, defaults, and filename rules | P1 | Desktop GUI/API; restricted webapp | no | V | V | V | V | V | verified | `dfb5cb3` implementation; controlled GUI and persisted API evidence `198e6f6` |
 | GUI-SHL-001 | Default docks, menu, and panel visibility | P1 | Desktop and webapp GUI | no | G | N (no invalid-input or refused-action contract for shell layout) | N (no cancellation or recovery lifecycle for static shell layout) | G | N (no identity, concurrency, ownership, or permission boundary for shell layout) | gap | `fcb4408` inspection |
 | GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
 | GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | V | V | V | verified | `dd20821`, `75be9c2`, `301c19c` |
