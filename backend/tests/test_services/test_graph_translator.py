@@ -16,6 +16,7 @@ import pytest
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
 from bioimageflow_server.services.graph_translator import (
+    _default_positions,
     _detect_missing_packages,
     _detect_missing_tools,
     collect_required_packages,
@@ -419,6 +420,63 @@ def test_library_import_stacks_disconnected_components_below_primary_graph() -> 
         "target": (320.0, 0.0),
         "orphan": (0.0, 440.0),
         "source": (0.0, 0.0),
+    }
+
+
+def test_library_import_layout_is_recursive_deterministic_and_graph_scoped() -> None:
+    child = _graph("child", [_tool("branch_a"), _tool("orphan"), _tool("source")])
+    child["edges"] = [{
+        "type": "dataframe", "id": "child-edge", "source_node": "source",
+        "target_node": "branch_a", "target_position": 0,
+    }]
+    parent = _graph("parent", [
+        _tool("sink"), _tool("branch_b"), _tool("source"), _tool("branch_a"),
+        {"type": "workflow", "id": "nested", "name": "Nested", "position": [20, 40],
+         "workflow": child, "bindings": {}},
+    ])
+    parent["edges"] = [
+        {"type": "dataframe", "id": "source-a", "source_node": "source",
+         "target_node": "branch_a", "target_position": 0},
+        {"type": "dataframe", "id": "source-b", "source_node": "source",
+         "target_node": "branch_b", "target_position": 0},
+        {"type": "dataframe", "id": "a-sink", "source_node": "branch_a",
+         "target_node": "sink", "target_position": 0},
+    ]
+    library = graph_state_to_lib_dict(GraphState.model_validate(parent), _registry()).lib_dict
+
+    first = lib_dict_to_graph_state(library)
+    second = lib_dict_to_graph_state(library)
+
+    assert first == second
+    assert {node.id: node.position for node in first.nodes} == {
+        "sink": (640.0, 110.0),
+        "branch_b": (320.0, 0.0),
+        "source": (0.0, 110.0),
+        "branch_a": (320.0, 220.0),
+        "nested": (0.0, 660.0),
+    }
+    nested = next(node for node in first.nodes if node.id == "nested")
+    assert nested.type == "workflow"
+    assert {node.id: node.position for node in nested.workflow.nodes} == {
+        "branch_a": (320.0, 0.0),
+        "orphan": (0.0, 440.0),
+        "source": (0.0, 0.0),
+    }
+
+
+def test_library_layout_handles_encoded_ids_and_cycle_remnants_deterministically() -> None:
+    portable = {
+        "nodes": [{"name": name} for name in ("a/b", "b%20c", "tail")],
+        "edges": [
+            {"source_node": "a/b", "target_node": "b%20c"},
+            {"source_node": "b%20c", "target_node": "a/b"},
+        ],
+    }
+
+    assert _default_positions(portable) == _default_positions(portable) == {
+        "a/b": (0.0, 0.0),
+        "b%20c": (0.0, 220.0),
+        "tail": (0.0, 660.0),
     }
 
 
