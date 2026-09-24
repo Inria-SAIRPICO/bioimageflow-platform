@@ -24,3 +24,9 @@ At patch-equivalent task revision, exact Chromium cancellation passed in 39s and
 `scripts/test check frontend` passed in 26s with 1,313 units plus lint/type/build; `scripts/test check cross-browser-smoke` passed 18/18 Chromium and 18/18 Firefox in 112s; `scripts/test check campaign` passed in under 1s at 244/500 overall and 222/224 primary GUI.
 An earlier `scripts/test check backend` attempt on intermediate task content ended red in 135s: 1,792 passed, one obsolete fixture metadata assertion failed, two tests could not bind localhost in the restricted sandbox, and nine external tests were deselected. The corrected exact fixture selection passed with local sockets permitted; the full backend lane was not repeated, so it is not claimed as passed.
 Sol/high planning and independent Astra/high review approved the opt-in fixture contract; no production refactor was needed. RT-EXE-016.F/P/B are verified; setup-phase and selected/cached plan success plus visible stale-event refusal remain S/R gaps. No full suite or external certification ran.
+
+## Current-revision nested-result and image-viewer spot checks — `9c4a435`
+
+`scripts/test focus e2e tests/e2e/nested-execution.spec.ts:414 --project=chromium` passed 1/1 in 18s, and the same exact selector in Firefox passed 1/1 in 35s.
+`scripts/test focus e2e tests/e2e/avivator.spec.ts --project=chromium --grep 'opens a converted OME-TIFF image inside the Dockview panel'` passed 1/1 in 21s, and its Firefox counterpart passed 1/1 in 27s.
+All four runs used the current source revision, had no retries or skips, and used local-server access; they recheck WF-REC-012 and RT-RES-007 GUI success/identity paths, not every historical boundary or a complete browser lane.

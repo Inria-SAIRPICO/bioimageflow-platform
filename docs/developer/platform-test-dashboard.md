@@ -103,7 +103,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-009 | Nested conflict waits for explicit choice | P1 | Nested GUI/session coordinator | yes | V | V | V | V | V | verified | `d86c9b0` |
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `f920c9b`, `6025ee6` |
 | WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `cf794fb`, `6025ee6` |
-| WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f` |
+| WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f`; exact nested-instance GUI recheck `9c4a435` |
 | WF-REC-013 | Semantic operation-batch atomicity | P1 | Draft operation API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | G | N (cycle insertion is refused atomically before a recovery lifecycle begins) | G | G | gap | `fcb4408` inspection |
 | WF-SRC-011 | Import viewing readiness and setup guidance without blocking execution | P1 | Desktop GUI/import/API | no | G | G | G | N (the guidance message is transient; imported workflow persistence is WF-SRC-008) | G | gap | `6111f84` implementation; scenario audit pending |
@@ -147,7 +147,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `7ab16e6`, `af1951b`, `bfb6197` |
+| RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `7ab16e6`, `af1951b`, `bfb6197`; exact viewer GUI recheck `9c4a435` |
 | RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
