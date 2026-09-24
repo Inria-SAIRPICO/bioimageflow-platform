@@ -30,3 +30,10 @@ Sol/high planning and independent Astra/high review approved the opt-in fixture 
 `scripts/test focus e2e tests/e2e/nested-execution.spec.ts:414 --project=chromium` passed 1/1 in 18s, and the same exact selector in Firefox passed 1/1 in 35s.
 `scripts/test focus e2e tests/e2e/avivator.spec.ts --project=chromium --grep 'opens a converted OME-TIFF image inside the Dockview panel'` passed 1/1 in 21s, and its Firefox counterpart passed 1/1 in 27s.
 All four runs used the current source revision, had no retries or skips, and used local-server access; they recheck WF-REC-012 and RT-RES-007 GUI success/identity paths, not every historical boundary or a complete browser lane.
+
+## Current local execution selector rechecks — `71b82da`
+
+`scripts/test focus backend tests/test_integration/test_real_execution.py::test_execution_manager_runs_real_dataframe_workflow_and_updates_cache` passed 1/1 in 44s, and `::test_api_runs_real_dataframe_workflow_and_reuses_cache` passed 1/1 in 5s.
+`scripts/test focus backend tests/test_services/test_graph_builder.py::test_built_workflow_uses_wetlands` passed 1/1 in 6s.
+`scripts/test focus backend tests/test_routers/test_execution_router.py -k 'run_selected_uses_accepted_draft_graph or run_rejects_stale_draft_before_execution_side_effects'` passed 2/2 in 6s, with 45 unrelated tests deselected by the exact selection.
+These source-current selectors check Direct computation/cache, automatic worker routing, and accepted-draft/stale-revision boundaries; the real-worker GUI/PID and cancellation evidence is separately recorded at `6a3c5df`, and no broad backend or browser lane was run for this read-only revalidation.
