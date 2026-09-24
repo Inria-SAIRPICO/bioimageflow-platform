@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import ConfirmDialog from 'primevue/confirmdialog'
 import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
 
 import StorageSection from '../StorageSection.vue'
 import { getDemoWorkflowsStatus } from '@/api/demoWorkflows'
+import { useWorkflowStore } from '@/stores/workflow'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn(),
@@ -101,5 +104,62 @@ describe('StorageSection demo workflows', () => {
     )
     expect(wrapper.get('[data-testid="demo-workflows-install"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="demo-workflows-remove"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows one confirmation and sends one deletion per installed demo', async () => {
+    vi.mocked(getDemoWorkflowsStatus).mockResolvedValue({
+      bundle_version: 2,
+      status: 'installed',
+      workflows: ['Demo/Fish Analysis', 'Demo/Parameters Space Exploration'].map((workflow_id) => ({
+        id: workflow_id,
+        version: 1,
+        workflow_id,
+        display_name: workflow_id,
+        status: 'installed' as const,
+        installed_version: 1,
+        identity_generation: 1,
+      })),
+      can_install: false,
+      can_remove: true,
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    vi.spyOn(useWorkflowStore(), 'fetchWorkflowTree').mockResolvedValue([])
+    const deleted: string[] = []
+    const onDelete = (event: Event) => {
+      const detail = (event as CustomEvent<{ workflowName: string; resolve: () => void }>).detail
+      deleted.push(detail.workflowName)
+      detail.resolve()
+    }
+    window.addEventListener('bioimageflow:request-delete-workflow', onDelete)
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const wrapper = mount(defineComponent({
+      render: () => h('div', [
+        h(ConfirmDialog, { group: 'app' }),
+        h(ConfirmDialog),
+        h(StorageSection, { modelValue: settings }),
+      ]),
+    }), {
+      attachTo: host,
+      global: { plugins: [pinia, PrimeVue, ConfirmationService, ToastService] },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="demo-workflows-remove"]').trigger('click')
+      await flushPromises()
+      expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1)
+      const accept = [...document.querySelectorAll('button')]
+        .find(button => button.textContent?.trim() === 'Yes')
+      expect(accept).toBeDefined()
+      accept?.click()
+      await flushPromises()
+      expect(deleted).toEqual(['Demo/Fish Analysis', 'Demo/Parameters Space Exploration'])
+    } finally {
+      wrapper.unmount()
+      host.remove()
+      window.removeEventListener('bioimageflow:request-delete-workflow', onDelete)
+    }
   })
 })

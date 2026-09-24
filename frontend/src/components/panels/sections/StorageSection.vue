@@ -193,6 +193,7 @@ function confirmRemoveDemos(): void {
     return
   }
   confirm.require({
+    group: 'app',
     header: 'Remove example workflows',
     message: `Remove ${installedDemoCount.value} installed example workflow${installedDemoCount.value === 1 ? '' : 's'} and their server-managed output caches? Your other workflows in the Demo folder will be kept.`,
     icon: 'pi pi-exclamation-triangle',

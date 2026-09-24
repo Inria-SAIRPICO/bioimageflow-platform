@@ -1576,7 +1576,7 @@ defineExpose({ dockviewApi })
       />
     </div>
     <Toast position="bottom-right" />
-    <ConfirmDialog />
+    <ConfirmDialog group="app" />
     <Dialog
       :visible="rootCloseDialogVisible"
       modal

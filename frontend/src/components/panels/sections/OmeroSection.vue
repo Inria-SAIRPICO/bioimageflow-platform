@@ -138,6 +138,7 @@ function removeRow(index: number) {
   const message = `Remove OMERO instance '${displayName(row)}'? Stored credentials will be deleted.`
   if (confirm) {
     confirm.require({
+      group: 'app',
       message,
       header: 'Remove OMERO instance',
       icon: 'pi pi-exclamation-triangle',
