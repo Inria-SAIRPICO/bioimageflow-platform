@@ -30,7 +30,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **246 V + 248 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **246 / 500 are verified (49.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **251 V + 243 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **251 / 500 are verified (50.2%)**; blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -77,7 +77,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| WF-LIF-015 | Confirmed workflow-format migration and backups | P1 | Desktop and webapp GUI/API/storage | no | G | G | G | G | G | gap | `4a2a344` implementation; scenario audit pending |
+| WF-LIF-015 | Confirmed workflow-format migration and backups | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344` implementation; focused browser/backend evidence `2ce96a0` |
 | WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
 | WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
