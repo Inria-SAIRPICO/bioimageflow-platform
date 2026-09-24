@@ -317,6 +317,28 @@ test.describe('workflow interface and grouping', () => {
     expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
   })
 
+  test('edits a workflow node field binding in the Nodes panel', async ({ page }) => {
+    const name = workflowName('workflow_binding')
+    const displayName = `Workflow binding ${name}`
+    await createWorkflow(page, name, displayName)
+    const response = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      data: { graph: nestedInterfaceGraph(name, displayName) },
+    })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    await page.goto('/')
+    await openWorkflow(page, name, displayName)
+    await page.locator('.vue-flow__node[data-id="child"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const channel = page.getByTestId('workflow-binding-child-number-input').locator('input')
+    await expect(channel).toHaveValue('7')
+    await channel.fill('4')
+    await channel.blur()
+    await saveWorkflow(page, name)
+    expect(childNode(await savedGraph(page, name)).bindings['child-number-input']).toEqual({
+      __type__: 'int', value: 4,
+    })
+  })
+
   test('exposes and renames stable interface ports', async ({ page }) => {
     const name = workflowName('interface')
     const displayName = `Interface ${name}`

@@ -48,6 +48,7 @@ There are two explicit edge variants:
 - A DataFrame edge connects a complete DataFrame to a positional tool input or stable named workflow input ID.
 
 Workflow interface ports have stable immutable IDs and editable display names.
+The Nodes panel edits unconnected field bindings on selected workflow nodes by stable child input ID.
 The Nodes panel publishes positional DataFrame inputs independently of tool parameters through **Published DataFrame inputs → Publish DataFrame input**.
 Each publication reserves the next free positional slot; connected and published slots compact together on removal without changing surviving public IDs.
 Existing child workflow DataFrame ports can also be published through the enclosing workflow interface.

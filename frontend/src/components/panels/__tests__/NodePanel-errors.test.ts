@@ -5,6 +5,7 @@ vi.mock('@/api/editor', () => ({ openNodeWithEditor: vi.fn().mockResolvedValue({
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import InputNumber from 'primevue/inputnumber'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
@@ -51,8 +52,11 @@ function registerPanelCommands(
     renameWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
     renameWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
     updateParameter: vi.fn(() => true),
+    updateWorkflowBinding: workflowBindingUpdate,
   })
 }
+
+const workflowBindingUpdate = vi.fn(() => true)
 
 function makeTool(): ToolMetadata {
   return {
@@ -150,6 +154,26 @@ function mountWithErrors(
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('shows and edits unconnected workflow field bindings', async () => {
+    workflowBindingUpdate.mockClear()
+    const wrapper = mountWithErrors(null, {
+      nodeType: 'workflow', tool: null,
+      bindings: { 'input-channel': { __type__: 'int', value: 1 } },
+      workflow: { interface: { inputs: [
+        { id: 'input-channel', name: 'Channel', kind: 'field', schema: { type: 'int' }, default: { __type__: 'int', value: 0 }, targets: [] },
+        { id: 'input-image', name: 'Image', kind: 'field', schema: { type: 'Path' }, targets: [] },
+      ], outputs: [] } },
+      connectedInputs: { [encodeEndpointHandle({ kind: 'workflow-input', id: 'input-image' })]: 'Source' },
+    })
+    expect(wrapper.text()).toContain('Channel')
+    expect(wrapper.text()).not.toContain('Image')
+    const input = wrapper.findComponent(InputNumber)
+    expect(input.props('modelValue')).toBe(1)
+    input.vm.$emit('update:modelValue', 2)
+    await flushPromises()
+    expect(workflowBindingUpdate).toHaveBeenCalledWith('node-1', 'input-channel', 2)
+    wrapper.unmount()
+  })
   it('shows every server validation error when clearing outputs fails', async () => {
     const failure = Object.assign(new Error('Failed to build workflow: 2 error(s)'), {
       response: { data: { errors: [

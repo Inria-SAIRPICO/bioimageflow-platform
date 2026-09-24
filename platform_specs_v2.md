@@ -112,6 +112,7 @@ Publications reserve slots alongside internal DataFrame connections; the canvas 
 Removing a publication or an internal connection compacts the remaining positional targets and edges together without changing surviving public port IDs or names.
 Source tools that do not accept upstream DataFrames do not offer positional publication.
 For a selected workflow node, the same section can publish each unconnected child DataFrame port through the enclosing interface, targeting the child's stable port ID rather than inventing positional inputs on the workflow node.
+For a selected workflow node, the Parameters section renders its unconnected field inputs and edits their instance bindings using the child's stable input IDs; connected fields are supplied by their edges.
 These actions use the ordinary graph mutation lock, undo/redo, draft persistence, and nested-save reconciliation paths.
 Renaming a port changes its label while preserving its ID and parent connections.
 Removing or changing a connected port requires explicit confirmation and atomically removes affected bindings and edges.
@@ -357,7 +358,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 The application loads demo bundle version 3, whose root graph and every recursively embedded graph use canonical schema version 2.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
-The versioned platform templates are generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**, and generation fails if any bundled graph is not recursively schema v2.
+The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
+The versioned platform templates are generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**, with platform-owned Fish Analysis overlap and summary tools; generation fails if any bundled graph is not recursively schema v2.
 The examples are self-contained definitions that download their public input data into workflow-managed run assets and do not reference repository-local datasets.
 
 Initialization installs both templates under `Demo/` only when the active workflow root did not exist before initialization.

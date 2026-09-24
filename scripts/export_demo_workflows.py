@@ -29,6 +29,7 @@ from bioimageflow_server.services.graph_translator import (  # noqa: E402
     lib_dict_to_graph_state,
 )
 from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noqa: E402
+from bioimageflow_server.models.graph import GraphState  # noqa: E402
 
 
 BUNDLE_VERSION = 3
@@ -200,6 +201,33 @@ def _render_definition(
                 node.name = branch_names[node.id]
                 node.workflow.display_name = branch_names[node.id]
     graph_payload = graph.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if definition.template_id == "fish-analysis":
+        fish_tools = OUTPUT_DIR / "fish-analysis" / "tools"
+        for filename in ("fish_label_overlaps.py", "average_spots_per_nucleus.py"):
+            tool_files[filename] = (fish_tools / filename).read_bytes()
+        for branch in (node for node in graph_payload["nodes"] if node["type"] == "workflow"):
+            child = branch["workflow"]
+            image_input = next(item for item in child["interface"]["inputs"] if item["id"] == "input-image")
+            image_input["targets"].append({
+                "node": "measure_nucleus_overlaps",
+                "port": {"kind": "field", "name": "source_image"},
+            })
+            child["interface"]["outputs"].append({
+                "id": "output-source-image", "name": "source_image",
+                "schema": {"type": "str", "image_spec": None},
+                "source": {"node": "measure_nucleus_overlaps", "column": "source_image"},
+            })
+            overlap = next(node for node in child["nodes"] if node["id"] == "measure_nucleus_overlaps")
+            overlap.update(tool_name="FishLabelOverlaps", tool_class="FishLabelOverlaps",
+                           tool_module="tools.fish_label_overlaps")
+            overlap.pop("tool_package", None)
+            overlap.pop("tool_package_version", None)
+        graph_payload["interface"]["outputs"].append({
+            "id": "output-source-image", "name": "source_image",
+            "schema": {"type": "str", "image_spec": None},
+            "source": {"node": "avg_spots_per_nucleus", "column": "source_image"},
+        })
+        graph = GraphState.model_validate(graph_payload)
 
     def require_schema_v2(value: dict[str, Any]) -> None:
         if value.get("schema_version") != 2:

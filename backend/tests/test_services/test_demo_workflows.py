@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import shutil
 from pathlib import Path
 
@@ -117,6 +118,41 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     }
     assert "DownloadImages" not in {item.tool_name for item in fish.missing_tools}
     assert "AverageSpotsPerNucleus" not in {item.tool_name for item in fish.missing_tools}
+    assert "FishLabelOverlaps" not in {item.tool_name for item in fish.missing_tools}
+    for branch in branches.values():
+        overlap = next(node for node in branch.workflow.nodes if node.id == "measure_nucleus_overlaps")
+        assert overlap.tool_name == "FishLabelOverlaps"
+        assert any(output.name == "source_image" for output in branch.workflow.interface.outputs)
+
+
+def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> None:
+    import pandas as pd
+
+    path = Path(__file__).resolve().parents[2] / "src/bioimageflow_server/data/demo_workflows/v3/fish-analysis/tools/average_spots_per_nucleus.py"
+    spec = importlib.util.spec_from_file_location("fish_average_demo", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    tool = module.AverageSpotsPerNucleus()
+    fols2 = pd.DataFrame([
+        {"source_image": "a.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 3},
+        {"source_image": "a.tif", "reference_label": 2, "spot_label": 0, "overlap_count": 4},
+        {"source_image": "b.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 2},
+        {"source_image": "b.tif", "reference_label": 1, "spot_label": 2, "overlap_count": 2},
+    ], index=["0::0", "0::1", "1::0", "1::1"])
+    csf1r = pd.DataFrame([
+        {"source_image": "a.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 3},
+        {"source_image": "a.tif", "reference_label": 2, "spot_label": 1, "overlap_count": 2},
+        {"source_image": "b.tif", "reference_label": 1, "spot_label": 0, "overlap_count": 4},
+    ], index=["0::0", "0::1", "1::0"])
+
+    result = tool.merge_dataframes([fols2, csf1r], None)
+
+    assert result["source_image"].tolist() == ["a.tif", "b.tif", "Global average"]
+    assert result["avg_fols2_per_nucleus"].tolist() == [0.5, 2.0, 1.0]
+    assert result["avg_csf1r_per_nucleus"].tolist() == [1.0, 0.0, 2 / 3]
+    assert result.loc["global", "total_nuclei"] == 3
+    assert result["total_nuclei"].dtype.kind in "iu"
 
 
 def test_install_is_idempotent_and_never_overwrites_installed_demo(tmp_path: Path) -> None:

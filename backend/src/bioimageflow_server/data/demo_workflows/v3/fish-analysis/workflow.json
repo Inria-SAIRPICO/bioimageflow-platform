@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:f6e32edc4f6dba61f5743407a5f42714f1721e65f99216fcce47f2da473bcbec",
+  "artifact_hash": "sha256:e50b1639fa7ebb5f3d68616e210658a6d910d02088a95c459fc2973d36eb8235",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -106,6 +106,18 @@
           },
           "source": {
             "column": "avg_csf1r_per_nucleus",
+            "node": "avg_spots_per_nucleus"
+          }
+        },
+        {
+          "id": "output-source-image",
+          "name": "source_image",
+          "schema": {
+            "image_spec": null,
+            "type": "str"
+          },
+          "source": {
+            "column": "source_image",
             "node": "avg_spots_per_nucleus"
           }
         }
@@ -260,6 +272,13 @@
                       "kind": "field",
                       "name": "input_image"
                     }
+                  },
+                  {
+                    "node": "measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "source_image"
+                    }
                   }
                 ]
               },
@@ -391,6 +410,18 @@
                   "column": "overlap_count",
                   "node": "measure_nucleus_overlaps"
                 }
+              },
+              {
+                "id": "output-source-image",
+                "name": "source_image",
+                "schema": {
+                  "image_spec": null,
+                  "type": "str"
+                },
+                "source": {
+                  "column": "source_image",
+                  "node": "measure_nucleus_overlaps"
+                }
               }
             ]
           },
@@ -470,11 +501,9 @@
                 0.0
               ],
               "resources": {},
-              "tool_class": "LabelOverlaps",
-              "tool_module": "bioimageflow_common_tools.label_overlaps",
-              "tool_name": "LabelOverlaps",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_class": "FishLabelOverlaps",
+              "tool_module": "tools.fish_label_overlaps",
+              "tool_name": "FishLabelOverlaps",
               "type": "tool",
               "viewer_additions": {}
             }
@@ -564,6 +593,13 @@
                       "kind": "field",
                       "name": "input_image"
                     }
+                  },
+                  {
+                    "node": "measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "source_image"
+                    }
                   }
                 ]
               },
@@ -695,6 +731,18 @@
                   "column": "overlap_count",
                   "node": "measure_nucleus_overlaps"
                 }
+              },
+              {
+                "id": "output-source-image",
+                "name": "source_image",
+                "schema": {
+                  "image_spec": null,
+                  "type": "str"
+                },
+                "source": {
+                  "column": "source_image",
+                  "node": "measure_nucleus_overlaps"
+                }
               }
             ]
           },
@@ -774,11 +822,9 @@
                 0.0
               ],
               "resources": {},
-              "tool_class": "LabelOverlaps",
-              "tool_module": "bioimageflow_common_tools.label_overlaps",
-              "tool_name": "LabelOverlaps",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_class": "FishLabelOverlaps",
+              "tool_module": "tools.fish_label_overlaps",
+              "tool_name": "FishLabelOverlaps",
               "type": "tool",
               "viewer_additions": {}
             }

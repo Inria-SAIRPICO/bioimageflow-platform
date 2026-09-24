@@ -122,6 +122,21 @@ const selectedNode = computed(() => {
 })
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
+const editableWorkflowInputs = computed(() => (
+  (nodeData.value?.workflow?.interface.inputs ?? []).filter((input: WorkflowInput) => (
+    input.kind === 'field'
+    && !((encodeEndpointHandle({ kind: 'workflow-input', id: input.id })) in (nodeData.value?.connectedInputs ?? {}))
+  )) as WorkflowInput[]
+))
+
+function workflowInputValue(input: WorkflowInput): unknown {
+  return nodeData.value?.bindings?.[input.id]?.value ?? input.default?.value ?? null
+}
+
+function updateWorkflowInputValue(inputId: string, value: unknown): void {
+  const nodeId = selectedNode.value?.id
+  if (nodeId) canvasCommands.updateWorkflowBinding(nodeId, inputId, value)
+}
 const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
 const openingToolScript = ref(false)
@@ -884,6 +899,38 @@ async function pickFiles(key: string) {
       </section>
 
       <!-- Parameters section -->
+      <div v-if="nodeData.nodeType === 'workflow'" class="parameters-section">
+        <h4>Parameters</h4>
+        <div v-for="input in editableWorkflowInputs" :key="input.id" class="param-row">
+          <label :for="`workflow-binding-${input.id}`">{{ input.name }}</label>
+          <InputNumber
+            v-if="input.schema?.type === 'int' || input.schema?.type === 'float'"
+            :input-id="`workflow-binding-${input.id}`"
+            :model-value="workflowInputValue(input) as number"
+            :min-fraction-digits="input.schema?.type === 'float' ? 1 : 0"
+            :disabled="isNodeEditingDisabled"
+            :data-testid="`workflow-binding-${input.id}`"
+            @update:model-value="updateWorkflowInputValue(input.id, $event)"
+          />
+          <Checkbox
+            v-else-if="input.schema?.type === 'bool'"
+            :input-id="`workflow-binding-${input.id}`"
+            :model-value="workflowInputValue(input) as boolean"
+            binary
+            :disabled="isNodeEditingDisabled"
+            :data-testid="`workflow-binding-${input.id}`"
+            @update:model-value="updateWorkflowInputValue(input.id, $event)"
+          />
+          <InputText
+            v-else
+            :id="`workflow-binding-${input.id}`"
+            :model-value="String(workflowInputValue(input) ?? '')"
+            :disabled="isNodeEditingDisabled"
+            :data-testid="`workflow-binding-${input.id}`"
+            @update:model-value="updateWorkflowInputValue(input.id, $event)"
+          />
+        </div>
+      </div>
       <div v-if="nodeData.tool" class="parameters-section">
         <h4>Parameters</h4>
         <div

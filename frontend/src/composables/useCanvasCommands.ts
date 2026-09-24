@@ -58,6 +58,7 @@ export interface CanvasScopedCommandsOptions {
     name: string,
   ) => CanvasInterfaceCommandResult
   updateParameter: (nodeId: string, key: string, value: unknown) => boolean
+  updateWorkflowBinding?: (nodeId: string, inputId: string, value: unknown) => boolean
   updateParameters?: (
     nodeId: string,
     values: Record<string, unknown>,
@@ -89,6 +90,7 @@ export interface CanvasCommandsApi {
     name: string,
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
+  updateWorkflowBinding(nodeId: string, inputId: string, value: unknown): boolean
   updateParameters(nodeId: string, values: Record<string, unknown>): boolean
   dispose(): void
 }
@@ -118,6 +120,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
     name: string,
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
+  updateWorkflowBinding(nodeId: string, inputId: string, value: unknown): boolean
   updateParameters(nodeId: string, values: Record<string, unknown>): boolean
 }
 
@@ -193,6 +196,9 @@ export function useCanvasCommands(
     ),
     updateParameter: (nodeId, key, value) => (
       resource.updateParameter(nodeId, key, value)
+    ),
+    updateWorkflowBinding: (nodeId, inputId, value) => (
+      resource.updateWorkflowBinding(nodeId, inputId, value)
     ),
     updateParameters: (nodeId, values) => (
       resource.updateParameters(nodeId, values)
@@ -281,6 +287,10 @@ function createCommandResource(
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.updateParameter(nodeId, key, value)
     },
+    updateWorkflowBinding: (nodeId, inputId, value) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.updateWorkflowBinding?.(nodeId, inputId, value) ?? false
+    },
     updateParameters: (nodeId, values) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       if (options.updateParameters) return options.updateParameters(nodeId, values)
@@ -360,6 +370,9 @@ function createActiveFacade(): CanvasCommandsApi {
     ),
     updateParameter: (nodeId, key, value) => {
       return activeCommandResource()?.updateParameter(nodeId, key, value) ?? false
+    },
+    updateWorkflowBinding: (nodeId, inputId, value) => {
+      return activeCommandResource()?.updateWorkflowBinding(nodeId, inputId, value) ?? false
     },
     updateParameters: (nodeId, values) => {
       return activeCommandResource()?.updateParameters(nodeId, values) ?? false

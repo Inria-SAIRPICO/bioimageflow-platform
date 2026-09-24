@@ -291,6 +291,7 @@ const canvasCommands = useCanvasCommands({
   renameWorkflowInput,
   renameWorkflowOutput,
   updateParameter: updateNodeParameter,
+  updateWorkflowBinding: updateNodeWorkflowBinding,
   updateParameters: updateNodeParameters,
 })
 uiStore.setCanvasWorkflow(
@@ -3959,6 +3960,25 @@ function updateNodeParameter(
   value: unknown,
 ): boolean {
   return updateNodeParameters(nodeId, { [key]: value })
+}
+
+function updateNodeWorkflowBinding(nodeId: string, inputId: string, value: unknown): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  const input = node?.data?.workflow?.interface.inputs.find((item: WorkflowInput) => item.id === inputId)
+  if (node?.type !== 'workflow' || input?.kind !== 'field') return false
+  const type = value === null ? 'none' : Array.isArray(value) ? 'list' : typeof value === 'number'
+    ? (input.schema?.type === 'float' ? 'float' : 'int') : typeof value === 'boolean' ? 'bool' : 'str'
+  const binding = { __type__: type, value }
+  if (JSON.stringify(node.data.bindings?.[inputId]) === JSON.stringify(binding)) return false
+  const presentationStatus = canvasStatusProjection.statusForNode(nodeId)?.presentationStatus
+  node.data.bindings = { ...node.data.bindings, [inputId]: binding }
+  canvasStatusProjection.stageCurrentSemanticStatuses()
+  canvasStatusProjection.stageSemanticStatus(nodeId, {
+    node_id: nodeId, status: 'unexecuted', cached: false,
+  }, presentationStatus)
+  emitGraphChanged({ statusesAlreadyStaged: true })
+  return true
 }
 
 function updateNodeParameters(
