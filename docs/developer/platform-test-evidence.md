@@ -45,3 +45,8 @@ The selected-branch Chromium selector passed 1/1 in 91s; the held-worker and ear
 `scripts/test check frontend` passed lint, types, build, and 1,313 units in 23s. `scripts/test check cross-browser-smoke` passed 18/18 Chromium and 18/18 Firefox in 146s before the final setup-only test adjustment; no broad browser or full suite was run after that adjustment.
 The setup test uses a typed local retained-run response to verify the Execution panel's installation message without a numeric bar and its detail-refresh transition to 33%; it does not install a real environment. The injected WebSocket events prove visible refusal of stale or malformed execution context while a real worker is held, then delivery of a valid same-context event; arbitrary invalid numeric progress is not claimed.
 The focused selectors had no retries or skips. Unrelated tests were outside those selections, and external certification was not run. `scripts/test check campaign` was initially red only from the intentionally unedited aggregate tally, then passed after integration reconciliation.
+
+## Headed primary GUI journey — `b41e41d`
+
+`scripts/test focus e2e tests/e2e/canvas-interactions.spec.ts --project=chromium --headed --grep 'builds, runs, inspects, saves, and reopens a real workflow through the GUI'` passed 1/1 in 23s on the integrated source revision, with no retries or skips.
+It exercised the representative primary create/edit/run/inspect/save/reopen journey in a headed Chromium process; a separate human visual observation of the window was not recorded. Other browser cases were outside this exact selection, and no full browser lane was run.

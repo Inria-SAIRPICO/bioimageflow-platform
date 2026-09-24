@@ -18,9 +18,9 @@ Reconcile Git, worker state, and installed versions before assigning new work; p
 
 ## Next three actions
 
-1. At this GUI-wave boundary, run one headed primary create/edit/run/inspect/save/reopen journey if a display is available; record the visible observation or artifact-backed limitation without re-running the entire browser lane.
-2. In Tier 2, strengthen the visible workflow-format defer → review → confirm → reopen journey with exact pre-confirmation bytes, backup identity, and restart recovery for saved, draft, and nested authorities; follow the dedicated reviewed-refactor rule if implementation proves stale or structurally unsound.
-3. Continue Tier 2 through the newly recorded P1 journeys for layout, cache/environment recovery, Logger copying, Image Viewers, Napari chooser/favorite, import guidance, and Manage Tools environments before lower-frequency P2/native boundaries; investigate ISSUE-014/017 only on a relevant recurrence, with event/API breadcrumbs.
+1. In Tier 2, strengthen the visible workflow-format defer → review → confirm → reopen journey with exact pre-confirmation bytes, backup identity, and restart recovery for saved, draft, and nested authorities; follow the dedicated reviewed-refactor rule if implementation proves stale or structurally unsound.
+2. Continue Tier 2 through the newly recorded P1 journeys for layout, cache/environment recovery, Logger copying, Image Viewers, Napari chooser/favorite, import guidance, and Manage Tools environments before lower-frequency P2/native boundaries.
+3. Investigate ISSUE-014/017 only on a relevant recurrence, with event/API breadcrumbs; reserve broad browser/full lanes for their scheduled milestones or a change that actually requires them.
 
 ## Working set for a fresh orchestrator
 
