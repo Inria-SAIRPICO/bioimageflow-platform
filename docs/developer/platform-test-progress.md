@@ -6,17 +6,18 @@ orphan: true
 
 Updated 2026-09-24 after a read-only change scan through `15c5cc7` and ten newly recorded inventory rows; the owner continued the campaign.
 The Basic-Use Gate passed on historical revision `50c1af4`, and the September 18 Tier 1B dashboard recorded 219/219 primary-GUI cells; later code changes require focused current-revision revalidation.
-The reconciled [dashboard](platform-test-dashboard.md) now records **219/224 primary-GUI cells** and **241/500 overall (48.2%)**, with 253 gaps and six unassessed cells.
+The reconciled [dashboard](platform-test-dashboard.md) now records **222/224 primary-GUI cells** and **244/500 overall (48.8%)**, with 250 gaps and six unassessed cells.
 These are obligation counts with historical evidence revisions, not a passing current-revision full-suite certificate.
 The code scan added distinct obligations for progress, workflow-format migration, Image Viewers, Napari chooser/favorites, Manage Tools environments, imported-graph layout, corrupt-cache recovery, stale environment rebuild, Logger copying, and previously omitted import-viewing guidance; scenario-level checks remain to be executed.
 Tier 1B broad browser acceptance was attempted but remained red or interrupted; focused tests and scoped completion checks retain their exact evidence.
 ISSUE-013, ISSUE-014, and ISSUE-017 remain [open](platform-test-issues.md), with no confirmed high-impact basic-use defect from the latter two.
-This checkpoint is audited against source through `15c5cc7`; no new product test lane has yet certified that revision.
+The source inventory was audited through `15c5cc7`; integrated `3fb04d1` adds current-revision real-worker progress evidence for RT-EXE-016.F/P/B, while S/R remain open.
+The scoped cross-browser smoke passed on the progress task; the earlier backend completion attempt stayed red from one corrected fixture assertion and two sandbox-denied sockets, then the exact three-test fixture selection passed with local sockets permitted.
 Reconcile Git, worker state, and installed versions before assigning new work; preserve the unrelated untracked `presentation/` directory.
 
 ## Next three actions
 
-1. Revalidate affected historical primary-GUI claims on current code with exact selectors for execution context/cancellation, nested scoped Node Data, and retained image identity; then close the new RT-EXE-016 progress/setup obligation through a focused real GUI journey. Run one headed primary journey at the next GUI-wave boundary if a display is available.
+1. Finish RT-EXE-016.S/R with a deterministic Execution-panel setup-phase observation, selected/cached or nested plan, and visible stale-event refusal; obtain a reviewed high-reasoning plan before any new structural testing seam. Revalidate historical primary-GUI claims affected by changed execution, nested-result, and retained-image code with exact selectors. Run one headed primary journey at the next GUI-wave boundary if a display is available.
 2. In Tier 2, strengthen the visible workflow-format defer → review → confirm → reopen journey with exact pre-confirmation bytes, backup identity, and restart recovery for saved, draft, and nested authorities; follow the dedicated reviewed-refactor rule if implementation proves stale or structurally unsound.
 3. Continue Tier 2 through the newly recorded P1 journeys for layout, cache/environment recovery, Logger copying, Image Viewers, Napari chooser/favorite, import guidance, and Manage Tools environments before lower-frequency P2/native boundaries; investigate ISSUE-014/017 only on a relevant recurrence, with event/API breadcrumbs.
 
