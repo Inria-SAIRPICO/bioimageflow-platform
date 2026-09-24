@@ -170,8 +170,10 @@ function createCanvasStatusProjectionResource(
       semanticPresentationStatus:
         semanticOverrides.value[nodeId]?.presentationStatus ?? null,
       executionStatus: execution.nodeStatuses[nodeId] ?? null,
+      executionPhase: execution.state,
       validationStatus:
         options.validationResult.value?.node_statuses?.[nodeId] ?? null,
+      validationErrors: options.validationResult.value?.errors ?? [],
       executionOriginMatches: originMatches,
       executionDraftRevision: execution.executionDraftRevision,
       acceptedDraftRevision: options.acceptedDraftRevision.value,

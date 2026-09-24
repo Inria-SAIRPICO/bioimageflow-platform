@@ -1,4 +1,5 @@
-import type { NodeStatus } from '@/api/types'
+import type { GraphValidationError, NodeStatus } from '@/api/types'
+import type { ExecutionPhase } from '@/stores/execution'
 
 export type NodeStatusProjectionSource =
   | 'semantic'
@@ -17,7 +18,9 @@ export interface NodeStatusProjectionInput {
   semanticOverride: NodeStatus | null
   semanticPresentationStatus: NodeStatus['status'] | null
   executionStatus: NodeStatus | null
+  executionPhase: ExecutionPhase
   validationStatus: NodeStatus | null
+  validationErrors: readonly GraphValidationError[]
   executionOriginMatches: boolean
   executionDraftRevision: number | null
   acceptedDraftRevision: number | null
@@ -33,6 +36,17 @@ export function projectNodeStatus(
       'semantic',
       input.semanticPresentationStatus ?? input.semanticOverride.status,
     )
+  }
+
+  if (
+    input.executionPhase === 'idle'
+    && input.validationStatus?.status === 'failed'
+    && input.validationErrors.some(error => (
+      error.type === 'cache_corrupt'
+      && (error.node === input.nodeId || error.node?.startsWith(`${input.nodeId}/`))
+    ))
+  ) {
+    return projected(input.validationStatus, 'validation')
   }
 
   if (executionMatchesCanvasDraft(input) && input.executionStatus !== null) {

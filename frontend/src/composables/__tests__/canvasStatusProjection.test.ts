@@ -405,6 +405,141 @@ describe('canvas status projection resource', () => {
     expect(second.statusForNode('shared')).toMatchObject({ status: 'failed', source: 'execution' })
   })
 
+  it('shows idle corrupt validation in either arrival order and releases it after Clear', () => {
+    const canvasId = canvasIdFromPanelId('workflow:corrupt')
+    const accepted = ref<ValidationResult | null>({
+      valid: false,
+      node_statuses: {
+        source: status('source', 'failed'),
+        dependent: status('dependent', 'out_of_date'),
+        sibling: status('sibling', 'executed'),
+      },
+      errors: [{ type: 'cache_corrupt', node: 'source', detail: 'bad record' }],
+    })
+    const projection = useCanvasStatusProjection({
+      descriptor: { kind: 'root', canvasId, workflowId: 'wf_corrupt' },
+      nodes: ref([node('source'), node('dependent'), node('sibling')]),
+      validationResult: accepted,
+      acceptedDraftRevision: ref(4),
+    })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_corrupt', 'Corrupt')
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-corrupt',
+      workflow_id: 'wf_corrupt',
+      draft_revision: 4,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        source: status('source', 'executed'),
+        dependent: status('dependent', 'executed'),
+        sibling: status('sibling', 'executed'),
+      },
+    })
+    expect(projection.statusForNode('source')).toMatchObject({ status: 'failed', source: 'validation' })
+    expect(projection.statusForNode('sibling')).toMatchObject({ status: 'executed', source: 'execution' })
+
+    accepted.value = validation({
+      source: status('source', 'executed'),
+      dependent: status('dependent', 'executed'),
+      sibling: status('sibling', 'executed'),
+    })
+    expect(projection.statusForNode('source')).toMatchObject({ status: 'executed', source: 'execution' })
+    accepted.value = {
+      valid: false,
+      node_statuses: { ...accepted.value.node_statuses, source: status('source', 'failed') },
+      errors: [{ type: 'cache_corrupt', node: 'source', detail: 'bad record' }],
+    }
+    expect(projection.statusForNode('source')).toMatchObject({ status: 'failed', source: 'validation' })
+
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-corrupt',
+      workflow_id: 'wf_corrupt',
+      draft_revision: 4,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        source: status('source', 'unexecuted'),
+        dependent: status('dependent', 'out_of_date'),
+        sibling: status('sibling', 'executed'),
+      },
+    })
+    accepted.value = validation({
+      source: status('source', 'unexecuted'),
+      dependent: status('dependent', 'out_of_date'),
+      sibling: status('sibling', 'executed'),
+    })
+    expect(projection.statusForNode('source')).toMatchObject({ status: 'unexecuted' })
+    expect(projection.statusForNode('dependent')).toMatchObject({ status: 'out_of_date' })
+    expect(projection.statusForNode('sibling')).toMatchObject({ status: 'executed' })
+  })
+
+  it('projects an idle corrupt descendant through its aggregate and applied nested canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:aggregate')
+    const root = useCanvasStatusProjection({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'wf_aggregate' },
+      nodes: ref([node('parent'), node('sibling')]),
+      validationResult: ref({
+        valid: false,
+        node_statuses: {
+          parent: status('parent', 'failed'),
+          'parent/leaf': status('parent/leaf', 'failed'),
+          sibling: status('sibling', 'executed'),
+        },
+        errors: [{ type: 'cache_corrupt', node: 'parent/leaf', detail: 'bad record' }],
+      }),
+      acceptedDraftRevision: ref(4),
+    })
+    useUIStore().setCanvasWorkflow(rootId, 'wf_aggregate', 'Aggregate')
+    const graph = emptyGraph('child', 'Child')
+    useNestedWorkflowSessionsStore().sessions = [{
+      id: 'session-corrupt',
+      owner: { kind: 'root', canvas_id: rootId, workflow_id: 'wf_aggregate' },
+      parentCanvasId: rootId,
+      parentWorkflowName: 'wf_aggregate',
+      parentSourceWorkflowName: null,
+      parentNodeId: 'parent',
+      parentNodeName: 'parent',
+      draft: structuredClone(graph),
+      savedSnapshot: structuredClone(graph),
+      acceptedSnapshot: structuredClone(graph),
+      parentApplyConflict: null,
+      snapshotRevision: 0,
+      updatedAt: '2026-01-01T00:00:00Z',
+      validation: validation({}),
+    }]
+    const nested = useCanvasStatusProjection({
+      descriptor: {
+        kind: 'nested',
+        canvasId: canvasIdFromPanelId('nested:session-corrupt'),
+        sessionId: 'session-corrupt',
+        parentCanvasId: rootId,
+      },
+      nodes: ref([node('leaf')]),
+      validationResult: ref(validation({ leaf: status('leaf', 'unexecuted') })),
+      acceptedDraftRevision: ref(null),
+    })
+    useExecutionStore().applyStatusSnapshot({
+      execution_id: 'exec-aggregate',
+      workflow_id: 'wf_aggregate',
+      draft_revision: 4,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        parent: status('parent', 'executed'),
+        'parent/leaf': status('parent/leaf', 'executed'),
+        sibling: status('sibling', 'executed'),
+      },
+    })
+    expect(root.statusForNode('parent')).toMatchObject({ status: 'failed', source: 'validation' })
+    expect(root.statusForNode('parent/leaf')).toMatchObject({ status: 'failed', source: 'validation' })
+    expect(root.statusForNode('sibling')).toMatchObject({ status: 'executed', source: 'execution' })
+    expect(nested.statusForNode('leaf')).toMatchObject({ status: 'failed', source: 'validation' })
+  })
+
   it('does not activate canvases and disposal leaves another resource intact', () => {
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')

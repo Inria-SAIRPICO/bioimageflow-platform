@@ -28,7 +28,9 @@ function input(
     semanticOverride: null,
     semanticPresentationStatus: null,
     executionStatus: null,
+    executionPhase: 'idle',
     validationStatus: null,
+    validationErrors: [],
     executionOriginMatches: false,
     executionDraftRevision: null,
     acceptedDraftRevision: null,
@@ -59,6 +61,7 @@ describe('projectNodeStatus', () => {
       name: 'exact contextual execution wins over validation',
       value: input({
         executionStatus: status('same', 'running'),
+        executionPhase: 'running',
         validationStatus: status('same', 'unexecuted'),
         executionOriginMatches: true,
         executionDraftRevision: 4,
@@ -169,5 +172,56 @@ describe('projectNodeStatus', () => {
       presentationStatus: 'unexecuted',
       source: 'validation',
     })
+  })
+
+  it.each([
+    { nodeId: 'source', errorNode: 'source' },
+    { nodeId: 'parent', errorNode: 'parent/internal' },
+  ])('shows idle cache corruption for $nodeId over a retained success', ({ nodeId, errorNode }) => {
+    expect(projectNodeStatus(input({
+      nodeId,
+      executionStatus: status(nodeId, 'executed'),
+      validationStatus: status(nodeId, 'failed'),
+      validationErrors: [{ type: 'cache_corrupt', node: errorNode, detail: 'bad record' }],
+      executionOriginMatches: true,
+      executionDraftRevision: 4,
+      acceptedDraftRevision: 4,
+    }))).toMatchObject({ status: 'failed', source: 'validation' })
+  })
+
+  it('keeps active execution and ordinary terminal failures ahead of cache diagnostics', () => {
+    const corrupt = [{ type: 'cache_corrupt' as const, node: 'source', detail: 'bad record' }]
+    for (const executionPhase of ['starting', 'running', 'stopping'] as const) {
+      expect(projectNodeStatus(input({
+        executionStatus: status('same', 'running'),
+        executionPhase,
+        validationStatus: status('same', 'failed'),
+        validationErrors: [{ ...corrupt[0]!, node: 'same' }],
+        executionOriginMatches: true,
+        executionDraftRevision: 4,
+        acceptedDraftRevision: 4,
+      }))).toMatchObject({ status: 'running', source: 'execution' })
+    }
+    expect(projectNodeStatus(input({
+      executionStatus: status('same', 'failed'),
+      validationStatus: status('same', 'failed'),
+      validationErrors: [{ type: 'parameter_invalid', node: 'same', detail: 'bad input' }],
+      executionOriginMatches: true,
+      executionDraftRevision: 4,
+      acceptedDraftRevision: 4,
+    }))).toMatchObject({ status: 'failed', source: 'execution' })
+  })
+
+  it('does not transfer a sibling or similarly prefixed corrupt path', () => {
+    for (const errorNode of ['sibling', 'same_other', 'other/same']) {
+      expect(projectNodeStatus(input({
+        executionStatus: status('same', 'executed'),
+        validationStatus: status('same', 'failed'),
+        validationErrors: [{ type: 'cache_corrupt', node: errorNode, detail: 'bad record' }],
+        executionOriginMatches: true,
+        executionDraftRevision: 4,
+        acceptedDraftRevision: 4,
+      }))).toMatchObject({ status: 'executed', source: 'execution' })
+    }
   })
 })

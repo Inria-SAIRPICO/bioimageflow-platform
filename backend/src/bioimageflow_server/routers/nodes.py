@@ -121,11 +121,14 @@ def _node_data_response(
     dataframe = dataframe.copy()
     dataframe.columns = [str(column) for column in dataframe.columns]
     column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
-    retained_viewers = (
-        result_store.result_viewers(identity, storage_path=storage_path)
-        if isinstance(identity, ResultArtifactIdentity)
-        else {}
-    )
+    try:
+        retained_viewers = (
+            result_store.result_viewers(identity, storage_path=storage_path)
+            if isinstance(identity, ResultArtifactIdentity)
+            else {}
+        )
+    except ResultDataNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     column_viewers = {
         column: ViewerSpec.from_library(retained_viewers.get(column))
         for column in dataframe.columns
@@ -493,8 +496,17 @@ async def download_node_csv(
 ) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     filename = f"{node_id}.csv"
-    if not columns:
-        csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
+    try:
+        modern_identity = result_store.capture_latest_result_identity(
+            node_id, storage_path=storage_path
+        )
+    except ResultDataNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not columns and not isinstance(modern_identity, ResultArtifactIdentity):
+        try:
+            csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
+        except ResultDataNotReadyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if csv_path is not None:
             return FileResponse(
                 path=csv_path,
@@ -502,7 +514,12 @@ async def download_node_csv(
                 filename=filename,
             )
 
-    df = _get_node_dataframe(node_id, result_store, storage_path)
+    df = _get_node_dataframe(
+        node_id,
+        result_store,
+        storage_path,
+        modern_identity if isinstance(modern_identity, ResultArtifactIdentity) else None,
+    )
     if columns:
         unknown = [column for column in columns if column not in df.columns]
         if unknown:

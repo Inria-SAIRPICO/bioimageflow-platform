@@ -647,6 +647,7 @@ class WorkflowDraftService:
                 ):
                     continue
                 results = ResultStoreService(authority.storage_path, store.tool_registry)
+                planned_node_ids: set[str] = set()
                 projected = validator.validation_from_compilation(
                     draft.graph,
                     compilation,
@@ -655,11 +656,37 @@ class WorkflowDraftService:
                         results.get_latest_record_dir(node_id, storage_path=authority.storage_path)
                         is not None
                     ),
+                    planned_node_ids=planned_node_ids,
                 )
+                retained_errors = [
+                    error
+                    for error in draft.validation.errors
+                    if error.type != "cache_corrupt"
+                    or error.node is None
+                    or error.node not in planned_node_ids
+                ]
+                errors = [
+                    *retained_errors,
+                    *(error for error in projected.errors if error.type == "cache_corrupt"),
+                ]
+                statuses = dict(projected.node_statuses)
+                for error in retained_errors:
+                    if error.type != "cache_corrupt" or error.node is None:
+                        continue
+                    parts = error.node.split("/")
+                    for depth in range(1, len(parts) + 1):
+                        node_id = "/".join(parts[:depth])
+                        accepted_status = draft.validation.node_statuses.get(node_id)
+                        if accepted_status is not None and accepted_status.status == "failed":
+                            statuses[node_id] = accepted_status
                 return draft.model_copy(
                     update={
                         "validation": draft.validation.model_copy(
-                            update={"node_statuses": projected.node_statuses}
+                            update={
+                                "valid": not errors,
+                                "errors": errors,
+                                "node_statuses": statuses,
+                            }
                         )
                     }
                 )

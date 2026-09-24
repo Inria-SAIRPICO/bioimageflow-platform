@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import logging
 from io import BytesIO
 from pathlib import Path
@@ -23,6 +24,7 @@ from bioimageflow_server.routers import nodes as nodes_router
 from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.result_store import DATAFRAME_RESULT_IDENTITY_ATTR
+from bioimageflow_server.services.result_store import ResultStoreService
 
 pytestmark = pytest.mark.anyio
 
@@ -260,6 +262,27 @@ async def test_get_node_data_returns_409_when_cache_not_ready() -> None:
     assert "not ready" in resp.json()["detail"]
 
 
+async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt() -> None:
+    from bioimageflow_server.services.result_store import ResultDataNotReadyError
+
+    identity = ResultArtifactIdentity(
+        run_id="run_0123456789abcdef0123456789abcdef",
+        node_key="n1",
+        result_key="rk_current",
+        record_id="rec_current",
+    )
+    dataframe = pd.DataFrame({"x": [2]})
+    dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = dataframe
+    store.get_column_types.return_value = {"x": "int"}
+    store.result_viewers.side_effect = ResultDataNotReadyError("Viewer metadata is not ready")
+    async with await _client(store) as client:
+        response = await client.post("/api/v1/nodes/n1/data/query", json={})
+
+    assert response.status_code == 409
+
+
 async def test_get_node_data_forwards_tool_name() -> None:
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"x": [1]})
@@ -300,6 +323,94 @@ async def test_download_csv(tmp_path: Path) -> None:
     assert "text/csv" in resp.headers["content-type"]
     assert "n1.csv" in resp.headers["content-disposition"]
     assert resp.text == "x\n1\n"
+
+
+async def test_download_csv_uses_verified_modern_record_instead_of_companion_file(
+    tmp_path: Path,
+) -> None:
+    companion = tmp_path / "dataframe.csv"
+    companion.write_text("x\n99\n")
+    identity = ResultArtifactIdentity(
+        run_id="run_0123456789abcdef0123456789abcdef",
+        node_key="n1",
+        result_key="rk_current",
+        record_id="rec_current",
+    )
+    store = MagicMock()
+    store.capture_latest_result_identity.return_value = identity
+    store.get_csv_path.return_value = companion
+    store.load_result_dataframe.return_value = pd.DataFrame({"x": [2]})
+    async with await _client(store) as client:
+        response = await client.get("/api/v1/nodes/n1/data/csv")
+
+    assert response.status_code == 200
+    assert response.text == ",x\n0,2\n"
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
+    store.get_csv_path.assert_not_called()
+
+
+async def test_download_csv_rejects_corrupt_modern_provenance() -> None:
+    from bioimageflow_server.services.result_store import ResultDataNotReadyError
+
+    store = MagicMock()
+    store.capture_latest_result_identity.side_effect = ResultDataNotReadyError(
+        "Output data for node 'n1' is not ready"
+    )
+    async with await _client(store) as client:
+        response = await client.get("/api/v1/nodes/n1/data/csv")
+
+    assert response.status_code == 409
+    store.get_csv_path.assert_not_called()
+
+
+@pytest.mark.parametrize("node_id", ["n1", "child/inner"])
+async def test_forged_in_root_latest_view_refuses_node_data_and_csv(
+    tmp_path: Path, node_id: str
+) -> None:
+    from bioimageflow.cache import dataframe_publish, dataframe_result_key
+    from bioimageflow.storage import Storage
+
+    run_id = "run_1123456789abcdef0123456789abcdef"
+    dataframe_publish(
+        tmp_path, node_id, "historical", pd.DataFrame({"x": [9]}),
+        run_id=run_id, engine="direct:parallel", tool_identity="tests:node-data",
+    )
+    storage = Storage(tmp_path)
+    result_key = dataframe_result_key(node_id, "historical")
+    pointer = storage.load_current(result_key)
+    assert pointer is not None
+    storage.write_run_metadata(
+        run_id, workflow_identity="test", engine="direct", status="succeeded",
+        target_nodes=[node_id],
+    )
+    storage.write_run_node_result(
+        run_id, node_id, result_key=result_key, record_id=pointer.record_id,
+        cache_hit=False,
+    )
+    storage.update_latest_node(node_id, run_id)
+    historical = ResultArtifactIdentity(
+        run_id=run_id, node_key=node_id, result_key=result_key,
+        record_id=pointer.record_id,
+    )
+    forged = tmp_path / "forged" / "nodes" / node_id
+    forged.mkdir(parents=True)
+    (forged / "result.json").write_bytes(
+        (storage.run_node_dir(run_id, node_id) / "result.json").read_bytes()
+    )
+    latest = tmp_path / "views" / "latest" / f"{node_id}.bioimageflow-link.json"
+    latest.write_text(json.dumps({
+        "schema": "bioimageflow.link.v1", "kind": "directory",
+        "target": os.path.relpath(forged, latest.parent).replace(os.sep, "/"),
+    }))
+
+    store = ResultStoreService(tmp_path, MagicMock(get_tool=MagicMock(return_value=None)))
+    async with await _client(store) as client:
+        query = await client.post(f"/api/v1/nodes/{node_id}/data/query", json={})
+        csv = await client.get(f"/api/v1/nodes/{node_id}/data/csv")
+
+    assert query.status_code == 409
+    assert csv.status_code == 409
+    assert store.load_result_dataframe(historical)["x"].tolist() == [9]
 
 
 async def test_download_filtered_csv_honors_filters_sort_and_columns() -> None:

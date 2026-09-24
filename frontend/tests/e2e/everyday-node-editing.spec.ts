@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import type { GraphState } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
@@ -7,6 +9,31 @@ const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?
 const SOURCE_ID = 'everyday_source'
 const TARGET_ID = 'everyday_target'
 const EDGE_ID = 'everyday_dataframe_edge'
+const E2E_ROOT = process.env.BIOIMAGEFLOW_E2E_ROOT
+
+function selectedRecord(workflowName: string, nodeId: string) {
+  expect(E2E_ROOT).toBeTruthy()
+  const storageRoot = join(E2E_ROOT!, 'workflows', workflowName, 'results')
+  const latestLinkPath = join(storageRoot, 'views', 'latest', `${nodeId}.bioimageflow-link.json`)
+  const latestLink = JSON.parse(readFileSync(latestLinkPath, 'utf8')) as {
+    kind: string
+    target: string
+  }
+  expect(latestLink.kind).toBe('directory')
+  const nodeView = resolve(dirname(latestLinkPath), latestLink.target)
+  const result = JSON.parse(readFileSync(join(nodeView, 'result.json'), 'utf8')) as {
+    run_id: string
+    node_key: string
+    result_key: string
+    record_id: string
+    canonical: string
+  }
+  expect(result.node_key).toBe(nodeId)
+  const recordDir = resolve(nodeView, result.canonical)
+  expect(recordDir.startsWith(join(storageRoot, 'cache', 'v1', 'results'))).toBe(true)
+  expect(recordDir).toContain(result.record_id)
+  return { storageRoot, result, recordDir, currentPath: join(dirname(dirname(recordDir)), 'current.json') }
+}
 
 function uniqueWorkflowName(): string {
   const project = test.info().project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -554,6 +581,132 @@ test.describe('everyday node editing', () => {
     })
     expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
     expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+  })
+
+  test('quarantines a corrupt selected record through GUI Clear and reruns exact rows', async ({ page }) => {
+    const siblingId = await addSeedNodeFromCatalog(page, workflowName)
+    const baseline = await fetchDraft(page, workflowName)
+    expect(baseline.graph.nodes.map(item => item.id)).toContain(siblingId)
+
+    const firstRun = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    const firstAccepted = await firstRun
+    expect(firstAccepted.status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+
+    const query = (id: string) => page.request.post(`${API_BASE}/api/v1/nodes/${id}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    const expectedRows = [
+      { number: 1, label: 'one', number_plus_one: 2 },
+      { number: 2, label: 'two', number_plus_one: 3 },
+      { number: 3, label: 'three', number_plus_one: 4 },
+    ]
+    expect(await (await query(TARGET_ID)).json()).toMatchObject({ rows: expectedRows, total_rows: 3 })
+    const source = selectedRecord(workflowName, SOURCE_ID)
+    const target = selectedRecord(workflowName, TARGET_ID)
+    const sibling = selectedRecord(workflowName, siblingId)
+    expect(source.result.run_id).toBe(target.result.run_id)
+    expect(source.result.run_id).toBe(sibling.result.run_id)
+    const historicalRunPath = join(source.storageRoot, 'views', 'runs', source.result.run_id, 'run.json')
+    const historicalRun = readFileSync(historicalRunPath)
+    const historicalSibling = readFileSync(join(source.storageRoot, 'views', 'runs', source.result.run_id, 'nodes', siblingId, 'result.json'))
+    const targetBytes = readFileSync(join(target.recordDir, 'dataframe.parquet'))
+    const siblingBytes = readFileSync(join(sibling.recordDir, 'dataframe.parquet'))
+    const runViewsBefore = readdirSync(join(source.storageRoot, 'views', 'runs')).sort()
+    const retainedBefore = await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()
+
+    const corruptBytes = Buffer.from('corrupt selected parquet')
+    writeFileSync(join(source.recordDir, 'dataframe.parquet'), corruptBytes)
+    writeFileSync(join(source.recordDir, 'dataframe.csv'), 'number,label\n999,stale\n')
+    await page.reload()
+    const corruptDraft = await fetchDraft(page, workflowName)
+    expect(corruptDraft.draft_revision).toBe(baseline.draft_revision)
+    expect(corruptDraft.graph).toEqual(baseline.graph)
+    expect(corruptDraft.validation).toMatchObject({
+      valid: false,
+      errors: [{ type: 'cache_corrupt', node: SOURCE_ID }],
+      node_statuses: { [SOURCE_ID]: { status: 'failed' }, [siblingId]: { status: 'executed' } },
+    })
+    await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-failed/)
+    await expect(node(page, siblingId).locator('.status-indicator')).toHaveClass(/status-executed/)
+    await node(page, SOURCE_ID).click()
+    const panel = await openNodesPanel(page)
+    await expect(panel.getByTestId('node-validation-errors')).toContainText('Record dataframe transport digest mismatch')
+    expect((await query(SOURCE_ID)).status()).toBe(409)
+    expect((await page.request.get(
+      `${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/csv?workflow_name=${workflowName}`,
+    )).status()).toBe(409)
+    const blocked = await page.request.post(`${API_BASE}/api/v1/execution/run`, {
+      data: { workflow_id: workflowName, draft_revision: baseline.draft_revision },
+    })
+    expect(blocked.status()).toBe(422)
+    expect(await blocked.json()).toMatchObject({ errors: [{ type: 'cache_corrupt', node: SOURCE_ID }] })
+    await page.getByTestId('run-workflow-button').click()
+    await expect(page.getByTestId('out-of-date-confirm')).toContainText('Rebuild nodes before running?')
+    await page.getByTestId('out-of-date-continue').click()
+    await expect(page.locator('.p-toast')).toContainText('Validation errors')
+    expect(readdirSync(join(source.storageRoot, 'views', 'runs')).sort()).toEqual(runViewsBefore)
+    expect((await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()).last_result).toEqual(retainedBefore.last_result)
+    expect(await (await query(TARGET_ID)).json()).toMatchObject({ rows: expectedRows, total_rows: 3 })
+    expect((await query(siblingId)).ok()).toBeTruthy()
+
+    const clearResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/clear')
+      && response.request().method() === 'POST'
+    ))
+    await panel.getByTestId('clear-node-outputs').click()
+    await page.getByTestId('node-destructive-confirm').click()
+    const cleared = await clearResponse
+    expect(cleared.status()).toBe(200)
+    expect(cleared.request().postDataJSON()).toMatchObject({
+      nodes: [SOURCE_ID], workflow_id: workflowName, draft_revision: baseline.draft_revision,
+    })
+    expect(await cleared.json()).toMatchObject({
+      node_statuses: {
+        [SOURCE_ID]: { status: 'unexecuted', cached: false },
+        [TARGET_ID]: { status: 'out_of_date', cached: false },
+      },
+    })
+    expect((await query(SOURCE_ID)).status()).toBe(404)
+    const quarantine = readdirSync(join(dirname(dirname(source.recordDir)), 'quarantine'))
+    expect(quarantine).toHaveLength(1)
+    expect(quarantine[0]).toMatch(new RegExp(`^${source.result.record_id}\\.`))
+    expect(readFileSync(join(dirname(dirname(source.recordDir)), 'quarantine', quarantine[0], 'dataframe.parquet'))).toEqual(corruptBytes)
+    expect(readFileSync(join(target.recordDir, 'dataframe.parquet'))).toEqual(targetBytes)
+    expect(readFileSync(join(sibling.recordDir, 'dataframe.parquet'))).toEqual(siblingBytes)
+    expect(readFileSync(historicalRunPath)).toEqual(historicalRun)
+    expect(readFileSync(join(source.storageRoot, 'views', 'runs', source.result.run_id, 'nodes', siblingId, 'result.json'))).toEqual(historicalSibling)
+    expect((await (await page.request.get(`${API_BASE}/api/v1/execution/status`)).json()).last_result).toEqual(retainedBefore.last_result)
+
+    await page.reload()
+    await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
+    await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
+    await expect(node(page, siblingId).locator('.status-indicator')).toHaveClass(/status-executed/)
+    const refreshed = await fetchDraft(page, workflowName)
+    expect(refreshed.draft_revision).toBe(baseline.draft_revision)
+    expect(refreshed.graph).toEqual(baseline.graph)
+    expect(refreshed.validation.errors).toEqual([])
+
+    const rerunResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run')
+      && response.request().method() === 'POST'
+    ))
+    await page.getByTestId('run-workflow-button').click()
+    await expect(page.getByTestId('out-of-date-confirm')).toContainText('Rebuild nodes before running?')
+    await page.getByTestId('out-of-date-continue').click()
+    const rerun = await rerunResponse
+    expect(rerun.status()).toBe(202)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
+    expect(await (await query(TARGET_ID)).json()).toMatchObject({ rows: expectedRows, total_rows: 3 })
+    expect((await query(SOURCE_ID)).ok()).toBeTruthy()
+    expect((await query(siblingId)).ok()).toBeTruthy()
+    expect(readFileSync(historicalRunPath)).toEqual(historicalRun)
+    expect(readFileSync(join(sibling.recordDir, 'dataframe.parquet'))).toEqual(siblingBytes)
+    expect(selectedRecord(workflowName, SOURCE_ID).result.run_id).not.toBe(source.result.run_id)
   })
 
   test('refuses to clear outputs when the pending draft cannot be accepted', async ({ page }) => {

@@ -69,6 +69,7 @@ def _validation_from_compilation(
     *,
     dev_mode: bool,
     has_retained_latest: Callable[[str], bool] | None = None,
+    planned_node_ids: set[str] | None = None,
 ) -> ValidationResult:
     """Derive validation and statuses from one request-local compilation."""
     from bioimageflow import CycleInWorkflowError
@@ -110,6 +111,8 @@ def _validation_from_compilation(
                 ),
             )
             plans = {}
+        if planned_node_ids is not None:
+            planned_node_ids.update(plans)
         for node_id, node_plan in plans.items():
             if node_id in node_statuses:
                 continue
@@ -195,6 +198,7 @@ class GraphValidationService:
         *,
         dev_mode: bool,
         has_retained_latest: Callable[[str], bool] | None = None,
+        planned_node_ids: set[str] | None = None,
     ) -> ValidationResult:
         """Project a compiled graph against cache state at the caller's linearization point."""
         return _validation_from_compilation(
@@ -202,6 +206,7 @@ class GraphValidationService:
             compilation,
             dev_mode=dev_mode,
             has_retained_latest=has_retained_latest,
+            planned_node_ids=planned_node_ids,
         )
 
     def validate_with_compilation(

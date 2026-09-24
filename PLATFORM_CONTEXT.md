@@ -150,6 +150,7 @@ Building from Python materializes a canonical graph and its allowed source bundl
 ### Execution and results
 
 Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
+Modern Node Data and CSV validate the latest link schema and contained relative target, require the canonical run/node view named by its provenance, and verify the retained result identity and immutable record before serving rows; corrupt provenance or Parquet produces a typed unavailable response, and only views with absent `result.json` use the deliberately unpinned legacy path.
 They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
 The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 Node-image, thumbnail, and Reveal requests resolve relative owned image paths against the immutable record captured for that request through the library's public asset API; absolute external image paths keep their declared location, and legacy unpinned results retain their existing lookup rules.
@@ -192,9 +193,10 @@ Each saved workflow owns runtime storage at `<workflow-directory>/results`.
 The `outputs/latest` view is a disposable per-node projection and may combine the latest successful outputs from different runs.
 Clearing selected root-workflow nodes operates on an accepted draft, invalidates their cache/status, and removes only those nodes' disposable latest pointers and materializations without mutating the graph; nested-canvas result clearing requires its own scoped ownership path and is not exposed through the root-only control.
 The matching retained execution-status snapshot tracks a successful Clear across browser reloads, while the completed run's historical result remains unchanged.
-On an authoritative root-draft GET, the backend recomputes cache statuses from the accepted graph and current workflow storage without rewriting the persisted draft or its revision; a dependent waiting on cleared upstream work is out of date only when it retains a latest output, otherwise it is unexecuted.
+On an authoritative root-draft GET, the backend recomputes cache statuses and `cache_corrupt` diagnostics from the accepted graph and current workflow storage without rewriting the persisted draft or its revision; it preserves accepted non-cache diagnostics and cache diagnostics for nodes unavailable to fresh planning. A dependent waiting on cleared upstream work is out of date only when it retains a latest output, otherwise it is unexecuted.
 The read fences the accepted draft, workflow generation, and storage path against concurrent draft mutation, Clear, and workflow replacement, and performs the final plan and latest-output lookup under the same workflow mutation lock as Clear.
 A corrupt selected cache record projects the affected node as failed with `cache_corrupt` while leaving the draft readable and saveable; execution remains strict and rejects that branch.
+When execution is idle, that accepted failed status takes badge precedence over a matching retained execution status for the affected node or a failed aggregate workflow ancestor; semantic edits, active progress, and ordinary terminal execution status keep their existing precedence.
 Clearing the affected node removes its current selection, quarantines a safely identified corrupt immutable record, and refreshes the cleared and downstream status projection.
 A workflow-and-results bundle instead pins one successful run.
 These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.

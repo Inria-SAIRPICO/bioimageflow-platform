@@ -27,7 +27,7 @@ from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
-from bioimageflow_server.models.validation import ValidationResult
+from bioimageflow_server.models.validation import GraphValidationError, ValidationResult
 from bioimageflow_server.routers.execution import (
     get_workflow_draft_service as execution_get_workflow_draft_service,
 )
@@ -35,7 +35,7 @@ from bioimageflow_server.routers.workflow_drafts import (
     get_workflow_draft_service as drafts_get_workflow_draft_service,
 )
 from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
-from bioimageflow_server.services.graph_builder import build_workflow
+from bioimageflow_server.services.graph_builder import BuildOutput, build_workflow
 from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -142,6 +142,7 @@ def _graph(node_id: str = "bad") -> dict[str, Any]:
 
 async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = ToolRegistryService()
     registry.register_tool(
@@ -216,6 +217,8 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         draft_response = await client.get("/api/v1/workflow-drafts/wf")
         assert draft_response.status_code == 200
         draft = draft_response.json()
+        assert draft["validation"]["valid"] is False
+        assert draft["validation"]["errors"][0]["type"] == "cache_corrupt"
         assert draft["validation"]["node_statuses"]["source"]["status"] == "failed"
 
         saved = await client.put(
@@ -229,6 +232,27 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         assert saved.status_code == 200
         accepted = saved.json()
         assert accepted["validation"]["errors"][0]["type"] == "cache_corrupt"
+        draft_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        accepted_bytes = draft_path.read_bytes()
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                workflow_draft_service.GraphCompiler,
+                "compile",
+                lambda *_args, **_kwargs: BuildOutput(
+                    None,
+                    [GraphValidationError(type="missing_tool", detail="Source unavailable")],
+                    set(),
+                ),
+            )
+            partial = await client.get("/api/v1/workflow-drafts/wf")
+        assert partial.status_code == 200
+        assert partial.json()["validation"]["valid"] is False
+        assert [error["type"] for error in partial.json()["validation"]["errors"]] == [
+            "cache_corrupt"
+        ]
+        assert partial.json()["validation"]["node_statuses"]["source"]["status"] == "failed"
+        assert draft_path.read_bytes() == accepted_bytes
 
         blocked = await client.post(
             "/api/v1/execution/run",
@@ -254,7 +278,12 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
 
         repaired = await client.get("/api/v1/workflow-drafts/wf")
         assert repaired.status_code == 200
-        assert repaired.json()["validation"]["node_statuses"]["source"]["status"] == ("unexecuted")
+        assert repaired.json()["validation"]["node_statuses"]["source"]["status"] == "unexecuted"
+        assert repaired.json()["validation"]["valid"] is True
+        assert repaired.json()["validation"]["errors"] == []
+        assert repaired.json()["draft_revision"] == accepted["draft_revision"]
+        assert repaired.json()["graph"] == accepted["graph"]
+        assert draft_path.read_bytes() == accepted_bytes
 
 
 async def test_get_synthesizes_draft_from_saved_workflow(
@@ -397,10 +426,16 @@ async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(
     assert first.json()["draft_revision"] == 1
     assert first.json()["dirty_against_saved"] is True
     assert first.json()["validation"]["valid"] is False
+    accepted_errors = first.json()["validation"]["errors"]
+    assert accepted_errors
 
     draft_path = tmp_path / "workspace" / "workflows" / "wf" / ".bioimageflow" / "draft.json"
     assert draft_path.exists()
     assert json.loads(draft_path.read_text())["graph"]["nodes"][0]["id"] == "n1"
+    read_back = await client.get("/api/v1/workflow-drafts/wf")
+    assert read_back.status_code == 200
+    assert read_back.json()["validation"]["errors"] == accepted_errors
+    assert read_back.json()["validation"]["valid"] is False
 
     stale = await client.put(
         "/api/v1/workflow-drafts/wf",

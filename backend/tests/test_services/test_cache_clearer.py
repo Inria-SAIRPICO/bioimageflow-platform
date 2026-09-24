@@ -373,9 +373,33 @@ def test_corrupt_cache_projects_diagnostic_and_clear_repairs_status(
                 tool_name="DFTool",
                 position=(0, 0),
                 parameters={"threshold": 0.5},
-            )
+            ),
+            ToolNodeState(
+                type="tool",
+                id="sibling",
+                name="sibling",
+                tool_name="DFTool",
+                position=(200, 0),
+                parameters={"threshold": 0.75},
+            ),
         ],
         edges=[],
+    )
+    historical_graph = graph.model_copy(deep=True)
+    historical_graph.nodes[0].parameters["threshold"] = 0.25
+    historical_workflow, historical_errors, _disabled = build_workflow(
+        historical_graph, registry, storage_path=tmp_path
+    )
+    assert historical_errors == []
+    historical_plan = historical_workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(
+        tmp_path,
+        "a",
+        historical_plan.logical_signature,
+        pd.DataFrame({"x": [9]}),
+        run_id="run_8123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
     )
     workflow, errors, _disabled = build_workflow(
         graph,
@@ -393,7 +417,64 @@ def test_corrupt_cache_projects_diagnostic_and_clear_repairs_status(
         engine="direct:parallel",
         tool_identity="tests:DFTool",
     )
+    sibling_plan = workflow.plan(dev_mode=True)["sibling"]
+    dataframe_publish(
+        tmp_path,
+        "sibling",
+        sibling_plan.logical_signature,
+        pd.DataFrame({"x": [7]}),
+        run_id="run_9123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
+    )
     storage = Storage(tmp_path)
+    historical_pointer = storage.load_current(historical_plan.final_result_key)
+    sibling_pointer = storage.load_current(sibling_plan.final_result_key)
+    assert historical_pointer is not None
+    assert sibling_pointer is not None
+    historical_record = (
+        storage.result_dir(historical_plan.final_result_key)
+        / "records"
+        / historical_pointer.record_id
+    )
+    sibling_record = (
+        storage.result_dir(sibling_plan.final_result_key)
+        / "records"
+        / sibling_pointer.record_id
+    )
+    healthy_records = (historical_record, sibling_record)
+    healthy_bytes = {
+        (record, filename): (record / filename).read_bytes()
+        for record in healthy_records
+        for filename in ("manifest.json", "dataframe.parquet")
+    }
+    other_storage_path = tmp_path / "other_workflow"
+    other_workflow, other_errors, _disabled = build_workflow(
+        graph, registry, storage_path=other_storage_path
+    )
+    assert other_errors == []
+    other_plan = other_workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(
+        other_storage_path,
+        "a",
+        other_plan.logical_signature,
+        pd.DataFrame({"x": [11]}),
+        run_id="run_a123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
+    )
+    other_storage = Storage(other_storage_path)
+    other_pointer = other_storage.load_current(other_plan.final_result_key)
+    assert other_pointer is not None
+    other_record = (
+        other_storage.result_dir(other_plan.final_result_key)
+        / "records"
+        / other_pointer.record_id
+    )
+    other_bytes = {
+        filename: (other_record / filename).read_bytes()
+        for filename in ("manifest.json", "dataframe.parquet")
+    }
     pointer = storage.load_current(plan.final_result_key)
     assert pointer is not None
     record_dir = storage.result_dir(plan.final_result_key) / "records" / pointer.record_id
@@ -405,21 +486,54 @@ def test_corrupt_cache_projects_diagnostic_and_clear_repairs_status(
         f"sha256:{hashlib.sha256(dataframe_path.read_bytes()).hexdigest()}"
     )
     manifest_path.write_text(json.dumps(manifest))
+    corrupt_bytes = dataframe_path.read_bytes()
+    corrupt_manifest_bytes = manifest_path.read_bytes()
 
     corrupt = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
     assert corrupt.valid is False
     assert corrupt.node_statuses["a"].status == "failed"
+    assert corrupt.node_statuses["sibling"].status == "executed"
     assert [error.type for error in corrupt.errors] == ["cache_corrupt"]
     assert corrupt.errors[0].detail == "Record dataframe logical digest mismatch."
 
     cleared = clear_node_cache(["a"], graph, registry, tmp_path)
     assert cleared["a"].status == "unexecuted"
     assert not record_dir.exists()
-    assert len(list((storage.result_dir(plan.final_result_key) / "quarantine").iterdir())) == 1
+    quarantined = list((storage.result_dir(plan.final_result_key) / "quarantine").iterdir())
+    assert len(quarantined) == 1
+    assert quarantined[0].name.startswith(f"{pointer.record_id}.")
+    assert (quarantined[0] / "dataframe.parquet").read_bytes() == corrupt_bytes
+    assert (quarantined[0] / "manifest.json").read_bytes() == corrupt_manifest_bytes
+    assert storage.load_current(plan.final_result_key) is None
+    assert storage.load_current(historical_plan.final_result_key) is None
+    assert storage.load_current(sibling_plan.final_result_key) == sibling_pointer
+    assert all(
+        (record / filename).read_bytes() == contents
+        for (record, filename), contents in healthy_bytes.items()
+    )
+    assert storage.load_record_dataframe(
+        historical_plan.final_result_key, historical_pointer.record_id
+    )["x"].tolist() == [9]
+    assert storage.load_record_dataframe(
+        sibling_plan.final_result_key, sibling_pointer.record_id
+    )["x"].tolist() == [7]
+    assert not (
+        storage.result_dir(historical_plan.final_result_key) / "quarantine"
+    ).exists()
+    assert not (storage.result_dir(sibling_plan.final_result_key) / "quarantine").exists()
+    assert other_storage.load_current(other_plan.final_result_key) == other_pointer
+    assert all(
+        (other_record / filename).read_bytes() == contents
+        for filename, contents in other_bytes.items()
+    )
+    assert not (
+        other_storage.result_dir(other_plan.final_result_key) / "quarantine"
+    ).exists()
 
     repaired = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
     assert repaired.valid is True
     assert repaired.node_statuses["a"].status == "unexecuted"
+    assert repaired.node_statuses["sibling"].status == "executed"
 
 
 def test_invalid_graph_does_not_clear_existing_cache(
