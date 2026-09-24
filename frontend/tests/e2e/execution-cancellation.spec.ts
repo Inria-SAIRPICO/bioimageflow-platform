@@ -104,7 +104,7 @@ function heldGraph(workflowName: string, controlPort: number): GraphState {
       },
       {
         type: 'tool', id: WORKER_ID, name: 'Held worker', tool_name: 'HeldWorkerNumbers',
-        position: [520, 180], parameters: { control_port: controlPort },
+        position: [520, 180], parameters: { control_port: controlPort, report_progress: true },
         resources: { max_concurrent: 1 }, output_templates: {}, enabled: true, collapsed: false,
       },
     ],
@@ -231,6 +231,11 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     expect(heldStatus).toMatchObject({
       state: 'running', workflow_id: workflowName,
       draft_revision: acceptedDraft.draft_revision,
+      planned_node_ids: [SOURCE_ID, WORKER_ID],
+      planned_node_names: {
+        [SOURCE_ID]: 'Completed source',
+        [WORKER_ID]: 'Held worker',
+      },
       node_statuses: {
         [SOURCE_ID]: { status: 'executed' },
         [WORKER_ID]: { status: 'running' },
@@ -240,11 +245,16 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
     await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
     await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Running: Held worker')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Processing row 1/3')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Task progress 1/4')
     await expect(page.getByTestId('execution-banner-row-progress')).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
     const recovered = await executionStatus(page)
     expect(recovered).toMatchObject({
       state: 'running', execution_id: heldStatus.execution_id,
@@ -312,6 +322,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       execution_id: expect.stringMatching(/^run_/),
       workflow_id: workflowName,
       draft_revision: acceptedDraft.draft_revision,
+      planned_node_ids: [SOURCE_ID, WORKER_ID],
     })
     expect(rerunContext.execution_id).not.toBe(heldStatus.execution_id)
     const firstRerunStart = await control.nextStart()
@@ -330,6 +341,9 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       const status = await executionStatus(page)
       return [status.state, status.last_result?.success, status.node_statuses?.[WORKER_ID]?.status]
     }, { timeout: 60_000 }).toEqual(['idle', true, 'executed'])
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('2/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '100')
     await expect.poll(() => executionEvents.filter(event => (
       event.type === 'progress' && event.execution_id === rerunContext.execution_id
     )).map(event => [event.status, event.node_id, event.row, event.total_rows]), {
@@ -368,6 +382,9 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     })
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('2/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '100')
     expect(await executionStatus(page)).toMatchObject({
       execution_id: rerunContext.execution_id,
       workflow_id: workflowName,

@@ -39,6 +39,7 @@ class HeldWorkerNumbers(ProcessingTool):
                 connectable=Connectable.NEVER,
             ),
         ] = 4
+        report_progress: bool = False
 
     class Outputs(IOModel):
         multiplied: int
@@ -46,6 +47,8 @@ class HeldWorkerNumbers(ProcessingTool):
         report: Path = Template("held_number_{value}.txt")
 
     def process_row(self, arguments: Arguments, *, task: Any = None) -> Outputs | list:
+        if arguments.report_progress and task is not None:
+            task.update("Held for release", current=1, maximum=4)
         with socket.create_connection(("127.0.0.1", arguments.control_port)) as control:
             control.sendall(
                 (

@@ -42,9 +42,11 @@ def test_held_worker_fixture_registers_and_compiles_as_sequential_wetlands(
     metadata = registry.get_tool("HeldWorkerNumbers")
     assert metadata.tool_type == "ProcessingTool"
     assert metadata.row_consumption == "mapped"
-    assert set(metadata.inputs) == {"value", "control_port", "multiplier"}
+    assert set(metadata.inputs) == {"value", "control_port", "multiplier", "report_progress"}
     assert metadata.inputs["multiplier"].connectable == "never"
     assert metadata.inputs["multiplier"].default == 4
+    assert metadata.inputs["report_progress"].type == "bool"
+    assert metadata.inputs["report_progress"].default is False
     assert metadata.outputs["multiplied"]["type"] == "int"
     assert HeldWorkerNumbers.environment.name == "platform-worker-numbers"
     assert HeldWorkerNumbers.environment.dependencies == {"python": "3.12"}
@@ -102,7 +104,7 @@ def test_held_worker_acknowledges_cooperative_cancellation_without_output(
         with ThreadPoolExecutor(max_workers=1) as executor:
             result = executor.submit(
                 HeldWorkerNumbers().process_row,
-                Arguments(value=3, control_port=port, multiplier=4, report=report),
+                Arguments(value=3, control_port=port, multiplier=4, report_progress=False, report=report),
                 task=task,
             )
             with listener.accept()[0] as control:
@@ -135,7 +137,7 @@ def test_held_worker_failure_is_announced_and_publishes_no_output(
         with ThreadPoolExecutor(max_workers=1) as executor:
             result = executor.submit(
                 HeldWorkerNumbers().process_row,
-                Arguments(value=3, control_port=port, multiplier=0, report=report),
+                Arguments(value=3, control_port=port, multiplier=0, report_progress=False, report=report),
             )
             with listener.accept()[0] as control:
                 with control.makefile("r") as messages:
