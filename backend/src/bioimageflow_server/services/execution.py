@@ -42,6 +42,7 @@ from bioimageflow_server.services.environment_logging import environment_log_ent
 from bioimageflow_server.services.graph_validator import GraphValidationService
 from bioimageflow_server.services.log_context import bind_execution_log_context
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_status import aggregate_workflow_statuses
 
 logger = logging.getLogger(__name__)
 
@@ -419,6 +420,7 @@ class ExecutionManager:
         self.context: ExecutionContext | None = None
         self._node_statuses: dict[str, NodeStatus] = {}
         self._workflow: Any | None = None
+        self._active_graph: GraphState | None = None
         self._run_task: asyncio.Task | None = None
         self._preparation_lock = asyncio.Lock()
         self._starting = False
@@ -699,6 +701,7 @@ class ExecutionManager:
         # The platform owns the disposable latest-output projection.
         workflow.output_view = None
         self._workflow = workflow
+        self._active_graph = build_graph
         targets: tuple[Any, ...] = ()
         if nodes is not None:
             targets = tuple(node_map[nid] for nid in nodes)
@@ -1401,6 +1404,23 @@ class ExecutionManager:
                         context=context,
                     )
 
+        if self._active_graph is not None:
+            aggregates = aggregate_workflow_statuses(
+                self._active_graph,
+                self._node_statuses,
+                selected_leaf_ids=context.planned_node_ids,
+            )
+            self._node_statuses.update(aggregates)
+            for node_id, status in aggregates.items():
+                self.event_bus.publish_node_state(
+                    node_id,
+                    status.status,
+                    status.cached,
+                    status.error,
+                    status.traceback,
+                    context=context,
+                )
+
         self.last_result = ExecutionResult(
             success=success,
             errors=errors,
@@ -1456,6 +1476,7 @@ class ExecutionManager:
 
         self.state = "idle"
         self._workflow = None
+        self._active_graph = None
         self._run_task = None
 
 

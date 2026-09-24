@@ -22,6 +22,7 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_status import aggregate_workflow_statuses
 
 _PLAN_STATUS_MAP: dict[str, tuple[NodeStatusValue, bool]] = {
     "cached": ("executed", True),
@@ -153,6 +154,7 @@ def _validation_from_compilation(
             node.id,
             NodeStatus(node_id=node.id, status="unexecuted", cached=False),
         )
+    node_statuses.update(aggregate_workflow_statuses(graph, node_statuses))
 
     node_tools = {}
     if workflow is not None:

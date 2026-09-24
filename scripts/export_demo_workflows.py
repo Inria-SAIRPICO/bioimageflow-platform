@@ -202,9 +202,7 @@ def _render_definition(
                 node.workflow.display_name = branch_names[node.id]
     graph_payload = graph.model_dump(mode="json", by_alias=True, exclude_none=True)
     if definition.template_id == "fish-analysis":
-        # The pinned runtime drops nested node scope in parallel worker threads.
-        # Sequential execution retains scoped result identities and Node Data views.
-        graph_payload["config"]["execution"] = "sequential"
+        graph_payload["config"]["execution"] = "parallel"
         fish_tools = OUTPUT_DIR / "fish-analysis" / "tools"
         for filename in ("fish_label_overlaps.py", "average_spots_per_nucleus.py"):
             tool_files[filename] = (fish_tools / filename).read_bytes()

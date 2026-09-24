@@ -23,6 +23,9 @@ dependencies = [
     "mcp>=1.0",
 ]
 
+[tool.uv.sources]
+bioimageflow = { path = "../../bioimageflow/packages/bioimageflow", editable = true }
+
 [project.optional-dependencies]
 desktop = [
     "pywebview>=5.0",

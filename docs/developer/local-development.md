@@ -111,27 +111,23 @@ uv run uvicorn bioimageflow_server.app:create_app --factory \
   --log-config src/bioimageflow_server/logging.yaml
 ```
 
-## Use local BioImageFlow source in workers
+## Use local BioImageFlow source
 
-When validating unpublished changes to the sibling BioImageFlow library, first install its orchestrator and core into this checkout's backend environment:
+The backend's `pyproject.toml` and `uv.lock` resolve the sibling BioImageFlow orchestrator and core as editable packages. Place the BioImageFlow checkout beside this platform checkout, then sync the backend environment:
 
 ```bash
 cd backend
-uv pip install --python .venv/bin/python --no-deps \
-  --editable ../../bioimageflow/packages/bioimageflow-core \
-  --editable ../../bioimageflow/packages/bioimageflow
+uv sync --group dev --frozen
 cd ..
-UV_NO_SYNC=1 scripts/test focus backend tests/test_integration/test_platform_fixture_contracts.py
-UV_NO_SYNC=1 scripts/test focus e2e tests/e2e/canvas-interactions.spec.ts --grep 'new dynamic tools connect cleanly'
+scripts/test focus backend tests/test_integration/test_platform_fixture_contracts.py
+scripts/test focus e2e tests/e2e/canvas-interactions.spec.ts --grep 'new dynamic tools connect cleanly'
 ```
 
-`UV_NO_SYNC=1` keeps nested `uv run` calls, including the Playwright backend server, from replacing those editable sources with the published lockfile versions.
-Record both repository revisions with test evidence; this validates local source, not a published package release.
-Restore the ordinary published environment with `cd backend && uv sync --group dev --frozen` when local-library validation is finished.
+The normal Python debug launch profiles use this editable backend environment. Record both repository revisions with test evidence; this validates local source, not a published package release. The sibling checkout is currently required by the lockfile, including for CI jobs that run `uv sync`.
 
 Wetlands tool environments install `bioimageflow-core` separately from the backend environment.
 They use a pinned published version by default so user and runtime environments remain reproducible.
-The normal **Desktop**, **Backend**, and **Backend-worktree** VS Code launch profiles explicitly clear local-core source settings and use that published mode.
+The normal **Desktop**, **Backend**, and **Backend-worktree** VS Code launch profiles explicitly clear local-core worker settings, while importing the editable orchestrator installed in `backend/.venv`.
 
 For regular `bioimageflow-core` development, clone the BioImageFlow library alongside this repository and choose **Desktop (local core)** or **Backend (local core)** in VS Code.
 These profiles add the sibling core package to the platform process's `PYTHONPATH`, pass its project directory to BioImageFlow through `BIOIMAGEFLOW_CORE_SOURCE`, and set `BIOIMAGEFLOW_WETLANDS` to the ignored `.bioimageflow/wetlands-local-core` directory.

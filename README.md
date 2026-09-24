@@ -28,6 +28,7 @@ The complete documentation is published at <https://bioimageflow-platform.readth
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
 - [Bun](https://bun.sh/) or Node.js 20 or newer
+- A sibling `bioimageflow/` source checkout for the current editable backend dependency
 
 ### Repository layout
 

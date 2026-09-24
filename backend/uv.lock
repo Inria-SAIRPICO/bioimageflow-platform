@@ -58,7 +58,7 @@ wheels = [
 [[package]]
 name = "bioimageflow"
 version = "0.8.6"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../bioimageflow/packages/bioimageflow" }
 dependencies = [
     { name = "bioimageflow-core" },
     { name = "numpy" },
@@ -68,22 +68,35 @@ dependencies = [
     { name = "pydantic" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/6c/27df386ea5eae842d79e26574f76361ae138f750f3ea97d7594afdd77418/bioimageflow-0.8.6.tar.gz", hash = "sha256:d3a6c0c5d3efde8646c38ce7d2d2924a37ded4f6df39c641e736b15ddee304bf", size = 392380, upload-time = "2026-09-22T17:51:56.116Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5c/a9/16465ae81240ab95c9ac0a1c25716d8bd20445606a7a6433cfc2637b4eaa/bioimageflow-0.8.6-py3-none-any.whl", hash = "sha256:a5991ab2a82deda37854b97aab223153272be541c010824e0b70c84aee779c2a", size = 496939, upload-time = "2026-09-22T17:51:54.817Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "bioimageflow-core", editable = "../../bioimageflow/packages/bioimageflow-core" },
+    { name = "numpy", specifier = ">=1.23.5" },
+    { name = "packaging", specifier = ">=24.0" },
+    { name = "pandas", specifier = ">=2.0.0" },
+    { name = "parsl", marker = "extra == 'parsl'", specifier = ">=2026.5.25,<2026.6" },
+    { name = "psij-python", marker = "extra == 'psij'", specifier = ">=0.9.11,<0.10" },
+    { name = "pyarrow", specifier = ">=12.0.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
+    { name = "wetlands", specifier = ">=2.4.2,<3" },
 ]
+provides-extras = ["parsl", "psij", "cluster"]
 
 [[package]]
 name = "bioimageflow-core"
 version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../bioimageflow/packages/bioimageflow-core" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/e8/54fde9ad97c5d62b070ba360131b0609a7772755918cd471050fb7569f32/bioimageflow_core-0.4.1.tar.gz", hash = "sha256:c698ac9de83ec1e94def3f6d33b9512287a354aec82a30fc0e10fba0c238b642", size = 27008, upload-time = "2026-09-17T12:32:29.723Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/8f/702ee944c30792e59a53c55008b7319ea90169e1a4aa4632e18006e21a80/bioimageflow_core-0.4.1-py3-none-any.whl", hash = "sha256:86aeb507f5fb192ac680198fd61c0bee1dc86e137d304f9c8ac22383e586e3b5", size = 33059, upload-time = "2026-09-17T12:32:28.776Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.23.5" },
+    { name = "packaging", specifier = ">=24.0" },
 ]
 
 [[package]]
@@ -129,7 +142,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioimageflow", extras = ["cluster"], specifier = "==0.8.6" },
+    { name = "bioimageflow", extras = ["cluster"], editable = "../../bioimageflow/packages/bioimageflow" },
     { name = "bioimageflow-core", specifier = ">=0.4.1,<0.5" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

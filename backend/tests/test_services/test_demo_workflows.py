@@ -94,7 +94,7 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     fish = store.get_workflow("Demo/Fish Analysis")
     fish_document = store.read_workflow_document("Demo/Fish Analysis")
     assert fish_document.artifact_hash == artifact_hash(fish_document.graph, [])
-    assert fish_document.graph.config.execution == "sequential"
+    assert fish_document.graph.config.execution == "parallel"
     branches = {
         node.id: node
         for node in fish_document.graph.nodes
@@ -142,19 +142,27 @@ def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> 
         {"source_image": "a.tif", "reference_label": 2, "spot_label": 0, "overlap_count": 4},
         {"source_image": "b.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 2},
         {"source_image": "b.tif", "reference_label": 1, "spot_label": 2, "overlap_count": 2},
-    ], index=["0::0", "0::1", "1::0", "1::1"])
+        {"source_image": "c.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 3},
+        {"source_image": "d.tif", "reference_label": 1, "spot_label": 0, "overlap_count": 4},
+    ], index=["0::0::0", "0::0::1", "0::1::0", "0::1::1", "0::2::0", "0::3::0"])
     csf1r = pd.DataFrame([
         {"source_image": "a.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 3},
         {"source_image": "a.tif", "reference_label": 2, "spot_label": 1, "overlap_count": 2},
         {"source_image": "b.tif", "reference_label": 1, "spot_label": 0, "overlap_count": 4},
-    ], index=["0::0", "0::1", "1::0"])
+        {"source_image": "c.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 3},
+        {"source_image": "d.tif", "reference_label": 1, "spot_label": 1, "overlap_count": 2},
+        {"source_image": "d.tif", "reference_label": 1, "spot_label": 2, "overlap_count": 2},
+    ], index=["0::0::0", "0::0::1", "0::1::0", "0::2::0", "0::3::0", "0::3::1"])
 
     result = tool.merge_dataframes([fols2, csf1r], None)
 
-    assert result["source_image"].tolist() == ["a.tif", "b.tif", "Global average"]
-    assert result["avg_fols2_per_nucleus"].tolist() == [0.5, 2.0, 1.0]
-    assert result["avg_csf1r_per_nucleus"].tolist() == [1.0, 0.0, 2 / 3]
-    assert result.loc["global", "total_nuclei"] == 3
+    assert result["source_image"].tolist() == [
+        "a.tif", "b.tif", "c.tif", "d.tif", "Global average"
+    ]
+    assert result.index.tolist() == ["0::0", "0::1", "0::2", "0::3", "global"]
+    assert result["avg_fols2_per_nucleus"].tolist() == [0.5, 2.0, 1.0, 0.0, 0.8]
+    assert result["avg_csf1r_per_nucleus"].tolist() == [1.0, 0.0, 1.0, 2.0, 1.0]
+    assert result.loc["global", "total_nuclei"] == 5
     assert result["total_nuclei"].dtype.kind in "iu"
 
 

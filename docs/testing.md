@@ -21,7 +21,7 @@ cd ../frontend
 bun install --frozen-lockfile
 ```
 
-Local development and CI both install the published dependency versions recorded in `backend/uv.lock`.
+The current backend lock resolves BioImageFlow and BioImageFlow Core from the sibling source checkout as editable packages; other dependencies remain locked to published versions. A checkout without that sibling source cannot run `uv sync --frozen` until the library fix is published and the platform returns to a registry pin.
 
 ## Focused tests while editing
 

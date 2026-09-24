@@ -359,7 +359,7 @@ A workspace-document backup, when provided, remains a separate platform artifact
 The application loads demo bundle version 3, whose root graph and every recursively embedded graph use canonical schema version 2.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
-The bundled Fish Analysis marker branches use distinct internal node IDs and sequential execution with the pinned published BioImageFlow runtime so nested result identities and Node Data views keep their scoped paths; that runtime's parallel branch workers do not yet propagate scoped node names.
+The bundled Fish Analysis marker branches use distinct internal node IDs and parallel execution with the editable sibling BioImageFlow source, whose parallel branch workers retain scoped names and result views. The final tool groups mapped overlap rows by their immediate parent image row index, yielding one row per input image and a weighted Global average row.
 The versioned platform templates are generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**, with platform-owned Fish Analysis overlap and summary tools; generation fails if any bundled graph is not recursively schema v2.
 The examples are self-contained definitions that download their public input data into workflow-managed run assets and do not reference repository-local datasets.
 

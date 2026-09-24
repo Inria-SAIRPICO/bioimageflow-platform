@@ -134,7 +134,7 @@ class AverageSpotsPerNucleus(DataFrameTool):
 
     @staticmethod
     def _parent_index(index: Any) -> str:
-        return str(index).split("::", 1)[0]
+        return str(index).rsplit("::", 1)[0]
 
     @classmethod
     def _summarize_overlap_dataframe(cls, df: Any, label: str) -> Any:

@@ -36,6 +36,7 @@ from bioimageflow_server.services.execution import (
     WorkflowBuildError,
     ExecutionRetryError,
 )
+from bioimageflow_server.services.workflow_status import aggregate_workflow_statuses
 
 
 class EnvironmentReuseError(RuntimeError):
@@ -430,6 +431,88 @@ def _selected_graph() -> GraphState:
             )
         ],
     )
+
+
+def test_workflow_boundaries_reflect_executed_descendants() -> None:
+    graph = _selected_graph()
+    statuses = {
+        "upstream/internal": NodeStatus(
+            node_id="upstream/internal", status="executed", cached=True
+        ),
+        "selected/internal": NodeStatus(
+            node_id="selected/internal", status="executed", cached=False
+        ),
+    }
+
+    aggregates = aggregate_workflow_statuses(
+        graph,
+        statuses,
+        selected_leaf_ids=statuses,
+    )
+
+    assert aggregates["upstream"].status == "executed"
+    assert aggregates["upstream"].cached
+    assert aggregates["selected"].status == "executed"
+    assert not aggregates["selected"].cached
+    assert "unrelated" not in aggregates
+
+
+def test_validation_projects_workflow_boundary_statuses() -> None:
+    from bioimageflow_server.services.graph_builder import BuildOutput
+    from bioimageflow_server.services.graph_validator import GraphValidationService
+
+    def plan(status: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            status=SimpleNamespace(value=status),
+            final_result_key=None,
+            selected_record_id=None,
+        )
+
+    child = SimpleNamespace(nodes={"internal": object()})
+    workflow = SimpleNamespace(
+        errors=[],
+        validate=lambda **_kwargs: [],
+        plan=lambda **_kwargs: {
+            "upstream/internal": plan("cached"),
+            "selected/internal": plan("cached"),
+            "unrelated/internal": plan("unexecuted"),
+        },
+        nodes={name: SimpleNamespace(workflow=child) for name in (
+            "upstream", "selected", "unrelated"
+        )},
+    )
+
+    result = GraphValidationService.validation_from_compilation(
+        _selected_graph(), BuildOutput(workflow, [], set()), dev_mode=True
+    )
+
+    assert result.node_statuses["upstream"].status == "executed"
+    assert result.node_statuses["selected"].status == "executed"
+    assert result.node_statuses["unrelated"].status == "unexecuted"
+
+
+def test_completed_run_publishes_workflow_boundary_statuses() -> None:
+    bus = RecordingEventBus()
+    manager = ExecutionManager(bus, MagicMock(), _settings())
+    context = _TEST_CONTEXT.model_copy(
+        update={"planned_node_ids": ["upstream/internal", "selected/internal"]}
+    )
+    manager.context = context
+    manager.state = "running"
+    manager._active_graph = _selected_graph()
+    manager._node_statuses = {
+        node_id: NodeStatus(node_id=node_id, status="executed", cached=False)
+        for node_id in context.planned_node_ids
+    }
+
+    manager._on_run_done(SimpleNamespace(exception=lambda: None), context)
+
+    assert manager.last_result is not None and manager.last_result.success
+    assert manager.last_result.node_statuses["upstream"].status == "executed"
+    assert manager.last_result.node_statuses["selected"].status == "executed"
+    assert "unrelated" not in manager.last_result.node_statuses
+    assert ("upstream", "executed", False, None, None) in bus.node_state_events
+    assert ("selected", "executed", False, None, None) in bus.node_state_events
 
 
 def _compiled_workflow_node() -> Any:
