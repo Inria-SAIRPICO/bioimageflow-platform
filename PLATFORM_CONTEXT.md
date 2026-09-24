@@ -267,7 +267,7 @@ For an API change, trace the backend model and service, router, generated type, 
 
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines focused, quick, scoped completion, browser, full, and certification lanes.
-- `docs/developer/platform-test-start.md` is the restart entry point for the scoped feature-coverage campaign; its linked plan requires Sol/high orchestration with focused context, Sol/medium workers, and Astra/high escalation, prioritizing main GUI journeys while retaining systematic coverage of every implemented in-scope feature.
+- `docs/developer/platform-test-start.md` is the restart entry point for the scoped feature-coverage campaign; its linked plan makes the current agent the focused orchestrator, requires high-reasoning specialist planning and independent review for stale code or refactors, prioritizes main GUI journeys, and retains systematic coverage of every implemented in-scope feature.
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
 - `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
 - `bioimageflow/` may be a local library checkout or link used to inspect the library source and specification; the installed dependency remains the runtime authority selected by the lockfile.

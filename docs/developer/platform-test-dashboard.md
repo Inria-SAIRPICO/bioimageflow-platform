@@ -27,11 +27,12 @@ Each stable ID is declared directly on its source inventory row and is the sole 
 The numeric suffix records the ID's original baseline assignment, not a live ordinal, so inserting or reordering source prose must not renumber an existing ID.
 IDs must be unique across the inventories and dashboard.
 
-The initial totals were provisional while every scenario dimension was reconciled against its source contract. This revision completes that audit; the following totals are no longer provisional:
+The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
+The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **241 V + 209 G + 0 I + 0 B + 6 U = 456 applicable obligations**, so **241 / 456 are verified (52.9%)**; blocked and unassessed are reported separately from the ratio numerator.
-- Primary GUI: **219 V + 0 G + 0 I + 0 B + 0 U = 219 applicable obligations**, so **219 / 219 are verified (100.0%)**.
-- Inventory reconciliation: 98 feature rows, 490 scenario decisions, including 34 justified `N` decisions.
+- Overall: **241 V + 253 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **241 / 500 are verified (48.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Primary GUI: **219 V + 5 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **219 / 224 are verified (97.8%)**.
+- Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
 The integrated image/file/export evidence is credited only for its exact browser, archive-byte, deterministic refusal, rollback, and identity assertions; its remaining recovery, reload, and native-boundary cells stay gaps.
@@ -40,6 +41,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GUI-SHL-009 | Image Viewers environment settings, defaults, and filename rules | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `dfb5cb3` implementation; scenario audit pending |
 | GUI-SHL-001 | Default docks, menu, and panel visibility | P1 | Desktop and webapp GUI | no | G | N (no invalid-input or refused-action contract for shell layout) | N (no cancellation or recovery lifecycle for static shell layout) | G | N (no identity, concurrency, ownership, or permission boundary for shell layout) | gap | `fcb4408` inspection |
 | GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
 | GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | V | V | V | verified | `dd20821`, `75be9c2`, `301c19c` |
@@ -48,6 +50,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
 | GUI-SHL-007 | OMERO settings cards and secret handling | P2 | Desktop GUI/settings API; webapp restrictions | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-008 | Desktop/editor settings and forbidden webapp mutation | P2 | Desktop and webapp settings API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| GUI-EDT-014 | Deterministic recursive imported-graph layout persists after first materialization | P1 | Desktop and webapp GUI/import | no | G | N (invalid graph rejection belongs to import/validation, not layout) | N (layout computation has no separate cancellation or recovery lifecycle) | G | G | gap | `f3b2391` implementation; scenario audit pending |
 | GUI-EDT-001 | Catalog inspect, double-click add, drag add, and select | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `eb0dc74`, `4208769`, `a44851e` |
 | GUI-EDT-002 | Fit large/small graphs and encoded paths | P1 | Desktop and webapp GUI | no | G | N (viewport fitting accepts no invalid domain input) | N (viewport fitting has no cancellation or recovery lifecycle) | N (fit geometry is recomputed and is not durable workflow state) | N (viewport fitting has no identity, concurrency, ownership, or permission boundary) | gap | `fcb4408` inspection |
 | GUI-EDT-003 | Whole-DataFrame edges and dynamic columns | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4456435`, `bd92dfc` |
@@ -61,6 +64,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `26551d6` |
 | GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `4ec5dbc` |
 | GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| GUI-AUT-008 | Manage Tools environment inventory and create/recreate | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `af78b1a` implementation; scenario audit pending |
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
 | GUI-AUT-002 | Custom-tool create/rename/delete and editor opening | P1 | Desktop GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-003 | Package versions, install/uninstall, and errors | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -73,6 +77,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| WF-LIF-015 | Confirmed workflow-format migration and backups | P1 | Desktop and webapp GUI/API/storage | no | G | G | G | G | G | gap | `4a2a344` implementation; scenario audit pending |
 | WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
 | WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
@@ -101,6 +106,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f` |
 | WF-REC-013 | Semantic operation-batch atomicity | P1 | Draft operation API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | G | N (cycle insertion is refused atomically before a recovery lifecycle begins) | G | G | gap | `fcb4408` inspection |
+| WF-SRC-011 | Import viewing readiness and setup guidance without blocking execution | P1 | Desktop GUI/import/API | no | G | G | G | N (the guidance message is transient; imported workflow persistence is WF-SRC-008) | G | gap | `6111f84` implementation; scenario audit pending |
 | WF-SRC-001 | Explicit identity-bound source update preview/apply | P1 | Desktop API/storage | no | V | V | V | V | V | verified | `d02dea9` |
 | WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | G | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -116,6 +122,9 @@ The integrated image/file/export evidence is credited only for its exact browser
 
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| RT-EXE-016 | Overall execution plan progress and setup phase | P1 | Desktop and webapp GUI/runtime | yes | G | G | G | G | G | gap | `9b3cb22`, `7f56806` implementation; scenario audit pending |
+| RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | G | G | G | G | G | gap | `4a2a344`, `2dbdd7f` implementation; scenario audit pending |
+| RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | G | G | G | G | G | gap | `bfd1ab5` implementation; scenario audit pending |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f` |
 | RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
@@ -131,6 +140,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
+| RT-RES-012 | Result-scoped napari chooser and exclusive output favorite | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `dfb5cb3` implementation; scenario audit pending |
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `c050207`, `125ee3d` |
@@ -142,6 +152,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | U | U | U | unassessed | `fcb4408` inspection pending |
+| RT-XCT-007 | Logger selection and filtered-log copying | P1 | Desktop and webapp GUI | no | G | N (an empty selection is a valid empty-result state, not invalid input) | N (copy has no durable cancellation or recovery lifecycle) | N (selection and clipboard content have no platform reload contract) | G | gap | `4a5b870` implementation; scenario audit pending |
 | RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | N (session-only Error History and Logger have no reload-retention contract; durable run diagnostics belong to execution history) | V | verified | `4676ffb`; specialist contract review |
@@ -152,7 +163,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 ## Applying later evidence
 
 When a batch lands, update only the affected cells, row status, and evidence revision, then recompute both ratios.
-Run `python3 scripts/verify-platform-test-dashboard.py` after every inventory or dashboard edit; `scripts/test check docs` also invokes this verifier before Sphinx.
+Run `scripts/test check campaign` on the consolidated inventory/dashboard edit; `scripts/test check docs` also invokes this verifier before Sphinx when documentation structure changes or at certification.
 Do not replace the detailed inventory evidence with dashboard prose.
 If one existing row is found to contain separable user actions with different obligations, split it under new stable IDs and retain the old ID as a documented alias; never silently reuse an ID for a different contract.
 If a manual or external obligation cannot run, keep it `B` with its recovery procedure in the source inventory or [manual testing guide](manual-testing.md); owner acceptance records a limitation but does not turn it into `V`.

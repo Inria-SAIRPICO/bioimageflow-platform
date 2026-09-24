@@ -27,10 +27,9 @@ Update affected code, tests, fixtures, specifications, and documentation togethe
 
 ## Orchestrator, delegation, and context discipline
 
-The main agent must be **GPT-5.6 Sol with high reasoning**, acting primarily as an orchestrator.
-Ordinary implementation workers use **GPT-5.6 Sol with medium reasoning**; bounded specialist investigations use **GPT-6 Astra with high reasoning**.
-These are requested runtime settings; editing this plan does not change the currently selected model.
-Use [Restart instructions](platform-test-start.md) to start the requested orchestrator and verify the client settings.
+The main agent is the agent running the current campaign session, regardless of its model or reasoning setting, and acts primarily as an orchestrator.
+It selects focused workers for ordinary tasks and delegates complex diagnosis, stale-code assessment, and refactor planning to a dedicated **GPT-6 Astra/high** or **GPT-6 Sol/high** agent.
+Model selection is a runtime setting; this plan does not change the current agent or silently substitute for a requested specialist.
 
 The orchestrator owns the global feature map, priority and dependency decisions, task assignment, review, integration, validation reuse, and accurate reporting.
 Workers own detailed source investigation, fixture design, implementation, focused tests, and their worktree completion checks.
@@ -46,7 +45,7 @@ While a worker runs, review another independent feature's coverage or prepare th
 For a remote CI, validation, or publication run, record its URL and exact source revision, then poll only for meaningful state changes while continuing independent work.
 Do not repeatedly ingest complete job payloads when the run status and first failing step are sufficient.
 
-Use at most two independent ordinary workers concurrently, including while a specialist review is pending; reserve the remaining agent slot for Astra or urgent integration review.
+Use at most two independent ordinary workers concurrently, including while a specialist review is pending; reserve the remaining agent slot for a high-reasoning specialist or urgent integration review.
 Do not fill a free slot merely to maximize parallelism, and do not start two browser-heavy completion lanes at once when their shared machine resources could make failures ambiguous.
 Parallel writable tasks require separate worktrees under `.worktrees/<task_name>` with independent dependencies and runtime state as required by `AGENTS.md`.
 Give each task one coherent user journey or issue, the related `ID.cell` obligations it may close, explicit write ownership, and a completion-check choice from `docs/testing.md`.
@@ -71,6 +70,14 @@ After integration, move the clean completed worktree to trash with `mv`, prune i
 Preserve unrelated user worktrees and changes.
 
 ## Tiered GUI-first priority queue
+
+### Rebaseline against current code before resuming a tier
+
+At each restart and after a substantial platform change, compare commits since the last inventory audit with implemented user journeys, visible controls, backend contracts, and existing tests.
+Update or add stable inventory rows and dashboard obligations for newly implemented in-scope behavior, and check whether changed code invalidates earlier `V` evidence.
+Treat the last verified revision as evidence for that revision only; retain valid unaffected cells, mark uncertain or invalidated cells as gaps or in-progress, and record the exact reason.
+Complete this bounded reconciliation before selecting the next feature batch; keep excluded distributed/parallel execution outside this campaign unless the owner changes its scope.
+Do not assume a new feature is covered because a nearby older row has a similar label.
 
 Completed dependency releases, fixture repairs, and audited scope selection are retained prerequisites, not tasks to restart.
 Use the current checkpoint to select the first unfinished item below.
@@ -260,25 +267,33 @@ Run comprehensive browser acceptance at substantial milestones and final certifi
 
 ## Autonomous repair and escalation
 
-Sol workers may repair routine, bounded defects autonomously when the intended behavior is explicit, the cause is reproduced or decisive, and regressions preserve the contract.
-Use Astra/high for conflicting specifications, unclear library semantics or fixture validity, identity/data-loss risk, a proposed semantic redesign, or one unsuccessful bounded repair whose cause remains unclear.
+Ordinary workers may repair routine, bounded defects autonomously when the intended behavior is explicit, the cause is reproduced or decisive, and regressions preserve the contract.
+Use a dedicated Astra/high or Sol/high agent for conflicting specifications, unclear library semantics or fixture validity, identity/data-loss risk, a proposed semantic redesign, or one unsuccessful bounded repair whose cause remains unclear.
 A production failure alone does not require specialist escalation if those conditions are absent.
-Before escalation, a Sol worker should capture the smallest reachable reproduction, authoritative contract, likely ownership boundary, and failed bounded attempts; a routine local event-wiring or assertion defect with clear intent stays with Sol.
-For a risky change, send Astra one bounded decision packet with an explicit invariant checklist covering identity, concurrency, persistence, rollback, and affected user-visible outcomes.
-Request another Astra pass only when the implementation materially changes those invariants or a concrete unresolved safety concern remains; record each pass and its disposition in the issue or evidence record.
+Before escalation, an ordinary worker should capture the smallest reachable reproduction, authoritative contract, likely ownership boundary, and failed bounded attempts; a routine local event-wiring or assertion defect with clear intent stays with an ordinary worker.
+For a risky change, send the specialist one bounded decision packet with an explicit invariant checklist covering identity, concurrency, persistence, rollback, and affected user-visible outcomes.
+
+When an agent encounters stale production code, a stale test/fixture/API assumption, or a change that appears to require code refactoring, pause dependent edits and ask a dedicated Astra/high or Sol/high agent for a bounded diagnosis and refactor plan.
+The plan must identify the current and intended contract, affected owners and callers, the smallest coherent change, tests that distinguish the old and intended behavior, migration or rollback needs, and what measurable simplification or correctness gain the change provides.
+Have a second Astra/high or Sol/high agent review that plan against the current code and specification before implementation; the reviewer must identify preserved invariants, likely regressions, and whether the proposed result is actually simpler or more reliable than a focused repair.
+The planner and reviewer may work sequentially in the reserved specialist slot; one bounded diagnosis and its independent review replace a second generic investigation of the same finding.
+Keep both handoffs concise in the issue or task record rather than creating a free-standing planning document; implement only after the review finds a justified improvement, or revise the plan and review it again.
+If the specialist finds no code refactor is needed, record the reason and return to the exact test or documentation repair.
+After implementation, verify the promised improvement with the plan's focused assertions and the required scoped completion check; a passing test alone does not justify unnecessary structural change.
+Ask for another specialist pass only if implementation changes the reviewed invariants or reveals a concrete unresolved concern.
 
 Before classifying a finding as release-blocking or P1, record the exact reachable platform entry path, credible trigger, affected user outcome, and smallest reproduction.
 An artificial dependency state that platform code neither installs nor exposes is a dependency follow-up unless it demonstrates a reachable safety or correctness failure.
 Limit the resulting claim to the tested boundary; reachability review must not dismiss a reproduced data-loss, security, wrong-result, or writer-lifecycle risk.
 
-The orchestrator records an issue and freezes dependent changes, then sends one bounded fresh-context investigation to Astra.
-Only describe an issue as `astra-review` after a specialist is actually assigned; otherwise it is `open` with a queued next action.
-Astra returns `safe-to-fix` with contract/cause/repair/regressions, `not-a-defect` with supporting evidence, or `needs-owner` with one concrete unresolved decision.
-For `safe-to-fix`, Sol implements and validates; for `not-a-defect`, correct the test/inventory without inventing new behavior.
-If Astra cannot establish a safe contract and returns `needs-owner`, pause the campaign and ask the owner one concrete question with the evidence.
+For a complex finding not already handled by the refactor sequence, the orchestrator records an issue, freezes dependent changes, and sends one bounded fresh-context investigation to a high-reasoning specialist.
+Only describe an issue as `specialist-review` after a specialist is actually assigned; otherwise it is `open` with a queued next action.
+The specialist returns `safe-to-fix` with contract/cause/repair/regressions, `not-a-defect` with supporting evidence, or `needs-owner` with one concrete unresolved decision.
+For `safe-to-fix`, assign implementation and validation; for `not-a-defect`, correct the test/inventory without inventing new behavior.
+If the specialist cannot establish a safe contract and returns `needs-owner`, pause dependent work and ask the owner one concrete question with the evidence.
 Independent features may continue while a bounded specialist investigation runs unless the concern affects shared foundations.
 Record unavailable services/credentials as `externally-blocked` with recovery steps; neither slowness nor infrastructure failure establishes a product defect.
-Missing required model capability is a configuration blocker; never silently substitute or claim a review occurred.
+If neither named high-reasoning specialist is available, record the missing review and continue independent work; never claim an unperformed review.
 
 ## Final certification and completion gate
 
