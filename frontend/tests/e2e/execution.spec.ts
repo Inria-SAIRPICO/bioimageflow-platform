@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import type { ExecutionPresentation, ExecutionPresentationPage } from '../../src/api/types'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -199,6 +200,86 @@ test.describe('execution lifecycle', () => {
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
   })
 
+  test('Execution panel shows local setup text before numeric job progress, then refreshes', async ({ page }) => {
+    const workflowId = deriveWorkflowId(uniqueDisplayName('Local Setup'))
+    const runId = 'run_0123456789abcdef0123456789abcdef'
+    const setup: ExecutionPresentation = {
+      revision: 1,
+      execution_id: runId,
+      workflow_id: workflowId,
+      draft_revision: 1,
+      command: 'run',
+      backend: 'wetlands',
+      target_id: 'local',
+      target_label: 'Local',
+      target_mode: 'local',
+      state: 'running',
+      jobs: {
+        held_worker: {
+          scoped_node_path: 'held_worker',
+          state: 'running',
+          row: 0,
+          total_rows: 0,
+          current: null,
+          maximum: null,
+          message: 'Installing execution environment',
+        },
+      },
+      progress_cursor: 0,
+      actions: {
+        cancel: { available: true, reason: null },
+        retry: { available: false, reason: 'Run is active.' },
+        recompute: { available: false, reason: 'Run is active.' },
+        download_results: { available: false, reason: 'Run is active.' },
+        cleanup: { available: false, reason: 'Local run.' },
+      },
+      observation: { reachable: true },
+      created_at: '2026-09-24T10:00:00Z',
+      updated_at: '2026-09-24T10:00:00Z',
+    }
+    const processing: ExecutionPresentation = {
+      ...setup,
+      revision: 2,
+      jobs: {
+        held_worker: {
+          ...setup.jobs!.held_worker!,
+          row: 0,
+          total_rows: 3,
+          current: 1,
+          maximum: 3,
+          message: 'Processing row 1/3',
+        },
+      },
+    }
+    let current = setup
+    await page.route(/\/api\/v1\/executions(?:\?.*)?$/, route => {
+      const response: ExecutionPresentationPage = {
+        items: [current], total: 1, offset: 0, limit: 50,
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', json: response })
+    })
+    let detailRequests = 0
+    await page.route(`**/api/v1/executions/${runId}`, route => {
+      detailRequests += 1
+      return route.fulfill({ status: 200, contentType: 'application/json', json: current })
+    })
+
+    await page.locator('.dv-tab').filter({ hasText: /^Execution$/ }).click()
+    const panel = page.getByTestId('panel-execution')
+    await panel.getByRole('button', { name: 'Workspace', exact: true }).click()
+    await expect(panel).toContainText(runId)
+    const job = panel.getByRole('row').filter({ hasText: 'Installing execution environment' })
+    await expect(job).toContainText('Installing execution environment')
+    await expect(job.getByRole('progressbar')).toHaveCount(0)
+    await expect(job).toContainText('—')
+
+    current = processing
+    await expect.poll(() => detailRequests, { timeout: 10_000 }).toBeGreaterThan(0)
+    const progressingJob = panel.getByRole('row').filter({ hasText: 'Processing row 1/3' })
+    await expect(progressingJob.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '33')
+    await expect(progressingJob).toContainText('Processing row 1/3')
+  })
+
   test('creates a workflow and executes a source tool through the real backend', { tag: '@critical' }, async ({
     page,
   }) => {
@@ -294,7 +375,19 @@ test.describe('execution lifecycle', () => {
       nodes: ['increment_valid'],
     })
     expect(request.postDataJSON()).not.toHaveProperty('graph')
-    expect((await runResponse).status()).toBe(202)
+    const firstAcceptedResponse = await runResponse
+    expect(firstAcceptedResponse.status()).toBe(202)
+    const firstAccepted = await firstAcceptedResponse.json()
+    expect(firstAccepted).toMatchObject({
+      execution_id: expect.stringMatching(/^run_/),
+      workflow_id: workflowName,
+      draft_revision: draftRevision,
+      planned_node_ids: ['seed_valid', 'increment_valid'],
+      planned_node_names: {
+        seed_valid: 'Valid seed',
+        increment_valid: 'Selected increment',
+      },
+    })
 
     await waitForExecutionComplete(page, 'increment_valid')
     await expect(source.locator('.tool-node')).toHaveClass(/status-executed/)
@@ -323,6 +416,15 @@ test.describe('execution lifecycle', () => {
     const statusResponse = await page.request.get(`${API_BASE}/api/v1/execution/status`)
     expect(statusResponse.ok()).toBeTruthy()
     const status = await statusResponse.json()
+    expect(status).toMatchObject({
+      state: 'idle',
+      execution_id: firstAccepted.execution_id,
+      workflow_id: workflowName,
+      draft_revision: draftRevision,
+      planned_node_ids: ['seed_valid', 'increment_valid'],
+      planned_node_names: firstAccepted.planned_node_names,
+      last_result: { success: true },
+    })
     expect(status.node_statuses.seed_valid).toMatchObject({ status: 'executed', cached: false })
     expect(status.node_statuses.increment_valid).toMatchObject({ status: 'executed', cached: false })
     expect(status.node_statuses.unrelated_invalid).toBeUndefined()
@@ -332,6 +434,62 @@ test.describe('execution lifecycle', () => {
       { data: { workflow_name: workflowName } },
     )
     expect(unrelatedResult.status()).toBe(404)
+
+    const cachedRunResponse = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
+    ))
+    await selected.click()
+    await page.getByTestId('run-selected-button').click()
+    const cachedAcceptedResponse = await cachedRunResponse
+    expect(cachedAcceptedResponse.status()).toBe(202)
+    const cachedAccepted = await cachedAcceptedResponse.json()
+    expect(cachedAccepted).toMatchObject({
+      execution_id: expect.stringMatching(/^run_/),
+      workflow_id: workflowName,
+      draft_revision: draftRevision,
+      planned_node_ids: ['seed_valid', 'increment_valid'],
+      planned_node_names: firstAccepted.planned_node_names,
+    })
+    expect(cachedAccepted.execution_id).not.toBe(firstAccepted.execution_id)
+    await waitForExecutionComplete(page, 'increment_valid')
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('2/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '100')
+    const cachedStatusResponse = await page.request.get(`${API_BASE}/api/v1/execution/status`)
+    expect(cachedStatusResponse.ok()).toBeTruthy()
+    const cachedStatus = await cachedStatusResponse.json()
+    expect(cachedStatus).toMatchObject({
+      state: 'idle',
+      execution_id: cachedAccepted.execution_id,
+      workflow_id: workflowName,
+      draft_revision: draftRevision,
+      planned_node_ids: ['seed_valid', 'increment_valid'],
+      planned_node_names: firstAccepted.planned_node_names,
+      last_result: { success: true },
+      node_statuses: {
+        seed_valid: { status: 'executed', cached: true },
+        increment_valid: { status: 'executed', cached: true },
+      },
+    })
+    expect(cachedStatus.node_statuses.unrelated_invalid).toBeUndefined()
+    const cachedResult = await page.request.post(
+      `${API_BASE}/api/v1/nodes/increment_valid/data/query`,
+      { data: { workflow_name: workflowName } },
+    )
+    expect(cachedResult.ok()).toBeTruthy()
+    expect(await cachedResult.json()).toMatchObject({
+      columns: ['number', 'label', 'number_plus_one'],
+      rows: [
+        { number: 1, label: 'one', number_plus_one: 2 },
+        { number: 2, label: 'two', number_plus_one: 3 },
+        { number: 3, label: 'three', number_plus_one: 4 },
+      ],
+      total_rows: 3,
+    })
+    expect((await page.request.post(
+      `${API_BASE}/api/v1/nodes/unrelated_invalid/data/query`,
+      { data: { workflow_name: workflowName } },
+    )).status()).toBe(404)
 
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })

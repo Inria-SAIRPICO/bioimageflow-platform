@@ -169,6 +169,15 @@ async function expectExactTable(panel: Locator, columns: string[], rows: string[
 
 test('cancels a held real sequential worker without mutating its exact draft', async ({ page }) => {
   test.setTimeout(180_000)
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols)
+        ;(window as unknown as { campaignExecutionSocket: WebSocket }).campaignExecutionSocket = this
+      }
+    }
+  })
   const executionEvents: Record<string, unknown>[] = []
   page.on('websocket', socket => socket.on('framereceived', frame => {
     try {
@@ -261,6 +270,25 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
     })
 
+    const injectExecutionEvent = (event: Record<string, unknown>) => page.evaluate(payload => {
+      const socket = (window as unknown as { campaignExecutionSocket: WebSocket }).campaignExecutionSocket
+      socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(payload) }))
+    }, event)
+    const progressContext = {
+      type: 'progress', node_id: WORKER_ID, status: 'row_progress',
+      row: 0, total_rows: 3, task_current: 2, task_maximum: 4,
+      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+    }
+    await injectExecutionEvent({ ...progressContext, execution_id: 'run_stale_context' })
+    await injectExecutionEvent({
+      ...progressContext, execution_id: heldStatus.execution_id, draft_revision: 'malformed',
+    })
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Task progress 1/4')
+    await injectExecutionEvent({ ...progressContext, execution_id: heldStatus.execution_id })
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Task progress 2/4')
+
     const workerNode = page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`)
     await workerNode.click()
     await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
@@ -328,6 +356,17 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const firstRerunStart = await control.nextStart()
     expect(firstRerunStart).toMatchObject({ value: 1 })
     expect(firstRerunStart.process_id).not.toBe(backendPid.process_id)
+    expect(await executionStatus(page)).toMatchObject({
+      state: 'running', execution_id: rerunContext.execution_id,
+      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      planned_node_ids: [SOURCE_ID, WORKER_ID],
+      node_statuses: {
+        [SOURCE_ID]: { status: 'executed', cached: true },
+        [WORKER_ID]: { status: 'running', cached: false },
+      },
+    })
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '50')
     await expect.poll(() => executionEvents.some(event => event.type === 'node_state'
       && event.status === 'running' && event.node_id === WORKER_ID
       && event.execution_id === rerunContext.execution_id
