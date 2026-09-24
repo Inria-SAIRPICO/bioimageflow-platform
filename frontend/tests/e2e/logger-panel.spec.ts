@@ -114,7 +114,7 @@ test.describe('logger panel', () => {
     }
   })
 
-  test('copies exactly the filtered logs and reports clipboard failures', async ({ page, context, browserName }) => {
+  test('copies visibly filtered global and execution logs without changing attribution', async ({ page, context, browserName }) => {
     if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/')
     await page.locator('.dv-tab').filter({ hasText: 'Logger' }).click()
@@ -125,13 +125,27 @@ test.describe('logger panel', () => {
       const logger = useLoggerStore()
       logger.clearEntries()
       logger.addEntry({ level: 'DEBUG', nodeId: 'n1', timestamp: 1, message: 'needle hidden level' })
-      logger.addEntry({ level: 'INFO', nodeId: 'n2', timestamp: 2, message: 'needle hidden node' })
-      logger.addEntry({ level: 'WARNING', nodeId: 'n1', timestamp: 3.125, message: 'needle first\ncontinuation' })
-      logger.addEntry({ level: 'ERROR', nodeId: 'n1/child', timestamp: 4.5, message: 'needle second' })
-      logger.addEntry({ level: 'WARNING', nodeId: 'n1', timestamp: 5, message: 'unmatched search' })
-      logger.setFilter({ levels: new Set(['WARNING', 'ERROR']), nodeId: 'n1', searchText: 'needle' })
+      logger.addEntry({ level: 'INFO', nodeId: null, timestamp: 2, message: 'needle global' })
+      logger.addEntry({ level: 'WARNING', nodeId: 'n1', timestamp: 3.125, message: 'needle first\ncontinuation', executionId: 'run-a', workflowId: 'workflow-a', draftRevision: 3 })
+      logger.addEntry({ level: 'ERROR', nodeId: 'n1/child', timestamp: 4.5, message: 'needle second', executionId: 'run-b', workflowId: 'workflow-b', draftRevision: 7 })
+      logger.addEntry({ level: 'WARNING', nodeId: 'n1', timestamp: 5, message: 'unmatched search', executionId: 'run-a', workflowId: 'workflow-a', draftRevision: 3 })
+      logger.addEntry({ level: 'ERROR', nodeId: 'n2', timestamp: 6, message: 'needle other node', executionId: 'run-c', workflowId: 'workflow-c', draftRevision: 2 })
     })
-    await expect(page.getByTestId('log-entry')).toHaveCount(2)
+    await page.getByTestId('log-level-DEBUG').click()
+    await page.getByTestId('log-search').fill('needle')
+    await expect(page.getByTestId('log-entry')).toHaveCount(4)
+    await page.getByTestId('log-node-filter').click()
+    await page.getByRole('option', { name: 'n1', exact: true }).click()
+    await expect(page.getByTestId('log-message')).toHaveText(['needle first\ncontinuation', 'needle second'])
+    await page.getByTestId('log-node-filter').click()
+    await page.getByRole('option', { name: 'All nodes', exact: true }).click()
+    await expect(page.getByTestId('log-message')).toHaveText([
+      'needle global', 'needle first\ncontinuation', 'needle second', 'needle other node',
+    ])
+    await expect(page.getByTestId('log-entry')).toHaveCount(4)
+    expect(await page.getByTestId('log-entry').evaluateAll((rows) => rows.map((row) =>
+      row.querySelector('[data-testid="log-node-name"]')?.textContent?.trim() ?? '',
+    ))).toEqual(['', 'n1', 'n1/child', 'n2'])
     await expect(copy).toBeEnabled()
     const stamps = await page.getByTestId('log-timestamp').allTextContents()
     if (browserName === 'firefox') {
@@ -148,17 +162,33 @@ test.describe('logger panel', () => {
     const copiedText = browserName === 'chromium'
       ? await page.evaluate(() => navigator.clipboard.readText())
       : await page.locator('body').getAttribute('data-copied-logs')
-    expect(copiedText).toBe(`${stamps[0]}  WARNING  n1  needle first\ncontinuation\n${stamps[1]}  ERROR  n1/child  needle second`)
+    expect(copiedText).toBe([
+      `${stamps[0]}  INFO  needle global`,
+      `${stamps[1]}  WARNING  n1  needle first\ncontinuation`,
+      `${stamps[2]}  ERROR  n1/child  needle second`,
+      `${stamps[3]}  ERROR  n2  needle other node`,
+    ].join('\n'))
     expect(await page.evaluate(async () => {
       const { useLoggerStore } = await import('/src/stores/logger.ts')
       const logger = useLoggerStore()
       return {
-        count: logger.entries.length,
+        identities: logger.entries.map(({ executionId, workflowId, draftRevision, nodeId }) =>
+          [executionId, workflowId, draftRevision, nodeId]),
         levels: [...logger.filter.levels],
         nodeId: logger.filter.nodeId,
         searchText: logger.filter.searchText,
       }
-    })).toEqual({ count: 5, levels: ['WARNING', 'ERROR'], nodeId: 'n1', searchText: 'needle' })
+    })).toEqual({
+      identities: [
+        [null, null, null, 'n1'],
+        [null, null, null, null],
+        ['run-a', 'workflow-a', 3, 'n1'],
+        ['run-b', 'workflow-b', 7, 'n1/child'],
+        ['run-a', 'workflow-a', 3, 'n1'],
+        ['run-c', 'workflow-c', 2, 'n2'],
+      ],
+      levels: ['INFO', 'WARNING', 'ERROR'], nodeId: null, searchText: 'needle',
+    })
 
     await page.evaluate(() => {
       Object.defineProperty(navigator.clipboard, 'writeText', {
@@ -170,11 +200,9 @@ test.describe('logger panel', () => {
     await expect(page.getByTestId('log-copy-error')).toHaveText('Could not copy logs')
     await expect(page.getByTestId('log-copy-success')).toHaveCount(0)
 
-    await page.evaluate(async () => {
-      const { useLoggerStore } = await import('/src/stores/logger.ts')
-      useLoggerStore().setFilter({ searchText: 'no matches' })
-    })
+    await page.getByTestId('log-search').fill('no matches')
     await expect(page.getByTestId('log-entry')).toHaveCount(0)
+    await expect(page.getByTestId('log-empty')).toHaveText('No log messages')
     await expect(copy).toBeDisabled()
   })
 })
