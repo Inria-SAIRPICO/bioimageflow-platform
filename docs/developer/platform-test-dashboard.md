@@ -30,7 +30,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **261 V + 233 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **261 / 500 are verified (52.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **266 V + 228 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **266 / 500 are verified (53.2%)**; blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -123,7 +123,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | RT-EXE-016 | Overall execution plan progress and setup phase | P1 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `9b3cb22`, `7f56806` implementation; `6a3c5df`, `18aa760` focused GUI evidence; setup presentation uses a controlled local retained-run fixture |
-| RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | G | G | G | G | G | gap | `4a2a344`, `2dbdd7f` implementation; scenario audit pending |
+| RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344`, `2dbdd7f` implementation; focused GUI, result-integrity, and recovery evidence `e58b8f1` |
 | RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | G | G | G | G | G | gap | `bfd1ab5` implementation; scenario audit pending |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f`; accepted-draft router selectors `71b82da` |
 | RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | G | G | G | G | G | gap | `fcb4408` inspection |
