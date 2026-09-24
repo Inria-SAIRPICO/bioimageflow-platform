@@ -30,7 +30,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **254 V + 240 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **254 / 500 are verified (50.8%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **256 V + 238 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **256 / 500 are verified (51.2%)**; blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -152,7 +152,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | U | U | U | unassessed | `fcb4408` inspection pending |
-| RT-XCT-007 | Logger selection and filtered-log copying | P1 | Desktop and webapp GUI | no | V | N (an empty selection is a valid empty-result state, not invalid input) | N (copy has no durable cancellation or recovery lifecycle) | N (selection and clipboard content have no platform reload contract) | V | verified | `4a5b870`; exact Logger selectors in Chromium and Firefox |
+| RT-XCT-007 | Logger selection and filtered-log copying | P1 | Desktop and webapp GUI | no | V | N (an empty selection is a valid empty-result state, not invalid input) | N (copy has no durable cancellation or recovery lifecycle) | N (selection and clipboard content have no platform reload contract) | V | verified | `4a5b870`; exact Logger selectors in Chromium and Firefox at `cd81d42` |
 | RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | N (session-only Error History and Logger have no reload-retention contract; durable run diagnostics belong to execution history) | V | verified | `4676ffb`; specialist contract review |
