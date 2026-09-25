@@ -3238,8 +3238,6 @@ export interface components {
             interpreter: string;
             /** Interpreter Identity */
             interpreter_identity: string;
-            /** Interpreter Fingerprint */
-            interpreter_fingerprint: string;
             launch: components["schemas"]["NapariLaunchContext"];
             managed?: components["schemas"]["NapariManagedMetadata"] | null;
             inventory?: components["schemas"]["NapariEnvironmentInventory"] | null;
@@ -3248,7 +3246,7 @@ export interface components {
              * @default ready
              * @enum {string}
              */
-            state: "setup_needed" | "creating" | "ready" | "failed" | "cancelled" | "removing" | "missing" | "replaced" | "drifted" | "probe_failed";
+            state: "setup_needed" | "creating" | "ready" | "failed" | "cancelled" | "removing" | "missing" | "drifted" | "probe_failed";
             /** Last Error */
             last_error?: string | null;
         };

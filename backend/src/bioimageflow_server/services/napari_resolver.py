@@ -53,7 +53,6 @@ UNAVAILABLE_STATES = frozenset(
         "cancelled",
         "removing",
         "missing",
-        "replaced",
     }
 )
 

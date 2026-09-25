@@ -104,7 +104,6 @@ describe('NapariOutputChooser', () => {
         root: '/env',
         interpreter: '/env/bin/python',
         interpreter_identity: 'python-id',
-        interpreter_fingerprint: 'python-fingerprint',
         launch: { strategy: 'interpreter', argv_prefix: ['/env/bin/python'] },
         inventory: {
           python_version: '3.12',
@@ -179,7 +178,6 @@ describe('NapariOutputChooser', () => {
           root: '/tracking',
           interpreter: '/tracking/bin/python',
           interpreter_identity: 'tracking-python',
-          interpreter_fingerprint: 'tracking-fingerprint',
           launch: { strategy: 'interpreter', argv_prefix: ['/tracking/bin/python'] },
           state: 'ready',
         },

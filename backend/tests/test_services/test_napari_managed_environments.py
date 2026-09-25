@@ -453,7 +453,6 @@ async def test_remove_rejects_adopted_and_mismatched_owned_generation(tmp_path: 
         root=str(tmp_path / "adopted"),
         interpreter=str(tmp_path / "python"),
         interpreter_identity=str(tmp_path / "python"),
-        interpreter_fingerprint="fingerprint",
         launch=NapariLaunchContext(strategy="wetlands-managed"),
         managed=NapariManagedMetadata(
             wetlands_name="napari",
@@ -613,7 +612,6 @@ async def test_restart_reconciliation_recovers_ready_or_marks_interrupted(tmp_pa
             root=f"managed-pending:{wetlands_name}",
             interpreter="",
             interpreter_identity="",
-            interpreter_fingerprint="",
             launch=NapariLaunchContext(strategy="wetlands-managed"),
             managed=NapariManagedMetadata(
                 wetlands_name=wetlands_name,

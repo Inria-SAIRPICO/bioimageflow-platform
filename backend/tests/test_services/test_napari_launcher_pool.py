@@ -47,7 +47,6 @@ def _environment(name: str, *, fingerprint: str = "inventory-a") -> NapariEnviro
         root=root,
         interpreter=interpreter,
         interpreter_identity=interpreter,
-        interpreter_fingerprint=f"python-{name}",
         launch=NapariLaunchContext(strategy="interpreter", argv_prefix=[interpreter]),
         inventory=NapariEnvironmentInventory(
             python_version="3.12.8",

@@ -25,8 +25,8 @@ Desktop mode can keep several named Napari environments side by side.
 Use **Add existing** to register a Conda environment or virtual environment without changing its packages, or **Create environment** to let BioImageFlow create an isolated managed environment.
 Each entry shows its detected Python, Napari, Qt, and installed-distribution inventory.
 Use **Refresh** after changing packages outside BioImageFlow, and **Launch empty viewer** when you want to start or focus that environment without opening an image.
-If BioImageFlow says the Python executable changed since registration, the previous package check may be out of date and opening is blocked until the installation is verified.
-For an external environment, use **Locate environment** to select its current folder, even if the path is unchanged, then **Refresh**.
+Use **Refresh** after changing packages or the Python installation at the saved path.
+For an external environment that moved, use **Locate environment** to select its current folder, then **Refresh**.
 For an adopted legacy installation, use **Forget** to remove the old registration permanently and add the installation as an existing environment, or create a new managed environment.
 Forgetting removes that environment's default, filename rules, and output favorites without deleting its files.
 

@@ -37,7 +37,6 @@ def _environment(
         root=f"/{name}",
         interpreter=f"/{name}/python",
         interpreter_identity=f"/{name}/python",
-        interpreter_fingerprint="a" * 64,
         launch=NapariLaunchContext(strategy="interpreter"),
         inventory=NapariEnvironmentInventory(
             python_version="3.12",

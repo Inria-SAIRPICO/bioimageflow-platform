@@ -57,16 +57,16 @@ test.describe('Settings Panel', () => {
     await expect(section.locator('[data-testid="fiji-path-input"]')).toBeVisible()
   })
 
-  test('Image Viewers explains a changed legacy interpreter and uses application dialogs', async ({ page }) => {
+  test('Image Viewers manages an adopted installation and uses application dialogs', async ({ page }) => {
     await page.route('**/api/v1/napari/environments', route => route.fulfill({ json: {
       revision: 1,
       environments: [{
         id: '68ff94c5-b649-4dc5-9d98-605e82736e3b', registration_order: 0,
         name: 'Old napari', ownership: 'managed', kind: 'conda', root: '/old/napari',
         interpreter: '/old/napari/bin/python', interpreter_identity: '/old/napari/bin/python',
-        interpreter_fingerprint: 'old-fingerprint', launch: { strategy: 'wetlands-managed', argv_prefix: ['/old/napari/bin/python'] },
+        launch: { strategy: 'wetlands-managed', argv_prefix: ['/old/napari/bin/python'] },
         managed: { wetlands_name: 'napari', installation_generation: 'f5f7bc30-9065-4f40-a88f-e7ee4842d7f1', recipe: { source: 'adopted' } },
-        state: 'replaced', last_error: 'The Python executable at the saved environment path changed since registration.',
+        state: 'ready', last_error: null,
         inventory: null,
       }],
       default_environment_id: null, filename_rules: [], operations: [],
@@ -78,7 +78,6 @@ test.describe('Settings Panel', () => {
     await dialog.getByText('Image Viewers', { exact: true }).click()
     const section = dialog.locator('[data-testid="image-viewers-section"]')
 
-    await expect(section).toContainText('previous package check may no longer apply')
     await expect(section).toContainText('Create a napari environment')
     await expect(section).toContainText('Reader plugin ID (optional)')
     await expect(section.getByRole('button', { name: 'Locate environment' })).toHaveCount(0)
@@ -113,7 +112,7 @@ test.describe('Settings Panel', () => {
     const makeEnvironment = (name: string, path: string, ownership: 'external' | 'managed', id: string): Environment => ({
       id, registration_order: environments.length, name, ownership, kind: ownership === 'managed' ? 'conda' : 'venv',
       root: path, interpreter: `${path}/bin/python`, interpreter_identity: `${path}/bin/python`,
-      interpreter_fingerprint: `fingerprint-${id}`, launch: { strategy: ownership === 'managed' ? 'wetlands-managed' : 'direct', argv_prefix: [`${path}/bin/python`] },
+      launch: { strategy: ownership === 'managed' ? 'wetlands-managed' : 'direct', argv_prefix: [`${path}/bin/python`] },
       managed: ownership === 'managed' ? {
         wetlands_name: `napari-${id}`, installation_generation: null,
         recipe: { source: 'managed', preset: 'default', python: '==3.12.*', napari: '0.9.1', qt: 'PyQt6', requested_packages: [], channels: ['conda-forge'] },

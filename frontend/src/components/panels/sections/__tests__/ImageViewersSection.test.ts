@@ -16,7 +16,7 @@ import { useNapariStore } from '@/stores/napari'
 const environment = {
   id: 'env-a', registration_order: 0, name: 'Tracking', ownership: 'managed', kind: 'conda',
   root: '/managed/tracking', interpreter: '/managed/tracking/bin/python',
-  interpreter_identity: 'identity', interpreter_fingerprint: 'fingerprint',
+  interpreter_identity: 'identity',
   launch: { strategy: 'wetlands-managed', argv_prefix: [] }, state: 'ready',
   managed: { wetlands_name: 'napari-env-a', installation_generation: 'generation', recipe: { source: 'managed', preset: 'default', python: '==3.12.*', napari: '0.9.1', qt: 'PyQt6', requested_packages: ['reader>=1'], channels: ['conda-forge'] } },
   inventory: { python_version: '3.12.8', napari_version: '0.9.1', qt_distribution: 'PyQt6', qt_version: '6.8', bridge_distribution: null, bridge_version: null, distributions: [{ name: 'reader', version: '1.2' }], fingerprint: 'inventory', probed_at: '2026-09-15T00:00:00Z' },
@@ -195,29 +195,4 @@ describe('ImageViewersSection', () => {
     expect(wrapper.text()).not.toContain('Create modified copy')
   })
 
-  it('explains a replaced adopted interpreter without offering an unsupported locate action', async () => {
-    const adopted = {
-      ...environment,
-      name: 'Old napari',
-      state: 'replaced',
-      last_error: 'The Python executable at the saved environment path changed since registration.',
-      managed: { ...environment.managed, recipe: { ...environment.managed.recipe, source: 'adopted' } },
-    }
-    vi.mocked(api.get).mockImplementation((url: string) => {
-      if (url === '/api/v1/napari/status') return Promise.reject(new Error('unavailable'))
-      return Promise.resolve({ data: { revision: 4, environments: [adopted], default_environment_id: 'env-a', filename_rules: [], operations: [] } })
-    })
-    const wrapper = mount(ImageViewersSection, {
-      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
-      global: { plugins: [PrimeVue] },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('previous package check may no longer apply')
-    expect(wrapper.text()).toContain('Installed packages (last checked)')
-    expect(wrapper.find('button[aria-label="Locate environment"]').exists()).toBe(false)
-    await wrapper.get('button[aria-label="Forget"]').trigger('click')
-    await flushPromises()
-    expect(document.body.textContent).toContain('will not be registered automatically again')
-  })
 })

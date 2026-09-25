@@ -251,7 +251,7 @@ function ownershipLabel(environment: typeof napari.environments[number]): string
 }
 
 function canLaunch(environment: typeof napari.environments[number]): boolean {
-  return !['setup_needed', 'creating', 'failed', 'cancelled', 'removing', 'missing', 'replaced', 'probe_failed'].includes(environment.state)
+  return !['setup_needed', 'creating', 'failed', 'cancelled', 'removing', 'missing', 'probe_failed'].includes(environment.state)
 }
 
 function beginRuleEdit(item: typeof napari.filenameRules[number]) {
@@ -330,13 +330,7 @@ onMounted(() => {
           <strong>{{ environment.name }}</strong>
           <span>napari {{ environment.inventory?.napari_version ?? 'unknown' }} · {{ stateLabel(lifecycle[environment.id] ?? environment.state) }}</span>
         </div>
-        <p v-if="environment.state === 'replaced'" class="environment-warning" role="status">
-          The Python executable at this saved path changed since registration, so the previous package check may no longer apply.
-          <template v-if="environment.ownership === 'external'">Use <strong>Locate environment</strong> to verify the current installation, then <strong>Refresh</strong> its packages.</template>
-          <template v-else-if="!isPlatformManaged(environment)">This legacy installation cannot be relocated here. You can forget its registration and add it as an existing environment, or create a new one.</template>
-          <template v-else>Create a new managed environment, then delete this installation when it is no longer needed.</template>
-        </p>
-        <p v-else-if="environment.state === 'missing'" class="environment-warning" role="status">
+        <p v-if="environment.state === 'missing'" class="environment-warning" role="status">
           The saved Python executable is missing.
           <template v-if="environment.ownership === 'external'">Use <strong>Locate environment</strong> to reconnect this registration.</template>
           <template v-else-if="!isPlatformManaged(environment)">You can forget this legacy registration and add an existing installation, or create a new environment.</template>
@@ -358,7 +352,7 @@ onMounted(() => {
             </template>
           </dl>
           <p v-if="lifecycle[environment.id] === 'restart_required'">Running viewer restart required to use the current installed packages.</p>
-          <h4>{{ ['missing', 'replaced'].includes(environment.state) ? 'Installed packages (last checked)' : 'Installed packages' }}</h4>
+          <h4>{{ environment.state === 'missing' ? 'Installed packages (last checked)' : 'Installed packages' }}</h4>
           <p v-if="!environment.inventory?.distributions.length" class="help-text">No inventory is available.</p>
           <ul v-else class="packages">
             <li v-for="pkg in environment.inventory.distributions" :key="pkg.name">{{ pkg.name }} {{ pkg.version }}</li>
@@ -367,7 +361,7 @@ onMounted(() => {
             <Button label="Refresh" size="small" @click="refresh(environment.id)" />
             <Button label="Launch empty viewer" size="small" :disabled="!canLaunch(environment)" @click="launch(environment.id)" />
             <Button label="Rename" size="small" @click="openRename(environment.id, environment.name)" />
-            <Button v-if="environment.ownership === 'external' && (environment.state === 'missing' || environment.state === 'replaced')" label="Locate environment" size="small" @click="locate(environment.id)" />
+            <Button v-if="environment.ownership === 'external' && environment.state === 'missing'" label="Locate environment" size="small" @click="locate(environment.id)" />
             <Button v-if="!isPlatformManaged(environment)" label="Forget" severity="secondary" size="small" @click="askForget(environment)" />
             <Button v-if="isPlatformManaged(environment) && ['failed', 'cancelled', 'setup_needed'].includes(environment.state)" label="Retry" size="small" @click="retry(environment.id)" />
             <Button v-if="isPlatformManaged(environment)" label="Delete managed installation" severity="danger" size="small" @click="askDeleteManaged(environment)" />

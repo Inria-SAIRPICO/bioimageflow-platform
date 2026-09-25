@@ -531,7 +531,6 @@ class NapariLauncher:
             "cancelled",
             "removing",
             "missing",
-            "replaced",
             "probe_failed",
         }:
             raise NapariLaunchError(
@@ -706,7 +705,7 @@ def _installation_identity(environment: NapariEnvironment) -> str:
     if environment.managed is not None:
         base = str(environment.managed.installation_generation)
     else:
-        base = f"{environment.interpreter_identity}:{environment.interpreter_fingerprint}"
+        base = environment.interpreter_identity
     return f"{base}:{inventory}"
 
 

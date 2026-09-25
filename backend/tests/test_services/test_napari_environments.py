@@ -122,17 +122,12 @@ async def test_stale_registry_mutation_is_rejected(tmp_path: Path) -> None:
     assert raised.value.code == "napari_registry_revision_conflict"
 
 
-async def test_missing_replaced_and_located_external_interpreter(tmp_path: Path) -> None:
+async def test_missing_and_located_external_interpreter(tmp_path: Path) -> None:
     service = await _service(tmp_path)
     original_root = _venv(tmp_path / "original")
     environment = await service.register("Viewer", str(original_root), expected_revision=0)
     (original_root / "bin" / "python").unlink()
     assert service.snapshot().environments[0].state == "missing"
-
-    (original_root / "bin" / "python").symlink_to("/bin/sh")
-    replaced = service.snapshot().environments[0]
-    assert replaced.state == "replaced"
-    assert "changed since registration" in (replaced.last_error or "")
 
     replacement_root = _venv(tmp_path / "replacement")
     located = await service.update(environment.id, path=str(replacement_root), expected_revision=1)

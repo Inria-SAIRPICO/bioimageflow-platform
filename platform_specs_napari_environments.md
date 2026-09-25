@@ -38,9 +38,8 @@ A general plugin marketplace, arbitrary install scripts, automatic upgrades, and
 The backend resolves and records the actual interpreter, environment kind, canonical environment root, and supported launch strategy.
 Support Conda environments and Python virtual environments on the supported desktop operating systems.
 Detect duplicate canonical installations and offer the existing entry rather than registering the same interpreter twice.
-Moving an installation requires **Locate environment** and a fresh probe; replacing the interpreter at the same path also invalidates its observed inventory.
-The changed-interpreter state explains that the Python executable at the saved path changed since registration and that its installed-package list is only the last checked inventory.
-**Locate environment** is offered only for external registrations; selecting the current folder again refreshes the recorded interpreter identity, after which **Refresh** checks its packages.
+Moving an installation requires **Locate environment** and a fresh probe; replacing the interpreter at the same path is handled by a fresh package probe rather than a persisted executable fingerprint.
+**Locate environment** is offered only for external registrations; selecting the current folder again records its interpreter path, after which **Refresh** checks its packages.
 For an adopted legacy installation, **Forget** durably suppresses automatic adoption of that root on later startups, so users may add it as an external environment or create a new managed one.
 
 **Check environment** runs a bounded subprocess using that interpreter and reports Python, napari, Qt, and installed Python distribution metadata.

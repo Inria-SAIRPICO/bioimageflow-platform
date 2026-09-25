@@ -71,8 +71,8 @@ test('napari result action resolves the captured identity to the server-selected
   await page.route('**/api/v1/napari/environments', route => route.fulfill({ json: {
     revision: 3,
     environments: [
-      { id: environmentA, registration_order: 0, name: 'Microscopy', ownership: 'external', kind: 'venv', root: '/a', interpreter: '/a/python', interpreter_identity: 'a', interpreter_fingerprint: 'a', launch: { strategy: 'interpreter', argv_prefix: ['/a/python'] }, inventory: { python_version: '3.12', napari_version: '0.9.1', distributions: [], fingerprint: 'a', probed_at: '2026-09-15T10:00:00Z' }, state: 'ready' },
-      { id: environmentB, registration_order: 1, name: 'Tracking', ownership: 'external', kind: 'venv', root: '/b', interpreter: '/b/python', interpreter_identity: 'b', interpreter_fingerprint: 'b', launch: { strategy: 'interpreter', argv_prefix: ['/b/python'] }, state: 'ready' },
+      { id: environmentA, registration_order: 0, name: 'Microscopy', ownership: 'external', kind: 'venv', root: '/a', interpreter: '/a/python', interpreter_identity: 'a', launch: { strategy: 'interpreter', argv_prefix: ['/a/python'] }, inventory: { python_version: '3.12', napari_version: '0.9.1', distributions: [], fingerprint: 'a', probed_at: '2026-09-15T10:00:00Z' }, state: 'ready' },
+      { id: environmentB, registration_order: 1, name: 'Tracking', ownership: 'external', kind: 'venv', root: '/b', interpreter: '/b/python', interpreter_identity: 'b', launch: { strategy: 'interpreter', argv_prefix: ['/b/python'] }, state: 'ready' },
     ],
     default_environment_id: environmentA,
     filename_rules: [], operations: [],

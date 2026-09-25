@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
-import hashlib
 import inspect
 import json
 import logging
@@ -189,14 +188,6 @@ def _canonical_path(path: Path) -> str:
 
 def _launch_path(path: Path) -> str:
     return os.path.normcase(os.path.abspath(path))
-
-
-def _interpreter_fingerprint(path: Path) -> str:
-    stat = path.stat()
-    material = (
-        f"{_canonical_path(path)}\0{stat.st_dev}\0{stat.st_ino}\0{stat.st_size}\0{stat.st_mtime_ns}"
-    )
-    return hashlib.sha256(material.encode()).hexdigest()
 
 
 def _validate_pattern(pattern: str) -> str:
@@ -568,7 +559,6 @@ class NapariEnvironmentService:
             root=f"managed-pending:{wetlands_name}",
             interpreter="",
             interpreter_identity="",
-            interpreter_fingerprint="",
             launch=NapariLaunchContext(strategy="wetlands-managed"),
             managed=NapariManagedMetadata(
                 wetlands_name=wetlands_name,
@@ -750,7 +740,6 @@ class NapariEnvironmentService:
                 "kind": kind,
                 "interpreter": _launch_path(interpreter),
                 "interpreter_identity": _canonical_path(interpreter),
-                "interpreter_fingerprint": _interpreter_fingerprint(interpreter),
                 "launch": self._launch_context(root, kind, interpreter, ownership="managed"),
                 "managed": metadata,
                 "state": "creating",
@@ -984,7 +973,6 @@ class NapariEnvironmentService:
                 "kind": kind,
                 "interpreter": _launch_path(interpreter),
                 "interpreter_identity": _canonical_path(interpreter),
-                "interpreter_fingerprint": _interpreter_fingerprint(interpreter),
                 "launch": self._launch_context(root, kind, interpreter, ownership="managed"),
                 "managed": environment.managed.model_copy(
                     update={"installation_generation": generation}
@@ -1081,7 +1069,6 @@ class NapariEnvironmentService:
             candidate.kind = kind
             candidate.interpreter = _launch_path(interpreter)
             candidate.interpreter_identity = _canonical_path(interpreter)
-            candidate.interpreter_fingerprint = _interpreter_fingerprint(interpreter)
             candidate.launch = self._launch_context(root, kind, interpreter, ownership="external")
             candidate.inventory = None
             candidate.state = "ready"
@@ -1194,7 +1181,7 @@ class NapariEnvironmentService:
 
     async def probe(self, environment_id: UUID, *, expected_revision: int) -> NapariEnvironment:
         current = self._with_current_interpreter_state(self._get(environment_id))
-        if current.state in {"missing", "replaced"}:
+        if current.state == "missing":
             await self._replace_environment(current, expected_revision=expected_revision)
             raise NapariEnvironmentError(
                 f"napari_environment_{current.state}", current.last_error or current.state
@@ -1504,7 +1491,6 @@ class NapariEnvironmentService:
                     "kind": environment.kind,
                     "interpreter": environment.interpreter,
                     "interpreter_identity": environment.interpreter_identity,
-                    "interpreter_fingerprint": environment.interpreter_fingerprint,
                     "launch": environment.launch,
                     "managed": environment.managed,
                     "inventory": environment.inventory,
@@ -1596,7 +1582,6 @@ class NapariEnvironmentService:
             root=_canonical_path(root),
             interpreter=_launch_path(interpreter),
             interpreter_identity=_canonical_path(interpreter),
-            interpreter_fingerprint=_interpreter_fingerprint(interpreter),
             launch=self._launch_context(root, kind, interpreter, ownership=ownership),
             managed=managed,
         )
@@ -1690,22 +1675,6 @@ class NapariEnvironmentService:
         if not interpreter.is_file():
             return environment.model_copy(
                 update={"state": "missing", "last_error": "registered interpreter is missing"}
-            )
-        try:
-            fingerprint = _interpreter_fingerprint(interpreter)
-        except OSError:
-            return environment.model_copy(
-                update={"state": "missing", "last_error": "registered interpreter is unavailable"}
-            )
-        if fingerprint != environment.interpreter_fingerprint:
-            return environment.model_copy(
-                update={
-                    "state": "replaced",
-                    "last_error": (
-                        "The Python executable at the saved environment path changed since "
-                        "registration. Verify this installation before opening it."
-                    ),
-                }
             )
         return environment
 

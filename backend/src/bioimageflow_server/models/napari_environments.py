@@ -205,7 +205,6 @@ class NapariEnvironment(BaseModel):
     root: str
     interpreter: str
     interpreter_identity: str
-    interpreter_fingerprint: str
     launch: NapariLaunchContext
     managed: NapariManagedMetadata | None = None
     inventory: NapariEnvironmentInventory | None = None
@@ -217,7 +216,6 @@ class NapariEnvironment(BaseModel):
         "cancelled",
         "removing",
         "missing",
-        "replaced",
         "drifted",
         "probe_failed",
     ] = "ready"
