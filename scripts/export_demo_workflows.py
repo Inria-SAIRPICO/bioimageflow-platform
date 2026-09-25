@@ -32,7 +32,7 @@ from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noq
 from bioimageflow_server.models.graph import GraphState  # noqa: E402
 
 
-BUNDLE_VERSION = 3
+BUNDLE_VERSION = 4
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -40,7 +40,6 @@ OUTPUT_DIR = (
     / "bioimageflow_server"
     / "data"
     / "demo_workflows"
-    / f"v{BUNDLE_VERSION}"
 )
 
 
@@ -241,7 +240,19 @@ def _render_definition(
             "schema": {"type": "str", "image_spec": None},
             "source": {"node": "avg_spots_per_nucleus", "column": "source_image"},
         })
-        graph = GraphState.model_validate(graph_payload)
+    elif definition.template_id == "parameters-space-exploration":
+        # The example keeps both classes in one module. Workers import the whole
+        # ProcessingTool source file, but do not have the orchestrator package.
+        tool_files.pop("metrics.py")
+        parameter_tools = OUTPUT_DIR / definition.directory / "tools"
+        for filename in ("spot_mask_metrics.py", "parameter_sweep_results.py"):
+            tool_files[filename] = (parameter_tools / filename).read_bytes()
+        for node in graph_payload["nodes"]:
+            if node["id"] == "spot_mask_counts":
+                node["tool_module"] = "tools.spot_mask_metrics"
+            elif node["id"] == "parameter_results":
+                node["tool_module"] = "tools.parameter_sweep_results"
+    graph = GraphState.model_validate(graph_payload)
 
     def require_schema_v2(value: dict[str, Any]) -> None:
         if value.get("schema_version") != 2:

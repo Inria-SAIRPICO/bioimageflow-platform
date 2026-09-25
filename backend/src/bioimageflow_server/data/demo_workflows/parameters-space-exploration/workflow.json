@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:da7c2a492a56b8f42de93013c9a29ed4d20547ec7978a69432c3129300c81dbf",
+  "artifact_hash": "sha256:98c3baa9f298e7ad7dbdc51e830410178b50713cc8032f93967b0d5529d31060",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -331,7 +331,7 @@
         ],
         "resources": {},
         "tool_class": "SpotMaskMetrics",
-        "tool_module": "tools.metrics",
+        "tool_module": "tools.spot_mask_metrics",
         "tool_name": "SpotMaskMetrics",
         "type": "tool",
         "viewer_additions": {}
@@ -371,7 +371,7 @@
         ],
         "resources": {},
         "tool_class": "ParameterSweepResults",
-        "tool_module": "tools.metrics",
+        "tool_module": "tools.parameter_sweep_results",
         "tool_name": "ParameterSweepResults",
         "type": "tool",
         "viewer_additions": {}
@@ -382,7 +382,7 @@
   "metadata": {
     "bundled_template": {
       "id": "parameters-space-exploration",
-      "version": 2
+      "version": 4
     },
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },

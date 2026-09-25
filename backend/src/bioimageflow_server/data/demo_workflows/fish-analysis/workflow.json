@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:eda3b8696dee2abfde96973403b3fc26c267d840a03669efb12bf7ec56f42ddf",
+  "artifact_hash": "sha256:cbbacc9e647f1c4e6d3a2e38f4fa0e2b638d84cd787b9b0413afb2497f59be75",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -108,6 +108,18 @@
             "column": "avg_csf1r_per_nucleus",
             "node": "avg_spots_per_nucleus"
           }
+        },
+        {
+          "id": "output-source-image",
+          "name": "source_image",
+          "schema": {
+            "image_spec": null,
+            "type": "str"
+          },
+          "source": {
+            "column": "source_image",
+            "node": "avg_spots_per_nucleus"
+          }
         }
       ]
     },
@@ -196,7 +208,7 @@
         "collapsed": false,
         "enabled": true,
         "id": "fols2_marker_spot_analysis",
-        "name": "Marker Spot Analysis",
+        "name": "FOLS2 Marker Spot Analysis",
         "position": [
           960.0,
           0.0
@@ -209,30 +221,30 @@
             "engine": "wetlands",
             "execution": "parallel"
           },
-          "display_name": "Marker Spot Analysis",
+          "display_name": "FOLS2 Marker Spot Analysis",
           "edges": [
             {
               "id": "edge-07b064a2dfef4cc23c4f",
-              "source_node": "extract_marker_channel",
+              "source_node": "fols2_extract_marker_channel",
               "source_output": "output_image",
               "target_input": "input_image",
-              "target_node": "detect_marker_spots",
+              "target_node": "fols2_detect_marker_spots",
               "type": "column"
             },
             {
               "id": "edge-0c662bb971cb8175b378",
-              "source_node": "detect_marker_spots",
+              "source_node": "fols2_detect_marker_spots",
               "source_output": "output_image",
               "target_input": "input_image",
-              "target_node": "label_marker_spots",
+              "target_node": "fols2_label_marker_spots",
               "type": "column"
             },
             {
               "id": "edge-21f21e2e68302ceac955",
-              "source_node": "label_marker_spots",
+              "source_node": "fols2_label_marker_spots",
               "source_output": "output_image",
               "target_input": "label_image",
-              "target_node": "measure_nucleus_overlaps",
+              "target_node": "fols2_measure_nucleus_overlaps",
               "type": "column"
             }
           ],
@@ -255,10 +267,17 @@
                 },
                 "targets": [
                   {
-                    "node": "extract_marker_channel",
+                    "node": "fols2_extract_marker_channel",
                     "port": {
                       "kind": "field",
                       "name": "input_image"
+                    }
+                  },
+                  {
+                    "node": "fols2_measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "source_image"
                     }
                   }
                 ]
@@ -280,7 +299,7 @@
                 },
                 "targets": [
                   {
-                    "node": "measure_nucleus_overlaps",
+                    "node": "fols2_measure_nucleus_overlaps",
                     "port": {
                       "kind": "field",
                       "name": "reference_image"
@@ -302,7 +321,7 @@
                 },
                 "targets": [
                   {
-                    "node": "extract_marker_channel",
+                    "node": "fols2_extract_marker_channel",
                     "port": {
                       "kind": "field",
                       "name": "channel"
@@ -324,7 +343,7 @@
                 },
                 "targets": [
                   {
-                    "node": "detect_marker_spots",
+                    "node": "fols2_detect_marker_spots",
                     "port": {
                       "kind": "field",
                       "name": "gaussian_std"
@@ -346,7 +365,7 @@
                 },
                 "targets": [
                   {
-                    "node": "detect_marker_spots",
+                    "node": "fols2_detect_marker_spots",
                     "port": {
                       "kind": "field",
                       "name": "p_value"
@@ -365,7 +384,7 @@
                 },
                 "source": {
                   "column": "reference_label",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "fols2_measure_nucleus_overlaps"
                 }
               },
               {
@@ -377,7 +396,7 @@
                 },
                 "source": {
                   "column": "spot_label",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "fols2_measure_nucleus_overlaps"
                 }
               },
               {
@@ -389,7 +408,19 @@
                 },
                 "source": {
                   "column": "overlap_count",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "fols2_measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-source-image",
+                "name": "source_image",
+                "schema": {
+                  "image_spec": null,
+                  "type": "str"
+                },
+                "source": {
+                  "column": "source_image",
+                  "node": "fols2_measure_nucleus_overlaps"
                 }
               }
             ]
@@ -399,7 +430,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "extract_marker_channel",
+              "id": "fols2_extract_marker_channel",
               "name": "extract_marker_channel",
               "output_templates": {},
               "parameters": {
@@ -421,7 +452,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "detect_marker_spots",
+              "id": "fols2_detect_marker_spots",
               "name": "detect_marker_spots",
               "output_templates": {},
               "parameters": {},
@@ -441,7 +472,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "label_marker_spots",
+              "id": "fols2_label_marker_spots",
               "name": "label_marker_spots",
               "output_templates": {},
               "parameters": {},
@@ -461,7 +492,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "measure_nucleus_overlaps",
+              "id": "fols2_measure_nucleus_overlaps",
               "name": "measure_nucleus_overlaps",
               "output_templates": {},
               "parameters": {},
@@ -470,11 +501,9 @@
                 0.0
               ],
               "resources": {},
-              "tool_class": "LabelOverlaps",
-              "tool_module": "bioimageflow_common_tools.label_overlaps",
-              "tool_name": "LabelOverlaps",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_class": "FishLabelOverlaps",
+              "tool_module": "tools.fish_label_overlaps",
+              "tool_name": "FishLabelOverlaps",
               "type": "tool",
               "viewer_additions": {}
             }
@@ -500,7 +529,7 @@
         "collapsed": false,
         "enabled": true,
         "id": "csf1r_marker_spot_analysis",
-        "name": "Marker Spot Analysis",
+        "name": "CSF1R Marker Spot Analysis",
         "position": [
           960.0,
           220.0
@@ -513,30 +542,30 @@
             "engine": "wetlands",
             "execution": "parallel"
           },
-          "display_name": "Marker Spot Analysis",
+          "display_name": "CSF1R Marker Spot Analysis",
           "edges": [
             {
               "id": "edge-07b064a2dfef4cc23c4f",
-              "source_node": "extract_marker_channel",
+              "source_node": "csf1r_extract_marker_channel",
               "source_output": "output_image",
               "target_input": "input_image",
-              "target_node": "detect_marker_spots",
+              "target_node": "csf1r_detect_marker_spots",
               "type": "column"
             },
             {
               "id": "edge-0c662bb971cb8175b378",
-              "source_node": "detect_marker_spots",
+              "source_node": "csf1r_detect_marker_spots",
               "source_output": "output_image",
               "target_input": "input_image",
-              "target_node": "label_marker_spots",
+              "target_node": "csf1r_label_marker_spots",
               "type": "column"
             },
             {
               "id": "edge-21f21e2e68302ceac955",
-              "source_node": "label_marker_spots",
+              "source_node": "csf1r_label_marker_spots",
               "source_output": "output_image",
               "target_input": "label_image",
-              "target_node": "measure_nucleus_overlaps",
+              "target_node": "csf1r_measure_nucleus_overlaps",
               "type": "column"
             }
           ],
@@ -559,10 +588,17 @@
                 },
                 "targets": [
                   {
-                    "node": "extract_marker_channel",
+                    "node": "csf1r_extract_marker_channel",
                     "port": {
                       "kind": "field",
                       "name": "input_image"
+                    }
+                  },
+                  {
+                    "node": "csf1r_measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "source_image"
                     }
                   }
                 ]
@@ -584,7 +620,7 @@
                 },
                 "targets": [
                   {
-                    "node": "measure_nucleus_overlaps",
+                    "node": "csf1r_measure_nucleus_overlaps",
                     "port": {
                       "kind": "field",
                       "name": "reference_image"
@@ -606,7 +642,7 @@
                 },
                 "targets": [
                   {
-                    "node": "extract_marker_channel",
+                    "node": "csf1r_extract_marker_channel",
                     "port": {
                       "kind": "field",
                       "name": "channel"
@@ -628,7 +664,7 @@
                 },
                 "targets": [
                   {
-                    "node": "detect_marker_spots",
+                    "node": "csf1r_detect_marker_spots",
                     "port": {
                       "kind": "field",
                       "name": "gaussian_std"
@@ -650,7 +686,7 @@
                 },
                 "targets": [
                   {
-                    "node": "detect_marker_spots",
+                    "node": "csf1r_detect_marker_spots",
                     "port": {
                       "kind": "field",
                       "name": "p_value"
@@ -669,7 +705,7 @@
                 },
                 "source": {
                   "column": "reference_label",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "csf1r_measure_nucleus_overlaps"
                 }
               },
               {
@@ -681,7 +717,7 @@
                 },
                 "source": {
                   "column": "spot_label",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "csf1r_measure_nucleus_overlaps"
                 }
               },
               {
@@ -693,7 +729,19 @@
                 },
                 "source": {
                   "column": "overlap_count",
-                  "node": "measure_nucleus_overlaps"
+                  "node": "csf1r_measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-source-image",
+                "name": "source_image",
+                "schema": {
+                  "image_spec": null,
+                  "type": "str"
+                },
+                "source": {
+                  "column": "source_image",
+                  "node": "csf1r_measure_nucleus_overlaps"
                 }
               }
             ]
@@ -703,7 +751,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "extract_marker_channel",
+              "id": "csf1r_extract_marker_channel",
               "name": "extract_marker_channel",
               "output_templates": {},
               "parameters": {
@@ -725,7 +773,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "detect_marker_spots",
+              "id": "csf1r_detect_marker_spots",
               "name": "detect_marker_spots",
               "output_templates": {},
               "parameters": {},
@@ -745,7 +793,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "label_marker_spots",
+              "id": "csf1r_label_marker_spots",
               "name": "label_marker_spots",
               "output_templates": {},
               "parameters": {},
@@ -765,7 +813,7 @@
             {
               "collapsed": false,
               "enabled": true,
-              "id": "measure_nucleus_overlaps",
+              "id": "csf1r_measure_nucleus_overlaps",
               "name": "measure_nucleus_overlaps",
               "output_templates": {},
               "parameters": {},
@@ -774,11 +822,9 @@
                 0.0
               ],
               "resources": {},
-              "tool_class": "LabelOverlaps",
-              "tool_module": "bioimageflow_common_tools.label_overlaps",
-              "tool_name": "LabelOverlaps",
-              "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_class": "FishLabelOverlaps",
+              "tool_module": "tools.fish_label_overlaps",
+              "tool_name": "FishLabelOverlaps",
               "type": "tool",
               "viewer_additions": {}
             }
@@ -810,7 +856,7 @@
   "metadata": {
     "bundled_template": {
       "id": "fish-analysis",
-      "version": 2
+      "version": 4
     },
     "description": "Analyze FISH marker spots per segmented nucleus."
   },

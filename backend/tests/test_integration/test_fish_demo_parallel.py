@@ -56,7 +56,7 @@ class _OverlapRows(ProcessingTool):
 def test_parallel_marker_branches_publish_views_and_four_image_summary(tmp_path: Path) -> None:
     tool_path = (
         Path(__file__).resolve().parents[2]
-        / "src/bioimageflow_server/data/demo_workflows/v3/fish-analysis/tools/average_spots_per_nucleus.py"
+        / "src/bioimageflow_server/data/demo_workflows/fish-analysis/tools/average_spots_per_nucleus.py"
     )
     spec = importlib.util.spec_from_file_location("fish_parallel_average", tool_path)
     assert spec and spec.loader

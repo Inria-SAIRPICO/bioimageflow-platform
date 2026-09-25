@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import json
+import builtins
+import hashlib
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 
 import pytest
+from bioimageflow_core.worker_origins import SourceFileOriginV1, load_worker_tool
 
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.demo_workflows import (
@@ -30,7 +33,12 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 3
+    assert service.bundle_version == 4
+    assert {path.name for path in service.resource_root.iterdir()} == {
+        "manifest.json",
+        "fish-analysis",
+        "parameters-space-exploration",
+    }
 
     def assert_schema_v2(graph: dict) -> None:
         assert graph["schema_version"] == 2
@@ -128,10 +136,42 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
     assert len(branch_node_ids) == len(set(branch_node_ids))
 
 
+def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, store = _service(tmp_path)
+    service.install()
+    workflow_id = "Demo/Parameters Space Exploration"
+    graph = store.read_workflow_document(workflow_id).graph
+    tools = {node.id: node for node in graph.nodes if node.type == "tool"}
+    assert tools["spot_mask_counts"].tool_module == "tools.spot_mask_metrics"
+    assert tools["parameter_results"].tool_module == "tools.parameter_sweep_results"
+
+    tool_path = store.workflow_tools_dir(workflow_id) / "spot_mask_metrics.py"
+    original_import = builtins.__import__
+
+    def worker_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "bioimageflow" or name.startswith("bioimageflow."):
+            raise ModuleNotFoundError("No module named 'bioimageflow'")
+        return original_import(name, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(builtins, "__import__", worker_import)
+        tool = load_worker_tool(
+            SourceFileOriginV1(
+                path=str(tool_path),
+                source_hash=hashlib.sha256(tool_path.read_bytes()).hexdigest(),
+                class_name="SpotMaskMetrics",
+            )
+        )
+
+    assert type(tool).__name__ == "SpotMaskMetrics"
+
+
 def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> None:
     import pandas as pd
 
-    path = Path(__file__).resolve().parents[2] / "src/bioimageflow_server/data/demo_workflows/v3/fish-analysis/tools/average_spots_per_nucleus.py"
+    path = Path(__file__).resolve().parents[2] / "src/bioimageflow_server/data/demo_workflows/fish-analysis/tools/average_spots_per_nucleus.py"
     spec = importlib.util.spec_from_file_location("fish_average_demo", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
