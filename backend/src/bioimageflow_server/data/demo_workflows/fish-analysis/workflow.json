@@ -856,7 +856,7 @@
   "metadata": {
     "bundled_template": {
       "id": "fish-analysis",
-      "version": 4
+      "version": 5
     },
     "description": "Analyze FISH marker spots per segmented nucleus."
   },

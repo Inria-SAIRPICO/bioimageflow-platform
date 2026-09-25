@@ -32,7 +32,7 @@ from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noq
 from bioimageflow_server.models.graph import GraphState  # noqa: E402
 
 
-BUNDLE_VERSION = 4
+BUNDLE_VERSION = 5
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -248,7 +248,13 @@ def _render_definition(
         for filename in ("spot_mask_metrics.py", "parameter_sweep_results.py"):
             tool_files[filename] = (parameter_tools / filename).read_bytes()
         for node in graph_payload["nodes"]:
-            if node["id"] == "spot_mask_counts":
+            if node["id"] == "atlas_detections":
+                # Each parameter row processes the same source image. Atlas's
+                # default template would make every row write the same mask.
+                node["output_templates"]["output_image"] = (
+                    "{input_image.stem}_{row_index}_detections{ext}"
+                )
+            elif node["id"] == "spot_mask_counts":
                 node["tool_module"] = "tools.spot_mask_metrics"
             elif node["id"] == "parameter_results":
                 node["tool_module"] = "tools.parameter_sweep_results"

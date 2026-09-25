@@ -106,10 +106,11 @@ The **Storage** preferences report whether the recognized demos are installed an
 Removing demos preserves unrelated workflows under `Demo/`.
 Switching to another existing workspace does not copy demos into it automatically.
 
-The runtime bundle is version 4, stored under one `demo_workflows/` directory, and every root and recursively embedded graph is canonical schema v2.
+The runtime bundle is version 5, stored under one `demo_workflows/` directory, and every root and recursively embedded graph is canonical schema v2.
 New Fish Analysis installations give the FOLS2 and CSF1R embedded instances distinct display names; existing installed demos remain unchanged.
 Their overlap tables include the source image filename on each row, and the final statistics table includes per-image rows followed by a weighted Global average row.
 The Fish Analysis marker branches use distinct internal node IDs and parallel execution with the editable sibling BioImageFlow source, which retains nested result identities and Node Data views across worker threads. Its final tool groups overlap rows by their immediate parent image row index before adding the weighted Global average.
+The Parameters Space Exploration ATLAS node includes the parameter row index in its mask output path so each sweep result remains separate.
 The maintained Python examples and platform-owned demo tool sources are exported to bundled workflow definitions with:
 
 ```bash

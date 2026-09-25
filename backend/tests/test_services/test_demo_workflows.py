@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from bioimageflow_core.worker_origins import SourceFileOriginV1, load_worker_tool
+from bioimageflow.template import resolve_template
 
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.demo_workflows import (
@@ -33,7 +34,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 4
+    assert service.bundle_version == 5
     assert {path.name for path in service.resource_root.iterdir()} == {
         "manifest.json",
         "fish-analysis",
@@ -166,6 +167,28 @@ def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
         )
 
     assert type(tool).__name__ == "SpotMaskMetrics"
+
+
+def test_parameter_demo_atlas_masks_have_distinct_paths_for_each_setting(tmp_path: Path) -> None:
+    service, store = _service(tmp_path)
+    service.install()
+    graph = store.read_workflow_document("Demo/Parameters Space Exploration").graph
+    atlas = next(node for node in graph.nodes if node.id == "atlas_detections")
+    template = atlas.output_templates["output_image"]
+
+    paths = {
+        resolve_template(
+            template,
+            {
+                "input_image": "/images/13432_c0.tif",
+                "row_index": str(index),
+                "_ext": ".tif",
+            },
+        )
+        for index in range(6)
+    }
+    assert len(paths) == 6
+    assert all(path.endswith("_detections.tif") for path in paths)
 
 
 def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> None:

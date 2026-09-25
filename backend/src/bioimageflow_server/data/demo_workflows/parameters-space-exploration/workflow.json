@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:98c3baa9f298e7ad7dbdc51e830410178b50713cc8032f93967b0d5529d31060",
+  "artifact_hash": "sha256:d47a957f95e596d1fa6e6b5a692e8e2a10df1312140ab200de2ca8069325905e",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -303,7 +303,9 @@
         "enabled": true,
         "id": "atlas_detections",
         "name": "atlas_detections",
-        "output_templates": {},
+        "output_templates": {
+          "output_image": "{input_image.stem}_{row_index}_detections{ext}"
+        },
         "parameters": {},
         "position": [
           960.0,
@@ -382,7 +384,7 @@
   "metadata": {
     "bundled_template": {
       "id": "parameters-space-exploration",
-      "version": 4
+      "version": 5
     },
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },
