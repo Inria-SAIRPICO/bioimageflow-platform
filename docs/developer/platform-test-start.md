@@ -4,14 +4,14 @@ orphan: true
 
 # Start the new platform confidence campaign
 
-The campaign is **PREPARED / NOT EXECUTED**.
-Application execution remains held pending the user's model choice after the interruption; the specification revision and docs checks do not resume it.
+The campaign is **RUNNING**; use the checkpoint to resume the remaining work.
+The user requested execution after the specification revision and documentation acceptance.
 Use this prompt when execution is requested; reading or reviewing these documents alone does not start tests, repair branches, or native setup.
 The [plan](platform-test-plan.md) defines outcomes and acceptance; the [checkpoint](platform-test-progress.md) contains the observed baseline and next tasks.
 The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is preserved for audit only.
 
 ```text
-After the user resolves the pending model choice and requests execution, execute the new Platform confidence campaign in docs/developer/platform-test-plan.md.
+Execute or resume the user-authorized Platform confidence campaign in docs/developer/platform-test-plan.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
 You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
 

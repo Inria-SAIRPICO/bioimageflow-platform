@@ -615,7 +615,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function loadWorkflow(
     name: string,
     canvasId?: CanvasId,
-    options: { rememberAsLastOpened?: boolean } = {},
+    options: { rememberAsLastOpened?: boolean; canUpdatePresentation?: () => boolean } = {},
   ): Promise<GraphState> {
     const identityGeneration = captureWorkflowIdentity(name)
     const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`)
@@ -624,10 +624,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       throw new WorkflowIdentityChangedError(name)
     }
     upsertWorkflow(data.info)
-    setCurrent(data.info, canvasId)
-    missingPackages.value = data.missing_packages ?? []
-    missingTools.value = data.missing_tools ?? []
-    markPresentationClean(canvasId)
+    if (options.canUpdatePresentation?.() !== false) {
+      setCurrent(data.info, canvasId)
+      missingPackages.value = data.missing_packages ?? []
+      missingTools.value = data.missing_tools ?? []
+      markPresentationClean(canvasId)
+    }
     if (options.rememberAsLastOpened !== false) {
       await autoSave.setLastOpenedWorkflow(name)
     }

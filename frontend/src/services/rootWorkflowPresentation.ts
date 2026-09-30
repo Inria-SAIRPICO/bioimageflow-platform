@@ -1,5 +1,5 @@
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
-import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import { fetchWorkflowDraft, type WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
@@ -27,14 +27,19 @@ export function workflowInfoId(workflow: WorkflowInfo): string {
 
 export async function loadRootWorkflowPresentation(
   workflowName: string,
+  options: { background?: boolean; canPresent?: () => boolean } = {},
 ): Promise<RootWorkflowPresentation> {
   const workflowStore = useWorkflowStore()
   const identityGeneration = workflowStore.captureWorkflowIdentity(workflowName)
   const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
+  // Startup can update the loading presentation only while App still owns it.
   const savedGraph = await workflowStore.loadWorkflow(
     workflowName,
     canvasId,
-    { rememberAsLastOpened: false },
+    {
+      rememberAsLastOpened: false,
+      ...(options.background ? { canUpdatePresentation: options.canPresent ?? (() => false) } : {}),
+    },
   )
   const info = workflowStore.workflows.find(
     workflow => workflowInfoId(workflow) === workflowName,
@@ -48,7 +53,9 @@ export async function loadRootWorkflowPresentation(
   }
   let result: RootWorkflowPresentation
   try {
-    const draft = await useWorkflowDraftStore().loadDraft(workflowName)
+    const draft = options.background
+      ? await fetchWorkflowDraft(workflowName)
+      : await useWorkflowDraftStore().loadDraft(workflowName)
     result = {
       graph: draft.graph,
       dirty: draft.dirty_against_saved,

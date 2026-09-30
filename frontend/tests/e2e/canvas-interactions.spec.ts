@@ -569,7 +569,15 @@ test.describe('Canvas interactions', () => {
       response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST',
     )
     await page.getByTestId('run-workflow-button').click()
-    expect((await runResponse).status()).toBe(202)
+    const acceptedRun = await runResponse
+    expect(acceptedRun.status()).toBe(202)
+    const runIdentity = (await acceptedRun.json()).execution_id
+    const runRecord = await page.request.get(`${API_BASE}/api/v1/executions/${runIdentity}`)
+    expect(runRecord.ok()).toBeTruthy()
+    expect(await runRecord.json()).toMatchObject({
+      backend: 'direct', workflow_id: workflowName,
+      draft_revision: acceptedRun.request().postDataJSON().draft_revision,
+    })
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
 
     await incrementNode.click()

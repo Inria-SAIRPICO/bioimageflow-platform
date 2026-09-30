@@ -47,6 +47,7 @@ import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
 import { emptyGraph } from '@/sessions/graphDocument'
+import { loadRootWorkflowForOpen } from '@/services/startupWorkflow'
 import {
   loadRootWorkflowPresentation,
   type RootWorkflowPresentation,
@@ -383,8 +384,11 @@ async function openWorkflow(): Promise<void> {
 
 async function onOpenWorkflow(name: string): Promise<void> {
   if (executionStore.isMutationLocked) return
+  window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', {
+    detail: { workflowName: name },
+  }))
   try {
-    const loaded = await loadRootWorkflowPresentation(name)
+    const loaded = await loadRootWorkflowForOpen(name)
     if (executionStore.isMutationLocked) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)

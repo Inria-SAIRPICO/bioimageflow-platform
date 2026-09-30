@@ -5,8 +5,8 @@ orphan: true
 # Platform confidence campaign — 2026-09-30
 
 Establish confidence in the platform people use today, repair demonstrated defects, then complete systematic coverage of implemented in-scope behavior.
-This is a new campaign prepared from the previous campaign's results; execution has not started.
-Application checks remain **HELD pending the user's model choice** after the execution interruption; specification review and documentation acceptance may continue without restarting the application campaign.
+This campaign was prepared from the previous campaign's results; execution started after the user requested it on 2026-09-30.
+Application execution is **RUNNING**; the checkpoint records actual readiness outcomes separately from historical coverage.
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
 

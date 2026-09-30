@@ -178,6 +178,7 @@ onMounted(() => {
     'bioimageflow:apply-graph',
     onApplyGraph as EventListener,
   )
+  window.addEventListener('bioimageflow:root-workflow-open-started', onRootWorkflowOpenStarted)
   window.addEventListener(
     'bioimageflow:close-nested-workflow-session',
     onCloseNestedWorkflowSession as EventListener,
@@ -226,6 +227,7 @@ onBeforeUnmount(() => {
     'bioimageflow:apply-graph',
     onApplyGraph as EventListener,
   )
+  window.removeEventListener('bioimageflow:root-workflow-open-started', onRootWorkflowOpenStarted)
   window.removeEventListener(
     'bioimageflow:close-nested-workflow-session',
     onCloseNestedWorkflowSession as EventListener,
@@ -306,6 +308,10 @@ const openCanvasPanelIds = new Set<string>()
 const rootPanelActivationOrder: string[] = []
 let canvasActivationRequest = 0
 let rootOpenRequest = 0
+function onRootWorkflowOpenStarted(): void {
+  // An accepted user Open owns presentation before its asynchronous load ends.
+  rootOpenRequest += 1
+}
 let startupResolved = false
 let isUnmounting = false
 let activeCanvasPanelId: string | null = null
@@ -426,7 +432,9 @@ async function resolveAndOpenStartupWorkflow(api: DockviewApi): Promise<void> {
   const request = rootOpenRequest
   let startup: Awaited<ReturnType<typeof resolveStartupWorkflow>> = null
   try {
-    startup = await resolveStartupWorkflow()
+    startup = await resolveStartupWorkflow({
+      canPresent: () => request === rootOpenRequest && !isUnmounting && dockviewApi.value === api,
+    })
   } catch (error) {
     console.warn('[startup] Failed to resolve a workflow:', error)
   }

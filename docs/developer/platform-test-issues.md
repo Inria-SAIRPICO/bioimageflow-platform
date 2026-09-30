@@ -32,7 +32,8 @@ Next recurrence: capture those event/API breadcrumbs on the exact failed browser
 ## Resolved issue lookup
 
 ISSUE-001–ISSUE-012 and ISSUE-015–ISSUE-016 are closed in the [issue archive](archive/platform-test-issues-through-tier-1b.md); ISSUE-006 has a reviewed `not-a-defect` disposition.
-Use the stable ID to search that archive only when a specific historical decision matters to the current task.
+ISSUE-018 is resolved in the [Wave 1 issue archive](archive/platform-test-issues-wave-1-2026-09-30.md), with the startup/Open causal diagnosis and passing repair evidence.
+Use the stable ID to search the relevant archive only when a specific historical decision matters to the current task.
 
 ## New issue record
 

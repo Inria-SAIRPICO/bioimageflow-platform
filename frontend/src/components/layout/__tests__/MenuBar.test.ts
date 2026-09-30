@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
 }))
 const autoSaveMocks = vi.hoisted(() => ({
+  loadAutoSave: vi.fn().mockResolvedValue(null),
   clearAutoSave: vi.fn().mockResolvedValue(undefined),
   clearAutoSaveStrict: vi.fn().mockResolvedValue(undefined),
   setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
@@ -220,6 +221,7 @@ describe('MenuBar', () => {
     apiMocks.put.mockReset()
     apiMocks.patch.mockReset()
     apiMocks.delete.mockReset()
+    autoSaveMocks.loadAutoSave.mockReset().mockResolvedValue(null)
     autoSaveMocks.clearAutoSave.mockClear()
     autoSaveMocks.clearAutoSaveStrict.mockReset().mockResolvedValue(undefined)
     autoSaveMocks.setLastOpenedWorkflow.mockClear()
@@ -759,6 +761,24 @@ describe('MenuBar', () => {
       expect(document.body.querySelector('[data-testid="open-workflow-dialog"]')).not.toBeNull()
     })
 
+    it('refused Open during execution never cancels startup', async () => {
+      const wrapper = mountMenuBar()
+      const onStarted = vi.fn()
+      window.addEventListener('bioimageflow:root-workflow-open-started', onStarted)
+      try {
+        useExecutionStore().state = 'starting'
+        window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+          detail: { action: 'open', name: 'a' },
+        }))
+        await flushPromises()
+        expect(onStarted).not.toHaveBeenCalled()
+        expect(apiMocks.get).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('bioimageflow:root-workflow-open-started', onStarted)
+        wrapper.unmount()
+      }
+    })
+
     it('opens the workflow that finished loading even if global current changes later', async () => {
       const graphA: GraphState = makeGraph()
       apiMocks.get.mockResolvedValueOnce({
@@ -785,6 +805,8 @@ describe('MenuBar', () => {
         resolveDraft = resolve
       }))
       const wrapper = mountMenuBar()
+      const started = vi.fn()
+      window.addEventListener('bioimageflow:root-workflow-open-started', started)
       const applied: any[] = []
       const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
       window.addEventListener('bioimageflow:apply-graph', onApply)
@@ -792,6 +814,8 @@ describe('MenuBar', () => {
       window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
         detail: { action: 'open', name: 'a' },
       }))
+      expect(started).toHaveBeenCalledOnce()
+      expect(applied).toHaveLength(0)
       await flushPromises()
       useWorkflowStore().current = { name: 'b', display_name: 'Workflow B' } as any
       resolveDraft(openedDraft)
@@ -804,6 +828,7 @@ describe('MenuBar', () => {
         draft: openedDraft,
         identityGeneration: 0,
       })
+      window.removeEventListener('bioimageflow:root-workflow-open-started', started)
       window.removeEventListener('bioimageflow:apply-graph', onApply)
       wrapper.unmount()
     })

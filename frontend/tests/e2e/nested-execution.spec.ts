@@ -439,6 +439,10 @@ test('opened nested canvases inspect the results of their own instance', async (
   second.id = 'second_nested_step'
   second.name = 'Second marker analysis'
   second.position = [410, 410]
+  const secondSeed = second.workflow.nodes.find(node => node.id === 'internal_seed')
+  if (secondSeed?.type !== 'tool') throw new Error('Expected second internal source')
+  secondSeed.tool_name = 'Generate'
+  secondSeed.parameters = { column_name: 'number', values: [10, 20, 30] }
   graph.nodes.push(second)
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
   await createSavedWorkflow(page, graph)
@@ -463,9 +467,19 @@ test('opened nested canvases inspect the results of their own instance', async (
       'Execution complete', { timeout: 30_000 },
     )
 
+    let secondResultIdentity: unknown = null
     for (const instance of [
-      { id: 'nested_step', name: 'First marker analysis', rows: [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']] },
-      { id: 'second_nested_step', name: 'Second marker analysis', rows: [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']] },
+      {
+        id: 'nested_step', name: 'First marker analysis',
+        columns: ['number', 'label', 'number_plus_one'],
+        rows: [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']],
+        sourceColumns: ['number', 'label'], sourceRows: [['1', 'one'], ['2', 'two'], ['3', 'three']],
+      },
+      {
+        id: 'second_nested_step', name: 'Second marker analysis',
+        columns: ['number', 'number_plus_one'], rows: [['10', '11'], ['20', '21'], ['30', '31']],
+        sourceColumns: ['number'], sourceRows: [['10'], ['20'], ['30']],
+      },
     ]) {
       await page.locator(`.vue-flow__node[data-id="${instance.id}"]:visible`).dblclick()
       await expect(page.locator('.dv-tab').filter({ hasText: instance.name })).toBeVisible()
@@ -478,10 +492,19 @@ test('opened nested canvases inspect the results of their own instance', async (
           source.node_id === `${instance.id}/nested_increment`
         ))
       ))
+      const projectionResponse = page.waitForResponse(response => (
+        response.url().endsWith('/api/v1/data-table/query')
+        && response.request().postDataJSON()?.sources?.some((source: { node_id: string }) => (
+          source.node_id === `${instance.id}/nested_increment`
+        ))
+        && response.status() === 200
+      ))
       await internal.click()
       await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
       await projectionRequest
-      await expectExactTable(page.getByTestId('data-table-panel'), ['number', 'label', 'number_plus_one'], instance.rows)
+      const projected = await (await projectionResponse).json()
+      if (instance.id === 'second_nested_step') secondResultIdentity = projected.sources[0].result_identity
+      await expectExactTable(page.getByTestId('data-table-panel'), instance.columns, instance.rows)
       const intermediate = page.locator('.vue-flow__node[data-id="internal_seed"]:visible')
       await expect(intermediate.locator('.status-indicator')).toHaveClass(/status-executed/)
       const intermediateRequest = page.waitForRequest(request => (
@@ -494,7 +517,7 @@ test('opened nested canvases inspect the results of their own instance', async (
       await intermediate.click()
       await intermediateRequest
       await expectExactTable(page.getByTestId('data-table-panel'),
-        ['number', 'label'], [['1', 'one'], ['2', 'two'], ['3', 'three']])
+        instance.sourceColumns, instance.sourceRows)
       await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
     }
     await page.reload()
@@ -505,11 +528,20 @@ test('opened nested canvases inspect the results of their own instance', async (
     await expect(page.locator('.nested-workflow-editor:visible')).toBeVisible()
     const reopened = page.locator('.vue-flow__node[data-id="nested_increment"]:visible')
     await expect(reopened.locator('.status-indicator')).toHaveClass(/status-executed/)
+    const reopenedProjection = page.waitForResponse(response => (
+      response.url().endsWith('/api/v1/data-table/query')
+      && response.request().postDataJSON()?.sources?.some((source: { node_id: string }) => (
+        source.node_id === 'second_nested_step/nested_increment'
+      ))
+      && response.status() === 200
+    ))
     await reopened.click()
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     await expectExactTable(page.getByTestId('data-table-panel'),
-      ['number', 'label', 'number_plus_one'],
-      [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']])
+      ['number', 'number_plus_one'], [['10', '11'], ['20', '21'], ['30', '31']])
+    expect((await (await reopenedProjection).json()).sources[0].result_identity).toEqual(secondResultIdentity)
+    await expect(page.locator('.nested-workflow-editor:visible')).toBeVisible()
+    await expect(reopened).toHaveClass(/selected/)
   } finally {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${rootName}`).catch(() => undefined)
   }

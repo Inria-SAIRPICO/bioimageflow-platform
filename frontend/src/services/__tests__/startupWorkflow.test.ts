@@ -9,9 +9,11 @@ const workflowStoreMock = vi.hoisted(() => ({
   fetchWorkflows: vi.fn(),
   flattenedWorkflows: [] as WorkflowInfo[],
   workflows: [] as WorkflowInfo[],
+  assertWorkflowIdentityCurrent: vi.fn(),
 }))
 
 const autoSaveMock = vi.hoisted(() => ({
+  loadAutoSave: vi.fn(),
   loadMostRecentAutoSave: vi.fn(),
   getLastOpenedWorkflow: vi.fn(),
   clearAutoSave: vi.fn(),
@@ -37,7 +39,7 @@ vi.mock('../rootWorkflowPresentation', () => ({
   loadRootWorkflowPresentation: presentationMocks.loadRootWorkflowPresentation,
 }))
 
-import { resolveStartupWorkflow } from '../startupWorkflow'
+import { loadRootWorkflowForOpen, resolveStartupWorkflow } from '../startupWorkflow'
 
 function graph(nodeId: string): GraphState {
   return makeGraph({
@@ -95,10 +97,39 @@ describe('resolveStartupWorkflow', () => {
     workflowStoreMock.workflows = []
     workflowStoreMock.fetchWorkflowTree.mockResolvedValue(undefined)
     workflowStoreMock.fetchWorkflows.mockResolvedValue(undefined)
+    autoSaveMock.loadAutoSave.mockResolvedValue(null)
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValue(null)
     autoSaveMock.getLastOpenedWorkflow.mockResolvedValue(null)
     autoSaveMock.clearAutoSave.mockResolvedValue(undefined)
     autoSaveMock.setLastOpenedWorkflow.mockResolvedValue(undefined)
+  })
+
+  it('explicit Open retains newer same-workflow recovery and its accepted CAS base', async () => {
+    const info = workflowInfo('recovered')
+    const draft = { draft_revision: 7, updated_at: '2026-05-21T11:00:00Z' } as WorkflowDraftResponse
+    const loaded = presentation('recovered', { draft })
+    const recovered = graph('recovery')
+    workflowStoreMock.workflows = [info]
+    presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
+    autoSaveMock.loadAutoSave.mockResolvedValueOnce({
+      name: 'recovered', graph: recovered, timestamp: Date.parse('2026-05-21T12:00:00Z'),
+    })
+
+    await expect(loadRootWorkflowForOpen('recovered')).resolves.toMatchObject({
+      graph: recovered, dirty: true, draft: { draft_revision: 7 },
+    })
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
+    expect(workflowStoreMock.assertWorkflowIdentityCurrent).toHaveBeenCalledWith('recovered', 0)
+  })
+
+  it('explicit Open keeps unrelated recovery separate', async () => {
+    const loaded = presentation('selected')
+    presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
+    autoSaveMock.loadAutoSave.mockResolvedValueOnce({
+      name: 'other', graph: graph('other-recovery'), timestamp: Date.parse('2026-05-21T12:00:00Z'),
+    })
+    await expect(loadRootWorkflowForOpen('selected')).resolves.toEqual(loaded)
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
   })
 
   it('falls back to the flat workflow list when the tree request fails', async () => {
@@ -112,7 +143,7 @@ describe('resolveStartupWorkflow', () => {
     await expect(resolveStartupWorkflow()).resolves.toEqual(loaded)
 
     expect(workflowStoreMock.fetchWorkflows).toHaveBeenCalledOnce()
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('analysis')
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('analysis', { background: true, canPresent: expect.any(Function) })
   })
 
   it('opens the last workflow even when another workflow has newer recovery', async () => {
@@ -133,7 +164,7 @@ describe('resolveStartupWorkflow', () => {
 
     expect(result).toMatchObject({ workflowName: 'last-opened' })
     expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledTimes(1)
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('last-opened')
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('last-opened', { background: true, canPresent: expect.any(Function) })
     expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalledWith('recovered')
   })
 
@@ -186,7 +217,7 @@ describe('resolveStartupWorkflow', () => {
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(presentation('first'))
 
     await expect(resolveStartupWorkflow()).resolves.toMatchObject({ workflowName: 'first' })
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('first')
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('first', { background: true, canPresent: expect.any(Function) })
   })
 
   it('clears a recovery entry that is older than the saved workflow or durable draft', async () => {
@@ -222,7 +253,7 @@ describe('resolveStartupWorkflow', () => {
     await expect(resolveStartupWorkflow()).resolves.toEqual(loaded)
 
     expect(autoSaveMock.clearAutoSave).toHaveBeenCalledWith('Untitled')
-    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('renamed')
+    expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('renamed', { background: true, canPresent: expect.any(Function) })
   })
 
   it('clears a missing startup target and falls through to the next known workflow', async () => {
@@ -246,8 +277,8 @@ describe('resolveStartupWorkflow', () => {
     expect(autoSaveMock.clearAutoSave).toHaveBeenCalledWith('missing')
     expect(autoSaveMock.setLastOpenedWorkflow).toHaveBeenCalledWith(null)
     expect(presentationMocks.loadRootWorkflowPresentation.mock.calls).toEqual([
-      ['missing'],
-      ['fallback'],
+      ['missing', { background: true, canPresent: expect.any(Function) }],
+      ['fallback', { background: true, canPresent: expect.any(Function) }],
     ])
   })
 

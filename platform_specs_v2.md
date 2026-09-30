@@ -393,6 +393,7 @@ Width persistence stores only explicit user choices by workflow/table and stable
 Node Data is a read-only inspection surface during execution.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
 In an opened nested canvas, selecting an internal node queries its own result using the full root-relative instance path and root workflow storage identity.
+Node Data dock focus preserves that canvas selection; pending startup restoration cannot reactivate the root after an accepted Open and subsequent nested inspection (v1 Section 3.8).
 Nested node status and progress are projected from the same scoped root execution when that editor still presents the applied instance; private edits retain the ordinary validation and cached-result behavior until applied and rerun.
 
 ## 14. API Surface

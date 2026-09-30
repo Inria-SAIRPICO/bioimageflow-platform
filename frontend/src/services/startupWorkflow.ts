@@ -36,7 +36,21 @@ async function applyFreshRecovery(
   }
 }
 
-export async function resolveStartupWorkflow(): Promise<RootWorkflowPresentation | null> {
+/** Explicit Open must retain the recovery that a superseded startup would use. */
+export async function loadRootWorkflowForOpen(workflowName: string): Promise<RootWorkflowPresentation> {
+  const presentation = await loadRootWorkflowPresentation(workflowName)
+  const info = useWorkflowStore().workflows.find(
+    workflow => workflowInfoId(workflow) === workflowName,
+  )
+  const recovery = await useAutoSave().loadAutoSave(workflowName)
+  const result = await applyFreshRecovery(presentation, recovery, info?.last_modified)
+  useWorkflowStore().assertWorkflowIdentityCurrent(workflowName, presentation.identityGeneration)
+  return result
+}
+
+export async function resolveStartupWorkflow(
+  options: { canPresent?: () => boolean } = {},
+): Promise<RootWorkflowPresentation | null> {
   const workflowStore = useWorkflowStore()
   const autoSave = useAutoSave()
   await workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
@@ -61,7 +75,9 @@ export async function resolveStartupWorkflow(): Promise<RootWorkflowPresentation
 
   for (const workflowName of [...new Set(candidates)]) {
     try {
-      const presentation = await loadRootWorkflowPresentation(workflowName)
+      const presentation = await loadRootWorkflowPresentation(workflowName, {
+        background: true, canPresent: options.canPresent ?? (() => true),
+      })
       const info = workflowStore.workflows.find(
         workflow => workflowInfoId(workflow) === workflowName,
       )
