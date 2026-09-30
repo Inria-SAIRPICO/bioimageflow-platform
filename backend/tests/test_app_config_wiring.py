@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from importlib.metadata import version
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -18,6 +19,7 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.routers.datasets import (
     get_datasets_root,
     get_max_upload_size,
@@ -104,6 +106,27 @@ async def test_create_app_creates_missing_tool_store(
     )
 
     assert store.is_dir()
+
+
+async def test_automatic_environment_preparation_uses_one_service_guard(empty_tool_store: Path) -> None:
+    from bioimageflow_server.routers.execution import get_execution_manager
+    from bioimageflow_server.routers.tools import get_tool_environment_service
+
+    app = create_app(AppConfig(
+        tool_registry=ToolRegistryService(), pypi_versions=_FakePypi(), disable_hot_reload=True,
+    ))
+    service = app.dependency_overrides[get_tool_environment_service]()
+    execution = app.dependency_overrides[get_execution_manager]()
+    workflow = SimpleNamespace(
+        engine_type="wetlands",
+        create_engine=lambda **kwargs: SimpleNamespace(adapter=kwargs["env_manager"]),
+    )
+    context = ExecutionContext(execution_id="guard-wiring", workflow_id="wf", draft_revision=1)
+    engine = execution._create_execution_engine(workflow, context)
+
+    assert execution._processing_environment_lock is service.processing_environment_lock
+    assert engine.adapter._environment_lock is service.processing_environment_lock
+    assert engine.adapter._manager is service.manager
 
 
 async def test_install_endpoint_no_longer_500s_by_default(

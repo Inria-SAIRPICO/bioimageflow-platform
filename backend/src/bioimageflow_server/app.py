@@ -616,6 +616,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             storage_path=stateless_storage_path,
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
+            processing_environment_lock=getattr(
+                tool_environment_service, "processing_environment_lock", None,
+            ),
             environment_replacement_authorizer=getattr(
                 tool_environment_service,
                 "can_replace_processing_environment",

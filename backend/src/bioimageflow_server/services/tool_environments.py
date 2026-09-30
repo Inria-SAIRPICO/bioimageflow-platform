@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,13 +36,21 @@ class ToolEnvironmentService:
         self._managed_environments = managed_environment_manager
         self._protected_environment_names = protected_environment_names
         self._standard_refresh_task: asyncio.Task[None] | None = None
+        self._processing_environment_lock = threading.RLock()
+
+    @property
+    def processing_environment_lock(self) -> Any:
+        """Coordinate automatic startup preparation with execution submission."""
+        return self._processing_environment_lock
 
     @property
     def _manager(self) -> Any:
         if self._wetlands is None:
-            from bioimageflow.env_manager import WetlandsEnvManager
+            with self.processing_environment_lock:
+                if self._wetlands is None:
+                    from bioimageflow.env_manager import WetlandsEnvManager
 
-            self._wetlands = WetlandsEnvManager()
+                    self._wetlands = WetlandsEnvManager()
         return self._wetlands
 
     @property
@@ -121,25 +130,7 @@ class ToolEnvironmentService:
     async def _refresh_standard_environment(self) -> None:
         env_name = GENERAL_ENV.name
         try:
-            self._require_processing_replacement_allowed(env_name)
-            state = await anyio_to_thread.run_sync(
-                self._manager.inspect_environment,
-                GENERAL_ENV,
-            )
-            if state is not EnvironmentRecipeState.STALE:
-                return
-            tools = self._tools_for_environment(env_name)
-            self._set_status(tools, "updating")
-            self._publish(env_name, "updating")
-            await anyio_to_thread.run_sync(
-                lambda: self._manager.get_or_create(
-                    GENERAL_ENV,
-                    replace_existing=True,
-                    on_provision_event=self._log_provision_event,
-                )
-            )
-            self._set_status(tools, "running")
-            self._publish(env_name, "running")
+            await anyio_to_thread.run_sync(self._refresh_standard_environment_sync)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -147,6 +138,23 @@ class ToolEnvironmentService:
             self._set_status(tools, "failed")
             self._publish(env_name, "failed")
             logger.exception("Failed to refresh the bioimageflow-general environment")
+
+    def _refresh_standard_environment_sync(self) -> None:
+        # Acquire and release in the worker thread; never hold this guard on
+        # the event loop while awaiting an offloaded manager operation.
+        with self.processing_environment_lock:
+            self._require_processing_replacement_allowed(GENERAL_ENV.name)
+            if self._manager.inspect_environment(GENERAL_ENV) is not EnvironmentRecipeState.STALE:
+                return
+            tools = self._tools_for_environment(GENERAL_ENV.name)
+            self._set_status(tools, "updating")
+            self._publish(GENERAL_ENV.name, "updating")
+            self._manager.get_or_create(
+                GENERAL_ENV, replace_existing=True,
+                on_provision_event=self._log_provision_event,
+            )
+            self._set_status(tools, "running")
+            self._publish(GENERAL_ENV.name, "running")
 
     async def stop(self, env_name: str) -> str:
         tools = self._tools_for_environment(env_name)

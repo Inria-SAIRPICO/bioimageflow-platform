@@ -261,6 +261,8 @@ class _FakeWetlandsManager:
         self.replace_existing_calls: list[bool] = []
         self.recipe_state = "current"
         self.raise_exc: BaseException | None = None
+        self.generation = 0
+        self.submitted_payloads: list[dict[str, Any]] = []
 
     def inspect_environment(self, env_spec: _EnvSpecStub) -> object:
         return SimpleNamespace(value=self.recipe_state)
@@ -318,12 +320,27 @@ class _FakeWetlandsManager:
             )
         if self.raise_exc is not None:
             raise self.raise_exc
-        value = object()
+        if not replace_existing and env_spec.name in self._envs:
+            if self.recipe_state == "stale":
+                raise EnvironmentReuseError("Stale managed recipe requires replacement")
+            return self._envs[env_spec.name]
+        self.generation += 1
+        value = SimpleNamespace(generation_id=f"generation-{self.generation}")
         self._envs[env_spec.name] = value
+        self.recipe_state = "current"
         return value
 
     def is_running(self, env_name: str) -> bool:
         return env_name in self._envs
+
+    def submit_processing_task(
+        self, env_spec: _EnvSpecStub, payload: dict[str, Any],
+        max_workers: int = 1, worker_timeout: float | None = None,
+    ) -> object:
+        assert env_spec.name in self._envs
+        assert self.recipe_state == "current"
+        self.submitted_payloads.append(payload)
+        return SimpleNamespace(payload=payload)
 
     def running_environments(self) -> tuple[str, ...]:
         return tuple(self._envs)
@@ -562,6 +579,118 @@ async def _drain(manager: ExecutionManager, timeout: float = 2.0) -> None:
         await asyncio.sleep(0)
 
 
+def _observed_environment_adapter(
+    manager: _FakeWetlandsManager,
+    bus: RecordingEventBus,
+    *,
+    replacement_allowed: bool,
+) -> _ExecutionEnvironmentManager:
+    execution = ExecutionManager(
+        bus,
+        MagicMock(),
+        _settings(),
+        environment_replacement_authorizer=lambda _spec: replacement_allowed,
+    )
+
+    execution.context = _TEST_CONTEXT
+    execution.state = "running"
+    return _ExecutionEnvironmentManager(
+        manager,
+        context=_TEST_CONTEXT,
+        current_node_id=lambda: None,
+        on_preparation=execution._on_environment_preparation,
+        on_provision_event=execution._on_environment_event,
+        on_ready=execution._on_environment_ready,
+        on_failure=execution._on_environment_failure,
+        on_stopped=lambda name: execution._publish_environment_status(name, "stopped"),
+        replacement_authorizer=execution._environment_replacement_authorizer,
+    )
+
+
+def test_concurrent_submissions_replace_one_stale_generation_before_handoff() -> None:
+    """Coordinate both the unguarded race and the guarded path without sleeps."""
+    first_inspected = threading.Event()
+    second_attempted = threading.Event()
+    release_first = threading.Event()
+
+    class ConcurrentManager(_FakeWetlandsManager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lock = threading.RLock()
+            self.task_generations: list[str] = []
+            self.retired_generations: list[str] = []
+
+        def inspect_environment(self, env_spec: _EnvSpecStub) -> object:
+            state = self.recipe_state
+            if threading.current_thread().name == "e1-first":
+                first_inspected.set()
+                assert release_first.wait(5)
+            else:
+                second_attempted.set()
+            return SimpleNamespace(value=state)
+
+        def get_or_create(self, env_spec: _EnvSpecStub, **kwargs: Any) -> object:
+            with self.lock:
+                if kwargs.get("replace_existing"):
+                    self.retired_generations.extend(self.task_generations)
+                return super().get_or_create(env_spec, **kwargs)
+
+        def submit_processing_task(self, env_spec: _EnvSpecStub, payload: dict[str, Any], **kwargs: Any) -> object:
+            with self.lock:
+                generation = self._envs[env_spec.name].generation_id
+                self.task_generations.append(generation)
+                return super().submit_processing_task(env_spec, payload, **kwargs)
+
+    class CoordinatedLock:
+        """Expose a waiting lock attempt so the controller can release first."""
+
+        def __init__(self) -> None:
+            self.lock = threading.RLock()
+
+        def __enter__(self) -> None:
+            if threading.current_thread().name == "e1-second":
+                second_attempted.set()
+            self.lock.acquire()
+
+        def __exit__(self, *_args: Any) -> None:
+            self.lock.release()
+
+    manager = ConcurrentManager()
+    manager._envs["cellpose-env"] = SimpleNamespace(generation_id="old")
+    manager.recipe_state = "stale"
+    adapter = _observed_environment_adapter(manager, RecordingEventBus(), replacement_allowed=True)
+    # Instrument the guard's acquisition only; inspection, replacement, and
+    # submission still exercise the adapter's actual implementation.
+    adapter._environment_lock = CoordinatedLock()
+    failures: list[BaseException] = []
+
+    def submit(row: int) -> None:
+        try:
+            adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), {"row": row})
+        except BaseException as error:
+            failures.append(error)
+
+    first = threading.Thread(target=submit, args=(1,), name="e1-first")
+    second = threading.Thread(target=submit, args=(2,), name="e1-second")
+    first.start()
+    try:
+        assert first_inspected.wait(5)
+        second.start()
+        assert second_attempted.wait(5)
+    finally:
+        release_first.set()
+        first.join(5)
+        if second.ident is not None:
+            second.join(5)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert failures == []
+    assert sorted(manager.submitted_payloads, key=lambda payload: payload["row"]) == [{"row": 1}, {"row": 2}]
+    assert manager.replace_existing_calls == [True, False]
+    assert manager.task_generations == ["generation-1", "generation-1"]
+    assert manager.retired_generations == []
+
+
 # ---- B2: ExecutionManager ---------------------------------------------------
 
 
@@ -796,34 +925,109 @@ class TestExecutionManagerLifecycle:
     async def test_owned_stale_environment_is_replaced_lazily(self) -> None:
         bus = RecordingEventBus()
         manager = _FakeWetlandsManager()
+        old = SimpleNamespace(generation_id="old-generation")
+        unrelated = SimpleNamespace(generation_id="unrelated-generation")
+        manager._envs.update({"cellpose-env": old, "unrelated-env": unrelated})
         manager.recipe_state = "stale"
-        em = ExecutionManager(
-            bus,
-            MagicMock(),
-            _settings(),
-            environment_replacement_authorizer=lambda _spec: True,
-        )
-        em.context = _TEST_CONTEXT
-        em.state = "running"
-        adapter = _ExecutionEnvironmentManager(
-            manager,
-            context=_TEST_CONTEXT,
-            current_node_id=lambda: None,
-            on_preparation=em._on_environment_preparation,
-            on_provision_event=em._on_environment_event,
-            on_ready=em._on_environment_ready,
-            on_failure=em._on_environment_failure,
-            on_stopped=lambda name: em._publish_environment_status(name, "stopped"),
-            replacement_authorizer=em._environment_replacement_authorizer,
-        )
+        adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
 
-        adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+        replacement = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
 
+        assert replacement is manager._envs["cellpose-env"]
+        assert replacement is not old
+        assert manager._envs["unrelated-env"] is unrelated
         assert manager.replace_existing_calls == [True]
         assert bus.environment_events == [
             ("cellpose-env", "updating"),
             ("cellpose-env", "running"),
         ]
+
+        reused = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+
+        assert reused is replacement
+        assert manager._envs["unrelated-env"] is unrelated
+        assert manager.replace_existing_calls == [True, False]
+
+    async def test_stale_environment_outside_processing_ownership_is_not_replaced(self) -> None:
+        bus = RecordingEventBus()
+        manager = _FakeWetlandsManager()
+        old = SimpleNamespace(generation_id="external-generation")
+        manager._envs["external-env"] = old
+        manager.recipe_state = "stale"
+        adapter = _observed_environment_adapter(manager, bus, replacement_allowed=False)
+
+        with pytest.raises(EnvironmentReuseError, match="requires replacement"):
+            adapter.get_or_create(_EnvSpecStub("external-env"))
+
+        assert manager._envs["external-env"] is old
+        assert manager.replace_existing_calls == [False]
+        assert bus.environment_events[-1] == ("external-env", "failed")
+
+    async def test_failed_stale_replacement_can_retry_without_publishing_ready(self) -> None:
+        bus = RecordingEventBus()
+        manager = _FakeWetlandsManager()
+        old = SimpleNamespace(generation_id="old-generation")
+        manager._envs["cellpose-env"] = old
+        manager.recipe_state = "stale"
+        manager.raise_exc = RuntimeError("provisioning failed")
+        adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
+
+        with pytest.raises(RuntimeError, match="provisioning failed"):
+            adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+
+        assert manager._envs["cellpose-env"] is old
+        assert manager.generation == 0
+        assert manager.replace_existing_calls == [True]
+        assert bus.environment_events == [
+            ("cellpose-env", "updating"),
+            ("cellpose-env", "failed"),
+        ]
+
+        manager.raise_exc = None
+        replacement = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+
+        assert replacement is manager._envs["cellpose-env"]
+        assert replacement is not old
+        assert manager.generation == 1
+        assert manager.replace_existing_calls == [True, True]
+        assert bus.environment_events[-2:] == [
+            ("cellpose-env", "updating"),
+            ("cellpose-env", "running"),
+        ]
+
+    @pytest.mark.parametrize("mapped", [False, True])
+    async def test_processing_submission_prepares_stale_environment_before_dispatch(
+        self, mapped: bool,
+    ) -> None:
+        bus = RecordingEventBus()
+        manager = _FakeWetlandsManager()
+        manager._envs["cellpose-env"] = SimpleNamespace(generation_id="old")
+        manager.recipe_state = "stale"
+        adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
+        payloads = [{"row": 1}, {"row": 2}]
+
+        if mapped:
+            tasks = adapter.map_processing_tasks(_EnvSpecStub("cellpose-env"), payloads)
+        else:
+            tasks = [adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), payload)
+                     for payload in payloads]
+
+        assert [task.payload for task in tasks] == payloads
+        assert manager.submitted_payloads == payloads
+        assert manager.replace_existing_calls == [True, False]
+        assert manager.generation == 1
+        assert bus.environment_events.count(("cellpose-env", "updating")) == 1
+
+    async def test_failed_processing_preparation_never_submits_payload(self) -> None:
+        manager = _FakeWetlandsManager()
+        manager.recipe_state = "stale"
+        manager.raise_exc = RuntimeError("provisioning failed")
+        adapter = _observed_environment_adapter(manager, RecordingEventBus(), replacement_allowed=True)
+
+        with pytest.raises(RuntimeError, match="provisioning failed"):
+            adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), {"row": 1})
+
+        assert manager.submitted_payloads == []
 
     async def test_start_clears_previous_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()

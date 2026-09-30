@@ -49,6 +49,14 @@ class MockProcessingTool(ProcessingTool):
         return {}
 
 
+class IncompatibleCoreTool(MockProcessingTool):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(
+        name="test-incompatible-core",
+        dependencies={"pip": ["bioimageflow-core==0.0.0"]},
+    )
+
+
 class CompatInputs(IOModel):
     mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
@@ -123,6 +131,7 @@ class MockSourceDataFrameTool(DataFrameTool):
 
 _TOOL_CLASSES: dict[str, type] = {
     "MockProcessingTool": MockProcessingTool,
+    "IncompatibleCoreTool": IncompatibleCoreTool,
     "CompatTool": CompatTool,
     "IncompatTool": IncompatTool,
     "IntParamTool": IntParamTool,
@@ -180,6 +189,33 @@ def test_valid_graph(registry: ToolRegistryService, tmp_path: Path) -> None:
     assert "n1" in result.node_statuses
     assert result.node_statuses["n1"].status == "unexecuted"
     assert result.errors == []
+
+
+def test_incompatible_core_requirement_is_refused_at_graph_validation(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
+    graph = graph_state(
+        nodes=[
+            ToolNodeState(
+                type="tool",
+                id="incompatible",
+                name="incompatible",
+                tool_name="IncompatibleCoreTool",
+                position=(0, 0),
+                parameters={"input_image": "/tmp/x.tif"},
+            )
+        ],
+        edges=[],
+    )
+
+    result = validate_graph(graph, registry, storage_path=tmp_path)
+
+    assert result.valid is False
+    assert len(result.errors) == 1
+    error = result.errors[0]
+    assert (error.type, error.node) == ("environment_incompatible", "incompatible")
+    assert "bioimageflow-core==0.0.0" in error.detail
+    assert "active bioimageflow-core==" in error.detail
 
 
 def test_request_local_validation_isolates_graphs_with_repeated_node_ids(

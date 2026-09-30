@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 
 import pandas as pd
 from bioimageflow import DataFrameTool
+from bioimageflow.env_manager import configure_wetlands, get_shared_environment_manager
 from bioimageflow_core import Connectable, GUIMeta, IOModel
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import ProcessingTool, RowConsumption
@@ -19,10 +20,16 @@ from pydantic import BaseModel
 from bioimageflow_server.app import create_app as create_platform_app
 from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.routers.tools import get_tool_environment_service
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from tests.fixtures.held_worker import HeldWorkerNumbers
+from tests.fixtures.stale_environment import (
+    ObservedProcessingManager,
+    pixi_forwarder,
+)
+from tests.fixtures.stale_worker_numbers import IncompatibleWorkerNumbers, StaleWorkerNumbers
 
 
 class Generate(DataFrameTool):
@@ -142,6 +149,11 @@ def create_app() -> FastAPI:
     os.environ["BIOIMAGEFLOW_HOME"] = str(root)
     os.environ["BIOIMAGEFLOW_TOOL_STORE"] = str(tool_store)
     os.environ["BIOIMAGEFLOW_WETLANDS"] = str(root / "wetlands")
+    pixi, failure_marker = pixi_forwarder(root)
+    configure_wetlands(root=root / "wetlands", pixi_executable=pixi)
+    # Freeze the public manager configuration before the platform configures
+    # its default root. Construction does not prepare Pixi or any environment.
+    get_shared_environment_manager()
 
     hot_reload_fixture = os.environ.get("BIOIMAGEFLOW_HOT_RELOAD_FIXTURE")
     if hot_reload_fixture:
@@ -152,7 +164,10 @@ def create_app() -> FastAPI:
     # the generated tool-store fixture explicitly so browser tests exercise
     # Files-node creation and hot reload against the real package loader.
     registry.scan_tool_store(tool_store)
-    for tool_class in (Generate, CrossJoin, ParameterControls, HeldWorkerNumbers):
+    for tool_class in (
+        Generate, CrossJoin, ParameterControls, HeldWorkerNumbers,
+        StaleWorkerNumbers, IncompatibleWorkerNumbers,
+    ):
         registry._register_tool_from_class(
             tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
         )
@@ -206,6 +221,36 @@ def create_app() -> FastAPI:
     async def backend_process_id() -> dict[str, int]:
         """Expose the orchestrator PID for real-worker isolation assertions."""
         return {"process_id": os.getpid()}
+
+    observed: ObservedProcessingManager | None = None
+
+    def worker_manager() -> ObservedProcessingManager:
+        nonlocal observed
+        if observed is None:
+            service = app.dependency_overrides[get_tool_environment_service]()
+            observed = ObservedProcessingManager(service.manager)
+            service._wetlands = observed
+        return observed
+
+    @app.post("/api/v1/dev/e2e/stale-worker-environment")
+    def stale_worker_environment() -> dict[str, Any]:
+        """Create a real older managed generation, then pause its next preparation."""
+        return worker_manager().seed_stale()
+
+    @app.get("/api/v1/dev/e2e/worker-environment")
+    def worker_environment() -> dict[str, Any]:
+        return {**worker_manager().evidence(), "runtime_root": str(root)}
+
+    @app.post("/api/v1/dev/e2e/release-worker-environment")
+    def release_worker_environment() -> dict[str, bool]:
+        worker_manager().release.set()
+        return {"released": True}
+
+    @app.post("/api/v1/dev/e2e/fail-next-worker-install")
+    def fail_next_worker_install() -> dict[str, str]:
+        """Inject one actual Pixi command failure; the next attempt uses real Pixi."""
+        failure_marker.write_text("E1 injected install fault", encoding="utf-8")
+        return {"fault": "E1 injected Pixi install failure (exit 77)"}
 
     return app
 

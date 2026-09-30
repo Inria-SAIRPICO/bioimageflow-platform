@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,8 @@ from bioimageflow import EnvironmentRecipeState
 from bioimageflow_core.environment import GENERAL_ENV
 
 from bioimageflow_server.services.tool_environments import ToolEnvironmentService
+from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.services.execution import _ExecutionEnvironmentManager
 
 pytestmark = pytest.mark.anyio
 
@@ -191,14 +194,214 @@ async def test_background_refresh_rebuilds_only_existing_stale_general(
     assert wetlands.get_calls == [(GENERAL_ENV.name, True)]
 
 
+@pytest.mark.parametrize("state", [EnvironmentRecipeState.MISSING, EnvironmentRecipeState.CURRENT])
 async def test_background_refresh_does_not_create_missing_general(
     tmp_path: Path,
+    state: EnvironmentRecipeState,
 ) -> None:
     wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / GENERAL_ENV.name))
-    wetlands.state = EnvironmentRecipeState.MISSING
+    wetlands.state = state
     service = ToolEnvironmentService(registry=_registry(general=True), wetlands_manager=wetlands)
 
     service.start_standard_environment_refresh()
     await asyncio.wait_for(service._standard_refresh_task, timeout=1)
 
     assert wetlands.get_calls == []
+
+
+async def test_background_refresh_failure_releases_automatic_preparation_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    manager = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / GENERAL_ENV.name))
+    manager.state = EnvironmentRecipeState.STALE
+    registry = _registry(general=True)
+    service = ToolEnvironmentService(registry=registry, wetlands_manager=manager)
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("controlled startup preparation failure")
+
+    monkeypatch.setattr(manager, "get_or_create", fail)
+    service.start_standard_environment_refresh()
+    await asyncio.wait_for(service._standard_refresh_task, timeout=2)
+
+    def guard_available() -> bool:
+        acquired = service.processing_environment_lock.acquire(timeout=1)
+        if acquired:
+            service.processing_environment_lock.release()
+        return acquired
+
+    assert await asyncio.to_thread(guard_available)
+    assert registry.get_package.return_value.environment_status == "failed"
+    assert "controlled startup preparation failure" in caplog.text
+    await service.close()
+
+
+@pytest.mark.parametrize("first_owner", ["startup", "run"])
+async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path: Path, first_owner: str) -> None:
+    inspected = threading.Event()
+    release_refresh = threading.Event()
+    second_attempted = threading.Event()
+    handed_off = threading.Event()
+
+    class PreparationGuard:
+        def __init__(self) -> None:
+            self.lock = threading.RLock()
+            self.first_guarded = False
+
+        def __enter__(self) -> None:
+            if inspected.is_set():
+                second_attempted.set()
+            else:
+                self.first_guarded = True
+            self.lock.acquire()
+
+        def __exit__(self, *_args: Any) -> None:
+            self.lock.release()
+
+    class ProcessingManager(_FakeWetlandsWrapper):
+        def __init__(self) -> None:
+            super().__init__(_FakeWetlandsManager(tmp_path / GENERAL_ENV.name))
+            self.state = EnvironmentRecipeState.STALE
+            self.generation = 0
+            self.inspect_calls = 0
+            self.submitted_generations: list[int] = []
+            self.retired_generations: list[int] = []
+            self.lock = threading.RLock()
+
+        def inspect_environment(self, env_spec: object) -> EnvironmentRecipeState:
+            with self.lock:
+                self.inspect_calls += 1
+                first = self.inspect_calls == 1
+                snapshot = self.state
+            if first:
+                inspected.set()
+                assert release_refresh.wait(5)
+            else:
+                second_attempted.set()
+            return snapshot
+
+        def get_or_create(self, env_spec: object, *, replace_existing: bool = False,
+                          on_preparation: Any = None, **kwargs: Any) -> _FakeEnvironment:
+            with self.lock:
+                if on_preparation is not None:
+                    on_preparation(SimpleNamespace(action="updating" if replace_existing else "reusing"))
+                if replace_existing:
+                    self.retired_generations.extend(self.submitted_generations)
+                    self.generation += 1
+                self.state = EnvironmentRecipeState.CURRENT
+                kwargs.pop("max_workers", None)
+                kwargs.pop("worker_timeout", None)
+                return super().get_or_create(env_spec, replace_existing=replace_existing, **kwargs)
+
+        def submit_processing_task(self, env_spec: object, payload: dict, **kwargs: Any) -> object:
+            self.submitted_generations.append(self.generation)
+            handed_off.set()
+            return SimpleNamespace(payload=payload)
+
+    manager = ProcessingManager()
+    service = ToolEnvironmentService(registry=_registry(general=True), wetlands_manager=manager)
+    guard = PreparationGuard()
+    service._processing_environment_lock = guard
+    adapter = _ExecutionEnvironmentManager(
+        manager, context=ExecutionContext(execution_id="startup-race", workflow_id="wf", draft_revision=1),
+        current_node_id=lambda: "worker", on_preparation=lambda *_args: None,
+        on_provision_event=lambda *_args: None, on_ready=lambda *_args: None,
+        on_failure=lambda *_args: None, on_stopped=lambda *_args: None,
+        replacement_authorizer=service.can_replace_processing_environment,
+        environment_lock=service.processing_environment_lock,
+    )
+    submission = None
+    if first_owner == "startup":
+        service.start_standard_environment_refresh()
+    else:
+        submission = asyncio.create_task(asyncio.to_thread(adapter.submit_processing_task, GENERAL_ENV, {"row": 1}))
+    try:
+        assert await asyncio.to_thread(inspected.wait, 5)
+        if first_owner == "startup":
+            submission = asyncio.create_task(asyncio.to_thread(adapter.submit_processing_task, GENERAL_ENV, {"row": 1}))
+        else:
+            service.start_standard_environment_refresh()
+        assert await asyncio.to_thread(second_attempted.wait, 5)
+        # The original unguarded startup must reach handoff before resuming
+        # its stale decision. The guarded owner instead blocks the contender.
+        if first_owner == "startup" and not guard.first_guarded:
+            assert await asyncio.to_thread(handed_off.wait, 5)
+    finally:
+        release_refresh.set()
+        if submission is not None:
+            await asyncio.wait_for(submission, timeout=5)
+        await asyncio.wait_for(service._standard_refresh_task, timeout=5)
+        await service.close()
+
+    assert manager.generation == 1
+    assert manager.submitted_generations == [1]
+    assert manager.retired_generations == []
+
+
+def test_concurrent_first_manager_access_constructs_one_pool_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_constructing = threading.Event()
+    second_attempted = threading.Event()
+    release_first = threading.Event()
+    factory_lock = threading.Lock()
+    constructed: list[object] = []
+    returned: list[object] = []
+    errors: list[BaseException] = []
+
+    class InitializationGuard:
+        def __init__(self) -> None:
+            self.lock = threading.RLock()
+            self.entries = 0
+
+        def __enter__(self) -> None:
+            self.entries += 1
+            if threading.current_thread().name == "e1-second-access":
+                second_attempted.set()
+            self.lock.acquire()
+
+        def __exit__(self, *_args: Any) -> None:
+            self.lock.release()
+
+    def factory() -> object:
+        value = SimpleNamespace(pools={})
+        with factory_lock:
+            constructed.append(value)
+            first = len(constructed) == 1
+        if first:
+            first_constructing.set()
+            assert release_first.wait(5)
+        else:
+            second_attempted.set()
+        return value
+
+    monkeypatch.setattr("bioimageflow.env_manager.WetlandsEnvManager", factory)
+    service = ToolEnvironmentService(registry=_registry())
+    guard = InitializationGuard()
+    service._processing_environment_lock = guard
+
+    def access() -> None:
+        try:
+            returned.append(service.manager)
+        except BaseException as error:
+            errors.append(error)
+
+    first = threading.Thread(target=access, name="e1-first-access")
+    second = threading.Thread(target=access, name="e1-second-access")
+    first.start()
+    try:
+        assert first_constructing.wait(5)
+        second.start()
+        assert second_attempted.wait(5)
+    finally:
+        release_first.set()
+        first.join(5)
+        if second.ident is not None:
+            second.join(5)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert errors == []
+    assert len(constructed) == 1
+    assert len(returned) == 2
+    assert returned[0] is returned[1] is service.manager
+    entries = guard.entries
+    assert service.manager is returned[0]
+    assert guard.entries == entries  # Initialized reads remain lock-free.

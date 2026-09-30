@@ -216,6 +216,7 @@ class _ExecutionEnvironmentManager:
         on_failure: Callable[[str], None],
         on_stopped: Callable[[str], None],
         replacement_authorizer: Callable[[Any], bool] | None,
+        environment_lock: Any | None = None,
     ) -> None:
         self._manager = manager
         self._context = context
@@ -226,6 +227,7 @@ class _ExecutionEnvironmentManager:
         self._on_failure = on_failure
         self._on_stopped = on_stopped
         self._replacement_authorizer = replacement_authorizer
+        self._environment_lock = environment_lock if environment_lock is not None else threading.RLock()
 
     def get_or_create(
         self,
@@ -236,6 +238,23 @@ class _ExecutionEnvironmentManager:
         on_provision_event: Callable[[Any], None] | None = None,
         replace_existing: bool = False,
         on_preparation: Callable[[Any], None] | None = None,
+    ) -> Any:
+        with self._environment_lock:
+            return self._get_or_create_locked(
+                env_spec, max_workers=max_workers, worker_timeout=worker_timeout,
+                on_provision_event=on_provision_event, replace_existing=replace_existing,
+                on_preparation=on_preparation,
+            )
+
+    def _get_or_create_locked(
+        self,
+        env_spec: Any,
+        max_workers: int,
+        worker_timeout: float | None,
+        *,
+        on_provision_event: Callable[[Any], None] | None,
+        replace_existing: bool,
+        on_preparation: Callable[[Any], None] | None,
     ) -> Any:
         env_name = env_spec.name
         node_id = self._current_node_id()
@@ -276,10 +295,16 @@ class _ExecutionEnvironmentManager:
         max_workers: int = 1,
         worker_timeout: float | None = None,
     ) -> Any:
-        # WetlandsBackend.prepare_node calls the observed get_or_create before dispatch.
-        return self._manager.submit_processing_task(
-            env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout
-        )
+        # Whole-workflow compute dispatches directly; only compute_steps callers
+        # invoke prepare_node. Keep authorization and observation at this common
+        # submission boundary before the shared manager submits any processing.
+        with self._environment_lock:
+            self.get_or_create(
+                env_spec, max_workers=max_workers, worker_timeout=worker_timeout,
+            )
+            return self._manager.submit_processing_task(
+                env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout
+            )
 
     def map_processing_tasks(
         self,
@@ -288,9 +313,12 @@ class _ExecutionEnvironmentManager:
         max_workers: int = 1,
         worker_timeout: float | None = None,
     ) -> list[Any]:
-        return self._manager.map_processing_tasks(
-            env_spec, payloads, max_workers=max_workers, worker_timeout=worker_timeout
-        )
+        return [
+            self.submit_processing_task(
+                env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout,
+            )
+            for payload in payloads
+        ]
 
     def shutdown_all(self) -> None:
         names = self._manager.running_environments()
@@ -400,6 +428,7 @@ class ExecutionManager:
         environment_replacement_authorizer: Callable[[Any], bool] | None = None,
         retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
         managed_result_root: Path | Callable[[str], Path] | None = None,
+        processing_environment_lock: Any | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
@@ -410,6 +439,7 @@ class ExecutionManager:
         self._settings_provider = settings_provider
         self._environment_manager_provider = environment_manager_provider
         self._environment_replacement_authorizer = environment_replacement_authorizer
+        self._processing_environment_lock = processing_environment_lock
         self._retained_execution_started = retained_execution_started
         self._managed_result_root = managed_result_root
         self.storage_path = storage_path
@@ -1224,6 +1254,7 @@ class ExecutionManager:
                 on_failure=self._on_environment_failure,
                 on_stopped=lambda name: self._publish_environment_status(name, "stopped"),
                 replacement_authorizer=self._environment_replacement_authorizer,
+                environment_lock=self._processing_environment_lock,
             ),
         )
 
