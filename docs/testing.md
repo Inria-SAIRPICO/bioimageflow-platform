@@ -9,6 +9,9 @@ Run `scripts/test help` from any directory in the checkout to see the available 
 
 For native desktop, external-application, coding-agent, and human-judgment checks that remain outside these automated lanes, use the [Manual Platform Testing](developer/manual-testing.md) guide and its reusable `scripts/manual-qa` fixtures.
 
+The [Platform confidence campaign](developer/platform-test-plan.md) sequences current-code readiness and systematic feature work using these existing lanes.
+Its [checkpoint](developer/platform-test-progress.md) distinguishes prepared work, executed evidence, and historical coverage; it does not redefine command scopes.
+
 ## Install test dependencies
 
 The runner does not install the repository's normal development dependencies.

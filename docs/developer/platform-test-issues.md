@@ -7,6 +7,7 @@ orphan: true
 Read only the issue relevant to the assigned task.
 Completed decisions and detailed history for ISSUE-001–ISSUE-017 are retained in the [issue archive](archive/platform-test-issues-through-tier-1b.md); do not load it during an ordinary restart.
 The current [checkpoint](platform-test-progress.md) owns ordering and the [plan](platform-test-plan.md) owns escalation rules.
+These open issues carry forward into the new campaign without a new diagnosis or closure; historical tier labels describe their earlier scheduling only.
 
 ## ISSUE-013 — Napari probe output bound reports timeout
 

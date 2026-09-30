@@ -6,7 +6,8 @@ orphan: true
 
 This is a partial inspected coverage inventory, not a passing certification report.
 The audit baseline is `fcb4408`; no tests were executed during this inventory pass.
-The campaign paused on an identity-generation issue reported by the workflow audit before the proposed runtime test changes began.
+The initial inventory pass paused on the identity-generation concern later resolved as ISSUE-001; that historical pause is not the new campaign's status or queue.
+Rows combine the initial inspection with later executed evidence; use the [checkpoint](platform-test-progress.md) for current campaign status and evidence reconciliation.
 Selectors below are relative to `backend/tests/` unless prefixed with `frontend/`; use `scripts/test focus backend tests/<selector>` for backend cases.
 File-level selectors identify a relevant family, while named selectors identify assertions inspected directly or a specific follow-up boundary.
 Parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines are excluded.
@@ -66,14 +67,12 @@ The `Scenario contracts` cell records all five dashboard dimensions with the das
 | RT-XCT-006 | Desktop startup identity, window configuration, orderly shutdown (v1 §§1,2.8) | `desktop.py`, entry point | `test_desktop.py` validates app icon/name, URL, host/port, dialogs, child editor window, cleanup ordering and stop timeout through mocks. | Packaged artifact launch, native event loop, code signing/install, macOS/Windows/Linux-specific behavior remain release/manual acceptance; headless tests must not claim these passed. | S=G: exercise the named successful behavior and assert the exact row outcome; R=G: exercise the row's invalid-input or refused-action boundary and assert no unintended mutation; F=G: exercise cancellation, failure, or recovery and assert coherent retained state; P=N (startup shell has no portable saved state); B=G: exercise the applicable identity, concurrency, ownership, or permission boundary |
 | RT-XCT-007 | Logger rows can be selected and filtered rows copied without losing attribution (`4a5b870`) | Logger panel and logging store | `logger-panel.spec.ts` verifies cross-row drag selection and native keyboard copy in Chromium and Firefox. Its strengthened copy journey uses visible level, node, and search controls over global and three execution-attributed records, checks exact visible order, node labels, full multiline clipboard text, unchanged execution/workflow/revision identities and filters, disabled copy and empty message for no matches, and visible feedback after clipboard denial. | Verified in Chromium and Firefox. Deterministic entries are seeded in the browser store to isolate this GUI action; WebSocket provenance is covered separately by RT-XCT-002/003. Chromium reads the real clipboard; Firefox captures the clipboard write because automated read permission is unavailable. | S=V: filtered visible entries copy in exact order with readable context; R=N (an empty selection is a valid empty-result state, not invalid input); F=N (copy has no durable cancellation or recovery lifecycle); P=N (selection and clipboard content have no platform reload contract); B=V: filtering/copying preserves execution and workflow identities and never assigns a node to a global entry |
 
-## Priorities after the campaign resumes
+## Campaign scheduling and evidence reuse
 
-Follow the [campaign plan](platform-test-plan.md) for global ordering: resolve the reproduced Run Selected issue and prove ordinary execution/results through the main GUI journey before expanding lifecycle and integration scenarios.
-The gaps below remain mandatory final-coverage obligations; assign stable feature IDs and record applicable scenario, browser/deployment, and evidence status as they are completed.
-1. Extend the verified held real sequential processing fixture from cancellation/reload/mutation-lock into actual failure, visible error/log attribution, correction, and successful rerun.
-2. Extend the verified browser result journey from exact rows, filters, sorted source identity, full CSV content, and paging into merged/stacked views and durable column widths.
-3. Verify a real two-run result bundle and GUI archive download, then cover a valid image in the browser viewer.
-4. Complete pending Napari/deployment and MCP end-to-end audits, and keep native/external integrations in the manual acceptance checklist.
+The [campaign plan](platform-test-plan.md) and [checkpoint](platform-test-progress.md) own baseline reconciliation, the four readiness journeys, and the current batch order.
+Use each row's current scenario states and cited assertions to select remaining work; earlier Run Selected, worker failure/rerun, table, bundle, and image batches are historical evidence to assess, not an unfinished fixed queue to repeat.
+After the initial batches, prioritize remaining gaps by user frequency and loss/wrong-result risk while retaining every applicable obligation and its browser/deployment boundaries.
+Keep native/external integrations and real worker acceptance distinct from mocked client or in-process evidence.
 
-These are gaps or audit work items, not assumed platform defects.
-Unexpected behavior with an unclear repair follows the [Sol → Astra → owner escalation protocol](platform-test-plan.md); preserve evidence before changing expectations or implementation.
+Gaps and audit work items are not assumed platform defects.
+Follow the plan's [repair and escalation rules](platform-test-plan.md#repair-delegation-and-validation); preserve evidence before changing expectations or implementation.

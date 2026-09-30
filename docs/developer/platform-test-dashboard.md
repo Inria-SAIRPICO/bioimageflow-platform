@@ -9,6 +9,10 @@ The inventories retain assertion details, selectors, manual boundaries, and gaps
 The dashboard baseline is `b213223` (2026-09-15); its counts remained provisional until the complete applicability audit recorded in this revision.
 Change the denominator only when implementation or specification reconciliation adds, removes, splits, combines, or changes the applicability of a feature, and record the revision that made that change here.
 
+The [new campaign](platform-test-plan.md) is prepared but not executed.
+The counts and `V` cells below retain historical evidence; baseline reconciliation must assess their current applicability before reporting a current campaign percentage.
+No cell is promoted or reset by the campaign redesign alone.
+
 ## Counting rules
 
 Each row has five scenario dimensions: successful behavior (`S`), invalid input or refused action (`R`), cancellation/failure/recovery (`F`), persistence/reload (`P`), and applicable identity/concurrency/ownership/permission boundaries (`B`).

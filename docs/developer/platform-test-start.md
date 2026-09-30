@@ -2,81 +2,32 @@
 orphan: true
 ---
 
-# Restart the platform test campaign
+# Start the new platform confidence campaign
 
-The agent running the new session is the campaign's main orchestrator, regardless of its selected model or reasoning setting.
-It assigns bounded ordinary work and calls a dedicated GPT-6 Astra/high or GPT-6 Sol/high agent for complex problems and refactor planning.
-Model selection is a runtime setting, not an effect of reading this file.
-
-From the repository root, this starts a fresh session without prescribing its model:
-
-```bash
-codex 'Read docs/developer/platform-test-start.md and execute its restart prompt.'
-```
-
-For the app, use the currently selected agent and send the prompt below.
-
-## Restart prompt
+The campaign is prepared but not executed.
+Use this prompt when execution is requested; reading or reviewing these documents alone does not start tests, repair branches, or native setup.
+The [plan](platform-test-plan.md) defines outcomes and acceptance; the [checkpoint](platform-test-progress.md) contains the observed baseline and next tasks.
+The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is preserved for audit only.
 
 ```text
-Execute the BioImageFlow Platform testing campaign in this repository.
-You, the agent running this session, are the main orchestrator; use dedicated GPT-6 Astra or GPT-6 Sol/high agents for complex diagnosis, stale-code assessment, and refactor planning.
-The objective is to test and strengthen the platform, fix demonstrated bugs, and systematically cover all implemented in-scope features.
-Use the plan's strict tiers and resume the highest-priority runnable obligation in the current tier; the Basic-Use Gate passed on its recorded historical revision.
-Do not assign a lower tier while a higher-tier runnable obligation remains; priority changes execution order, never the final coverage requirements.
-Keep the orchestrator context focused on the feature-status table, current decisions, active ownership, and next three tasks.
-Delegate detailed investigation, implementation, and focused validation in bounded packets; consume concise outcomes and failure excerpts, not full logs or worker transcripts.
-Keep routine, bounded defects with an ordinary worker when intent and the repair boundary are clear.
-For conflicting contracts, identity/data-loss risk, semantic redesign, unclear library behavior, or a failed bounded repair, delegate one focused decision packet to Astra/high or Sol/high with an identity/concurrency/persistence/rollback invariant checklist.
-If source, tests, fixtures, or API assumptions are stale, or a fix appears to require refactoring, ask one dedicated Astra/high or Sol/high agent for a concrete diagnosis and plan and a second Astra/high or Sol/high agent to verify the proposed result is simpler or more reliable while preserving the contract.
-Record the concise plan and review in the issue/task handoff, then implement and test the justified change; if no refactor is needed, record why and use a focused repair.
-If a specialist returns needs-owner, stop dependent work, record the issue, ask me one concrete question, and continue independent work.
+Execute the new Platform confidence campaign in docs/developer/platform-test-plan.md.
+Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
+You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
 
-Read AGENTS.md and PLATFORM_CONTEXT.md, then the short docs/developer/platform-test-progress.md checkpoint and only the relevant sections of docs/developer/platform-test-plan.md.
-Read only the assigned feature's inventory row, relevant specifications, and matching open issue; do not load whole inventories, resolved issues, or historical archives by default.
-Inspect git status/log and reconcile the checkpoint with actual files and installed library versions.
-Before selecting a new feature task, compare platform changes since the last campaign audit with current controls, contracts, inventories, and existing evidence; add missing in-scope obligations and mark invalidated verification explicitly.
-Do not assume historical workers still exist or temporary logs are available.
-Do not repeat completed library releases, audits, or successful checks unless changes invalidate their evidence.
+First reconcile current main, dirty files/worktrees and active processes, installed dependencies/editable library source, and platform changes since inventory audit 15c5cc7.
+Preserve unfinished candidate worktrees and unrelated user files; do not merge, reset, or resume their old instructions wholesale.
+Verify current contracts before porting candidate code, especially removed fingerprint fields and changed result/dependency APIs.
+Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.
 
-Continue from the first runnable action in the progress file after reconciling actual Git and worker state; do not treat historical issue examples in this prompt as an active queue.
-Use the current catalog contract: single-click opens/toggles bottom tool information, double-click adds exactly one node, and drag is a separate creation gesture.
-Prioritize remaining Primary-GUI journeys by ordinary use and risk of lost work, wrong identity, or wrong results before non-primary important extensions or specialist boundaries.
-Preserve complete inventory obligations for negative, boundary, deployment, integration, native, and external cases after the basic paths.
-Use disposable state for reproduction; do not change test expectations to manufacture a pass.
-Keep writes disjoint and use at most two ordinary workers alongside the master, leaving a slot for Astra or urgent integration review; do not fill the slot merely to maximize parallelism.
-When more than one agent may write in parallel, give each agent a dedicated worktree under `.worktrees/<task_name>`; never let parallel agents share one writable checkout.
-Pass fresh, bounded task packets rather than full-history forks; give each worker one coherent user journey, related dashboard `ID.cell` targets, owned paths, and the scoped completion check.
-Strengthen an adequate existing browser journey to cover related refusal/recovery and identity cells before adding a near-duplicate test; avoid one long test whose early failure hides separate features.
-Allow independent main-feature work while a bounded issue is investigated; freeze only dependent work unless the issue affects shared foundations.
+Run the four current-code readiness journeys with the exact selectors in both browsers, checking J1's execution backend and making J3's sibling results distinguishable before crediting those claims; then take the Napari chooser, stale processing environment, import guidance, and Manage Tools batches.
+Split independent failure modes into short scenarios and distinguish mocked client, real API/storage, real GUI/backend, real worker, and native evidence.
+A passing intercepted chooser does not certify backend favorite persistence or native Qt launch.
+Continue the systematic inventory after these initial batches; retain parallel/HPC/Parsl/managed remote/distributed exclusions and sequential real local workers.
 
-Exclude parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines from platform certification.
-Keep Direct and test real Wetlands workers sequentially with one worker.
-Run exact Chromium and Firefox selectors for a changed GUI journey, then use the smallest applicable `scripts/test` completion lane documented in `docs/testing.md`.
-For localized browser test-only changes, do not add a complete browser-project run solely for reassurance; browser implementation/persistence changes, broad infrastructure changes, major GUI milestones, and final certification retain their documented broader checks.
-Do not overlap browser-heavy completion lanes when shared machine resources could make failures ambiguous.
-After a late failure, reproduce the exact failing selector/project and retain successful unchanged phases; rerun only invalidated checks.
-Once that selector passes, advance to the next unrun check; if it fails, focus there rather than rerunning already-passing earlier tests or the entire lane.
-Limit broad browser acceptance to one attempt per substantial milestone unless I explicitly request another or a later broad browser/E2E change requires it; do not repeatedly restart the full project to chase unrelated or nonreproduced failures.
-Keep historical Tier 1B obligation closure separate from broad-lane certification; recheck any cells invalidated by later platform changes before retaining a current-revision coverage claim.
-Use audited per-case exclusions.
-Reuse existing scope selectors; do not build more runner infrastructure without a concrete testing need.
-Make clean changes without backward-compatibility shims; update affected specifications, documentation, fixtures, and tests.
-Commit each coherent validated task as soon as its issue or bounded task is resolved, including its durable progress update, without staging unrelated files.
-Consolidate that task's inventory, dashboard, evidence, and checkpoint edits; run `scripts/test check campaign` once for the batch and commit the documentation with or immediately after its product/test commit.
-Use the dashboard verifier only when an interim count is needed; run `scripts/test check docs` for changed documentation structure/navigation, a substantial documentation milestone, and final certification, not each campaign status edit.
-Record an interruption, open defect, remote milestone, or owner decision immediately even when no feature is complete.
-Do not begin another writable task in that checkout until the completed task is committed; keep restart points clean so the campaign can be interrupted safely.
-Maintain the progress file, issue decisions, and feature inventories so another fresh session can continue without this conversation.
-Keep the active evidence and checkpoint short and internally consistent; move completed history to dated archives at milestones and do not read it on ordinary restarts.
-Use the established stable-ID dashboard to report verified applicable obligations over the total, separately for the whole campaign and primary GUI coverage; do not use raw test counts as completion percentages.
-After remote CI, validation, publication, or dependency-availability milestones, update and commit the durable checkpoint/evidence before starting unrelated writable work; after interruption, reconcile the remote state before repeating an operation.
-At each major GUI-wave boundary, run one representative primary Playwright journey headed when a visible display is available, otherwise retain trace/video/screenshots and record that no window was shown.
-Before treating a specialist finding as P1 or release-blocking, prove its reachable platform entry path and user impact; keep artificial, unexposed dependency states as follow-ups without weakening reachable safety findings.
-The fixed 73-cell Basic-Use Gate passed on the evaluated historical revision recorded in the progress file, and the owner chose to continue.
-Preserve that evidence; later platform changes require the focused current-revision revalidation listed in the checkpoint before claiming the same confidence for current code.
-An owner-approved early pause leaves the systematic campaign incomplete and requires a durable risk/backlog checkpoint; do not infer such a decision from a status question.
-Do not claim completion until every in-scope feature has verified applicable scenarios, all primary GUI journeys pass Chromium and Firefox, bugs are resolved, and external/manual obligations are completed or explicitly accepted by the owner as limitations.
-Answer status questions briefly and continue the active campaign unless I explicitly pause it or change the objective.
-Proceed until the campaign is complete or an escalation genuinely requires my decision.
+Follow docs/testing.md: exact failing selector/browser first, focused post-fix run, then the required smallest completion check; keep valid passing phases after late failures and record all unrun cases.
+Do not repeat broad lanes solely to erase an unrelated intermittent failure; capture gesture/Open, API, identity, tab, lock, and event breadcrumbs on recurrence.
+For unresolved contract conflicts or refactors affecting identity, persistence, concurrency, or loss behavior, get the bounded high-reasoning plan and independent review before dependent implementation.
+Use separate worktrees and independent runtime/dependencies for parallel writers; workers propose evidence and only you credit shared status after actual passing commands.
+Commit each coherent validated task without unrelated files; consolidate inventory/dashboard/evidence/checkpoint updates at that boundary.
+Continue until final acceptance or a concrete owner decision blocks dependent work, answering status questions briefly while preserving the active objective.
 ```

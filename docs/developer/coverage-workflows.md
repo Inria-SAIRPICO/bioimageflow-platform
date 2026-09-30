@@ -7,7 +7,7 @@ orphan: true
 This is an assertion-level audit of workflow lifecycle, drafts, recursive editing, provenance, and owned-source transport at revision `fcb4408dd994a31567042b691eff85f3b268c5ab`.
 The audit reads test bodies and their fixtures; it does not certify that the listed tests passed in this campaign.
 No tests were executed for this audit.
-Parallel scheduling, HPC, Parsl, and distributed execution are excluded.
+Parallel scheduling, HPC, Parsl, managed remote execution, and distributed engines are excluded.
 Serialized `execution: parallel` values in persistence-only fixtures do not demonstrate parallel execution and should not cause unrelated lifecycle tests to be excluded automatically.
 
 The source-update identity concern below was resolved as ISSUE-001; current open decisions are tracked in [Campaign issues](platform-test-issues.md).
@@ -86,9 +86,9 @@ The specialist established that v2 §§10 and 12 unambiguously require rejection
 Prepared source-refresh and Python-rebuild operations now capture the destination generation atomically with the previewed document and reject any generation change before staging or writes.
 The new regressions cover same-content recreation and deterministic lifecycle serialization; workspace switching and source-workflow recreation were not reproduced and are not claimed as fixed defects.
 
-## Priority after resumption
+## Campaign scheduling and evidence reuse
 
-Schedule these workflow gaps within the plan's main-journey, everyday-editing, nested-workflow, and remaining-feature waves; this family-specific list does not override that global order.
-Prioritize nested private-edit reload/discard and stale-parent application with connected stable ports; source-update destructive confirmation and conflict journeys; and recursive source copying through the agent-copy UI.
-Refactor overstated test names or add the missing assertions for nested binding deletion and incoming DataFrame grouping.
+Use the [campaign plan](platform-test-plan.md) and [checkpoint](platform-test-progress.md) for baseline reconciliation, readiness, and the current batch order.
+Select workflow follow-up work from each row's remaining gaps and baseline-invalidated evidence; completed private-edit, stale-parent, source-update, and recursive agent-copy claims retain their cited historical revisions rather than becoming an unfinished queue again.
+Check test names against their actual assertions, including nested binding deletion and incoming DataFrame grouping, before claiming a scenario is covered or adding a replacement test.
 Keep real desktop dialogs, external editor interaction, operating-system drag-and-drop, and application crash/restart acceptance explicitly separate from headless browser and in-process service checks.
