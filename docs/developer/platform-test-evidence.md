@@ -210,3 +210,54 @@ This account check is neither platform keyring nor scientific image-read accepta
 The N1 consolidation `/usr/bin/time -p scripts/test check campaign` passed in 0.15 s elapsed / 1 s lane at main `884be6e` plus campaign documentation diff SHA-256 `df55bf64ec0be5008905c4ba057804359fe62589efff27685e5bbf86b961d5ed`, before this result-only entry.
 It verified 108 rows, 500 applicable cells, 271 accumulated verified cells and 54 local links; no application phase was executed.
 The first documentation attempt failed because the summary's changed wording did not match the verifier's required format; restoring that format preserved the explicit accumulated/historical distinction and the check passed.
+
+## E1 integrated acceptance
+
+Main feature revision `2290c67f963980f6325c93c5076c6f6e373f6129` integrates only worker feature `8cc9187b3fbd5eeeaaf9fbe56e027541791f21bf` from parent `884be6e`.
+Final task diff SHA-256 is `1d086391293154712710e3fe44ed3a569c7e8e5ab33f0a1237cddd50e330c10e`, saved as `/private/tmp/bioimageflow-e1-final-feature.diff`; feature tree is `77a9916ae0214c71a9985a006246c2c760c50508`.
+All 15 owned files were compared byte-for-byte between worker and main; clean library remains `dff04e3`, BioImageFlow 0.8.6/Core 0.4.1, registry Wetlands 2.4.2, Python 3.13.2 and Bun 1.4.2.
+Rebasing E1 onto N1 preserved all 11 recorded backend/fixture/dependency digests; unchanged passing phases were retained, and affected final service/app/lifespan checks were rerun.
+
+Actual GUI Run first failed in Chromium in 52 s: ordinary whole-workflow compute bypassed adapter preparation and reached a stale shared pool without observed authorization/setup.
+The bounded submission repair then exposed three separately reviewed and deterministically reproduced ownership defects: two same-run contenders authorize stale replacement (red 3 s, fixed 16 s); default-general background refresh retires Run's newly current generation (red 3 s, two supported orderings fixed 4 s); simultaneous first access creates two shared manager wrappers (red 5 s, fixed 3 s).
+Malformed helper/signature attempts are fixture failures, not additional product findings.
+The service-owned reentrant guard now spans fresh inspection, conditional public replacement and submission handoff for automatic startup/Run owners, with task completion outside it and double-checked first construction.
+Explicit manual lifecycle routes retain their existing semantics; neither global coordination nor excluded parallel scheduling certification is claimed.
+Independent read-only plan/applied implementation review found no remaining material blocker after those corrections; the reviewer executed no tests.
+
+| Completion command or exact selector | Result and duration | Boundary |
+| --- | --- | --- |
+| `scripts/test focus backend tests/test_services/test_execution_manager.py tests/test_services/test_graph_validator.py tests/test_services/test_tool_environments.py tests/test_app_config_wiring.py tests/test_routers/test_app_lifecycle.py` | 153 passed in 14 s | Shared startup/Run guard and app injection before the final lazy-initialization correction. |
+| `scripts/test focus backend tests/test_services/test_tool_environments.py tests/test_app_config_wiring.py tests/test_routers/test_app_lifecycle.py` | 52 passed in 20 s; pytest 10.61 s | Rechecks the affected final lazy-initialization increment. |
+| Five separate exact invocations of concurrent-submission/startup regression selectors | 15 passed; 3, 3, 12, 2 and 3 s | Three coordinated cases per invocation; no sleep-based ordering or repeat plugin. |
+| `scripts/test focus backend tests/test_integration/test_stale_processing_environment.py::test_real_stale_generation_failure_retry_and_fresh_process_reuse --run-external` | Actual compute/shared-guard version passed in 64 s | Genuine provisioning, Pixi failure/retry, exact files/rows, old PID cleanup, fresh creation, unrelated/unmanaged preservation and fresh-process reuse. Later final lazy-owner change has its own exact/affected checks; serial fixture ownership and unchanged worker/recipe paths permit retained phase reuse. |
+| `scripts/test quick` | Passed in 44 s; backend 1235 passed/610 deselected, frontend 433 passed/43 files, lint/types passed | Intermediate coherent increment only; external/integration/serial/slow/browser/coverage excluded. |
+| `scripts/test focus e2e --project=chromium tests/e2e/stale-processing-environment.spec.ts --grep 'replaces one real stale worker' --trace=on` | Final corrected visible artifact passed in 65 s; test 54.8 s | Actual GUI/backend and worker generation/PID/rows/files, setup retained across reload and later warm GUI reuse. |
+| Same exact stale-worker selector with `--project=firefox` | Final corrected visible artifact passed in 96 s; test reported 1.4 min | Same real boundary; captured Worker row image visually reviewed. |
+| Chromium exact `--grep 'injected Pixi replacement failure\|incompatible core recipe'` | Fault/retry passed (test 49 s); original combined command failed in 88 s on Core fixture | Core fixture wrongly waited for dispatch after correct GUI preflight refusal; original failure remains recorded. |
+| Chromium unchanged exact `--grep 'incompatible core recipe'` | Reproduced fixture failure in 39 s | Actual validation toast/Core mismatch confirmed preflight refusal. |
+| Chromium corrected exact `--grep 'incompatible core recipe'` | Passed in 9 s; test 1.3 s | GUI toast and zero browser dispatch; separate real accepted-draft API 422 and no environment/preparation mutation. |
+| Firefox exact `--grep 'injected Pixi replacement failure\|incompatible core recipe'` | 2 passed in 62 s; tests 49.8 and 2.5 s | Real failure/Run retry and separate GUI/API refusal. |
+| `scripts/test check app` | Passed in 268 s | Backend lint passed; 1837 passed/10 external deselected, phase 183 s; logging 7 passed/3 s; frontend lint 9 s/types 6 s/1337 tests in 134 files 26 s/build 5 s; critical Chromium 18/18 in 82 s. |
+
+All final passing E1 commands were without retries, skips or external blockers; `check app` intentionally excludes external cases, package certification and noncritical browsers.
+The actual external fixture was separately run with explicit Pixi and disposable runtime roots; earlier stepwise 65/70 s passes do not certify the previously bypassed GUI boundary.
+An initial actual-compute run failed in 30 s because the fixture expected one preparation callback instead of creating/reusing/reusing for three rows; the corrected version passed in 65 s before the shared guard amendment.
+The shared-guard 64 s run's JSON was removed by global pytest temporary retention before copying; it is unavailable, and the retained initial-compute JSON is explicitly earlier-source evidence.
+The final browser traces, images and generation/failure/refusal JSONs are preserved independently under `/private/tmp/bioimageflow-e1-browser-artifacts/`, with its 23-file SHA-256 manifest, and named `/private/tmp/bioimageflow-e1-*.json`/PNG extracts.
+The original GUI red and Core fixture reds are retained; corrected screenshots capture the actually asserted Worker row rather than the initially clipped panel.
+The full command/source/red history is `/private/tmp/bioimageflow-e1-worker-report.md`; the exact feature branch is additionally preserved as `/private/tmp/bioimageflow-e1-feature.bundle`.
+
+RT-EXE-018 receives five S/R/F/P/B cells; accumulated dashboard becomes 276/500, retaining historical evidence boundaries.
+Fresh orchestrator/worker restart evidence is not packaged native desktop restart; full, published common-tools and native acceptance remain later campaign obligations.
+The clean integrated E1 tree moved intact to Trash after artifact preservation, its registration was pruned and only its owned integrated branch deleted; historical trees were preserved.
+The ordinary workers now own I1 and T1 in fresh isolated trees at the combined application source.
+
+Root refreshed the main production frontend build for desktop preparation using `/usr/bin/time -p bun run build`: pass in 4.07 s elapsed at `2290c67`, with the existing Vite chunk advisory.
+The actual desktop entry point started and served the generated bundle, but Computer Use could not bind its Python-hosted window and refused the disposable wrapper as not approved.
+No native interaction or native acceptance is credited, and no disposable desktop process remains.
+The user explicitly deferred desktop testing to the very end of the campaign; the access question remains irrelevant until that final milestone.
+
+The E1 consolidated documentation milestone `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed in 3.05 s elapsed / 3 s lane at main `2290c67` plus documentation diff SHA-256 `a23142e30dd1776dcb37a83a2b92b9a84920bcbc2dcda531bfd7f193aae3c6bf`, before this result-only entry.
+Dashboard reconciliation verified 108 rows, 500 applicable cells, 276 accumulated verified cells and 53 local links; Sphinx warnings-as-errors passed.
+No application or native coverage follows from this documentation command.

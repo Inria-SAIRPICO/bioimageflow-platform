@@ -48,13 +48,13 @@ See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-prep
 
 ## ISSUE-021 — GUI local worker dispatch bypasses stale-generation preparation
 
-Status: reproduced in the real GUI/worker path; bounded repair planning in progress.
+Status: resolved by reviewed E1 feature integrated at `2290c67`; real worker, exact two-browser journeys and scoped app completion passed.
 At E1 base `4b58e44` plus task fixtures, Chromium selector `GUI Run replaces one real stale worker generation with visible setup and reuses it` in `stale-processing-environment.spec.ts` failed against a genuinely older owned recipe with the authoritative Core 0.4.1 requirement.
 Ordinary `ExecutionManager._run_sync` calls `workflow.compute()`, which submits directly through `_ExecutionEnvironmentManager` without entering `WetlandsBackend.prepare_node`; the shared manager rejects the stale pool with `already provisioned with a different recipe` and no adapter preparation occurs.
 Earlier stepwise real worker tests prove the preparation adapter boundary only and do not close this GUI dispatch defect.
-Owner: E1 worker; next: independent review of the smallest public adapter submit/map repair, direct-submit regression, actual compute-path external acceptance and exact repaired GUI selectors in both browsers.
-No library implementation change or older incompatible Core seed is currently required.
-See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
+Owner: E1 worker; accepted preparation-before-submit, shared automatic startup/Run guard and single lazy manager owner have distinguishing red/green regressions. Explicit manual lifecycle semantics remain unchanged; native restart is separately deferred.
+No library implementation change or older incompatible Core seed was required.
+See [E1 acceptance](platform-test-evidence.md#e1-integrated-acceptance).
 
 ## ISSUE-022 — Explicit selected-workflow Open can leave the previous workflow active
 

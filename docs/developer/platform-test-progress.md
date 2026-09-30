@@ -4,7 +4,7 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — Wave 1 and N1 accepted; E1 executing, I1 delegated**.
+Prepared and started 2026-09-30; **RUNNING — Wave 1, N1 and E1 accepted; I1 and T1 delegated**.
 The user requested execution after the specification revision; the model-choice hold is lifted, and the session's model settings are unchanged.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -82,30 +82,33 @@ N1 is integrated in main `884be6e11eb09783f80a1de0174af1f49c65e84d` from feature
 The combined inactive-dock and captured-identity repair passes all six distinguishing deferred unit regressions, seven separate client scenarios in both browsers, frontend completion and 36-test cross-browser smoke.
 ISSUE-019/020 are resolved; its original Firefox stress remains 5 passed / 1 failed / 4 unrun before chooser interaction, retained as unattributed root-owned ISSUE-022.
 Five RT-RES-012 obligations are now credited with explicit intercepted-client versus actual CAS storage boundaries; native RT-RES-011 remains unassessed.
-Accumulated dashboard evidence is 271/500 (starting historical 266 plus N1 five); the remaining historical cells are not a current-revision certification.
+Accumulated dashboard evidence is 276/500 (starting historical 266 plus N1 five and E1 five); the remaining historical cells are not a current-revision certification.
 E1's real worker adapter-only test passed, but the actual GUI Run exposed a dispatch defect: ordinary `workflow.compute()` task submission bypasses adapter preparation and reaches the stale shared pool unchanged.
 That failed GUI path governs E1 acceptance; reviewed task submission, shared startup/Run preparation and lazy shared-manager ownership repairs have distinguishing red/green tests and actual compute-path acceptance.
 E1 rebased onto combined main `884be6e`, retaining unchanged backend/dependency digests; the three exact GUI journeys now pass in both browsers, including visible actual worker replacement/reuse, injected Pixi failure/retry and Core refusal without mutation.
 The Core browser fixture initially expected dispatch despite the correct frontend validation refusal; its corrected assertion separates the real GUI refusal from the actual revision-addressed API 422, without a product change.
-The worker is running combined-source `check app`; integration remains pending.
-[ISSUE-021/022](platform-test-issues.md) remain open; E1 holds the browser token.
+E1 is integrated in main `2290c67f963980f6325c93c5076c6f6e373f6129` from feature `8cc9187b3fbd5eeeaaf9fbe56e027541791f21bf`; combined-source `check app` passed in 268 s.
+ISSUE-021 is resolved; ISSUE-022 remains open.
+The clean integrated E1 worktree was retired intact to Trash after artifact preservation and source equivalence checks; its worker now owns T1 at `.worktrees/campaign-t1-current` from `2290c67`.
 The completed clean N1 worktree was moved to Trash, registration pruned and task branch deleted after source-equivalent integration; its artifacts were preserved in `/private/tmp/bioimageflow-n1-artifacts/`.
-Its worker now owns I1 in fresh `.worktrees/campaign-i1-current`, branch `campaign/i1-current` from `884be6e`, with independent dependencies and archive/readiness assertions while awaiting E1 integration for browser work.
-Two deferred DOM unit reds show that an earlier import's late success replaces the newer import's setup prefills and its late failure publishes obsolete guidance; production is unchanged while the bounded identity/guidance plan receives independent review.
+Its worker now owns I1 in fresh `.worktrees/campaign-i1-current`, branch `campaign/i1-current` from `884be6e`, now aligned to combined `2290c67`, with independent dependencies and archive/readiness assertions.
+Two deferred DOM unit reds show that an earlier import's late success replaces the newer import's setup prefills and its late failure publishes obsolete guidance; production is unchanged while the bounded identity/guidance plan incorporates independent review of captured form provenance and source confirmation.
 
-1. Finish E1 exact repaired GUI/worker scenarios in both browsers and `check app` on the combined source, then integrate its validated task commit; retain all original failed commands and adapter/worker/native boundaries.
-2. Let I1 continue independent preparation, align it to integrated E1 before browser acceptance, and assign T1 to the completing E1 worker with its current shared preparation/lifecycle impact map.
+1. Execute the reviewed I1 guidance/identity packet and its exact two-browser/backend acceptance, preserving creation-form edits and source confirmation across readiness refresh/withdrawal.
+2. Execute T1 Manage Tools on the integrated E1 lifecycle baseline, with independent selected-environment mutation and refusal/retry evidence.
 3. Reconcile the wave impact audit and native prerequisites without inventing coverage: existing assertions guide bounded remaining packets, and any confirmed omitted implemented obligation requires a documented denominator correction.
 
-The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`; no native application has been launched or certified.
+The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`.
+A current-source desktop launch at `2290c67` served the production build, but Computer Use could not bind the Python-hosted window and refused the disposable wrapper as not approved; no native acceptance is credited.
+The user then explicitly moved desktop testing to the very end of the campaign; no campaign native process remains, and app access must be resolved only at that final milestone.
 Cocoa/pywebview and Fiji are present; a historical installed BioImageFlow application was inventoried without being credited as the current source build.
 The user supplied a live OMERO demo account; explicit headless Chromium login and authenticated read-only API collection queries returned HTTP 200 (projects 0, datasets 1, images 0).
 This is an account prerequisite, not a platform/OS-keyring or image-read result; credentials are omitted from records.
-A trusted disposable read-only QA package and isolated actual-desktop launcher are prepared outside the repository, with tool metadata validated; neither has been installed/launched/executed, and native application checks await integrated product acceptance.
+A trusted disposable read-only QA package and isolated actual-desktop launcher are prepared outside the repository, with tool metadata validated; the package has not been installed/executed, and native application checks are deferred until final campaign acceptance.
 
 ## Carry-forward concerns and working set
 
-[ISSUE-013, ISSUE-014, ISSUE-017, ISSUE-021 and ISSUE-022](platform-test-issues.md) remain open with their respective evidence limits.
+[ISSUE-013, ISSUE-014, ISSUE-017 and ISSUE-022](platform-test-issues.md) remain open with their respective evidence limits.
 ISSUE-018 has a reviewed causal repair and is retained in the Wave 1 archive; its resolution does not attribute or close the older intermittent observations.
 No new diagnosis is established for the older intermittent workflow activation/selection or broad-lane failures.
 Record event/API breadcrumbs on relevant recurrence and preserve prior red/interrupted lanes as such.

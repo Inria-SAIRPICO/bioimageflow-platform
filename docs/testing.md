@@ -158,6 +158,9 @@ They cover graph schemas and registry discovery against the actual published pac
 The additional real Wetlands worker fixture is marked `external`, `integration`, `serial`, and `slow` because it changes process-wide manager state and creating its isolated worker environment can download dependencies.
 It runs in `full`, and can be selected explicitly with `scripts/test focus backend tests/test_integration/test_platform_fixture_contracts.py --run-external`.
 It verifies actual worker process identity, transformed values, and output files; a DataFrame-only graph selecting Direct is not worker certification.
+The stale-generation fixture in `tests/test_integration/test_stale_processing_environment.py` uses the same `external`, `integration`, `serial`, and `slow` boundaries and is selected with `scripts/test focus backend tests/test_integration/test_stale_processing_environment.py::test_real_stale_generation_failure_retry_and_fresh_process_reuse --run-external`.
+It exercises whole-workflow computation through the platform preparation adapter with a genuine owned stale recipe, actual Pixi installation failure and retry, retired worker cleanup, fresh creation, unrelated/unmanaged isolation, and warm plus fresh-orchestrator-process generation reuse.
+That restart assertion covers orchestration and worker reuse, not a packaged native desktop restart.
 Other package installation and discovery behavior remains covered by repository-owned fixtures in the deterministic lane.
 Additional published tool packages should receive an external lane only when the platform declares a compatibility contract with them; test count alone is not a reason to duplicate this certification.
 
@@ -168,7 +171,7 @@ scripts/test certification
 ```
 
 This command installs the version declared in `scripts/ci/test_versions.env` from the package index into a new empty store, then runs tests marked both `external` and `common_tools` with `--run-external`.
-It does not run the separate real Wetlands worker fixture.
+It does not run the separate real Wetlands worker fixtures.
 The installer places only the tool package in that store; runtime dependencies remain owned by the pinned backend environment so they cannot shadow the platform's editable source dependencies.
 It requires network access and an existing `backend/.venv`.
 The temporary store is deleted when the command exits.
@@ -200,6 +203,6 @@ Frontend changes, backend runtime changes, E2E fixtures, and shared test infrast
 The current path selector treats changes outside `backend/`, `frontend/`, `docs/`, and `README.md` as shared and selects all five PR jobs; this includes root instructions such as `AGENTS.md` and `PLATFORM_CONTEXT.md`.
 Routine documentation PRs still select the Sphinx job; the local campaign-status schedule does not change CI selection or demonstrate CI savings.
 Scheduled and manually dispatched certification splits backend coverage and external certification, frontend coverage and build, Chromium, and Firefox into independent jobs with a final required aggregator.
-Its backend job excludes `external`, and its external job runs common-tools certification only, so the separate real-worker fixture and Sphinx still need explicit acceptance evidence.
+Its backend job excludes `external`, and its external job runs common-tools certification only, so the separate real-worker fixtures and Sphinx still need explicit acceptance evidence.
 Independent jobs can overlap; actual elapsed cost also includes dependency setup and runner queue time, and no measured savings are claimed here.
 The published common-tools version has one source of truth in `scripts/ci/test_versions.env`, shared by local and CI runners.

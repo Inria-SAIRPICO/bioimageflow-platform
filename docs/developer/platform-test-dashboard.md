@@ -10,7 +10,7 @@ The dashboard baseline is `b213223` (2026-09-15); its counts remained provisiona
 Change the denominator only when implementation or specification reconciliation adds, removes, splits, combines, or changes the applicability of a feature, and record the revision that made that change here.
 
 The [new campaign](platform-test-plan.md) is running: the four readiness outcomes pass in both browsers, and Wave 2 feature work is delegated.
-The counts combine retained historical evidence with the five newly accepted N1 obligations at `884be6e`; baseline reconciliation must assess the remaining historical cells before reporting a current campaign percentage.
+The counts combine retained historical evidence with the ten newly accepted N1/E1 obligations at `884be6e` and `2290c67`; baseline reconciliation must assess the remaining historical cells before reporting a current campaign percentage.
 No cell is promoted or reset by the campaign redesign alone.
 
 ## Counting rules
@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **271 V + 223 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **271 / 500 are verified (54.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **276 V + 218 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **276 / 500 are verified (55.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -128,7 +128,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | RT-EXE-016 | Overall execution plan progress and setup phase | P1 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `9b3cb22`, `7f56806` implementation; `6a3c5df`, `18aa760` focused GUI evidence; setup presentation uses a controlled local retained-run fixture |
 | RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344`, `2dbdd7f` implementation; focused GUI, result-integrity, and recovery evidence `e58b8f1` |
-| RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | G | G | G | G | G | gap | `bfd1ab5` implementation; scenario audit pending |
+| RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | V | V | V | V | V | verified | `2290c67` integrated repair; real worker, three journeys per browser and scoped app completion |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f`; accepted-draft router selectors `71b82da` |
 | RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
