@@ -31,19 +31,19 @@ Next recurrence: capture those event/API breadcrumbs on the exact failed browser
 
 ## ISSUE-019 — Focusing a visible inactive result dock refreshes during the click
 
-Status: reproduced; isolated N1 repair passes the exact scenario once in Chromium and Firefox, but combined completion and integration remain pending.
+Status: resolved in integrated N1 `884be6e`; exact scenarios, combined Chromium stress and required two-browser completion pass, with the separate ISSUE-022 Open observation retained.
 At source-equivalent readiness base `261ee56` plus N1 test changes, `napari-output-chooser.spec.ts` selector `napari inactive visible dock` failed in Chromium: a real row click changed projection query count from 1 to 2 and dispatched zero opens.
 The worker's narrow visibility callback correction preserves the projection during focus and refreshes when the dock becomes visible; corrected wheel/viewport geometry avoids a sticky-header fixture error.
-Owner: N1 worker; next: validate the coherent visibility and identity patch, then required frontend/cross-browser completion before integration.
+Owner: N1 worker; accepted visibility and identity patch supplies frontend completion and 36-test cross-browser smoke; resolution details will move to the Wave 2 archive at its milestone.
 See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
 
 ## ISSUE-020 — Napari chooser can combine replacement identity with retained actions
 
-Status: reproduced; bounded component repair in progress, not yet accepted.
+Status: resolved in integrated N1 `884be6e`, with the recorded plan-review limitation and the separate pre-chooser ISSUE-022 observation retained.
 At N1 base `261ee56`, six real DOM unit reproductions in `NapariOutputChooser.test.ts` show an enabled stale clear action during replacement, a delayed favorite retry targeting the replacement preference key, an old menu overwriting current preference state, an undispatched favorite surviving unmount, an old pending toggle blocking its replacement owner, and a retained candidate callback pairing the new result with the old reader even when the environment UUID matches.
 The tests defer actual API promises and change mounted props or dispose the owner; they do not invoke private component methods.
 Two dedicated plan passes improved captured selection and operation ownership; a fresh third reviewer could not be created because the tool reached its agent-thread limit, so convergence is not claimed.
-Owner: N1 worker; next: exact distinguishing unit passes, coherent two-browser validation and required completion; no backend or native launch claim follows from mocked client evidence.
+Owner: N1 worker; all six distinguishing unit regressions and the seven two-browser client scenarios pass, with frontend and critical-smoke completion; separate actual CAS storage remains distinct from mocked client and native launch evidence.
 See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
 
 ## ISSUE-021 — GUI local worker dispatch bypasses stale-generation preparation
@@ -55,6 +55,18 @@ Earlier stepwise real worker tests prove the preparation adapter boundary only a
 Owner: E1 worker; next: independent review of the smallest public adapter submit/map repair, direct-submit regression, actual compute-path external acceptance and exact repaired GUI selectors in both browsers.
 No library implementation change or older incompatible Core seed is currently required.
 See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
+
+## ISSUE-022 — Explicit selected-workflow Open can leave the previous workflow active
+
+Status: one retained Firefox stress observation; cause unproved, root-owned focused diagnosis.
+At N1 source-equivalent readiness `261ee56` plus tested diff `e3b4d9e1d10dd8f29d1ba5baa3a10cbe0a5c100b84a3c2763582596e3cb7c0e5`, combined inactive/artifact-replacement Firefox stress produced 5 passed / 1 failed / 4 unrun in 39 s.
+The failed artifact-replacement test stopped before any chooser interaction: its real workflow row click and selected-details heading identify the requested workflow, then its explicit **Open workflow** click leaves the prior workflow title/root active.
+The original zero-retry run has an error context and screenshot but no first-attempt trace; it does not establish lost admission, loading, presentation, registry activation, or overwrite as the cause.
+The exact selector passed once (15 s); separate diagnostic variants passed five times each (46 s and 42 s), and 36-test critical smoke passed; none closes the original observation or relabels the failed command green.
+Corrected probes capture actual workflow-command/Open-start/apply-graph, exact workflow-drafts and nested saved metadata, execution state/lock, active-canvas lifecycle guard and operations; the initial diagnostic used incorrect guessed presentation/draft names and has explicit limits.
+Owner: orchestrator; next actual recurrence must identify the first missing command/API/presentation/activation boundary before repair, with an exact controlled ordering regression and bounded reviewed plan if needed.
+This differs from ISSUE-017's double-click entry and ISSUE-014's empty title; no common cause or closure of either is asserted, and resolved ISSUE-018 remains its separately confirmed startup race.
+Retained artifacts are under `/private/tmp/bioimageflow-n1-artifacts/n1-races-stress-firefox/` and the two diagnostic directories; see [N1 acceptance](platform-test-evidence.md#n1-integrated-acceptance).
 
 ## Resolved issue lookup
 

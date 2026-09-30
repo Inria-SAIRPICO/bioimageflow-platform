@@ -159,3 +159,54 @@ Live OMERO prerequisites were requested asynchronously and remain unanswered; no
 
 The consolidated Wave 2 checkpoint-only update passed `/usr/bin/time -p scripts/test check campaign` in 0.29 s elapsed / 0 s lane against main `4b58e44` plus documentation diff SHA-256 `314b143d8305b0ba84f6828e60ef19e1d21ab8ac78d712be1ed37d460dfd8a66`, before this result-only entry.
 Dashboard consistency retained 108 rows / 500 applicable / 266 historical verified cells, and 53 active local links passed; no skip/retry or application phase was involved.
+
+## N1 integrated acceptance
+
+Main feature revision is `884be6e11eb09783f80a1de0174af1f49c65e84d`, integrating only worker feature commit `45adbebc9b5f07dd16f3f85ba792d8d51df486cc`.
+The worker tested source-equivalent readiness parent `261ee566d9efd9ac70251e42cd609ff4945566b1` plus task diff SHA-256 `e3b4d9e1d10dd8f29d1ba5baa3a10cbe0a5c100b84a3c2763582596e3cb7c0e5`; integration did not change those bytes.
+Editable library remains clean `dff04e3eb7c15ded7984aa6b0befa44febe4cb37`, BioImageFlow 0.8.6/Core 0.4.1 and Wetlands 2.4.2.
+Backend and frontend lock hashes are respectively `092664aa1715c03c811ca5b191ac226abb61799b9b4f85478a4fc0c4e2614865` and `dea1134bffb88424a08d9dd5f7ee16f80ce9e33a793904713a29088edd3196a9`.
+
+The visibility repair preserves cell gestures when an already visible Node Data dock gains focus and refreshes on hidden-to-visible reentry.
+Six mounted DOM unit reproductions established separate stale chooser action, preference snapshot, disposal, issued-operation ownership and retained-candidate boundaries before the captured-owner repair.
+Selection replacement withdraws old actions; payloads, reader and server-derived preference key stay captured through asynchronous work, and issued operations are never replayed.
+The two material dedicated identity-plan reviews remain explicitly limited: fresh review pass 3 could not start because of the agent-thread limit, so no convergence is claimed.
+Root performed read-only integration review; it is not an independently executed test.
+
+| Completion command | Result and duration | Scope and retained limitations |
+| --- | --- | --- |
+| `scripts/test focus backend tests/test_services/test_viewer_preferences.py tests/test_services/test_napari_resolver.py` | 7 passed; pytest 0.23 s, runner 37 s cold | Actual reopened CAS favorite storage; resolver adapters remain controlled, not real viewer/cache certification. |
+| `scripts/test check backend` | Original command failed in 142 s: lint passed, 1822 passed, 2 failed, 9 external deselected; logging phase unrun | Two held-worker tests could not bind loopback in the sandbox. Unchanged passing phases are retained, not relabeled as a passing original command. |
+| `scripts/test focus backend tests/test_integration/test_held_worker_fixture.py::test_held_worker_acknowledges_cooperative_cancellation_without_output tests/test_integration/test_held_worker_fixture.py::test_held_worker_failure_is_announced_and_publishes_no_output` | Elevated recovery 2 passed; pytest 0.16 s, runner 2 s | Exact failed selectors recovered with unchanged source/dependencies. |
+| `scripts/test focus backend tests/test_logging_config.py tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently tests/test_ws/test_handler.py::test_publish_logs_future_exceptions tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger -q` | 7 passed; pytest 0.42 s, runner 2 s | Completes the previously unrun logging phase; accepted backend phases form a composite. |
+| `scripts/test focus unit src/components/panels/__tests__/NapariOutputChooser.test.ts src/api/__tests__/napari.test.ts src/stores/__tests__/napari.test.ts src/components/panels/__tests__/DataTablePanel.test.ts` | 35 passed in 4 files; runner 2 s | Exact six red selectors recovered; an inconsistent favorite mock was corrected separately from product defects. |
+| `scripts/test check frontend` | Passed in 28 s: lint 11 s, types 6 s, 1337 tests/134 files 28 s, build 6 s | Existing Vite chunk advisory retained. Later browser-fixture-only changes did not invalidate units/types/build. |
+| `/usr/bin/time -p bun run lint` | Passed in 5.87 s | Rechecks the later browser fixture corrections; temporary probes and trace configuration were removed byte-for-byte before commit. |
+| `scripts/test check docs` | Passed in 12 s; Sphinx 11 s warning-clean | Tested N1 normative documents/context; campaign counts then remained historical 266/500 with 49 active links. |
+| `scripts/test focus e2e --project=chromium tests/e2e/napari-output-chooser.spec.ts` | 7 passed in 24 s | Client-intercepted chooser actions, persistence/reload, refusal/retry and visibility behavior. |
+| `scripts/test focus e2e --project=firefox tests/e2e/napari-output-chooser.spec.ts` | 7 passed in 32 s | Same client scope; no native Napari launch. |
+| `scripts/test focus e2e --project=chromium tests/e2e/napari-output-chooser.spec.ts --grep 'inactive visible dock|replaces captured artifact' --repeat-each=5` | 10 passed in 39 s | Stress is justified by the proven timing/ownership defects. |
+| `scripts/test focus e2e --project=firefox tests/e2e/napari-output-chooser.spec.ts --grep 'inactive visible dock|replaces captured artifact' --repeat-each=5` | Original command failed in 39 s: 5 passed, 1 failed, 4 unrun | ISSUE-022 occurred at prerequisite workflow Open, before chooser interaction; cause remains unproved. |
+| `scripts/test check cross-browser-smoke` | 36/36 passed in 128 s; Chromium 18/91 s, Firefox 18/128 s | No skip or unrun case. Broader managed critical case execution supplies no excluded-family campaign credit. |
+
+The replacement browser baseline already passed in 15 s with the previous chooser: its DOM owner had unmounted, so that baseline supplies integration evidence rather than another reused-chooser red.
+The exact repaired replacement selector passed in Chromium 12 s and Firefox 17 s; the exact inactive-visible selector passed in Chromium 17 s and Firefox 12 s after a separate sticky-header geometry correction using real wheel gestures.
+Two earlier replacement popover-lifecycle reds were fixture errors and are retained separately.
+After ISSUE-022, an exact Firefox replacement follow-up passed in 15 s and two diagnostic repeat-five runs passed in 46 s and 42 s.
+The first diagnostic missed the actual presentation event/draft prefix; the corrected probe captured workflow-command, Open-start, apply-graph, workflow-draft requests and lifecycle/execution guards.
+Neither diagnostic reproduced the failure, established its cause, or closes/relabels the original failed stress run.
+
+Durable artifacts were copied to `/private/tmp/bioimageflow-n1-artifacts/` before the clean integrated task worktree was moved to Trash and its registration/branch removed.
+The original Open failure retains screenshot/error context under `n1-races-stress-firefox/napari-output-chooser-napa-fffac--clear-or-favorite-dispatch-firefox-repeat2/`; the original first attempt has no trace under the default first-retry policy.
+The complete command/red history remains in `/private/tmp/bioimageflow-n1-worker-report.md`, with source diff `/private/tmp/bioimageflow-n1-final.diff` and diagnostic owner map `/private/tmp/bioimageflow-open-recurrence-diagnosis.md`.
+RT-RES-012 receives its five applicable S/R/F/P/B cells from these exact client assertions and separate durable CAS storage evidence.
+The accumulated dashboard is now 271 verified/500 applicable; the other historical cells have not thereby become current campaign certification.
+No full/browser-all, native viewer, package provisioning or RT-RES-011 acceptance is claimed.
+
+The live OMERO prerequisite is now answered: explicit headless Chromium authenticated successfully and read-only collection queries returned HTTP 200 (projects 0, datasets 1, images 0).
+The interactive prerequisite tab was closed; no credentials are included in records.
+This account check is neither platform keyring nor scientific image-read acceptance, and no remote scientific data was changed.
+
+The N1 consolidation `/usr/bin/time -p scripts/test check campaign` passed in 0.15 s elapsed / 1 s lane at main `884be6e` plus campaign documentation diff SHA-256 `df55bf64ec0be5008905c4ba057804359fe62589efff27685e5bbf86b961d5ed`, before this result-only entry.
+It verified 108 rows, 500 applicable cells, 271 accumulated verified cells and 54 local links; no application phase was executed.
+The first documentation attempt failed because the summary's changed wording did not match the verifier's required format; restoring that format preserved the explicit accumulated/historical distinction and the check passed.

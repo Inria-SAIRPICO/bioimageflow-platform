@@ -10,7 +10,7 @@ The dashboard baseline is `b213223` (2026-09-15); its counts remained provisiona
 Change the denominator only when implementation or specification reconciliation adds, removes, splits, combines, or changes the applicability of a feature, and record the revision that made that change here.
 
 The [new campaign](platform-test-plan.md) is running: the four readiness outcomes pass in both browsers, and Wave 2 feature work is delegated.
-The counts and `V` cells below retain historical evidence; baseline reconciliation must assess their current applicability before reporting a current campaign percentage.
+The counts combine retained historical evidence with the five newly accepted N1 obligations at `884be6e`; baseline reconciliation must assess the remaining historical cells before reporting a current campaign percentage.
 No cell is promoted or reset by the campaign redesign alone.
 
 ## Counting rules
@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **266 V + 228 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **266 / 500 are verified (53.2%)**; blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **271 V + 223 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **271 / 500 are verified (54.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -144,7 +144,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
-| RT-RES-012 | Result-scoped napari chooser and exclusive output favorite | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `dfb5cb3` implementation; scenario audit pending |
+| RT-RES-012 | Result-scoped napari chooser and exclusive output favorite | P1 | Desktop GUI/API; restricted webapp | no | V | V | V | V | V | verified | `884be6e`; seven intercepted-client GUI scenarios in Chromium/Firefox, captured-action unit regressions, and separate real CAS favorite storage; no native launch credit |
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `c050207`, `125ee3d` |

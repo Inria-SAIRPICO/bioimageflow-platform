@@ -4,7 +4,7 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — Wave 1 accepted; Wave 2 delegated**.
+Prepared and started 2026-09-30; **RUNNING — Wave 1 and N1 accepted; E1 executing, I1 delegated**.
 The user requested execution after the specification revision; the model-choice hold is lifted, and the session's model settings are unchanged.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -78,26 +78,34 @@ Current focused gate: **4/4 outcomes passed in both browsers**; J3 has a causall
 
 ## Current Wave 2 execution and next actions
 
-N1 reproduced a visible inactive-dock projection refresh that swallowed the click; its visibility-only correction passes the exact scenario once in Chromium and Firefox.
-Six distinguishing deferred DOM unit tests also reproduced stale artifact/reader dispatch, preference-key retargeting, late preference overwrite, disposed-owner dispatch and favorite pending ownership defects before product repair.
-The N1 worker is implementing the twice-reviewed component-only capture/ownership plan; combined repair validation and integration remain pending.
+N1 is integrated in main `884be6e11eb09783f80a1de0174af1f49c65e84d` from feature `45adbebc9b5f07dd16f3f85ba792d8d51df486cc`; readiness cherry-pick parent `261ee56` was excluded.
+The combined inactive-dock and captured-identity repair passes all six distinguishing deferred unit regressions, seven separate client scenarios in both browsers, frontend completion and 36-test cross-browser smoke.
+ISSUE-019/020 are resolved; its original Firefox stress remains 5 passed / 1 failed / 4 unrun before chooser interaction, retained as unattributed root-owned ISSUE-022.
+Five RT-RES-012 obligations are now credited with explicit intercepted-client versus actual CAS storage boundaries; native RT-RES-011 remains unassessed.
+Accumulated dashboard evidence is 271/500 (starting historical 266 plus N1 five); the remaining historical cells are not a current-revision certification.
 E1's real worker adapter-only test passed, but the actual GUI Run exposed a dispatch defect: ordinary `workflow.compute()` task submission bypasses adapter preparation and reaches the stale shared pool unchanged.
-That failed GUI path, not the earlier adapter test, governs E1 acceptance; the worker owns exact reproduction, bounded dispatch repair planning and actual compute-path validation.
-Stable open defect records are [ISSUE-019–ISSUE-021](platform-test-issues.md); none is closed by these preliminary results.
-E1 holds the browser token; N1 continues focused units, with race repetitions deferred until its coherent combined repair.
+That failed GUI path governs E1 acceptance; reviewed task submission, shared startup/Run preparation and lazy shared-manager ownership repairs have distinguishing red/green tests and actual compute-path acceptance.
+E1 rebased onto combined main `884be6e`, retaining unchanged backend/dependency digests; the three exact GUI journeys now pass in both browsers, including visible actual worker replacement/reuse, injected Pixi failure/retry and Core refusal without mutation.
+The Core browser fixture initially expected dispatch despite the correct frontend validation refusal; its corrected assertion separates the real GUI refusal from the actual revision-addressed API 422, without a product change.
+The worker is running combined-source `check app`; integration remains pending.
+[ISSUE-021/022](platform-test-issues.md) remain open; E1 holds the browser token.
+The completed clean N1 worktree was moved to Trash, registration pruned and task branch deleted after source-equivalent integration; its artifacts were preserved in `/private/tmp/bioimageflow-n1-artifacts/`.
+Its worker now owns I1 in fresh `.worktrees/campaign-i1-current`, branch `campaign/i1-current` from `884be6e`, with independent dependencies and archive/readiness assertions while awaiting E1 integration for browser work.
+Two deferred DOM unit reds show that an earlier import's late success replaces the newer import's setup prefills and its late failure publishes obsolete guidance; production is unchanged while the bounded identity/guidance plan receives independent review.
 
-1. Complete the bounded E1 dispatch plan and independent review, then the exact repaired real GUI/worker selector in Chromium and Firefox; preserve original failed commands and adapter-only evidence boundaries.
-2. Return browser ownership to N1 for its exact coherent repair checks, review both packets' assertions and completion phases, and integrate only validated task commits.
-3. Assign I1 import guidance and T1 Manage Tools to the available isolated workers, while reconciling obligation-level evidence and current native prerequisites.
+1. Finish E1 exact repaired GUI/worker scenarios in both browsers and `check app` on the combined source, then integrate its validated task commit; retain all original failed commands and adapter/worker/native boundaries.
+2. Let I1 continue independent preparation, align it to integrated E1 before browser acceptance, and assign T1 to the completing E1 worker with its current shared preparation/lifecycle impact map.
+3. Reconcile the wave impact audit and native prerequisites without inventing coverage: existing assertions guide bounded remaining packets, and any confirmed omitted implemented obligation requires a documented denominator correction.
 
 The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`; no native application has been launched or certified.
 Cocoa/pywebview and Fiji are present; a historical installed BioImageFlow application was inventoried without being credited as the current source build.
-A disposable live OMERO setup and supporting tool package were requested asynchronously; no answer or live outcome has been received.
-Independent automated work continues while that prerequisite is pending.
+The user supplied a live OMERO demo account; explicit headless Chromium login and authenticated read-only API collection queries returned HTTP 200 (projects 0, datasets 1, images 0).
+This is an account prerequisite, not a platform/OS-keyring or image-read result; credentials are omitted from records.
+A trusted disposable read-only QA package and isolated actual-desktop launcher are prepared outside the repository, with tool metadata validated; neither has been installed/launched/executed, and native application checks await integrated product acceptance.
 
 ## Carry-forward concerns and working set
 
-[ISSUE-013, ISSUE-014, and ISSUE-017](platform-test-issues.md) remain open with their existing evidence limits.
+[ISSUE-013, ISSUE-014, ISSUE-017, ISSUE-021 and ISSUE-022](platform-test-issues.md) remain open with their respective evidence limits.
 ISSUE-018 has a reviewed causal repair and is retained in the Wave 1 archive; its resolution does not attribute or close the older intermittent observations.
 No new diagnosis is established for the older intermittent workflow activation/selection or broad-lane failures.
 Record event/API breadcrumbs on relevant recurrence and preserve prior red/interrupted lanes as such.
@@ -105,6 +113,6 @@ Native Napari smoke and real provisioning remain separate from mocked GUI/API sc
 
 Ordinary restarts need this file, the assigned plan section, the relevant inventory rows, and matching open issue only.
 [Evidence](platform-test-evidence.md) owns new executed results; the [dashboard](platform-test-dashboard.md) owns the stable scenario denominator; source inventories own assertions and gaps.
-Shared campaign status belongs to the orchestrator; N1 and E1 workers own only their isolated feature packets, with scoped validation and commits required before reviewed integration.
+Shared campaign status belongs to the orchestrator; N1 is integrated, and the two ordinary workers now own isolated I1 and E1 packets, with scoped validation and commits required before reviewed integration.
 Follow the plan's per-edit, feature, wave, and final validation schedule; record observed setup/test costs and unchanged-phase reuse without repeating Sphinx for routine status drafts or presenting unmeasured savings.
 The next baseline record must replace these observations with current facts and mark invalidated evidence without erasing its historical source.
