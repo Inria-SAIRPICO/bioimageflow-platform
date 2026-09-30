@@ -142,7 +142,9 @@ The platform does not expose a separate root-input invocation contract and there
 ## 6. Submission and Identity
 
 After path resolution and explicit submit confirmation, the platform calls `cluster.submit()` directly.
-It does not expose or retain a separate platform deploy, prepare, validate, or plan token and does not implement a second confirmation protocol around those library phases.
+It does not expose or retain library deployment, preparation, validation, or planning handles and does not implement a second confirmation protocol around those library phases.
+After exact graph/profile/path resolution, preflight may issue one short-lived in-process admission token bound to the captured workflow identity/revision, profile revision, request, and resolved invocation overrides.
+The run endpoint consumes that intent once and calls `RemoteCluster.submit()` directly; the token is neither a durable remote allocation nor a library deploy/validate/plan handle and is lost on platform restart.
 
 `cluster.submit()` owns source snapshotting, deployment publication or reuse, validation, planning, upload, scheduler submission, and durable remote allocation.
 The platform must not reread or patch library-owned prepared state.
@@ -253,7 +255,7 @@ Canvas status projects only when workflow identity and accepted draft revision s
 
 The platform exposes strict OpenAPI models for profiles, targets, sanitized cluster descriptions, connection reports, remote node-path plans, execution snapshots, diagnostics, retry journals, result downloads, cleanup plans, and cleanup reports.
 These models reject unknown response fields rather than passing arbitrary public-library mappings to the frontend.
-OpenAPI remains the sole source of frontend API types.
+OpenAPI remains the sole normative source of frontend API types; the unrelated handwritten draft-wrapper debt is recorded in [v2 Section 14](platform_specs_v2.md#14-api-surface).
 
 The managed profile routes are:
 
@@ -266,7 +268,7 @@ The managed profile routes are:
 The target and execution routes are:
 
 - `GET /api/v1/execution/targets`;
-- `POST /api/v1/execution/preflight` for exact snapshot validation and remote path resolution only;
+- `POST /api/v1/execution/preflight` for exact snapshot validation, remote path resolution, and issuance of a short-lived local admission intent when ready;
 - `POST /api/v1/executions` to consume one exact short-lived managed admission intent and call `cluster.submit()`;
 - `GET /api/v1/executions`;
 - `GET /api/v1/executions/{execution_id}`;
@@ -278,7 +280,7 @@ The target and execution routes are:
 - `POST /api/v1/executions/{execution_id}/cleanup`.
 
 The run endpoint resolves a captured server-side profile revision and never accepts a raw `RemoteCluster` object or script body.
-The preflight endpoint may return explicit path-resolution requirements but does not create a remote deployment, plan, or scheduler allocation.
+The preflight endpoint returns explicit path-resolution requirements or the ready admission token and expiry; it does not create a remote deployment, library plan, or scheduler allocation.
 
 WebSocket execution events carry execution ID, snapshot revision, workflow ID, draft revision, and changed presentation values.
 Events accelerate observation but do not replace full snapshot recovery.

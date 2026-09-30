@@ -1,8 +1,9 @@
 # Multiple napari environments and portable viewer requirements
 
 Status: Phase A specification complete; the backend environment registry, inventory probe, per-environment launcher/lifecycle, portable viewer metadata, exact-result provenance, compatibility resolver, favorite store, managed creation/copy/removal lifecycle, environment settings UI, passive readiness report, and exact-result output chooser are implemented; native desktop smoke certification remains incomplete.
-This document specifies the delivered extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md).
-It does not change their implemented status; the portable viewer metadata it relies on is defined and exported by the released `bioimageflow-core` 0.4.0 package.
+This document is the feature-specific normative extension to the implemented [v1 viewer and settings contracts](platform_specs_v1.md) and [v2 recursive workflow, import/export, and result contracts](platform_specs_v2.md), overriding their viewer/environment behavior where stated.
+Its portable viewer metadata is defined and exported by the BioImageFlow Core contract; local environment and preference state remains platform-owned.
+Implementation delivery, known requirement gaps, and native certification are distinguished in Section 9.
 The portable workflow and frontend examples below describe implemented behavior unless their implementation status is stated explicitly.
 
 ## 1. Product decisions
@@ -69,14 +70,17 @@ The creation form contains:
 
 The default managed recipe creates a Conda environment containing Python 3.12, then installs napari 0.9.1, PyQt6, and requested Python distributions from PyPI.
 The older supported smoke recipe creates Python 3.12 through Conda, then installs napari 0.6.6, PyQt5, and requested Python distributions from PyPI.
-These are the initial explicit tested matrices; the creation API defaults to the first and advanced requests require an exact napari version and an explicit PyQt5/PyQt6 choice.
+These are the supported recipe matrices requiring the helper compatibility and native smoke checks below; implementation of a recipe does not certify native Qt/plugin behavior.
+The creation API defaults to the first and advanced requests require an exact napari version and an explicit PyQt5/PyQt6 choice.
 Resolve requested package constraints against the selected tested matrix.
 Do not offer “latest” as a promise that arbitrary plugin combinations will work.
 The implementation must publish these tested napari/Python/Qt and bridge matrices; supporting both does not imply supporting other releases.
 Users who need unsupported combinations can manage an external installation, but an unsupported bridge remains explicitly unverified or unavailable.
 
 Use one documented provisioning strategy through public Wetlands APIs.
-Conda supplies only Python for these managed recipes; napari, Qt, the bridge, and requested packages are Python distributions installed from PyPI.
+Conda supplies only Python for these managed recipes; napari, Qt, and requested packages are Python distributions installed from PyPI.
+The platform launches its standalone helper script inside the selected environment rather than installing a bridge distribution.
+That helper must still have a published tested compatibility matrix and real native smoke evidence for each supported napari/Python/Qt combination.
 Package distribution names and napari plugin IDs are not shell commands or Conda package mappings, and the platform does not maintain Conda-name translations for requested packages.
 For automatic installation, resolve reviewed Python distribution requirements from PyPI.
 Constraints requiring unavailable builds, system libraries, or incompatible Python/Qt versions produce a solvability error with the affected packages.
@@ -137,10 +141,10 @@ An illustrative serialized output declaration is:
   "viewer": {
     "napari": {
       "required_packages": [
-        {"distribution": "example-track-reader", "version": ">=1.2,<2"}
+        {"distribution": "example-track-reader", "normalized_name": "example-track-reader", "version": ">=1.2,<2"}
       ],
       "recommended_packages": [
-        {"distribution": "example-track-editor", "version": ">=1"}
+        {"distribution": "example-track-editor", "normalized_name": "example-track-editor", "version": ">=1"}
       ],
       "reader_id": "example-track-reader",
       "napari_version": null
@@ -464,10 +468,10 @@ Allow one platform-owned viewer process per registered environment per applicati
 Reuse a running viewer only for the exact environment installation; a recreated environment must not inherit an old process connection.
 Concurrent open requests to the same environment share one launch, while another environment remains responsive.
 Keep authenticated local IPC and use request IDs to distinguish accepted, opening, succeeded, and failed operations.
-Report success only after `viewer.open()` completes on the Qt thread; the current helper acknowledges queueing before opening, which is insufficient for reliable reader-error reporting.
+Report success only after `viewer.open()` completes on the Qt thread; the implemented standalone helper waits for that callback and returns reader failures explicitly.
 An ambiguous disconnect after dispatch is “outcome unknown”; do not replay automatically and risk duplicate layers or another clear operation.
 
-Pass the selected reader to the helper rather than always calling `viewer.open(..., plugin=None)`.
+Pass an explicitly selected reader to the helper as `viewer.open(..., plugin=reader_id)`; without one, use ordinary napari reader discovery.
 If napari reports multiple readers, expose a concrete choice or invoke its supported reader chooser; do not turn ambiguity into a silent success.
 Clear-layers behavior and partial multi-file failure must be explicit; do not promise rollback of arbitrary plugin side effects.
 Close or restart only the process owned by the addressed launcher; never attach to, kill, or control a separately launched napari session implicitly.
@@ -501,6 +505,8 @@ Preserve the current managed napari installation as one registered entry named �
 Migration inspects and adopts the actual installation without recreating it or discarding user-installed plugins.
 If it does not exist, register a setup-needed default recipe; first use presents setup and installation progress.
 Changing settings alone must not provision it.
+**Known implementation gap:** Startup currently adopts an existing singleton but skips a missing installation without registering the required setup-needed default recipe.
+Explicit managed creation is available from Settings and the output chooser; that path does not by itself close the default-recipe requirement, which needs an owned repair or an approved product decision.
 Legacy outputs with no viewer annotations retain normal opening behavior once a healthy default is available.
 
 Delivery advanced in three independently verifiable increments:
@@ -509,7 +515,8 @@ Delivery advanced in three independently verifiable increments:
 2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
 3. Managed environment creation with requirement-group prefills, plus the retained recipe-based copy API.
 
-The feature is complete only when all three increments are available, and all three are now delivered.
+The implementation for all three increments is delivered, subject to the missing-default-recipe gap above.
+Feature acceptance additionally requires the native desktop checks in Section 10; those remain uncertified.
 The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
 Phase C replaced the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.
 External venv and Conda entries use direct argv-only subprocesses. Recipe-created managed entries resolve their recorded Wetlands name with the public `EnvironmentManager.environment(name)` API and call that generation's public `ManagedEnvironment.spawn(argv, env=...)`; an adopted legacy Wetlands 1 pixi workspace may fall back narrowly to its persisted interpreter when no matching current Wetlands generation exists.
@@ -525,7 +532,8 @@ The passive report evaluates imported or currently saved workflow requirements w
 The product decisions above do not depend on a new general-purpose environment manager or a complex association editor.
 
 The affected v1 viewer/settings/API sections, v2 graph/inspection/archive/lifecycle contracts, library specifications and public contract references, and `PLATFORM_CONTEXT.md` were updated together with this implementation; further implementation of this feature updates them together as well.
-Native desktop certification is still required before declaring the feature complete: the earlier local attempt did not leave a reliable completion artifact and therefore is not acceptance evidence.
+Native desktop certification is still required before declaring the feature accepted: the earlier local attempt did not leave a reliable completion artifact and therefore is not acceptance evidence.
+Mocked helper tests and headless browser checks cannot close Qt startup, third-party reader/plugin behavior, or configuration-isolation obligations.
 The existing normative documents continue to govern unaffected implementation.
 
 ## 10. Acceptance criteria

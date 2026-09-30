@@ -4,13 +4,18 @@ Read the [BioImageFlow library specification](bioimageflow/docs/source/specs.md)
 
 > **Status: future proposal.** The [v1](platform_specs_v1.md) and [v2](platform_specs_v2.md) documents define the implemented platform. This document proposes webapp and multi-user behavior; it must not be used as evidence that a feature is currently implemented unless that feature is explicitly inherited from v1 or v2.
 
-The proposal builds on stable canvas ownership and backend workflow-draft revision CAS. Before multi-browser locking is implemented, the startup root must also use the same stable canonical canvas lifecycle as later roots; the current bootstrap canvas alias documented in v2 is not a sufficient long-term claimant identity. Revision conflicts remain authoritative, locks are advisory UX, and CRDT or automatic merge semantics remain deferred until simultaneous collaborative editing becomes a product requirement.
+The proposal builds on the implemented stable canvas ownership, canonical startup-root lifecycle, and backend workflow-draft revision CAS.
+Startup already resolves a temporary non-canvas loading placeholder through the same root creation, activation, persistence, and close lifecycle as later roots ([v1 Section 3.8](platform_specs_v1.md#38-workflows-panel)).
+Future multi-browser locks must use those stable claimant identities; revision conflicts remain authoritative and locks are advisory UX.
+CRDT or automatic merge semantics remain deferred until simultaneous collaborative editing becomes a product requirement.
 
 ---
 
 ## 1. Dual Deployment Mode
 
-BioImageFlow v3 introduces a dual deployment model. The same codebase runs in two distinct modes, selected at server startup and exposed as the read-only `deployment_mode` field in the `Settings` model.
+The implemented v1/v2 platform already has desktop and webapp deployment modes with backend capability restrictions.
+This proposal adds authenticated multi-user operation, request guards, and per-user deployment behavior to that foundation; it does not introduce the modes themselves.
+The mode remains selected at server startup and exposed through `Settings.deployment_mode`.
 
 ### 1.1 Desktop Mode
 
@@ -47,14 +52,14 @@ server derives exactly one workspace:
 <workspaces_root>/<user_id>/workspace/
 ```
 
-The per-user workspace contains `workflows/`, `data/`, `outputs/`, and
-`.bioimageflow/`. Workflow ids are paths relative to `workspace/workflows/`,
-GUI-created custom tools are scoped to each workflow's `tools/` folder, dataset
-uploads are stored under the user's workspace data area, and runtime outputs are
-stored under `workspace/outputs/<workflow_id>/`. `GET /api/v1/workspace`
-returns these resolved roots plus read-only/admin-managed flags. In webapp mode
-`PATCH /api/v1/workspace` returns 403 for ordinary users; only deployment/admin
-configuration changes `workspaces_root`.
+The proposal places workflows under `workspace/workflows/` and workflow-local tools under each workflow's `tools/` folder.
+`GET /api/v1/workspace` would return derived roots plus read-only/admin-managed flags, and `PATCH /api/v1/workspace` would reject ordinary users with HTTP 403.
+Only deployment/admin configuration would change `workspaces_root`.
+
+**Unresolved storage departure:** Earlier proposal layouts placed uploads under a per-user `data/` area and runtime results under `workspace/outputs/<workflow_id>/`.
+The implemented baseline instead uses workspace-owned `datasets/` and workflow-owned `<workflow-directory>/results` ([v1 Section 2.4.10](platform_specs_v1.md#2410-dataset-management), [v2 Section 12](platform_specs_v2.md#12-persistence-drafts-and-lifecycle)).
+Choosing future roots requires an explicit storage, identity, move/delete, retained-result, and migration decision; the illustrative v3 layouts do not override the current contract.
+Section 3 and the container volumes in Section 10.4 must use that reviewed decision before implementation.
 
 Workflow and folder path segments may contain spaces; they remain ordinary
 workspace-relative path segments and cannot be empty, absolute, or traversal
@@ -111,7 +116,9 @@ In webapp mode, the following are disabled to prevent remote code execution:
 
 The frontend hides the "Create Tool" button in the Tools Panel and "Open in editor" buttons on tool rows when `deployment_mode === "webapp"`.
 
-Tool packages can still be installed from the **known packages list** (see Section 2.5) via the Tools Panel. Only packages on this pre-defined list are available for installation in locked-down webapp mode — users cannot install arbitrary PyPI packages, GitHub/GitLab package sources, or `.zip` package archives. The Manage Tools inline **Install tool package** footer for unknown package sources is hidden in locked-down webapp mode and its backend endpoints return HTTP 403. ProcessingTools are sandboxed by Wetlands; DataFrameTools from known packages run in the main process.
+Tool packages can still be installed from the **known packages list** (see Section 2.5) via the Tools Panel. Only packages on this pre-defined list are available for installation in locked-down webapp mode — users cannot install arbitrary PyPI packages, GitHub/GitLab package sources, or `.zip` package archives. The Manage Tools inline **Install tool package** footer for unknown package sources is hidden in locked-down webapp mode and its backend endpoints return HTTP 403. Wetlands provides dependency environments and separate processing-worker processes, not a filesystem/network privilege sandbox.
+DataFrameTools from known packages remain in the orchestrator process; approved packages are trusted executable code.
+The proposed deployment must own user isolation and enforce any filesystem, network, or resource boundary (Section 10).
 
 ### 2.5 Available Package Versions and Known Packages Registry
 
@@ -141,12 +148,15 @@ bioimageflow-omero
 
 ## 3. Dataset Management — Multi-User Extensions
 
-Base dataset management (endpoints, Datasets panel, drag-and-drop upload, filename sanitization, file size limit, path traversal prevention, and logical folders) is specified in **v1 Section 2.4.10**, **v1 Section 3.14**, and **v2 Section 5.7** and is available in both deployment modes.
+Base dataset catalog, logical folders, upload safety, selection resolution, and revision-checked deletion are defined in [v1 Section 2.4.10](platform_specs_v1.md#2410-dataset-management).
+The docked panel and transient single-file picker are defined in [v1 Section 3.14](platform_specs_v1.md#314-datasets-panel), with Files-source integration in [v2 Section 16](platform_specs_v2.md#16-files-source-selection).
+Catalog endpoints are available in both modes; the desktop dock uses ordinary local input paths instead of the Datasets panel.
 V3 extends it for multi-user operation.
 
 ### 3.1 Per-User Storage Scoping
 
-In webapp mode, datasets are partitioned by user:
+The proposal requires datasets to be partitioned by authenticated user; the final root remains the unresolved storage decision in Section 1.2.1.
+The following layout illustrates scoping rather than selecting a new current root:
 
 ```
 datasets/{user_id}/{timestamp}_{sanitized_filename}.{ext}
@@ -163,7 +173,8 @@ Desktop mode is unchanged: storage remains single-user and uses the v1 layout.
 
 ### 3.2 Path Traversal Gate (Multi-User)
 
-v1's path traversal gate (`Path.resolve()` + prefix check) still applies, with the allowed prefix now `datasets/{user_id}/` rather than the shared `datasets_root/`. This ensures that even a forged `dataset_id` cannot escape into another user's directory.
+The implemented resolve-and-containment gate remains mandatory, with the allowed resolved root restricted to the caller's reviewed per-user dataset area.
+Forged dataset IDs and symlink paths must not escape into another user's directory; a string-prefix comparison alone is insufficient.
 
 ### 3.3 Authenticated Access
 
@@ -172,7 +183,7 @@ Unauthenticated requests receive HTTP 401.
 
 ### 3.4 Datasets Panel — Webapp-Only Behavior
 
-The Datasets panel UI is specified in v2 Section 5.7.
+The Datasets panel UI is specified in [v1 Section 3.14](platform_specs_v1.md#314-datasets-panel), with Files-source actions in [v2 Section 16](platform_specs_v2.md#16-files-source-selection).
 In webapp mode it is the only path-selection mechanism because native dialogs are unavailable.
 All dataset catalog records and logical folders remain scoped to the authenticated user.
 
@@ -186,7 +197,7 @@ v1 already defines workflow-scoped node-image serving, on-demand OME-TIFF conver
 
 ### 4.2 UI Integration
 
-In the Data Table, image cells (columns typed as `ImagePath` or `ImageShared`) show:
+In Node Data, image cells (columns typed as `ImageFile` or `ImageShared`) show:
 - A thumbnail (loaded lazily from `GET /api/v1/nodes/{node_id}/thumbnail`).
 - A **"View image"** button (replaces the "Open in Napari" button shown in desktop mode).
 
@@ -242,13 +253,17 @@ The Viv viewer is rendered as a Dockview panel with the following controls:
 
 ### 5.1 Overview
 
-When multiple nodes are selected in the canvas, the Data Table (bottom panel) displays their individual DataFrames stacked vertically. When possible, a **Summary DataFrame** is displayed at the top, above the individual DataFrames.
+Implemented [v2 Section 13](platform_specs_v2.md#13-node-data-inspection) already provides lossless consolidated projections for related retained sources and independent stacked tables when alignment is unsafe.
+V3 proposes an additional **Summary DataFrame** join/presentation policy above those tables; it is not evidence of a delivered summary endpoint or a replacement for the existing consolidated contract.
 
 ### 5.2 Summary Computation
 
 The summary is an **outer join on index** of all selected contiguous nodes' DataFrames. NaN values fill gaps where indices don't match. Column headers in the summary include a tooltip with the originating node name.
 
-The summary join is computed **server-side** via `POST /api/v1/nodes/summary` to handle large DataFrames correctly with pagination.
+The proposed summary join would be computed **server-side** via `POST /api/v1/nodes/summary`.
+**Unresolved summary policy:** Outer-join eligibility, lineage/cardinality handling, and collision presentation need a separately reviewed contract.
+Any accepted design must retain explicit workflow and scoped-node identities, each source's immutable run/result/record identity, filtering-before-sorting/pagination and CSV semantics, and safe stacked fallback for unrelated lineages.
+The wire sketch below is incomplete until those fields and rules are defined; it must not be implemented as an unscoped node-ID query.
 
 ### 5.3 Summary Endpoint
 
@@ -271,9 +286,9 @@ The summary join is computed **server-side** via `POST /api/v1/nodes/summary` to
 ```json
 {
   "columns": [
-    {"name": "mask", "source_node": "cellpose_segmenter_1", "type": "ImagePath"},
+    {"name": "mask", "source_node": "cellpose_segmenter_1", "type": "ImageFile"},
     {"name": "cell_count", "source_node": "cellpose_segmenter_1", "type": "int"},
-    {"name": "mask", "source_node": "stardist_segmenter_1", "type": "ImagePath"},
+    {"name": "mask", "source_node": "stardist_segmenter_1", "type": "ImageFile"},
     {"name": "nuclei_count", "source_node": "stardist_segmenter_1", "type": "int"}
   ],
   "index": ["img_001", "img_002", "img_003"],
@@ -368,7 +383,7 @@ When a tab opens in read-only mode:
 
 - A persistent banner is shown at the top: `"This workflow is open in another tab. Close that tab to edit here."`
 - All graph mutations are disabled: node/edge creation and deletion, parameter editing, enable/disable toggle, clear outputs, save, undo/redo.
-- Read-only interactions are allowed: selecting nodes, viewing the Node Panel, browsing the Data Table, scrolling the Logger Panel, panning/zooming the canvas, opening images in the viewer.
+- Read-only interactions are allowed: selecting nodes, viewing the Node Panel, browsing Node Data, scrolling the Logger Panel, panning/zooming the canvas, opening images in the viewer.
 - The Run button is disabled with tooltip: `"Cannot execute in read-only mode."`
 
 ### 7.4 Lock Release
@@ -503,19 +518,22 @@ Rate limiting and request guard parameters are configurable at deployment time v
 
 In the current architecture, `DataFrameTool` runs in the **main server process** (the same process that hosts FastAPI, manages the Workflow, and holds all state). This is by design — DataFrameTools need full pandas access and benefit from zero-overhead DataFrame manipulation. However, in webapp mode, this means any DataFrameTool code (including from installed PyPI packages) has unrestricted access to the server's filesystem, network, and memory.
 
-Sandboxing ProcessingTools is straightforward (Wetlands already isolates them in separate processes). Sandboxing DataFrameTools is harder because their core abstraction — "I transform DataFrames in the main process" — is inherently incompatible with process-level isolation.
+ProcessingTools have Wetlands dependency/process isolation, but their worker processes retain the host's privileges unless deployment adds a security boundary.
+DataFrameTools run in the orchestrator by contract, so moving them into restricted workers would require a separate library execution redesign.
+Per-user security isolation must cover both tool kinds and the backend itself.
 
 Three approaches were evaluated:
 
 | Approach | Description | Spec Impact | Drawbacks |
 |----------|-------------|-------------|-----------|
-| **Per-user container** | Each user's entire BioImageFlow server runs in a rootless Podman container | None (operational only) | Higher resource usage per user |
-| **DataFrameTool in worker** | Move DataFrameTools to sandboxed workers (like ProcessingTools) | Major — redesigns a core abstraction | DataFrame serialization overhead, blurs tool type distinction |
+| **Per-user container** | Each user's entire BioImageFlow server runs in a rootless Podman container | Preserves library execution semantics; requires proposed platform/deployment work | Higher resource usage per user |
+| **DataFrameTool in worker** | Move DataFrameTools to workers with a separately defined security boundary | Major — redesigns a core abstraction | DataFrame serialization overhead, blurs tool type distinction |
 | **Hybrid trust model** | Sandbox only user-created DataFrameTools, trust installed packages | Moderate — two execution paths | Complexity, "trusted" is a judgment call |
 
 ### 10.2 Recommended Architecture: Per-User Containers
 
-The recommended approach for webapp mode is to run each user's BioImageFlow server inside a **rootless Podman container**. This provides full isolation without changing the library architecture.
+The proposed approach runs each user's BioImageFlow server inside a **rootless Podman container** while preserving library execution semantics.
+Container configuration, mounted paths, privileges, network policy, credential handling, and launcher controls must establish and validate the intended user boundary; rootless operation alone does not guarantee full isolation.
 
 ```
                     +-----------------------------------+
@@ -542,7 +560,8 @@ The recommended approach for webapp mode is to run each user's BioImageFlow serv
 
 **Why this approach:**
 
-1. **Zero library spec changes.** DataFrameTool keeps its "main process" semantics. ProcessingTool keeps its Wetlands isolation. The sandboxing is purely operational.
+1. **Zero library spec changes.** DataFrameTool keeps its "main process" semantics. ProcessingTool keeps its Wetlands dependency/process isolation.
+   Deployment owns the security boundary, alongside the proposed authentication/scoping/guard work in the platform backend.
 2. **The DataFrameTool design is architecturally correct.** Merge/filter/aggregate operations are fundamentally DataFrame-level and benefit from running in-process with full pandas access. Forcing them into workers would add serialization overhead and blur the clean separation between "per-row processing in isolated env" (ProcessingTool) and "holistic DataFrame manipulation" (DataFrameTool).
 3. **Standard pattern.** Per-user containers is the established approach for multi-tenant compute platforms (JupyterHub, Google Colab, Gitpod).
 4. **Solves multi-user.** Each container is a user session with its own filesystem namespace, tool store, and workflow state.
@@ -601,7 +620,9 @@ All other requests are proxied to the user's container based on the session toke
 - code-server
 - Wetlands
 
-Tool packages are mounted from a shared read-only tool store to avoid duplication across containers. Wetlands environments are created inside the container's own filesystem.
+The proposed container mounts a shared read-only tool store to avoid duplication; Wetlands environments remain inside the container's own filesystem.
+**Unresolved installation strategy:** Section 2.4 also permits approved package installation, which cannot write that read-only mount.
+A reviewed deployment strategy must define who installs approved versions and how user requests are published or isolated; no shared-store mutation or writable overlay is selected by this proposal cleanup.
 
 **Data volumes:**
 
@@ -612,14 +633,10 @@ Tool packages are mounted from a shared read-only tool store to avoid duplicatio
 | `{data_root}/shared/tool_packages/` | `/home/bioimageflow/.bioimageflow/tool_packages/` | Read-Only |
 | `{data_root}/shared/known_packages.txt` | `/home/bioimageflow/.bioimageflow/known_packages.txt` | Read-Only |
 
-Inside the container, `BIOIMAGEFLOW_WORKSPACE=/workspace` and the backend
-reports `/workspace` as the user's workspace path. Workflow files live under
-`/workspace/workflows/`, workflow-local custom tools under
-`/workspace/workflows/<id>/tools/`, uploads under `/workspace/data/datasets/`, and runtime outputs under
-`/workspace/outputs/`. Workflow creation accepts an optional description. The
-workflow detail UI shows and edits that description, opens the workflow folder
-through the system file browser when available, and avoids showing both a
-workflow-file row and storage-path row for the same concept.
+Inside the proposed container, `BIOIMAGEFLOW_WORKSPACE=/workspace` and the backend reports `/workspace` as the user's derived workspace.
+Workflow documents and owned tools retain the `workflows/<id>/` ownership layout.
+Dataset/result roots must follow the separately reviewed storage decision in Section 1.2.1, including migration and lifecycle implications; `/workspace/data/datasets/` and `/workspace/outputs/` are unresolved illustrative departures.
+Workflow description editing remains inherited from v1/v2, and local Reveal actions remain forbidden in webapp mode.
 
 **Resource limits (Podman flags):**
 
@@ -674,7 +691,7 @@ Containers are stopped after an idle timeout (configurable, default 30 minutes).
 |-----------|----------------|
 | `bioimageflow-core` | None |
 | `bioimageflow` (library) | None |
-| GUI backend (FastAPI) | None (runs inside the container as-is) |
+| GUI backend (FastAPI) | Proposed authentication, user scoping, capability guards, and timeout behavior in Sections 2, 3, and 9; no additional library execution redesign solely for container hosting |
 | GUI frontend | Minimal — login page, token storage, loading screen during container startup |
 | Deployment | New: launcher service, Podman configuration, container image build, nginx config |
 | Settings | New: launcher config file (idle timeout, resource limits, auth provider, GPU strategy) |
@@ -693,10 +710,10 @@ The following table lists all endpoints that are **new or modified** in v3. Endp
 
 | # | Method | Endpoint | Mode | When Used |
 |---|--------|----------|------|-----------|
-| 1 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
+| 1 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Node Data |
 
 Node-image serving and tool-package refresh are current v1 endpoints.
-Dataset management endpoints are defined in v1 Section 2.4.10 and v2 Section 5.7; v3 modifies all of those contracts with per-user scoping and authentication.
+Dataset catalog endpoints are defined in v1 Section 2.4.10, the panel in v1 Section 3.14, and Files-source integration in v2 Section 16; v3 proposes per-user scoping and authentication around them.
 
 ### 11.2 Modified Endpoints
 

@@ -176,7 +176,8 @@ Reopening the source returns the same working file, and applying the graph prese
 Saving preserves compatible parent bindings and edges by stable port ID.
 Removed or incompatible connected ports require confirmation.
 If the parent node changed or disappeared since the editor opened, apply reports a conflict and changes nothing.
-During execution, root and nested editors are mutation-locked uniformly.
+During attached local execution, root and nested editors are mutation-locked uniformly.
+Durable managed remote runs own immutable submissions and allow later graph editing under [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
 If a node context-menu Delete or Group action is invoked while execution owns the canvas, the graph and history remain unchanged and the editor reports the lock visibly.
 Outside execution, ordinary root, draft, and nested mutations serialize through the same execution-admission gate: an admitted mutation blocks Run, concurrent mutations wait, and only an actually starting or running execution rejects a mutation as locked.
 
@@ -415,8 +416,9 @@ Download routes complete their temporary materialization before returning a stre
 The desktop folder route accepts an absolute existing parent directory and a replacement flag, derives the export child name itself, and is forbidden outside desktop mode.
 Expected export failures use stable status categories for missing workflows, forbidden or unsafe destinations, existing destinations, unavailable results, invalid requests, and internal materialization failures.
 
-OpenAPI is the sole frontend API type source.
+OpenAPI is the sole normative frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
+Workflow-draft routes and response models are also generated; the remaining handwritten draft response/conflict shapes in `frontend/src/api/workflowDrafts.ts` are transitional debt to remove, not an additional contract authority.
 `POST /api/v1/napari/viewing-readiness` accepts a `ViewingRequirementsManifest` directly, including the exact manifest returned after import, and returns the backend-authoritative desktop-only passive compatibility report without rereading workflow state.
 The report preserves every structural output identity and declaration or unknown reason, shares registered-inventory candidate evaluation with retained-artifact resolution, and returns independent normalized requirement groups with managed-create prefill rather than unioning incompatible output needs.
 `POST /api/v1/editor/open-node` identifies the workflow ID and identity generation, the accepted revision, the node ID, and an optional nested session UUID.

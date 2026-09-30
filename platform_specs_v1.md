@@ -17,7 +17,7 @@ The BioImageFlow GUI is a desktop application for building, executing, and inspe
 **Desktop vs. browser runtime detection.** The same frontend bundle runs in two environments:
 
 - **Inside pywebview (desktop).** The frontend detects this at runtime by checking for `window.pywebview` (injected by pywebview into the page). Path selection uses the native OS file dialogs exposed via `window.pywebview.api` (`select_file`, `select_files`, `select_folder`, `save_file`). Drag-and-dropped files are treated as local filesystem paths — the user's machine and the server share the same filesystem.
-- **In a plain browser.** When `window.pywebview` is absent (e.g., the user pointed a browser at the FastAPI server for testing, or this is the basis for a future webapp deployment), the server's filesystem is not directly accessible from the client. Path selection instead uses the **Dataset Browser modal** (Section 3.14), which lets the user upload files to the server and select from previously uploaded datasets. Drag-and-drop opens the same modal in upload mode.
+- **In a plain browser.** When `window.pywebview` is absent (e.g., the user pointed a browser at the FastAPI server for testing, or this is the basis for a future webapp deployment), the server's filesystem is not directly accessible from the client. Path selection instead activates the docked **Datasets panel** in transient single-file picker mode (Section 3.14), where the user can upload files and select managed datasets. Drag-and-drop queues uploads in that panel.
 
 Dataset management endpoints (Section 2.4.10) are available in both environments — they are the only way for a non-pywebview client to get bytes onto the server. In pywebview mode they are unused by the standard flows but still reachable.
 
@@ -47,7 +47,8 @@ Each frontend canvas owns its immediate graph snapshot, canvas identity, workflo
 
 Normal root-canvas synchronization sends complete graph snapshots to `PUT /workflow-drafts/{id}` with revision CAS. The accepted draft response is the ordinary persistence and validation authority: it returns the accepted graph, draft revision, validation errors, and derived node statuses together. Nested canvases use their private snapshot endpoint instead. `PUT /graph` remains a request-local, stateless compatibility and transient-validation endpoint; it does not persist a graph or select an active canvas.
 
-The backend is stateless between request-local validation calls except for workflow and draft files, private nested snapshots, agent workspace context, and transient execution state. A server restart during execution loses the running workflow, but root drafts and accepted nested snapshots remain recoverable.
+The backend retains workflow and draft files, private nested snapshots, agent workspace context, and execution state separately from request-local graph validation.
+A server restart loses an attached local running workflow, while root drafts and accepted nested snapshots remain recoverable; durable managed remote runs follow the separate registry and attachment contract in [distributed execution Sections 6–7](platform_specs_distributed_execution.md#6-submission-and-identity).
 
 **Server state is minimal:**
 
@@ -67,7 +68,8 @@ There is no `last_valid_workflow` cache and no authoritative backend editor sess
 - **Undo/redo is purely client-side.** The frontend maintains its own undo stack (snapshots of the graph state). No server round-trip needed. See [Section 4.6](#46-undoredo) for details.
 - **Validation is authoritative on the server.** The frontend may do lightweight client-side checks (cycle detection, basic type checks) for instant UX feedback, but the server is the final authority before execution.
 - **Vue Flow maintains the interactive graph client-side.** This approach keeps editing responsive while the backend draft provides durable state for agents, save, run, and export.
-- **Graph editing is locked during execution.** While a workflow is running, the frontend disables all graph mutations (node/edge creation, deletion, parameter changes). The user can only view data and logs. This avoids race conditions between the running workflow and user edits.
+- **Attached local execution locks graph editing.** Local runs exclude graph mutations while starting or running and permit read-only inspection.
+  Durable managed remote runs own immutable submissions and permit later editing under [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
 
 **Compatibility and deferred architecture:** Frontend active-session facades retain a zero-registered-canvas compatibility mode for older callers and tests; normal multi-canvas operation always resolves an explicit registered canvas. Canvas synchronization uses revision CAS and explicit execution context, not CRDTs or graph-content digests. Generalized multi-file filesystem transactions are deferred; individual JSON persistence and targeted identity repairs remain atomic.
 
@@ -407,131 +409,39 @@ The optional `graph` field is rejected for `action: "update"`.
 
 ##### Graph JSON Schema (Pydantic Models)
 
-The full-state sync architecture has a single graph payload as its central contract. This schema is formally defined as Pydantic models in the backend, which serve as both validation and documentation. FastAPI exposes OpenAPI schemas for routed models, and the frontend generates the covered paths and schemas with `openapi-typescript`. The current workflow-draft client retains explicit manual response types in `frontend/src/api/workflowDrafts.ts`, so generated coverage must not be described as the only frontend API contract until those routes are present in the generated file.
+The full-state sync payload is the canonical recursive `GraphState` defined in [v2 Sections 2–5](platform_specs_v2.md#2-canonical-graph-document).
+The strict wire shape is maintained in [`models/graph.py`](backend/src/bioimageflow_server/models/graph.py) and exposed through backend OpenAPI; this section is an overview rather than a second schema transcription.
+Every graph carries its schema version, definition and display names, explicit interface, configuration, nodes, and edges at every recursive depth.
+Layout, collapsed/enabled state, parameters, resource overrides, and output templates belong directly to that graph.
 
-**Edge model — discriminated union:**
+Nodes are discriminated as tool invocations or embedded workflows.
+Tool nodes retain explicit module/class, package/version, and workflow-local source bindings when present; a catalog name must not replace a bound source or qualified tool identity.
+Workflow nodes own an embedded graph and bindings keyed by stable child interface IDs; saved-workflow provenance is not execution authority.
+Runtime translation to the library's portable form occurs in memory from the accepted graph, without persisting another editable representation.
 
-The graph has two kinds of edges, each with a distinct purpose:
+Edges are discriminated as `column` or `dataframe`:
 
-- **`ColumnEdge`**: Binds a specific output column of one node to a specific input field of another. Used for `ProcessingTool` keyword bindings.
-- **`DataFrameEdge`**: Connects a node as a positional upstream argument to a `DataFrameTool`. The `target_position` determines order in `merge_dataframes(dfs)`.
+- A column edge connects a named output to a tool field or stable workflow field-input ID.
+- A DataFrame edge connects a complete DataFrame to exactly one positional tool target or stable named workflow DataFrame-input ID.
 
 DataFrameTool keyword parameters are constant-only and never expose column input pins, irrespective of an individual field's GUI metadata.
-The library's shared validation rejects column references and node shorthand for those parameters, including bindings through recursive workflow interfaces.
-Tool schemas resolve postponed and inherited Python annotations in their defining namespaces while retaining `Annotated` GUI/image metadata; validation and wire serialization use the same resolved declarations.
+Published field ports may supply constants to those parameters, while a column-valued binding through a recursive interface is rejected at its ultimate DataFrameTool target.
+Tool schemas resolve postponed and inherited Python annotations while retaining `Annotated` GUI/image metadata; validation and serialization use the same declarations.
+The versioned endpoint-handle codec distinguishes structural endpoint kinds and IDs from display labels, as specified in [v2 Section 4](platform_specs_v2.md#4-edges-and-endpoint-handles).
 
-These are modeled as a **discriminated union** (discriminator: `type` field) rather than a single model with optional fields. This eliminates invalid states (e.g., `source_output` set simultaneously with `target_position`), produces cleaner TypeScript types from OpenAPI, and makes each edge self-documenting.
+**Structural identities:** A node's immutable `id` identifies API, edge, and WebSocket references; its editable `name` is a presentation label.
+The frontend generates readable node IDs from tool class names with uniqueness suffixes, but renaming a label never changes its ID.
+Node, edge, and interface IDs must be unique in their owning graph and valid for their structural role.
+Edge IDs are unique frontend-generated strings; no particular UUID or nanoid generator is required.
+Published positional DataFrame targets and internal DataFrame edges reserve one shared sequence of slots and compact together when removed, preserving surviving public port IDs and names ([v2 Section 5](platform_specs_v2.md#5-workflow-interfaces)).
+Strict backend validation checks that accepted graph rather than silently normalizing edges alone.
 
-**NodeStatus separation:**
+**Derived status:** `NodeStatus` is separate from `NodeState` and is never saved as graph definition content.
+It carries the structural node identity, status/cache assessment, optional failure detail and traceback, and available result/record identity.
+The same backend status schema is used by accepted draft/snapshot validation, request-local graph validation, execution, Clear, and WebSocket events; frontend projection remains scoped to the owning canvas and execution context.
 
-`NodeStatus` is intentionally **not** a property of `NodeState`. The separation reflects the data flow direction:
-
-- **`NodeState`** flows **frontend → backend**: the user's graph definition (what to build). Saved to disk.
-- **`NodeStatus`** flows **backend → frontend**: the server's assessment (cache state, validity). Computed, never saved.
-
-Merging them would mean the frontend sends back stale server-computed values, and the backend would need to ignore its own fields.
-
-**Schema definition:**
-
-```python
-from pydantic import BaseModel, Discriminator, Tag
-from typing import Any, Annotated, Literal
-
-class NodeState(BaseModel):
-    """A node in the graph. Sent by the frontend, saved to disk."""
-    id: str                              # Unique node identifier (URL-safe, e.g., "cellpose_segmenter_1")
-    name: str                            # Human-readable display name (may contain spaces, e.g., "Cellpose Segmenter 1")
-    tool_name: str                       # Tool class name (e.g., "CellposeSegmenter")
-    position: tuple[float, float]        # Canvas position (x, y)
-    parameters: dict[str, Any]           # Constant input values (non-connected fields)
-    resources: dict[str, Any] = {}       # Resource overrides (cpu, gpu, gpu_memory, memory, max_concurrent)
-    output_templates: dict[str, str] = {} # Custom output path templates (field_name → template string)
-    enabled: bool = True
-    collapsed: bool = False
-
-class ColumnEdge(BaseModel):
-    """Binds an output column to an input field (ProcessingTool keyword binding)."""
-    type: Literal["column"] = "column"
-    id: str                              # Unique edge ID
-    source_node: str                     # Upstream node ID
-    target_node: str                     # Downstream node ID
-    source_output: str                   # Output field name on source node
-    target_input: str                    # Input field name on target node
-
-class DataFrameEdge(BaseModel):
-    """Connects a node as positional upstream to a DataFrameTool."""
-    type: Literal["dataframe"] = "dataframe"
-    id: str                              # Unique edge ID
-    source_node: str                     # Upstream node ID
-    target_node: str                     # Downstream node ID
-    target_position: int                # Position in merge_dataframes(dfs) list
-
-Edge = Annotated[
-    Annotated[ColumnEdge, Tag("column")]
-    | Annotated[DataFrameEdge, Tag("dataframe")],
-    Discriminator("type"),
-]
-
-class GraphState(BaseModel):
-    """Full graph state sent by the frontend on every structural change."""
-    nodes: list[NodeState]
-    edges: list[Edge]
-
-class NodeStatus(BaseModel):
-    """Server-computed status for a node. Returned by validation and WebSocket."""
-    node_id: str                         # Matches NodeState.id
-    status: Literal["unexecuted", "executed", "out_of_date", "disabled", "running", "failed"]
-    cached: bool
-    error: str | None = None             # Error message (only for status="failed")
-    traceback: str | None = None         # Full traceback string (only for status="failed")
-    result_key: str | None = None        # Cache/result identity when available
-    record_id: str | None = None         # Record identity when available
-
-class GraphValidationError(BaseModel):
-    """A single validation error."""
-    type: Literal[
-        "cycle_detected",
-        "type_incompatible",
-        "parameter_invalid",
-        "missing_tool",
-        "missing_connection",
-        "missing_package",
-        "invalid_node_id",
-        "invalid_edge_id",
-        "source_tool_upstream",
-    ]
-    detail: str
-    node: str | None = None
-    edge_id: str | None = None
-    field: str | None = None
-
-class ValidationResult(BaseModel):
-    """Validation returned by draft/snapshot persistence and PUT /graph."""
-    valid: bool
-    node_statuses: dict[str, NodeStatus] = {}
-    errors: list[GraphValidationError] = []
-```
-
-**Node `id` vs `name`:** The `id` is the URL-safe, unique, special-character-free identifier used in API endpoints (e.g., `/nodes/{id}/data`) and edge references (`source_node`, `target_node`). The `name` is the human-readable display name shown on the canvas and in the Node Panel. The `id` is auto-generated from the tool's **class name** by converting CamelCase to snake_case and appending a numeric suffix for uniqueness (e.g., class `CellposeSegmenter` → id `"cellpose_segmenter_1"`). The `id` is stable once assigned — renaming the `name` does not change the `id`. All API endpoints and WebSocket messages use `id` (not `name`). The `name` is used only in UI display contexts.
-
-**Node ID validation:** The backend validates node ID uniqueness and format whenever it validates a graph, including draft, nested-snapshot, full Run, Clear, and request-local `/graph` paths. Run Selected compiles the same complete accepted graph and limits only node-attributable execution diagnostics according to its selected-plus-upstream root scope. Duplicate or malformed IDs produce a `GraphValidationError` of type `"invalid_node_id"`.
-
-**Edge IDs:** Edge IDs (`ColumnEdge.id`, `DataFrameEdge.id`) are frontend-generated UUIDs (or nanoid). The backend validates uniqueness; duplicate or missing edge IDs produce a `GraphValidationError` of type `"invalid_edge_id"`.
-
-**Positional index normalization:** The backend normalizes `target_position` values on `DataFrameEdge`s: it sorts by `target_position` and reassigns `0..N-1`. This makes the frontend resilient to gaps after edge disconnection.
-
-Note: `NodeStatus` is used in accepted draft and nested-snapshot validation results, the direct `PUT /graph` compatibility response, execution status, Clear responses, and WebSocket `node_state` messages. The schema is shared, while its frontend projection remains canvas and execution-context scoped.
-
-Note: `NodeState` does not include `tool_version`. The `tool_package` and `tool_package_version` are stored in the library's serialization format (per node), not in the GUI's graph state. The server resolves tool versions from the tool store when building the Workflow.
-
-**Compatibility with the library serialization format:**
-
-The backend translation layer maps between the GUI schema and the library's `workflow.export()` format:
-- Library edges with `column: "dataframe"` map to `DataFrameEdge`
-- Library edges with `column: "field_name"` map to `ColumnEdge`
-- Library `nodes[].constants` maps to `NodeState.parameters`
-- Library `nodes[].tool_module` + `tool_class` are resolved from `NodeState.tool_name` via the tool registry
-- Library `nodes[].tool_package` + `tool_package_version` are resolved from the tool registry (based on the current workflow's selected package versions)
+**Frontend API types:** Backend OpenAPI is the sole intended source of frontend API types, including recursive graph and workflow-draft routes and responses already generated in `frontend/src/api/types.ts`.
+The handwritten draft response/conflict shapes in `frontend/src/api/workflowDrafts.ts` remain transitional implementation debt; they must consume the generated contract rather than become a second authority.
 
 ##### Graph Validation Endpoint
 
@@ -541,43 +451,7 @@ The backend translation layer maps between the GUI schema and the library's `wor
 
 Normal root canvases do not use this endpoint as their persistence authority; they use the validated `PUT /workflow-drafts/{id}` response. Nested canvases use validated private snapshot writes. `PUT /graph` is retained for explicit request-local compatibility and transient validation, and it never stores an active graph for a later request.
 
-**Request body — example `GraphState`:**
-
-```json
-{
-  "nodes": [
-    {
-      "id": "cellpose_segmenter_1",
-      "name": "Cellpose Segmenter 1",
-      "tool_name": "CellposeSegmenter",
-      "position": [350, 200],
-      "parameters": {
-        "diameter": 30.0,
-        "model_type": "cyto2"
-      },
-      "enabled": true,
-      "collapsed": false
-    }
-  ],
-  "edges": [
-    {
-      "type": "column",
-      "id": "edge_1",
-      "source_node": "file_lister_1",
-      "source_output": "path",
-      "target_node": "cellpose_segmenter_1",
-      "target_input": "input_image"
-    },
-    {
-      "type": "dataframe",
-      "id": "edge_2",
-      "source_node": "file_lister_1",
-      "target_node": "inner_join_1",
-      "target_position": 0
-    }
-  ]
-}
-```
+**Request body:** A complete canonical recursive `GraphState`; use the shape in [v2 Section 2](platform_specs_v2.md#2-canonical-graph-document) and the generated OpenAPI models.
 
 **Response (success):**
 ```json
@@ -617,9 +491,9 @@ Normal root canvases do not use this endpoint as their persistence authority; th
 
 The backend:
 1. Parses the `GraphState`
-2. Reconstructs a BioImageFlow `Workflow` object (translates `ColumnEdge` to `ColumnRef` bindings, `DataFrameEdge` to positional args, resolves tool classes from the tool store)
+2. Recursively translates the accepted graph in memory to BioImageFlow objects, preserving explicit tool/source identities, stable interface bindings, and column/complete-DataFrame edge semantics
 3. Runs validation (cycle detection, type compatibility, parameter validation via Pydantic). Disabled nodes are skipped during validation.
-4. Checks cache status for each node (compares current parameters + upstream signature against stored hashes)
+4. Projects cache status through the library's public `plan()` API using result keys and exact selected upstream immutable record references; diagnostic logical signatures are not reusable cache identities
 5. Returns the `ValidationResult` with per-node status
 
 Cache projection is diagnostic rather than all-or-nothing.
@@ -719,7 +593,7 @@ Normal root-canvas runs address the accepted draft revision:
 
 The backend rejects a stale revision with `draft_revision_conflict` and compiles the backend-loaded accepted graph. A request without `draft_revision` or with an inline graph fails request validation.
 
-Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context plus the fixed `planned_node_ids` and `planned_node_names`, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
+Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context plus the fixed `planned_node_ids` and `planned_node_names`, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The attached local execution lock remains global: only one local execution may run in the process, even when several canvases are open. Durable managed remote submission and editing follow [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
 An attached progress callback may update state and publish messages only while its captured execution context is the active running context; late events from a completed or superseded run are discarded.
 Ordinary accepted workflow and draft mutations serialize through the execution-admission gate instead of reporting one another as running execution: a mutation already holding the gate blocks Run, a concurrent mutation waits, and an actually starting or running execution rejects the mutation with HTTP 423.
 
@@ -822,7 +696,7 @@ Every registry mutation carries and increments `napari_registry_revision` so sta
 |--------|----------|-------------|
 | `POST` | `/fs/reveal` | Open a path in the system file browser |
 
-In pywebview mode, path selection uses native file dialogs — no server-side browse endpoint is needed. In plain-browser mode, path selection is handled by the Dataset Browser modal backed by the endpoints in Section 2.4.10.
+In pywebview mode, path selection uses native file dialogs — no server-side browse endpoint is needed. In plain-browser mode, path selection activates the Datasets panel single-file picker backed by the catalog endpoints in Section 2.4.10.
 
 #### 2.4.8 Image Viewer Integration
 
@@ -891,77 +765,68 @@ Preparation messages describe environment, runtime-download, and extension check
 
 #### 2.4.10 Dataset Management
 
-Dataset management provides server-side file storage for clients that cannot access the server's filesystem directly (primarily plain-browser mode, but also useful for testing and for workflows that share inputs across machines). Datasets are uploaded via HTTP, stored under a dedicated server directory, and referenced by absolute path in node parameters.
+Dataset management owns managed server-side files and a logical SQLite catalog of files and folders.
+The docked Datasets panel and its transient single-file picker are specified in Section 3.14; [v2 Section 16](platform_specs_v2.md#16-files-source-selection) owns Files-source integration.
+The endpoints remain available in both deployment modes, although ordinary desktop inputs use local filesystem references.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/datasets` | List available datasets |
-| `POST` | `/datasets/upload` | Upload one or more datasets (multipart form data) |
-| `DELETE` | `/datasets/{dataset_id}` | Delete a dataset |
+| `GET` | `/datasets` | List managed file records |
+| `POST` | `/datasets/upload` | Upload multipart `files`, optionally into `folder_id` |
+| `PATCH` | `/datasets/{dataset_id}` | Change `display_name` or logical `folder_id` |
+| `DELETE` | `/datasets/{dataset_id}` | Compatibility single-file deletion |
+| `GET` | `/datasets/folders` | List logical folders |
+| `POST` | `/datasets/folders` | Create a named folder under optional `parent_id` |
+| `PATCH` | `/datasets/folders/{folder_id}` | Rename or move a logical folder |
+| `POST` | `/datasets/actions/resolve` | Resolve selected file/folder IDs to ordered file records |
+| `POST` | `/datasets/actions/delete-preview` | Preview recursive selection counts and catalog revision |
+| `POST` | `/datasets/actions/delete` | Confirm recursive deletion with `expected_revision` |
 
-**Dataset storage layout (v1, single-user):**
+**Storage and catalog identity:** Physical uploads live directly under `{datasets_root}` as `{timestamp}_{sanitized_filename}.{ext}`, with collision disambiguation.
+The root defaults to `<workspace>/datasets`, follows the active workspace, and may be overridden by deployment configuration; it is not a per-workflow setting.
+The timestamp is compact UTC upload time, for example `20260421T143022`.
+A file's `dataset_id` is a URL-safe base64 identity derived from its stored filename; a logical folder has its own stable ID.
+Logical rename/move changes display names or catalog parent references without moving physical bytes or changing a file's ID or server path.
+Folders are catalog groups, never server filesystem directories that can populate a Directory parameter.
+Names are nonempty, exclude traversal/path separators and NUL, and must be unique among sibling files and folders ignoring case.
+Folder moves reject self/descendant containment and invalid destination identities.
 
-```
-{datasets_root}/{timestamp}_{sanitized_filename}.{ext}
-```
+File records contain `id`, `original_filename`, `display_name`, `folder_id`, absolute server `path`, byte `size`, UTC `upload_date`, and informational `content_type`.
+Folder records contain `id`, `name`, optional `parent_id`, and `created_at`.
+The exact API shapes are defined in [`models/datasets.py`](backend/src/bioimageflow_server/models/datasets.py) and OpenAPI.
+Selecting a file writes its server `path` into the addressed path parameter, never its display label or logical folder name.
 
-- `{datasets_root}` uses the configured application dataset root or defaults to `<BIOIMAGEFLOW_HOME>/datasets/`. It is not configured per workflow.
-- `{timestamp}` is the upload time in ISO 8601 compact format (e.g., `20260421T143022`).
-- `{sanitized_filename}` is the original filename after sanitization (see below).
+**Selection resolution:** `{dataset_ids, folder_ids}` includes all descendants of each selected folder and deduplicates overlapping selections.
+The backend resolves it to file records ordered by logical folder path, display name, and stable ID, with missing identities refused.
+Canvas Files-source actions use those explicit paths and preserve the one-edit replacement contract in v2 Section 16.
 
-The `dataset_id` is a URL-safe base64 string derived from the stored filename (for example, `d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg`).
+**Deletion:** Preview returns `revision`, `dataset_count`, and `folder_count` for the recursive selection.
+Confirmation submits the selected IDs and that `expected_revision`; any intervening catalog change returns HTTP 409 `catalog_conflict` before deletion.
+The response identifies deleted file/folder IDs and per-file errors.
+Successful files are removed from storage and catalog, while failed files remain and prevent their containing folders from being deleted as empty.
+The client refreshes the catalog and shows actionable partial failures rather than claiming the whole selection was deleted.
+The compatibility `DELETE /datasets/{dataset_id}` returns 204 on success or 404 if absent; panel recursive deletion uses preview/confirmation instead.
+Deletion does not rewrite existing workflow parameters or invalidate prior computation records; a later run that needs a deleted input reports its absence.
 
-**`GET /datasets` response:**
-
-```json
-[
-  {
-    "id": "d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg",
-    "original_filename": "cells.tif",
-    "size": 52428800,
-    "upload_date": "2026-04-21T14:30:22Z",
-    "path": "/abs/path/to/datasets/20260421T143022_cells.tif",
-    "content_type": "image/tiff"
-  }
-]
-```
-
-The `path` field is the absolute server-side path. This is the value that gets written into `NodeState.parameters` for Path-typed inputs when a dataset is selected.
-
-**`POST /datasets/upload` request:** Multipart form data with one or more `files` parts. Multi-file upload is supported in a single request.
-
-**`POST /datasets/upload` response:**
-
-```json
-{
-  "uploaded": [
-    {
-      "id": "d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg",
-      "original_filename": "cells.tif",
-      "path": "/abs/path/to/datasets/20260421T143022_cells.tif",
-      "size": 52428800,
-      "upload_date": "2026-04-21T14:30:22Z",
-      "content_type": "image/tiff"
-    }
-  ],
-  "errors": [
-    {"filename": "too_big.tif", "error": "file_too_large", "detail": "Exceeds 2GB limit"}
-  ]
-}
-```
-
-Per-file errors are returned in the `errors` array so that a partially successful multi-file upload still reports the successes.
-
-**`DELETE /datasets/{dataset_id}` response:** HTTP 204 No Content on success. HTTP 404 Not Found if the dataset does not exist. Deleting a dataset does not invalidate any node that previously consumed it — the node simply fails on next execution with a "file not found" error.
+**Uploads:** Multipart requests may contain multiple `files` parts and return `{uploaded: [...], errors: [{filename, error, detail}]}`.
+Each successful record has the file fields above, and per-file failures do not conceal successful files in the same request.
+The panel sends one file per request for per-file progress, cancel, and explicit retry.
 
 **Upload validation:**
 
-- **Filename sanitization.** Path separators (`/`, `\`) are stripped. Only alphanumerics, hyphens, underscores, and dots are kept; any other character is replaced with `_`. The extension is preserved. Names longer than 255 characters are truncated while preserving the extension. The original filename is retained in the `original_filename` metadata field.
-- **File size limit.** Configurable per deployment, default **2 GB** per file. The authoritative per-file cap is enforced **mid-stream**: as each file in the multipart body is streamed to disk, a running byte counter stops that file, removes the partial write, and reports `file_too_large` in the HTTP 200 response's `errors[]` array. `Content-Length` is additionally used as a coarse DoS guard: a request whose declared body size clearly exceeds `max_upload_size * MAX_FILES_PER_REQUEST` (e.g., 2 GB × 32 = 64 GB) is rejected up-front with HTTP 413, before any body is read. It is **not** used as a per-file cap, because a multi-file body legitimately contains multiple files plus multipart boundaries and form fields — a valid N-file upload can have a total size exceeding the per-file cap.
-- **Path traversal prevention.** The server resolves the final storage path with `Path.resolve()` and verifies it starts with the configured `{datasets_root}`. Any escape attempt is rejected with HTTP 400 `{"error": "path_traversal", "detail": "Invalid filename"}`. This is defensive programming — sanitization already prevents path separators, but resolve-then-check is the authoritative gate.
-- **Content type.** No enforcement in v1. The `content_type` field is informational, derived from the extension.
+- **Filename safety:** Strip submitted directory components using both separator styles, reject NUL and empty/traversal basenames, protect Windows reserved stems, and preserve safe UTF-8 characters and spaces.
+  Bound the final stored name to 255 bytes with room for the timestamp and collision suffix, truncating without splitting a UTF-8 character and preserving the extension where a valid bounded name is possible.
+  The submitted original filename must remain metadata, separate from editable display naming and the safe stored basename.
+  Current implementation derives `original_filename` from the sanitized basename, so exact original-name fidelity remains a documented implementation gap rather than a relaxed requirement.
+- **File size limit:** The deployment default is **2 GB per file**.
+  A running mid-stream byte counter enforces the authoritative cap, removes partial writes, and returns `file_too_large` in `errors[]`.
+  `Content-Length` is only a coarse request guard: a declared body exceeding `max_upload_size * MAX_FILES_PER_REQUEST` (currently 32) receives HTTP 413 before body parsing, while a valid multi-file body may exceed one file's cap.
+- **Containment:** Resolve every final upload/delete target and verify containment within the resolved dataset root; sanitization alone is not an authority.
+  Reject traversal and symlink escape with an actionable `path_traversal` failure rather than accessing another server path.
+- **Content type:** Informational, inferred from the extension; no content-type enforcement is promised.
 
-**Single-user note.** v1 is single-user (see Section 1), so datasets are shared across all canvases and browser windows on the machine. Per-user directories, authentication, and collaborative access control are deferred.
+The implemented baseline is single-user: managed catalogs are shared by canvases and browser windows in the active workspace.
+Authentication and per-user dataset scoping remain the future [v3 proposal](platform_specs_v3.md#3-dataset-management--multi-user-extensions).
 
 ### 2.5 WebSocket API
 
@@ -1332,11 +1197,11 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `float` | Number input or slider | `min`, `max`, `step` from GUIMeta. If all three are set, render as slider. |
 | `bool` | Checkbox | -- |
 | `Enum` or `Literal[...]` | Dropdown | -- |
-| `Path` with `path_picker: "file"` | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
+| `Path` with `path_picker: "file"` | Text input + "Select File" button | In pywebview: native file dialog. In browser: Datasets panel single-file picker (Section 3.14). |
 | `Path` with `path_picker: "folder"` | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
-| `Path` with `path_picker: "both"` | Text input + separate "Select File" and "Select Folder" buttons | In pywebview both native actions are shown. In browser only the Dataset Browser file action is shown; folder paths can still be entered manually. |
+| `Path` with `path_picker: "both"` | Text input + separate "Select File" and "Select Folder" buttons | In pywebview both native actions are shown. In browser only the Datasets panel file action is shown; folder paths can still be entered manually. |
 | `Path` without `path_picker` | Backward-compatible generic path widget | Behaves as `"both"`; older tool schemas remain usable. |
-| `ImageFile` | Text input + "Select File" button (filtered by format spec) | Same desktop/browser behavior as `Path` with `path_picker: "file"`. File-type filters apply to both the native dialog and the Dataset Browser search filter. |
+| `ImageFile` | Text input + "Select File" button (filtered by format spec) | Same desktop/browser behavior as `Path` with `path_picker: "file"`. File-type filters apply to both the native dialog and the Datasets panel picker filter. |
 | `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable != "never"`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
@@ -1360,15 +1225,19 @@ For `ProcessingTool` nodes, the Node Panel includes a collapsible **Resources** 
 
 | Field | Widget | Description |
 |-------|--------|-------------|
-| **CPU** | Number spinner (min: 1) | Number of CPUs to allocate |
-| **GPU** | Number spinner (min: 0) | Number of GPUs to allocate |
+| **CPU** | Number spinner (min: 1) | Required CPU capacity |
+| **GPU** | Number spinner (min: 0) | Required GPU capacity |
 | **GPU Memory** | Text input (e.g., "8GB") | Minimum GPU memory required |
-| **Memory** | Text input (e.g., "16GB") | Memory limit |
-| **Max Concurrent** | Number spinner (min: 0, 0=unlimited) | Maximum parallel rows |
+| **Memory** | Text input (e.g., "16GB") | Minimum worker memory required |
+| **Max Concurrent** | Number spinner (min: 0) | Cap on active row tasks; 0 is unlimited only when the declaration permits it |
 
-**Defaults:** Fields are pre-filled from the tool's `ResourceSpec` declaration (the tool author's minimum requirements). If the tool has no `ResourceSpec`, all fields default to the library defaults (1 CPU, 0 GPU, no memory limit, unlimited concurrency).
+**Defaults:** Fields are pre-filled from the tool's `ResourceSpec` declaration (the tool author's minimum requirements). If the tool has no `ResourceSpec`, fields use the library defaults (1 CPU, 0 GPU, no declared memory requirement, unlimited concurrency).
 
-**Semantics:** The values in this section are the **execution allocation** — what the engine will actually use when running the node. The tool author's `ResourceSpec` serves as the **minimum floor**: the GUI prevents the user from setting values below the tool's declared minimums (e.g., if the tool declares `gpu=1`, the user cannot set GPU to 0). The user can increase resources above the minimum (e.g., allocate 2 GPUs instead of the tool's required 1).
+**Semantics:** CPU, GPU, memory, and GPU-memory values are worker requirements used to select workers or request backend capacity, with the tool author's declaration as a minimum floor.
+The GUI assists entry and backend/library validation enforces those floors.
+Users may raise capacity requirements, but a nonzero maximum-concurrency override may only lower an existing nonzero declared cap; zero cannot remove that cap.
+Actual available capacity, allocation, and enforcement belong to the execution backend or deployment site, so these portable requirements do not promise OS memory limits or a guaranteed allocation.
+Requirements do not affect cache identity, and sequential/parallel scheduling remains workflow configuration ([v2 Sections 2 and 8](platform_specs_v2.md#2-canonical-graph-document)).
 
 **Storage:** Resource overrides are stored in `NodeState.resources` — a dedicated dict separate from `parameters` to avoid namespace pollution. Keys are `cpu`, `gpu`, `gpu_memory`, `memory`, `max_concurrent`. The backend uses these to construct a `ResourceSpec` for the engine. If `resources` is empty, the tool's declared `ResourceSpec` is used as-is.
 
@@ -1378,7 +1247,7 @@ For `ProcessingTool` nodes, the Node Panel includes a collapsible **Resources** 
 
 A collapsible section at the bottom of the Node Panel that displays execution output scoped to the selected node.
 
-- **Logs:** The frontend maintains a per-node log buffer in memory (from WebSocket `log` messages with `node_name` field). When a node is selected, this section shows only that node's logs — a filtered view of the same data as the Logger Panel.
+- **Logs:** The frontend maintains a per-node log buffer in memory (from WebSocket `log` messages with `node_id` field). When a node is selected, this section shows only that node's logs — a filtered view of the same data as the Logger Panel.
 - **Error display:** For failed nodes, the error message and traceback are displayed prominently at the top of this section with a red background. The `node_state` WebSocket message for failed nodes includes `error` and `traceback` fields (see `NodeStatus` model in Section 2.4.3).
 - **Level filter buttons:** DEBUG / INFO / WARNING / ERROR, defaulting to INFO+.
 - Logs are kept in memory for the duration of the session and cleared on new execution.
@@ -1465,13 +1334,10 @@ workspace/
         tools/
 ```
 
-Each `workflow.json` stores the platform document for the workflow, including
-the library workflow payload, GUI state, and metadata. Custom tools created from
-the platform GUI are workflow-local and live under
-`workspace/workflows/<workflow_id>/tools/`, so exported workflow archives carry
-the custom tool sources they use. A workflow directory can contain workflow-local
-files, but these directories are not shown as user folders in the Workflows
-panel.
+Each `workflow.json` stores a `WorkflowDocument` envelope containing the canonical recursive graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source IDs.
+Layout and GUI node state belong directly to that graph; library translation happens in memory.
+Custom tools created from the platform GUI live under `workspace/workflows/<workflow_id>/tools/`, and exported workflow archives carry the owned source files they use.
+A workflow directory may contain other local files, but these directories are not shown as user folders in the Workflows panel.
 
 Only directories containing `workflow.json` are platform workflows. Stray JSON
 files under `workspace/workflows/` are ordinary files and are not listed,
@@ -1518,7 +1384,7 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 - **Run Selected:** Always visible as a separate toolbar button, disabled when no nodes are selected or execution is unavailable; it does not require opening the Run dropdown. Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected stable node IDs. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
-**During execution — Non-Modal Execution Banner:**
+**During attached local execution — Non-Modal Execution Banner:**
 
 Instead of a blocking modal, the GUI shows a **persistent execution banner** at the top of the canvas. The user can inspect completed nodes, view Node Data, and browse the Logger Panel while execution is in progress. Graph **mutations** are locked (node/edge creation, deletion, parameter changes, drag-to-reorder), but read-only inspection is allowed.
 
@@ -1572,10 +1438,9 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.1 External Editor Settings
 
-- **External editor command:** Text field. Placeholder:
-  `code {workspace_path} --goto {file_path}`. `{workspace_path}` is replaced
-  with the current workspace folder and `{file_path}` with the focused file. If
-  empty, "Open in editor" copies the relevant path to clipboard with a toast.
+- **External editor command:** Text field with `code {workspace_path} --goto {file_path}` as the recommended VS Code command.
+  `{workspace_path}` identifies the editor project and `{file_path}` the focused file according to Section 2.4.9.
+  If empty, the embedded managed multi-root code-server project is used when available, with clipboard/toast fallback if unavailable.
 
 #### 3.12.2 Image Viewers
 
@@ -1583,7 +1448,9 @@ A dedicated panel or modal for application configuration. Settings are persisted
 - **Environment actions:** Register or locate an external installation; create, retry, cancel, or remove a managed generation; refresh inventory; rename; forget; or launch that addressed environment empty. Recipe-based copy remains an API operation but is not offered in Settings.
 - **Selection preferences:** Chooses one global default and manages revision-checked, first-match filename rules with extension shortcuts, ordering, and catch-all diagnostics. An optional reader plugin ID selects a reader for matching files; package requirements remain separate.
 - **Viewing readiness:** Passively evaluates imported workflow requirements and can prefill managed setup from one normalized requirement group without installing or launching anything; Settings does not show a per-output readiness report.
-- **Changed interpreters:** A registration whose Python executable fingerprint changed is blocked with an explanation that its inventory is last known. External entries can be relocated and refreshed; adopted legacy entries can be forgotten durably and re-added as external installations.
+- **Missing installations and inventory drift:** Missing external registrations offer Locate followed by a fresh probe.
+  Replacing an interpreter at the recorded path or changing packages uses inventory Refresh; compatibility reflects observed Python/napari/Qt/distribution metadata rather than a persisted executable fingerprint.
+  Adopted legacy entries can be forgotten durably and re-added as external installations.
 - **Fiji installation:** Editable directory field with Browse and Clear actions. The selected directory must be a usable `Fiji.app` installation for the current desktop platform before it is saved.
 - **Download Fiji:** Links to the official Fiji downloads page. Fiji installation and updates remain the user's responsibility.
 - The section and Fiji result action are hidden in webapp mode.
@@ -1600,7 +1467,8 @@ A dedicated panel or modal for application configuration. Settings are persisted
 #### 3.12.5 Storage
 
 - **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
-- **Output data folder:** resolved path display with Reveal and, in desktop mode, Change actions. Changing it does not move existing data.
+- **Latest output view:** Shows the effective symbolic-link or portable-pointer publication mode, any warning, and a Retest action.
+  Named workflow results remain under `<workflow-directory>/results`, with per-node latest publication distinct from a pinned successful-run bundle ([v2 Section 12](platform_specs_v2.md#12-persistence-drafts-and-lifecycle)); this is not a configurable output-folder control.
 - **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
 
 #### 3.12.6 OMERO
@@ -1614,39 +1482,37 @@ The OMERO tab lists named server instances with host, port, username, password s
 Users can drag and drop files (images, CSVs, etc.) onto the application window.
 
 - **In pywebview mode.** The drop event exposes local filesystem paths. Dropping files creates a "Files" DataFrameTool source node on the canvas, pre-configured with the dropped paths.
-- **In browser mode.** The drop event exposes `File` objects, not filesystem paths. The frontend opens the Dataset Browser modal (Section 3.14) in upload mode, with the dropped files queued for upload. Once the user confirms, the server-side paths of the uploaded datasets are used to create the "Files" DataFrameTool source node.
+- **In browser mode.** The drop event exposes `File` objects rather than server paths; it activates the Datasets panel and queues the dropped files for upload.
+  Successfully uploaded managed datasets can then populate a Files source through the panel actions and [v2 Section 16](platform_specs_v2.md#16-files-source-selection).
 
-### 3.14 Dataset Browser Modal
+### 3.14 Datasets Panel
 
-A PrimeVue **Dialog** that replaces native file/folder dialogs in browser mode. Shown when:
+The docked **Datasets** panel is the normal managed-file browser in webapp mode and is absent from the desktop dock and View menu.
+It owns catalog browsing and upload presentation, while the backend catalog in Section 2.4.10 owns file/folder identity and mutations.
 
-- The user clicks **Select File** on a Path parameter in the Node Panel (browser mode only; in pywebview mode the native dialog opens directly).
-- The user drags and drops files onto the application window (browser mode only).
-- A workflow is being imported or otherwise requires selecting server-side input paths.
+The panel provides:
 
-**Modal layout:**
+- **Search:** Filters file display/original names and logical folder paths, retaining matching ancestors and expanding matching paths.
+- **Tree:** Logical folders and managed files with hierarchical checkboxes, full/partial selection states, and **Unselect all**.
+  Folder selection includes its descendants, and deselecting a descendant clears the ancestor's complete-selection state.
+- **Editing:** Add folder, rename one selected file/folder, and drag selected entries to another logical folder or the root.
+  Moves reject containment cycles and name conflicts and refresh the catalog after success or failure.
+- **Upload files:** Uses the browser file picker or dropped files, queues one request per file, shows per-file and batch progress, and offers cancel, retry for failed/cancelled entries, dismiss error, and clear completed actions.
+  The frontend may reject files over the cached cap plus 10% headroom; the streamed backend cap remains authoritative.
+- **Delete:** Previews the selected recursive file/folder counts and submits only after explicit confirmation with that catalog revision.
+  A stale revision is refused as `catalog_conflict`; partial file failures remain actionable and undeleted descendants keep their folders.
+- **Canvas actions:** **Create Files node**, **Set files on “node name”** for one selected Files node, and dataset-tree drag to the canvas use selected managed paths.
+  Files-source behavior and one-edit replacement of Directory/Files are defined in [v2 Section 16](platform_specs_v2.md#16-files-source-selection).
 
-- **Title bar:** `"Select dataset for: {parameter_name}"` (or `"Upload datasets"` when opened in upload mode via drag-and-drop).
-- **Search/filter bar:** Text input at the top, filters the dataset table by filename. The file-type filter from the calling Path parameter (e.g., `*.tif`) seeds this box.
-- **Dataset table:** Single-selection, columns:
+The selection summary has its own footer row, with actions below it that wrap with visible spacing in narrow panels.
+Execution mutation locks disable applicable editing and canvas actions.
+Upload failures display the backend's per-file detail and offer explicit retry; a network failure is not proof that no file was stored.
 
-  | Column | Content |
-  |--------|---------|
-  | **Filename** | Original filename |
-  | **Size** | Human-readable (e.g., "50 MB") |
-  | **Upload date** | Formatted date/time |
-
-  Clicking a row selects it.
-
-- **Upload button.** Opens the browser's native `<input type="file">` picker (multi-file). Each selected file is dispatched as its **own POST** to `/datasets/upload` (one file per request), so axios's `onUploadProgress` gives genuine per-file progress and per-file error retry falls out for free. Uploaded files appear as pending rows in the table immediately with a per-row progress bar; on completion the bar is replaced with the final file size from the backend response. Files exceeding `serverCap * 1.1` (10% client-side headroom over the server's authoritative cap — avoids blocking legitimate uploads when the cap has been raised but the cached frontend hasn't reloaded) are rejected client-side before upload with a toast: `"File '{filename}' exceeds the {limit} size limit."`
-- **Delete button.** Removes the selected dataset via `DELETE /datasets/{dataset_id}`. Confirmation dialog: `"Delete '{filename}'? This cannot be undone."` Disabled when no row is selected.
-- **Footer actions:**
-  - **Cancel.** Closes the modal without selecting.
-  - **Select.** Writes the chosen dataset's `path` (server-side absolute path) into the calling parameter and closes the modal. Disabled until a row is selected.
-
-**Drag-and-drop upload mode.** When the modal is opened by a file drop, the dropped files are auto-queued for upload and the **Select** button is pre-targeted at the first successfully uploaded file. On successful upload, the action bar adds a **"Create Files node"** button (in addition to Select) that creates the "Files" DataFrameTool source node on the canvas with the uploaded paths and closes the modal.
-
-**Error handling.** Per-file upload errors from the server (`errors` array in the upload response) are shown inline on the corresponding row with a **Retry** button. Network failures show a toast with a Retry action.
+**Transient single-file picker:** An ordinary browser **Select File** action activates this same panel with the calling parameter and optional file-type filters.
+Folders remain visible for navigation but cannot be chosen as filesystem directories, and exactly one matching file can be selected.
+**Use file** writes that file's authoritative server path to the calling parameter; **Cancel** changes no parameter.
+Completion or cancellation restores the panel's previous normal multi-selection.
+The Files source's **Select in Datasets panel** action instead uses normal multi-selection and does not enter this picker mode.
 
 ---
 
@@ -1662,10 +1528,11 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
 5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas or flush the active private snapshot and wait for acceptance for an active nested canvas. Every production graph owner is a registered canvas session; state-free menu and editor shell adapters only delegate to that active registered session.
 6. Run submits the workflow ID and accepted draft revision after the canvas freshness barrier. Full Run and Run Selected both compile the complete backend-loaded graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches, without pruning or rebuilding the graph.
-7. During execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas.
+7. During attached local execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas. Durable managed remote editing follows [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
 8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
 
-`workflow.json` is a saved artifact, not the live editing source. Derived workflow/export sections are regenerated from the draft graph through the existing workflow save/export translation path.
+`workflow.json` is a saved artifact, not the live editing source.
+Save promotes the accepted graph into its `WorkflowDocument` envelope; portable export translates that captured graph in memory through the public library API.
 
 ### 4.2 Node State Transitions
 
@@ -1699,15 +1566,18 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
            +-------------+
 ```
 
-**Disabled node semantics** (aligned with bioimageflow library Section 4.6):
+**Disabled node semantics** (aligned with [library Section 4.6a](bioimageflow/docs/source/specs.md#46a-enabling-and-disabling-nodes)):
 
 - **Disabled nodes are not executed.** No cache lookup, no computation, no side effects.
 - **Implicit skip propagation.** Any enabled node whose upstream includes a disabled node is skipped during execution. These nodes remain displayed as "unexecuted" — no special visual encoding is needed.
 - **Graph structure is preserved.** Disabling does not alter edges, bindings, or registration. Re-enabling restores the original wiring.
-- **Cache is unaffected.** The `enabled` flag is NOT part of the signature hash. Re-enabling a node with unchanged parameters hits existing cache.
-- **Serialization:** The `enabled` flag is persisted in the workflow JSON (`"enabled": false` when disabled, omitted when enabled).
+- **Cache is unaffected.** The `enabled` flag is not part of result-key material. Re-enabling a node can reuse a valid selected record when its computation inputs and selected upstream record references are unchanged.
+- **Serialization:** Canonical platform graphs persist each node's `enabled` state directly; an omitted value defaults to `true` on input. Portable library exports include `"enabled": false` for disabled nodes and omit the default `true` value.
 
-**Out-of-date detection:** Out-of-date status is server-authoritative. The server compares the accepted graph's current parameters and upstream signatures against cached results and returns the result in the accepted draft or nested-snapshot validation response (or direct `/graph` compatibility response). The frontend does not maintain `last_execution_params` for out-of-date detection. A parameter command immediately projects its target as provisional `unexecuted`; the accepted validation may then classify it as `out_of_date` when a stale cache entry exists.
+**Out-of-date detection:** Out-of-date status is server-authoritative and projects the accepted graph's library plan, including exact selected upstream record provenance ([library Section 6.5](bioimageflow/docs/source/specs.md#65-pre-execution-planning)).
+The accepted draft or nested-snapshot validation response (or direct `/graph` compatibility response) returns that projection; diagnostic logical signatures must not substitute for result keys and selected record IDs.
+The frontend does not maintain `last_execution_params` for out-of-date detection.
+A parameter command immediately projects its target as provisional `unexecuted`; the accepted validation may then classify it as `out_of_date` when a prior selection or retained latest output establishes stale work.
 
 An accepted `cache_corrupt` diagnostic with a failed node status takes badge precedence over a matching retained execution status when execution is idle, including an aggregate workflow node whose failed status is caused by a corrupt descendant. Semantic edit feedback and active execution progress keep their precedence; ordinary terminal execution statuses remain tied to their exact workflow and accepted draft revision. After Clear removes the diagnostic, refreshed cache and execution statuses restore the cleared and downstream badges without changing the graph or historical run.
 
@@ -1758,29 +1628,15 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 | Parameter value in Node Panel | Constant keyword argument |
 | Pin visibility on a node | ProcessingTool input pins follow `GUIMeta.connectable`; DataFrameTool parameters never expose column input pins. |
 | "Run" button | `workflow.compute(node)` |
-| Node position, collapsed state | GUI-only state (stored in workflow file under `gui` section) |
-| Package version in Tools Panel | `tool_package_version` in library serialization format |
+| Node position, collapsed state | Platform presentation state owned directly by canonical `GraphState`; omitted from portable library graphs |
+| Explicit package/version or local-source node binding | Qualified tool/source identity preserved through library translation |
 
 ### 4.5 Workflow Persistence
 
-The workflow file (JSON) contains both the library workflow data and GUI-specific state:
-
-```json
-{
-  "workflow": {
-    "nodes": [],
-    "edges": []
-  },
-  "gui": {
-    "nodes": {
-      "cellpose_segmenter_1": {
-        "position": [350, 200],
-        "collapsed": false
-      }
-    }
-  }
-}
-```
+A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`models/workflow.py`](backend/src/bioimageflow_server/models/workflow.py), containing `platform_document_version`, `graph`, `metadata`, `authoring_source`, `owned_source_ids`, and `artifact_hash`.
+Its `graph` is the sole recursive editable definition, including layout and node presentation state; there is no separate persisted `workflow` payload or `gui` graph.
+Root draft revision-CAS, private nested-snapshot revision-CAS, explicit promotion/apply, identity generations, source ownership, and workflow-owned runtime results follow [v2 Sections 2, 7, and 12](platform_specs_v2.md#2-canonical-graph-document).
+The library workflow is compiled from the accepted graph in memory for validation, execution, and portable export.
 
 Panel layout preferences (which panels are open, sizes) are stored in **user-level settings** (not per-workflow).
 
@@ -1893,9 +1749,13 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" for catalog tools and newly created tools after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |
-| 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
-| 41 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |
-| 42 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal delete button |
+| 40 | `GET` | `/api/v1/datasets` | Datasets panel and transient file picker; list managed files |
+| 41 | `POST` | `/api/v1/datasets/upload` | Datasets panel upload queue and browser file drops |
+| 42 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Compatibility single-file deletion |
+| 42a | `GET`/`POST`/`PATCH` | `/api/v1/datasets/folders[/{folder_id}]` | List/create/rename/move logical folders (Section 2.4.10) |
+| 42b | `PATCH` | `/api/v1/datasets/{dataset_id}` | Change display name or logical folder |
+| 42c | `POST` | `/api/v1/datasets/actions/resolve` | Resolve a managed selection to ordered files |
+| 42d | `POST` | `/api/v1/datasets/actions/delete-preview` / `/delete` | Preview and revision-confirm recursive deletion |
 
 ---
 

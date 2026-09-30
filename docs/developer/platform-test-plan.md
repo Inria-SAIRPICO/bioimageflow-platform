@@ -6,6 +6,7 @@ orphan: true
 
 Establish confidence in the platform people use today, repair demonstrated defects, then complete systematic coverage of implemented in-scope behavior.
 This is a new campaign prepared from the previous campaign's results; execution has not started.
+Application checks remain **HELD pending the user's model choice** after the execution interruption; specification review and documentation acceptance may continue without restarting the application campaign.
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
 
@@ -23,16 +24,25 @@ Follow `AGENTS.md`, `PLATFORM_CONTEXT.md`, the implemented v1/v2 and applicable 
 Cover implemented desktop and webapp behavior, including their different permission and persistence contracts.
 Parallel scheduling, HPC, Parsl, managed remote execution, distributed engines, and future v3 proposals remain excluded.
 Keep Direct execution and real local Wetlands execution with one sequential worker; selecting a worker engine is not proof that a worker ran.
-Preserve existing out-of-scope regression tests; campaign exclusions do not authorize deleting them.
+Preserve existing out-of-scope regression tests and specification contracts; campaign exclusions do not authorize deleting delivered parallel, HPC, Parsl, or managed remote/distributed capabilities.
 The catalog contract remains single-click to toggle bottom tool information, double-click to create exactly one node, and drag as an independent creation gesture.
 
 ## First action: establish one reproducible baseline
 
-Before scenarios or writable task assignment, record these items together in the checkpoint:
+Before application assertions or writable repair assignment, reconcile specification authority with actual current code and record the reviewed documentation revisions in the checkpoint.
+Use the bounded specification-coherence revision as a docs baseline, then distinguish stale descriptions from implementation defects and unresolved future product choices rather than silently choosing code as the authority.
+Keep canonical recursive GraphState, CAS drafts/private snapshots, stable source/result identities, worker requirements/floors/caps, dataset deletion CAS, local/managed execution ownership, portable viewer metadata, and native-certification boundaries intact.
+Documentation review and a passing docs check earn no application, browser, worker, or native coverage credit.
+
+Record these items together in the checkpoint:
 
 - Platform SHA and dirty files; installed BioImageFlow/Core/Wetlands versions and source locations; editable library SHA and dirty state; relevant lockfile/dependency differences.
 - Registered worktrees, their branches/SHAs, dirty state, actual active owners/processes, and disposition: preserve, read-only candidate for salvage, or integrated and safe to retire.
 - A bounded change scan from inventory audit `15c5cc7` to the selected baseline, mapping changed controls/contracts to stable inventory IDs, missing obligations, and historical evidence invalidated by those changes.
+- Reviewed platform/library specification revisions, preserved contract boundaries, and known doc-versus-code debts with an owner, scope, and distinguishing acceptance before any dependent assertion or repair.
+  The current known debts include generated-type consumption in the handwritten draft wrapper, absent-installation Napari default-recipe creation, and exact uploaded-original-filename metadata fidelity; none is closed by documentation reconciliation.
+  The library specification also records permissive runtime image-validation adapter implementation debt; use its own normative owner rather than copying that contract into campaign notes.
+  Future v3 storage roots/migration, summary join policy, read-only-store installation strategy, and security deployment choices remain separate owner decisions.
 
 Do not trust a stale branch's API fields, dependency pins, or documentation status.
 In particular, removed fingerprint fields and changed dependency/result contracts require comparison with current code before using the unfinished Napari and stale-environment work.
@@ -41,7 +51,8 @@ Do not merge a dirty worktree wholesale, silently reset it, or delete abandoned 
 A new task worktree has its own dependencies, runtime state, and build output under `.worktrees/<task_name>`.
 Reuse its installed dependencies while lockfiles, editable dependency metadata, and installation options remain compatible; resync only affected environments when installation requirements change, without sharing them between worktrees.
 Retain fresh disposable browser runtime roots and external certification stores; dependency reuse must not reuse a prior test's workspace or result state.
-The baseline is ready when the next tasks have current contracts, runnable fixtures, explicit ownership, and no unresolved dependency mismatch affecting their assertions.
+The baseline is ready when the next tasks have reviewed current contracts, runnable fixtures, explicit ownership, and no unresolved dependency mismatch or contract decision affecting their assertions.
+Record the integrated documentation and application/dependency revisions actually used; dated prior observations stay historical and must not be relabelled as a current baseline.
 Record a missing prerequisite with its recovery action and continue independent work.
 
 ## Wave 1: current-code readiness

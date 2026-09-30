@@ -4,17 +4,21 @@ orphan: true
 
 # Start the new platform confidence campaign
 
-The campaign is prepared but not executed.
+The campaign is **PREPARED / NOT EXECUTED**.
+Application execution remains held pending the user's model choice after the interruption; the specification revision and docs checks do not resume it.
 Use this prompt when execution is requested; reading or reviewing these documents alone does not start tests, repair branches, or native setup.
 The [plan](platform-test-plan.md) defines outcomes and acceptance; the [checkpoint](platform-test-progress.md) contains the observed baseline and next tasks.
 The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is preserved for audit only.
 
 ```text
-Execute the new Platform confidence campaign in docs/developer/platform-test-plan.md.
+After the user resolves the pending model choice and requests execution, execute the new Platform confidence campaign in docs/developer/platform-test-plan.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
 You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
 
-First reconcile current main, dirty files/worktrees and active processes, installed dependencies/editable library source, and platform changes since inventory audit 15c5cc7.
+First record the reviewed platform/library specification revisions and reconcile their contracts with current code before application assertions.
+Then reconcile current main, dirty files/worktrees and active processes, installed dependencies/editable library source, and platform changes since inventory audit 15c5cc7.
+Retain the known handwritten-draft-type, missing Napari default-recipe, and original-filename metadata debts for bounded owned repair packets; a docs change does not close a code defect or certify behavior.
+Preserve canonical graphs, CAS editing, source/result identity, resource floors/caps, dataset delete-CAS, local/managed execution ownership, viewer metadata and native boundaries; leave future storage/summary/shared-store/security decisions explicitly unresolved.
 Preserve unfinished candidate worktrees and unrelated user files; do not merge, reset, or resume their old instructions wholesale.
 Verify current contracts before porting candidate code, especially removed fingerprint fields and changed result/dependency APIs.
 Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.

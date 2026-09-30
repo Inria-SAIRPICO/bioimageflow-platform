@@ -98,7 +98,8 @@ There is no second editable child-graph language and no separately persisted lib
 Validation must cover the whole recursive graph, including unique identities, endpoint compatibility, tool availability, interfaces, local-source ownership, containment cycles, bindings, and the selected execution context.
 Errors should retain scoped node paths so a failure inside an embedded workflow remains attributable to its actual internal node.
 
-Frontend graph types are generated from backend OpenAPI into `frontend/src/api/types.ts`.
+Frontend graph and workflow-draft routes/response types are generated from backend OpenAPI into `frontend/src/api/types.ts`.
+The draft client's remaining handwritten response/conflict shapes are transitional debt and do not supersede the generated-only authority.
 When an API model changes, update the backend model and schema first, regenerate the frontend types, and adapt consumers instead of introducing handwritten compatibility copies.
 
 ### Tools and sources
@@ -108,6 +109,7 @@ DataFrameTool parameter fields accept constants, including constant-valued publi
 Complete upstream DataFrames connect positionally, and the library rejects column or node-shorthand bindings to DataFrameTool parameters, including through recursive workflow interfaces.
 Tool annotation introspection resolves postponed and inherited annotations while preserving GUI and image metadata, so registry schemas and execution validation describe the same declared types.
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
+Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound tools, without replacing same-named registry entries.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain the previous usable registry entries.
@@ -147,6 +149,15 @@ Validation returns source-specific node metadata without registering imported cl
 
 Trusted `workflow.py` files are authoring inputs only.
 Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.
+
+### Managed datasets
+
+The implemented dataset catalog and docked panel have their normative home in v1 Sections 2.4.10 and 3.14; v2 Section 16 owns Files-source integration.
+Managed bytes default to `<workspace>/datasets`, while logical folders and display names live in a SQLite catalog and do not change physical paths or file IDs.
+Selection resolution expands folder descendants into explicit ordered file records; recursive deletion requires a preview and catalog-revision confirmation, with actionable partial failures.
+Ordinary browser path parameters use the panel's transient single-file picker, and Files sources use normal multi-selection; desktop inputs use native/local filesystem paths.
+Resolve-and-containment checks remain authoritative for uploads and deletion.
+Exact submitted-original-filename metadata fidelity remains a known store implementation gap, distinct from safe stored naming.
 
 ### Execution and results
 
@@ -226,7 +237,7 @@ Preserve these invariants unless an approved specification change explicitly rep
 - Embedded workflow content is independent from saved-source provenance unless the user explicitly performs an update.
 - Workflow-local source ownership is preserved recursively and same-named different-content sources can coexist.
 - Runtime translation uses public BioImageFlow contracts and does not create a second persisted workflow authority.
-- OpenAPI is the source of frontend API types.
+- OpenAPI is the sole normative source of frontend API types; remaining handwritten wrappers are implementation debt.
 - Desktop-only filesystem and execution capabilities remain gated from ordinary webapp mode.
 - Path resolution, archive extraction, uploads, editor launches, and trusted Python authoring must reject traversal, symlink escape, and unintended server-path access.
 - Mutation, publication, export, execution, and result reads operate on explicitly identified accepted snapshots.
@@ -270,7 +281,7 @@ For an API change, trace the backend model and service, router, generated type, 
 
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines focused, quick, scoped completion, browser, full, and certification lanes.
-- `docs/developer/platform-test-start.md` starts the new platform confidence campaign when execution is requested; its plan first reconciles current code, editable dependencies, worktrees, and historical evidence, then checks four readiness journeys before focused risk batches and systematic in-scope coverage. The campaign is prepared, not executed; historical dashboard totals are not current certification. The executing agent owns shared evidence and uses bounded workers plus high-reasoning planning and independent review for unresolved contract conflicts or refactors affecting identity, persistence, concurrency, or loss behavior.
+- `docs/developer/platform-test-start.md` starts the new platform confidence campaign after execution is requested and the pending user model choice is resolved; its plan first reconciles specifications, current code, editable dependencies, worktrees, and historical evidence, then checks four readiness journeys before focused risk batches and systematic in-scope coverage. The campaign is prepared and held, not executed; documentation review/checks supply no application evidence, and historical dashboard totals are not current certification. The executing agent owns shared evidence and uses bounded workers plus high-reasoning planning and independent review for unresolved contract conflicts or refactors affecting identity, persistence, concurrency, or loss behavior.
 - Campaign repair packets trace changed files through owners, callers, storage/events, generated types, and library contracts to exact tests and required completion scopes. Its plan defines per-edit, feature, wave, and final validation boundaries, retaining valid unchanged phases and measuring setup/test costs without weakening coverage or changing CI selection.
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
 - `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
@@ -289,13 +300,15 @@ Use this authority order:
 2. `platform_specs_v1.md` is the implemented platform baseline.
 3. `platform_specs_v2.md` is a cumulative implemented platform delta and overrides v1 where it explicitly changes the same behavior.
 4. `platform_specs_distributed_execution.md` is the implemented normative delta for managed distributed execution and overrides v2 where it explicitly changes the same behavior.
-5. `platform_specs_v3.md` is a future webapp and multi-user proposal, not evidence that a feature is implemented.
+5. `platform_specs_napari_environments.md` is the feature-specific implemented viewer/environment extension, with explicit remaining gaps and native certification obligations; it overrides v1/v2 in that scope.
+6. `platform_specs_v3.md` is a future authenticated multi-user proposal building on existing deployment modes, not evidence that a feature is implemented or an override of current storage/results contracts.
 
 [`platform_specs_napari_environments.md`](platform_specs_napari_environments.md) is the completed Phase A design and phased implementation authority for multiple napari environments: named local environments, portable output viewing requirements, one exclusive toggleable favorite per structural output identity across all rows and future results, filename rules with extension shortcuts, deterministic environment selection, and setup guidance.
 Its package-compatibility contract uses installed Python distribution metadata and PEP 440 constraints independently of npe1/npe2 manifests, plugin discovery, and enabled flags; reader identifiers remain separate launch instructions and actual reader/plugin failures are launch-time outcomes.
 Managed creation uses Python 3.12 from Conda and installs the remaining distributions from PyPI, with napari 0.9.1/PyQt6 as the default matrix and napari 0.6.6/PyQt5 as the older smoke matrix.
 Its coordinated portable contract uses canonical recursive schema-v2 graphs, explicit schema-v1 normalization, strict viewer metadata, normalized artifact hashes, and a previewed, explicitly confirmed, byte-backed-up, forward-recoverable saved-document/root-draft/nested-snapshot migration.
 Its Phase B backend foundation implements the settings-backed environment registry, explicit immutable launch/managed identity, package-only bounded probes, singleton adoption, revisioned desktop-only routes, and ordered filename rules.
+Startup adoption still does not create the required setup-needed default recipe when no legacy installation exists; explicit managed creation does not close that known requirement gap.
 Phase C implements UUID-keyed lazy launcher processes and locks, frozen registered-environment argv dispatch, public Wetlands generation-owned spawning for recipe-created managed entries with a narrow persisted-interpreter fallback for adopted legacy Wetlands 1 workspaces, per-environment napari settings files, optional explicit reader dispatch, Qt-completion acknowledgements, typed open failures, unknown-outcome no-replay semantics, and attributed lifecycle status/events.
 Its dedicated environment launch route starts an empty viewer without dispatching `viewer.open([])`.
 The managed installer backend implements strict default, legacy-smoke, and explicit advanced recipes, PyPI-only requested distribution validation, immutable create/copy generations, durable public-Wetlands operation progress/cancellation/restart reconciliation, metadata-only validation probes, and ownership-proven removal coordinated with per-environment launcher shutdown and an idempotent local-reference cleanup seam.
@@ -324,7 +337,7 @@ Read this file first, then use the following routing table instead of loading ev
 | Execution, caching, cancellation, progress, or result storage | Relevant library Sections 4–7 and 10–13, v1 execution/data-flow sections, and v2 Sections 8, 9, 12, and 14 |
 | Execution targets, profiles, preflight, retained runs, managed clusters, Parsl, PSI/J, or remote data | `platform_specs_distributed_execution.md`, the library remote-cluster specifications and how-to, relevant library execution sections, and the current execution models/services/tests |
 | Import, export, latest outputs, result bundles, or Python authoring | v2 Sections 6, 8, and 10–14 plus library archive, file-management, and recursive-workflow sections |
-| Datasets, browser mode, authentication, security, or multi-user behavior | Implemented v1/v2 sections first; consult v3 only for work explicitly targeting the proposal and distinguish inherited behavior from proposed behavior |
+| Datasets, browser mode, authentication, security, or multi-user behavior | v1 Sections 2.4.10 and 3.14 plus v2 Section 16 for implemented datasets; consult v3 only for work explicitly targeting the proposal and distinguish inherited behavior from proposed behavior |
 | MCP workspace operations or coding-agent user features | Root `AGENTS.md`, `docs/agents/`, `backend/src/bioimageflow_server/data/agent_workspace_instructions.md`, and the corresponding backend MCP/services tests |
 | Broad cross-stack architecture or library compatibility | All of v1 and v2 plus relevant library sections; add the managed distributed specification or v3 proposal only when the task includes that scope |
 
