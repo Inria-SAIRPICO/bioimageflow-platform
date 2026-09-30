@@ -250,7 +250,7 @@ watch(() => executionStore.lastResult, (result) => {
 })
 
 let scope: EffectScope | null = null
-let activeChangeDisposable: DockviewIDisposable | null = null
+let visibilityChangeDisposable: DockviewIDisposable | null = null
 watch(sourceEntries, (entries) => {
   const target = currentDataTableTarget()
   const statusProjection = statusProjectionForTarget(target)
@@ -282,8 +282,8 @@ onMounted(async () => {
     refreshProjection()
     stackedEntries.value.forEach(entry => fetchEntry(entry, true))
   }
-  activeChangeDisposable = props.params?.api?.onDidActiveChange(({ isActive }) => {
-    if (isActive) refreshProjection()
+  visibilityChangeDisposable = props.params?.api?.onDidVisibilityChange(({ isVisible }) => {
+    if (isVisible) refreshProjection()
   }) ?? null
 })
 
@@ -301,7 +301,7 @@ watch(() => settingsStore.settings?.node_data_page_size, (pageSize, previous) =>
 })
 onBeforeUnmount(() => {
   scope?.stop()
-  activeChangeDisposable?.dispose()
+  visibilityChangeDisposable?.dispose()
 })
 </script>
 

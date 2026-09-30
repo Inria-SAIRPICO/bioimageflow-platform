@@ -355,6 +355,8 @@ Raw JSON import/export of local configuration may be a later advanced convenienc
 The existing **Open in napari** becomes a split button.
 Its main action opens in the resolved environment; its tooltip/accessibility label includes that environment and selection reason.
 The arrow opens a popover showing all registered environments with status, detected napari version, and a short reason when requirements are unmet.
+Changing the selected artifact withdraws the previous resolved environment, reader, launch, clear-layers, and favorite actions while the new artifact resolves; late responses cannot revive those withdrawn actions.
+Each admitted open captures its artifact, row, structural output, environment, and reader together; an already dispatched open completes against that capture without automatic replay, and disposed or replaced chooser state cannot dispatch an older pending intent.
 Keep unavailable entries visible with disabled launch controls so users can understand or repair them; removing an existing favorite remains available.
 
 Always show the selected output name and its structural output identity context.
@@ -423,6 +425,8 @@ Apply remaps surviving entries to the accepted parent instance; discard drops th
 After parent persistence succeeds, the client finalizes the child snapshot through an idempotent backend endpoint that derives the destination from the stored owner and verifies that the current parent snapshot or root draft embeds the exact accepted child graph.
 The endpoint remaps into the parent session for nested owners and into the current workflow generation for saved root owners; it rejects unsaved root owners, so the UI must not offer durable output favorites before a workflow has persistent identity.
 Preference writes bind to the captured workspace/generation/session so a delayed request cannot target a replacement workflow or another workspace.
+Deferred client preference work retains the original server-derived output key and selection owner; replacement or disposal abandons an undispatched toggle, while completion of an already dispatched toggle cannot overwrite a replacement selection or release its newer pending action.
+Older menu snapshots cannot replace a newer accepted preference revision within the same selection.
 The resolver returns the exact server-derived persistent preference key for the addressed structural output, including the durable workspace UUID, so a client can create the first favorite without inventing or inferring workspace identity.
 They use revision-checked set/unset actions so a stale toggle cannot accidentally clear a favorite changed in another window.
 Each structural output identity stores zero or one environment ID, with no independent per-environment boolean favorites.

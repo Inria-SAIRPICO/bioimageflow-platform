@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
 import { useToast } from 'primevue/usetoast'
@@ -12,7 +12,9 @@ import {
 import type {
   NapariEnvironment,
   NapariEnvironmentCandidate,
+  NapariResolveRequest,
   NapariResolveResponse,
+  NapariOpenRequest,
   ResultArtifactIdentity,
   ViewerFavorite,
   ViewerPreferencesSnapshot,
@@ -32,7 +34,19 @@ const props = defineProps<{
 }>()
 
 const popover = ref<InstanceType<typeof Popover> | null>(null)
-const resolution = ref<NapariResolveResponse | null>(null)
+interface SelectionCapture {
+  epoch: number
+  token: string
+  request: NapariResolveRequest
+  path: string
+}
+interface AcceptedSelection {
+  selection: SelectionCapture
+  response: NapariResolveResponse
+}
+const accepted = shallowRef<AcceptedSelection | null>(null)
+const resolution = computed(() => accepted.value && isCurrentSelection(accepted.value.selection)
+  ? accepted.value.response : null)
 const environments = ref<NapariEnvironment[]>([])
 const preferences = ref<ViewerPreferencesSnapshot | null>(null)
 const resolving = ref(false)
@@ -47,6 +61,10 @@ try {
   toast = null
 }
 let resolveRequest = 0
+let menuRequest = 0
+let favoriteRequest = 0
+let selectionEpoch = 0
+let disposed = false
 
 const identityToken = computed(() => JSON.stringify([
   props.workflowId,
@@ -134,52 +152,92 @@ function keysMatch(favorite: ViewerFavorite): boolean {
 }
 
 function favoriteEnvironmentId(): string | null {
-  return preferences.value?.favorites?.find(keysMatch)?.environment_id
-    ?? favoriteCandidate.value?.environment_id
-    ?? null
+  return preferences.value
+    ? preferences.value.favorites?.find(keysMatch)?.environment_id ?? null
+    : favoriteCandidate.value?.environment_id ?? null
 }
 
 function isFavorite(environmentId: string): boolean {
   return favoriteEnvironmentId() === environmentId
 }
 
-async function resolveSelection(): Promise<NapariResolveResponse | null> {
-  if (!canResolve.value || !props.workflowId || props.identityGeneration === null || !props.resultIdentity) {
-    resolution.value = null
-    return null
-  }
-  const requestId = ++resolveRequest
-  const token = identityToken.value
-  resolving.value = true
-  try {
-    const response = await resolveNapariEnvironment({
+function captureSelection(): SelectionCapture | null {
+  if (!canResolve.value || !props.workflowId || props.identityGeneration === null || !props.resultIdentity) return null
+  return {
+    epoch: selectionEpoch,
+    token: identityToken.value,
+    path: props.path,
+    request: {
       workflow_id: props.workflowId,
       identity_generation: props.identityGeneration,
       node_path: [...props.nodePath],
       output_key: props.outputKey,
       result_identity: { ...props.resultIdentity },
       row: props.row,
-    })
-    if (requestId === resolveRequest && token === identityToken.value) {
-      resolution.value = response
-      return response
-    }
-    return null
-  } catch (error) {
-    if (requestId === resolveRequest) resolution.value = null
-    showError(error, 'Could not resolve a napari environment')
-    return null
-  } finally {
-    if (requestId === resolveRequest) resolving.value = false
+    },
   }
 }
 
-watch(identityToken, () => {
+function isCurrentSelection(selection: SelectionCapture): boolean {
+  return !disposed && selection.epoch === selectionEpoch && selection.token === identityToken.value
+}
+
+function acceptPreferences(snapshot: ViewerPreferencesSnapshot): void {
+  if (!preferences.value || snapshot.revision >= preferences.value.revision) preferences.value = snapshot
+}
+
+async function resolveSelection(): Promise<NapariResolveResponse | null> {
+  const requestId = ++resolveRequest
+  const selection = captureSelection()
+  if (!selection) {
+    accepted.value = null
+    resolving.value = false
+    return null
+  }
+  const ownsRequest = () => requestId === resolveRequest && isCurrentSelection(selection)
+  resolving.value = true
+  try {
+    const response = await resolveNapariEnvironment(selection.request)
+    if (!ownsRequest()) return null
+    accepted.value = { selection, response }
+    return response
+  } catch (error) {
+    if (ownsRequest()) {
+      accepted.value = null
+      showError(error, 'Could not resolve a napari environment')
+    }
+    return null
+  } finally {
+    if (ownsRequest()) resolving.value = false
+  }
+}
+
+function invalidateSelection(): void {
+  selectionEpoch += 1
+  resolveRequest += 1
+  menuRequest += 1
+  favoriteRequest += 1
+  accepted.value = null
   preferences.value = null
+  resolving.value = false
+  loadingMenu.value = false
+  favoritePending.value = false
+}
+
+watch(identityToken, () => {
+  invalidateSelection()
   void resolveSelection()
 }, { immediate: true })
+onBeforeUnmount(() => {
+  disposed = true
+  invalidateSelection()
+})
 
 async function loadMenu(): Promise<void> {
+  const selection = captureSelection()
+  if (!selection) return
+  const requestId = ++menuRequest
+  const ownsRequest = () => requestId === menuRequest && isCurrentSelection(selection)
   loadingMenu.value = true
   try {
     const [registry, snapshot] = await Promise.all([
@@ -187,16 +245,18 @@ async function loadMenu(): Promise<void> {
       getViewerPreferences(),
       resolution.value ? Promise.resolve(resolution.value) : resolveSelection(),
     ])
+    if (!ownsRequest()) return
     environments.value = registry.environments ?? []
-    preferences.value = snapshot
+    acceptPreferences(snapshot)
   } catch (error) {
-    showError(error, 'Could not load napari environments')
+    if (ownsRequest()) showError(error, 'Could not load napari environments')
   } finally {
-    loadingMenu.value = false
+    if (ownsRequest()) loadingMenu.value = false
   }
 }
 
 function toggleMenu(event: Event): void {
+  if (disposed) return
   popover.value?.toggle(event)
   void loadMenu()
 }
@@ -206,29 +266,36 @@ async function openCandidate(
   event?: MouseEvent,
   replace = false,
 ): Promise<void> {
-  if (!props.resultIdentity || candidate.status === 'unavailable') return
+  const capture = accepted.value
+  if (!capture || !resolution.value || resolving.value
+    || !capture.response.candidates.includes(candidate)
+    || candidate.status === 'unavailable'
+    || napari.environmentState(candidate.environment_id).pending) return
+  const selected = capture.selection.request
+  const request: NapariOpenRequest = {
+    paths: [capture.selection.path],
+    clear_layers: replace || Boolean(event?.ctrlKey || event?.metaKey),
+    environment_id: candidate.environment_id,
+    reader_id: candidate.reader_id ?? null,
+    node_id: selected.result_identity.node_key,
+    row: selected.row,
+    col: selected.output_key,
+    workflow_name: selected.workflow_id,
+    result_identity: { ...selected.result_identity },
+  }
   try {
-    await napari.open({
-      paths: [props.path],
-      clear_layers: replace || Boolean(event?.ctrlKey || event?.metaKey),
-      environment_id: candidate.environment_id,
-      reader_id: candidate.reader_id ?? null,
-      node_id: props.resultIdentity.node_key,
-      row: props.row,
-      col: props.outputKey,
-      workflow_name: props.workflowId,
-      result_identity: { ...props.resultIdentity },
-    })
+    await napari.open(request)
   } catch (error) {
-    showError(error, 'Could not open the selected result in napari')
+    if (isCurrentSelection(capture.selection)) showError(error, 'Could not open the selected result in napari')
   }
 }
 
 async function primaryOpen(event: MouseEvent): Promise<void> {
+  const selection = captureSelection()
+  if (!selection) return
   const response = resolution.value ?? await resolveSelection()
-  const candidate = response?.effective_environment_id
-    ? candidateFor(response.effective_environment_id)
-    : null
+  if (!isCurrentSelection(selection)) return
+  const candidate = response?.candidates.find(candidate => candidate.environment_id === response.effective_environment_id)
   if (!candidate) {
     toggleMenu(event)
     return
@@ -236,30 +303,48 @@ async function primaryOpen(event: MouseEvent): Promise<void> {
   await openCandidate(candidate, event)
 }
 
-async function updateFavorite(environmentId: string): Promise<void> {
-  if (!resolution.value || favoritePending.value) return
-  const candidate = candidateFor(environmentId)
-  if (!isFavorite(environmentId) && candidate?.status !== 'compatible') return
+async function updateFavorite(candidate: NapariEnvironmentCandidate): Promise<void> {
+  const capture = accepted.value
+  if (!capture || !resolution.value || resolving.value || favoritePending.value
+    || !capture.response.candidates.includes(candidate)) return
+  const environmentId = candidate.environment_id
+  const wasFavorite = isFavorite(environmentId)
+  if (!wasFavorite && candidate.status !== 'compatible') return
+  const key = { ...capture.response.preference_key, node_path: [...capture.response.preference_key.node_path] }
+  const requestId = ++favoriteRequest
+  const ownsRequest = () => requestId === favoriteRequest && isCurrentSelection(capture.selection)
   favoritePending.value = true
   try {
-    if (!preferences.value) preferences.value = await getViewerPreferences()
-    preferences.value = await toggleViewerFavorite({
-      key: resolution.value.preference_key,
+    const snapshot = preferences.value ?? await getViewerPreferences()
+    if (!ownsRequest() || accepted.value !== capture || resolving.value) return
+    acceptPreferences(snapshot)
+    if (isFavorite(environmentId) !== wasFavorite) {
+      await resolveSelection()
+      return
+    }
+    const updated = await toggleViewerFavorite({
+      key,
       environment_id: environmentId,
-      expected_revision: preferences.value.revision,
+      expected_revision: preferences.value!.revision,
     })
+    if (!ownsRequest()) return
+    acceptPreferences(updated)
     await resolveSelection()
   } catch (error) {
+    if (!ownsRequest()) return
     const status = (error as { response?: { status?: number } }).response?.status
     if (status === 409) {
-      preferences.value = await getViewerPreferences().catch(() => preferences.value)
+      const snapshot = await getViewerPreferences().catch(() => null)
+      if (!ownsRequest()) return
+      if (snapshot) acceptPreferences(snapshot)
       await resolveSelection()
     }
-    showError(error, status === 409
+    if (ownsRequest()) showError(error, status === 409
       ? 'The favorite changed in another window. The current preference has been reloaded.'
       : 'Could not update the favorite environment')
   } finally {
-    favoritePending.value = false
+    // A successful action replaces its own resolution; pending ownership follows the operation.
+    if (ownsRequest()) favoritePending.value = false
   }
 }
 
@@ -351,7 +436,7 @@ function createEnvironment(): void {
               :title="isFavorite(candidate.environment_id) ? 'Unset favorite for this output' : 'Set favorite for this output'"
               :aria-pressed="isFavorite(candidate.environment_id)"
               :disabled="favoritePending || (!isFavorite(candidate.environment_id) && candidate.status !== 'compatible')"
-              @click="updateFavorite(candidate.environment_id)"
+              @click="updateFavorite(candidate)"
             />
           </article>
         </div>
@@ -359,6 +444,7 @@ function createEnvironment(): void {
         <footer class="napari-picker__actions">
           <Button
             v-if="effectiveCandidate"
+            :disabled="resolving || napari.environmentState(effectiveCandidate.environment_id).pending"
             label="Clear layers, then open"
             text
             size="small"

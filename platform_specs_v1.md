@@ -1279,6 +1279,8 @@ When multiple nodes are selected, their DataFrames are displayed in a **vertical
 
 **Single node selected:** Show that node's output DataFrame only.
 
+Focusing an already visible Node Data dock preserves its projection and the active cell gesture; revealing the dock after it was hidden refreshes the projection.
+
 **Table features:**
 - **Column types:** Columns are annotated with their type. Image columns show special rendering.
 - **Column sizing:** Individual and merged tables initially size columns from the displayed header, reserved sort/filter controls, and a bounded sample of up to 50 loaded rows; image/path cells receive a stable preview/action allowance rather than waiting for thumbnails. Automatic widths are bounded to 120–480 CSS pixels and measured only after fonts are ready and the table is visible. Narrow tables do not stretch to fill the panel; wide tables scroll horizontally. Paging, sorting, filtering, panel resizing, and thumbnail loading do not continually resize established columns. Header text truncates with a full-text tooltip while sort/filter controls remain accessible.
@@ -1418,6 +1420,8 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 - **Choose environment:** The adjacent menu lists every compatible, incompatible, unknown, or unavailable registered environment with its backend explanation; choosing a runnable row opens once without changing preferences.
 - **Favorite:** One keyboard-accessible exclusive star per structural output identity applies across rows and future results; choosing the filled star removes it, and favorite mutations never launch a viewer.
 - **Clear layers, then open:** Explicitly clears layers only in the chosen environment before opening.
+- Changing a selected artifact withdraws its previous resolved actions until the replacement resolves; deferred chooser work cannot combine the replacement artifact or preference key with the previous environment or reader, and cannot dispatch after its chooser is disposed.
+- An already dispatched open or favorite remains bound to its original capture; late completion cannot retarget or replay that action or overwrite a replacement chooser.
 - Napari is launched lazily on first use, while **Launch empty viewer** starts or focuses one addressed environment without dispatching an empty open request.
 
 **Fiji:** Fiji is installed separately by the user. In desktop mode, the Node Data image-cell action sends the selected node, row, column, and workflow context to `POST /fiji/open`; the backend resolves the authoritative result path and launches the configured Fiji installation with that image. If Fiji is not configured, the action opens Preferences → Image Viewers. If the saved installation has moved or become invalid, the action returns to configuration mode. Fiji controls reuse of an existing Fiji process.

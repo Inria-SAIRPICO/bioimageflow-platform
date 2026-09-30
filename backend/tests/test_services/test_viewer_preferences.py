@@ -48,6 +48,47 @@ def test_workspace_identity_and_favorites_are_durable_and_separate(tmp_path) -> 
     ).favorites == []
 
 
+def test_favorite_is_exclusive_per_structural_output_and_workspace(tmp_path) -> None:
+    first_workspace = ensure_workspace_identity(tmp_path / "first-workspace")
+    second_workspace = ensure_workspace_identity(tmp_path / "second-workspace")
+    assert first_workspace != second_workspace
+    path = tmp_path / "user/viewer-preferences.json"
+    store = ViewerPreferenceStore(path)
+    mask = PersistentOutputPreferenceKey(
+        workspace_id=first_workspace,
+        workflow_id="analysis",
+        identity_generation=2,
+        node_path=("segment",),
+        output_key="mask",
+    )
+    image = mask.model_copy(update={"output_key": "image"})
+    other_workspace = mask.model_copy(update={"workspace_id": second_workspace})
+    old_generation = mask.model_copy(update={"identity_generation": 1})
+    first, second = uuid4(), uuid4()
+
+    store.set(mask, first, expected_revision=0)
+    store.set(image, first, expected_revision=1)
+    store.set(other_workspace, first, expected_revision=2)
+    store.set(old_generation, first, expected_revision=3)
+    replaced = store.set(mask, second, expected_revision=4)
+    assert len(replaced.favorites) == 4
+    assert store.favorite_for(mask) == second
+    assert store.favorite_for(image) == first
+    assert store.favorite_for(other_workspace) == first
+    assert store.favorite_for(old_generation) == first
+
+    reopened = ViewerPreferenceStore(path)
+    assert reopened.snapshot().revision == 5
+    assert reopened.favorite_for(mask) == second
+    assert reopened.favorite_for(image) == first
+    assert reopened.favorite_for(other_workspace) == first
+    assert reopened.favorite_for(old_generation) == first
+    reopened.unset(mask, expected_environment_id=second, expected_revision=5)
+    assert reopened.favorite_for(mask) is None
+    assert reopened.favorite_for(image) == first
+    assert reopened.favorite_for(other_workspace) == first
+
+
 def test_move_delete_and_session_lifecycle_use_structural_identity(tmp_path) -> None:
     workspace_id = uuid4()
     environment_id = uuid4()

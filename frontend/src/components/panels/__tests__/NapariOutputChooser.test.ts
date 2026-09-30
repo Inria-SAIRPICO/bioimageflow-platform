@@ -223,6 +223,7 @@ describe('NapariOutputChooser', () => {
 
   it('explains incompatible and unavailable environments and requires an explicit try-anyway action', async () => {
     const incompatibleId = response().candidates[0]!.environment_id
+    vi.mocked(getViewerPreferences).mockResolvedValue(preferences(1, incompatibleId))
     const unavailableId = '944f4316-e72a-4445-8026-482382f753b2'
     vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({
       candidates: [{
@@ -274,6 +275,193 @@ describe('NapariOutputChooser', () => {
     tryMissing.click()
     await flushPromises()
     expect(openInNapari).toHaveBeenCalledTimes(1)
+  })
+
+  it('withdraws the previous replace action while a changed artifact awaits resolution', async () => {
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Clear layers, then open')
+    let finishCurrent!: (value: NapariResolveResponse) => void
+    vi.mocked(resolveNapariEnvironment).mockReturnValueOnce(new Promise(resolve => { finishCurrent = resolve }))
+    const nextIdentity = { ...identity, result_key: 'replacement-result' }
+    await wrapper.setProps({ resultIdentity: nextIdentity, identityGeneration: 8, outputKey: 'next-output', row: 43 })
+    const replacement = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('Clear layers, then open'))
+    expect(replacement).toBeUndefined()
+    expect(openInNapari).not.toHaveBeenCalled()
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    const nextEnvironment = 'b3a28e8d-63c0-4109-a4c7-2d3ef37e88ed'
+    finishCurrent(response({ artifact_identity: nextIdentity, identity_generation: 8, output_key: 'next-output',
+      preference_key: { ...preferenceKey, identity_generation: 8, output_key: 'next-output' },
+      effective_environment_id: nextEnvironment,
+      candidates: [{ ...response().candidates[0]!, environment_id: nextEnvironment, name: 'Tracking', reader_id: 'current-reader' }],
+    }))
+    await flushPromises()
+    const currentReplace = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('Clear layers, then open'))!
+    expect(currentReplace.title).toContain('Tracking')
+    currentReplace.click()
+    await flushPromises()
+    expect(openInNapari).toHaveBeenCalledOnce()
+    expect(openInNapari).toHaveBeenCalledWith({ paths: ['/stale/client/path.tif'],
+      clear_layers: true, environment_id: nextEnvironment, reader_id: 'current-reader', node_id: nextIdentity.node_key,
+      row: 43, col: 'next-output', workflow_name: 'analysis', result_identity: nextIdentity })
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not retarget a favorite while retrying a failed preference read', async () => {
+    vi.mocked(getViewerPreferences).mockRejectedValueOnce(new Error('Preferences temporarily unavailable'))
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    let finishPreferences!: (value: ViewerPreferencesSnapshot) => void
+    vi.mocked(getViewerPreferences).mockReturnValueOnce(new Promise(resolve => { finishPreferences = resolve }))
+    const star = document.querySelector<HTMLButtonElement>('button[aria-label="Set Microscopy as favorite for this output"]')!
+    expect(star).toBeTruthy()
+    star.click()
+    await flushPromises()
+    const nextKey = { ...preferenceKey, output_key: 'next-output' }
+    const nextIdentity = { ...identity, result_key: 'next-result' }
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({ artifact_identity: nextIdentity, preference_key: nextKey, output_key: 'next-output' }))
+    await wrapper.setProps({ resultIdentity: nextIdentity, outputKey: 'next-output' })
+    await flushPromises()
+    vi.mocked(toggleViewerFavorite).mockResolvedValue(preferences(4))
+    finishPreferences(preferences(3))
+    await flushPromises()
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    expect(openInNapari).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not restore an old menu snapshot over a replacement output favorite', async () => {
+    let finishOldPreferences!: (value: ViewerPreferencesSnapshot) => void
+    vi.mocked(getViewerPreferences).mockReturnValueOnce(new Promise(resolve => { finishOldPreferences = resolve }))
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    const nextKey = { ...preferenceKey, output_key: 'next-output' }
+    const nextIdentity = { ...identity, result_key: 'next-result' }
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({ artifact_identity: nextIdentity, preference_key: nextKey, output_key: 'next-output' }))
+    vi.mocked(getViewerPreferences).mockResolvedValue({ preferences_version: 1, revision: 5,
+      favorites: [{ key: nextKey, environment_id: response().effective_environment_id! }] })
+    await wrapper.setProps({ resultIdentity: nextIdentity, outputKey: 'next-output' })
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-next-output"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-next-output"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1)
+    finishOldPreferences(preferences(1))
+    await flushPromises()
+    expect(document.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1)
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    expect(openInNapari).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('abandons an undispatched favorite after the chooser unmounts', async () => {
+    vi.mocked(getViewerPreferences).mockRejectedValueOnce(new Error('Preferences temporarily unavailable'))
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    let finishPreferences!: (value: ViewerPreferencesSnapshot) => void
+    vi.mocked(getViewerPreferences).mockReturnValueOnce(new Promise(resolve => { finishPreferences = resolve }))
+    document.querySelector<HTMLButtonElement>('button[aria-label="Set Microscopy as favorite for this output"]')!.click()
+    await flushPromises()
+    wrapper.unmount()
+    vi.mocked(toggleViewerFavorite).mockResolvedValue(preferences(4))
+    finishPreferences(preferences(3))
+    await flushPromises()
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    expect(openInNapari).not.toHaveBeenCalled()
+  })
+
+  it('keeps a replacement favorite action independent of an already dispatched toggle', async () => {
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    let finishOldToggle!: (value: ViewerPreferencesSnapshot) => void
+    vi.mocked(toggleViewerFavorite).mockReturnValueOnce(new Promise(resolve => { finishOldToggle = resolve }))
+    document.querySelector<HTMLButtonElement>('button[aria-label="Set Microscopy as favorite for this output"]')!.click()
+    await flushPromises()
+    expect(toggleViewerFavorite).toHaveBeenCalledOnce()
+    const nextKey = { ...preferenceKey, output_key: 'next-output' }
+    const nextIdentity = { ...identity, result_key: 'next-result' }
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({ artifact_identity: nextIdentity, preference_key: nextKey, output_key: 'next-output' }))
+    vi.mocked(getViewerPreferences).mockResolvedValue({ ...preferences(1), favorites: [{ key: preferenceKey, environment_id: response().effective_environment_id! }] })
+    await wrapper.setProps({ resultIdentity: nextIdentity, outputKey: 'next-output' })
+    await flushPromises()
+    const nextStar = document.querySelector<HTMLButtonElement>('button[aria-label="Set Microscopy as favorite for this output"]')!
+    expect(nextStar.disabled).toBe(false)
+    let finishNextToggle!: (value: ViewerPreferencesSnapshot) => void
+    vi.mocked(toggleViewerFavorite).mockReturnValueOnce(new Promise(resolve => { finishNextToggle = resolve }))
+    nextStar.click()
+    await flushPromises()
+    expect(toggleViewerFavorite).toHaveBeenNthCalledWith(2, { key: nextKey, environment_id: response().effective_environment_id, expected_revision: 1 })
+    const resolvesBeforeOldCompletion = vi.mocked(resolveNapariEnvironment).mock.calls.length
+    finishOldToggle(preferences(1, response().effective_environment_id!))
+    await flushPromises()
+    expect(resolveNapariEnvironment).toHaveBeenCalledTimes(resolvesBeforeOldCompletion)
+    expect(nextStar.disabled).toBe(true)
+    finishNextToggle({ ...preferences(2), favorites: [{ key: nextKey, environment_id: response().effective_environment_id! }] })
+    await flushPromises()
+    expect(document.querySelector<HTMLButtonElement>('button[aria-label="Unset favorite for this output"]')!.disabled).toBe(false)
+    expect(openInNapari).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('refuses a withdrawn candidate callback even when the environment UUID survives', async () => {
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    const oldOpen = document.querySelector<HTMLButtonElement>('button[aria-label="Open once in Microscopy"]')!
+    const nextIdentity = { ...identity, result_key: 'next-result' }
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({ artifact_identity: nextIdentity,
+      candidates: [{ ...response().candidates[0]!, reader_id: 'current-reader' }] }))
+    await wrapper.setProps({ resultIdentity: nextIdentity })
+    await flushPromises()
+    oldOpen.click()
+    await flushPromises()
+    expect(openInNapari).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('button[aria-label="Open once in Microscopy"]')!.click()
+    await flushPromises()
+    expect(openInNapari).toHaveBeenCalledOnce()
+    expect(openInNapari).toHaveBeenCalledWith(expect.objectContaining({ result_identity: nextIdentity, reader_id: 'current-reader' }))
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('ignores a delayed resolver response after the captured result changes', async () => {
+    let finishOld!: (value: NapariResolveResponse) => void
+    const oldResponse = new Promise<NapariResolveResponse>(resolve => { finishOld = resolve })
+    vi.mocked(resolveNapariEnvironment).mockReturnValueOnce(oldResponse)
+    const wrapper = mountChooser()
+    const nextIdentity = { ...identity, result_key: 'replacement-result' }
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({
+      artifact_identity: nextIdentity,
+      candidates: [{ ...response().candidates[0]!, name: 'Current environment' }],
+    }))
+    await wrapper.setProps({ resultIdentity: nextIdentity })
+    await flushPromises()
+    const primary = wrapper.get('[data-testid="open-napari-42-labels"]')
+    expect(primary.attributes('aria-label')).toBe('Open in Current environment')
+    finishOld(response({ candidates: [{ ...response().candidates[0]!, name: 'Stale environment' }] }))
+    await flushPromises()
+    expect(primary.attributes('aria-label')).toBe('Open in Current environment')
+    expect(resolveNapariEnvironment).toHaveBeenLastCalledWith(expect.objectContaining({ result_identity: nextIdentity }))
+    expect(openInNapari).not.toHaveBeenCalled()
+    expect(toggleViewerFavorite).not.toHaveBeenCalled()
+    await primary.trigger('click')
+    expect(openInNapari).toHaveBeenCalledOnce()
+    expect(openInNapari).toHaveBeenCalledWith(expect.objectContaining({ result_identity: nextIdentity }))
+    wrapper.unmount()
   })
 
   it('exposes an explicit replace action scoped to the effective environment', async () => {
