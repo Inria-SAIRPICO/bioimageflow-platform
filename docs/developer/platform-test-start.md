@@ -24,10 +24,15 @@ Split independent failure modes into short scenarios and distinguish mocked clie
 A passing intercepted chooser does not certify backend favorite persistence or native Qt launch.
 Continue the systematic inventory after these initial batches; retain parallel/HPC/Parsl/managed remote/distributed exclusions and sequential real local workers.
 
-Follow docs/testing.md: exact failing selector/browser first, focused post-fix run, then the required smallest completion check; keep valid passing phases after late failures and record all unrun cases.
+For every repair packet map changed files through owners, callers, storage/event/generated-type/library consumers to exact distinguishing selectors and the required completion scope.
+Follow docs/testing.md: focus after localized edits, exact failing selector/browser first, quick only after coherent increments when coding continues, then the required smallest completion check once before each feature commit/integration.
+Use the plan's defined wave milestones and final certification schedule; preserve strong checks and both-browser obligations, and avoid stacking lanes whose phases are already covered.
+Keep valid passing phases after late failures only with recorded source/fixture/dependency/generated-artifact/runtime equivalence; preserve original red/interrupted commands and all skipped/unrun cases.
 Do not repeat broad lanes solely to erase an unrelated intermittent failure; capture gesture/Open, API, identity, tab, lock, and event breadcrumbs on recurrence.
 For unresolved contract conflicts or refactors affecting identity, persistence, concurrency, or loss behavior, get the bounded high-reasoning plan and independent review before dependent implementation.
 Use separate worktrees and independent runtime/dependencies for parallel writers; workers propose evidence and only you credit shared status after actual passing commands.
 Commit each coherent validated task without unrelated files; consolidate inventory/dashboard/evidence/checkpoint updates at that boundary.
+Check routine campaign status once per consolidated batch; use Sphinx for structural/substantial documentation milestones and final acceptance, not every review draft.
+Record actual setup/test timings and cold/warm state before claiming savings; local scheduling does not optimize the current CI triggers.
 Continue until final acceptance or a concrete owner decision blocks dependent work, answering status questions briefly while preserving the active objective.
 ```

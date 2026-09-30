@@ -39,6 +39,8 @@ In particular, removed fingerprint fields and changed dependency/result contract
 Keep their original worktrees untouched while inspecting; port only reviewed relevant changes to a clean task branch if needed.
 Do not merge a dirty worktree wholesale, silently reset it, or delete abandoned work.
 A new task worktree has its own dependencies, runtime state, and build output under `.worktrees/<task_name>`.
+Reuse its installed dependencies while lockfiles, editable dependency metadata, and installation options remain compatible; resync only affected environments when installation requirements change, without sharing them between worktrees.
+Retain fresh disposable browser runtime roots and external certification stores; dependency reuse must not reuse a prior test's workspace or result state.
 The baseline is ready when the next tasks have current contracts, runnable fixtures, explicit ownership, and no unresolved dependency mismatch affecting their assertions.
 Record a missing prerequisite with its recovery action and continue independent work.
 
@@ -113,6 +115,8 @@ Change the denominator only for a documented scope/applicability discovery, with
 Report current campaign gate outcomes and completed batches first; report a dashboard percentage as current only after its evidence applicability is reconciled, otherwise label it historical.
 
 For one coherent completed batch, the orchestrator records command/selector/project, tested SHA or named diff, integrated SHA, dependency baseline, duration, result, retries/skips/deselections/unrun cases, evidence type, and artifact location in [evidence](platform-test-evidence.md).
+Use the runner's phase and total timings to record cold versus warm setup, dependency/provisioning setup time when separately observed, executed lane count, and why a repeat was needed; parallel wall time and summed phase time are different measurements.
+Compare equivalent commands and prerequisites before claiming savings; the schedule is an efficiency hypothesis until measured, and cost goals never reduce required coverage or hide a failure.
 Use the labels **mocked client**, **real API/storage**, **real GUI + backend**, **real sequential worker**, and **native/manual** where needed to delimit claims.
 API-seeded prerequisites are allowed, but an API/store mutation cannot certify that action's GUI path; mocked execution cannot certify computation or worker lifecycle.
 Use exact expected values and captured identities rather than assertions that merely copy implementation output.
@@ -124,6 +128,8 @@ Record interruptions, blockers, and owner decisions immediately; consolidate ord
 
 The executing session is the orchestrator and may use at most two ordinary workers, keeping one slot available for a specialist.
 Workers receive a fresh bounded packet with current contract, one outcome, owned paths/worktree, inventory IDs, baseline/dependencies, acceptance conditions, exact checks, and escalation triggers.
+Include a short impact map: changed files → owning service/session and callers → storage/event/generated-type/library consumers → exact distinguishing selectors in each affected layer/browser → required completion scope.
+Trace those consumers in code and tests rather than selecting only by file proximity; include negative, recovery, permission, and identity cases when the changed contract can affect them.
 Writable parallel work must use separate worktrees; shared campaign records belong to the orchestrator.
 Commit only each task's validated changes, integrate after review, and retire only clean integrated task worktrees as `AGENTS.md` requires.
 Leave unrelated files and unfinished worktrees intact.
@@ -136,13 +142,20 @@ Do not repeat the specialist loop for unchanged reviewed invariants; if unavaila
 Escalate to the owner only for a concrete unresolved product/scope decision, with the supported entry path and user impact.
 
 Use `scripts/test` and the completion table in [Test lanes](../testing.md), not an invented campaign runner.
-Reproduce an exact failure in its exact browser before expanding; after a fix rerun it once, or five times only for a suspected timing/race defect.
-Then run the smallest required scoped completion check for the actual changed surface; changed GUI journeys need exact Chromium and Firefox evidence.
-Use `quick` only for intermediate coding feedback, never immediately before a completion check that subsumes it.
+After each localized edit run its affected exact selectors; reproduce an exact failure in its exact browser before expanding, then rerun it once after a fix, or five times only for a suspected timing/race defect.
+Run `quick` after a coherent coding increment when development will continue; omit it immediately before a completion check that subsumes it.
+At feature/repair completion run the smallest required scoped check once before committing or integrating; changed GUI journeys also need exact Chromium and Firefox evidence.
+Cross-stack API/schema/dependency/runtime changes require `check app`; broad architectural/test-infrastructure changes require `check all`, plus `check browser-all` when broad browser/E2E infrastructure is affected, as the lane table requires.
 Do not overlap browser-heavy lanes; do not start a broad browser project while its exact failing selector remains red.
-After late failure preserve successful unchanged phases, record the failed/unrun portion, and rerun only invalidated checks; a composite record must identify each phase's revision rather than call the original command passed.
-Routine status edits use `check campaign` once per consolidated batch; navigation/structure changes and final documentation acceptance use `check docs`, which includes it.
+After late failure preserve successful unchanged phases only with relevant source, fixture, dependency/editable-library, generated-artifact, and runtime equivalence; record the original red/interrupted command and all failed/skipped/unrun portions, then rerun only invalidated checks.
+A composite record must identify each phase's revision and applicability rather than call the original command passed.
+Routine status edits use `check campaign` once per consolidated batch before commit; navigation/structure changes, substantial documentation milestones, and final documentation acceptance use `check docs`, which includes it, without a separate preceding campaign check or Sphinx runs for each review draft.
 No new runner infrastructure is planned; change it only for a demonstrated selection/validation need.
+
+The larger milestones are Wave 1's 4/4 two-browser gate, Wave 2's integrated N1/E1/I1/T1 acceptances, and Wave 3's reconciled implemented-feature families before final acceptance.
+At each milestone review the combined impact map and confirm affected shared journeys on the reconciled integrated baseline; run missing or invalidated journeys and retain equivalent passing feature and journey evidence instead of repeating checks solely because a wave ended.
+Use `full` after a completed large cross-stack plan, for package-loading/external-compatibility changes, or for final comprehensive certification when that broader scope is chosen; it includes product, external, coverage, and both-browser phases but documentation remains separate.
+`check app` includes backend/frontend completion plus critical Chromium, and `check all` expands that browser scope to full Chromium; neither supplies Firefox or documentation evidence.
 
 ## Final acceptance
 

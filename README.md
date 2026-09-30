@@ -75,10 +75,16 @@ Run focused tests while editing, then the smallest scoped check that covers the 
 ```bash
 scripts/test focus backend tests/test_services/test_demo_workflows.py
 scripts/test focus unit src/stores/__tests__/workflow.test.ts
-scripts/test quick
+```
+
+Run `scripts/test quick` after a coherent coding increment when development will continue.
+At completion, choose the applicable scope from [Test Lanes](docs/testing.md); for a cross-stack API, schema, dependency, or runtime change:
+
+```bash
 scripts/test check app
 ```
 
+Do not run `quick` immediately before a completion check that includes its phases.
 See [Test Lanes](docs/testing.md) for selectors, lane contents, browser coverage, and external package certification.
 
 ## Build the documentation

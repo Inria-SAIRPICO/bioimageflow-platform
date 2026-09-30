@@ -26,7 +26,7 @@ Current gate: **0/4 outcomes executed**, with both Chromium and Firefox still re
 ## Next three actions when execution starts
 
 1. Establish the reproducible baseline described in the plan: Git/worktree disposition, installed and declared dependency state, changes since `15c5cc7`, affected inventory/evidence, and clean task ownership. No old release needs rerunning merely to start.
-2. Run J1–J4 through their current exact selectors in Chromium and Firefox; repair demonstrated reachable failures with focused evidence and the applicable completion check before claiming readiness.
+2. Map each repair's changed files through owners/callers/storage/events/library consumers to exact selectors and its required completion scope, then run J1–J4 in Chromium and Firefox; repair demonstrated reachable failures with focused evidence and the applicable completion check before claiming readiness.
 3. Start N1 Napari chooser/favorite with independently runnable launch, favorite/persistence, dock/scroll, and refusal/recovery cases; compare candidate changes with main first. E1 stale processing environments, I1 import guidance, and T1 Manage Tools follow.
 
 ## Carry-forward concerns and working set
@@ -39,4 +39,5 @@ Native Napari smoke and real provisioning remain separate from mocked GUI/API sc
 Ordinary restarts need this file, the assigned plan section, the relevant inventory rows, and matching open issue only.
 [Evidence](platform-test-evidence.md) owns new executed results; the [dashboard](platform-test-dashboard.md) owns the stable scenario denominator; source inventories own assertions and gaps.
 Shared campaign status belongs to the orchestrator; no worker currently owns a new-campaign task.
+Follow the plan's per-edit, feature, wave, and final validation schedule; record observed setup/test costs and unchanged-phase reuse without repeating Sphinx for routine status drafts or presenting unmeasured savings.
 The next baseline record must replace these observations with current facts and mark invalidated evidence without erasing its historical source.

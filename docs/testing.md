@@ -25,9 +25,12 @@ bun install --frozen-lockfile
 ```
 
 The current backend lock resolves BioImageFlow and BioImageFlow Core from the sibling source checkout as editable packages; other dependencies remain locked to published versions. A checkout without that sibling source cannot run `uv sync --frozen` until the library fix is published and the platform returns to a registry pin.
+Reuse a checkout's prepared environments while its lockfiles, editable dependency metadata, and installation options remain compatible; resync the affected environment when installation requirements change.
+Keep dependencies and build/runtime state separate between worktrees, and keep browser runtime roots and certification stores disposable even when dependency installation is reused.
 
 ## Focused tests while editing
 
+Map changed files to their owning service/session, callers, persistence and event consumers, and public library boundary before choosing selectors; `focus related` alone cannot establish that impact map.
 Use the narrowest native selector that exercises the code being changed:
 
 ```bash
@@ -119,7 +122,9 @@ Run `check docs` when moving/renaming campaign files, changing documentation nav
 `check browser-all` runs the complete Chromium and Firefox projects in isolated parallel processes without coverage or external certification.
 `check app` runs the backend and frontend checks in parallel and follows them with the critical Chromium smoke.
 `check all`, and the compatibility alias `check`, run the previous complete deterministic lane with the full Chromium project.
-All scoped checks avoid network access and developer runtime tool stores unless their description explicitly says otherwise.
+Both include the quick product phases, so do not stack `quick` immediately before them; neither includes Firefox, external certification, or documentation.
+Scoped product checks use isolated test fixtures rather than developer runtime tool stores; cold dependency setup can still require network access.
+`check campaign` is offline, while `check docs` resolves its Sphinx environment with `uv --with-requirements` and can require network when the cache is cold.
 
 ## Comprehensive end-of-iteration suite
 
@@ -134,10 +139,13 @@ Before starting the tests it installs the pinned published `bioimageflow-common-
 The command fails if installation or external certification cannot run, so a successful full result never hides deselected external tests.
 Chromium and Firefox run against separate temporary roots and servers in parallel.
 Local browser lanes stop after the first failure by default.
+`full` subsumes the backend/frontend product checks, both browser projects, and common-tools certification; it does not run `check docs` or native/manual acceptance.
+Run documentation acceptance separately when required rather than stacking already-covered product lanes before `full`.
 
 If a late full-suite phase fails, fix and stress the exact failure first.
 Successful earlier phases remain valid when subsequent edits cannot affect them; run only the scoped checks invalidated by those edits rather than restarting the full lane automatically.
 Record the source revision, command, duration, and result so this reuse is explicit.
+Justify reuse with unchanged relevant source, fixtures, dependencies/editable library, generated artifacts, and runtime assumptions; retain the original failed command and every skipped or unrun case alongside the newer phase results.
 
 Coverage artifacts are written to `backend/.pytest_cache/coverage.xml`, `backend/.pytest_cache/htmlcov/`, and `frontend/test-results/coverage/`.
 The transient Coverage.py database is stored under `backend/.pytest_cache/` and removed on success or failure, so the suite does not leave `backend/.coverage` behind.
@@ -189,6 +197,9 @@ These are intentionally separate scope selectors; a repository-wide campaign com
 
 Pull-request jobs run the selected deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.
 Frontend changes, backend runtime changes, E2E fixtures, and shared test infrastructure also select a critical Firefox smoke job.
+The current path selector treats changes outside `backend/`, `frontend/`, `docs/`, and `README.md` as shared and selects all five PR jobs; this includes root instructions such as `AGENTS.md` and `PLATFORM_CONTEXT.md`.
+Routine documentation PRs still select the Sphinx job; the local campaign-status schedule does not change CI selection or demonstrate CI savings.
 Scheduled and manually dispatched certification splits backend coverage and external certification, frontend coverage and build, Chromium, and Firefox into independent jobs with a final required aggregator.
-This preserves the complete certification surface while making its wall time the longest component rather than the sum of every component.
+Its backend job excludes `external`, and its external job runs common-tools certification only, so the separate real-worker fixture and Sphinx still need explicit acceptance evidence.
+Independent jobs can overlap; actual elapsed cost also includes dependency setup and runner queue time, and no measured savings are claimed here.
 The published common-tools version has one source of truth in `scripts/ci/test_versions.env`, shared by local and CI runners.
