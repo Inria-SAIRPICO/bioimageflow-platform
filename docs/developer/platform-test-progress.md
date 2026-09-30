@@ -7,7 +7,7 @@ orphan: true
 Prepared and started 2026-09-30; **RUNNING — Wave 1 accepted; Wave 2 delegated**.
 The user requested execution after the specification revision; the model-choice hold is lifted, and the session's model settings are unchanged.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
-Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is being integrated; native checks are not yet credited, and no historical candidate branch has been integrated.
+Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
 The [plan](platform-test-plan.md) replaces the previous resume queue with current-baseline readiness, focused risk batches, then systematic extensions.
 The [previous checkpoint](archive/platform-test-progress-before-2026-09-30.md) preserves the old outcomes and next actions as history only.
 
@@ -29,7 +29,7 @@ Documentation-only acceptance results, all exit 0:
 - Library: `/usr/bin/time -p env UV_CACHE_DIR=/private/tmp/bif-spec-docs-hvbwhdoj/cache uv run --no-sync --offline sphinx-build -W --keep-going docs/source docs/_build/html` passed in 46.08 seconds elapsed against the same accepted source; Sphinx 8.1.3 built 187 fresh pages with warnings as failures.
 
 Library documentation setup used an isolated Python 3.10.8 environment and about 55 seconds of measured cached preparation without network; Sphinx used its configured Python/pandas intersphinx network access.
-Application, browser, worker, published-package, and native certification phases were not run; the new campaign remains held with 0/4 readiness outcomes executed.
+At that documentation-only milestone, application, browser, worker, published-package, and native certification phases had not run and readiness was 0/4; the subsequent execution sections supersede that hold.
 
 Known doc-versus-code debts remain for later owned packets: consume generated draft response/conflict types, create the required setup-needed Napari default recipe when no legacy installation exists, and preserve exact submitted original-filename metadata.
 The reviewed specs retain those requirements rather than weakening them to match current gaps.
@@ -42,7 +42,10 @@ Reviewed specs are integrated in that platform revision and library `dff04e3eb7c
 The library checkout is clean; installed editable BioImageFlow 0.8.6 and Core 0.4.1 resolve to its sibling packages and match `backend/uv.lock`, including its transitive editable Core source; Wetlands 2.4.2 is registry-installed.
 Backend Python is 3.13.2 and Bun is 1.4.2; this checkout already has independent backend/frontend development dependencies, reused without resync while the lock/source metadata remains unchanged.
 The orchestrator owns main readiness repair, integration and shared campaign records.
-Two isolated ordinary workers now prepare N1 (`.worktrees/campaign-n1-current`, branch `campaign/n1-current`) and E1 (`.worktrees/campaign-e1-current`, branch `campaign/e1-current`) from `29733fa`; a reserved read-only specialist reviews the J3 implementation.
+Two isolated ordinary workers own N1 (`.worktrees/campaign-n1-current`, branch `campaign/n1-current`) and E1 (`.worktrees/campaign-e1-current`, branch `campaign/e1-current`), originally created from `29733fa`.
+Both now include the integrated readiness source: N1 cherry-picked its source-equivalent `261ee566d9efd9ac70251e42cd609ff4945566b1`; E1 rebased onto main `4b58e44`.
+There are eighteen registered worktrees including these two; the sixteen pre-existing worktrees remain preserved.
+The reserved specialist completed the J3 implementation review and two material N1 captured-identity plan passes; fresh pass 3 could not be created because the collaboration tool reached its agent-thread limit, so N1 plan convergence is not claimed.
 Each worker prepares independent dependencies/runtime; the new `.worktrees/bioimageflow` link exposes only the clean editable library source.
 The orchestrator grants browser/real-provisioning runtime ownership explicitly, keeping browser-heavy lanes sequential while independent preparation and lower-level focused work proceed.
 The two pre-existing root/frontend VTT files are preserved.
@@ -73,11 +76,24 @@ These are accumulated historical evidence counts, not current readiness or a cur
 The old 73-cell gate passed at `50c1af4`; it does not pass the new four-outcome gate.
 Current focused gate: **4/4 outcomes passed in both browsers**; J3 has a causally confirmed, independently reviewed repair with frontend composite and two-browser critical-smoke completion; documentation acceptance passed (2.91 s), and the task-only main commit supplies the workers' integrated baseline.
 
-## Next three actions when execution starts
+## Current Wave 2 execution and next actions
 
-1. Send the validated main readiness commit to N1/E1, then release N1 browser ownership for its exact independent scenarios. Preserve all unfinished candidates and existing developer processes.
-2. Release one worker's browser token at a time after main completion; review N1/E1 results against their impact maps and real evidence boundaries before task-only integration. Keep the reserved specialist slot for unresolved contract or identity/loss questions.
-3. Finish N1 and E1 acceptance, then assign I1 import guidance and T1 Manage Tools to the available isolated workers. Reconcile obligation-level evidence without promoting mocked client results into worker/native certification.
+N1 reproduced a visible inactive-dock projection refresh that swallowed the click; its visibility-only correction passes the exact scenario once in Chromium and Firefox.
+Six distinguishing deferred DOM unit tests also reproduced stale artifact/reader dispatch, preference-key retargeting, late preference overwrite, disposed-owner dispatch and favorite pending ownership defects before product repair.
+The N1 worker is implementing the twice-reviewed component-only capture/ownership plan; combined repair validation and integration remain pending.
+E1's real worker adapter-only test passed, but the actual GUI Run exposed a dispatch defect: ordinary `workflow.compute()` task submission bypasses adapter preparation and reaches the stale shared pool unchanged.
+That failed GUI path, not the earlier adapter test, governs E1 acceptance; the worker owns exact reproduction, bounded dispatch repair planning and actual compute-path validation.
+Stable open defect records are [ISSUE-019–ISSUE-021](platform-test-issues.md); none is closed by these preliminary results.
+E1 holds the browser token; N1 continues focused units, with race repetitions deferred until its coherent combined repair.
+
+1. Complete the bounded E1 dispatch plan and independent review, then the exact repaired real GUI/worker selector in Chromium and Firefox; preserve original failed commands and adapter-only evidence boundaries.
+2. Return browser ownership to N1 for its exact coherent repair checks, review both packets' assertions and completion phases, and integrate only validated task commits.
+3. Assign I1 import guidance and T1 Manage Tools to the available isolated workers, while reconciling obligation-level evidence and current native prerequisites.
+
+The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`; no native application has been launched or certified.
+Cocoa/pywebview and Fiji are present; a historical installed BioImageFlow application was inventoried without being credited as the current source build.
+A disposable live OMERO setup and supporting tool package were requested asynchronously; no answer or live outcome has been received.
+Independent automated work continues while that prerequisite is pending.
 
 ## Carry-forward concerns and working set
 

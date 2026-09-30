@@ -29,6 +29,33 @@ The exact selector passed 1/1 and 5/5 repeated, and a preceding clipboard-to-cri
 The failed screenshot does not prove whether the double-click event, command, or async load was lost.
 Next recurrence: capture those event/API breadcrumbs on the exact failed browser run and preserve the real workflow-list double-click contract; do not replace its main-GUI coverage with the separate Open button.
 
+## ISSUE-019 — Focusing a visible inactive result dock refreshes during the click
+
+Status: reproduced; isolated N1 repair passes the exact scenario once in Chromium and Firefox, but combined completion and integration remain pending.
+At source-equivalent readiness base `261ee56` plus N1 test changes, `napari-output-chooser.spec.ts` selector `napari inactive visible dock` failed in Chromium: a real row click changed projection query count from 1 to 2 and dispatched zero opens.
+The worker's narrow visibility callback correction preserves the projection during focus and refreshes when the dock becomes visible; corrected wheel/viewport geometry avoids a sticky-header fixture error.
+Owner: N1 worker; next: validate the coherent visibility and identity patch, then required frontend/cross-browser completion before integration.
+See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
+
+## ISSUE-020 — Napari chooser can combine replacement identity with retained actions
+
+Status: reproduced; bounded component repair in progress, not yet accepted.
+At N1 base `261ee56`, six real DOM unit reproductions in `NapariOutputChooser.test.ts` show an enabled stale clear action during replacement, a delayed favorite retry targeting the replacement preference key, an old menu overwriting current preference state, an undispatched favorite surviving unmount, an old pending toggle blocking its replacement owner, and a retained candidate callback pairing the new result with the old reader even when the environment UUID matches.
+The tests defer actual API promises and change mounted props or dispose the owner; they do not invoke private component methods.
+Two dedicated plan passes improved captured selection and operation ownership; a fresh third reviewer could not be created because the tool reached its agent-thread limit, so convergence is not claimed.
+Owner: N1 worker; next: exact distinguishing unit passes, coherent two-browser validation and required completion; no backend or native launch claim follows from mocked client evidence.
+See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
+
+## ISSUE-021 — GUI local worker dispatch bypasses stale-generation preparation
+
+Status: reproduced in the real GUI/worker path; bounded repair planning in progress.
+At E1 base `4b58e44` plus task fixtures, Chromium selector `GUI Run replaces one real stale worker generation with visible setup and reuses it` in `stale-processing-environment.spec.ts` failed against a genuinely older owned recipe with the authoritative Core 0.4.1 requirement.
+Ordinary `ExecutionManager._run_sync` calls `workflow.compute()`, which submits directly through `_ExecutionEnvironmentManager` without entering `WetlandsBackend.prepare_node`; the shared manager rejects the stale pool with `already provisioned with a different recipe` and no adapter preparation occurs.
+Earlier stepwise real worker tests prove the preparation adapter boundary only and do not close this GUI dispatch defect.
+Owner: E1 worker; next: independent review of the smallest public adapter submit/map repair, direct-submit regression, actual compute-path external acceptance and exact repaired GUI selectors in both browsers.
+No library implementation change or older incompatible Core seed is currently required.
+See [Wave 2 evidence](platform-test-evidence.md#wave-2-observed-defects-and-preparation).
+
 ## Resolved issue lookup
 
 ISSUE-001–ISSUE-012 and ISSUE-015–ISSUE-016 are closed in the [issue archive](archive/platform-test-issues-through-tier-1b.md); ISSUE-006 has a reviewed `not-a-defect` disposition.

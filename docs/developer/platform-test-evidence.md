@@ -98,7 +98,7 @@ The fixture gained only that metadata field; production source, build inputs, br
 Instead of repeating unchanged passing phases, the exact affected unit file passed 5/5 (0.98 s), `/usr/bin/time -p bun run type-check` passed (4.84 s), and `/usr/bin/time -p bun run lint` passed (4.58 s), both from `frontend/`.
 These are explicit repaired native subphases of the authoritative runner's failed completion command, forming composite frontend acceptance; the original command is not relabeled green.
 Build retains its existing >500 kB chunk warning; no tests were skipped or deselected in the unit completion phase.
-Browser/docs completion and integration are still pending.
+Browser/docs completion and integration were pending at that intermediate record; the following completion record supersedes that state.
 
 ### Reconciled readiness recheck
 
@@ -106,7 +106,7 @@ Browser/docs completion and integration are still pending.
 This rechecks J1, J2 and J4 because the Open/startup presentation repair invalidated reuse of their earlier GUI outcomes; the deliberately failed Direct fixture remains expected behavior within the passing recovery test.
 Source is parent `29733fa` plus the repaired production/E2E diff above; the typed unit-fixture correction is browser-independent, and editable dependencies, generated artifacts and disposable runtime assumptions are unchanged.
 Together with the exact J3 passes and five repetitions per browser, all four focused readiness journeys now pass in Chromium and Firefox without retries/skips.
-This is a 4/4 focused gate; final scoped completion, implementation review and commit are still pending.
+This was the 4/4 focused gate before the scoped completion, implementation review and commit recorded below.
 
 ### Delegated packet ownership
 
@@ -128,4 +128,34 @@ ISSUE-018 is archived with its bounded resolution; ISSUE-013/014/017 remain open
 `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, lane 3 s / elapsed 2.91 s on the same repaired application source plus the Wave 1 campaign/specification record; dashboard consistency (500 applicable cells, historical 266 verified), 49 active links and Sphinx 9.1.0 warnings-as-errors passed.
 These documentary counts remain historical; no native/worker or whole-campaign acceptance is inferred.
 The following status-only acceptance record does not change application/specification behavior or documentation navigation.
-The task-only main commit will be the integrated baseline sent to workers.
+The task-only main commit `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117` is the integrated baseline sent to workers.
+
+## Wave 2 observed defects and preparation
+
+Integrated readiness source is main `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`, equivalent to the recorded tested production/E2E diff and typed fixture correction above.
+The precommit `/usr/bin/time -p scripts/test check campaign` passed in 0.13 s elapsed / 0 s lane; this documentation-only check supplies no additional application credit.
+N1's source-equivalent cherry-pick is `261ee566d9efd9ac70251e42cd609ff4945566b1`; E1 rebased its task changes onto `4b58e44`.
+Both workers use independent installed dependencies, build output and disposable runtime state; editable library remains clean `dff04e3`, BioImageFlow 0.8.6/Core 0.4.1 and Wetlands 2.4.2.
+
+N1 setup measured approximately 9.43 s for cached/backend preparation and installation of 84 packages, and 5.22 s for 393 Bun packages.
+Its exact inactive-dock selector (`scripts/test focus e2e --project=chromium tests/e2e/napari-output-chooser.spec.ts --grep 'napari inactive visible dock'`) failed before repair in 22 s runner / 6.8 s test; an instrumented baseline failed in 11 s runner / 1.7 s test, observing projection query count 1→2 during the click.
+The visibility-only attempt then failed on sticky-header geometry after its primary assertion passed; that fixture was corrected with a real mouse wheel and unobscured viewport assertions.
+The exact repaired selector passed once in Chromium (17 s runner / 2.7 s test) and Firefox (12 s runner / 3.5 s test), with no favorite writes and visibility reentry refresh.
+Artifacts are the N1 worktree's `frontend/test-results/n1-inactive-baseline`, `n1-inactive-fixed` and `n1-inactive-fixed-firefox` directories.
+These client-intercepted passes and the subsequent six deferred DOM unit reds establish ISSUE-019/020 boundaries; coherent repair completion remains pending and no inventory cell is promoted yet.
+The two material dedicated identity-plan reviews are recorded in temporary `/private/tmp/bioimageflow-n1-identity-review.md`; pass 3 creation failed at the tool's agent-thread limit, so this is a reviewed plan with an explicit review limitation, not a convergence claim.
+
+E1 setup measured 7.31 s for 84 backend packages and 4.29 s for 393 Bun packages.
+Its actual Pixi fault/retry and sequential worker adapter test passed in 65 s, then a strengthened exact run passed in 70 s with fresh creation, live stale PID retirement/cleanup, warm reuse, fresh-process generation/digest reuse and unrelated/unmanaged isolation.
+The earlier failed attempts were fixture boundary errors: bypassing adapter preparation in the helper, then importing orchestrator-only definitions from a minimal Core worker; neither is presented as a product repair.
+The subsequent actual GUI Run failed in Chromium in 52 s and demonstrated ISSUE-021 at ordinary platform dispatch, despite adapter-only acceptance.
+The worker is correcting the test to use the platform's actual compute path and obtaining review before dependent production repair; no GUI/worker completion or inventory credit follows from the earlier adapter-only passes.
+Exact commands, source diff identities and retained trace paths will be consolidated from the completed worker report rather than inferred from this preliminary diagnosis.
+
+Native prerequisite preparation used `/usr/bin/time -p scripts/manual-qa prepare --root /private/tmp/bioimageflow-campaign-native.czhkjuet` (pass, 4.66 s elapsed) and pretest `/usr/bin/time -p scripts/manual-qa verify --root /private/tmp/bioimageflow-campaign-native.czhkjuet` (pass, 2.27 s elapsed) at main `4b58e44`.
+These validate isolated fixture material, not native application behavior.
+Cocoa/pywebview and Fiji inventory presence is recorded separately from launch certification; the historical installed desktop application was not launched or attributed to this source.
+Live OMERO prerequisites were requested asynchronously and remain unanswered; no live connection or native result is claimed.
+
+The consolidated Wave 2 checkpoint-only update passed `/usr/bin/time -p scripts/test check campaign` in 0.29 s elapsed / 0 s lane against main `4b58e44` plus documentation diff SHA-256 `314b143d8305b0ba84f6828e60ef19e1d21ab8ac78d712be1ed37d460dfd8a66`, before this result-only entry.
+Dashboard consistency retained 108 rows / 500 applicable / 266 historical verified cells, and 53 active local links passed; no skip/retry or application phase was involved.
