@@ -11,12 +11,13 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from email.parser import Parser
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse, urlunparse
 from typing import TYPE_CHECKING
 
@@ -43,13 +44,82 @@ class PackageNetworkError(Exception):
 
 
 class PackageInvalidError(Exception):
-    """Raised when an import source is not a supported package source."""
+    """Raised when a package source or stored removal selection is invalid."""
 
 
 @dataclass(frozen=True)
 class PackageInstallResult:
     package: str
     version: str
+
+
+@dataclass(frozen=True)
+class _UninstallSelection:
+    configured_root: Path
+    root: Path
+    package_name: str
+    version: str | None
+    target: Path
+    root_identity: tuple[int, int]
+    package_identity: tuple[int, int]
+    target_identity: tuple[int, int]
+
+
+def _validate_uninstall_component(value: str) -> None:
+    if (
+        not value
+        or value != value.strip()
+        or value.startswith(".")
+        or "/" in value
+        or "\\" in value
+        or PureWindowsPath(value).drive
+        or any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in value)
+    ):
+        raise PackageInvalidError("Package and version must be exact safe stored names")
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode):
+        raise PackageInvalidError("Selected installed target must be a directory, not a link or file")
+    if path.resolve(strict=True) != path:
+        raise PackageInvalidError("Selected installed directory has redirected ancestry")
+    return info.st_dev, info.st_ino
+
+
+def _select_uninstall_target(
+    configured_root: Path, package_name: str, version: str | None,
+) -> _UninstallSelection:
+    _validate_uninstall_component(package_name)
+    if version is not None:
+        _validate_uninstall_component(version)
+    try:
+        # Configuration-level links are supported; links below this root are not.
+        root = configured_root.resolve(strict=True)
+        root_identity = _directory_identity(root)
+        package = root / package_name
+        package_identity = _directory_identity(package)
+        target = package if version is None else package / version
+        target_identity = _directory_identity(target)
+    except FileNotFoundError as exc:
+        raise PackageNotFoundError("Selected package version is not installed") from exc
+    except (OSError, RuntimeError) as exc:
+        raise PackageInvalidError("Cannot safely inspect the selected installed target") from exc
+    return _UninstallSelection(
+        configured_root, root, package_name, version, target,
+        root_identity, package_identity, target_identity,
+    )
+
+
+def _recheck_uninstall_selection(selection: _UninstallSelection) -> None:
+    try:
+        current = _select_uninstall_target(
+            selection.configured_root, selection.package_name, selection.version,
+        )
+    except PackageNotFoundError as exc:
+        raise PackageInvalidError("Selected installed target changed before removal") from exc
+    if current != selection:
+        raise PackageInvalidError("Selected installed target changed before removal")
 
 
 class PackageInstallerService:
@@ -234,24 +304,13 @@ class PypiPackageInstaller(PackageInstallerService):
 
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
         async with self._operation_lock:
-            pkg_root = self._tool_store / package_name
-            if version is None:
-                target: Path = pkg_root
-            else:
-                target = pkg_root / version
+            selection = _select_uninstall_target(self._tool_store, package_name, version)
 
             if self._hot_reload is not None:
                 self._hot_reload.suppress()
 
             try:
-                if not target.exists():
-                    raise PackageNotFoundError(
-                        f"Package '{package_name}'"
-                        + (f"=={version}" if version else "")
-                        + " is not installed"
-                    )
-
-                await anyio_to_thread.run_sync(_remove_tree, target)
+                await anyio_to_thread.run_sync(_remove_tree, selection)
                 self._registry.forget_package(package_name, version)
             except Exception:
                 if self._hot_reload is not None:
@@ -344,16 +403,20 @@ def _pip_install_source(source: str, target: Path) -> None:
         ) from exc
 
 
-def _remove_tree(target: Path) -> None:
+def _remove_tree(selection: _UninstallSelection) -> None:
     # send2trash is ~O(1) on macOS (APFS rename into ~/.Trash) vs
     # shutil.rmtree which unlinks every file in the target tree —
     # slow for site-packages-style directories with thousands of files.
+    _recheck_uninstall_selection(selection)
     try:
-        send2trash(str(target))
+        send2trash(str(selection.target))
     except Exception:
+        # A failed trash call may already have moved the target or an ancestor.
+        # Never replay removal against a replacement or newly selected path.
+        _recheck_uninstall_selection(selection)
         logger.warning(
             "send2trash failed for %s; falling back to shutil.rmtree",
-            target,
+            selection.target,
             exc_info=True,
         )
-        shutil.rmtree(target)
+        shutil.rmtree(selection.target)

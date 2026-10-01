@@ -16,6 +16,7 @@ import pytest
 
 from bioimageflow_server.services import package_installer as installer_module
 from bioimageflow_server.services.package_installer import (
+    PackageInvalidError,
     PackageNetworkError,
     PackageNotFoundError,
     PypiPackageInstaller,
@@ -71,6 +72,19 @@ def tool_store(tmp_path: Path) -> Path:
     store = tmp_path / "tool_packages"
     store.mkdir()
     return store
+
+
+@pytest.fixture(autouse=True)
+def disposable_trash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Removal tests own their trash and never use the user's OS Trash."""
+    trash = tmp_path / "trash"
+
+    def move_to_trash(target: str) -> None:
+        path = Path(target)
+        trash.mkdir(exist_ok=True)
+        path.rename(trash / f"{len(list(trash.iterdir()))}-{path.name}")
+
+    monkeypatch.setattr(installer_module, "send2trash", move_to_trash)
 
 
 @pytest.fixture
@@ -472,6 +486,214 @@ async def test_source_install_uses_orchestrator_python_and_argv(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("case", [
+    "absolute_version", "absolute_package", "traversal_version", "traversal_package",
+    "backslash", "drive", "empty", "dot", "hidden", "nul", "padded",
+    "symlink_package", "symlink_version", "file_version",
+])
+async def test_uninstall_rejects_unowned_target(
+    case: str,
+    installer_with_hot_reload: PypiPackageInstaller,
+    tool_store: Path,
+    registry: MagicMock,
+    hot_reload: _FakeHotReload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    unrelated = tool_store.parent / "unrelated"
+    unrelated.mkdir()
+    sentinel = unrelated / "sentinel"
+    sentinel.write_bytes(b"unrelated bytes")
+    sibling = tool_store / "foo" / "1.0" / "sentinel"
+    sibling.parent.mkdir(parents=True)
+    sibling.write_bytes(b"installed sibling")
+    attempted: list[object] = []
+    monkeypatch.setattr(installer_module, "_remove_tree", attempted.append)
+    package, version = "foo", "1.0"
+    if case == "absolute_package":
+        package, version = str(unrelated), None
+    elif case == "traversal_package":
+        package, version = "../unrelated", None
+    elif case == "symlink_package":
+        package = "linked"
+        (tool_store / package).symlink_to(unrelated, target_is_directory=True)
+    elif case in {"symlink_version", "file_version"}:
+        version = "selected"
+        entry = tool_store / package / version
+        if case == "symlink_version":
+            entry.symlink_to(sibling.parent, target_is_directory=True)
+        else:
+            entry.write_bytes(b"not a directory")
+    else:
+        version = {
+            "absolute_version": str(unrelated), "traversal_version": "../../unrelated",
+            "backslash": "..\\unrelated", "drive": "C:unrelated", "empty": "",
+            "dot": ".", "hidden": ".hidden", "nul": "1\x00", "padded": " 1.0",
+        }[case]
+
+    with pytest.raises(PackageInvalidError):
+        await installer_with_hot_reload.uninstall(package, version)
+
+    assert attempted == []
+    assert hot_reload.calls == []
+    registry.forget_package.assert_not_called()
+    registry.scan_tool_store.assert_not_called()
+    assert sentinel.read_bytes() == b"unrelated bytes"
+    assert sibling.read_bytes() == b"installed sibling"
+
+
+@pytest.mark.parametrize("changed", ["root", "package", "version"])
+async def test_uninstall_rechecks_ancestor_and_target_at_worker_entry(
+    changed: str, installer_with_hot_reload: PypiPackageInstaller, tool_store: Path,
+    registry: MagicMock, hot_reload: _FakeHotReload, monkeypatch: pytest.MonkeyPatch,
+):
+    selected = tool_store / "foo" / "1.0"
+    selected.mkdir(parents=True)
+    (selected / "sentinel").write_bytes(b"original")
+    remove = installer_module._remove_tree
+    old = tool_store.parent / "old"
+
+    def substitute_then_remove(selection):
+        if changed == "version":
+            selected.rename(old)
+            selected.mkdir()
+        elif changed == "root":
+            tool_store.rename(old)
+            tool_store.mkdir()
+            # Preserve package and selected inodes: only the root changes.
+            (old / "foo").rename(tool_store / "foo")
+        else:
+            (tool_store / "foo").rename(old)
+            selected.mkdir(parents=True)
+            # Retain the selected version inode to distinguish ancestor ownership.
+            selected.rmdir()
+            (old / "1.0").rename(selected)
+        (selected / "replacement").write_bytes(b"replacement")
+        remove(selection)
+
+    monkeypatch.setattr(installer_module, "_remove_tree", substitute_then_remove)
+    with pytest.raises(PackageInvalidError, match="changed"):
+        await installer_with_hot_reload.uninstall("foo", "1.0")
+    assert (selected / "replacement").read_bytes() == b"replacement"
+    original = old / "sentinel" if changed == "version" else selected / "sentinel"
+    assert original.read_bytes() == b"original"
+    registry.forget_package.assert_not_called()
+    assert hot_reload.calls == [("suppress", None), ("resume", False)]
+
+
+@pytest.mark.parametrize("redirected", ["package", "version"])
+async def test_uninstall_rejects_redirected_directory(
+    redirected: str, installer_with_hot_reload: PypiPackageInstaller, tool_store: Path,
+    registry: MagicMock, hot_reload: _FakeHotReload, monkeypatch: pytest.MonkeyPatch,
+):
+    selected = tool_store / "foo" / "1.0"
+    selected.mkdir(parents=True)
+    (selected / "sentinel").write_bytes(b"selected")
+    outside = tool_store.parent / "unrelated"
+    outside.mkdir()
+    (outside / "sentinel").write_bytes(b"unrelated")
+    redirected_path = selected.parent if redirected == "package" else selected
+    resolve = Path.resolve
+
+    def redirected_resolution(path: Path, strict: bool = False) -> Path:
+        # Model directory redirection (e.g. a junction) that lstat reports as
+        # a directory. No native junction or outside-root removal is performed.
+        if path == redirected_path:
+            return outside
+        return resolve(path, strict=strict)
+
+    attempted: list[object] = []
+    monkeypatch.setattr(Path, "resolve", redirected_resolution)
+    monkeypatch.setattr(installer_module, "_remove_tree", attempted.append)
+    with pytest.raises(PackageInvalidError):
+        await installer_with_hot_reload.uninstall("foo", "1.0")
+    assert attempted == []
+    assert hot_reload.calls == []
+    registry.forget_package.assert_not_called()
+    registry.scan_tool_store.assert_not_called()
+    assert (selected / "sentinel").read_bytes() == b"selected"
+    assert (outside / "sentinel").read_bytes() == b"unrelated"
+
+
+@pytest.mark.parametrize("outcome", ["unchanged", "replacement", "missing"])
+async def test_uninstall_trash_failure_rechecks_before_fallback(
+    outcome: str, installer: PypiPackageInstaller, tool_store: Path,
+    registry: MagicMock, monkeypatch: pytest.MonkeyPatch,
+):
+    selected = tool_store / "foo" / "1.0"
+    selected.mkdir(parents=True)
+    (selected / "sentinel").write_bytes(b"original")
+    old = tool_store.parent / "moved"
+
+    def failed_trash(target: str):
+        assert Path(target) == selected
+        if outcome != "unchanged":
+            selected.rename(old)
+        if outcome == "replacement":
+            selected.mkdir()
+            (selected / "sentinel").write_bytes(b"replacement")
+        raise OSError("trash failed")
+
+    monkeypatch.setattr(installer_module, "send2trash", failed_trash)
+    if outcome == "unchanged":
+        await installer.uninstall("foo", "1.0")
+        assert not selected.exists()
+        registry.forget_package.assert_called_once_with("foo", "1.0")
+    else:
+        with pytest.raises(PackageInvalidError, match="changed"):
+            await installer.uninstall("foo", "1.0")
+        assert (old / "sentinel").read_bytes() == b"original"
+        if outcome == "replacement":
+            assert (selected / "sentinel").read_bytes() == b"replacement"
+        registry.forget_package.assert_not_called()
+
+
+async def test_uninstall_removal_failure_can_retry_same_owned_target(
+    installer_with_hot_reload: PypiPackageInstaller, tool_store: Path, registry: MagicMock,
+    hot_reload: _FakeHotReload, monkeypatch: pytest.MonkeyPatch,
+):
+    selected = tool_store / "foo" / "1.0"
+    selected.mkdir(parents=True)
+    (selected / "sentinel").write_bytes(b"original")
+    trash = installer_module.send2trash
+    remove = installer_module.shutil.rmtree
+
+    def fail(*args):
+        raise OSError("removal denied")
+
+    monkeypatch.setattr(installer_module, "send2trash", fail)
+    monkeypatch.setattr(installer_module.shutil, "rmtree", fail)
+    with pytest.raises(OSError, match="removal denied"):
+        await installer_with_hot_reload.uninstall("foo", "1.0")
+    assert (selected / "sentinel").read_bytes() == b"original"
+    registry.forget_package.assert_not_called()
+    assert hot_reload.calls == [("suppress", None), ("resume", False)]
+    monkeypatch.setattr(installer_module, "send2trash", trash)
+    monkeypatch.setattr(installer_module.shutil, "rmtree", remove)
+    await installer_with_hot_reload.uninstall("foo", "1.0")
+    assert not selected.exists()
+    registry.forget_package.assert_called_once_with("foo", "1.0")
+    assert hot_reload.calls[-2:] == [("suppress", None), ("resume", True)]
+
+
+async def test_uninstall_configured_root_link_preserves_exact_stored_version(
+    tool_store: Path, registry: MagicMock, pypi: AsyncMock,
+):
+    configured = tool_store.parent / "configured"
+    configured.symlink_to(tool_store, target_is_directory=True)
+    for version in ["1.0", "1.0.0", "legacy-build+label"]:
+        target = tool_store / "foo" / version
+        target.mkdir(parents=True)
+        (target / "__init__.py").write_text("raise RuntimeError('broken import')")
+    installer = PypiPackageInstaller(configured, registry, pypi)
+    await installer.uninstall("foo", "1.0")
+    assert not (tool_store / "foo" / "1.0").exists()
+    assert (tool_store / "foo" / "1.0.0").is_dir()
+    await installer.uninstall("foo", "legacy-build+label")
+    assert not (tool_store / "foo" / "legacy-build+label").exists()
+    assert configured.is_symlink()
+    pypi.get_latest_stable.assert_not_awaited()
+
+
 async def test_uninstall_removes_single_version(
     installer: PypiPackageInstaller,
     tool_store: Path,
@@ -606,16 +828,15 @@ async def test_uninstall_success_suppresses_then_resumes_with_batch(
     assert hot_reload.calls == [("suppress", None), ("resume", True)]
 
 
-async def test_uninstall_failure_resumes_with_emit_batch_false(
+async def test_uninstall_missing_target_does_not_suppress(
     installer_with_hot_reload: PypiPackageInstaller,
     hot_reload: _FakeHotReload,
 ):
     with pytest.raises(PackageNotFoundError):
         await installer_with_hot_reload.uninstall("ghost", "1.0")
 
-    assert ("suppress", None) in hot_reload.calls
-    assert ("resume", False) in hot_reload.calls
-    assert ("resume", True) not in hot_reload.calls
+    # Missing targets are refused during admission, before suppression begins.
+    assert hot_reload.calls == []
 
 
 async def test_install_uses_hot_reload_indexing_instead_of_full_store_scan(

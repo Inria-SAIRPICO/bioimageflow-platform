@@ -119,6 +119,8 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
+Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
+An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
 The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.

@@ -110,10 +110,18 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `GET` | `/tools/packages` | List all packages (installed and known). Returns installed versions, available versions, tools per version, and environment status. This is the single source of truth for the Tools Panel — no need to cross-reference with `GET /tools`. |
 | `POST` | `/tools/packages/refresh` | Refresh the known and installed package catalog from its configured package-index sources. |
 | `POST` | `/tools/packages/{package_name}/install` | Install a package version into the tool store (body: `{version?: str}`) |
-| `DELETE` | `/tools/packages/{package_name}` | Uninstall a package version from the tool store (body: `{version?: str}`) |
+| `DELETE` | `/tools/packages/{package_name}` | Uninstall the exact stored version selected by optional `?version=X`; omission removes the selected package's versions |
 | `POST` | `/tools/environments/{env_name}/start` | Start a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/stop` | Stop a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/recreate` | Create or replace a tool's managed Wetlands environment |
+
+**Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
+Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
+A configuration-level root symlink is supported; package/version symlinks, non-directory entries, traversal and unsafe selectors return HTTP 400 `bad_request`, while a safe absent selection returns 404.
+Admission precedes hot-reload suppression and registry changes; the captured root, package ancestor and selected directory identities are checked again at physical removal and before any failed-trash fallback.
+Fallback must not remove a missing or substituted target; successful removal forgets only the exact selected package/version and refreshes its catalog projection.
+Other versions/packages and managed worker environments remain independent.
+These checks serialize the service's cooperating operations and refuse observed ownership changes; they do not promise an atomic filesystem transaction against arbitrary external writers, rollback after physical removal, or cancellation-safe physical worker retirement.
 
 **Tool metadata response (from `GET /tools`):**
 
