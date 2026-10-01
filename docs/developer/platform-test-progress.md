@@ -260,3 +260,26 @@ Repairs, new diagnostic tests and every application/browser/worker/external/nati
 `env UV_OFFLINE=1 scripts/test check docs` passed for the 705-input administrative checkpoint in 4 s (4.05 s measured) at source revision `30a4de1` plus four audit-document changes, source-manifest SHA-256 `cbd5696733d2e172814f275b4e64affd949627425cf9b99699fa63778d73f572`; the manifest precedes this result-only log entry.
 Campaign-record guards and Sphinx passed, and `git diff --check` passed; all application/backend/frontend/browser/worker/external/native phases remain held and unrun.
 This supplies documentation-integrity evidence only; M1 and independent completeness remain open.
+
+### Complete-review source checkpoint: 913 entries
+
+A batches 15–20 complete 65 additional editor, clipboard, recursive graph, library example/manifest and counterpart inputs; B batches 10–13 complete 76 additional remote submission, launcher/control, typed-return and Core/shared-memory inputs.
+Root batches 8–10 complete 49 Wetlands lifetime/protocol/codec, native-entrypoint source, selected-node presentation and complete counterpart inputs.
+Reviewer batches 17–21 complete 12 additional human specifications/guides/producers and six individually justified artifact classifications.
+The orchestrator fully read the new reports, reconciled named contract disagreements and verified current hashes before accepting distinct owned judgments; borrowed context and ownership transfer grant no duplicate credit.
+Current scope is 1,799 inputs / 913 complete (807 reviewed / 106 classified) / 886 pending, with 348 identified findings recorded.
+Owner progress is A 174/347, B 223/490, root 151/565 and shared reviewer 365/397.
+Four editor implementations and two corresponding tests were transferred to A, the desktop entrypoint to root, the 750-line preview producer to the reviewer, 31 pending Parsl source/counterpart inputs to B and three pending resource/viewer/origin tests to A.
+HPC runtime exclusion does not exclude static Parsl engine/future lifetime review; desktop source review performs no native acceptance action, which remains final M5.
+The backlog now distinguishes configured-webapp editor guards from mutable-settings policy, physical cancellation acknowledgment from retained cleanup ownership, native destruction retry from harmless already-absent close, and possible live-output EOF/group-identity interleavings from executed failures.
+The earlier library Python-floor claims were explicitly withdrawn: Core supports Python >=3.9 and the library >=3.10; the retained platform prerequisite finding is separate.
+Type partial-overlap compatibility is explicitly tested existing behavior, and available plain-string schema derives known/viewer=None; neither is reclassified as a confirmed compatibility defect.
+Example factory checks establish structural/public-load validity, not declarative quantitative scientific acceptance, while current static previews are illustrations and their precise producer/caption correspondence remains pending.
+Test-suite improvements are recorded against actual oracles: unreached failure branches, manually replicated subscriber logic, file-handler/child fixture lifetime and timing coordination; no deletion, new diagnostic test or measured speed gain is claimed.
+Full remaining source/tests/specification review, current mutable-control reconciliation, cross-owner synthesis and independent final completeness acceptance remain pending.
+M1 remains OPEN; repairs, new diagnostic tests and all application/backend/frontend/browser/worker/external/native execution remain held.
+
+`env UV_OFFLINE=1 scripts/test check docs` passed for the 913-input administrative checkpoint in 4 s (4.68 s measured) at source revision `3cd3ad7` plus four audit-document changes, source-manifest SHA-256 `dafe9629e950c9d99f830547f5ce8f962d8cdee97f353454c7305bc1fc1627e0`; the manifest precedes this result-only log entry.
+The preceding documentation-only pass took 8.32 s; a corrected human/classified subtotal required the final 4.68 s recheck.
+Campaign-record guards and Sphinx passed, and `git diff --check` passed; backend/frontend/browser/worker/external/published-compatibility/native phases were held and unrun.
+These commands establish audit-document integrity only; complete code review, cross-owner synthesis and independent acceptance remain open.
