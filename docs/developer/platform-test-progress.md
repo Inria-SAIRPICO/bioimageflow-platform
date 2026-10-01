@@ -4,7 +4,7 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — architecture/test reconnaissance; Wave 1, N1 and E1 accepted; I1/T1 preserved pending synthesis**.
+Prepared and started 2026-09-30; **RUNNING — M1 bounded synthesis accepted, M2 priority diagnostics; Wave 1/N1/E1 accepted, I1/T1 preserved**.
 The user authorized the 2026-10-01 campaign revision following an independent GPT-6.1 Sol Ultra retrospective, then continued execution.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -114,12 +114,19 @@ The former I1 worker now reviews graph/draft/identity and tools/sources/archives
 The former T1 worker now reviews execution/environments/cache/results/images and platform/library/installed-Wetlands contracts and tests.
 The orchestrator owns the full file manifest, deployment/persistence/integrations, test architecture/cost and shared records; the reserved reviewer checks the revised plan and then cross-boundary synthesis.
 Initial reconnaissance is read-only with no new broad lanes, installation or native actions; depth and unreviewed areas are recorded explicitly rather than granting static-review coverage credit.
+The first pass and independent synthesis are now recorded in the [architecture audit](platform-test-architecture-audit.md), including the complete per-file ledger and explicit unreviewed areas.
+M1 releases root dataset-publication diagnosis, A's portable tool-binding diagnosis and B's public force-Recreate wrapper plan in parallel; populated-credential rollback, settings-derived webapp root authorization and stale-caller incarnation remain P1 follow-ups.
+No speculative repair, coverage credit or global speedup follows from that synthesis.
+M1 documentation acceptance: `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 2 s reported / 2.28 s elapsed at `2b945ccc` plus the five-document source manifest SHA-256 `ae85daedcdf25f6c98443d70afe8e4a03f1ceb12f7d04e0ee9ebbd574301f3da`, including the new audit and file ledger, before this status-only entry.
+It verified 108 inventory rows / 500 applicable / 276 accumulated verified, 59 local links and warning-clean Sphinx; no product/browser/worker/native phase was run by that documentation check.
+Root's new isolated `.worktrees/campaign-dataset-publication-current` retains two exact causally red store/real disk-spooled HTTP diagnostics as [ISSUE-023](platform-test-issues.md#issue-023-dataset-listing-publishes-an-upload-before-completion); no dataset production change is made before independent publication-plan review.
+The retained T1 actual force-generation red is now [ISSUE-024](platform-test-issues.md#issue-024-explicit-force-recreate-reuses-the-selected-ready-generation).
 The independent plan review found no material gate/acceptance blocker; its one context-navigation inconsistency was corrected before validation.
 `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 3 s reported / 2.53 s elapsed against main `d8bc910` plus reviewed task diff SHA-256 `6d080613542082fc1093d3a6da8e27bb2ee3d63437c0204109e9f822ca3ca1c0`, before this result-only entry.
 Dashboard/link checks and warning-clean Sphinx passed; no product/browser/external/native phase was run or credited for this documentation revision.
 
-1. Complete the bounded reconnaissance ledger, authority/boundary map and prioritized findings; independently review their synthesis and exact next repair packets at M1.
-2. Resolve the public force-Recreate contract and other high-risk findings, then finish only coherent I1/T1 work with required checks and explicit unchanged-phase reuse.
+1. Execute the independently selected dataset-publication and tool-binding diagnoses and public force-Recreate plan; reproduce distinguishing failures before reviewed production repairs.
+2. Address the remaining P1 authority/loss findings, then finish only coherent I1/T1 work with required checks and explicit unchanged-phase reuse.
 3. Reconcile inventory omissions and continue systematic coverage after architectural priorities; measure proposed suite changes before claiming savings.
 4. Complete automated/external certification, then execute desktop acceptance only at final M5.
 
