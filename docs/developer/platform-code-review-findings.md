@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 374 complete (373 reviewed / 1 classified) / 1425 pending, with 206 identified findings.
+Current checkpoint: 1,799 inputs / 501 complete (447 reviewed / 54 classified) / 1298 pending, with 229 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -2007,3 +2007,247 @@ No source finding, corroboration or administrative validation above supplies run
 
 ### Complete-review checkpoint — reviewer-batch-5
 No additional defect IDs: complete common/measurement documentation retained scientific, ownership and refusal contracts; targeted implementation traces receive no duplicate full-file credit.
+
+### Complete-review checkpoint — A-batch-9
+
+#### A-F072 — Medium/High potential impact, explicit stale root owner generation is ignored on Open
+
+nested_workflow_snapshot.py:767–782 canonicalizes an incoming root owner to the current workflow generation without comparing an explicitly supplied owner.identity_generation.
+A delayed open request carrying old graph/generation can therefore become a new private session owned by the recreated current root instead of refusing its stale incarnation.
+This is an adjacent concrete boundary to canonical A-F004's missing draft/save wire incarnation; supplying the generation alone would not currently fix this Open path.
+After canonicalization the rest of validation/commit checks preserve the captured current generation correctly, so the gap is at admission, not every subsequent CAS operation.
+No delayed request/recreation was executed.
+`test_open_is_idempotent_and_root_owners_do_not_collide` and route open tests omit an explicit expected generation; generation/move router tests from batch2 exercise later ownership transitions, not stale requested admission.
+Retain compatibility for truly generation-less legacy callers where permitted, immutable private session identity and root generation commit checks; future action should distinguish absent legacy ownership from an explicitly stale captured owner.
+
+#### A-F073 — Medium, deletion durability asymmetry
+
+nested_workflow_snapshot.py:389 direct DELETE,430 root-tree cleanup and661 orphan cleanup unlink snapshot records without fsync of the snapshot directory.
+Write publication explicitly fsyncs the directory at1059, and move-root deletion does so at533–537 before the move journal can clear.
+Ordinary acknowledged deletion therefore has weaker power-loss durability than acknowledged writes/move deletion and may permit removed directory entries to return after a crash.
+No crash/power-loss failure was executed; ordinary process/service restart tests cannot distinguish this filesystem durability boundary.
+`test_replace_and_delete_are_revision_checked` and depth-two ordered close assert current file absence; they do not assert directory sync on the separate deletion paths.
+Filesystem helper/platform-specific policy is B-owned and must be reconciled before repair priority is finalized.
+Retain revision/dependent checks and idempotent root-tree cleanup; future action should apply the documented durable acknowledgment policy consistently at unlink commit.
+
+#### A-F074 — Medium qualified integrity risk, ordinary read lacks filename/body session identity check
+
+Inventory scan:821–840 rejects a body session_id that differs from the UUID filename, but _read:1015–1025 returns _read_path without comparing that body's ID to the requested session.
+A syntactically valid mismatched record introduced after startup can be returned through GET A as session B; PUT uses current.session_id at353 and can write the accepted replacement into B's path rather than refusing corrupted authority.
+Normal service writes create matching UUID/body paths and startup cleanup rejects mismatch, so this is a corrupt/external filesystem state path rather than a normal API identity change.
+No corrupted record was created during audit.
+Complete service/router counterparts cover matching persisted records/restart only; move-recovery/cleanup integrity tests remain pending, so no claim that all integrity tests omit it.
+Retain strict model validation and startup inventory classification; future action should enforce the same path/body agreement for ordinary targeted reads before mutation.
+
+#### A-F075 — Low/Medium, unrelated malformed snapshot can block targeted open/delete scans
+
+_find_snapshot:866–877 and _dependent_session_ids:921–932 call _read_path for every *.json without the tolerant classification used by _inventory_locked.
+A malformed unrelated JSON record after startup can therefore fail opening a different owner or deleting a child without dependents, rather than isolating/refusing only the unreadable authority concerned.
+Startup cleanup handles preexisting corruption, and refusing destructive operations in uncertainty can be intentional; this finding concerns the inconsistent targeted read/availability policy, not permission to silently delete an unreadable dependent.
+No malformed record was written or request executed.
+Complete current counterparts cover valid unrelated records and known dependent refusal; full recovery fault/inventory counterparts remain pending.
+Retain fail-closed dependent ownership when unreadable data might matter; future action should define which corruption can be safely isolated and reuse one inventory classification rather than raw all-file parse.
+
+#### A-F076 — Medium potential impact, staging cleanup can prevent attempted rollback of already replaced snapshots
+
+_write_many:1062–1078 calls _remove_staged_files before iterating replaced paths for rollback.
+_remove_staged_files:1136–1141 catches only FileNotFoundError; another unlink error can escape immediately and skip rollback of an already published earlier file in a multi-file replacement.
+The final cleanup can likewise override a primary/rollback failure message.
+A durable outer workflow move journal may retain/recover the partially rewritten operation, which is an essential mitigation pending full recovery-service/fault counterpart review.
+No injected failure or partial move was executed.
+The complete simple snapshot service/router tests do not inject cleanup/replace/fsync failures; batch2 workflow router faults cover outer move failure but are not an oracle for cleanup-before-rollback sequencing.
+Retain durable staged writes and reverse restoration; future action should prioritize restorative work over ancillary temp cleanup and preserve meaningful failure evidence without weakening the outer journal.
+
+
+### Complete-review checkpoint — A-batch-10
+
+#### A-F077 — Low/Medium, advertised partial document rewrite fault does not isolate that boundary
+
+`test_workflow_folder_move_recovery.py::test_folder_rename_recovers_second_workflow_after_first_document_rewrite` captures original_rewrite and calls it before checking whether old_id is project/b (lines204–212).
+The injected failure therefore occurs after the second document rewrite, not between the first and second; the subsequent assertion explicitly observes archive/b's rewritten draft identity.
+This is useful recovery after completed artifact writes but before later phase acknowledgment, yet its name/intended partial-first-document claim is stronger than its actual fault oracle.
+The first folder test stops before any artifact rewrite, so these two tests do not isolate an interruption with exactly one of two workflow documents rewritten.
+No fault/test was executed during audit, and there is no claim the production recovery fails that missing distinction.
+Retain completed-artifact idempotence and before-any failure coverage; future test maintenance should label the actual boundary and, if required by the full transaction contract, place an existing fault hook before the second rewrite instead of adding a duplicate journey blindly.
+
+#### A-F078 — Low/Medium, extra-field journal refusal fixture has confounding missing fields
+
+`test_workflow_move_recovery.py::test_corrupt_or_extra_field_journal_is_rejected_without_mutation` writes only journal_version and unexpected=true (lines467–478).
+The journal lacks required operation ID/kind/source/destination/moves, so it fails even if a future parser ignored extra fields; this fixture cannot specifically distinguish strict extra-field rejection.
+The full B-owned model currently sets extra='forbid', so no current acceptance defect is claimed.
+The test still usefully proves an untrustworthy incomplete journal prevents mutation and preserves the existing workflow.
+Retain that corrupt-journal/no-mutation oracle; future test maintenance can derive a complete valid prepared journal and add an extra key if strict unknown-field rejection is a required independent distinction.
+No new test or execution is authorized by this audit finding.
+
+
+### Complete-review checkpoint — B-batch-7
+
+#### B-F059 — P2 source defect/test oracle: abandoned eager step reservations are not released
+
+`workflow/runtime.py:46–88,371–429` reserves the original Workflow before returning _WorkflowSteps; only wrapper exhaustion/error/explicit close calls _end_public_execution.
+`scheduler.py:43–86,265–278` similarly reserves DefaultEngine before returning _EngineSteps; only wrapper methods release it and invoke owned backend cleanup.
+Neither wrapper has context-manager/finalizer behavior, and dropping an unstarted inner generator cannot run its body/finally.
+For a started workflow iterator, generator close can finalize its run/inner iterator but does not call the outer wrapper's _release; the original Workflow remains admitted unless explicit wrapper close/exhaustion occurs.
+Thus temporary `for step in wf.compute_steps(...): break` does not establish reusable original Workflow admission, and dropping a never-started execute_steps iterator strands the original engine active flag.
+This is source behavior, not an executed leak/PID observation; explicitly retained iterators may intentionally require explicit close.
+`tests/unit/test_workflow_execution_context.py::test_steps_reserve_workflow_before_first_iteration` and `::test_engine_steps_reserve_engine_before_first_iteration` correctly verify eager exclusion and explicit-close release.
+Borrowed `tests/integration/test_compute_steps.py::TestComputeStepsPartialIteration::test_early_break_does_not_leak` creates a different Workflow/engine afterward; the second test has no ownership oracle, so neither distinguishes release of the original owner.
+Future diagnostic should reuse the exact original owners after never-started abandonment and after a started early break, preserve eager exclusion and deterministic explicit close, and establish/document an iterator lifetime contract before choosing cleanup behavior.
+
+#### B-F060 — P2 source defect/authority: root compute wrappers lose per-environment launch overrides
+
+`workflow/runtime.py:312–329,446–463` builds execution parents for compute(inputs=...) or no explicit targets and copies workflow-wide max_workers/wetlands_config but omits _env_configs.
+A-complete `workflow/interfaces.py:372–408` structural snapshots also omit the per-environment configuration map.
+`engine/dispatch.py:181–199` consults only the actual executing root workflow._env_configs to choose max_workers and worker_timeout.
+Consequently `wf.get_environment(env).max_workers`/worker_timeout overrides that are effective for compute(explicit_node) are absent on the no-target/root-input wrapper path, using workflow defaults instead; captured child configuration is also not a runtime authority in the current scheduler.
+This is not a demand to inherit every nested child's independent runtime: root execution policy may deliberately own all nested launch settings.
+The root workflow's own override loss is a narrower inconsistency requiring a contract decision and distinguishing tests.
+B1 `test_workflow_public_factory_preserves_configuration` checks global defaults only; full execution context root-wrapper test checks exact run context only, not launch overrides.
+Future diagnostic should use an injected tracking public manager with explicit/no-target/input wrapper paths and distinguish root policy from child captured policy without provisioning or broad coordinator changes.
+
+#### B-F061 — P2 source defect: prepare can launch a skipped ProcessingTool environment
+
+`engine/common.py:606–631` returns False for skipped cached, then prepare calls backend.prepare_node without checking skipped.
+Borrowed full `backends.py:110–131` WetlandsBackend.prepare_node resolves the ProcessingTool and get_or_create regardless of enablement.
+`scheduler.py:295–317` intentionally yields skipped NodeStep objects, and execute correctly refuses them with DisabledNodeError.
+A caller that prepares each yielded step before testing skipped can therefore provision/start workers for a disabled or blocked node despite no processing execution.
+This is a source side-effect gap, not a claim that disabled process_row runs.
+Borrowed complete TestPrepare cases exercise only enabled tools/direct mode; the documented disabled loop deliberately avoids execute but preparation refusal/no-op is not distinguished in those tests.
+Future diagnostic must assert zero public manager calls for skipped prepare and retain cached/active preparation behavior and explicit disabled execute refusal.
+
+#### B-F062 — P2 source candidate: disabled dependencies participate in environment mismatch admission
+
+`engine/graph.py:129–161` collects all reached ProcessingTools without filtering disabled or downstream-blocked nodes.
+`scheduler.py:289–298,363–384` performs that mismatch check before _filter_executable.
+An enabled branch sharing an environment name with a disabled conflicting branch is refused before the scheduler can skip the disabled branch.
+The current mismatch test requires both enabled tools, so it establishes legitimate conflict detection but does not decide whether disabled definitions should block an otherwise executable run.
+Record as a behavior/contract candidate, not an executed disabled workflow failure or automatic removal of environment validation.
+Future diagnostic should cover disabled node and disabled ancestor separately, retain conflicts between executable tools, and reconcile with validate/plan diagnostics.
+Different Core flexibility/prerelease flags with the same dependencies are not automatically different runtime recipes: those flags authorize declarations, and translating the same accepted requirements to the same Wetlands recipe can be correct.
+
+#### B-F063 — P2 source-risk: close can retire engine-owned pools during an active execution
+
+`scheduler.py:233–243` holds the lifecycle lock and marks closed but never rejects or coordinates _execution_active before backend.close.
+Execution holds the lock only at begin/end, and borrowed WetlandsBackend.close shuts down engine-owned managers immediately.
+A separate caller can therefore close an engine with active tasks or a live stepped iterator; ownership is scoped correctly, but physical completion/cancellation admission is not coordinated by this lock.
+External managers are expressly retained and are not implicated in this retirement path.
+Full lifecycle tests cover sequential close after success/failure/cancellation and idempotence, with no concurrent active-close oracle.
+This is unexecuted source risk; define supported close-during-execution semantics before introducing any coordination, preserving external ownership and normal finally cleanup.
+
+#### B-F064 — P2 source-risk: start-run metadata failure leaves a bound running context
+
+`workflow/runtime.py:530–584` calls run_context._bind then writes run-view fields and invokes Storage.start_run_metadata.
+Both compute and stepped execution call _start_run_view outside their inner exception-to-_execution_failed handling (`350–366,479–499`).
+If metadata creation fails after binding, eager Workflow admission is released, but the supplied public context remains running/bound without a terminal outcome and _run_view_context can remain populated.
+A caller cannot reuse that single-use context or infer success/failure from terminal_status; subsequent manual finalize may itself fail if canonical run metadata was not created.
+This is a fault-path source risk, not an observed filesystem failure or a request to make contexts reusable.
+Full context tests distinguish deferred success and pre-requested cancellation, but not metadata start failure before engine.execute.
+Future fault injection should verify context outcome, run-view clearing and absence of tool execution, preserving exact single-use binding, launcher reservation and deferred success semantics.
+
+
+### Complete-review checkpoint — reviewer-batch-6
+
+No new findings: exactly26 wrappers classified against the complete generator/header/include/toctree consumers and27 full human common/measurement authorities; all current hashes match.
+
+
+### Complete-review checkpoint — reviewer-batch-7
+
+#### reviewer-F034 — P4, output description ambiguity: selection removes an axis, not the selected data
+
+`io-tools/docs/tools/select_channel.md:14` says the output has the selected channel removed, and `select_timepoint.md:14` says the selected timepoint is removed.
+The actual shared selection owner returns the selected data and removes the selected axis from the remaining-axis declaration (`_axes.py:49–71`).
+Their own later expected-result sections describe that actual behavior correctly.
+After review, make these two short output descriptions agree with the existing selected-data/remaining-axes contract; preserve explicit selection and refusal semantics, and use existing slicing assertions rather than adding duplicate tests.
+No pixel selection defect is asserted.
+
+#### reviewer-F035 — P3, public tool documentation completeness: thin specialist pages omit essential configuration/failure contracts
+
+All five phasor tool pages contain only three to six lines; the LapTrack tool page contains eleven.
+They state useful high-level scientific meaning but omit a minimal configured workflow, explicit public input/output names and key failure/refusal requirements expected by the already reviewed package-author guide (`how-to/custom_tool_package.rst:76–80`).
+The actual public inputs include acquisition dataset/channel/frame/detector-time/harmonic selection, `reference_lifetime_ns` and reference-center policy, median/intensity bounds, and LapTrack's `max_link_distance`, `gap_closing_distance`, `gap_closing_max_frames` and `division_distance`.
+The actual source additionally validates positive finite metadata/constraints, matching calibration frequency/harmonic, ordered intensity bounds, source-specific object identity and shared batch parameters; those are essential existing behaviors rather than prospective feature expansion.
+After the audit, fill those exact omissions from already implemented schemas, current workflow examples and existing package contract/runtime selectors.
+Keep scientific units, acquisition versus exchange provenance, source isolation, pinned runtime gating, actual external skips and current merge exclusion explicit; do not add generic prose, duplicate long package manuals or claim a mock contract test proves the scientific backend.
+This is a documentation completeness finding, not a request for new code/tests or permission to execute a native model/runtime now.
+
+
+### Complete-review checkpoint — reviewer-batch-8
+
+No new findings: exactly27 IO/phasor/tracking wrappers classified individually against the complete producer, human batch7 authorities, headers/includes/relative-docs/toctrees and matching hashes.
+
+
+### Complete-review checkpoint — root-batch-6
+
+#### ROOT-F045 — P2 protocol robustness defect: syntactically valid wrong-shaped JSON escapes structured errors
+
+agent_mcp.py:788–822 validates response JSON syntax but not successful body shape.
+Draft callers immediately use .get or draft['draft_revision']; list/tool callers iterate bodies and invoke mapping helpers; _operation_result:1211 likewise assumes a mapping.
+A scalar/list successful draft/operation response or a mapping instead of a tool list therefore raises a raw TypeError/AttributeError rather than the declared malformed_backend_response result.
+Normal FastAPI response models produce expected shapes, so no normal-server failure or executed malformed response is claimed.
+The complete MCP test file checks missing state and positive mock bodies but has no malformed JSON/shape/HTTP-conflict transport oracle.
+After the review, validate the minimal expected envelope at the transport/operation boundary and reuse focused negative transport cases, keeping exact structured backend errors and recursive public payloads rather than reimplementing all graph validation in the gateway.
+
+#### ROOT-F046 — P2 qualified consistency risk: one logical operation rereads connection state between stages
+
+_apply_operations:762–777 captures AgentState, fetches a draft when expected_revision is omitted, then posts using the captured workflow ID; _request:795–799 rereads AgentState separately to choose api_base_url for each HTTP call.
+run_workflow likewise captures the workflow ID before the draft read and a fresh request-state lookup for Run.
+If the state file's backend connection changes between awaits, one operation can combine a revision/target captured from one connection with another connection's base URL.
+Ordinary active-workflow changes keep the base URL and captured workflow target, which is a useful mitigation; no actual backend switch/race or cross-workspace operation was executed.
+This is separate from canonical A-F020's global context publication: request routing itself lacks an immutable per-operation connection snapshot.
+After complete workspace/lifecycle synthesis, decide whether the supported reconnection contract needs captured URL/server identity through the entire operation; retain CAS and do not blindly retry a write against a new backend.
+
+#### ROOT-F047 — P3 source-reference drift: existing/partial targets are treated as available without refresh/provenance
+
+agent_workspace_context.py:52–56 treats any existing platform-source path as the reference, sanitizes it and marks it available without verifying a completed checkout or its source revision.
+In the normal app call ensure_agent_workspace_context(workspace_path), source_root is None, so the existing-target branch passes None into _sync_agent_docs and does not rediscover the current checkout.
+A later launch after source/docs changes therefore preserves the old reference; a failed clone leaving a partial target also satisfies target.exists and can be advertised available.
+This does not change running application imports, and an explicitly supplied source_root refreshes agent docs; no actual stale or partial clone was created here.
+The complete failure test raises before creating a target, while successful/existing reference assertions do not distinguish partial-clone status or default-call upgrades.
+After the gate, record and check reference provenance/completeness and choose a bounded refresh policy, preserving best-effort startup and never deleting unowned existing directories merely to refresh context.
+
+#### ROOT-F048 — P2 MCP example drift: positional connection and generated recommendations use obsolete names
+
+Fully reviewed docs/agents/api-reference.md:230–237 sends positional_index to connect_nodes, while both the registered MCP signature and gateway implementation accept target_position (agent_mcp.py:628–648,1140–1156).
+The same stale positional spelling is present in the targeted workflow-editing.md:95 counterpart, whose full document review remains with the shared reviewer.
+WorkflowDraftService.write_agent_context:550–557 still emits recommended create_node/update_node_parameters and create_node operation names; the actual public inventory uses create_tool_node/update_tool_parameters and typed recursive variants.
+The complete workspace documentation test bans obsolete tool/type names in three curated docs/template but never checks generated recommended_commands, and its layout-name checks do not validate argument names.
+No MCP call or validation exception was executed; static signatures and the published example are incompatible.
+After the audit, reconcile curated examples and generated runtime recommendations with the same maintained MCP contract, retaining recursive workflow operations and user-facing concise guidance; use existing focused contract assertions rather than adding broad repeated workflow journeys.
+
+#### ROOT-F049 — P3 qualified artifact-ownership decision: custom root instructions are overwritten unconditionally
+
+ensure_agent_workspace_context:39 and WorkflowDraftService.write_agent_context:570 replace workspace-root AGENTS.md without checking its existing owner/header or preserving a user section.
+Hidden custom AGENTS.md is explicitly preserved by _remove_generated_hidden_instructions and its whole test, but that oracle does not cover the root file.
+The public MCP guide explicitly identifies root AGENTS.md as generated workspace context, so replacement may be intentional policy rather than an implementation violation.
+A preexisting custom workspace instruction file nevertheless has no demonstrated coexistence/admission contract in the inspected producer/tests; no user file was overwritten during this audit.
+After reviewing onboarding/normative workspace ownership, either specify reserved generated ownership clearly or preserve separately owned instructions through an explicit supported mechanism; do not suppress the required MCP workflow controls or modify arbitrary instructions silently.
+
+
+### Complete-review checkpoint — root-batch-7
+
+#### ROOT-F050 — P2 qualified layout contract gap: Mosaic reads only the initial frame
+
+mosaic.py:48–55 declares scalar image semantics without restricting layout; process_batch:121–124 loads/copies the initial Pillow frame without seek/n_frames selection or multiframe refusal.
+A multi-page volume/channel/time TIFF therefore contributes its initial frame to the montage, with no explicit selected-plane policy in the complete source/guide.
+This is source behavior and a contract question, not an executed pixel-loss result or a demand that QC montage preserve every volume dimension.
+Full common-workflow tests cover planar grayscale/RGB/RGBA/palette behavior; the multi-channel TIFF fixture is used only by Files.
+After axis/schema synthesis, specify supported geometry and explicit selection/refusal/annotation while preserving current image-count, row mapping, UInt16, color and alpha behavior.
+
+#### ROOT-F051 — P3 qualified schema-policy debt: Concat retains first branch metadata for same-type columns
+
+merge.py:307–315 degrades a shared entry only for a different top-level type; same-type entries retain the first image_spec/viewer/default verbatim.
+The existing integration test_concat_same_type_keeps_first intentionally establishes this scalar/default policy; Path rows from multiple image semantic/layout declarations need a separate compatibility decision.
+Node.get_output_schema delegates to this owner, and A's complete schema authority family remains pending.
+Concat guidance expects compatible/equivalent rows, so this may be a caller precondition rather than a source violation; no bad admission/viewer was executed.
+After the full contract review, decide whether incompatible image/viewer metadata requires refusal or conservative unknown metadata while retaining current scalar first-wins policy unless deliberately changed.
+Use existing merge schema oracles if this distinction is required; no new broad suite is authorized.
+
+#### ROOT-F052 — P2 qualified side-effect/cache contract gap: cached WriteTable does not recreate its destination
+
+table.py:142–147 writes Inputs.path then returns only a passthrough table; the destination is not a declared owned Path output.
+B's full node_execution/dataframe/cache trace confirms valid DataFrameTool cache hits return before merge/transform, and publication supplies outputs=[] without independently checking Inputs.path destination existence/content.
+A deleted destination can therefore remain absent after an otherwise-valid cache hit while the guide still describes a written output table.
+This is a traced source path, not an executed lost file; explicit external side-effect rematerialization remains a tool/cache contract decision.
+Full WriteTable tests call transform once and check CSV/TSV bytes; they do not distinguish subsequent cache reuse after destination removal.
+After cache/storage/spec synthesis, define destination ownership and cache-validity semantics, preserving arbitrary explicitly selected CSV/TSV destinations and passthrough behavior; do not take externally authored files into owned-cache deletion silently.
+A single existing tool/cache oracle should own any required distinction instead of repeated successful E2E table journeys.
