@@ -6,7 +6,7 @@ orphan: true
 
 Establish confidence in the platform people use today by reviewing architecture and tests together, repairing demonstrated defects and validated structural weaknesses, then completing systematic coverage of implemented in-scope behavior.
 This campaign was prepared from the previous campaign's results; execution started after the user requested it on 2026-09-30.
-Application execution is **RUNNING**; the 2026-10-01 retrospective inserts whole-system reconnaissance before the remaining repairs and coverage expansion.
+Application execution is **HELD FOR COMPLETE REVIEW**; the 2026-10-01 retrospective inserts whole-system reconnaissance before the remaining repairs and coverage expansion.
 The checkpoint records actual readiness outcomes separately from historical coverage.
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
@@ -24,7 +24,8 @@ Reuse valid historical evidence explicitly and retain successful unchanged valid
 
 Follow `AGENTS.md`, `PLATFORM_CONTEXT.md`, the implemented v1/v2 and applicable later specifications, and [Test lanes](../testing.md).
 Cover implemented desktop and webapp behavior, including their different permission and persistence contracts.
-Parallel scheduling, HPC, Parsl, managed remote execution, distributed engines, and future v3 proposals remain excluded.
+Parallel scheduling, HPC, Parsl, managed remote execution, distributed engines, and future v3 proposals remain excluded from campaign execution.
+Their tracked human-written source, tests and specifications remain included in the complete codebase review.
 Keep Direct execution and real local Wetlands execution with one sequential worker; selecting a worker engine is not proof that a worker ran.
 Preserve existing out-of-scope regression tests and specification contracts; campaign exclusions do not authorize deleting delivered parallel, HPC, Parsl, or managed remote/distributed capabilities.
 The catalog contract remains single-click to toggle bottom tool information, double-click to create exactly one node, and drag as an independent creation gesture.
@@ -88,11 +89,15 @@ The gate is a modest readiness signal, not a release certificate or completion o
 The independent GPT-6.1 Sol Ultra retrospective on 2026-10-01 found real product gains but no completed whole-system architecture or suite-redundancy audit.
 Its installed-Wetlands force-Recreate contradiction and the earlier Run preparation bypass demonstrate why public dependency boundaries must be traced before adding coverage.
 Insert this gate at the current checkpoint; do not undo accepted fixes or reexecute readiness merely because the sequence changes.
+The user's subsequent clarification requires a meticulous whole-codebase and test-suite review before further repairs or campaign execution.
+The earlier inventory and selective reconnaissance did not complete M1; priority diagnostic tests and implementation plans are now held with I1/T1.
 
 Inventory all tracked first-party platform and library/Core implementation, tests, runner/configuration and specification files at named revisions.
 Classify generated files, bundled assets, fixtures and excluded execution families explicitly rather than treating every file as an independent coding task.
 Review Wetlands' relevant public contracts and installed implementation, recording differences from its source checkout; this is a targeted dependency review, not certification of the entire dependency.
 Every inventoried file has a subsystem owner and a truthful depth: inventory-only, read, traced through callers/consumers, or deeply reviewed against an invariant.
+Record complete-review status separately: pending, reviewed, or classified with a justified generated/asset boundary.
+Earlier excerpt/invariant review does not establish a complete-file review.
 Inventory-only and static reading earn no application coverage credit.
 Use a compact file ledger and record unreviewed areas; do not claim exhaustive analysis from a representative sample.
 
@@ -113,14 +118,24 @@ Treat complexity or repetition as a candidate to investigate, not proof that a r
 For each finding record the source/contract, demonstrated defect or unproved risk, consequence, existing distinguishing selectors, repair/retain/deepen/defer decision and owner.
 Preserve the recursive GraphState, CAS, stable identities, immutable result and deployment contracts; excluded distributed implementations and tests remain intact.
 
-Bound the first reconnaissance to one coherent pass, initially about one or two working days rather than an open-ended file-reading campaign.
-Extend only for a named unresolved high-risk boundary, retaining the inspected-source ledger and explaining the remaining uncertainty.
-The gate closes with a reviewed authority/boundary map, explicit unreviewed areas, prioritized findings and repair packets, and a test-cost baseline or named missing measurements.
-High-risk unresolved findings block their dependent paths, not independent work.
-The specialist checks interactions and evidence quality rather than repeating every file read.
+Review every human-authored implementation, test, script/configuration and specification file in the platform and library checkout, including scientific packages and statically reviewed execution families excluded from later campaign execution.
+Review the entire Wetlands source checkout and compare installed contracts where the platform/library consumes them.
+Read complete files in manageable dependency-ordered batches, then trace callers, ownership/lifetime, error and concurrency paths, persistence, public contracts, test fixtures and distinguishing assertions.
+Inspect generated code, lockfiles, fixtures and assets through their actual producer/consumer and boundary requirements; classification requires a specific rationale and cannot excuse an inconvenient human-written file.
+Include all held I1/T1 and diagnostic task files at captured content hashes; unrelated historical worktrees remain outside the current source baseline.
+Record every identified defect, risk, redundancy, maintainability issue, test-oracle weakness and specification inconsistency in the findings register, with severity, precise source, causal reasoning, existing tests, uncertainty and a proposed future action.
+A no-finding file needs a specific review rationale; reading/search telemetry alone is not evidence of review quality.
+
+Do not implement fixes, add or execute diagnostic/product/browser/external tests, install dependencies or resume campaign coverage while this review gate is open.
+Documentation-only integrity validation may run to preserve coherent review deliverables; it supplies no application evidence.
+Use serial review batches and durable checkpoints without an arbitrary one-or-two-day completion deadline.
+The gate closes only when every baseline file is reviewed or explicitly classified, there are zero pending/unmatched/content-hash-mismatched human-written inputs, cross-subsystem findings are synthesized, and independent review accepts the method, a representative evidence sample and the prioritized backlog.
+Review changed source again when its recorded hash changes; keep earlier partial inspection and red diagnostics as historical evidence.
+Completion means the agreed source scope was meticulously reviewed, not that every possible bug was discovered or behavior was certified.
+The specialist checks completeness, interactions and evidence quality rather than duplicating every file read.
 
 I1/T1 remain isolated at their preserved checkpoints during reconnaissance.
-After synthesis, finish I1's applicable completion checks without relabelling its composite or deferred phases as a passing original lane.
+After complete review and synthesis, finish I1's applicable completion checks without relabelling its composite or deferred phases as a passing original lane.
 T1 must resolve force-Recreate through a supported public capability; do not delete environment directories, mutate private state, invent recipe nonces or silently narrow the essential feature to stale-only replacement.
 Independent T1 ownership/admission repairs may be split only when they form a reviewed coherent change with their own required validation and explicit remaining lifecycle gap.
 Recheck E1 consumers affected by shared helper or lifecycle changes; retain only equivalent unchanged evidence.
@@ -206,7 +221,7 @@ Keep the checkpoint focused on current state/decisions and put detailed complete
 | Milestone | Required outcome |
 | --- | --- |
 | M0 — Retained baseline | Reviewed specifications, accepted Wave 1/N1/E1 and preserved I1/T1; historical percentages remain separate from current certification |
-| M1 — Reconnaissance | Reviewed architecture/test boundary map, file review depths, prioritized findings and missing measurements; no static-review coverage credit |
+| M1 — Complete codebase review | Every human-authored platform/library/Wetlands source and test file reviewed, generated/assets explicitly classified, held WIP inspected, all identified findings recorded, cross-boundary synthesis and independent completeness review; no static-review coverage credit |
 | M2 — Priority repairs and optimization | Validated coherent repairs, resolved or explicitly blocked dependency contracts, measured suite changes and consistent specifications |
 | M3 — Systematic implemented coverage | Reconciled inventories and missing real assertions across all in-scope families, with low-risk work following the architectural findings |
 | M4 — Automated and external certification | Complete audited local selections plus required lint/types/build/logging/docs, published compatibility and real-worker/scientific-boundary results |

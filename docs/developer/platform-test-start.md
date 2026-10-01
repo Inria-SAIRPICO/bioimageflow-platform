@@ -24,10 +24,14 @@ Verify current contracts before porting candidate code, especially removed finge
 Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.
 
 Retain the accepted readiness/N1/E1 evidence and preserved I1/T1 work; do not restart those paths solely because the campaign sequence changed.
-Begin with the reconnaissance gate: inventory platform/library/Core source and tests at exact revisions, assign subsystem owners and truthful per-file review depths, and trace sensitive cross-layer invariants and relevant installed Wetlands public contracts.
+Begin with the complete-codebase review gate: inventory platform/library/Core and the entire Wetlands checkout at exact revisions, plus every held I1/T1/diagnostic WIP file by content hash.
+Read every human-written implementation, test, script/configuration and specification in dependency-ordered batches; review callers, invariants, failure paths and distinguishing test oracles.
+Record every identified fix/optimization/specification candidate before implementing or executing anything else; earlier selective reconnaissance is not completion.
 Use two ordinary subsystem reviewers plus a reserved independent specialist; review code and test oracles together, not a swarm of disconnected file reports.
 The orchestrator owns the complete manifest, deployment/persistence and suite-cost review, shared documents and cross-boundary synthesis.
-Close the gate with an independently reviewed authority map, explicit unreviewed areas, prioritized repair/retain/deepen/defer decisions and cost evidence or named missing measurements.
+Do not release repairs, new diagnostic tests or campaign execution while the review gate is open.
+Close it only with zero pending/unmatched/hash-mismatched human-written files, specifically justified generated/asset classifications, recorded findings and independent completeness/cross-boundary review.
+Keep batch checkpoints truthful and leave M1 open until this is achieved; no time limit substitutes for complete review.
 Static review earns no coverage credit; do not call inventory-only files reviewed or representative reading exhaustive.
 Resolve T1 force-Recreate via supported public capabilities before dependent lifecycle acceptance; preserve ownership, concurrency, failure and unrelated-environment invariants without private-state workarounds or silently weakening the feature.
 Then finish applicable I1/T1 work and priority repairs, inspecting existing assertions before adding missing coverage.

@@ -4,7 +4,7 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — M1 bounded synthesis accepted, M2 priority diagnostics; Wave 1/N1/E1 accepted, I1/T1 preserved**.
+Prepared and started 2026-09-30; **RUNNING — M1 meticulous whole-codebase review OPEN; repairs and campaign tests held; Wave 1/N1/E1 accepted, I1/T1 preserved**.
 The user authorized the 2026-10-01 campaign revision following an independent GPT-6.1 Sol Ultra retrospective, then continued execution.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -115,20 +115,42 @@ The former T1 worker now reviews execution/environments/cache/results/images and
 The orchestrator owns the full file manifest, deployment/persistence/integrations, test architecture/cost and shared records; the reserved reviewer checks the revised plan and then cross-boundary synthesis.
 Initial reconnaissance is read-only with no new broad lanes, installation or native actions; depth and unreviewed areas are recorded explicitly rather than granting static-review coverage credit.
 The first pass and independent synthesis are now recorded in the [architecture audit](platform-test-architecture-audit.md), including the complete per-file ledger and explicit unreviewed areas.
-M1 releases root dataset-publication diagnosis, A's portable tool-binding diagnosis and B's public force-Recreate wrapper plan in parallel; populated-credential rollback, settings-derived webapp root authorization and stale-caller incarnation remain P1 follow-ups.
+The earlier bounded synthesis initially released root dataset-publication and A portable tool-binding diagnoses plus B's force-Recreate plan; this release is superseded by the full-audit-first clarification below.
 No speculative repair, coverage credit or global speedup follows from that synthesis.
-M1 documentation acceptance: `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 2 s reported / 2.28 s elapsed at `2b945ccc` plus the five-document source manifest SHA-256 `ae85daedcdf25f6c98443d70afe8e4a03f1ceb12f7d04e0ee9ebbd574301f3da`, including the new audit and file ledger, before this status-only entry.
+Partial reconnaissance documentation acceptance: `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 2 s reported / 2.28 s elapsed at `2b945ccc` plus the five-document source manifest SHA-256 `ae85daedcdf25f6c98443d70afe8e4a03f1ceb12f7d04e0ee9ebbd574301f3da`, including the new audit and file ledger, before this status-only entry.
 It verified 108 inventory rows / 500 applicable / 276 accumulated verified, 59 local links and warning-clean Sphinx; no product/browser/worker/native phase was run by that documentation check.
-Root's new isolated `.worktrees/campaign-dataset-publication-current` retains two exact causally red store/real disk-spooled HTTP diagnostics as [ISSUE-023](platform-test-issues.md#issue-023-dataset-listing-publishes-an-upload-before-completion); no dataset production change is made before independent publication-plan review.
-The retained T1 actual force-generation red is now [ISSUE-024](platform-test-issues.md#issue-024-explicit-force-recreate-reuses-the-selected-ready-generation).
+Root's new isolated `.worktrees/campaign-dataset-publication-current` retains two exact causally red store/real disk-spooled HTTP diagnostics as [ISSUE-023](platform-test-issues.md#issue-023--dataset-listing-publishes-an-upload-before-completion); no dataset production change is made before independent publication-plan review.
+The retained T1 actual force-generation red is now [ISSUE-024](platform-test-issues.md#issue-024--explicit-force-recreate-reuses-the-selected-ready-generation).
 The independent plan review found no material gate/acceptance blocker; its one context-navigation inconsistency was corrected before validation.
 `/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 3 s reported / 2.53 s elapsed against main `d8bc910` plus reviewed task diff SHA-256 `6d080613542082fc1093d3a6da8e27bb2ee3d63437c0204109e9f822ca3ca1c0`, before this result-only entry.
 Dashboard/link checks and warning-clean Sphinx passed; no product/browser/external/native phase was run or credited for this documentation revision.
 
-1. Execute the independently selected dataset-publication and tool-binding diagnoses and public force-Recreate plan; reproduce distinguishing failures before reviewed production repairs.
-2. Address the remaining P1 authority/loss findings, then finish only coherent I1/T1 work with required checks and explicit unchanged-phase reuse.
-3. Reconcile inventory omissions and continue systematic coverage after architectural priorities; measure proposed suite changes before claiming savings.
-4. Complete automated/external certification, then execute desktop acceptance only at final M5.
+### User clarification: complete review before fixes
+
+The user explicitly clarified that meticulous review of the entire codebase and test suites, with everything identified to fix recorded, must precede further campaign execution.
+The previous 107 platform / 37 library / five Wetlands scoped inspections were selective reconnaissance, not full review; M1 is reopened and no M2 repair is released.
+The two dataset red tests, four actual portable-binding red cases and public force-wrapper/publication plans are preserved as held evidence; no production change was made in these new diagnosis tasks.
+The reserved C3 plan review is also held and records transaction/cleanup lifetime, short-write completeness and per-file error concerns without implementation authorization.
+No new product tests, dependency installation, fixes, I1/T1 completion or native execution occurs while M1 is open.
+
+The refreshed ledger captures platform `29d272d` (740 tracked files), library `dff04e3` (909) and Wetlands `874febd` (118), plus three installed seams and 28 held task files (I1 13, T1 11, portable diagnostics two, dataset diagnostics two).
+All 1,798 entries initially have `pending` complete-review status regardless of earlier scoped inspection depth.
+Source hashes distinguish frozen task bytes; campaign documents changing during the review must be rechecked at closure.
+Owners work through full-file dependency-ordered batches: A 335 graph/tool/source files, B 536 execution/result/environment/Wetlands files, root 541 remaining platform/scientific files, reviewer 386 test-infrastructure/configuration/specification/documentation files.
+These are assignment counts, not completed reviews.
+First accepted full-content checkpoints cover 59 baseline entries (A 20, root 39), with zero accepted generated/asset classifications and 1,739 entries pending.
+That first partial checkpoint is superseded by B/shared-infrastructure batch 1: 104 complete entries (103 reviewed / one classified), 1,694 pending, and 65 identified candidates recorded.
+Nine counterpart-test owners were corrected; current owner counts are A 334, B 539, root 533 and reviewer 393, including the newly authored findings register.
+That new control document adds one pending input beyond the 1,798 frozen baseline entries: that checkpoint was 1,799 entries / 104 complete / 1,695 pending.
+A batches 2–3 now add 17 full-content files (11 platform and six library): current scope is 1,799 entries / 121 complete (120 reviewed / one classified) / 1,678 pending, with 86 identified candidates recorded.
+The remaining source and test suites are still substantially unreviewed; this checkpoint does not complete M1.
+These counts are review progress, not defect confirmation, code correctness or application coverage.
+The [architecture audit](platform-test-architecture-audit.md) and [findings register](platform-code-review-findings.md) own durable coverage and every identified future action.
+
+1. Review complete human-written files and their callers/tests; specifically classify generated output/assets using actual producers and consumers.
+2. Merge each evidence-backed batch into the per-file ledger and findings register, retaining unresolved questions and all unreviewed entries.
+3. Require zero pending/unmatched/content-hash mismatches, independent completeness sampling and cross-owner synthesis before closing M1.
+4. Only then reprioritize and resume repairs/optimization, systematic coverage and certification; desktop remains final M5.
 
 The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`.
 A current-source desktop launch at `2290c67` served the production build, but Computer Use could not bind the Python-hosted window and refused the disposable wrapper as not approved; no native acceptance is credited.
@@ -151,3 +173,11 @@ Ordinary restarts need this file, the assigned plan section, the relevant invent
 Shared campaign status belongs to the orchestrator; N1/E1 are integrated and the two ordinary workers now own read-only reconnaissance while preserving isolated I1/T1 packets.
 Follow the plan's per-edit, feature, wave, and final validation schedule; record observed setup/test costs and unchanged-phase reuse without repeating Sphinx for routine status drafts or presenting unmeasured savings.
 The next baseline record must replace these observations with current facts and mark invalidated evidence without erasing its historical source.
+
+### Complete-review administrative checkpoint validation
+
+`env UV_OFFLINE=1 scripts/test check docs` passed in 3 s (2.95 s measured) at source revision `29d272dbb4d87d98e2bf236923f92dfa939018c8` plus seven audit-document changes, source-manifest SHA-256 `ae253295b28551862492358194dd9eec224e89c406df68196536297140e430d4`; the manifest precedes this result-only log entry.
+The preceding runs failed in 2.86 s and 5.59 s on the same two MyST heading-fragment links; clearing the generated doctree did not repair them, and those reds remain failures.
+The correction uses the actual source-heading slugs rather than rendered HTML IDs; warnings were not suppressed.
+The campaign dashboard/file-existence guards and Sphinx passed; backend, frontend, browser, worker, external, published-compatibility and native phases were not run for this documentation-only checkpoint.
+This validates the review records, not the completeness of M1 or application behavior.

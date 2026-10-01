@@ -4,7 +4,8 @@ orphan: true
 
 # Architecture and test reconnaissance — 2026-10-01
 
-M1's first bounded pass is complete with independent cross-boundary synthesis; it releases prioritized diagnosis, not a clean bill for every file or application coverage credit.
+The earlier bounded pass completed selective reconnaissance only; **M1 complete-codebase review is OPEN**, with repairs and further campaign testing held by the user's clarification.
+The initial synthesis and diagnoses below are preserved as partial historical findings, not a completed whole-codebase review.
 The [campaign plan](platform-test-plan.md#reconnaissance-gate-architecture-and-tests-together) defines the gate and [checkpoint](platform-test-progress.md) owns the executing queue.
 The [per-file ledger](platform-test-file-review.tsv) records exact inventory revisions, subsystem ownership and inspected depths.
 Depth describes the stated invariant or excerpts, not every line of a large file; inventory-only/classified means unreviewed implementation.
@@ -26,7 +27,8 @@ Three installed-Wetlands seams and three T1-WIP seams are recorded separately fr
 Overlapping reviewers are counted once; filename-based routing was corrected for suite/CI/configuration and dataset/settings/deployment ownership.
 Much of editing/editor code, broad library/Core internals, scientific tool packages and MCP/REST/WebSocket families remains inventory-only or only partly traced.
 The ledger covers all tracked paths at the named baseline; generated files/assets/excluded execution families remain explicit entries rather than omitted safety claims.
-Further deep review follows the risk-ranked packets and updates the ledger; this pass is not an exhaustive source audit.
+Further review now covers every human-written source, test, script/configuration and specification, with generated/asset classifications justified through actual producers/consumers.
+Earlier scoped depths remain historical; a separate complete-review status starts pending, and this pass is not an exhaustive source audit.
 
 ## Authorities to preserve
 
@@ -74,3 +76,28 @@ The library already has `tests/ownership.toml` and documented test tiers; no add
 Keep normative requirements in their product-owned specification and context as navigation; shorten repeated narratives without removing essential features or explicit debts.
 Update every affected specification/context with actual repairs, consolidate ordinary campaign records, and perform low-frequency retrospectives at consequential integrations.
 Desktop execution remains final M5; no static/headless/injected-store result supplies native acceptance.
+
+## Complete-review checkpoint
+
+The refreshed source ledger has 1,798 entries: 740 platform, 909 library, 118 Wetlands checkout, three installed-Wetlands seams and 28 held task files.
+Assignments and source hashes are recorded separately from actual completed reviews.
+All entries begin pending; batch reports must establish full-content review plus relevant caller/test reasoning or a specific justified classification.
+The [findings register](platform-code-review-findings.md) records every identified future action, including uncertainty, test-suite and specification candidates.
+Review batches do not execute tests or implement fixes.
+The gate remains open until pending/unmatched/hash-mismatched human-written inputs are zero, classification exclusions are reconciled, findings are synthesized and independent completeness review accepts the evidence.
+No completion deadline or representative sample alone closes this gate.
+
+First accepted complete-file checkpoints: A batch 1 reviewed 20 platform files; root batches 1–2 reviewed 37 additional platform files plus two held dataset test files.
+That is 59 reviewed entries / 1,798 baseline entries, zero accepted classifications, and 1,739 pending entries.
+The original selective depth counts above remain historical and are not added to these complete-review counts.
+Forty-two identified candidates (A-F001–012 and ROOT-F001–030) are recorded with uncertainty and future actions; dependent consumer reviews remain pending where explicitly stated.
+The current codebase review is far from complete and releases no repairs or campaign execution.
+
+B batch 1 adds 19 complete context/library/Wetlands files; shared-infrastructure batch 1 adds 25 reviewed files and one producer-justified lockfile classification.
+The checkpoint now contains 104 complete entries (103 reviewed / one classified) and 1,694 pending baseline entries; no domain is globally certified.
+The register contains 65 identified candidates, with source defect, runtime red, risk, design and maintenance distinctions retained.
+Five test counterpart assignments were corrected to their subsystem reviewers; reassignment itself supplies no complete-review credit.
+
+The newly authored findings register is a separate pending current-document input beyond the frozen baseline: that checkpoint was 1,799 entries, 104 complete and 1,695 pending.
+A batches 2–3 add 17 full-content files (11 platform and six library); current total is 1,799 entries, 121 complete (120 reviewed / one classified) and 1,678 pending.
+The register now contains 86 identified candidates; public-loader corroboration strengthens the source-envelope and SyntaxError findings while public/platform containment boundaries and unreviewed owners remain explicitly distinguished.
