@@ -101,3 +101,11 @@ Five test counterpart assignments were corrected to their subsystem reviewers; r
 The newly authored findings register is a separate pending current-document input beyond the frozen baseline: that checkpoint was 1,799 entries, 104 complete and 1,695 pending.
 A batches 2–3 add 17 full-content files (11 platform and six library); current total is 1,799 entries, 121 complete (120 reviewed / one classified) and 1,678 pending.
 The register now contains 86 identified candidates; public-loader corroboration strengthens the source-envelope and SyntaxError findings while public/platform containment boundaries and unreviewed owners remain explicitly distinguished.
+
+### Complete-review source checkpoint: 197 entries
+
+B batch 2 adds 28 complete main/held inputs, A batch 4 adds four public-library inputs, root batch 3 adds 17 scientific implementation/test inputs and shared-infrastructure batch 2 adds 27 release/package/configuration/test inputs.
+Every accepted new hash matched its assigned source; held main/WIP versions remain separate inputs.
+Current scope is 1,799 entries / 197 complete (196 reviewed / one classified) / 1,602 pending, with 116 identified findings recorded.
+Owners have completed A 41/334, B 47/539, root 56/533 and shared reviewer 53/393; these are review judgments, not passing tests or domain certification.
+M1 remains OPEN; unreviewed files, cross-owner conclusions, current control-document hashes and independent final completeness acceptance still prevent release of repairs or campaign testing.

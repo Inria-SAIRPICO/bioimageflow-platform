@@ -24,7 +24,9 @@ A bare recognized empty final placeholder is not an accepted crash-recovery stra
 Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 platform files plus two held dataset test files), root batch 2 (10 platform client/component/test files).
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
-The newly authored findings register adds one pending current-document input: 1,799 total / 121 complete / 1,678 pending.
+B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
+Current checkpoint: 1,799 inputs / 197 complete (196 reviewed / one classified) / 1,602 pending, with 116 identified findings.
+The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
 Files with no finding retain specific review reasoning in the ledger rather than an implied clean bill.
@@ -314,7 +316,8 @@ Related editor save completion can close a subsequently reopened dialog and must
 #### ROOT-F024 — P1 potential impact, source risk: deferred dataset resolution can address a different active canvas
 
 `DatasetsPanel.vue:675–694` awaits real selection resolution, then calls setup-created commands.addToolNode/updateParameters; the update captures a node ID but no canvas registration or incarnation.
-Command-facade excerpts show zero-options active-canvas lookup; A will finish its full facade/session review to establish the actual stale-target consequence.
+Complete command-facade/registry review confirms updateParameter/addToolNode resolve the active command resource at invocation, so an awaited dataset result can mutate the newly active canvas.
+The exact facade-test review is still pending; no interleaving was executed.
 Existing Files-node component assertions mock commands and resolve immediately; no held result plus canvas switch/same-node-ID distinction exists.
 Future action: preserve originating canvas/session identity and one-edit parameter replacement across the await; do not narrow multi-canvas operation or silently lose picked data.
 
@@ -775,12 +778,13 @@ Nested invalidation tests use serial actual compute/invalidate and distinguish s
 B received this seam and will link the same A finding during complete storage/runtime review.
 Retain exact selection identity, corrupt-record quarantine and semantic invalidation scope; future authority decision must precede a controlled storage-publication diagnostic.
 
-#### A-F031 — Medium potential impact, qualified scientific-package classifier omission
+#### A-F031 — Medium, corroborated raw-class scientific-package classifier omission
 
 Library `custom_sources.py:33–45,51–73` enumerates built-in scientific package prefixes but omits bioimageflow_phasor_tools.
 Raw public classes without `_bif_package`/version stamps therefore may be treated as workflow custom classes and embedded as individual source files, unlike the other scientific packages.
 Off-owner `test_tool_package_export.py::test_all_tool_packages_are_not_workflow_custom_classes` omits phasor too.
-Actual phasor class metadata/loader stamping is root's pending scientific review, so this is qualified rather than an executed incorrect export claim.
+Root batch 3 confirms raw direct-imported phasor classes have no package/version stamps; loader-stamped classes retain the mitigation.
+No incorrect export was executed during review.
 Retain stable installed-package identity versus true workflow-owned editable sources; root received the exact classifier/test omission handoff.
 
 #### A-F032 — Low/Medium, multi-file source publication failure cleanup gap
@@ -806,3 +810,312 @@ Retain legitimate local package assets and existing per-file export size bound; 
 Public loader review confirms A-F023 as a static SyntaxError-to-HTTP mapping defect, rather than a conditional risk; no new execution established this.
 A-F001/A-F003 also reach the earlier local-source promotion consumer in workflow_artifacts.py:146–175, which does not first preserve an explicit portable binding.
 The two administrative Sphinx failures expose the limited scope of reviewer-F011: the file-existence checker passed while MyST heading-fragment resolution rejected two actual links; source slugs and rendered HTML IDs differ for those em-dash headings.
+
+### Application and declared environment lifecycle — B batch 2
+
+These are held backlog entries, not implementation or diagnostic-test authorization.
+P1 marks essential demonstrated contract breaks; P2 marks material source risks; P3 marks narrower test, validation or maintenance candidates.
+Existing selectors are source identifiers only; no command was run in this stage.
+
+#### B-F013 — P1 established T1 defects: current manual lifecycle lacks Run admission and canonical target/recipe authority
+
+Main `routers/tools.py:603–633` delegates start/stop/recreate without an execution reservation or mapped ownership/recipe refusals.
+Main `services/tool_environments.py:61–104,159–174` inspects and prepares manual start in separate offloads outside the shared guard, authorizes the requested alias rather than the declared spec name, chooses the first matching declaration, and stops the requested alias rather than the actual pool name.
+`_environment_spec` at lines 198–207 rebuilds from metadata and drops original declaration flags such as `allow_flexible_versions`; main recreate publishes/stops before public Core validation and main start has no failure-status transition after a failed get-or-create.
+These are the previously retained T1 exact reds and source-derived defects, not newly executed audit failures.
+Do not reopen their established evidence as untested speculation, or count held WIP as accepted product behavior.
+
+The held versions contain bounded corrections and distinguishing selectors:
+`test_environment_lifecycle_is_refused_during_run_admission`, `test_accepted_environment_lifecycle_keeps_run_admission_until_completion`, `test_legacy_alias_cannot_bypass_declared_environment_owner`, `test_unambiguous_stop_alias_addresses_declared_pool_and_status`, `test_ambiguous_package_alias_does_not_select_first_environment`, `test_exact_environment_name_precedes_colliding_tool_alias`, `test_conflicting_declarations_for_one_environment_refuse_mutation`, `test_selected_recreate_preserves_valid_declared_flexible_recipe`, and `test_incompatible_declared_recipe_refuses_before_pool_or_status_mutation`.
+Future action after the complete-review gate: review/resume the bounded held packet and public-force wrapper plan with actual generation/failure/retry/isolation evidence.
+Retain intentional no-environment no-op behavior, unambiguous alias compatibility, declared lifecycle controls in webapp mode and the distinction from arbitrary source/package mutation.
+No universal webapp lifecycle ban or coordinator rewrite is justified.
+
+#### B-F014 — P2 source-risk: startup-refresh close can return before its offloaded physical operation
+
+Both main `tool_environments.py:117–133` and held `tool_environments.py:97–113` cancel the refresh asyncio task and swallow its cancellation while refresh directly awaits `anyio_to_thread.run_sync`.
+Raw `Task.cancel()` can unwind that await while the worker continues; the held manual `_run_lifecycle` drain at lines 68–86 addresses exactly this distinction for manual actions, but is not used by startup refresh.
+App awaits service close before later teardown (`app.py:746–748`), so the service can appear closed while its worker still prepares/replaces and publishes status through shared objects.
+This shutdown path has not received a distinguishing actual-runtime or exact coordinated cancellation reproduction; do not claim physical leakage or pool corruption is observed.
+
+`test_background_refresh_failure_releases_automatic_preparation_guard` exercises an ordinary physical exception and `test_startup_general_refresh_cannot_retire_processing_handoff` coordinates normal preparation, not shutdown cancellation during that worker.
+Future action: a bounded startup-close/physical-completion diagnostic after the audit gate; retain asynchronous startup, the shared guard and completion outside the event-loop lock.
+Avoid treating AnyIO scope shielding as evidence for raw asyncio cancellation.
+
+#### B-F015 — P2 source-risk/design: lifespan cleanup does not cover early startup failures and can be short-circuited
+
+App `app.py:670–742` performs settings/profile loading, distributed migration/coordinator startup, workflow recovery/registration, catalog initialization and log/watcher setup before reaching the `try: yield` cleanup scope at lines 743–745.
+A later startup failure therefore cannot execute that scope's cleanup for resources already constructed or started.
+Inside teardown, service/coordinator/token/Napari-service close at lines 746–754 and settings/profile flush at lines 797–800 are unguarded; one failure can skip later viewer/thumbnail/editor/watcher/log/PyPI cleanup.
+The viewer/thumbnail/editor sections already isolate ordinary exceptions, showing a useful local pattern; cleanup needs ownership-aware completeness rather than swallowing all errors indiscriminately.
+No failed-startup leak or teardown fault was executed in this audit.
+
+`test_lifespan_refreshes_catalog_on_startup`, `test_lifespan_swallows_network_error_from_refresh`, and `test_lifespan_starts_and_stops_hot_reload_service` cover normal life and the intentionally handled catalog exception, not another startup failure after coordinator start or an early close failure.
+Future action: distinguish entered ownership stages and failure-safe cleanup/aggregate reporting with exact injected startup/close tests.
+Do not globally close the borrowed process manager without reviewing pool/application ownership.
+
+#### B-F016 — P2 source-risk/design: package-scoped environment status collapses distinct declared targets
+
+Main `tool_environments.py:223–229` and held lines 252–258 write one `PackageInfo.environment_status` per selected tool's package and update the catalog at that package granularity.
+`models/tools.py:102–121` models one status despite a package potentially containing tools declaring multiple environments.
+Stopping or failing the selected target can therefore overwrite the package status representing an unrelated target that remains running.
+This source-level status-authority collapse is established; its precise frontend presentation is still a cross-owner pending trace.
+
+The held real integration test registers SelectedEnvironmentNumbers and OtherEnvironmentNumbers under `same-package`, but its isolation check compares managed inventory and unmanaged manifest digest, not distinct UI environment status.
+The exact-name precedence unit case uses different packages, so it does not distinguish this shared-package status case.
+Future action: reconcile declared-target status authority/read-model granularity and retain actual selected/unrelated inventory isolation; avoid duplicating lifecycle execution just to test status mapping.
+No filesystem or worker mutation of the unrelated environment is alleged from this status finding.
+
+#### B-F017 — P2 source-risk/persistence: profile loading discards every unknown schema version
+
+`services/execution_profiles.py:131–136` rewrites the store to an empty v2 envelope whenever `profiles_version != 2`, although its comment and `test_v1_profiles_are_dropped_without_archive` justify discarding obsolete v1 specifically.
+Missing, malformed or future version values take the same destructive branch and can lose stored profiles on application startup.
+The branch is source-demonstrated; no future-format file or data loss was executed here.
+Future action: distinguish the explicitly authorized v1 discard from unknown/malformed versions and preserve unsupported data on refusal.
+Retain the intentional no-archive v1 policy rather than inventing a migration requirement for obsolete contracts.
+
+#### B-F018 — P3 design/debt: profile update executes trusted configuration before target/CAS refusal
+
+`execution_profiles.py:179` offloads trusted script loading/evaluation before acquiring the lock, finding the target and checking expected revision at lines 180–187.
+A nonexistent/stale update can execute the script and perform expensive or scripted side effects before returning its predictable profile refusal.
+The scripts are intentionally trusted code; this is not a claim of a webapp edit bypass or a new sandbox requirement.
+The CRUD/CAS tests assert persisted revision state, not whether refused updates evaluate the script.
+Future action: consider a cheap initial target/CAS precheck followed by authoritative recheck after loading, with an evaluation-count oracle if the contract merits it.
+Retain exact content capture/digest validation and no reflection of script credential-bearing exception text.
+
+#### B-F019 — P3 source-risk: profile-load rejection can leave a partially accepted in-memory catalog
+
+`execution_profiles.py:137–140` assigns the id-indexed `_profiles` before detecting duplicate persisted IDs.
+After raising, an existing store object's `list/get` can expose the last duplicate value instead of retaining its previous validated catalog or remaining explicitly unloaded.
+Normal app startup stops on this error, so request exposure through default startup is not demonstrated.
+There is no duplicate-ID load-failure state oracle in the complete profile-store tests.
+Future action: validate into a local complete candidate before publication; distinguish initial/repeated load failure while retaining atomic writes and revision CAS.
+
+#### B-F020 — P3 performance/design candidate: async tool listing synchronously repeats full managed-root scans
+
+`routers/tools.py:240–258` calls `service.location` synchronously for each declared tool environment.
+`tool_environments.py:176–195` calls public `managed_environments()` each time; duplicate tool declarations sharing a target repeat the same filesystem-wide discovery and the async route performs these scans on the event loop.
+Large catalogs or slow storage can block unrelated API/WS progress and multiply discovery work.
+No performance regression, blocking duration or suite speedup has been measured.
+`test_get_tools_includes_managed_environment_location` checks one fake location and original metadata immutability, not discovery cardinality or event-loop work.
+Future action: request-local managed snapshot/location mapping and offload if measurements justify it; preserve public discovery, managed ownership and original recipe metadata nonmutation.
+Do not introduce a long-lived second environment authority/cache without reviewing invalidation.
+
+#### B-F021 — P3 test/artifact debt: real lifecycle evidence is written only after all assertions succeed
+
+Held `test_tool_environment_lifecycle.py:74–80` writes the combined generation/fault/recovery/worker evidence only at the successful end.
+An earlier failed assertion, such as the retained matching-generation red, prevents this automatic artifact from being produced even though meaningful real phases already occurred.
+The parent retained the actual T1 red through separate manual artifacts; those are valid, but the test does not itself guarantee first-failure phase preservation.
+Future action: retain stage snapshots/failure context before cleanup using the existing fixture and one genuine runtime journey, not duplicate runs or simulated provisioning pass claims.
+The selected-generation/PID/recipe and exact worker values/report content assertions are useful and must be retained.
+Fault injection remains the explicit one armed real Pixi install exit 77, not an invented external-provision success.
+
+#### B-F022 — P3 test gap: profile policy test does not distinguish the independent editable guard
+
+`test_routers/test_execution_profiles.py::test_webapp_profile_mutations_are_forbidden` supplies both webapp settings and `editable=False`.
+It passes even if either side of `_mutable` is accidentally removed; the source has the two guards, and the default process-mode store flag currently prevents ROOT-F002 from becoming a default webapp profile edit bypass.
+Future action: extend this existing parameterization for the independent guard combinations and read-model editable result; preserve administrator-managed profiles and trusted explicit describe semantics.
+No additional remote lifecycle execution is necessary to distinguish this local policy oracle.
+
+#### B-F023 — P3 false-confidence test: Fiji identity-required test fails on a different missing field
+
+`test_routers/test_fiji_router.py::test_open_requires_complete_result_identity` at lines 145–150 sends node_id and row but omits the required `col` field as well as result_identity.
+Its 422 assertion therefore succeeds in model validation even if the route's explicit immutable-result identity requirement at `routers/fiji.py:57–61` is removed.
+Other cases use a valid complete identity; they do not repair this missing negative distinction.
+Future action: send all non-identity required fields and assert the identity refusal/launcher non-call, preserving real pinned-result resolution as separate result-store integration coverage.
+Do not count the mock selected-cell test as whole image/session immutability certification.
+
+
+### Public graph materialization and interfaces — A batch 4
+
+#### A-F034 — Medium, static public endpoint-validation/roundtrip risk + oracle gap
+
+`workflow/materialization.py:250–301` validates edge variants/field combinations, unique edge IDs and node membership, but does not validate endpoint value types/nonempty IDs, nonnegative positional indices or uniqueness of incoming destinations.
+`kwargs`/`positional` at lines364–396 use target keys as dictionaries, so two different edge IDs targeting the same endpoint silently overwrite the earlier source while both contribute topological dependencies.
+A negative positional index can fall outside the later `range(max(positional)+1)` at lines483–486, so the accepted record's edge can disappear from actual args and reserialization.
+Platform GraphState is a stronger typed structural boundary, but public from_dict is also an authoritative entry for direct callers/archives and should not silently discard accepted wire edges.
+No constructed edge execution was run here; full Node binding review may constrain individual constructions but cannot restore an edge already overwritten in these dictionaries.
+`test_recursive_parser_rejects_unknown_variants_and_fields` covers variant/extra-field errors; `test_recursive_graph_round_trip_is_canonical` uses a well-formed single-endpoint graph.
+Retain symbolic fanout to distinct endpoints, stable edge IDs and partial missing-node diagnostic continuation; future action should define/reject competing endpoint ownership and malformed positions at the public boundary, not infer schema coverage from field-set checks.
+
+#### A-F035 — Medium, static public resource-applicability defect: DataFrame overrides silently ignored
+
+`materialization.py:487–527` applies resource_overrides only in the non-DataFrame branch.
+The DataFrame branch accepts a node record carrying resource_overrides because that field is allowed at lines213–228, then neither validates nor assigns it.
+The resulting workflow can lose the override in reserialization rather than refusing a Processing-only setting.
+Platform translator's explicit DataFrame refusal is a different boundary and can itself use the wrong same-name class (A-F002).
+No resource override test was run here; existing clean API/unified tests in this batch contain no DataFrame override payload.
+Complete public resources/test review is pending to confirm all surrounding selectors/contract wording.
+Retain Processing class declaration floors through actual Node setter and conservative engine classification; future action should make public invalid applicability a structured rejection using the actual resolved class.
+
+#### A-F036 — Medium, static exception-state mutation defect: rejected expose_input leaves a new port
+
+`interfaces.py:134–170` registers a new public input through self.input before `_bind_input_target` checks active ownership, conflicting internal edges and competing published targets.
+If that later check raises, the newly inserted `_interface_inputs` entry remains, with no rollback.
+The caller receives a refusal but the workflow definition/interface has changed; an unused required port can then alter validation/invocation semantics.
+No rejected exposure was executed; source order and mutation directly establish the exception-state discrepancy.
+`test_exposed_input_preserves_local_constant_as_fallback` verifies a valid exposure, not invalid exposure preserving the previous graph.
+Retain unique interface names/IDs and explicit internal-edge conflict refusal; future action should preflight or transactionally commit port+target ownership, without deleting a previously existing legitimate input on error.
+
+#### A-F037 — Medium, static workflow context reentry defect + test-oracle gap
+
+`interfaces.py:454–463` stores the previous active workflow in one mutable `self._prev_workflow` slot.
+Entering the same object twice sets that slot to self on the inner entry; both exits then restore self, leaving the object active after the outer exit.
+There is neither reentry rejection nor a per-entry token/stack.
+Normal distinct workflow nesting and exception propagation remain correct; context-local storage in Node is not disproved.
+`test_active_workflow_is_context_local_across_threads` creates a separate Workflow in each thread, so cannot distinguish same-object reentry or the shared previous-slot authority.
+No reentry test was executed here.
+Retain context-local construction and outer workflow restoration; future action must choose supported nested reuse versus explicit refusal before mutating active state, with a narrow same-object scope oracle.
+
+#### A-F038 — Low/Medium, qualified target-membership ownership risk
+
+`interfaces.py:515–539` resolves named nodes from self, but returns a passed Node reference without proving membership/identity.
+`enable`/`disable` then mutate that object even when it belongs to a different workflow.
+Actual compute/selection callers may intentionally accept reference targets; complete Node/WorkflowNode/runtime review is required before deciding the full API policy.
+This is not evidence of unintended platform cross-canvas mutation or a permission bypass.
+Reviewed tests use own named/reference targets; context/reference ownership tests do not exercise this selector branch with a foreign node.
+Retain caller-friendly own Node references and copied public mapping; future action should document/enforce one consistent membership policy rather than silently selecting an unrelated owner.
+
+#### A-F039 — Low/Medium, pending fallback fanout authority risk
+
+`common.py:98–126` reports a public input fallback if **any** target has one, while `interfaces.py:342–376` independently applies a supplied value to every target.
+If one field target has a constant/default and another remains required, that global fallback result may conceal a missing required input at a different target.
+Complete WorkflowNode/root input validation and IOModel default handling remain pending, so no admitted bad execution is claimed.
+The public unified fallback test has one target, while dataframe fanout has no mixed field-default scenario.
+B received this seam to reconcile invocation/runtime required-input authority.
+Retain local constant fallbacks and explicit root input override semantics; future diagnostic must distinguish per-target defaults from an actual shared boundary default.
+
+
+### Scientific adapters and test oracles — root batch 3
+
+#### ROOT-F031 — P1 scientific correctness, static defect plus harmonic-specific oracle gap
+
+`packages/bioimageflow-phasor-tools/bioimageflow_phasor_tools/phasor.py:180–197` obtains matching frequency and harmonic but calls phasor_calibrate without the harmonic.
+Conversion accepts any positive requested harmonic and writes it into the exchange file, so higher-harmonic coordinates can reach this branch with their correct metadata.
+The [official PhasorPy 0.12 lifetime API](https://www.phasorpy.org/docs/stable/api/lifetime/#phasorpy.lifetime.phasor_calibrate) defines an explicit harmonic parameter whose default is the first harmonic.
+Consequently the reference lifetime is interpreted at the fundamental frequency even when the accepted coordinates are at a higher harmonic, changing calibration values while the output retains the higher-harmonic label.
+This is source/API corroboration; no numerical failure was executed.
+`test_calibration_accepts_different_reference_shape_and_selects_center_method` checks reference shape/method using harmonic 1 and ignores the frequency/harmonic arguments; the real PhasorPy roundtrip also uses harmonic 1.
+After full review, preserve fundamental frequency, matching sample/reference acquisition and selectable harmonics; pass the actual harmonic through the authoritative upstream contract and distinguish a known higher-harmonic reference, without another whole-platform journey.
+
+#### ROOT-F032 — P1 scientific correctness, static defect plus lifetime oracle gap
+
+`phasor.py:310–317` discards the stored harmonic and passes only the fundamental frequency to phasor_to_apparent_lifetime.
+The [official PhasorPy 0.12 conversion contract](https://www.phasorpy.org/docs/stable/api/lifetime/#phasorpy.lifetime.phasor_to_apparent_lifetime) computes lifetime using angular frequency 2πf and has no separate harmonic argument.
+For unmodified calibrated coordinates at harmonic h, using f rather than hf scales the inferred lifetime by h; any preceding erroneous calibration is a separate ROOT-F031 distortion.
+This is a source/mathematical inference, not an observed numerical run.
+The adapter's fixed mocked lifetime and real first-harmonic roundtrip cannot detect it; modulation output bytes are also not asserted in that runtime test.
+Retain float32/NaN policy, correct physical units and fundamental acquisition metadata; future action must use the effective harmonic frequency and a known nonfirst-harmonic numerical oracle.
+Do not compensate by rewriting acquisition metadata to disguise the requested harmonic.
+
+#### ROOT-F033 — P3 validation defect, separator-only statistics escape the nonempty guard
+
+Measurement `table_tools.py:374–384` rejects an empty/blank stats string before splitting, but a nonblank separator-only string such as `","` becomes an empty requested list and passes all remaining checks.
+AggregatePerImage schema/runtime callers therefore accept no actual statistic despite the helper's explicit “at least one aggregation” contract; the schema can still publish object_count only.
+No pandas empty-aggregation behavior or failure was executed and no lost scientific rows are alleged.
+`test_table_tools_validate_selection_and_output_collisions` covers empty string and repeated mean, not an empty token set; the exact schema/runtime test covers valid requested stats only.
+Future action is a post-tokenization nonempty check at the existing shared helper and a narrow malformed-token oracle, retaining case normalization, supported aggregations and duplicate refusal.
+
+#### ROOT-F034 — P3 test organization candidate, broad synthetic case obscures independent tool failures
+
+`tests/test_measurements.py::test_measurement_tools_schema_and_synthetic_execution` performs schema checks and actual scientific/table assertions for ten tools in one long case.
+An early failed schema or region assertion prevents later independent matching/table/normalization assertions from running and gives those tools no independent selector.
+Later focused tests distinguish meaningful label/threshold/collision/index contracts, so these are not simply redundant tests to delete.
+After the hold, consider parameterizing the independent tool/oracle cases or splitting them with the same small synthetic fixtures, preserving every exact scientific assertion.
+The coherent public workflow/worker boundary remains a separate integration obligation; no extra complete journey is proposed.
+No timing saving has been measured and this review does not claim suite-wide optimization.
+
+
+Root batch 3 fully corroborates raw phasor classification A-F031: direct imported classes and their Core bases have no package/version stamps; loaded/stamped classes retain the mitigation.
+A full command-facade/registry review resolves ROOT-F024: parameterless useCanvasCommands returns a shared facade whose updateParameter/addToolNode methods choose the active command resource at invocation, so the original dataset resolution awaits do not bind the later mutation to its original canvas.
+Root scientific review also corroborates reviewer-F003 for the CAREamics configured-checkpoint test: ordinary collection skips its model_runtime marker, while the complete model-runtime selector requires a complete marker that this test lacks; no test was executed.
+
+### Release and package contracts — shared reviewer batch 2
+
+#### reviewer-F012 — P2, source contract risk: compatible published dependency versions are reduced to one latest version
+
+`scripts/release_support.py:198–215` exposes only PyPI JSON's `info.version`; `scripts/release_set.py:122–147` requires an unselected first-party dependency to accept that single returned version.
+`reference/releasing.md:31–38,127–129,197–198` preserves accurate lower/upper ranges and says a dependency needs a compatible published version.
+Consequently, when a dependency has advanced beyond an unchanged package's upper bound, the tool can refuse its independent release even if an older compatible version remains published.
+That is a source-derived scenario, not an observation about any current PyPI project: no registry was queried.
+`test_release_tagging.py::test_unselected_workspace_dependency_must_be_available` covers a latest version below the floor and an accepted latest version; it does not distinguish a latest version above the upper bound with another compatible published version.
+After the complete audit, clarify availability policy and resolve against actual compatible published candidates if the existing independent-release contract is retained.
+Do not automatically broaden upper bounds, raise unrelated package versions, or infer API compatibility from metadata alone.
+Optional/conditional first-party dependency handling is also a future boundary of these helpers: they currently inspect only `project.dependencies` and do not interpret requirement markers; none of the eleven present manifests has a conditional/optional first-party edge, so no current marker-induced failure is claimed.
+
+#### reviewer-F013 — P2, source failure-path risk: later invalid artifacts are checked after an earlier upload
+
+`scripts/release_set.py:530–552` validates one package's artifact pair, publishes it, then validates the next pair.
+A malformed/missing later artifact pair can therefore stop the public CLI after an earlier package has already been uploaded, despite all artifact directories being locally available before publication starts.
+Current GitHub CI mitigates this path: every selected build validates its pair before the publish job starts, and its staging shell checks expected names/counts (`release.yml:112–126,161–189`).
+The public CLI's exposed preflight remains weaker; the finding is not a claim that normal CI has published a bad pair.
+`test_release_tooling.py::test_release_set_publishes_validated_artifacts_in_dependency_order` supplies two valid pairs and checks order; it does not assert zero publisher calls when the later pair is invalid.
+After review, consider validating every selected pair before the first irreversible upload, retaining those exact paths for publication.
+Preserve dependency order, exact artifact identity, trusted publishing and explicit retry; PyPI publication cannot be promised atomic rollback.
+The one-time bootstrap helper deliberately builds/uploads sequentially (`publish_packages.py:167–217`); its documented partial-publication/retry behavior is explicit, so do not silently redefine that separate bootstrap contract.
+
+#### reviewer-F014 — P3, source defect: excluding every bootstrap package crashes plan formatting
+
+`scripts/publish_packages.py:71–83` permits exclusions yielding an empty selection; `build_publish_plan` returns an empty list and `publish_batch` explicitly accepts no work.
+But `_print_plan:233–235` calls `max(header_length, *row_lengths)` with no row arguments, reducing it to `max(int)` and raising `TypeError` before the intended no-work/plan completion path.
+This is a source-level reasoning result; it was not executed.
+The complete `tests/unit/test_publish_packages.py` covers mixed/unknown filters and token/clean-tree behavior, but not an all-excluded CLI plan.
+After the audit, make empty selection either an explicit clear refusal or a valid empty plan/no-op according to the retained CLI contract, using the existing formatter/filter tests.
+Preserve fail-closed version checks and token-free build subprocesses.
+
+#### reviewer-F015 — P3, cost/clarity candidate: the CI metadata step already performs an artifact build
+
+Library CI runs `test_package_artifacts.py` at lines 218–219 without a prebuilt directory.
+Its session fixture builds all packages (`test_package_artifacts.py:97–120`); CI then explicitly builds all packages with `--no-sources` and reruns the same artifact file against `dist/packages` (`ci.yml:220–225`).
+Thus the first step is not merely a metadata-only check, as the workflow label suggests.
+The build postures differ: the fixture fallback uses workspace defaults; the authoritative explicit build disables workspace sources.
+This refines batch 1's general retain-pre/post-boundaries note: retain both builds only if that posture distinction has a required distinguishing contract.
+Otherwise keep source-manifest checks and one authoritative release-posture build with all current artifact/import oracles.
+No build was run, no savings were measured, and no test names should be deleted solely because they repeat.
+
+#### reviewer-F016 — P3, bounded efficiency/reliability candidate: tagged subset preflight queries unrelated packages
+
+`scripts/release_set.py:575–583` queries every discovered workspace package for `plan/publish/verify --check-pypi`, even when tags select one independent subset.
+Any unrelated package's query error aborts the selected operation (`fetch_package_versions:282–286`).
+The same module already narrows explicit `tag` queries to its recursive required workspace dependency closure (`_version_query_packages:379–411`; `tag_release_set:429–435`), and `test_explicit_selection_queries_only_its_dependency_closure` distinguishes that behavior.
+After review, consider reusing the required closure for explicitly tagged subsets while retaining all-package queries for automatic whole-workspace discovery.
+Do not remove required dependency availability checks or the second validation after network input; the latter protects against local state changes across the query boundary.
+
+#### reviewer-F017 — P3, verification failure-path/scope candidate: the wait loop compares latest metadata and aborts on transient query faults
+
+`scripts/release_set.py:556–572` compares the single returned PyPI version with each requested version and retries only a nonmatching return value.
+A query exception aborts immediately rather than using the stated bounded visibility wait; a later latest version can also prevent this loop from recognizing the requested published version.
+The completely read matching release tests do not directly exercise this loop's transient-error or exact-version-presence outcomes.
+No registry response or failure was observed here.
+When this boundary is repaired, distinguish requested-version visibility from latest-version equality, retain explicit bounded retry/deadline behavior, and report publication separately from later verification failure.
+The CLI accepts arbitrary integer `--attempts` and float `--interval` (`590–599`); negative interval reaches `time.sleep` and zero/negative attempts perform no queries, so validation of that configuration is an adjacent small robustness candidate.
+Do not let additional retries exceed the workflow's overall time budget or automatically republish artifacts because a visibility probe failed.
+
+#### reviewer-F018 — P4, version-policy/maintenance candidate: duplicated three-part validation has an epoch ambiguity
+
+`release_support.py:93–115` and `publish_packages.py:46–62` separately implement stable three-part version validation.
+They reject prerelease/development/postrelease/local or noncanonical forms, but do not reject a nonzero PEP 440 epoch: release tuple length and canonical public spelling alone still permit an epoch-bearing stable version.
+Their help/policy describes plain `<major>.<minor>.<patch>` and all current manifests use plain triples.
+No current release uses an epoch and no failure was executed; treat this as a policy clarification/maintenance candidate, not an urgent publication defect.
+If plain triples are the intended exact contract, reuse one validation authority and add that distinction to the existing invalid-version cases; otherwise document the deliberately accepted epoch form.
+Retain all currently intended stable-version and exact-tag checks rather than narrowing legitimate version syntax accidentally.
+
+#### reviewer-F019 — P3, artifact-oracle scope candidate: prebuilt pairs are not compared to current manifest identity/version
+
+`test_package_artifacts.py:86–94,123–143` selects prebuilt files by package-name glob and reads metadata for dependency/extras assertions, but the file has no assertion that each artifact's metadata name/version equals its current source manifest.
+A sole stale-version pair can satisfy the prebuilt tests' filename shape and content/dependency checks.
+The clean CI build path is a mitigation, and the release helper separately checks exact identity/version before publication (`release_support.py:239–251`); no stale current CI output is claimed.
+If extending this artifact boundary after the audit, reuse manifest identity and the existing artifact metadata reader/validation helper for that missing distinguishing outcome rather than adding another build.
+The wheel import oracle correctly uses a separate process and verifies import origins; it specifically blocks Parsl/PSI/J imports, while using the current development environment for ordinary declared dependencies.
+It does not certify every allowed historical dependency version or a dependency-free fresh installation.
+
+#### reviewer-F020 — P3, validation guidance/cost inconsistency: release fixes always demand rerunning full
+
+Platform `docs/developer/releases.md:46–47` says that any validation fix must be committed and followed by the full lane again.
+Current AGENTS and `docs/testing.md:143–148` instead retain successful unchanged phases and rerun the exact failure plus invalidated checks with explicit composite revision/input evidence.
+After the hold, reconcile this release guidance with that proportionate rule while preserving complete required release evidence for the final relevant inputs.
+Do not replace release certification with quick/scoped results, waive manual release evidence, or hide original failed/unrun phases.
+The application archive still needs its signed manifest and matching static version, and rebuilt launchers still need their independent operating-system signing/startup checks.
+
+
+Shared batch 2 completes the release workflow/helpers and previously context-only infrastructure tests; reviewer-F004 also reaches stale installation.rst/reference tool-package claims about automatic tags and repeated validation, while current releasing.md correctly describes manual coordinated dispatch and retained exact-commit evidence.

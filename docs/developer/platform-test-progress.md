@@ -181,3 +181,18 @@ The preceding runs failed in 2.86 s and 5.59 s on the same two MyST heading-frag
 The correction uses the actual source-heading slugs rather than rendered HTML IDs; warnings were not suppressed.
 The campaign dashboard/file-existence guards and Sphinx passed; backend, frontend, browser, worker, external, published-compatibility and native phases were not run for this documentation-only checkpoint.
 This validates the review records, not the completeness of M1 or application behavior.
+
+### Complete-review source checkpoint: 197 entries
+
+B batch 2 adds 28 complete main/held inputs, A batch 4 adds four public-library inputs, root batch 3 adds 17 scientific implementation/test inputs and shared-infrastructure batch 2 adds 27 release/package/configuration/test inputs.
+Every accepted new hash matched its assigned source; held main/WIP versions remain separate inputs.
+Current scope is 1,799 entries / 197 complete (196 reviewed / one classified) / 1,602 pending, with 116 identified findings recorded.
+Owners have completed A 41/334, B 47/539, root 56/533 and shared reviewer 53/393; these are review judgments, not passing tests or domain certification.
+M1 remains OPEN; unreviewed files, cross-owner conclusions, current control-document hashes and independent final completeness acceptance still prevent release of repairs or campaign testing.
+
+`env UV_OFFLINE=1 scripts/test check docs` passed for the 197-entry administrative checkpoint in 3 s at revision `483ff9e` plus four changed audit files, source-manifest SHA-256 `65ae1d7008c3058a60297860089b17d1a7fbd0c51c0e07884fed5c9e3f8f292a` (manifest precedes this result-only log entry).
+Only campaign-record guards and Sphinx ran; every application, browser, worker, external and native phase remains held and unrun for this checkpoint.
+
+The first whitespace check for this checkpoint found 16 empty final TSV cells; these were normalized to the existing `-` placeholder convention without changing review judgments.
+`git diff --check` then passed, and `scripts/test check campaign` passed in 1 s at `94ce5bd` plus that ledger-format correction (ledger SHA-256 `c12db34471c16559cdec88bf486abfe552903467806a74546cc99659bb73e489`, before this result-only log entry); the original whitespace red is retained separately.
+No application phases ran.
