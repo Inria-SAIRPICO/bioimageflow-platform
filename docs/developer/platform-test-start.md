@@ -5,7 +5,7 @@ orphan: true
 # Start the new platform confidence campaign
 
 The campaign is **RUNNING**; use the checkpoint to resume the remaining work.
-The user requested execution after the specification revision and documentation acceptance.
+The user requested the 2026-10-01 architecture-led revision and continued execution after the independent retrospective.
 Use this prompt when execution is requested; reading or reviewing these documents alone does not start tests, repair branches, or native setup.
 The [plan](platform-test-plan.md) defines outcomes and acceptance; the [checkpoint](platform-test-progress.md) contains the observed baseline and next tasks.
 The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is preserved for audit only.
@@ -23,7 +23,14 @@ Preserve unfinished candidate worktrees and unrelated user files; do not merge, 
 Verify current contracts before porting candidate code, especially removed fingerprint fields and changed result/dependency APIs.
 Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.
 
-Run the four current-code readiness journeys with the exact selectors in both browsers, checking J1's execution backend and making J3's sibling results distinguishable before crediting those claims; then take the Napari chooser, stale processing environment, import guidance, and Manage Tools batches.
+Retain the accepted readiness/N1/E1 evidence and preserved I1/T1 work; do not restart those paths solely because the campaign sequence changed.
+Begin with the reconnaissance gate: inventory platform/library/Core source and tests at exact revisions, assign subsystem owners and truthful per-file review depths, and trace sensitive cross-layer invariants and relevant installed Wetlands public contracts.
+Use two ordinary subsystem reviewers plus a reserved independent specialist; review code and test oracles together, not a swarm of disconnected file reports.
+The orchestrator owns the complete manifest, deployment/persistence and suite-cost review, shared documents and cross-boundary synthesis.
+Close the gate with an independently reviewed authority map, explicit unreviewed areas, prioritized repair/retain/deepen/defer decisions and cost evidence or named missing measurements.
+Static review earns no coverage credit; do not call inventory-only files reviewed or representative reading exhaustive.
+Resolve T1 force-Recreate via supported public capabilities before dependent lifecycle acceptance; preserve ownership, concurrency, failure and unrelated-environment invariants without private-state workarounds or silently weakening the feature.
+Then finish applicable I1/T1 work and priority repairs, inspecting existing assertions before adding missing coverage.
 Split independent failure modes into short scenarios and distinguish mocked client, real API/storage, real GUI/backend, real worker, and native evidence.
 A passing intercepted chooser does not certify backend favorite persistence or native Qt launch.
 Continue the systematic inventory after these initial batches; retain parallel/HPC/Parsl/managed remote/distributed exclusions and sequential real local workers.
@@ -31,6 +38,8 @@ Continue the systematic inventory after these initial batches; retain parallel/H
 For every repair packet map changed files through owners, callers, storage/event/generated-type/library consumers to exact distinguishing selectors and the required completion scope.
 Follow docs/testing.md: focus after localized edits, exact failing selector/browser first, quick only after coherent increments when coding continues, then the required smallest completion check once before each feature commit/integration.
 Use the plan's defined wave milestones and final certification schedule; preserve strong checks and both-browser obligations, and avoid stacking lanes whose phases are already covered.
+Use M0–M5 and the low-frequency strategic retrospectives; combine adjacent triggers and review priorities after architectural integrations rather than after every edit.
+Execute desktop applications only at final M5 after automated/external certification; prerequisite inventory and headless checks cannot supply native evidence.
 Keep valid passing phases after late failures only with recorded source/fixture/dependency/generated-artifact/runtime equivalence; preserve original red/interrupted commands and all skipped/unrun cases.
 Do not repeat broad lanes solely to erase an unrelated intermittent failure; capture gesture/Open, API, identity, tab, lock, and event breadcrumbs on recurrence.
 For unresolved contract conflicts or refactors affecting identity, persistence, concurrency, or loss behavior, get the bounded high-reasoning plan and independent review before dependent implementation.
@@ -38,5 +47,7 @@ Use separate worktrees and independent runtime/dependencies for parallel writers
 Commit each coherent validated task without unrelated files; consolidate inventory/dashboard/evidence/checkpoint updates at that boundary.
 Check routine campaign status once per consolidated batch; use Sphinx for structural/substantial documentation milestones and final acceptance, not every review draft.
 Record actual setup/test timings and cold/warm state before claiming savings; local scheduling does not optimize the current CI triggers.
+Evaluate redundancy by contract, entry point, oracle and failure mode, retaining distinct evidence layers and essential features.
+Request expected network/socket/system permissions before the first applicable command; preserve original failure artifacts before cleanup and retention.
 Continue until final acceptance or a concrete owner decision blocks dependent work, answering status questions briefly while preserving the active objective.
 ```

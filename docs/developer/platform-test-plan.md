@@ -4,16 +4,18 @@ orphan: true
 
 # Platform confidence campaign — 2026-09-30
 
-Establish confidence in the platform people use today, repair demonstrated defects, then complete systematic coverage of implemented in-scope behavior.
+Establish confidence in the platform people use today by reviewing architecture and tests together, repairing demonstrated defects and validated structural weaknesses, then completing systematic coverage of implemented in-scope behavior.
 This campaign was prepared from the previous campaign's results; execution started after the user requested it on 2026-09-30.
-Application execution is **RUNNING**; the checkpoint records actual readiness outcomes separately from historical coverage.
+Application execution is **RUNNING**; the 2026-10-01 retrospective inserts whole-system reconnaissance before the remaining repairs and coverage expansion.
+The checkpoint records actual readiness outcomes separately from historical coverage.
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
 
 ## What changes from the previous campaign
 
 Start with the actual platform and installed library state before trusting old fixtures or branches.
-Demonstrate four ordinary user journeys on the current baseline, then tackle the known unfinished high-risk flows in small independent tests.
+Retain the four completed ordinary user journeys and accepted repairs, then examine the architecture and test suites before tackling the remaining flows.
+Do not equate passing tests with sound architecture or a file-reading count with understanding the system.
 Track the user outcome, available assertions, and executed evidence separately: a test body or a worker's proposed `V` is not a passing run.
 Keep the existing stable feature inventory for systematic closure, while using a short outcome queue for daily work instead of treating five cells per feature as five separate tasks.
 Reuse valid historical evidence explicitly and retain successful unchanged validation phases; do not restart completed releases or whole suites to chase an unrelated intermittent failure.
@@ -81,9 +83,53 @@ At this boundary inspect a representative trace/screenshots, or run one represen
 Report gate readiness separately from whole-campaign progress and continue into Wave 2 automatically when execution has been requested.
 The gate is a modest readiness signal, not a release certificate or completion of all primary-GUI obligations.
 
+## Reconnaissance gate: architecture and tests together
+
+The independent GPT-6.1 Sol Ultra retrospective on 2026-10-01 found real product gains but no completed whole-system architecture or suite-redundancy audit.
+Its installed-Wetlands force-Recreate contradiction and the earlier Run preparation bypass demonstrate why public dependency boundaries must be traced before adding coverage.
+Insert this gate at the current checkpoint; do not undo accepted fixes or reexecute readiness merely because the sequence changes.
+
+Inventory all tracked first-party platform and library/Core implementation, tests, runner/configuration and specification files at named revisions.
+Classify generated files, bundled assets, fixtures and excluded execution families explicitly rather than treating every file as an independent coding task.
+Review Wetlands' relevant public contracts and installed implementation, recording differences from its source checkout; this is a targeted dependency review, not certification of the entire dependency.
+Every inventoried file has a subsystem owner and a truthful depth: inventory-only, read, traced through callers/consumers, or deeply reviewed against an invariant.
+Inventory-only and static reading earn no application coverage credit.
+Use a compact file ledger and record unreviewed areas; do not claim exhaustive analysis from a representative sample.
+
+Assign ordinary agents by subsystem, with the orchestrator owning shared records and a reserved specialist synthesizing cross-subsystem findings:
+
+| Review family | Responsibilities and boundaries |
+| --- | --- |
+| Graph and workflow ownership | Canvas commands, root drafts, private snapshots, recovery, identity generations, CAS, recursive interfaces, generated API types and library graph contracts |
+| Tools and portable sources | Registry versus compiled classes, source ownership, archive/import/export, package installation, hot reload, Python authoring and editor boundaries |
+| Execution and environments | Admission, cancellation and physical completion, startup/Run/manual mutation, declared recipes, real workers and platform → BioImageFlow → Wetlands public capabilities |
+| Results and scientific data | Cache/provenance, immutable results, images/adapters/transports, viewer requirements and real scientific tool integration boundaries |
+| Deployment and persistence | Datasets, settings/workspace, containment and permissions, desktop/webapp differences, REST/WebSocket/MCP and external integration ownership |
+| Test architecture and cost | Fixture authorities, assertion oracles, selection/markers, shared helpers, real versus intercepted paths, repeated setup, artifact retention and comparable timing evidence |
+
+Trace sensitive paths from user gesture or API through validation, ownership, persistence and public dependency calls.
+Look for redundant authorities, duplicated business rules, private dependency coupling, inconsistent error/recovery semantics and tests whose assertions do not distinguish their stated outcomes.
+Treat complexity or repetition as a candidate to investigate, not proof that a rewrite or deletion is needed.
+For each finding record the source/contract, demonstrated defect or unproved risk, consequence, existing distinguishing selectors, repair/retain/deepen/defer decision and owner.
+Preserve the recursive GraphState, CAS, stable identities, immutable result and deployment contracts; excluded distributed implementations and tests remain intact.
+
+Bound the first reconnaissance to one coherent pass, initially about one or two working days rather than an open-ended file-reading campaign.
+Extend only for a named unresolved high-risk boundary, retaining the inspected-source ledger and explaining the remaining uncertainty.
+The gate closes with a reviewed authority/boundary map, explicit unreviewed areas, prioritized findings and repair packets, and a test-cost baseline or named missing measurements.
+High-risk unresolved findings block their dependent paths, not independent work.
+The specialist checks interactions and evidence quality rather than repeating every file read.
+
+I1/T1 remain isolated at their preserved checkpoints during reconnaissance.
+After synthesis, finish I1's applicable completion checks without relabelling its composite or deferred phases as a passing original lane.
+T1 must resolve force-Recreate through a supported public capability; do not delete environment directories, mutate private state, invent recipe nonces or silently narrow the essential feature to stale-only replacement.
+Independent T1 ownership/admission repairs may be split only when they form a reviewed coherent change with their own required validation and explicit remaining lifecycle gap.
+Recheck E1 consumers affected by shared helper or lifecycle changes; retain only equivalent unchanged evidence.
+
 ## Wave 2: finish the risky user flows
 
-After Wave 1, take this initial queue in order; a demonstrated loss/wrong-result defect takes precedence and independent work may continue when one item is externally blocked.
+The initial N1/E1 queue has already produced accepted repairs.
+Before finishing I1/T1 or expanding Wave 3, complete the reconnaissance gate below and rank remaining work by its findings rather than blindly resuming the old test queue.
+A demonstrated loss/wrong-result or permission defect takes precedence and independent work may continue when one item is externally blocked.
 
 | Batch | Concrete acceptance and test boundaries | Completion evidence |
 | --- | --- | --- |
@@ -102,7 +148,7 @@ A failed focused reproduction is actionable; an isolated pass does not close an 
 ## Wave 3: systematic extensions and real integrations
 
 The [GUI](coverage-gui.md), [workflow](coverage-workflows.md), and [runtime](coverage-runtime.md) inventories retain every implemented in-scope obligation, including negative, recovery, persistence, permission, native, and external cases.
-After Wave 2 select remaining runnable rows by user frequency and loss/wrong-result risk; check existing assertions before adding tests.
+After reconnaissance and the prioritized repairs, select remaining runnable rows by user frequency and loss/wrong-result risk; check existing assertions before adding tests.
 Cover all of these families before final closure:
 
 - Workspace/startup, settings, layouts, tabs, and deployment-specific controls.
@@ -112,7 +158,8 @@ Cover all of these families before final closure:
 - Datasets, implemented OMERO controls, REST/WebSocket/MCP boundaries, real native dialogs/viewers/editors, and process crash/restart.
 
 At each wave boundary compare implemented specification sections and visible controls/routes against the inventory so an omitted feature cannot disappear from final coverage.
-Schedule external/native prerequisites early enough to expose blockers while independent automated work continues.
+Inspect external prerequisites without launching native applications; execute desktop tests only at the very end, after automated and external acceptance, as the user requested.
+Headless checks cannot certify native dialogs, viewer launch, editor interaction or desktop restart.
 Use [Manual Platform Testing](manual-testing.md) for native/external procedures and disposable fixtures.
 
 ## Evidence and coverage without unnecessary overhead
@@ -134,6 +181,44 @@ Use exact expected values and captured identities rather than assertions that me
 Workers return proposed obligation credits; only the orchestrator updates shared inventory/dashboard/checkpoint after checking actual commands and assertions.
 Never promote status from a planned command or prospective worker documentation.
 Record interruptions, blockers, and owner decisions immediately; consolidate ordinary completed-batch administration into one update and commit.
+
+## Suite and specification improvement
+
+Review tests alongside their production owners, comparing contract, entry point, expected result and failure condition before declaring duplication.
+Prefer extending a missing local distinction in an existing case; keep separate tests when they protect different boundaries or one earlier failure would conceal another outcome.
+Remove or merge only proven redundant assertions with retained contract coverage; preserve meaningful component, storage, GUI and actual-worker layers.
+Correct misleading test titles and fixture/marker boundaries when demonstrated, without building tests that merely mirror marker implementation.
+
+Establish comparable costs from retained timings first, then collect only missing measurements needed for an optimization decision.
+Distinguish cold/warm dependency setup, collection/fixture time, execution/waits, repeated work, wall time and summed parallel phases.
+Report the before/after scope, revision and prerequisites for each accepted optimization; no global speedup or redundancy removal is established yet.
+Avoid predictable sandbox failures by requesting known socket/network/system access on the first applicable command; confirm exact selectors exist before execution.
+Preserve failure artifacts before runtime cleanup or pytest retention can remove them, and capture first-attempt browser traces for unexplained ordering failures when the fixture supports it.
+Do not create new runner infrastructure without a demonstrated need.
+
+Review platform and library specifications at the same boundaries as code.
+Keep requirements in their owning normative document and use context as navigation; remove repeated descriptions only when no essential requirement, rationale or explicit gap is lost.
+Update all affected specifications and PLATFORM_CONTEXT with behavioral or architectural repairs.
+Keep the checkpoint focused on current state/decisions and put detailed completed evidence in its owning record/archive rather than repeating the full narrative.
+
+## Milestones and retrospectives
+
+| Milestone | Required outcome |
+| --- | --- |
+| M0 — Retained baseline | Reviewed specifications, accepted Wave 1/N1/E1 and preserved I1/T1; historical percentages remain separate from current certification |
+| M1 — Reconnaissance | Reviewed architecture/test boundary map, file review depths, prioritized findings and missing measurements; no static-review coverage credit |
+| M2 — Priority repairs and optimization | Validated coherent repairs, resolved or explicitly blocked dependency contracts, measured suite changes and consistent specifications |
+| M3 — Systematic implemented coverage | Reconciled inventories and missing real assertions across all in-scope families, with low-risk work following the architectural findings |
+| M4 — Automated and external certification | Complete audited local selections plus required lint/types/build/logging/docs, published compatibility and real-worker/scientific-boundary results |
+| M5 — Final desktop acceptance | Actual native outcomes at the end, named remaining limitations and clean committed task changes |
+
+Hold a strategic retrospective after M1, after several coherent repair batches or a major architectural integration, before systematic coverage expansion and before final certification.
+Combine adjacent triggers into one review; do not conduct a retrospective after every edit, test or file.
+An ordinary retrospective is a bounded 30–60 minute review of what was learned, duplicated/moved authorities, invalidated evidence, observed cost and changed priorities.
+Record only consequential decisions and queue changes in the checkpoint.
+Trigger an exceptional targeted review for a contradictory public dependency contract, new ownership/permission bypass, recurring unexplained failure or repeated fixture/permission rework; independent work continues where safe.
+Use independent high-reasoning review for unresolved high-impact decisions, retaining the ordinary two-worker and specialist arrangement.
+The campaign is a learning and repair process, not a percentage-filling exercise.
 
 ## Repair, delegation, and validation
 
@@ -163,8 +248,7 @@ A composite record must identify each phase's revision and applicability rather 
 Routine status edits use `check campaign` once per consolidated batch before commit; navigation/structure changes, substantial documentation milestones, and final documentation acceptance use `check docs`, which includes it, without a separate preceding campaign check or Sphinx runs for each review draft.
 No new runner infrastructure is planned; change it only for a demonstrated selection/validation need.
 
-The larger milestones are Wave 1's 4/4 two-browser gate, Wave 2's integrated N1/E1/I1/T1 acceptances, and Wave 3's reconciled implemented-feature families before final acceptance.
-At each milestone review the combined impact map and confirm affected shared journeys on the reconciled integrated baseline; run missing or invalidated journeys and retain equivalent passing feature and journey evidence instead of repeating checks solely because a wave ended.
+Use M0–M5 above to review the combined impact map and confirm affected shared journeys on the reconciled integrated baseline; run missing or invalidated journeys and retain equivalent passing feature and journey evidence instead of repeating checks solely because a milestone ended.
 Use `full` after a completed large cross-stack plan, for package-loading/external-compatibility changes, or for final comprehensive certification when that broader scope is chosen; it includes product, external, coverage, and both-browser phases but documentation remains separate.
 `check app` includes backend/frontend completion plus critical Chromium, and `check all` expands that browser scope to full Chromium; neither supplies Firefox or documentation evidence.
 
@@ -179,6 +263,7 @@ Record editable dependency SHAs as well as package versions; source-checkout res
 Do not repeat previously completed release/publication operations without a new required dependency fix.
 
 Complete the campaign only when all implemented in-scope obligations have reconciled evidence, every primary GUI journey passes in Chromium and Firefox, demonstrated defects have a reviewed resolution, and native/external obligations have actual outcomes.
+Native application execution belongs to M5 after automated and external phases; prerequisite inventory and headless tests never supply its credit.
 An unavailable obligation remains blocked; explicit owner acceptance may permit closure with a named limitation, never a fabricated pass or a removed denominator cell.
 Readiness alone, raw test counts, and historical dashboard percentages cannot establish completion.
 The final report gives exact validation revisions/results/durations and any retained limitations, with clean committed task changes and a restartable checkpoint.

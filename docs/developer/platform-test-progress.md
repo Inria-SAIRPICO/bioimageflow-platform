@@ -4,11 +4,11 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — Wave 1, N1 and E1 accepted; I1 and T1 delegated**.
-The user requested execution after the specification revision; the model-choice hold is lifted, and the session's model settings are unchanged.
+Prepared and started 2026-09-30; **RUNNING — architecture/test reconnaissance; Wave 1, N1 and E1 accepted; I1/T1 preserved pending synthesis**.
+The user authorized the 2026-10-01 campaign revision following an independent GPT-6.1 Sol Ultra retrospective, then continued execution.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
-The [plan](platform-test-plan.md) replaces the previous resume queue with current-baseline readiness, focused risk batches, then systematic extensions.
+The [plan](platform-test-plan.md) now requires whole-system architecture/test reconnaissance and prioritized repairs before systematic coverage expansion.
 The [previous checkpoint](archive/platform-test-progress-before-2026-09-30.md) preserves the old outcomes and next actions as history only.
 
 ## Documentation reconciliation baseline — 2026-09-30
@@ -92,11 +92,36 @@ ISSUE-021 is resolved; ISSUE-022 remains open.
 The clean integrated E1 worktree was retired intact to Trash after artifact preservation and source equivalence checks; its worker now owns T1 at `.worktrees/campaign-t1-current` from `2290c67`.
 The completed clean N1 worktree was moved to Trash, registration pruned and task branch deleted after source-equivalent integration; its artifacts were preserved in `/private/tmp/bioimageflow-n1-artifacts/`.
 Its worker now owns I1 in fresh `.worktrees/campaign-i1-current`, branch `campaign/i1-current` from `884be6e`, now aligned to combined `2290c67`, with independent dependencies and archive/readiness assertions.
-Two deferred DOM unit reds show that an earlier import's late success replaces the newer import's setup prefills and its late failure publishes obsolete guidance; production is unchanged while the bounded identity/guidance plan incorporates independent review of captured form provenance and source confirmation.
+I1 has implemented the reviewed captured-guidance/form-provenance correction in its isolated worktree; six coherent GUI checks pass across Chromium/Firefox in 34 s and 101 affected units pass in 11 s.
+Its backend and frontend completion evidence is composite with original failed phases retained; the final sibling stress, cross-browser smoke, commit and integration remain pending.
+T1 has reviewed isolated ownership/alias/recipe, admission, preflight and cancellation corrections; 214 focused owner tests pass in 31 s, but lifecycle/browser/app completion and integration remain pending.
+Actual force-Recreate provisioning failed in 86 s: installed Wetlands 2.4.2 reuses a matching ready generation with `replace_existing=True`, contrary to the platform's forced-rebuild promise.
+No private-state deletion, recipe nonce or feature narrowing was applied; this public contract boundary is the first reconnaissance priority.
+Both workers preserved their WIP and artifacts without committing before the retrospective; no browser or provisioning process remains from those packets.
 
-1. Execute the reviewed I1 guidance/identity packet and its exact two-browser/backend acceptance, preserving creation-form edits and source confirmation across readiness refresh/withdrawal.
-2. Execute T1 Manage Tools on the integrated E1 lifecycle baseline, with independent selected-environment mutation and refusal/retry evidence.
-3. Reconcile the wave impact audit and native prerequisites without inventing coverage: existing assertions guide bounded remaining packets, and any confirmed omitted implemented obligation requires a documented denominator correction.
+## Strategic revision and active reconnaissance — 2026-10-01
+
+The independent read-only retrospective used GPT-6.1 Sol with Ultra reasoning, verified in its run metadata, after the normal collaboration spawn hit the total agent-thread limit.
+It inspected representative implementation, tests and evidence at platform `d8bc910`, application `2290c67`, library `dff04e3` and the I1/T1 diffs; it did not claim an exhaustive code audit or run tests.
+Its accepted conclusion is that real product/specification gains coexist with missing global architectural and suite-redundancy review; no overall speedup or duplicate removal has been demonstrated.
+Retain the accepted fixes and historical red records, insert reconnaissance before coverage expansion, and use subsystem/invariant review with cross-boundary synthesis instead of disconnected per-file tasks.
+The campaign's M0–M5 milestones, low-frequency retrospectives, suite-cost measurement and specification-concision rules are now explicit in the plan.
+No obligation or inventory denominator changes solely because the strategy changed; the proposed 17 additional applicable omissions remain uncredited until their own reconciliation.
+
+Current reconnaissance baseline is main `d8bc910f34acb00e5e6fb558d1130e5d08a46b10`, application `2290c67`, clean editable library `dff04e3`, and preserved I1/T1 WIP from `2290c67`.
+The two unrelated untracked VTTs and historical worktrees remain untouched.
+The former I1 worker now reviews graph/draft/identity and tools/sources/archives plus corresponding library contracts and tests.
+The former T1 worker now reviews execution/environments/cache/results/images and platform/library/installed-Wetlands contracts and tests.
+The orchestrator owns the full file manifest, deployment/persistence/integrations, test architecture/cost and shared records; the reserved reviewer checks the revised plan and then cross-boundary synthesis.
+Initial reconnaissance is read-only with no new broad lanes, installation or native actions; depth and unreviewed areas are recorded explicitly rather than granting static-review coverage credit.
+The independent plan review found no material gate/acceptance blocker; its one context-navigation inconsistency was corrected before validation.
+`/usr/bin/time -p env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, in 3 s reported / 2.53 s elapsed against main `d8bc910` plus reviewed task diff SHA-256 `6d080613542082fc1093d3a6da8e27bb2ee3d63437c0204109e9f822ca3ca1c0`, before this result-only entry.
+Dashboard/link checks and warning-clean Sphinx passed; no product/browser/external/native phase was run or credited for this documentation revision.
+
+1. Complete the bounded reconnaissance ledger, authority/boundary map and prioritized findings; independently review their synthesis and exact next repair packets at M1.
+2. Resolve the public force-Recreate contract and other high-risk findings, then finish only coherent I1/T1 work with required checks and explicit unchanged-phase reuse.
+3. Reconcile inventory omissions and continue systematic coverage after architectural priorities; measure proposed suite changes before claiming savings.
+4. Complete automated/external certification, then execute desktop acceptance only at final M5.
 
 The isolated native QA root `/private/tmp/bioimageflow-campaign-native.czhkjuet` was prepared and verified before application actions at main `4b58e44`.
 A current-source desktop launch at `2290c67` served the production build, but Computer Use could not bind the Python-hosted window and refused the disposable wrapper as not approved; no native acceptance is credited.
@@ -116,6 +141,6 @@ Native Napari smoke and real provisioning remain separate from mocked GUI/API sc
 
 Ordinary restarts need this file, the assigned plan section, the relevant inventory rows, and matching open issue only.
 [Evidence](platform-test-evidence.md) owns new executed results; the [dashboard](platform-test-dashboard.md) owns the stable scenario denominator; source inventories own assertions and gaps.
-Shared campaign status belongs to the orchestrator; N1 is integrated, and the two ordinary workers now own isolated I1 and E1 packets, with scoped validation and commits required before reviewed integration.
+Shared campaign status belongs to the orchestrator; N1/E1 are integrated and the two ordinary workers now own read-only reconnaissance while preserving isolated I1/T1 packets.
 Follow the plan's per-edit, feature, wave, and final validation schedule; record observed setup/test costs and unchanged-phase reuse without repeating Sphinx for routine status drafts or presenting unmeasured savings.
 The next baseline record must replace these observations with current facts and mark invalidated evidence without erasing its historical source.
