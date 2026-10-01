@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 197 complete (196 reviewed / one classified) / 1,602 pending, with 116 identified findings.
+Current checkpoint: 1,799 inputs / 374 complete (373 reviewed / 1 classified) / 1425 pending, with 206 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -1119,3 +1119,891 @@ The application archive still needs its signed manifest and matching static vers
 
 
 Shared batch 2 completes the release workflow/helpers and previously context-only infrastructure tests; reviewer-F004 also reaches stale installation.rst/reference tool-package claims about automatic tags and repeated validation, while current releasing.md correctly describes manual coordinated dispatch and retained exact-commit evidence.
+
+### Complete-review checkpoint — A-batch-5
+
+#### A-F040 — Medium, static nested fallback roundtrip defect + oracle gap
+
+`interfaces.py:134–170,286–316` permits exposing a WorkflowNode child input; `common.py:117–124` deliberately resolves recursive child fallbacks.
+`WorkflowNode.bind_port:195–225` maintains nested constants in `_input_constant_bindings`, whereas expose_input updates the separate `_workflow_input_bindings` bookkeeping.
+Serializer `serialization.py:88–93` always emits nested constant bindings.
+Materializer `materialization.py:430–443` rejects a constant binding whenever kwargs already contains that child port, including a symbolic WorkflowInputRef from the enclosing exposed interface, with the error "both an edge and a constant binding".
+A nested local fallback exposed by its parent can therefore serialize a definition that its public loader refuses, unlike the explicitly supported plain tool-field fallback.
+No new roundtrip was executed here; the source mismatch concerns the permitted WorkflowNode/exposure branch.
+`test_exposed_input_preserves_local_constant_as_fallback` covers a plain ValueTable target, not a child workflow port.
+Retain local fallback semantics and real edge-versus-constant exclusion; future action should distinguish a symbolic boundary fallback from a competing data edge consistently across nested serialization/loading.
+
+#### A-F041 — Medium/High, static rejected-invocation mutation defect: parent targets published before final admission
+
+`workflow_node.py:115–134` preflights prohibited column bindings, then applies every binding before checking missing required inputs and before parent registration.
+A symbolic binding publishes an enclosing target at lines199–206 through parent `_bind_input_target`.
+If a later required child input is missing or a later dataframe binding is invalid, the constructor raises while that parent interface target remains, pointing to an invocation that never registered.
+This extends A-F036's exception-state problem to a separate constructor with an explicit partial preflight comment; the preflight does not cover every remaining refusal.
+No failed construction was executed here.
+Unified callable tests provide all required bindings or defaults; nested storage tests likewise use valid invocations.
+Retain early source-tool column rejection, own symbolic references and unique parent names; future action should admit all bindings/required inputs transactionally before publishing parent targets.
+
+#### A-F042 — Medium, static binding bookkeeping risk: rebind retains old competing representation
+
+`workflow_node.py:209–235` inserts a new column or constant/dataframe binding without removing the old representation for that port or old upstream dependency.
+The underlying definition `_apply_interface_binding` does switch a plain field target between column and constant, but the invocation's `_input_column_bindings`/`_input_constant_bindings` can continue to contain both.
+Serializer emits both old edge and new constant, which materializer explicitly refuses; old upstream dependencies may also continue to schedule despite actual internal binding replacement.
+Existing tests construct once; no reviewed test rebinds the same stable child port column→constant or constant→column and checks roundtrip/dependency semantics.
+Runtime public root-binding use may constrain which transitions happen automatically; B is reviewing that authority.
+No changed execution output was reproduced.
+Retain stable child port identity and binding preflight; future action must update all binding/dependency representations as one operation, with narrow public rebind/serialization oracles.
+
+#### A-F043 — Medium potential impact, source lifetime risk: stale fixed dispose removes a remounted session
+
+`useCanvasCommands.ts:208` fixed API dispose unregisters by canvasId only.
+A previously disposed wrapper retains this method; unregister/remount with the same ID obtains a new token, but calling old dispose again removes that new session/resources.
+Registry token support exists but is not checked at this disposal boundary.
+Normal callbacks on the old resource throw after disposal, so those callbacks do not retarget the remount.
+`canvasSessionRegistry.test.ts` checks token change and repeated unregister only before remount; command disposed-call tests do not dispose an old API after remount.
+No actual UI lifecycle interleaving was executed, so the production occurrence remains a caller-lifetime risk.
+Retain exact canvas ownership and registration token distinction; future consumer review should prove whether stale disposal can occur before introducing a token-bound unregister guard.
+
+#### A-F044 — Low/Medium, optional fallback defect: bulk parameter fallback short-circuits
+
+`useCanvasCommands.ts:294–299` falls back to Object.entries(values).every(updateParameter).
+An unchanged/refused false return stops later entries, so it can skip valid subsequent updates or leave a partial update while returning false.
+Neighboring enabled-state fallback intentionally attempts all nodes and aggregates changes, with an exact test asserting true/false/true.
+`routes an atomic parameter update to the active canvas` supplies the custom bulk callback and never exercises this fallback.
+Production CanvasView supplies updateNodeParameters, so this defect is bounded to the optional fallback API and is not claimed as the current dataset update's product failure.
+Retain production atomic bulk callback; future action should define fallback change versus success semantics and either make it consistent or remove unsupported pseudo-atomic fallback.
+
+#### A-F045 — Low/Medium, cleanup fault isolation risk
+
+`canvasSessionRegistry.ts:144–159,174–178` removes registrations and clears resource maps before iterating dispose calls without catching errors.
+A throwing disposer stops cleanup of later resources/canvases, with no remaining registry handle to retry them.
+Current full resource implementations still need complete review to assess real throw paths, so this is a source failure-path risk, not an observed leaked subscription/timer.
+Registry tests use nonthrowing spies only.
+Retain unique-resource disposal and immediate registry/activation removal; future action should define best-effort cleanup/error aggregation so one faulty resource does not abandon unrelated ownership.
+
+#### A-F046 — Low, setup failure mutation risk
+
+`useCanvasCommands.ts:144–147` registers a nested session before refusing a missing required Save callback.
+A rejected setup can leave a registry entry/count with no commands resource.
+No production missing-Save call is claimed; CanvasView's nested branch supplies it.
+Existing facade tests do not inspect registry state after this setup error.
+Retain required nested Save and valid registration idempotence; future action can preflight options before registration or explicitly undo only the newly created registration.
+
+
+### Complete-review checkpoint — root-batch-4
+
+#### ROOT-F035 — P2 scientific layout source defect plus writer-specific oracle gap
+
+`bioimageflow_io_tools/_raster.py:52–64,67–70` validates explicit output axes but sets TIFF photometric=minisblack only when its shape heuristic says grayscale.
+For a declared ZYX/CYX/TYX three-dimensional grayscale array whose X size is 3 or 4, the heuristic instead returns false; no photometric is supplied, allowing the underlying TIFF writer's RGB(A) inference to override the declared absence of S.
+Both write_ome_tiff (`writers.py:193–199`) and BioIO's ordinary TIFF branch (`bioio_convert.py:121–126`) explicitly prevent exactly this inference, confirming a divergent shared-writer policy.
+No incorrect TIFF was newly produced; this is source corroboration and its underlying writer-default behavior remains a future exact reproduction boundary.
+The existing narrow-volume test uses ConvertToOmeTiff, while the ordinary writer's exact RGB test covers axes ending S; selection tests use X widths 5/6 and miss this grayscale shape.
+After full review, preserve real RGB(A) S axes and ordinary grayscale stacks; make explicit axes authoritative in the lightweight TIFF branch and extend the existing narrow-volume/ordinary-writer oracle without another full workflow journey.
+
+#### ROOT-F036 — P2 metadata fidelity defect: physical pixel units are discarded
+
+`bioimageflow_io_tools/metadata.py:174–185` parses raw PhysicalSizeX/Y/Z numeric attributes but ignores their respective PhysicalSize*Unit attributes; ImageMetadata and ReadImageMetadata.Outputs expose only unlabeled float values.
+The [official OME 2016-06 Pixels schema](https://www.openmicroscopy.org/Schemas/Documentation/Generated/OME-2016-06/ome_xsd.html) binds physical sizes to per-axis units, with micrometers as the default.
+Two equivalent physical lengths written in nm and µm can therefore produce different unlabeled results, and downstream callers cannot recover a nondefault unit from this response.
+This is source/schema reasoning, not a newly executed image or measured scientific error.
+`test_read_image_metadata_reports_ome_tiff_pixel_sizes` writes only sizes with default units; it cannot distinguish either normalized-unit correctness or explicit-unit preservation.
+Future action after the gate: choose/document a canonical returned unit or preserve per-axis unit identity through the public model and callers, with one nondefault-unit variant in the existing metadata test.
+Retain header-only inspection, unknown values, and distinct X/Y/Z rather than silently assuming every source uses the default unit.
+
+#### ROOT-F037 — P3 external-compatibility evidence gap: actual BioIO writers are substituted by permissive mocks
+
+`test_image_io.py::test_bioio_convert_image_uses_bioio_plugins_and_selection` and `::test_convert_to_ome_zarr_uses_writer_and_reopens_output` replace BioImage and writer classes with local fakes, including constructors accepting arbitrary keyword arguments.
+They distinguish adapter selection/delegation and desired shape/dtype checks, but cannot establish the pinned BioIO/plugin recipe creates a readable real artifact, exports the expected API, or preserves actual pixel values.
+A whole-repository search of package tests, integration/unit tests and scripts found no other actual BioIO/OME-Zarr writer invocation in test coverage; no executed historical compatibility result is inferred solely from this search.
+The upstream public writer documentation supports the chosen single-shape constructor posture, but does not substitute for installed pinned-version acceptance.
+After the complete audit, reconcile this obligation with existing package-loading/external-compatibility milestone evidence first; if absent, use one small actual pinned-worker writer/reopen/exact-array case there.
+Retain fast mocked adapter tests during local development and execute real dependency compatibility only at the relevant milestone or recipe change, rather than installing/running all BioIO plugins for each localized edit.
+The general conversion functions currently preserve axes/pixels but do not carry source physical sizes/channel names into the output writers; whether full microscopy metadata preservation is essential is a qualified product/specification decision, not a newly proved violation of the existing axis-focused contract.
+
+
+### Complete-review checkpoint — B-batch-3
+
+#### B-F024 — P1 source risk: asyncio Run-task cancellation releases admission before physical completion and reports success
+
+`backend/src/bioimageflow_server/services/execution.py:775–781,1331–1345,1491–1512` stores an asyncio task wrapping `asyncio.to_thread(_run_sync)`.
+The done callback catches `asyncio.CancelledError`, sets `exc=None`, publishes succeeded/completion, and releases `_workflow`, `_active_graph`, `_run_task` and `state` without a separate physical-completion holder.
+Cancellation of this task can cancel its awaiter without stopping the already-running thread; `_run_sync` can continue compute, latest-output materialization and export after the callback has admitted a later operation.
+This is a source risk, not an executed race or a claim that the public Stop route directly cancels this task: `stop()` correctly requests `workflow.cancel()`, and `TestExecutionManagerStop::test_stop_cancels_running_workflow` covers that distinct cooperative path.
+The exceptional branch is explicitly `pragma: no cover`; the complete manager/router test files contain no distinguishing raw-task cancellation oracle.
+Future diagnostic should coordinate a physically blocked computation, cancel the stored task, and assert actual completion/admission/status rather than elapsed sleep.
+Retain cooperative cancellation, selected-run scope, cached-node outcomes, external manager ownership and one accepted execution identity; do not globally close borrowed managers.
+Coordinate with A's physical-worker/admission seam in draft/Clear offloads; this finding does not establish that their worker commits corrupt storage because workflow mutation locking can supply additional ordering.
+
+#### B-F025 — P2 source defect: some managed-export failures become compute failures instead of unavailable exports
+
+`services/execution.py:798–830` computes the destination and looks up the run context before its export `try`, and calculates `_archive_digest(archive)` in the `else` outside that catch.
+A raising configured destination provider or archive-digest read error escapes `_export_managed_result` into the compute task, so the completion callback marks an otherwise completed computation failed.
+The same method deliberately records export/retention failures as unavailable exports while preserving computation success when they occur inside its guarded branches.
+No failure was injected in this audit; execution-runtime counterpart inspection is still incomplete.
+Existing selector `backend/tests/test_services/test_execution_runtime.py::test_attached_export_failure_preserves_success_and_disables_download` was located and must be inspected fully in the next batch before coverage credit; it appears to exercise the exporter, not destination resolution.
+Future action is a bounded diagnostic for destination-provider and digest failures and a consistently bounded export-only failure boundary, retaining independent compute status and download availability.
+
+#### B-F026 — P2 source risk: legacy fallback recaptures latest and can bypass modern provenance validation after pointer advance
+
+`services/result_store.py:36–48,51–108,251–280` first captures latest modern identity; when capture returns `None` for a legacy view, it resolves latest again and loads that second record using raw `cache_load`.
+If latest advances from a valid legacy view to a modern view between those reads, the second record can be loaded without `read_run_node_result`/record-integrity validation and without captured identity attributes.
+The static modern-corruption tests prove fail-closed behavior for a fixed modern selection, not that legacy-to-modern pointer advance preserves it.
+No concurrent reproduction or exact-viewer bypass is claimed: modern identities use the public validated library path, and legacy results do not authorize exact viewer opening.
+`test_modern_corrupt_record_never_falls_back_to_raw_or_historical_rows`, `test_present_malformed_modern_provenance_is_not_legacy` and `test_get_latest_dataframe_falls_back_to_legacy_latest_link` are the existing differentiating coverage to extend after the review gate.
+Future action should retain one captured selection through legacy/modern discrimination rather than remove legacy compatibility.
+The `identity is not None` condition at line47 is unreachable in this fallback; cleanup belongs to the same bounded change, not a second test journey.
+
+#### B-F027 — P3 source defect: malformed result.json fallback shape escapes the declared not-ready error
+
+`services/result_store.py:270–279` reads fallback metadata then calls `payload.get` without checking it is a mapping.
+When a selected node view has no record link and its fallback JSON is an array/scalar, `get_csv_path`/`has_data` can raise `AttributeError` instead of a controlled not-ready response.
+The primary modern `capture_latest_result_identity` path checks mapping shape and remains fail closed.
+Existing malformed-provenance tests exercise the primary dataframe path; no complete negative fallback-shape oracle occurs in `test_result_store.py`.
+Future diagnostic should construct this exact no-record-link fallback case, retaining canonical path confinement and malformed-link refusal.
+Do not broaden this to a promise that every I/O exception from `has_data` must be hidden.
+
+#### B-F028 — P3 test defect: router invalid-workflow-identity cases also omit required revision
+
+`backend/tests/test_routers/test_execution_router.py::test_run_rejects_invalid_workflow_identity` and `::test_clear_rejects_invalid_workflow_identity` omit `draft_revision` for every parameterized invalid identity.
+They still return 422 if workflow-id validation is removed because a separate required field is missing, so these cases do not distinguish their stated invariant.
+The complete model test file covers required draft identity and several request-mode constraints, but does not repair the oracle of these specific HTTP selectors.
+Future action should make every other field valid in those negatives; retain separate omission cases and do not duplicate the whole HTTP journey.
+
+#### B-F029 — P3 contract/test debt: frozen ExecutionContext is only shallowly immutable
+
+`models/execution.py:45–66` documents a stable frozen context but exposes mutable lists/dictionaries (`requested_nodes`, `planned_node_ids`, `planned_node_names`).
+`tests/test_models/test_execution.py::TestExecutionContext::test_is_immutable` checks only field reassignment.
+In-process holders can mutate a retained execution's requested/plan identity in place; no client HTTP mutation or observed retry corruption is claimed.
+Future decision should clarify public immutability versus a stable field-assignment boundary, then either enforce the intended collection contract or document it and add a distinguishing model-level oracle.
+Do not infer the literal default lists in ExecutionResult are shared: Pydantic supplies instance defaults; this review found no mutable-default cross-instance defect.
+
+#### B-F030 — P3 retention/design risk: local finished-run maps and all progress events have no eviction boundary
+
+`services/execution.py:463–469,718–724,868–894,1016–1022,1491` retains status, result-export descriptors and complete per-execution event lists for every local run for the manager's lifetime.
+Run contexts are normally released after export/failure, but historical progress/status/export maps persist, and row/task events can grow with workload.
+This supports independent execution queries, so blanket clearing on completion would violate existing retained-run behavior.
+No measured memory cost or approved retention bound is claimed; execution registry/runtime persistence must be read before choosing a retention policy.
+Future action is to reconcile durable registry ownership with bounded live snapshots and measure representative event volume, reusing retained-progress tests rather than add redundant successful-compute integration cases.
+
+### Complete-review checkpoint — A-batch-6
+
+#### A-F047 — Medium/High potential impact, superseded root initialization ownership risk
+
+useCanvasPersistence.ts:419–473 stores an initialization promise, awaits fetchDraft, then creates and publishes the coordinator without checking whether that initialization is still the current operation.
+resolveFromDraft:548–564 clears initialization and replaces authority but does not abort or invalidate a held earlier GET; initializeFromDraft can likewise seed a newer authoritative response while the older GET is pending.
+The old response can subsequently pass the same workflow-ID/disposal checks, adopt its old graph when pendingDraft has been cleared, and replace the newly resolved coordinator/revision.
+An old catch also clears the shared initialization slot and publishes its error without an operation-identity check.
+This is a demonstrated source interleaving, not an executed UI loss; full CanvasView resolution/admission callers remain pending and server CAS protects a stale subsequent PUT from overwriting newer server data.
+Existing selectors `clears pending after edits coalesce while draft initialization is in flight` and `clears a sticky CAS conflict only after explicit authoritative resolution` exercise each behavior separately, not resolution/reinitialization while the earlier GET is held.
+Retain fixed workflow ID, CAS and latest edit coalescing; future action should assess caller reachability and fence initialization publication/finalization by the captured operation.
+
+#### A-F048 — Medium potential impact, nested disposal does not own transport-side acceptance
+
+nestedSnapshotPersistence.ts:158–186 mutates latestAccepted and invokes onAccepted inside the asynchronous transport function before graphSyncCoordinator's disposal race can protect acceptance.
+More directly, startConflictResolution:196–230 creates an untracked AbortController for a held GET; dispose is only coordinator.dispose at line282.
+After disposal the GET can still invoke the resolution callback, which mutates latestAccepted/onAccepted at234–248 before resumeAfterConflict/acceptAuthoritativeSnapshot rejects the disposed coordinator.
+The normal Axios PUT respects the forwarded abort signal, which mitigates ordinary aborted PUT completion; the conflict GET is not aborted through this resource's dispose.
+No held-response disposal was executed, and stale mounted UI effects remain a caller-lifetime risk pending CanvasView.
+`holds a revision conflict and rebases the latest local graph only after an explicit action` and `replaces conflicted local work with the explicitly selected latest snapshot without another PUT` have immediate GET responses; graph coordinator disposal tests cannot observe these wrapper-side mutations.
+Retain explicit resolution and session/revision checks; future action should own and fence every transport-side acceptance and resolution finalizer.
+
+#### A-F049 — Medium potential impact, root disposal is a local wait barrier rather than a PUT cancellation barrier
+
+workflowDraftCoordinator.ts:177–178 schedules the transport in a microtask and races its result against disposal; dispose aborts request.signal.
+useCanvasPersistence.ts:66–83 and452–457 omit any signal from the production transport interface/PUT delegation, so that abort is never forwarded to fetch/PUT.
+Even disposing before the scheduled transport callback runs does not stop that callback, which receives an already-aborted signal that the root adapter ignores.
+A pending request may therefore still reach or commit at the server after the local wrapper stops waiting; do not claim this alone is data loss, since a durable already-admitted draft write can be intentional and server CAS remains active.
+`unregistering one canvas cancels only its persistence resources` tests queued debounce work; `disposing one canvas rejects its write without affecting another canvas` proves local promise rejection, not whether a server write starts/commits.
+This is separate from A-F007's physical backend worker/admission risk and A-F004's missing wire incarnation.
+Retain physical recovery clear ordering; future action should specify the root write disposal contract and either forward cancellation/preflight admission or explicitly document durable completion semantics.
+
+#### A-F050 — Medium, draft response authority guard gap
+
+workflowDraftCoordinator.ts:179–190 accepts response.workflow_id and response.draft_revision without checking the captured workflow ID or expected next revision, unlike nestedSnapshotPersistence.ts:178–183.
+Its root onAccepted callback adopts that response directly at useCanvasPersistence.ts:396–410; the initial GET path does check workflow identity.
+A wrong-identity or regressed/jumped PUT response can therefore advance the root authority without refusal.
+The normal server implementation returns the correct identity and CAS increment, so this is an adapter-contract/oracle gap, not a demonstrated normal-server misroute.
+All complete draft coordinator/routing test responses have matching identities and expected revisions; existing captured-request assertions do not distinguish a mismatched response.
+Retain server CAS and generated response models; future action should enforce equivalent response admission checks at the client authority boundary.
+
+#### A-F051 — Low/Medium, nested accepted graph and current graph can diverge after normalization
+
+nestedSnapshotPersistence.ts:184–186 stores the accepted server document but returns only validation to graphSyncCoordinator.
+The graph coordinator's normal acceptance retains the queued graph, and nested currentGraph aliases that graph at line275; flushLatest returns latestAccepted.graph at190–193.
+The complete nested test `joins an in-flight write and returns the newest exact accepted document` deliberately changes the response node name to server-normalized-b and asserts the flush result/onAccepted callback, but does not assert currentGraph.
+Thus the mock contract already permits a server graph for which the public currentGraph and flush result differ; root routing has an explicit contrasting accepted-graph authority test.
+The current backend may return the submitted graph unchanged; no real normalization or visible drift was executed, and CanvasView onAccepted hydration must still be reviewed.
+Retain newest local edits queued during an older response; future action should decide when the accepted latest graph replaces the projection without discarding those edits.
+
+#### A-F052 — Low/Medium, accepted callback failure mixes committed acceptance and operational retry state
+
+workflowDraftCoordinator.ts:190–198 updates acceptedQueueRevision/currentDraftRevision before calling onAccepted; an exception then enters the ordinary failure catch.
+flushLatest:254–259 returns the already recorded acceptance on retry without calling the callback again or clearing that error state.
+Nested acceptance similarly updates latestAccepted before onAccepted; a callback exception can make an already committed PUT appear failed and a subsequent retry submit it again at the newer revision.
+Production root callback includes draft-store acknowledgment; actual throw reachability remains pending full store/UI review.
+Complete coordinator tests use nonthrowing callbacks and transport failures, so they do not distinguish failed local projection/acknowledgment from failed persistence.
+This is analogous to, but separate from, backend postcommit acknowledgment A-F014.
+Retain durable response revision and no stale replay; future action should explicitly separate committed persistence from ancillary callback failure/recovery.
+
+#### A-F053 — Medium potential impact, retained nested writer retains its first mounted callback
+
+useGraphSync.ts:273–281 constructs a durable writer only once and supplies onAccepted from its first registration.
+Ordinary tab dispose leaves that writer alive, and remount reuses it without replacing or leasing the callback.
+The writer can therefore keep references to the old mounted consumer and omit the remounted consumer's callback.
+This is a source lifetime risk, not a proven broken remount: full CanvasView callback closure and hydration behavior remain pending.
+`retains a writer across ordinary tab disposal but forgets it after root deletion` verifies durable PUT reuse but supplies no onAccepted callbacks across remount.
+Retain durable writer lifetime; future action should separate durable authority from mounted observer ownership if the caller closure is instance-local.
+
+#### A-F054 — Low/Medium, nested registration does not check descriptor/session agreement
+
+useGraphSync.ts:258,273–286 registers descriptor.sessionId but keys/constructs the resource from initialSnapshot.session_id without checking agreement.
+A descriptor A with snapshot B can bind A's registry session to B's durable writer while other descriptor consumers retain A.
+Every reviewed test passes consistent identities, and no production inconsistent caller is claimed; full callers remain pending.
+Missing initial snapshots also register before refusal, extending A-F046's setup-error mutation to graph sync.
+Retain immutable descriptor identity; future action should preflight one consistent session identity before registering or attaching any writer.
+
+#### A-F055 — Medium potential impact, late root critical/reset responses lack final operation admission
+
+useCanvasPersistence.ts:592–608 captures a coordinator then awaits the freshness GET without rechecking disposal/current coordinator, workflow response identity or a superseding local edit/resolution before returning true or publishing remote revision.
+discardToSaved:611–658 flushes first, awaits reset, then unconditionally disposes the current coordinator, clears pending edits and adopts the response; it has no post-await lifetime/operation check.
+Server reset CAS protects server authority at the request boundary, but cannot alone protect newer client edits/resolution made while the response is held.
+A critical GET with a lower revision is accepted as fresh; A-F004 already owns workflow incarnation absence and is the canonical broader related finding.
+Tests fence preexisting draft/recovery work and distinguish reset CAS loss and cleanup failure, but do not queue a newer local edit or dispose/resolve while GET/reset is held.
+Actual GUI editing/lifecycle guards are pending full CanvasView/MenuBar reads; no global Open defect or reset loss is claimed.
+Retain explicit user reset intent, server CAS, strict recovery cleanup and the committed-response cleanup error; future action should verify caller guards and captured operation ownership before publication.
+
+#### A-F056 — Low, recovery invalidation tombstones accumulate by historical key
+
+recoveryPersistenceCoordinator.ts:83,169–176 stores invalidatedOwnershipThroughByRecoveryKey entries on every strict clear and never removes them.
+Unlike ownership/write-tail maps, this map has no empty-key cleanup; many historical unique deleted workflow keys remain for the page lifetime.
+The map is required to fence outstanding previously owned writes; blindly removing a tombstone at clear completion would weaken that invariant.
+No memory growth was measured and ordinary finite workspace use is not claimed problematic.
+The complete tests cover physical clear ordering and ownership release, not tombstone retirement after all older owners finish.
+Future action may consolidate tombstone lifetime with known outstanding owners only if a measured or bounded lifecycle need warrants it.
+
+
+### Complete-review checkpoint — A-batch-7
+
+#### A-F057 — Low/Medium potential impact, apply coalescing is keyed by ID before checking session object
+
+nestedWorkflowApplyCoordinator.ts:89–91 returns an existing in-flight promise solely by sessionId, before the sessionIdentity check used for retained retry at94–95.
+clear/reset removes map ownership but does not cancel an already running parent runner; its later completion is guarded only when deleting map state, not when applying effects outside the coordinator.
+A same-ID replacement caller could join or be acknowledged using an earlier object's accepted transaction.
+Production captures parent/nested registration/session guards, and ordinary durable delete recreates a different UUID; this substantially constrains the risk.
+Full App/CanvasView lifecycle and parent runner remain pending; no parent overwrite or real same-ID replacement was executed.
+`coalesces concurrent saves around the first exact accepted private revision` uses one session object; the retry test changes registration but preserves that object, both intended sound cases.
+Retain exact first-transaction coalescing and retry; future action should first prove whether same durable ID can denote a replacement object during an in-flight apply, then decide admission/cancellation behavior.
+
+#### A-F058 — Low/Medium, direct overwrite API clones a mutable graph after the first await
+
+workflowDraft.ts:144–155 fetches the latest server draft before cloning the graph argument for PUT.
+A caller mutating that object while GET is held changes the submitted recipe relative to the action's invocation; the persistence coordinators correctly clone at queue time.
+CanvasView:1039 passes a freshly serialized submittedGraph and separately preserves newer local edits after acknowledgment, mitigating this current primary consumer.
+`overwrites a newer remote draft with the current graph revision` uses an unchanged localGraph; the delayed overwrite test holds PUT, not the GET before cloning.
+No changed production payload was reproduced.
+Retain explicit overwrite intent and latest CAS fetch; future action can make the API's payload capture contract consistent if it remains public, without replaying new local edits as the old action.
+
+#### A-F059 — Medium potential impact, late responses recreate forgotten draft revision authority
+
+workflowDraft.ts:132–137 tracks before GET but has no operation/incarnation barrier when acknowledgeAcceptedDraft runs after await; overwrite likewise acknowledges after PUT.
+forgetWorkflow:174–178 removes state, but acknowledgeAcceptedDraft:194 creates it again by workflow_id and records max old revisions.
+If an old response lands after delete/forget and same name reuse, the new workflow's lower revisions/events can be treated as already known.
+The full root presentation helper rejects stale final presentation through workflow-store generation, but that happens after the direct draft-store acknowledgment, so it does not prevent retained-state contamination.
+This is a concrete companion source path for canonical A-F004, not a separately proved recreation loss.
+`forgets only the deleted workflow state before the id is reused` is synchronous; `does not reactivate a workflow when its in-flight overwrite is acknowledged` protects a different active name, not forgotten same-name incarnation.
+Retain inactive accepted writes and monotonic notice ordering within one incarnation; future authority work should key/guard those acknowledgments by captured incarnation rather than dropping all inactive responses.
+
+#### A-F060 — Medium qualified source risk, recovery rename bypasses per-key write/clear ownership
+
+useAutoSave.ts:114–135 loads the old entry, writes the new key and separately clears the old key in different IndexedDB transactions.
+It neither fences an old-key recovery write nor compares the old entry atomically before deletion, and a failed old-key clear is logged/swallowed while rename can resolve.
+A concurrently queued writer can recreate the old key or be deleted after producing a newer snapshot; partial moves can leave both names while last-opened preference advances.
+Targeted workflow store calls guard identity changes against mounted workflows, strongly mitigating ordinary active-canvas writes; the complete store and pending physical write shutdown still need review.
+No IndexedDB concurrency/partial failure was executed.
+There is no dedicated useAutoSave unit file in the tracked source inventory; persistence tests mock recovery transports and therefore do not exercise this actual move primitive.
+Retain copy-before-delete safety when the new write fails; future action should review lifecycle fencing and one atomic move/conditional-delete boundary before changing it.
+
+#### A-F061 — High potential recovery loss, startup treats any load failure as authoritative missing-workflow evidence
+
+startupWorkflow.ts:76–92 catches every presentation load error and clears the matching recovery entry and last-opened preference.
+A transient saved-workflow request error, server 500 or stale-identity refusal therefore takes the same destructive cleanup branch as a confirmed 404.
+useAutoSave.clearAutoSave performs actual deletion, so this can remove the only browser recovery graph merely because startup loading temporarily failed; no failing request was executed here.
+`clears a missing startup target and falls through to the next known workflow` mocks a plain Error('404') rather than a structured status; it cannot distinguish confirmed absence from transient failure.
+`returns null instead of creating a special startup workflow when none can load` uses the same untyped failure policy.
+Retain graceful fallback to another known workflow and cleanup of confirmed obsolete names; future action should distinguish authority-backed absence from retryable/unclassified load errors before destructive recovery cleanup.
+
+#### A-F062 — Medium/High potential impact, all draft load failures silently fall back to saved graph
+
+rootWorkflowPresentation.ts:56–71 catches any draft loading failure and presents savedGraph with dirty=false, without retaining the draft failure or distinguishing unsupported/missing draft from unavailable/corrupt/conflicting authority.
+An existing unsaved durable draft can thus be hidden during a temporary endpoint failure.
+If editing begins on that saved fallback and the persistence initializer later succeeds, its retained pending local graph can be PUT using the now-current draft CAS base; the user may replace the hidden durable draft without first seeing/resolving it.
+That consequence remains caller-qualified pending full CanvasView initialization/edit gates; the source fallback itself is definite, with no data loss execution claimed.
+`marks a resolved graph stale when its workflow generation is later deleted` deliberately mocks draft failure but checks only generation fencing; other complete presentation tests use successful drafts.
+Retain compatibility fallback only where the contract genuinely permits it and generation fencing; future action should make missing versus failed draft authority visible/explicit before allowing replacement semantics.
+
+#### A-F063 — Medium/High potential impact, stale recovery cleanup deletes by key without checking the inspected entry
+
+startupWorkflow.ts:26–30 inspects a loaded entry's timestamp then awaits clearAutoSave(name); useAutoSave.ts:75–78 deletes the key unconditionally in another transaction.
+A newer recovery write for that same key between the read and deletion can be removed by a cleanup decision about the older entry.
+Startup supersession protects loading presentation through canPresent, but does not pass that guard through recovery inspection/cleanup; the post-load helper can continue while explicit Open owns the app.
+The stronger strict clear coordinator addresses deliberate workflow discard/delete, not this conditional stale-entry cleanup; blindly using strict clear here could also invalidate valid newer snapshots.
+Complete startup tests mock immediate clear and loaded snapshots, and root presentation supersession tests mock AutoSave, so no test distinguishes conditional read/delete from an intervening new write.
+No actual recurrence or ISSUE022 cause is claimed; its cause remains unproved.
+Retain deletion of genuinely stale recovery; future action should condition cleanup on the captured entry/owner in the actual storage transaction and review superseded startup side effects.
+
+
+### Complete-review checkpoint — A-batch-8
+
+#### A-F064 — Medium/High, static grouping serializer drops node viewer additions
+
+workflowGrouping.ts:70–105 serializes selected tool/nested nodes through a second handwritten serializer without viewer_additions.
+The canonical graph sync serializer and graphStateToVueFlow:113,133 preserve that field, and strict graph models accept it for both node variants.
+Grouping a node with user-declared viewer additions therefore removes those additions from the captured child definition even though other tool/source binding metadata is carried.
+No grouping gesture/serialization test was executed during audit.
+`publishes exposed output schemas without an absent viewer declaration` tests catalog output field schema only, not node additions or nested invocation additions.
+Retain structural viewer declaration semantics and portable captured identity; future action should reuse one canonical node serializer or assert semantic field parity across every serializer.
+
+#### A-F065 — Medium, static nested dataframe grouping kind mismatch
+
+workflowGrouping.ts:176–204 recognizes positional dataframe targets but declares every other supported workflow-input target as kind='field', independently of its incoming edge and child input kind.
+An existing nested workflow node receiving a dataframe through its stable workflow-input handle can be grouped; its rewritten incoming edge remains dataframe at279–283 while the new outer public port is field.
+The complete backend GraphState validator explicitly refuses that combination at models/graph.py:466–470 with wrong workflow input kind.
+No new grouping validation was executed; this is a direct source contract mismatch.
+`publishes an incoming positional DataFrame and preserves exact DataFrame routes` covers plain positional targets, not an already-nested dataframe port.
+Retain stable nested port IDs and dataframe positional distinction; future action should derive the new public port kind/schema from the actual boundary edge/child port.
+
+#### A-F066 — Medium/High potential impact, bound or missing-tool hydration rewrites templates using live name-only metadata
+
+workflowGraph.ts:155–166 looks up current ToolMetadata solely by node.tool_name while retaining explicit package/version/class/source identity separately.
+toolNodeData:106 reconciles the saved output_templates against that live metadata.
+Root-owned outputTemplates.ts:15–18 returns an empty map if metadata is unavailable or names a DataFrameTool; lines21–30 drop keys not recognized as current path outputs and fill defaults from the live class.
+A captured portable v1 node under catalog v2 or a currently missing captured tool can thus lose saved templates or adopt incompatible defaults merely on client hydration; subsequent canonical serialization persists that altered map.
+This extends A-F001's captured-versus-live authority seam into presentation/payload transformation; it does not equate ordinary unbound catalog metadata updates with defects.
+`renders tool and workflow nodes from their discriminators` has one matching current tool; root-owned reconciliation tests deliberately assert stale-key removal under an explicitly selected current tool, which is valid for rebind but does not establish safe portable hydration.
+No actual UI persisted template loss was executed; full hydration/rebind callers remain pending.
+Retain deliberate reconciliation when the user chooses a new tool definition; future action must distinguish captured-bound hydration/unavailable metadata from explicit rebind.
+
+#### A-F067 — Medium, incremental upsert ignores returned folder authority
+
+workflow.ts:496–530 inserts/replaces returned info but never assigns workflowFolderIds[infoId] from info.folder.
+For a new create/import/duplicate in an already-known folder, sanitizeWorkflowTreeState maps the absent folder association to root.
+For a rename/patch changing folders, upsert copies the previous folder mapping even if returned info.folder changed.
+Dedicated moveWorkflowToFolder later fixes its mapping and folder operations refetch the full tree, but general create/import/patch paths do not perform that correction in the store.
+Targeted panel consumers can refresh afterward, so persistent visible misplacement is caller-qualified pending their full read; the inconsistent intermediate store state is definite.
+Tests create/import/duplicate at root and exercise dedicated move APIs, not nested-folder incremental upsert without a later refresh.
+Retain server canonical workflow IDs and local sibling ordering; future action should adopt returned folder membership consistently without using an old folder for a newly moved identity.
+
+#### A-F068 — Medium potential impact, older collection responses can remove newer observed generations
+
+workflow.ts:246–253 replaces the flat list with only items passing acceptWorkflowInfoGeneration; tree visit:269–282 likewise drops rejected older items.
+Observing a newer generation from ordinary fetched info at204–211 does not advance collection generation unless structuralEvent was explicitly supplied.
+Two concurrent refreshes can therefore share one collection generation: a newer response first installs generation12, then an older response10 is rejected and the replacement collection excludes the generation12 workflow entirely.
+A websocket structural event or local identity mutation advances collection generation and mitigates this path, but a fetched newer server generation without such an observed event remains possible at the API boundary.
+No reordered refresh was executed.
+`retries a stale flat-list response that crosses workflow deletion` and its tree counterpart test a local generation change, not out-of-order refreshes with no independently observed event.
+Retain rejection of stale incarnations and bounded refresh retry; future action should ensure rejecting stale entries cannot erase a fresher retained collection authority, or make newer observation invalidate the captured collection generation.
+
+#### A-F069 — Medium/High potential impact, mounted-identity guard is checked only before structural API awaits
+
+workflow.ts:323–336 refuses currently registered presenting canvases.
+patchWorkflow:958–975, applyWorkflowIdentityMove:1196–1220 and folder rename/move:1106–1119,1180–1192 check unmounted state before awaiting mutation but do not hold an in-flight identity fence or recheck a canvas that mounted while the response was held.
+A load already admitted before that mutation can present a tab after the initial check and before mutation response adoption; the mutation may then advance/rename the identity while a registered immutable canvas descriptor still denotes the old one.
+Local DELETE does hold workflowDeletionsInFlight, and generation checks prevent later old loads after invalidation, which are strong retained mitigations but not a structural pre-await admission barrier here.
+No real GUI interleaving was executed, and App/CanvasView presentation checks still await complete review.
+Tests refuse already-mounted operations or reject responses after explicit removal; they do not register a presenting canvas while the structural mutation response is pending.
+Retain the policy that mounted identities cannot be structurally changed; future action should review one admission owner across open versus rename/move/folder mutation rather than adding gesture waits.
+
+#### A-F070 — Low/Medium potential impact, structural completion can restore an obsolete global current selection
+
+applyWorkflowIdentityMove:1206,1221–1224 captures wasCurrent before awaits then sets current afterward without checking whether the user selected another workflow meanwhile.
+applyWorkflowFolderIdentityMove:1085,1102–1103 and child promotion:1143,1168–1171 similarly capture previousCurrent and activate its remapped identity after recovery work/tree refresh.
+Actual mounted-identity refusal and UI close/activation behavior constrain reachability; full panel/App callers remain pending and no wrong active canvas is established.
+The explicit-target Save/metadata update path has active-canvas/current-name checks; these structural helpers lack their equivalent captured selection guard.
+Tests remap the original current identity but do not switch current during held rename/recovery/tree work.
+Retain successful structural identity remapping; future action should separate durable collection updates from optional global active presentation ownership.
+
+#### A-F071 — Low, malformed disposition and exceptional download cleanup
+
+workflow.ts:97–101 decodeURIComponent on filename*=UTF-8'' can throw for malformed percent text, turning an otherwise downloaded blob into a failed action instead of using the fallback filename.
+The normal backend constructs valid headers; this is an external/adaptor robustness case, not a current backend failure.
+downloadBlob:105–115 revokes/removes only on ordinary success, so an exceptional click/append could abandon its URL/anchor.
+Export tests use valid plain filename or no header and mock a nonthrowing click; no malformed header/exception was executed.
+Retain safe basename fallback and current endpoint/signal routing; future action can use bounded parser fallback and finally cleanup when this small boundary is maintained.
+
+
+### Complete-review checkpoint — B-batch-4
+
+#### B-F031 — P2 source defect: archive hashing can strand an attached run as running
+
+`backend/src/bioimageflow_server/services/execution_runtime.py:322–353` catches result-export and archive-building errors, but `_archive_digest(archive)` in the success `else` can raise outside that catch and before `_complete`.
+The attached task then ends exceptionally while `_status` remains running, so the coordinator observes a running adapter without that task failure; `_error` also remains unset.
+The submitted adapter similarly performs archive construction/hashing outside its download failure handling at lines245–250, leaving its previous export descriptor on a local archive failure.
+The normal manager variant is B-F025: its escaped export failure instead becomes compute failure.
+`test_attached_export_failure_preserves_success_and_disables_download` exercises AttachedRunAdapter with a failing exporter, not destination-provider/digest failures on ExecutionManager; `test_direct_and_wetlands_managed_export_is_released_and_downloadable` covers the manager's positive export only.
+Future exact diagnostics should distinguish these three ownership outcomes rather than duplicate successful compute journeys.
+Retain successful computation independently of downloadable export availability; no injected failure or observed stranded run is claimed.
+
+#### B-F032 — P2 destructive migration source risk: every non-local v1 backend is erased, including malformed/unknown values
+
+`services/execution_registry.py:112–139` deletes any schema_version=1 snapshot whose backend is not direct/wetlands, before validating the backend or the rest of the snapshot.
+The stated migration removes obsolete distributed formats, and `test_migration_erases_legacy_distributed_bytes` explicitly establishes removal of submitted_remote credentials/history; that essential cleanup must remain.
+A missing/misspelled/unrecognized backend in a damaged v1 record is also irreversibly removed under the current branch, without distinguishing recognized retired formats from corruption.
+No migration was executed in this audit.
+Future decision should enumerate accepted retired formats and use explicit corruption handling for the rest, with an exact negative migration oracle; preserve required legacy credential erasure and local v1 retention.
+
+#### B-F033 — P2 identity source defect: registry file/request identity is not compared with decoded execution_id
+
+`services/execution_registry.py:157–170,206–238` validates requested path characters but accepts any valid snapshot payload's execution_id without checking it equals the requested id or JSON file stem.
+A corrupted/swapped valid snapshot can make GET for execution A return execution B, and list/non_terminal bind roots using payload B even though the file names A.
+`save` uses safe execution ids and normal atomic replacement, so ordinary writer behavior does not manufacture this mismatch; this is persistent-corruption/identity refusal coverage, not a hostile symlink claim or observed wrong-run operation.
+The complete registry/reload/workspace-binding tests cover valid paths/CAS and do not distinguish mismatched ids.
+Future exact diagnostic should swap only the payload id in an otherwise valid file and require controlled identity refusal before action binding, preserving active-run workspace pinning.
+
+#### B-F034 — P2 source risk: publication or persistence failure can permanently stop observation of an accepted run
+
+`services/execution_runtime.py:541–559` installs an adapter before registry reread/initial publication, but creates its poll task only afterward.
+A raising publisher leaves an installed adapter with no poll task; a repeated attach is rejected as already attached.
+`_refresh_once` at lines1226–1232 and `_record_observation_failure` at1259–1266 place persistence/publication outside their adapter-observation catch, and `_poll_loop` at1156–1167 has no failure recovery beyond cancellation and removes the task on exit.
+A transient save/CAS/publication error can thus end polling while the accepted run continues, distinct from the correctly handled remote observation failures.
+Complete tests cover network/handle observation loss and exact-child retry recovery, but not a fail-once publisher or registry-save failure during ongoing polling.
+Actual default EventBus error behavior and durable registry conflict conditions need the adjacent authority trace before claiming a default user-facing reproduction.
+Future diagnostic should use the existing coordinator fixture with one explicit fail-once persistence/publication hook, preserve accepted identity and observation-vs-authoritative-state separation, and avoid resubmission as recovery.
+
+#### B-F035 — P2 source risk: cancellation requested before attached task execution is overwritten
+
+`services/execution_runtime.py:289–293,322–323,366–372` lets `start()` schedule the task while status is starting; `cancel()` records cancel_requested and invokes the callback, then `_run` unconditionally sets running.
+If cancellation arrives before the coroutine starts, the later cancellation checks no longer see the request; result/state can become succeeded when the callback does not itself interrupt compute.
+This is an adapter lifecycle risk, not an executed Workflow cancellation failure: the callback/public library's cancellation state is a second authority that must be traced before default consequences are asserted.
+Complete attached tests do not coordinate start→immediate cancellation before first compute admission.
+Future exact adapter diagnostic should retain the cancellation intention and distinguish physical callback completion from merely scheduling an asyncio task.
+Raw asyncio task cancellation for AttachedRunAdapter also releases its awaiter while compute can continue and leaves status running (CancelledError is not caught); record this as an additional B-F024 seam, not another general rewrite.
+
+#### B-F036 — P3 persistence/design risk: attached completion/archive durability is weaker than registry durability
+
+`services/execution_runtime.py:89–107,134–165` atomically replaces the archive and fsyncs the completion temporary file, but does not fsync the replaced completion directory or archive file/directory.
+`services/execution_registry.py:428–448` explicitly fsyncs the replaced snapshot file and containing directory.
+The attached sidecar is described as durable/process-independent and startup uses it to recover authoritative completion before registry polling; a stronger power-loss guarantee is not established by the current file/rename sequence.
+Tests simulate process-independent reopen/tampering, not an OS power-loss oracle; no lost durable result was observed.
+Future action should specify the intended crash boundary and reuse the platform durability helpers if filesystem durability is part of that contract, without pretending a normal reopen test proves power-loss behavior.
+
+#### B-F037 — P3 corruption handling/test debt: retry-journal readers assume object envelopes
+
+`services/execution_registry.py:289–422` several readers call envelope.get after JSON decoding without mapping-shape checks; JSONDecodeError and a scalar/list shape also escape most retry state methods as generic exceptions.
+Cleanup journal reading has more explicit envelope/digest refusal, and the public RunRetryPlan parser protects payload integrity after successful journal read.
+Complete retry tests distinguish child uncertainty, confirmation states, digest tampering and exact-child recovery, but not malformed envelope shapes or partial journal corruption.
+Future action should choose a stable corruption error and fail closed before replay; keep the same preallocated child and never infer absence from journal-read failure.
+This is error classification/maintainability debt, not a claim that malformed journal bytes currently authorize a second child.
+
+#### B-F038 — P3 suite classification candidate: distributed module exclusion also labels local runtime contracts
+
+`backend/tests/test_services/test_execution_runtime.py:35` applies campaign_excluded(distributed-engine) to every test, including local registry, progress reduction, AttachedRunAdapter restart/export and regular direct/Wetlands manager retention.
+The distributed-integration and plural-router modules are similarly marked; their actual remote contracts warrant static review regardless of campaign execution exclusions.
+This is a classification candidate, not an omission claim about ordinary CI/full lanes.
+The shared infrastructure reviewer was notified and will reconcile actual pytest hook/filter authority before a coverage decision.
+Future action may split per-test ownership/markers so local contracts are retained in the applicable campaign gate, without expanding campaign credits to unexecuted remote scheduling.
+
+#### B-F039 — P3 test robustness debt: successful attached completion is inferred after a fixed 50ms sleep
+
+`tests/test_services/test_execution_runtime.py::test_attached_export_failure_preserves_success_and_disables_download` sleeps0.05 then requires terminal success, while thread scheduling and polling are asynchronous.
+This can become an incidental timing oracle on a loaded machine; no flake or measured suite cost is claimed.
+Future action should await a bounded observable terminal transition/physical task completion using the existing fixture and retain the export-failure distinction.
+B-F012 also extends to `test_retry_confirmation_refreshes_parent_after_waiting_for_run_lock`: its event wait is unbounded and manual lock release is not in finally; a failure before release can strand the confirmation task.
+Other direct adapter tests explicitly await the actual task and supply a stronger physical-completion oracle.
+
+#### B-F040 — P3 source defect: progress sequence filtering occurs after unsafe coercion
+
+`services/execution_progress.py:53–59` promises/implements skipping non-int sequence values in the loop, but sorts first with int(event.get('sequence', -1)).
+A non-numeric string/None sequence raises before that rejection and discards the entire reduction attempt, including otherwise valid events.
+The coordinator classifies this as observation failure and retains its cursor; replaying the same malformed event can repeatedly block healthy later events.
+Public library event producers and handle-parser validation remain a separate boundary to trace; no malformed event was observed and no assertion that valid public events contain these values is made.
+The complete reducer tests cover valid replay, parallel diagnostics and phase values only.
+Future narrow diagnostic should place one malformed sequence beside valid events, retain monotonic integer cursor behavior and avoid relaxing public diagnostic/secret validation.
+
+
+### Complete-review checkpoint — B-batch-5
+
+#### B-F041 — P2 source risk: cancellation can lose a returned managed run identity while submission continues
+
+`backend/src/bioimageflow_server/services/execution_preflight.py:146–165` pops the intent then awaits asyncio.to_thread(entry.prepared.submit); finally closes the intent.
+`ManagedSubmitIntent.submit` at104–120 can continue the physical public cluster.submit after cancellation of that awaiter, but the cancelled request no longer returns acceptance to `routers/executions.py:90–119` for registration.
+Thus the documented residual process-crash allocation/identity window also exists under raw asyncio cancellation of the consuming route task; closing the intent only changes a flag and does not recover/persist the returned acceptance.
+This is static risk, not an executed lost remote allocation or a claim that every browser disconnect cancels an ASGI handler.
+The complete token/preflight tests cover binding mismatch and one-use submission, not physical submission completion under route cancellation.
+Public library cluster.submit durability/recovery remains pending deeper review; no private scan/resubmission should compensate for an unknown identity.
+Future exact diagnostic should coordinate a bounded fake public submission and cancellation, observe physical completion and acceptance persistence, then reconcile the owned operation lifetime before any actual remote test.
+Link B-F024 physical-completion ownership while retaining explicit one-use token and direct-public-submit semantics; avoid a universal coordinator redesign.
+
+#### B-F042 — P1 route policy defect: node Reveal lacks the desktop-only mode guard
+
+`backend/src/bioimageflow_server/routers/nodes.py:641–659` resolves the result cell and directly invokes reveal_in_file_browser without a settings/process-policy dependency or mode check.
+The completely reviewed app installs this router in both modes; its readiness middleware is not a desktop filesystem-policy gate.
+PLATFORM_CONTEXT requires desktop-only filesystem capabilities gated in webapp; the complete node test file covers successful record-relative Reveal and exact asset delegation, with no webapp refusal case.
+This is separate from ROOT-F002's mutable-mode authority at existing guards: this route has no guard to mutate.
+No Reveal/native/webapp action was performed during the audit.
+Future bounded diagnostic should use immutable AppConfig/process mode and assert refusal before native launch; preserve actual desktop functionality and result identity validation.
+Root requested this separate finding and will link it in policy synthesis.
+
+#### B-F043 — P2 presentation contract/test gap: valid infinite results lose their distinction from missing values in node JSON
+
+`routers/nodes.py:150–166` passes DataFrame.to_dict rows into `models/nodes.py:40–70` Any-valued cells without a nonfinite presentation policy.
+Scientific positive infinity can be valid (root's perfect-match infinite PSNR contract), and changing that mathematical result to a finite value is not warranted.
+Installed FastAPI0.135.3 routing.py690–720 uses its default-response-model dump_json fast path; `_compat/v2.py:202–227` delegates to Pydantic dump_json.
+Installed Pydantic2.12.5 `_internal/_config.py:297` defaults ser_json_inf_nan to null, with no NodeDataResponse override.
+Static inference: the default node JSON path maps +infinity/-infinity/NaN to null, erasing valid infinity versus missing-data meaning; it is not the older JSONResponse allow_nan=False failure path for this baseline.
+No serialization call or endpoint was executed, and no alternate dependency baseline is certified.
+The complete node model/HTTP tests contain no nonfinite-value distinction; CSV still emits pandas' textual result representation.
+Future action should choose an explicit JSON-safe presentation plus frontend/type semantics for valid infinity and missing values, retain scientific truth, and add one exact node model/API oracle rather than duplicate scientific computation.
+
+#### B-F044 — P2 multi-process source risk: OME conversion uses one shared temporary filename per cache key
+
+`routers/nodes.py:378–411` uses a fixed cache_path+'.tmp', writes it, then replaces the cache path; error cleanup unlinks that same temporary path.
+Independent server processes converting the same source/key can write/remove each other's temporary file or publish an incomplete competing conversion.
+The cache root is process-global system temp, while the source hash includes resolved path/mtime/size; a single async worker executes this synchronous block serially, so this is not a claimed default same-loop interleaving.
+Complete OME tests cover one conversion, offsets, unreadable source and age pruning, not coordinated same-key processes.
+Future decision should use unique owned temporary output and validated atomic publication if multi-process/shared-cache operation is supported; retain normal cache reuse and prune behavior.
+No concurrent conversion or bad TIFF was produced in this audit.
+
+#### B-F045 — P2 source/API risk: table identity cannot be supplied to image/thumbnail/Reveal or filtered CSV endpoints
+
+The query endpoint accepts ResultArtifactIdentity and pins pagination, but `routers/nodes.py:540–568,610–688` image/thumbnail/Reveal and filtered CSV reread latest using only node/workflow/row/column.
+A table captured from run A cannot name A in those calls after latest advances to run B; the asset resolver validates the record belonging to the newly read dataframe, which does not establish that it is the table's displayed record.
+Complete tests distinguish pinned table pagination and exact assets within a selected dataframe; their image/thumbnail/Reveal mocks return a fixed dataframe and do not exercise table capture followed by latest advance.
+This is the API's missing pinning capability and a source risk for callers, not yet a claim of the whole frontend behavior; complete ImageCell/NodeDataTable/Avivator callers are the next batch.
+Retain explicit external paths and legacy_unpinned refusal distinctions; adding a captured identity must not cause fallback to whichever latest record is convenient.
+B-F026 separately concerns legacy-to-modern recapture during the reader itself.
+
+#### B-F046 — P2 source/spec mismatch: captured profile object is used at submit without a fresh submit-time script check
+
+The complete managed runtime wiring reference, Profile loading and Admission sections, and normative specification§3.1/3.2 require a fresh script import/current digest check for submission.
+Actual `DistributedPreflightService.preflight` resolves/imports the profile before graph/path discovery, then stores the live profile/workflow in ManagedSubmitIntent.
+`ManagedSubmitIntent.submit` uses that captured cluster directly; the consume/apply route does not call `PlatformExecutionProfileResolver.resolve_revision` (that method has no source caller).
+A script/profile change during the token lifetime therefore does not trigger the documented fresh submit-time check.
+The token does retain the exact captured request/profile/overrides internally, so this is not a claim that a token can silently switch its target; ordinary captured immutable intent semantics must be preserved.
+Full tests cover profile digest changes during explicit resolution and exact intent consumption, not a changed script between issue and consume.
+Future contract decision must reconcile submission's fresh-code promise with immutable captured intent and state whether current profile disable/update invalidates admission; no automatic repeated preparation or target rebinding is recommended.
+
+#### B-F047 — P3 lifetime/debt: expired submit intents remain retained until explicit use or app shutdown
+
+`services/execution_preflight.py:132–144,173–183` retains workflows/profile objects in `_entries` and provides reap_expired, but no backend source caller schedules/invokes it.
+Expiry is checked on consume, so expired tokens cannot submit; the defect candidate is resource retention/cleanup, not authorization beyond lifetime.
+Users repeatedly requesting ready preflight and abandoning its token can retain expired immutable graphs and profile objects for the application's lifetime.
+Tests cover once-only and mismatched consumption, not abandoned expiry/reap/close lifecycle; no measured memory cost is claimed.
+Future action should tie bounded expiry cleanup to the existing app token owner and cover cleanup without new remote execution journeys.
+
+#### B-F048 — P2 conversion design risk: array-shape heuristics can reinterpret scalar volumes as color
+
+`routers/nodes.py:359–375` classifies any3D array whose final dimension is3/4 as YXS and analogous4D arrays as ZYXS, while `_read_image_array` returns only array values and discards input TIFF axes/photometric metadata.
+A scalar ZYX volume with X=3/4 is ambiguous by shape and may become color-oriented OME output; larger multidimensional scientific inputs have an explicit2–4D refusal rather than an inferred universal support promise.
+Existing complete OME tests use2D grayscale and preserve already-OME files; they do not distinguish scalar-volume width3/4 from color channels.
+No misrender was reproduced; library/Core image metadata and the frontend format promise must be traced before choosing a correction.
+Future narrow diagnostic should retain known source axes/metadata when available and explicitly handle genuinely ambiguous unlabeled arrays, preserving existing RGB/multiframe behavior.
+
+
+### Complete-review checkpoint — B-batch-6
+
+#### B-F049 — P1 source defect/test oracle: configured Fiji button always omits required captured identity
+
+`frontend/src/components/panels/ImageCell.vue:303–320` calls openInFiji with node,row,col,workflow_name but omits its available resultIdentity prop.
+The complete API wrapper forwards the request unchanged; `backend/src/bioimageflow_server/routers/fiji.py:57–63` refuses result_identity=None with422 before native launch.
+NodeDataTable passes `data.source_identity` into ImageCell, so the modern table has the value but loses it on this specific action.
+The generated/model field is optional (`models/fiji.py:19`), so frontend compile validation cannot distinguish the semantic admission requirement.
+Complete borrowed selector `frontend/src/components/panels/__tests__/ImageCell.test.ts` / `opens the selected workflow image in configured Fiji` asserts precisely the identity-less obsolete payload and mocks HTTP200.
+Backend `test_open_requires_complete_result_identity` has the separate B-F023 confounded negative oracle; preserve existing valid-identity backend cases.
+This is deterministic source behavior for the default configured desktop action, not a claimed executed native failure.
+Future bounded diagnostic should require the captured identity in the caller payload and route contract together, retaining exact-result selection and disabling/refusing legacy unpinned opens appropriately rather than loosening the backend guard.
+Do not request or launch desktop/native tests during the audit freeze.
+
+#### B-F050 — P2 source publication defect: thumbnail readers can serve partial or failed PNG writes as ready
+
+`backend/src/bioimageflow_server/_external/thumbnail_generator.py:82–84` writes directly to the final cache pathname with img.save.
+`services/thumbnail_manager.py:117–122,173–181,195–197` treats file existence/readability as completion before its tracked execution task has physically finished.
+A concurrent poll can read a partial PNG while the worker writes; if save fails after creating a file, the cache-hit branch also prevents retry and returns that damaged file indefinitely.
+The node endpoint labels any non-placeholder bytes ready with public caching, and ImageCell makes a blob without image-decode validation or img error recovery.
+Whole manager tests write the complete mock payload in one call and helper tests inspect the file only after return; none distinguishes physical write admission/publication.
+No damaged image or timing race was executed.
+Future exact diagnostic should coordinate partial write→physical completion/failure and demand unique temporary ownership plus atomic complete publication, retaining same-key deduplication and no-store placeholders.
+
+#### B-F051 — P2 source/docs mismatch: thumbnail launch failure raises instead of yielding the documented placeholder recovery
+
+`services/thumbnail_manager.py:206–215` says failed launch should not raise and callers receive a retryable placeholder, but `_launch` at285–316 logs/resets then re-raises and its await has no catch.
+`get_or_queue` therefore fails the request on provisioning/start failure instead of reaching the placeholder branch; ImageCell's HTTP error path stops retries immediately.
+The complete tests exercise successful fake launch and missing/cached fast paths, not actual public operation failure.
+Future diagnostic should use a failing public-operation fixture and choose a coherent visible failure/retry policy (placeholder versus explicit terminal error), preserving recorded underlying failure detail.
+This is not an invented provisioning pass or a claim that bad recipes should silently succeed.
+
+#### B-F052 — P2 source lifecycle risk: thumbnail launch/submit awaiters are not drained or coordinated with shutdown
+
+`services/thumbnail_manager.py:205–235` awaits physical `_launch`/pool.submit_path under asyncio locks without cancellation-safe physical-completion ownership.
+`shutdown` at260–282 neither takes that lock nor marks the manager closed, and snapshots only already-tracked tasks/pool.
+Raw request cancellation can unwind the lock while physical launch/submission continues; shutdown during launch can see pool=None and return before the worker thread later assigns a live pool.
+Likewise a physically submitted task whose awaiter is cancelled before return can be absent from `_pending_generations`.
+The existing shutdown test begins only after fake submission/tracking and validates cancel/close; it does not distinguish physical launch/shutdown overlap.
+Actual public WorkerPool.close completion/manager worker ownership remains pending the full Wetlands audit; do not claim observed orphan workers or directory loss.
+Future exact lifecycle diagnostic should coordinate physical launch/submission return with shutdown/cancellation using the existing owner fixture and retain the borrowed shared EnvironmentManager lifetime.
+Link B-F024/B-F014; scope is the thumbnail owner, not a universal service coordinator.
+
+#### B-F053 — P3 source/test contract gap: extension-less dispatch cannot realize the helper's canonical-extension promise
+
+`thumbnail_manager.py:220–233` derives extension solely from the physical suffix, yielding an empty string for extension-less files.
+The helper always calls Path(image_path).with_suffix('.'+extension) at33; empty extension produces '.', which Python3.13 pathlib rejects as a suffix.
+The current test `test_queue_generate_handles_extension_with_no_dot` only checks the empty dispatch value against a fake pool; the helper symlink test supplies an explicit tif extension and therefore exercises another path.
+This is an inferred source incompatibility on the authoritative Python3.13 baseline, not an executed helper failure.
+Future contract decision should distinguish unsupported unnamed formats from supported logical-format metadata and avoid promising that the worker can infer an absent format.
+Do not invent a format or mutate arbitrary input directories; any supported temporary alias must be owned, unique and cleaned on failure.
+
+#### B-F054 — P2 source/UI identity risk: thumbnail reset ignores changed result identity when path/row text stays equal
+
+`ImageCell.vue:265–272` watches node/workflow/row/col/value/enabled only, excluding resultIdentity and identityGeneration.
+A new retained record that uses the same relative assets/mask.png text and row can leave the old blob attached even though the table now carries a new source identity.
+Napari receives updated identity separately; the thumbnail/Avivator/Reveal endpoints still resolve latest without pinning (B-F045), and full ImageCell/NodeDataTable reads now confirm the real caller path, not merely API capability absence.
+`openAvivator` uses a request-id guard for changed watched properties, but identity-only changes do not invalidate it either.
+The borrowed complete ImageCell test changes workflow/path during offsets; no same-text/new-record oracle is present.
+Future exact component diagnostic should change only the captured identity/incarnation, require stale asynchronous results ignored and pin actual backend image selection, retaining lazy visibility and bounded retry behavior.
+There is also no separate fetch generation check after response.blob; abort is the sole thumbnail stale-request defense.
+Treat ignored/late abort fulfillment as a qualified source risk until a real fetch timing diagnostic establishes the default browser interleaving.
+
+#### B-F055 — P2 source display defect: table helper field overwrites a real __absoluteRow column
+
+`frontend/src/components/panels/NodeDataTable.vue:37–44` spreads the producer row then assigns __absoluteRow=response.absolute_rows[i].
+If the legitimate dataframe contains a column named __absoluteRow, its displayed value is replaced by the row position; column rendering reads that overwritten object property.
+The backend's separate absolute_rows channel deliberately avoids payload helper collisions; its literal _absolute_row test protects a different spelling.
+No producer contract examined so far forbids __absoluteRow, and the NodeDataResponse row-key validator accepts it as an ordinary column.
+No UI/test execution or persisted data loss is claimed; the defect is in the displayed row model.
+Future narrow table oracle should use exactly the colliding producer name and keep metadata outside its column namespace, preserving row-action absolute positions.
+
+#### B-F056 — P3 test isolation debt: thumbnail helper loader leaves fake external modules in sys.modules
+
+`backend/tests/test_services/test_thumbnail_generator.py:31–54` writes bioio/bioio_tifffile stubs directly into sys.modules on every helper load and never restores prior entries.
+Complete test fixtures here have no cleanup; platform shared conftest controls paths/offline registry but does not supply this module restoration.
+A later host-side import can receive the earlier fake reader instead of the real module; no actual contamination failure is claimed and separate Wetlands subprocess imports are not this same interpreter.
+Future action should use owned monkeypatch restoration or a scoped loader fixture, retaining dependency-free pure tests and separate actual worker acceptance.
+The full ImageCell counterpart also mounts several wrappers without consistently unmounting and uses stubGlobal; actual Vitest global restoration configuration belongs to the shared infrastructure owner, so do not claim it is absent here.
+
+#### B-F057 — P3 preview policy/debt: scientific channels are interpreted as display alpha and later channels dropped
+
+`_external/thumbnail_generator.py:51–79` says keep all channels but renders2-channel data as luminance+alpha,4+channel data as first4 RGBA and drops channel5 onward.
+For scientific TCZYX channels, the second/fourth channel is not inherently alpha; its zero intensity can hide the first channels in the preview.
+Middle T/Z selection and intensity normalization are intentional thumbnail summarization, not scientific output mutation.
+Complete helper tests distinguish constant/single/RGBA-shaped data only and do not assert a multi-channel scientific display policy or alpha metadata semantics.
+No misleading thumbnail was generated in this audit.
+Future decision should define supported channel preview semantics, retain explicitly tagged RGBA where appropriate and label/handle dropped channels rather than imply complete-channel visualization.
+
+#### B-F058 — P3 UI recovery/docs gap: exhausted thumbnails cannot retrigger merely by scrolling away and back
+
+`ImageCell.vue:90–94` describes scrolling away/back as retry recovery.
+`activateThumbnail` at250–256 sets activated=true and removes the observer; after fetch exhaustion/error it remains activated and no visibility observer is restarted.
+Ordinary scroll-out/in therefore does not retrigger without a prop reset/remount, and no explicit thumbnail retry button exists.
+The complete counterpart tests enforce finite retries and unavailable state but not this claimed recovery action.
+Future decision should provide an explicit bounded retry or correct the stated recovery behavior, retaining protection against an unbounded request loop.
+
+
+### Complete-review checkpoint — reviewer-batch-3
+
+#### reviewer-F021 — P2, source defect: advertised custom documentation paths lose their package owner
+
+`docs/generate_tool_package_docs.py:96–102,107–143` accepts external `BIOIMAGEFLOW_DOC_PACKAGE_PATHS` and configured documentation roots.
+But tool/workflow child wrappers call `include_page(source)` without their known output/package context (`223–227,270–287`).
+`generated_wrapper_for_source` requires an ancestor whose parent is the repository's internal `PACKAGES_DIR` and then hardcodes `package_dir / "docs"`.
+An opted-in external package with local detail pages therefore reaches `StopIteration`; an internal package using another declared documentation root can reach `ValueError`.
+The error formatter for an invalid external index also assumes `package.index.relative_to(ROOT)` (`201–209`), replacing a useful diagnostic with another path exception.
+`how-to/custom_tool_package.rst:83–95,137–146` explicitly advertises these local custom-package capabilities; URL-only external packages intentionally skip local inclusion and are a separate supported path.
+No generator was executed and no existing first-party page failure is claimed.
+After the audit, carry the discovered package/docs/output owner into child wrapper generation and make error paths work outside the repository, preserving custom local documentation and the no-tool-import build boundary.
+The completed shared development tests cover package-doc navigation but do not distinguish an external local package or a nondefault docs root; reuse those oracles for the actual promised variants later.
+
+#### reviewer-F022 — P3, source metadata defect: the documentation generator parses TOML as stripped text
+
+`read_docs_metadata:147–173` strips text after every `#` before parsing strings and supports only a subset of double-quoted scalars.
+A valid quoted title or URL fragment can be truncated; single-quoted TOML strings retain quotes and escaped basic strings are not decoded.
+The public custom-package guide presents `[tool.bioimageflow.docs]` as ordinary TOML, without such syntax restrictions.
+None of the eleven current first-party manifests declares this table, so this is a documented custom-metadata boundary, not a demonstrated first-party build failure.
+After review, use the existing workspace's standard TOML parsing authority rather than a second partial parser, retaining fail-closed malformed metadata and the lightweight no-package-import producer.
+The existing shared development test lacks quoted-fragment, literal-string and nondefault-root distinctions.
+
+#### reviewer-F023 — P4, generated-output maintenance candidate: obsolete owned wrappers are outside the generator's check
+
+`write_pages:294–297` writes only newly expected paths, and `check_pages:300–312` compares only those paths.
+Removing or renaming a source page leaves its previously generated wrapper outside both operations' checks.
+Sphinx may still identify a broken include, but the generator's freshness check cannot identify that owned orphan.
+No obsolete file is claimed from this inspection and no generated-wrapper classification credit is taken yet.
+If cleanup is introduced after the full review, scope it to explicitly owned generated headers/output paths and preserve human pages, package sources and custom-build navigation; do not broadly delete documentation.
+
+#### reviewer-F024 — P3, developer configuration defect: debugger and type-path examples retain an obsolete directory spelling
+
+`.vscode/launch.json:14` launches nonexistent `example-workflows/fish_analysis/workflow.py`; the actual tracked entry point is `example_workflows/fish_analysis/workflow.py`.
+`pyrightconfig.json:34` repeats the nonexistent hyphenated directory.
+The same extra-path list omits the current phasor package, although packages are generally included and the environment may resolve its installed distribution; no type-check failure is inferred from that omission.
+After review, correct the dead debug/path references and align maintained package paths only where needed, without changing Python/runtime compatibility.
+
+#### reviewer-F025 — P3, architecture guard/oracle limit: eager nested module imports evade top-level checks
+
+`scripts/check_import_boundaries.py:66–70` implements `top_level_only` using only immediate `tree.body` import nodes.
+An import in an eager module-level conditional or class body is executed during module import but is invisible to the Core and production-Parsl rules.
+`reference/platform_development.md:28–30` states the worker-safe module-import boundary, and the existing shared development tests distinguish direct module imports from legitimate function-lazy imports, but not eager nested module contexts.
+This is a guard limitation; no current forbidden conditional import or runtime break is claimed.
+A later refinement must preserve legitimate lazy functions and nonexecuted typing guards, rather than replacing the scan with an indiscriminate recursive ban.
+Keep dependency direction and the existing focused guard/test authority; no generic import-system redesign is proposed.
+
+#### reviewer-F026 — P3, reference contract drift: the error catalogue overstates converters and omits an implemented kind
+
+`reference/errors.rst:52–100` calls its table the full `ValidationErrorKind` set but omits `environment_incompatible`, present in `validation/models.py:18–30`, generated by `workflow/inspection.py:263–267` and specified in `docs/source/specs.md:389,2614`.
+The sentence at `errors.rst:105–108` promises every listed domain exception has `to_validation_error`; actual `engine/common.py:356–378` and Core `environment.py:109–111` lack that method, while the four node exceptions provide it.
+The existing normative sentence at `specs.md:2625` has the same overbroad converter wording and is handed to B's specification ownership rather than silently narrowing the feature.
+The errors page's `/gui/planning_and_cache` link (`155`) resolves to the existing counterpart owned by B; absence from this reviewer's assignment list is not absence from the repository.
+After the audit, make the curated catalogue exhaustive for implemented kinds and explicitly distinguish converter-bearing exceptions from execution/planning exceptions; retain cycle aggregate validation and public plan refusal.
+The inspected validation implementation continues after cycle detection (`inspection.py:204–216`), matching that aggregate obligation.
+The exact public planning exception remains a cross-owner trace: an internal engine graph helper raises `RuntimeError`, but that helper alone does not prove the public `Workflow.plan` contract is wrong.
+This is reference/source reconciliation, not an executed planning failure or authorization to weaken stable kind semantics.
+
+#### reviewer-F027 — P2, campaign applicability candidate: exact exclusions also encompass local retained-run obligations
+
+B's complete runtime-test review identified the module-wide `campaign_excluded(reason="distributed-engine")` in `test_execution_runtime.py:36`.
+The actual campaign auditor removes every marked identity, and the manifest explicitly includes local attached/direct/Wetlands cases (`campaign-local-scope.json:253–329,397–398`).
+Targeted counterpart inspection confirms `test_regular_terminal_sidecar_recovers_failure_and_cancellation[failed-direct/cancelled-wetlands]` exercises an actual local `ExecutionManager` completion path and durable recovery (`test_execution_runtime.py:883–944`), while `test_direct_and_wetlands_managed_export_is_released_and_downloadable` exercises retained local export ownership and tamper refusal (`1387–1427`).
+Those assertions are not all parallel scheduling or actual managed remote submission.
+At the same time, they share the retained execution/coordinator schema intentionally designed for multiple backends; a mixed module may have a deliberate exclusion rationale.
+Thus this requires explicit per-test local applicability adjudication after the complete source/spec review, not an automatic demand to run the entire distributed module or a claim that ordinary CI omitted these tests.
+Preserve actual parallel/Parsl/managed-remote exclusions, historical counts/identities and exact marker-manifest self-audit.
+Prefer retaining existing distinguishing local selectors over adding duplicate tests or granting static coverage credit.
+
+#### reviewer-F028 — P4, fail-closed manifest diagnostic limit: malformed reason types bypass the promised controlled error
+
+`load_backend_exclusions:46` and `audit_backend_collection:88` test reason membership in a frozenset without first establishing a string.
+An unhashable malformed JSON value or marker reason (for example a list) raises `TypeError` outside the controlled `ValueError` conversion used by collection.
+The suite still fails closed, so this is diagnostic robustness rather than scope bypass.
+The exact collection tests distinguish duplicate/missing/unmarked/drift/zero-selection cases, but do not cover malformed reason types, malformed marker argument shape, or duplicate collected identities.
+If the scope infrastructure changes later, extend those existing negative oracles proportionately and keep exact collection integrity; no new tests are authorized now.
+
+
+### Complete-review checkpoint — reviewer-batch-4
+
+#### reviewer-F029 — P2, documented wire contract drift: current output is still described as version 1
+
+`gui/wire_format.rst:4–20,40–48` describes `Workflow.to_dict()` as schema-version-1 and exported envelopes as archive-version-1 without viewing metadata.
+Actual `workflow/serialization.py:207–208` emits schema-version-2, and explicit archive serialization (`35–58`) emits archive-version-2 with the derived viewing snapshot.
+The already reviewed viewer reference and actual loader (`loading.py:335–377`) distinguish strict current v2 envelopes and legacy v1 acceptance.
+Thus these examples no longer describe current output, even though the loader continues accepting supported v1 graphs/envelopes.
+After the audit, update the curated wire guide from the existing unified workflow contract and current golden fixtures, keeping legacy input compatibility, explicit unknown viewing snapshots, source ownership and strict field validation intact.
+This is a documentation finding, not a new runtime red.
+The default session's literal v1 graph is handed to A's pending complete session review; that literal alone does not prove incompatibility because the public loader explicitly supports v1.
+
+#### reviewer-F030 — P3, architecture narrative and public reference drift: existing modes are presented as future features
+
+`concepts/architecture.rst:64–66` calls distributed adapters future, and `concepts/tools.rst:64–65` calls row parallelism future, while the current public runtime constructs attached Parsl and the maintained execution/parallel guides describe actual current parallel scheduling.
+The architecture's absolute statement that tool authors only import Core (`113–114`) also needs the already documented distinction between worker-safe ProcessingTools and orchestrator DataFrameTools; this is not a reason to move DataFrameTools into Core.
+`how-to/run_in_parallel.rst:18` references nonexistent `bioimageflow_core.DataFrameTool`; the actual public class is `bioimageflow.DataFrameTool`.
+After review, align these small explanatory statements with current implemented modes and process boundaries, keeping campaign runtime exclusions separate from static source coverage and preserving the lightweight Core dependency direction.
+Do not redesign scheduling or broaden the held local campaign merely to reconcile a narrative.
+
+#### reviewer-F031 — P3, host guidance defect: the documented step advancement rule contradicts existing behavior and oracle
+
+`gui/disabled_nodes.rst:74–76` says execute is mandatory before advancing and the engine checks it.
+Actual `engine/scheduler.py:270–275,340–345` auto-executes an unexecuted runnable step when iteration advances.
+Skipped steps are yielded and then continued without automatic execution (`309–325`), consistent with the same page's worked skip loop.
+The existing `tests/integration/test_compute_steps.py::TestAutoExecute::test_auto_executes_when_user_skips_execute` explicitly exercises a real Direct workflow and executes only the final step (`97–116`).
+After the audit, correct the explanatory rule to the existing runnable/skipped behavior using that existing assertion; an additional duplicate test is unnecessary.
+Keep explicit execution control, skipped-step refusal when invoked, deterministic downstream consistency and iterator cleanup ownership.
+No step test was executed by this reviewer.
+
+#### reviewer-F032 — P3, output-template examples: compound stems and explosion indices overpromise automatic filenames
+
+`how-to/output_templating.rst:70–75` predicts `cells_result.ome.tif` for `{image.stem}_result{image.exts}` with `cells.ome.tif`.
+The actual resolver uses `Path.stem` (`template.py:125–133`), retaining `.ome` in the stem and separately appending all suffixes; the stated output spelling is inaccurate.
+The same guide (`90–103`) suggests an exploding tool automatically gets distinct `0::0`, `0::1` filenames from `{row_index}`.
+Actual arguments build templates before processing from the input row index and replace `::` with `_` (`engine/arguments.py:253–268`); the engine cannot know returned child count before that processing call.
+This does not establish a product overwrite: tool-side outputs may explicitly create their own distinct paths and the source/output validation owners must assess actual runtime semantics.
+After review, clarify input-row versus returned-child index ownership and correct filename examples, preserving explicit owned output paths and the essential one-to-many execution contract.
+The existing template resolver tests already distinguish stem/suffix/suffixes; use their actual expected spelling rather than changing the resolver solely to match prose.
+An explosion naming promise, if essential, needs public contract adjudication before any implementation change or new oracle.
+
+#### reviewer-F033 — P3, GUI schema reference drift: implemented picker/control distinctions and exception scope are incomplete
+
+`concepts/type_system.rst:201–215` and `gui/tool_schemas.rst:37–69` omit implemented `GUIMeta.path_picker` / serialized `path_picker`, despite Core `types.py:117–159`, serializer `serialization.py:269–285` and normative `specs.md:302,315,1193,1217` documenting the file/folder/both hint.
+The hint is rendering only, ignored for non-path fields/Outputs, and must not become filesystem validation.
+The schema reference also presents generic connectability without the implemented DataFrameTool input exception: actual serializer documentation/branch describes those inputs as `never` (`219–230,284`).
+Its exception advice (`gui/tool_schemas.rst:189–194`) describes serializer failure as `SchemaSerializationError` typically from tool instantiation, while the same page correctly says input serialization does not instantiate the class (`73–76`).
+The actual serializers directly inspect normalized IO classes and validate templates; the registry catches arbitrary `Exception` around each schema (`registry.py:278–285`).
+The exported `SchemaSerializationError` type alone does not prove that all direct introspection/template faults are translated into it, so consumers following only that catch advice can miss actual failures.
+After complete source/spec review, document the actual public exception/normalization boundary or preserve an explicitly required typed failure contract in a bounded implementation packet; do not silently weaken a required guarantee.
+Retain unknown/broken tool isolation, annotation-only introspection, input pin policy, path-picker intent and dynamic resolved outputs.
+Existing Core picker tests and validation-serialization input/metadata tests are the relevant current oracles; no new test execution or coverage credit is assigned here.
+
+
+### Complete-review checkpoint — root-batch-5
+
+#### ROOT-F038 — P2 default-state design risk: IOModel instances alias mutable declaration defaults
+
+`bioimageflow_core/tool.py:106–114` assigns getattr(self.__class__, name) directly when a field is omitted.
+Two instances using a list/dict/array default therefore share the declaration's object; mutation through one can change another instance and the future default.
+The source behavior is direct; no cross-row contamination was executed, and runtime resolution may supply explicit values on some paths.
+`TestIOModel.test_default_used` and integration `test_default_values` exercise only immutable scalar defaults.
+After full review, define independent instance-default semantics and either copy supported mutable defaults or explicitly refuse them, preserving immutable Template markers and intentional caller-supplied object identity.
+Do not add Pydantic or coerce every tool field merely to solve default ownership.
+
+#### ROOT-F039 — P2 recipe-validation defect: operator substrings are treated as exact version pins
+
+`bioimageflow_core/environment.py:51–97` accepts pip exact mode whenever the string contains ==/=== and conda mode whenever it contains allowed equality characters.
+A prefix requirement such as numpy==2.* passes allow_flexible_versions=False although it selects multiple versions; malformed equalities can pass declaration validation and fail only at later installation.
+[Python's version-specifier contract](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-matching) distinguishes wildcard prefix matching from an exact version.
+No recipe was provisioned or declaration failure executed here.
+Complete environment tests distinguish bare names/ranges/exact examples and preserve direct/local requirements, but omit wildcard and malformed-equality cases.
+After review, validate actual requirement grammar and exact-versus-flexible semantics through one authority, retaining the deliberate direct/local dependency exceptions and supported conda channel syntax.
+Core declaration policy and Wetlands runtime translation must remain consistent rather than enforcing only one copied list of strings.
+
+#### ROOT-F040 — P2 version-authority defect: custom preflight comparisons disagree with supported version semantics
+
+`bioimageflow_core/preflight.py:121–180` represents absent dev suffix as -1, so a release candidate with .devN sorts after the same release candidate without .dev; the dev branch precedes post handling, so a postrelease-development version sorts before its underlying final release.
+The regex accepts local identifiers but comparison drops their labels, so ==0.4.1+foo can report a 0.4.1+bar candidate compatible.
+The [official version ordering/matching specification](https://packaging.python.org/en/latest/specifications/version-specifiers/) requires the contrary distinctions.
+No preflight result or cluster execution was produced; current stable-version tests do not demonstrate a live compatibility failure.
+`test_probe_reports_incompatible_core_requirement` covers only an unrelated stable version; orchestrator mismatch tests use stable 0.1.7/0.1.8, while the caller's optional exact expected-version guard is retained as mitigation.
+After review, reconcile worker/orchestrator version policy with the supported canonical authority; preserve Python 3.9 worker import posture and strict plain-wire constraints.
+Do not loosen remote evidence or automatically change package-version floors to conceal a parser mismatch.
+
+#### ROOT-F041 — P2 qualified concurrency risk: staged publication uses one temporary sibling per process
+
+`bioimageflow_core/external.py:209–217` copies to .<final-name>.tmp-<pid>, then replaces and finally unlinks that fixed path.
+Two threads targeting the same final file in one process share that temporary path, so one can publish or remove the other's copy and leave the other failing or returning different bytes.
+Whether ordinary mapped rows can legitimately share a final target still requires complete output-template/storage ownership review; no race or tool-output corruption is claimed as observed.
+`test_run_external_command_with_staged_output_copies_to_final_path` uses one serial fake command and does not distinguish publication ownership.
+After the gate, clarify concurrent target policy and use an owned unique temporary sibling if concurrent last-writer publication is supported, retaining same-filesystem atomic replace and cleanup of only owned staging.
+A global tool/process lock would need an actual justified contract, not blanket serialization.
+
+#### ROOT-F042 — P2 bounded executable-selection defect: fallback ignores an explicitly supplied PATH
+
+`external.py:56–69` calls shutil.which against the parent process environment before falling back to sys.executable's sibling command, although run_external_command separately accepts and forwards an explicit env.
+If the parent PATH lacks the command, the supplied child PATH contains the intended command and an interpreter sibling also exists, the fallback hardcodes the sibling instead of allowing the child's PATH selection.
+No subprocess was executed and no current scientific recipe is alleged to use this distinguishing configuration.
+`test_subprocess_resolves_cli_next_to_environment_python` forces which=None and checks only default fallback; it has no distinct supplied-PATH case.
+Future action is consistent resolution against the actual effective subprocess environment while retaining the useful interpreter-sibling fallback when that environment genuinely lacks the command.
+Preserve explicit argv and cwd/env forwarding, not a shell-based workaround.
+
+#### ROOT-F043 — P3 test consolidation candidate: duplicated basic IOModel scenarios provide the same boundary
+
+Unit TestIOModel and integration TestIOModelBasics repeat scalar default/required/unknown/repr behavior, both directly importing Core IOModel and neither exercising orchestrator execution.
+Several inherited-field examples also overlap, but integration uniquely checks class-local lazy annotations/metadata, override precedence, inner declarations, Passthrough and interface types.
+After the gate, consolidate identical basic cases in the Core unit owner and retain those distinct integration/import/annotation contracts.
+This reduces duplicated scenarios rather than replacing independent expected behavior with implementation-derived expectations.
+No timing saving was measured and no cases were deleted here.
+
+#### ROOT-F044 — P3 worker-import oracle inventory gap: first-party phasor tools are omitted
+
+`tests/unit/test_worker_safe_tool_imports.py:27–133` enumerates first-party modules and processing exports but contains no bioimageflow_phasor_tools entry.
+The fully reviewed package is a ProcessingTool/Core-only module, so its future orchestrator-import regression would escape this subprocess boundary, just as raw-class export classification omits it in A-F031.
+Current phasor source is worker-safe by inspected imports; this is an oracle/inventory gap, not an executed bad import.
+Future action should reconcile the intended first-party processing inventory with package metadata and extend this existing fresh-process assertion; avoid deriving expected classes solely from the same imports under test.
+Retain exclusion of genuinely main-process DataFrame modules, lazy optional models and the explicit orchestrator blocker.
+
+### Cross-owner qualifications at the 374-input checkpoint
+
+A-F053 is downgraded to conditional observer-lifetime debt: the complete caller trace forwards acceptance to the shared nested session store, without directly hydrating an old mounted canvas.
+A-F052's production draft acknowledgment is ordinary synchronous store bookkeeping; a callback failure remains an adapter contract question, without demonstrated normal-production reachability.
+A-F063 also covers Save's unconditional recovery clear; full mounted editing/cleanup lifetime review remains pending before a data-loss assertion.
+Reviewer-F026's planning/cache reference resolves to an existing page; its finding concerns the omitted error kind and overstated converters only.
+B-F042 is a missing node Reveal deployment guard, distinct from ROOT-F002's mutable authority at guards which already exist; the complete ImageCell caller renders Reveal in webapp too.
+B-F043 reflects the inspected FastAPI/Pydantic response-model path mapping nonfinite values to null, not an executed JSON serialization exception.
+The complete ImageCell/NodeDataTable trace corroborates B-F045's omission of captured identity for thumbnails/Avivator/Reveal; B-F049 separately records the configured Fiji action's required-payload mismatch.
+No source finding, corroboration or administrative validation above supplies runtime certification or releases the repair gate.
+
+### Complete-review checkpoint — reviewer-batch-5
+No additional defect IDs: complete common/measurement documentation retained scientific, ownership and refusal contracts; targeted implementation traces receive no duplicate full-file credit.
