@@ -375,3 +375,24 @@ Native desktop acceptance remains final M5.
 Dashboard consistency and all64 active local links passed; `git diff --check` passed.
 This routine consolidation changes no documentation navigation, so Sphinx was not repeated; earlier structural validation remains historical.
 All application/backend/frontend/browser/worker/external/published-compatibility/native phases remain held and unrun, with no whole-audit or product certification claimed.
+
+### Complete-review source checkpoint: 1,702 entries
+
+Since the1,550-input checkpoint, individually accepted additions are A20 human, B41 human, root72 human and reviewer19 human inputs.
+These encompass A39–46, B31–36, root20–27 and reviewer42–46; reports were read fully before exact-hash integration.
+Current scope is1,799 inputs /1,702 complete snapshot judgments (1,558 reviewed /144 classified) /97 pending, with558 distinct identified findings.
+Owner progress is A346/354, B410/463, root365/365, reviewer581/617.
+The30 pending backend model/service/router sources were formally transferred from B to reviewer; transfer grants no review credit.
+Root's frozen owned slice is complete, while the whole review remains open for the other owners, current mutable controls, synthesis and independent completeness gate.
+Actual browser source review preserves accepted-draft CAS, real Direct rows, owned recursive source bytes, immutable record quarantine and distinct gesture-to-storage oracles.
+Mock execution202, injected diagnostic/progress state, fabricated development metadata and absent navigation assertions remain explicitly qualified rather than accepted as worker/native evidence.
+The moved-position Redo oracle gap does not imply globally missing Redo coverage: existing everyday tests assert actual accepted mixed edits, enabled state and atomic deletion through Redo.
+Current and held viewer/specification review distinguishes carried authority and managed guidance ownership from ordinary Save's missing requirement-report refresh; dependency-dialog prose contradicts a tested explicit install-all feature and must retain that feature.
+Clear's never-run response/read status seam is separate from the useful retained-downstream out_of_date behavior demonstrated by existing real compute/reload/rerun tests.
+No tests or product/spec behavior were changed; candidate findings remain qualified source risks, oracle/documentation discrepancies and unmeasured optimization candidates, not558 reproduced failures or approved repairs.
+M1 remains OPEN; repairs, new diagnostic tests and application/backend/frontend/browser/worker/external/published-compatibility/native acceptance remain held and unrun.
+Native desktop acceptance remains final M5.
+
+`scripts/test check campaign` passed for the1,702-input administrative checkpoint in0s runner-reported (0.17s measured), at source revision `0c723cc57dec569f2f9917e18cdd6c94efdca36a` plus four audit-document changes, source-manifest SHA-256 `6393d673bb7800c4d5b5390e802093110c8babf9c7e64de44f1e5c485ea6a051`; the manifest precedes this result-only entry.
+Dashboard consistency and all64 active local links passed; `git diff --check` passed.
+Sphinx was not repeated for this routine status consolidation, which changes no navigation; all application and external/native phases remained held and unrun, with no complete-review or product certification claimed.

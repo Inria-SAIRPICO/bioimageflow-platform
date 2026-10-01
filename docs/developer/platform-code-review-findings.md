@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 1550 complete (1406 reviewed / 144 classified) / 249 pending, with 532 identified findings.
+Current checkpoint: 1,799 inputs / 1702 complete (1558 reviewed / 144 classified) / 97 pending, with 558 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -6085,3 +6085,1033 @@ F083 extends to `SettingsPanel.test.ts:126–144`: the named section-update forw
 F027 is corroborated by the pure mocked managed-control text case in SettingsSections: ordinary CI remains separate; no runtime omission or removal authorization is inferred.
 The Settings shell, new-workflow preference scope and workspace read-only/native gates are otherwise coherent; current mock tests do not attest native filesystem selection, real retarget persistence or demo provisioning.
 All findings remain held pending whole-audit acceptance.
+
+### Complete-review checkpoint — root-batch-20
+
+#### ROOT-F092 — P2 source output-schema URL fails to encode a supported node identifier
+
+api/client.ts:29–31 directly interpolates nodeId into the URL path.
+Graph ToolNodeState admits nonempty strings, and the complete library Node constructor prohibits only empty/slash names; question-mark and fragment characters are not refused there.
+An identifier containing ? or # changes URL query/fragment semantics rather than addressing that exact node route; ordinary GUI-generated ids mitigate common occurrence, while imported/API-authored names retain this source boundary.
+No request was executed and literal slash names are not claimed valid library node names.
+The resolved-output store catches transport rejection as unresolved schema, so this can surface as misleading unresolved output rather than bad worker execution.
+The complete client counterpart tests transport defaults and server detail promotion, while resolved-output counterparts replace this adapter entirely; neither distinguishes exact special-character route identity.
+Future correction should encode supported path components and verify the actual transport/router contract for supported special names before broad browser coverage, preserving whole-graph schema input and current no-content-type-default behavior.
+
+#### ROOT-F093 — P2 qualified older source propagation can supersede an independently newer target refresh
+
+resolvedOutputs.ts:199–232 traverses the captured source graph, which correctly prevents traversal of edges introduced only after source request admission.
+For a target already present in that old snapshot, it unconditionally clears the target timer and allocates a newer per-target request id when the older source completes.
+A still-current source request captured graph G1 can be held while a target parameter/edge change schedules target refresh for G2; when the older source resolves first, its propagation cancels the newer target timer and resolves target against G1.
+CanvasView:1943–1980 refreshes changed dynamic nodes individually, and connection/disconnection handlers refresh affected targets without automatically retiring every unchanged upstream request.
+The existing strong tests distinguish an already dispatched child superseded afterward and a newly added edge absent from G1, but not an existing-edge target change before old source reaches that target.
+Current request ids defend late response arrival, yet the later dispatch of old graph work wins this particular authority ordering.
+This is a source-qualified stale-schema/presentation schedule, not an executed corruption or a demonstrated wrong engine run; exact graph/output compilation remains backend authority.
+Future distinguishing test should extend existing held-source fixtures with an unchanged connecting edge plus newer target edit, preserving captured-edge traversal, per-canvas separation, origin retirement and dynamic metadata classification.
+
+### Existing B-F176 extension — validation grouping also uses inherited user-key lookup
+
+useValidationErrors.ts:23–35 groups by node/edge id into ordinary {} and then calls push on an inherited member if a key is __proto__ or constructor.
+These user ids are accepted as nonempty graph identifiers; NodePanel selectedNodeErrors and Canvas edge-error projection actually consume the maps.
+The inherited value is not an Array, so this consumer can throw during computed grouping rather than publish an exact error group.
+This is a distinct grouping consequence of the canonical JavaScript dictionary-key authority finding, not duplicate remote preflight execution evidence; ordinary generated ids and server graph validation mitigate common paths without imposing a reserved-name contract.
+Existing complete132-line tests distinguish error-kind/node/edge/global routing only with ordinary ids.
+No JavaScript diagnostic was executed.
+
+### Retained helper and counterpart judgments
+
+FieldFocusTracker uses collision-free JSON tuple keys, copies exposed targets and scopes by canvas/node; actual NodePanel pairs focus/blur and clears tracked rows on selection/canvas change and unmount.
+The already-unfocused microtask callback has no returned cancellation handle, a bounded lifetime caveat to consider with its exact caller rather than a new proven canvas leak.
+The clearTracking test sets a callback but never blurs afterward/asserts noninvocation, so its comment exceeds its precise assertion; preserve useful cross-canvas and callback-once cases when tightening that existing oracle.
+ErrorReporting deliberately retains history outside Vue injection scope and suppresses some background toasts; command alwaysToast does not consume background dedup, and provider exceptions cannot erase history.
+The once-kind set is consumed before successful toast emission, including no-provider contexts; clarify whether once means first report or first visible toast before treating that policy as a required behavioral fix.
+Its complete tests force hasInjectionContext true and preserve per-kind/command/error-history oracles, not real provider lifecycle or historical workflow origin; reviewer-F082 owns that origin seam.
+useSettingsPanel current main keeps shared suggestion state without WIP owner/version; A-F168 owns actual creation finalizers and frozen I1 has separate exact credit.
+useEdgeError is a pure joined tooltip/error presence projection; useValidationErrors intentionally separates cycles/global, edge and node fields, with inherited-key caveat above.
+The short ColumnTypeString union and main.ts plugin/style/bootstrap wiring have no independent source finding; no runtime bootstrap/third-party version certification follows.
+Fiji wrapper counterpart omits result identity and therefore proves client forwarding only, matching earlier qualified Fiji route refusal findings; it is not a real accepted viewer open.
+ResolvedOutputs preserves per-canvas caches, source/child request retirement, inactive-null refusal and released-context barriers with controlled promises and fake timers.
+Old disposer after same-id re-registration remains the existing acquired-lifetime question A-F043; no duplicate id-only ownership framework is proposed.
+The obsolete useIndexedDB mock in the counterpart is not an active recovery dependency, corroborating reviewer-F080.
+M1 remains open; no fix or test execution is released.
+
+### Complete-review checkpoint — root-batch-21
+
+No new canonical defect IDs.
+App lifespan counterparts explicitly enter lifespan, unlike ordinary ASGI fixtures; they preserve settings loading, exact recovery-before-snapshot/catalog order, fatal ambiguous move refusal, nonfatal orphan-cleanup log and shutdown managed-service/settings calls.
+The real pending move test injects a failure after physical move, restarts the actual service/app and checks journal cleared plus moved workflow identity; this is a valuable recoverability oracle, not a mocked call-order equivalent or fsync/power-loss certification.
+Managed reconciliation/close tests mock service methods, so assert wiring only, not physical worker/provisioning completion.
+Static counterparts distinguish root/nested SPA fallback, genuine assets, missing asset404, API precedence and no-config no-fallback; no production bundle/assets/native render is certified.
+Developer fixture tests prove real metadata registration/graph validation plus actual canonical stored image result and compatibility-view readback; graph validation is not execution, and seeded ImageResultFixture storage is not a processing worker/PID witness.
+Exception cases preserve typed shape/structured details, expected403/422 quiet logging and service503 diagnostics; stale docstrings about health/content-type are maintenance debt rather than the actual executed test behavior.
+Filesystem reveal counterparts patch native dispatch and distinguish exact payload/OS error logging, not immutable deployment-policy enforcement (ROOT-F002) or physical file-browser acceptance.
+Launch tests are source-configuration guards for published versus explicitly isolated local Core, Vite task/background readiness/loopback and packaged production arguments; they do not prove the obsolete worktree profile works (ROOT-F091) or certify Windows paths.
+Node response model tests preserve exact row/column/absolute-row/type shape and Unicode rather than general data-query identity/order guarantees.
+Error/validation model counterparts contain small construction/default/serialization overlaps that could be consolidated later while preserving strict extra/type refusal, structured detail schema and roundtrip distinctions; no measured cost warrants deletion now.
+The short snake-case error-code test supplies examples without rejecting another code; it proves accepted examples, not a general enforced lexical schema.
+Health200 and payload cases duplicate one simple request/setup seam, a low-cost optional consolidation candidate rather than a product defect or priority speed gain.
+M1 remains open, no diagnostics/repairs/runtime acceptance released.
+
+### Complete-review checkpoint — root-batch-22
+
+No new canonical defect IDs.
+Code-server tests execute an isolated installer subprocess over locally constructed tar/file URL fixtures when run; they distinguish verified extraction, retained extension reuse, digest/download failure, layout traversal and incomplete launch entry refusal plus relative prefix ownership.
+They do not certify the actual released archive, native code-server launch, equal-byte regeneration or cross-process publication; run_installer has no explicit subprocess timeout, a bounded harness improvement candidate rather than an observed hang.
+The constructed release root/version is fixture data and cannot establish current published compatibility.
+Durability helper tests mock descriptors/fsync and correctly assert supported/no-op platform policy and closure after directory flush failure; real physical crash/power-loss semantics are outside that oracle.
+Known package tests preserve bundled resource and explicit user-file-replaces-bundle semantics, comments/blanks and missing-input warning.
+The default-constructor case permits machine user overrides and checks only list/string shape, so it is an honestly weak default-resolution oracle; inject a controlled user root if later tightening without removing override support.
+Output template integration actually constructs a public Workflow, computes DefaultEngine/direct, compares generated asset basename/location and distinct record parents after template change; this is stronger than metadata/config-only spies and does not prove a worker PID or published package.
+Managed profile counterparts execute trusted local config files in controlled temporary roots and distinguish exact RemoteCluster type, byte digest change, symlink refusal, minimal reconnectable persisted facts, obsolete profile drop/default repair and explicit-only digest refresh.
+Their managed-remote campaign exclusion includes deterministic local persistence contracts, corroborating reviewer-F027 without implying default/full CI omission or authorizing remote provisioning.
+Package catalog tests preserve installed/known union, upgrade availability/error fallback, active-version/load-error metadata, no PyPI lookup for custom sources, registry-only no-refresh and no extra network on active-version patch.
+They use fake version lookup, and selected-version forget fixtures have different tool class names per version; they do not close live same-name captured-class authority or active-version repair findings already owned by A.
+PyPI service counterparts use MockTransport, deterministic normalized URLs/ascending versions,404 versus network/timeout and latest-stable/pre-only/empty semantics; all clients close in finally, no live index evidence is implied.
+Operation failure tests distinguish mojibake normalization from already-correct Unicode and structured diagnostic tail, not real Windows provisioning.
+Validation boundary counterparts control actual validation thread entry/release and persist actual winning graph/revision; they preserve event-loop responsiveness, stale draft/nested CAS refusal, delete/recreate identity refusal and saved-graph reset revalidation.
+Those are distinct causal admission windows, not redundant because all use two graphs; bounded worker waits and finally release are important evidence to retain.
+An earlier assertion failure can bypass final awaits located after try/finally, so future harness lifetime cleanup may ensure admitted tasks are joined without replacing meaningful barriers with timing sleeps.
+M1 remains open; all fixes/new diagnostics/runtime acceptance remain held.
+
+### Complete-review checkpoint — B-batch-31
+
+#### B-F177 — P2 source late starting snapshot bypasses terminal fencing
+
+Execution store `applyStatusSnapshot:669–693` treats starting as a separate provisional branch before the ordinary `acceptPayloadContext` and `applyBackendPhase` fences.
+After a matching execution has completed, a late starting snapshot for that same ID/workflow/draft passes the branch's idle and non-older-draft checks.
+It assigns provisionalContext and changes state back to starting even though terminalExecutionIds remembers that ID and terminalFence is set.
+Run and mutation controls therefore re-lock provisionally until the next successful poll returns the authoritative idle state.
+Failures in that poll leave the provisional lock polling rather than restoring the known terminal phase.
+This is a source-level delayed-response schedule, not an executed timing failure; successful follow-up status recovery is an existing mitigating path.
+Existing exact tests `keeps a completed WebSocket run fenced when the Run response is mismatched`, `rejects late events from an older execution id`, and `handles a newer %s reconnect snapshot without prematurely committing identity` distinguish other paths but never terminal→same-ID starting.
+Future diagnostic should extend the controlled snapshot ordering fixture to retain legitimate newer external starts and provisional startup recovery while distinguishing terminal identity reuse.
+The existing bounded eight-ID history is intentional bounded memory; no blanket infinite-history requirement or stale worker execution is inferred.
+
+#### B-F178 — P2 qualified disposal does not retire an in-flight provisional status response
+
+Execution store `scheduleProvisionalStatusPoll:305–317` clears its timer handle before awaiting fetchStatus.
+`onScopeDispose:319` clears provisionalContext and any currently scheduled timer, but has no disposed/request generation marker.
+A GET already in flight can later call applyStatusSnapshot with starting, recreate provisionalContext, and schedule a new timer after the store's scope was disposed.
+This can retain the old store and repeated status traffic; it does not by itself mutate a replacement Pinia store instance or alter backend execution admission.
+The matching scope-disposal callback correctly cancels timers that have not started, which must remain supported.
+Exact existing test `polls an externally observed starting identity back to backend idle` resolves the GET immediately under fake timers; newer reconnect test disposes before any held GET and cannot distinguish physical in-flight completion after disposal.
+Future diagnostic should hold the GET, dispose the store, then complete the response and assert no rearmed poll, preserving active-store reconnect behavior.
+No timer leak or network request was executed in this audit.
+
+#### B-F179 — P2 qualified remote Run continuation and dialog lifetime lack the local owner barrier
+
+RunButton's local preparation captures workflow/canvas, checks `isTargetActive` after freshness/flush/confirmation, and enters the final synchronous local lock before awaiting exec.run.
+`runDistributed:242–301` instead captures a prepared request and awaits preflight, optional resolution dialog and second preflight without checking that the initiating canvas, selected target or component is still owned before applyPreparedExecution.
+`runCore:355–361` checks isTargetActive only after the remote operation has already applied, when deciding whether to emit run-started.
+Changing canvases or targets during the held preflight/resolution therefore does not cancel the old captured submit intent; this needs explicit intended-command lifetime reconciliation before repair, rather than forbidding all detached execution.
+The request still sends the original exact workflow/draft/target/profile and token binding; backend token consumption is one-shot and strict, so this is not wrong-target worker execution or demonstrated replay.
+The UI has no remote busy admission during first preflight, and local exec state does not lock this phase; repeated clicks can admit multiple independently prepared command promises, unlike same-token replay.
+No duplicate scheduler submission is claimed without the registrar's full existing admission contract and an exact diagnostic.
+Both confirmOutOfDate and requestRemoteResolution retain promise resolvers but the component has no on-unmount resolver/drain.
+Escape/cancel correctly resolves a visible local dialog, but unmount while awaiting either dialog can strand the command continuation and references.
+Late command failures also select the first validation offender/toast through the current global UI without a final owner check; local Run's earlier barriers do not cover a held transport rejection after a canvas switch.
+Existing `does not redirect a confirmed run when another canvas becomes active` strongly distinguishes the local confirmation path only; managed-ready test completes both mock HTTP requests immediately and has no target/canvas switch or unmount.
+Future diagnostics should extend those controlled component fixtures for held remote preflight/resolution and unmount, preserving explicit detached retained-run navigation, exact token binding and uncertain-ack attach-without-replay behavior.
+This is a source/intent-lifetime risk, not a runtime or loss reproduction.
+
+#### B-F180 — P3 scoped nested validation is filtered by direct root equality
+
+executionSelection's selected closure follows graph root edges, then `validationErrorsForExecution:68–78` accepts an error.node only when it exactly equals a selected root or root upstream ID.
+A selected nested invocation `nested` does not include its scoped leaf error `nested/leaf` in that set.
+UseExecutionLock uses that filtered list to decide whether `valid=false` blocks a selected run, and RunButton uses the same filter for locally reported errors.
+Thus a nonempty validation result containing only that selected nested descendant error can bypass the early client validation refusal and lose local offender details, while backend build/validation still refuses invalid execution.
+Root graph_validator emits scoped plan IDs and aggregates WorkflowNode statuses separately; that aggregate mitigates nested out-of-date rebuild prompts and must not be described as universally missing.
+No invalid processing admission or worker execution was demonstrated.
+Existing Run Selected test distinguishes a downstream root outside the selected set, not a descendant inside a selected nested root.
+Future diagnostic should add the nested selected-root/descendant-error axis to existing closure tests, retaining exclusion of unrelated branches and global errors, rather than widening all selected validation to the whole graph.
+
+
+### Complete-review checkpoint — B-batch-32
+
+#### B-F181 — P2 source terminal failure selection changes the current canvas rather than execution origin
+
+ExecutionBanner's state watcher `49–74` finds the first failed node in exec.lastResult and calls `ui.setSelectedNodes` directly.
+That method writes the current active canvas presentation, independent of exec.originCanvasId/executionWorkflowId or `appliesToCanvas`.
+An execution started in A can finish while B is active, replacing B's selection with A's failed scoped node ID.
+Global progress display intentionally remains independent of the open canvas, which is sound and explicitly tested; this does not authorize mutating another canvas's selection.
+Scoped nested leaf paths can also be absent from the current root's direct node IDs; this needs explicit reveal/navigation semantics rather than interpreting every failed path as a root selection.
+No graph mutation, wrong worker execution or runtime schedule was demonstrated.
+Existing exact test `shows "Execution failed" and auto-selects failed node on failure` always keeps the execution's root active, while `counts only planned executable scoped nodes, including cached work, independently of the open canvas` checks counts but no terminal selection.
+Future diagnostic should combine those existing controlled fixtures with an unrelated active canvas and retain useful failure navigation for the owning root.
+Related low-priority terminal presentation qualification: when the component restores an idle lastResult without an active→idle transition, mode displays the result but never schedules auto-dismiss; restored cancelled snapshot test checks text/count only.
+Reconcile the intended reconnect UX before treating persistent restored terminal banners as a defect; click dismissal still works and timer cleanup on unmount is present.
+
+#### B-F182 — P3 qualified selector lazy-load latch and late preference authority
+
+ExecutionTargetSelector `ensureTargets:18–33` sets loaded=true before the parallel target/settings requests.
+Both store fetchers catch failures internally, so the promise normally fulfills even after a failed discovery; the selector latch never resets and reopening this dropdown does not retry loading.
+An external registry refresh remains a recovery path; this is a control-local transient discovery issue, not permanently unavailable platform execution.
+The completion applies a preferred remote target whenever the current selectedTargetId is local, without a captured user-selection generation or disposed marker.
+A user who chooses local during the held initialization, or an unmounted old selector instance, can later have that global choice replaced by the fetched default.
+A default applied during untouched initial loading can be intentional; future diagnostic must distinguish explicit user selection from initialization and preserve settings defaults.
+Current tests `keeps the direct-submit acknowledgement warning visible for managed targets` and `omits unavailable managed profiles from the Run selector` prefill the registry and never trigger before-show or delayed preference fetch.
+No target switch or execution was performed in this audit.
+This is separate from B174 run-list scope buffering and B175 profile descriptions; no backend capability/read-only guard bypass is inferred.
+
+#### B-F183 — P2 qualified upload-picker result has no draft/source ownership guard
+
+RemoteExecutionDialog `chooseUpload:63–69` awaits pickFile/pickFolder and then resolves the current `draftFor(input,index)` to write its path.
+The unresolved-prop watcher can replace all drafts while that picker is open; source can also change from upload to cluster, the dialog can cancel/unmount, or a second picker can supersede the first.
+If a new plan reuses the same node/input/index, the old local picker path is written into that new draft or into a now-cluster choice; if the entry disappeared, the unguarded non-null lookup can throw from the late async handler.
+This is a UI input-ownership risk, not a bypass of backend input validation or an actual wrong upload/cluster worker action.
+usePathPicker's newest-request-wins browser dataset resolver mitigates overlapping browser picker requests, but it does not guard replacement dialog inputs or native picker completion.
+The source explicitly requires every leaf's source choice and preserves list order; nullable none and absolute POSIX cluster paths remain essential supported behavior.
+Existing exact test `requires an explicit source for every path leaf and preserves list order` mutates drafts directly, while the native picker mocks are never invoked.
+Future diagnostic should hold one picker, replace/cancel/change source, then release it and verify no new-plan mutation, preserving ordinary upload selection and browser/desktop routing.
+No native dialog was opened and no upload occurred.
+
+
+### Complete-review checkpoint — B-batch-33
+
+The full1157-line executionLock suite verifies connect/drag/edge mutation admission across starting/running/stopping, including a drag that starts before the transition and an edge-update event delivered after stopping.
+Those transition tests are stronger than checking disabled UI attributes alone and must be retained.
+`pasteFromClipboard is a no-op when locked` sets running before calling paste; it cannot distinguish A-F089's asynchronous clipboard-read completion after the lock changes.
+`removes a repaired cache-corruption diagnostic after clearing outputs` exercises a real Canvas callback with mocked accepted revision/status response, asserting exact workflow/draft wire identity and repaired validation.
+It does not hold Clear across canvas registration, workflow incarnation or unmount; A-F030 remains the canonical current-selection/consumer ownership seam.
+No new duplicate finding is assigned for those absent schedules.
+Pure validationAfterCacheClear intentionally removes cache_corrupt errors attributed to a repaired requested root, including a scoped descendant, while retaining unrelated semantic errors and failed roots.
+Actual Canvas Clear filters requested IDs against accepted direct graph nodes and refuses nested-editor Clear, so a hypothetical arbitrary scoped-leaf helper call is not promoted to a GUI defect.
+The helper does not claim to guard a delayed response's current canvas ownership; that belongs to its caller.
+
+
+### Complete-review checkpoint — A-batch-39
+
+### Existing A-F168 precise main creation-finalizer extension
+
+Reviewer fully owns current main ImageViewersSection568 and test198; targeted cross-owner source reconciliation earns no duplicate full-file credit here.
+Main createManaged104–112 captures recipe/request payload before await, but after createManagedEnvironment resolves it reads LIVE setupGroupId and consumes that group.
+Submitting recipe for group A then selecting group B while pending can remove B's setup guidance even though B was not the accepted request recipe.
+This is a presentation/suggestion finalizer ownership defect, not a wrong backend environment payload: the request still contains submitted A recipe and backend CAS/managed recipe validation are retained.
+Existing immediate-response main form tests do not hold submission across group selection, as confirmed by the main-source reviewer; no runtime reproduction is asserted by this audit.
+Frozen I1 section135–155 separately captures group and suggestion-list version before await and consumes only captured group.id with that version.
+Its complete A38 held submitted-creation oracle retains replacement groups/payload, so this main creation-finalizer clause must not be falsely applied to the stronger frozen I1 content.
+A-F176 missing version-constraint transfer remains in BOTH main and I1; captured suggestion identity does not reconcile the ignored napari constraint.
+Future main finalizer repair must preserve accepted recipe/confirmation capture and avoid consuming newly current suggestions or replaying the committed creation.
+Reviewer/root notified of canonical reconciliation; no new duplicate finding ID.
+
+
+### Complete-review checkpoint — A-batch-40
+
+Builder counterpart completely covers empty/single/mixed graphs, worker configuration, explicit positional DataFrame ordering, Processing column bindings, unavailable tool/package, disabled tracking and cleanup of globally active Workflow state.
+Updated metadata fixture distinguishes actual DataFrameTool from ProcessingTool, row consumption and accepts_upstream, avoiding earlier A-F012 mislabeled metadata for this exact dirty version.
+Internal _args/_column_bindings assertions are adapter shape oracles, not computations; ordinary Wetlands test checks engine/execution configuration only, not worker PID/public engine dispatch.
+Owned binding diagnostic builds actual source bytes with Core-only declarations, hashes the record, materializes through actual public Workflow.from_dict control and checks Processing class, resource cpu3, actual selected Wetlands configuration and below-floor2 refusal.
+It then stages/publishes the same owned bytes with actual OwnedWorkflowSources and reverse translates carried binding before constructing against same-name catalog DataFrame or unrelated Processing floor8.
+Expected success/class/floor3 and below-captured-floor refusal distinguish executable-class/resource authority from display-name catalog metadata.
+The source process_row returns constant1, but is not computed here; source materialization/engine classification does not provide worker invocation/PID/result or environment provisioning evidence.
+Staged-source cleanup uses discard in finally; public Workflow paths and generated owned directories are fixture-temporary. No arbitrary network or pip install in the body.
+
+Pinned package diagnostic creates two local package versions in BIOIMAGEFLOW_TOOL_STORE, supplied by existing autouse per-test isolated HOME/tool-store fixture (borrowed targeted conftest113–130, not duplicate full credit).
+Version1 is an actual public-loaded Core ProcessingTool; version2 is same-name DataFrameTool. load_versioned_package returns actual modules and public Workflow.from_dict control asserts EXACT v1 class identity before catalog-v2 platform build.
+Final assertion pairs exact first.BoundTool with Wetlands engine; this distinguishes public materialization/class/engine choice rather than accepting portable metadata alone.
+Finally unloads both version modules; temporary store cleanup is fixture-owned. No published distribution compatibility, provisioning or actual compute/PID is claimed.
+The absent processing floor/version structural checks do not weaken the exact class identity oracle; owned resource diagnostic covers that separate class/floor boundary.
+Existing A-F001 captured portable authority and A-F002 wrong live resource-floor branch are the canonical causes; no duplicate codefinding or prospective repair validation.
+
+Translator counterpart fully covers recursive one grammar, stable interface/edge IDs, schema2 viewer addition roundtrip, resource strictness/floors/DF refusal, deterministic dependency-aligned layout/disconnected/recursive/encoded-cycle remnants, package requirements/rebinding/missing/local semantics and scoped validation error category.
+Carried module/class/package/version is assigned into both root and child PORTABLE graph BEFORE reverse/forward translation, then active registry is actual v2-stamped same-name class.
+Exact equality to carried v1 fields and required package1.0.0 distinguishes captured binding from active catalog resolution; explicit rebind afterwards is the only expected transition to2.0.0.
+This is stronger than the old test which would construct fields from whatever the adapter already selected and only assert its explicit rebind result; it does not infer every ordinary unbound/catalog node refresh is defective.
+Owned source identity roundtrip remains a separate assertion over all five binding fields against same-name registry; public executable-class/floor tests provide the materialization boundary absent from shape alone.
+Versioned/control tests intentionally avoid network and use public package loading; hand stamping active fixture is the adversarial catalog producer, not a promise arbitrary class labels are executable package availability.
+Fixture golden test checks parent/nested type and normalized child schema2 with no adapter errors; it does not assert full canonical graph equality, known viewing snapshot, actual compute or preservation of all possible archived metadata.
+Layout expectations retain exact positions because coordinates are platform materialization authority, not portable persistence; cycle remnant deterministic layout is not cycle admission.
+
+Human-authored68line legacy1 fixture has one child Workflow binding list[7] to stable input-values, Generate declared constant column_name and stable output-value projected through root output-answer.
+It intentionally has no viewer snapshot and no canvas positions; schema1 normalization to2 is supported, so its old literal is not itself an emitted-format defect.
+Tool module is installed common-tools Generate, package/version null; this fixture tests ordinary module reference rather than captured installed pin, source bundle, actual archive or environment requirement contract.
+Golden translator consumer was fully read here and main already reviewed; exact human fixture gets reviewed rather than generated/opaque classification.
+No newly identified material defect in these added diagnostic assertions; retain controlled carried-before-roundtrip setup, real loader/class oracles and separate resource branches.
+
+
+### Complete-review checkpoint — A-batch-41
+
+#### A-F177 — Low/Medium qualified source/spec gap, ordinary saved requirement changes do not refresh current guidance
+
+Frozen platform_specs_napari_environments Section7 requires the same passive check on requirement changes and relevant inventory changes.
+Complete frozen MenuBar saveWorkflow535–555 invokes saveCurrentWorkflowGraph but never refreshes viewing manifest/readiness after accepted Save; captured root Save/export helper similarly preserves graph/dirty ownership without a guidance refresh.
+Viewing owner predicate298–307 binds workflow/local-server generations and root registration, not graph/draft/saved artifact revision; ordinary semantic Save can change output viewer additions while keeping those identity fields and root registration unchanged.
+Owner watcher316 subscribes active canvas/session count/active workflow/workflow list; list replacement only invalidates if identity owner ceases to match, not when accepted saved requirements differ.
+Store refresh324–331 refetches saved public manifest when inventory operations invoke it, but no requirement-edit or ordinary-Save producer invokes it in these complete consumers.
+Explicit Open/import and Python-source build/draft duplication refresh363/637/867 remain real mitigations: this is not a claim every source/manifest transition is stale or accepted stale sibling results leak.
+Thus an already displayed readiness report and its setup suggestions can remain the old requirement set after a viewer requirement edit is saved, until Open or a relevant inventory mutation forces refresh.
+Portable execution remains unaffected and exact retained-artifact resolver still checks its producer snapshot; consequence is stale advisory/setup guidance, not wrong artifact worker dispatch or native launch.
+Current full mounted MenuBar tests distinguish import/Open, delayed siblings and same-workflow inventory replacement, but no selector changes viewer additions then performs ordinary Save and compares the public-manifest/report/suggestions transition.
+No executed reproduction. Future diagnostic should mount accepted same-root presentation, accept old report, modify actual portable requirements, complete accepted Save and distinguish new saved-manifest refresh versus retained old guidance; do not replay Save or mutate current captured creation form to follow suggestions.
+The contract for unsaved draft guidance is not resolved by this finding: even the narrower accepted saved-content transition lacks the required refresh.
+No new tests/repair or release proposed while full audit is held.
+
+
+### Complete-review checkpoint — reviewer-batch-42
+
+#### reviewer-F090 — missing capability keys are treated as all-required ready
+
+P3 source-supported report false-positive candidate: `ExecutionProfilesSection.vue:34–66` defines five required keys, but missingRequiredCapabilities filters only the keys present in the received report; template283 reports all required available whenever that result is empty.
+A report omitting four required keys and supporting the fifth takes that success branch.
+The exact existing component fixture advertises only durable_remote_diagnostics of the required set (plus two optional/other entries); it asserts display but not this false summary.
+This is report readiness presentation, not submission admission, trusted-script security bypass or actual remote execution.
+The smallest later oracle is an assertion in that existing fixture distinguishing absent/unavailable from explicitly supported required capability entries; backend normal complete discovery need not be presumed malformed.
+B-F175 remains canonical for profile revisions/description cache/shared activity response ordering; no duplicate whole-store/API credit is taken here.
+
+A-F176 is independently corroborated in current main: selectedSetupGroup watcher70–76 copies requested packages but never the carried napari_version_constraint; creation104–112 uses current fixed preset or advanced exact value.
+A version range must be reconciled against supported exact/preset matrices or explicitly explained/refused, not assigned blindly to an exact recipe field and not silently discarded.
+The current test group has null napari constraint, so it does not distinguish that contract omission.
+No installation or incompatible runtime was executed; held I1 source improvements do not establish current-main integration credit.
+
+A-F168 extends to current-main creation finalization: createManaged constructs the submitted recipe/name before await, but afterward consumes LIVE setupGroupId.
+Changing from requirement group A to B while A creation awaits can remove B's setup guidance; request server target/recipe remain captured, so this is newer guidance/form ownership rather than provisioning another recipe or replay.
+Other settings forms catch late errors/clear live fields and rename/removal dialogs with shared presentation state; preserve durable operation completion/polling instead of canceling physical committed work to hide stale presentation.
+Held I1's captured new-creation owner is distinct and should retain its exact source/evidence claims.
+
+F027 is corroborated by the fully mocked profile-description component case's whole-case managed-remote exclusion; ordinary CI/default execution remains separate, and no broad reclassification is authorized by this read-only audit.
+Source/default/filename preferences do not override required compatibility, source-confirmation keeps unverified packages explicit, and managed/processing environments remain separate.
+Tests prove DOM/API wiring only; native Qt/plugin/install/popup/reader behavior is held for final campaign phases.
+
+
+### Complete-review checkpoint — reviewer-batch-43
+
+F082 now has complete store-source corroboration: ErrorEntry/report retains nodeId but no workflow/draft/incarnation, so history navigation cannot validate that origin from this record.
+F085 has exact complete counterpart corroboration: API deliberately exposes no dismiss/delete/clear, automatic dismissal only acknowledges, and read state is reversible without removing entries.
+Parent confirmed no prior canonical ID and requires specification precedence resolution; this audit does not assume restoring destructive auto-dismiss is the correct product decision.
+The current retained history/full-detail/logging behavior is meaningful and must be preserved while deciding coherent specification text and current-origin navigation.
+
+Optional unmeasured cost candidate: all retained entries remain in memory and the complete history panel copies/sorts/renders the full array on changes.
+For long sessions with many repeated events this has growing CPU/DOM/memory cost, but no benchmark or observed degradation was run.
+If later prioritized, windowed presentation or efficient maintained ordering should preserve the complete selectable history and acknowledgment semantics; deleting entries solely to improve a test/count would narrow the current intentional feature.
+Short finite automatic-ack timers and logger mirroring are not a demonstrated resource leak or duplicate-error bug.
+Tests' fake timers/local Pinia demonstrate deterministic state transitions, not browser persistence or current-workflow selection.
+M1 closure is still open; zero current-hash pending, independent completeness and mutable-controls acceptance remain required before fixes/runtime.
+
+
+### Complete-review checkpoint — reviewer-batch-44
+
+#### reviewer-F091 — intentional socket retirement leaves live callbacks outside current-socket ownership
+
+P2 source-supported lifecycle risk: `useWebSocket.ts:537–549` disconnect cancels current pending requests, sets state.socket=null and closes the old socket, but leaves its onopen/onclose/onerror/onmessage handlers attached.
+If a new connect happens before that asynchronous old close event, openSocket sees no previous pointer to detach; the old onclose445–449 can then set disconnected, cancel the new socket's ACKs and schedule a ghost reconnect because intentionallyClosed now belongs to the new connection.
+Queued old messages/open/errors also refer to the mutable singleton without comparing their socket owner.
+The existing mock close invokes onclose synchronously; the separate ghost regression connects while an old pointer still exists and correctly exercises openSocket's detachment, not this distinct disconnect→connect ordering.
+Direct connect replacement does detach old callbacks, but it does not immediately retire existing pending ACK timers/promises; these wait to report timeout after their owner socket has been discarded.
+Reconnect HTTP recovery also lacks a socket/retirement owner across its awaits and can finish after an intentional disconnect or replacement.
+Future bounded ownership diagnosis should extend existing fake close/recovery/ACK seams with held old callbacks and exact connection-owner assertions, preserving bounded backoff, current-socket dispatch, visible failures and required unfiltered reconnect subscription.
+No actual network ghost, missing log, native browser event or product recurrence was executed.
+
+#### reviewer-F092 — older active-workflow event refresh can emit a newer-looking Open intent
+
+P2 qualified causal source risk: handleActiveWorkflowChanged155–160 captures workflowId A, awaits refreshWorkflowTree, then emits canonical Open A without a producer generation/supersession owner.
+A later B message can complete its refresh and Open first; the older A completion can then emit last.
+A full source owner confirmed workflowStore's collection-generation refetch guard protects structural identity/list response relevance, not active-command ordering (A-F068 is related, not mitigation).
+MenuBar begins its own Open intent when that event arrives, so its later Open request fencing cannot identify this older producer continuation as obsolete.
+The existing test asserts a single sequential event only.
+Preserve canonical Open admission/current-workflow guards and remote active selection; future exact controlled-event/refresh ordering should distinguish producer supersession before any repair, rather than weaken the Open gesture or infer cause from presentation.
+This is not a reproduced failed workflow activation or proof about prior Firefox occurrences.
+
+Execution/log payloads retain exact context checks and structural deletion generation protection; mock transport-only contextless cases do not establish current execution acceptance.
+F027 is corroborated by a pure deterministic distributed-reducer case's campaign exclusion; default CI remains separate.
+Optional small text precision: the disconnected tooltip always says reconnecting, including intentional disconnect where retries are stopped.
+Global completeness, current-controls and repairs/runtime remain held.
+
+### Complete-review checkpoint — root-batch-23
+
+#### ROOT-F094 — P2 qualified retained retry/cleanup continuations lack invocation-owned presentation
+
+ExecutionPanel previewRetry238–258 captures parentId but stores the eventual plan/error/planning finalizer in shared refs without verifying the originating parent/dialog/request.
+The modal limits ordinary underlying clicks and closeRetryDialog refuses while busy, but repeated preview actions/retained-run commands or programmatic selection remain separate admission paths; no unconditional ordinary two-run race is claimed.
+A superseded preview can overwrite a later plan, while confirmRetry reads the currently stored parentId; strict backend plan-digest/parent identity binding protects against accepting a wrong parent's plan and remains essential.
+confirmRetry's late success/error clears shared dialog/plan or reads the current retryPlan to associate uncertain child identity rather than a captured confirmed plan object.
+The mismatched uncertainty path explicitly refuses another retry, so this is misleading presentation/attachment availability, not a demonstrated duplicate scheduler submission.
+previewCleanup157–173 similarly publishes old-run plan/error into current selected view; confirmCleanup captures its exact execution/digest correctly, then unconditionally clears whatever cleanupPlan is current and writes shared completion text.
+The cleanup plan dialog visibly shows captured execution/digest, mitigating a hidden wrong target; the risk is obsolete plan/finalizer/error ownership and new-state withdrawal, not arbitrary artifact deletion or a demand to roll back committed cleanup.
+Unmount clears interval only, leaving outstanding actions without a presentation retirement marker; durable committed run/cleanup operations must remain recoverable without replay.
+Existing494-line counterpart preserves exact digest preview/confirm, explicit stale-plan repreview, unrelated409 nonreplan, exact-child uncertain attach and structured managed diagnostics, but resolves requests immediately and does not distinguish superseded preview/finalizer/unmount.
+Future diagnostic should extend those controlled promises and exact plan identities before any source correction, preserving captured physical operation and user-approved no-replay policy.
+B179's RunButton initiating-command lifetime is distinct; B confirmed no duplicate retained-action ID.
+
+### Existing B-F181 extension — retained Canvas/Logs navigation also mutates current canvas by leaf only
+
+ExecutionPanel selectOnCanvas147–151 takes the last segment of the selected job's scoped_node_path and calls ui.setSelectedNodes in whichever canvas is active.
+It does not first navigate/validate the retained execution's workflow/root or nested path; workspace-wide history can therefore select an unrelated same-name node in another current canvas.
+Explicit navigation may intentionally switch to that run's owning workflow, so future contract should implement/reveal or refuse the exact origin rather than forbid useful retained-run navigation.
+Existing test checks Logs opens global logger only; it does not compare selected originating workflow/nested scope and source-qualified misselection is not an executed mutation.
+Global history/progress and strict retained identity remain intentional; no new duplicate ID or wrong worker claim.
+
+### Existing B-F045 extension — complete node CSV store lacks displayed result pinning
+
+DataTable downloadCsv562–582 captures current page filters/sort but sends no cached source_identity; the API request type lacks the identity capability already recorded by B-F045.
+Node pagination/sort/filter setters correctly carry the displayed source_identity, while this download rereads latest.
+Thus exact displayed-record CSV export cannot be inferred from otherwise pinned query tests; latest-advance ordering remains the future distinguishing seam, with no executed changed output.
+Merged projection CSV does retain source result identities returned by the projection, a stronger distinct contract that must not be weakened when repairing the node path.
+
+### Existing B-F176 extension — data-table state dictionaries also admit inherited identifier entries
+
+DataTable stateFor checks paginationState[nodeId] on an ordinary {}; __proto__/constructor can return inherited state rather than a newly owned default page object.
+The existing reserved user-key family extends to request/cache state grouping without declaring every resulting payload invalid or executing JavaScript; actual ordinary GUI-generated identifiers mitigate common paths.
+Correct encoded node-query URL is retained and contrasts with ROOT-F092's separate schema URL omission.
+
+### Retained structures and suite judgments
+
+DataTable full source preserves per-canvas request/controller/retry ownership, bounded409 delays, no-active fallback refusal, source identity through paging/filtering/sort and explicit captureLatest projection refresh.
+Controlled counterparts distinguish independent identical node IDs, supersession versus aborted ignored response, Clear preventing old response, per-canvas retry, fixed action after activation switch and released-context refusal/re-registration.
+These are distinct causal barriers; no count-based test deletion is justified.
+Projection request arrays/maps are shallow copies and retries retain caller objects; mutation ownership is a scoped in-process contract to inspect before claiming arbitrary server misroute.
+CSV failure finalizers write captured context without request/released guards, a narrower obsolete-error presentation candidate; deliberate downloads may continue after navigation and physical cancellation is not promised.
+Counted retry statuses are HTTP409 rather than typed not-ready codes, so later synthesis should verify which server errors are actually transient before broadening/reclassifying retry policy.
+Projection tests use mocked sources/responses with incomplete type shapes; they prove client request/state only, not real schema/row/source provenance or backend merge safety.
+The CSV test installs URL methods with Object.defineProperty and only restores spies; runner/global restoration must be checked before claiming a reproduced pollution defect.
+ExecutionPanel mount tests do not unmount wrappers that create5-second intervals, extending existing B012 fixture lifetime debt; no new leak or intertest failure was reproduced.
+Their entire managed fixture group is campaignExcluded despite deterministic digest/UI/error tests, corroborating reviewer-F027 while ordinary/default CI remains separate.
+Meaningful plan-digest/no-replay and exact retained-child oracle axes should stay even if setup is later shared; no native/local worker or scheduler certification follows.
+M1 remains open, all repairs/new diagnostics/runtime held.
+
+### Complete-review checkpoint — root-batch-24
+
+### Existing B-F012 extension — held socket fixture exceptional setup can wait without a bound
+
+test_held_worker_fixture listener.accept and messages.readline have no timeout, inside ThreadPoolExecutor context whose exit joins submitted process_row.
+A fixture setup/import/connect failure can leave accept waiting indefinitely; an assertion before setting task.cancel_requested can skip the intended cooperative cancellation sequence.
+Successful socket closure eventually makes recv return empty and worker raises, a relevant cleanup mitigation after acceptance rather than a bound on never-accepted control.
+result(timeout=1) occurs only after those blocking steps and does not bound executor shutdown; no hang was reproduced.
+This is the canonical exceptional fixture-lifetime family, not a real worker transport/PID claim: these cancellation/failure cases intentionally call process_row in a local thread and assert os.getpid.
+Future existing harness correction should own bounded accept/read, cancellation/release and physical join while preserving started/observed/acknowledged/no-output distinctions.
+
+### Retained fixture/runtime boundaries
+
+Platform fixtures derive metadata from actual classes, use positional whole-DataFrame versus column bindings explicitly and emit named row indices plus exact values.
+The direct DataFrame-only counterpart actually computes/readbacks expected rows and verifies selected engine is Direct despite portable Wetlands preference; it is separate from the externally marked actual processing worker case.
+The external processing counterpart provisions an isolated managed root when run, compares child PIDs against parent and one worker, exact rows/report bytes and three distinct confined record-relative owned assets, then surfaces real close failures before reset.
+Those strong worker/record/cleanup oracles must remain; this audit provides no new pass or compatibility certification.
+HeldWorkerNumbers imports Core only, announces worker PID/payload through its explicit socket and cooperatively emits observed/acknowledged cancellation before no-output return; task progress and intentional multiplier-zero failure are distinct supported fixture branches.
+Restarted_processing public persisted manager harness constructs actual platform adapter/engine, compares actual owned record paths/bytes and closes engine/shared manager in finally; source execution requires external resources and stays unrun.
+StaleWorkerNumbers versus IncompatibleWorkerNumbers have deliberately different exact recipes; same environment name between ordinary WorkerNumbers and HeldWorkerNumbers uses equal declared recipe rather than proving arbitrary recipe alias compatibility.
+Fish parallel test invokes actual AverageSpotsPerNucleus over constructed four-image nested marker branches and validates ordered image/global-summary row plus retained scoped result keys; it does not assert actual microscopy measurement values, segmentation quality, a worker PID or full released demo workflow.
+
+E2E app uses disposable configured storage/home/tool/Wetlands roots, real application/services with explicitly registered dynamic tools and dev-only observation endpoints.
+Its execution-failure route broadcasts constructed contextual log/completion through actual WS manager, so browser error journeys are real transport/presentation but synthetic worker-failure producer.
+Worker/Pixi observation endpoints and actual manager adapter are separate stronger lifetime probes; no certification follows merely from their presence.
+Injected offline PyPI lookup creates no real client; app ownership flag avoids closing it as an app-owned client, so the bypassed constructor is not itself a shutdown defect.
+Hot-reload fixture writes a minimal Files DataFrameTool and deliberately exercises actual package loader; it is not full common Files behavior or installed compatibility.
+
+Manual-QA producer builds deterministic images/table/local package, genuine public workflow archives with captured custom sources and nested child snapshot, deliberate corrupt ZIP and a constructed result bundle containing README rather than actual produced run records.
+That result bundle is a format/import fixture, not real-output provenance; manual reviewers must not treat it as an execution/export witness.
+Prepare refuses nonempty unmarked/modified roots, validates nonoverlap with repository/home roots, records generated checksums and removes generated bytecode; evidence is deliberately excluded from checksums.
+Clean deliberately accepts a marked modified QA root for cleanup after interaction, not immutable fixture certification; restoring verify-before-clean would need a product decision because normal QA changes those files.
+Prepare's check-then-create/rollback lacks exclusive ownership against another writer in the same root, a conditional maintainer concurrency risk to preserve before any future staging repair; no foreign files were deleted.
+Marker source_revision is repository HEAD, with generated-file checksums but no dirty generator/source digest; later acceptance should record exact dirty source manifest separately rather than imply the marker attests unchanged generator code.
+Public helpers accept a Path directly while CLI normalizes/expands/resolves first; supported CLI safety is distinct from arbitrary internal unnormalized calls.
+Manual counterpart genuinely reimports untouched exporter archives in fresh60-second-bounded subprocess and checks reopened actual computed [2,3,4] outputs for root/nested workflows, stronger than schema-only archive mocks.
+Other tests distinguish idempotent unchanged fixture, modified refusal, marker-only cleanup admission and actual fixture grammar/build/failure branches; repeated preparation may be amortized only where independence and modification/refusal axes remain intact, with no measured savings asserted.
+M1 remains open; native manual work remains final M5 and all repairs/diagnostics/runtime acceptance held.
+
+### Complete-review checkpoint — root-batch-25
+
+#### ROOT-F095 — P3 shortcut counterpart tests copied logic rather than the production listener
+
+frontend/tests/unit/components/AppShortcut.test.ts defines ShortcutHost replicating the App handler/listener choreography and mounts only that local component.
+It can remain green if production App's shortcut predicate or listener wiring changes or is removed; its comment explicitly admits the copy, so the current guarantee must stay a helper/recipe test rather than production App behavior.
+Actual App source108/204/253 has the corresponding handler and paired mount/unmount, with no production defect inferred by this oracle gap alone.
+Future suite synthesis should move a useful narrow shared handler under direct tests or exercise the actual App seam already available, retaining macOS versus desktop/plain-browser distinctions without a second copied implementation.
+The fixture sets navigator.platform with Object.defineProperty and does not restore that descriptor; vi.restoreAllMocks restores spies, not that explicitly defined global property.
+No intertest failure was executed; successful bodies explicitly unmount, while assertion failure skips that final retirement.
+
+### Retained producer/selector judgments
+
+package.json retains focused/quick/all-browser/coverage scripts and frozen-lock consumer dependencies; dependency ranges alone do not prove installed compatibility, and scripts/test remains authoritative orchestration.
+Playwright config selects one worker with serial full-suite execution, separate Chromium/Firefox projects, explicit backend/frontend ports and non-reused dev servers, disposable runtime root and hot-reload fixture.
+Serial execution protects shared workspace/hot-reload/worker fixture lifetimes; parallelizing this whole suite without per-worker runtime/identity isolation would be a contract change, not an assumed speed optimization.
+Collection imports allocate a temporary root; source does not delete it, allowing artifacts/runtime investigation at the cost of retained temporary state; no measured storage/performance issue is claimed.
+CI retries plus failOnFlakyTests expose flakiness, while local retries are zero; no fresh timing/browser result follows.
+Campaign reporters derive stable per-project/file/title identities, exact one annotation reason and full manifest; Vitest audit runs at end, browser audit at begin retains failure status for end.
+Browser reporter loops only projects present in collected tests; empty-project/no-suite refusal depends on runner/selector rather than an explicit reporter-wide selected-count assertion, a narrow validation boundary to preserve before describing this as independently fail-closed for every input.
+No default false-green run was reproduced or claimed; normal runner zero-test behavior is not redefined here.
+CampaignScope counterpart explicitly distinguishes exact partition, missing collection/manifest/annotation, reason drift/invalid reason, duplicate identities and zero selected input; useful fail-closed axes should remain rather than one broad smoke assertion.
+The reports do not prove runtime execution or physical external prerequisites; campaign applicability classification remains reviewer-F027 and ordinary/default suite coverage stays separate.
+M1 remains open; all implementation/test/native execution held.
+
+### Complete-review checkpoint — B-batch-34
+
+#### B-F184 — P2 source execution-log classifier retains the old engine module identity
+
+`log_context._is_execution_record:21–33` attaches context to bioimageflow.node.* records and explicit Wetlands worker execution metadata, but its root BioImageFlow diagnostic branch requires record.name==bioimageflow and record.module==engine.
+Current library engine/common.py owns that root logger and engine/scheduler.py emits actual skipped-node/disabled-target diagnostics through it.
+Python LogRecord module for those current calls is scheduler, not engine; source-time factory freezes the active run, but execution_log_context_for_record discards that snapshot because the classifier returns false.
+Those real diagnostic records therefore remain global despite being emitted inside the bound execution, weakening workflow/execution-scoped history.
+Existing exact `test_bioimageflow_engine_diagnostic_carries_bound_execution_context` constructs a synthetic record whose pathname is `/package/bioimageflow/engine.py`, preserving the old module identity rather than exercising the actual scheduler call.
+Bare BioImageFlow/environment lifecycle messages are deliberately global; do not attach every framework/environment record to the current run indiscriminately.
+Future diagnostic should extend the existing fixture with actual current producer metadata or a bounded real producer and retain global nonexecution/environment records.
+No worker/log action was executed here.
+A separate low-priority public context-manager lifetime qualification: same-context nested binds are accepted, but the inner finally clears the global active context while the outer bind remains active because no depth/token stack exists.
+Current ExecutionManager uses one outer bind, so this is direct nested-helper scope risk rather than a proven normal Run overlap or a call for a universal coordinator.
+
+#### B-F185 — P2/P3 qualified thread-to-loop publication cleanup/backlog authority
+
+ConnectionManager `_schedule:589–601` correctly closes an unused coroutine when its loop is None and consumes future exceptions through a dedicated internal logger.
+For a stored loop that is already closed, or closes during scheduling, run_coroutine_threadsafe can raise RuntimeError; this branch neither closes the newly created coroutine nor degrades the sync publisher safely.
+Ordinary app teardown sets the manager loop to None after removing log handlers, which mitigates the normal path; existing B015 early cleanup failure and direct retained publishers remain relevant qualifiers, not a claim every shutdown fails.
+Logging bridge `_schedule_broadcast:114–140` has an explicit is_closed early check and catches the close-between-check-and-schedule RuntimeError, but also leaves the newly created coroutine unclosed on that race.
+Its returned concurrent future is discarded, so broadcast failures are not surfaced by the ConnectionManager's existing future-diagnostic helper.
+Both paths can schedule one loop callback/task per source event before the per-connection bounded queues are reached.
+Those queues bound already-enqueued messages and isolate slow consumers, but do not themselves bound the cross-thread pending callback/future backlog while the event loop is blocked.
+No sustained backlog, memory leak or measured performance cost was executed; this is a distinct producer/lifetime resource-bound risk, not a disproved default queue size.
+Existing bridge `test_handler_does_not_crash_when_loop_closed` covers the early closed check, while sync publisher tests close a mocked scheduled coroutine themselves and do not distinguish a closed-loop scheduling race.
+Future diagnostics should reuse exact sync/bridge fixtures for schedule rejection and teardown ownership; do not require blocking each worker on network sends or remove slow-consumer isolation.
+Public max_queue_size<=0 also uses asyncio's intentional unbounded-queue semantics; reconcile supported configuration before treating that as an additional defect.
+
+#### B-F186 — P2 source fresh WebSocket status omits retained intent; typed server union is incomplete
+
+`_status_snapshot_payload:693–736` copies state/context/progress/node statuses/planned nodes but omits actual ExecutionStatus.mode, requested_nodes and retry_of_execution_id.
+Frontend execution store adopts these fields when supplied; a fresh running/terminal reconnect therefore preserves execution identity but cannot restore the full selected/retry command intent from this snapshot.
+The full frontend WebSocket counterpart review confirms no generic reconnect fetchStatus; only a provisional starting phase triggers status polling.
+Already accepted same-context metadata can remain, and a starting poll is a conditional recovery path; those do not supply fresh running reconnect intent.
+For a failed selected run, frontend retry validation uses requestedNodes if available; missing targets can change its early validation scope even though backend retry retains the original exact execution target authority.
+No changed worker target or invalid processing was demonstrated.
+Existing backend snapshot tests assert context/planned counts/full fixture payload without those intent fields, and the initial-provider test supplies a plain old fixture lacking them.
+Future diagnostic should extend the existing fresh reconnect/status oracle with selected/retry intent while preserving terminal fences and exact backend retained retry identity.
+
+The human-authored ServerMessage discriminated union also lacks actual execution_snapshot/execution_update, tool_source_changed, workflow_tree_changed and active_workflow_changed categories emitted by this manager.
+This is five emitted event kinds; execution_snapshot and execution_update form the retained replacement family.
+Models are strict extra-forbid but server emissions are constructed as raw dicts instead of validated through that union, so transport works while this advertised typed catalogue cannot validate the full current wire.
+Environment request correlation remains absent in the actual backend event contract, corroborating B167 rather than creating a new request-ID defect.
+Future contract reconciliation should unify the actual documented/generated catalogue and current emitters without inventing legacy compatibility behavior or narrowing essential event families.
+No protocol message was sent in this audit.
+
+#### B-F187 — P3 qualified node attribution relies on legacy/dotted logger text
+
+Logging bridge `_extract_node_id:144–151` takes only the first dot-delimited suffix of bioimageflow.node.<name>.
+Public library node names reject empty/slash but allow dots; a record for a legitimate dotted node ID is therefore attributed to a shortened different ID unless a separate naming/escaping contract supplies metadata.
+Child logger suffix handling is intentional and must remain supported; the missing distinction is node ID versus logger child namespace.
+The Wetlands attribution regex requires legacy `data/<node>/run` text and tracks a last parsed node per logger/channel/run context, with single-active-node fallback and exit-text clearing.
+Modern library ProcessingTool context uses the private cache attempt staging directory as run_dir, not that legacy data/node/run layout.
+Existing `test_wetlands_execute_path_preserves_nested_node_scope` supplies synthetic `Execute worker.run` legacy text and proves parsing that format, not actual current task-API row log attribution.
+The bridge may legitimately leave ambiguous lifecycle records global; no wrong actual worker-node assignment or parallel schedule was executed.
+Future diagnostic should inspect actual public worker log metadata and distinguish scoped/dotted nodes from true child logger names, preserving explicit source-time execution context and intentionally global environment logs.
+Avoid inferring node authority from arbitrary message strings as a universal replacement for public metadata.
+
+
+### Complete-review checkpoint — reviewer-batch-45
+
+#### reviewer-F093 — oldest-drop counterpart proves a drop, not which entries were retained
+
+P3 exact distinguishing-oracle candidate: test_queue_backpressure_drops_oldest1196–1221 blocks send_json, enqueues ten distinct progress messages into a three-entry queue, asserts only dropped_count>0 and disconnects.
+An implementation dropping newly incoming messages could satisfy that assertion while violating the named oldest-drop behavior.
+Preserve bounded queue/backpressure and independent fast consumers; the existing case can later use controlled send release and assert exact retained IDs/order, accounting for any explicitly held in-flight item.
+This does not claim a production ordering bug or observed lost terminal event.
+
+B-F186 counterpart corroboration: snapshot/context tests407–550 check execution ID, revision, planned nodes/name map and model-to-JSON serialization but no mode/requested_nodes/retry lineage; endpoint initial provider1317 supplies a plain dict lacking those fields.
+The complete model/union tests verify their retained discriminants, not every manual manager event family.
+The complete frontend reconnect test explicitly refuses generic REST status fetching; borrowed execution store has a genuine provisional-starting poll314, which is a conditional mitigation rather than fresh-running reconnect intent restoration.
+The backend source owner keeps B186 and actual default no-await initial snapshot behavior: cancellation held by a monkeypatched snapshot method is not evidence of default pre-try sender leakage.
+No duplicate backend source whole-file credit is taken.
+
+Logging causal tests materially distinguish record-created execution A from later execution B, unattributed records from subsequently bound context, real Python thread propagation, framework/environment/thumbnail global logs and node-path fallback reset across execution identities.
+Their Wetlands Execute path/stdio records are manually constructed legacy strings, not current real worker output or package/runtime compatibility evidence; B owns complete bridge/parser/source reconciliation.
+Closed-loop noncrash tests do not assert newly created coroutine closure or event-future physical drain; source ownership findings remain B's.
+Several unit queue tests rely on test-loop teardown instead of explicit manager disconnect, and fixed scheduling spins/small sleep polls measure only observed send completion. Optional fixture/controlled-barrier cleanup could make ownership and failure diagnosis clearer without expanding runtime lanes or claiming current leaks/flakiness.
+Correction after complete current validation-model read: all_statuses exercises all six current NodeStatus values; cache_corrupt is a GraphValidationError type, not a seventh status. The earlier optional omission remark is withdrawn; no enum-coverage defect is established.
+F027 is corroborated by deterministic remote-redaction-only campaign exclusion; default CI/full-suite selection remains independent and no blanket reclassification is authorized.
+Global completeness and all repairs/runtime remain held.
+
+
+### Complete-review checkpoint — reviewer-batch-46
+
+#### reviewer-F094 — auto-scroll count trigger omits new messages at bounded capacity
+
+P3 qualified source trigger gap: `LoggerPanel.vue:257–262` observes filteredEntries.length only, while borrowed logger store43,98–109 caps retained entries at5,000 and evicts from the head on append.
+At capacity with the same visible count, a new message does not invoke programmatic scrollToBottom, including a longer/multiline replacement that may increase scroll height.
+Actual browser anchoring/geometry may affect the result; this review has not reproduced lost following, scrolling or selection.
+The existing DOM counterpart282 toggles the boolean only; existing browser logger source has actual native selection/copy assertions but no saturation-follow assertion found by targeted search.
+Preserve bounded retained storage, user-paused/manual scrolling, full multiline text and local display filters; future smallest controlled append/scroll oracle belongs to existing component/browser seams, not a new broad lane.
+Parent confirmed no known duplicate canonical issue.
+
+Optional source-only cost/selection-stability candidate: visible rows466 use timestamp-plus-current-index keys.
+Head eviction changes the index/key of nearly every retained distinct-timestamp row, so Vue can remove/recreate far more DOM than the one appended/evicted row; all5,000 retained visible entries are rendered rather than windowed.
+No benchmark, savings, lost native selection or actual performance incident was executed.
+If prioritized after M1, stable per-entry presentation identity/windowing should retain message order, selectable multiline content and complete filtered Copy logs; reducing the bounded data contract or hiding selectable data is not an approved optimization.
+Optional pointer consistency: unlike the table resizer, Logger handles pointerup/cancel but not lostpointercapture; this is a small disposal/style-state candidate, not a reproduced width failure.
+
+Copy logs captures currently displayed text before the await, preserves full level/local timestamp/current-origin label and multiline detail, and reports rejected/missing clipboard failure rather than false success.
+Another workflow's retained node ID is not relabeled from the active graph; exact counterpart covers it.
+The complete source uses local client filters with unfiltered WS ingestion, preserving later filter changes; no server filter replay is required for normal Logger behavior.
+Mocks demonstrate flag/DOM/property mapping; no native selection/clipboard or real browser layout certification is inferred.
+All assigned frozen source inputs are complete; current mutable docs and independent global completeness remain open before any fixes/runtime.
+
+### Complete-review checkpoint — root-batch-26
+
+### Existing B-F012 extension — bounded fixture retirement and failure ownership
+
+Critical Save test holds the actual PUT before continuation, accepts another draft, activates a sibling and distinguishes savedA2/draftA3/siblingB9/titleB; no enclosing finally releases its gate or removes owned workflows after failed assertions.
+Other critical race cases correctly release their gates and unroute in finally; delayed-feedback probe disposal below finally is bypassed after an assertion failure, with browser context teardown the eventual owner.
+Node-width tests leave generated workflow cleanup outside a finally; no observed cross-test contamination or measured cost is asserted.
+Failure/hot-reload cleanup swallowing and unchecked DELETE responses retain investigation artifacts but do not prove successful per-case retirement.
+Any future optimization must preserve serial shared-runtime/hot-reload authority until actual isolation is introduced, and make fixture retirement precise before parallelism.
+
+### Existing reviewer-F082/F083/F085 extension — error browser oracles
+
+Error-handling failure uses the actual dev failure endpoint and real WebSocket envelope, exact workflow/draft/execution association and one unread-to-read log entry; it is transport/UI evidence rather than a failed Wetlands worker.
+Cycle case obtains real stateless backend diagnostics but injects them into graph-sync state before asserting the banner; it does not prove gesture-to-persisted-cycle handling.
+History toggle deliberately retains injected errors, corroborating the existing source/spec decision about read versus dismissal.
+Go-to-node injects node-42 absent from the actual graph, clicks the button and asserts only error rows disappear: navigation/selection is not asserted.
+This is precise corroboration of existing canonical error/navigation candidates, without a new duplicate test or ID.
+
+### Retained exact file judgments and useful tests
+
+app-shell44 checks actual Dockview menus, Tools visibility toggle and panels; full-stack28 independently checks real Vite-to-backend health plus initial console collection. Similar shell setup is a measurement/consolidation candidate, while the proxy readiness oracle remains distinct.
+critical-operation-races975 uses real workflow-keyed IndexedDB after an actual transport-aborted PUT; asserts newer recovery contents, unchanged server/saved bytes, accepted recovery revision and rendered graph after reload.
+Another case deletes browser fallback to prove accepted backend draft recovery, exercises actual Cancel, agent CAS, Discard409 without canvas/draft/sibling loss, Keep and reset to saved state. Its finally retires routes/owned workflows.
+Run confirmation injects out_of_date into real validation and mocks execution202; after a newer actual draft change, it reasks and sends exact current revision. Immediate Run likewise verifies accepted revision and parameters, with no worker/PID credit.
+Delayed feedback route.fetch commits the server PUT before holding client acknowledgement; observed DOM/status/error snapshots establish that different boundary from precommit transport refusal. Test evidence must retain that causal distinction.
+hot-reload206 edits actual custom/package source bytes, receives actual watcher/registry transport and checks actual node/tool DOM updates; external editor is mocked, and the event listener accepts any tool_reload name. Exact node badge later mitigates that broad event oracle; tighten existing event identity only if needed, without inventing native or published package credit.
+Package hot-reload finally restores exact original bytes, closes the separate socket and deletes owned workflow; custom source is intentionally owned and deleted rather than restored.
+node-data-widths103 mocks query rows while exercising real browser geometry, pointer/keyboard sizing, sibling isolation, theme colors, saved widths, reload and reset. It is real layout/input persistence coverage, not real data/worker processing.
+parameter-controls270 uses actual ProcessingParameterControls metadata and real canvas controls, typed enum/boolean/list edits, invalid list refusal with unchanged accepted draft revision, valid list validation, physical connectable pin and exact edge graph.
+Actual Save200, another workflow, reopen and exact persisted/restored graph/list/checkbox controls distinguish persistence from a unit harness. Both owned workflows are deleted in finally; no compute/worker/native acceptance is inferred.
+The existing meaningful cross-stack tests should remain until measured redundancy or failure-attribution evidence supports changes; this read-only audit added no tests or product fixes.
+
+
+### Complete-review checkpoint — A-batch-42
+
+### Complete contract judgment
+
+Full base includes architectural runtime/deployment detection, accessibility/title, backend thread model and draft-backed full-state sync, tool-store paths/version/discovery/index/metadata/schema examples, all REST sections and normalized errors, workflow tree/incarnation/migration/draft/copy/dependencies, graph/interfaces/status/generated API semantics, node data/dynamic schemas, accepted execution/Clear/retained status/progress, settings/keyring/debug policy, filesystem/viewers/editor/datasets, complete WS/reconnect/hot reload/startup/shutdown, frontend layout/canvas/pins/status/panel/resource/results/logging/tree/run/viewer/errors/preferences/datasets, synchronization/recovery/undo, edge cases/shortcuts/API summary/security.
+This base explicitly gives later v2/current distributed/viewer deltas precedence and OpenAPI complete surface priority; tables/examples do not become a second code generator or erase later contract overrides.
+Draft versus saved artifact/private nested editor identities, accepted CAS/writer/validation frontier and exact root execution closure remain coherent with complete source authority map.
+Whole selected graph compiles before diagnostics scoped to unrelated roots may be ignored; a partial/null workflow or unresolved selected target remains refusal, not permission to execute an ad-hoc pruned graph.
+Immutable selected run/record/result provenance and unpinned absent-result.json compatibility remain separate; raw CSV/path fallback is not allowed for corrupt modern identity.
+Ordinary Node Data/Clear affects latest projection/current status while historical successful run remains immutable; root-only Clear versus separately scoped nested admission remains explicit.
+Viewer metadata/additions and all-row structural favorites use separate portable/local stores and native certification contract; new frozen captured guidance/form clauses agree with A38–41 qualified gaps.
+Sources are recursively owned executable bytes, provenance not authority; catalog classes cannot replace carried qualified binding, supporting A001/A002 rather than silently redefining pins to current registry.
+Hot reload promises same-size/timestamp current bytes, serialized unit reloading, inactive version preservation and noncatalog source notifications; A026/A149–153 source findings remain contradictions/qualification to reconcile, not acceptance by prose.
+
+Frontend claims are judged against the actual caller tests, not blanket delivered status: stable handles/DataFrameTools constant-only, unexecuted provisional edits and contextual status, viewport controls, full tree no label identity, root-session close/discard/save capture, embedded source tool opening, separate filepicker/managed logical datasets, and keyboard menus have mapped full-source counterparts.
+Existing A161 shared-catalog version selection conflicts with repeated workflow-specific one-version/package Use-in-workflow claim (§2.3/§3.4); retained pins must remain carried until explicit rebind, and common catalog refresh alone is not every node's version authority.
+Header/body source-type distinction and ResourceSpec declaration floors are explicit, supporting already canonical A158 resource display omission and actual engine floor enforcement mitigation.
+Settings deployment_mode is mutable in the illustrated live model but desktop capabilities must remain configured policy; ROOT-F002 owns actual authority bypass and configured trusted Python guard stays retained, not duplicated here.
+HTTPSettings/OMERO/keyring/datasets/Clear/native implementation consequences stay root/B canonical and are not inferred solely from an illustrative schema.
+Server security prose is localhost/no auth single-user, with future v3 deferred; real deployment binding origin/access policy is root-reviewed, not fresh native/network test evidence.
+
+The base intentionally avoids a complete duplicate graph JSON transcription by referencing strict backend model/v2. Generated-only API aim explicitly acknowledges handwritten draft shape debt, A006 retained.
+Other handwritten Settings/metadata/REST summaries still need synchronization; uninstall table documents optional version BODY while actual tools router uses query (B168 full route authority), and execution state field table omits stopping despite starting/stopping locks in whole MenuBar test/source. These exact stale examples extend existing API transcription debt A006 rather than new runtime contract claims.
+API summary numbers repeat37, a low-priority navigation cleanup; generated OpenAPI remains the complete route authority.
+Core resource requirements do not promise OS enforcement or result-key changes; scheduling is accepted graph policy rather than mutable application preference override.
+Narrative says validation via Pydantic but ordinary Core IOModel declarations are not Pydantic models, reviewer-F038 source-authoring/model guidance owns that broader wording mismatch.
+No historical or illustrative docs statement supplies package/tool/native runtime pass evidence.
+
+#### A-F178 — Low documentation/source drift, workflow dependency dialog advertises no installation despite implemented install-all
+
+Frozen v1 §2.4.2 line428 says current dependency dialog does not install missing packages, and §5.2 line1680 says installing an absent required version remains a separate Tools Panel action.
+Complete frozen MenuBar760–830 implements installMissingDependencies, filters local custom tools, installs each exact missing package via tools installer, continues partial failures, refreshes catalog/workflow diagnostics and retains errors; template1340 handles dialog install-all.
+Complete mounted counterpart selectors `installs every exact missing dependency and refreshes diagnostics`, `never sends workflow-local custom tools to the package installer`, and `continues bulk installation after one package fails and keeps diagnostics open` distinguish this actual supported path.
+Thus human base description is inaccurate and obscures a valid dependency recovery route; it is not a missing implementation or a reason to remove the explicit action.
+Existing native/pip/install validation limitations and capture/partial failure findings remain; mocks do not certify published packages/network success.
+Future documentation reconciliation must describe explicit exact package installs and partial failures without implying passive import/viewer checks automatically install, or incorrectly treating __custom__ local sources as installable dependencies.
+No test execution/repair or same-source main full credit here; reviewer notified for duplicate-ID reconciliation.
+
+### Existing reviewer-F038 extension — source declaration example is missing required row consumption
+
+v1 §2.4.1 Python CellposeSegmenter example imports ProcessingTool/IOModel and defines process_row, but neither imports RowConsumption nor declares row_consumption.
+Its prose elsewhere declares mapped/collective required metadata, and the complete Core ProcessingTool subclass validator rejects a concrete row method without a RowConsumption value; illustrative undefined cellpose_env/ellipsis does not satisfy that mandatory declaration.
+Corrected authoring skeleton must state mapped/collective explicitly, retain plain IOModel field declaration semantics and avoid misleading Pydantic validation advice.
+The adjacent environment wire example uses legacy conda/pip lists rather than canonical requirement mappings; targeted cross-owner reviewer reconciliation pending for that precise grammar clause, so it is recorded as a qualified stale-example candidate rather than a fresh executed constructor failure.
+Reviewer owns F038 and was notified; no second canonical ID or duplicated source full credit.
+
+### Coverage
+
+326reviewed+8classified/354,20pending main platform:9E2E browser journey files, docs/agents/workflow-editing,8historical campaign controls and2main specifications.
+Next dependency-ordered browser journeys then current viewer/v2 and historical evidence/process records; full gate remains open and neither WIP is committed/released.
+
+Reviewer reconciliation after save: reviewer confirms no existing dependency-dialog-install contradiction ID, retains A178, and accepts F038 mandatory row-consumption/dependency-map example corroboration without a new canonical ID.
+This is source/documentation confirmation, not executed constructor or package validation.
+
+
+### Complete-review checkpoint — A-batch-43
+
+### Full-file judgment and test oracle boundaries
+
+Viewport test uses actual named folder workflow/API graph plus setLastOpenedWorkflow startup reload rather than a fabricated rendered canvas.
+Small and8000extent cases measure actual DOM matrix zoom, every rendered node within canvas, centered bounding extent and decoded SVG fragment points to that canvas pattern; RunSelected visibly present.
+This supports exact framing/grid identity including slash-containing path, not minimum5percent scroll gesture or backend processing/PID.
+Seed POST status is not checked; folder created before try can leak if subsequent setup fails, and cleanup delete responses are unchecked/live page remains, extending qualified A101 fixture lifecycle debt, not a new user-data runtime defect.
+Geometry cases are distinct small/large boundary obligations; do not collapse merely because bodies share code.
+
+Editable-import test builds real workflow-local DataFrame source, exports through actual backend, imports with name override, actually GUI opens imported workflow and clicks node-addressed editor button.
+Opening uses external_editor='true', so HTTP exact imported file identity is proved but no real editor readiness/focus/native window.
+Physical Run action and distinct expected CSV rows2/3/4 then21/22/23 demonstrate actual source-edit result at Direct/DataFrame boundary when executed; do not confuse saved config with worker isolation/PID.
+Read checks original source remainedn+1; parent prepare-embedding actually copies edited imported bundle into new owner and accepted draft has returned source id; editing parent copied file leaves imported original unchanged.
+Parent embedded edited source is not executed in this test, so source independence bytes are not nested worker result proof.
+Synthetic DataTransfer dispatches drop, exercising real drop handler/backend rather than pointer drag source gesture.
+Out-of-date Continue is dispatched through HTMLButtonElement.click inside polling to avoid a fading dialog, not physical Playwright user actionability/keyboard acceptance; report that separate from real main Run click.
+Changed second CSV values prevent already-existing first output satisfying the edit oracle; immutable storage result/PID remains separate acceptance.
+finally navigates blank, restores external editor and deletes owned workflows, with unchecked cleanup status; retain A026 hot reload/helper/pyc qualifications without claiming this narrow single-file edit proves every reload source-axis.
+
+Imported layout starts with overlapping root/child positions, actual portable API export/import twice and exact recursive deterministic coordinate map, then rendered no-overlap/edge-count asserts and physical node drag.
+Waits accepted root draft PUT, saved other graph remains byte-structurally same coordinate map, actual nested canvas visibility/separation, root Save and reload preserve user edited layout and sibling remains untouched.
+It distinguishes one-time materialization from reflow and graph identity scope; source export/import is API fixture not GUI archive chooser gesture, which is acceptable for this layout seam.
+No compute/cache/native claims. finally blank page plus owned delete; nested snapshot cleanup delegates actual server workflow deletion.
+This layout GUI persists the coordinate authority and complements backend deterministic layout tests; repeated exact map is cross-layer evidence, not blindly redundant text.
+
+Migration fixture writes actual saved document schema1 bytes inside explicitly isolated E2E_ROOT, leaving current workflow exact bytes as unrelated control.
+Actual scan planId, UI startup defer/unavailable tree/currentOpen, then GUI confirmation verifies exact returned backup path/content, no unrelated rewrite, schema2 load and reload identity.
+This is real saved-file migration UI proof when run, not typed mock; it does not cover accepted root draft baseline/nested snapshot transaction, stale preview source, crash journal or fsync ordering (separate complete backend migration counterparts).
+No finally enclosing mutation/cleanup, so midassertion failure leaves legacy/backup fixture workflow and state; A101 retained. Tests do not remove backups, intentionally durable evidence but per-run root owns eventual retirement.
+
+Graph recovery seeds actual available dev tools, stateless validates a positional complete-DataFrame graph, persists empty saved workflow, writes newer workflow-keyed IndexedDB recovery and reloads.
+Asserts exact restored node labels/IDs/one exact edge and finite visible SVG path plus dirty title.
+This proves recovery rendering for one existing workflow rather than old global key; no second workflow negative isolation, accepted durable draft CAS write or true browser interruption is asserted.
+Manual legacy GraphState TypeScript shape is fixture-only, not new production authority; backend normalization is explicit current supported input.
+Delete cleanup is end-only/no finally and live page; A101 retained.
+A012 extension below distinguishes fabricated dev metadata versus canonical introspection, not a current false test failure.
+
+Creation complete cases check actual startup shell/search/create visibility, fake pywebview settings404 fallback and absent Datasets, owned workflow grid/no minimap, no-workflow nonpersistent placeholder/Open dialog/New cancel/noimplicitPOST then actual single creation and reload without duplicatePOST, create-tool modal controls, and full Manage inventory independent of catalog search plus declared managed environment location.
+Fake native API only establishes frontend desktop fallback; no native filesystem/browser control or installer acceptance.
+No-workflow deletes all runtime workflows intentionally under suite-owned isolated backend root; do not claim production/user workspace safety or preserve prior unrelated fixture content. Subsequent named create cleanup is finally.
+Simple Tools presence/Create cancel/grid cases overlap unit/smoke surfaces, but exact browser theme/docking/modal wiring may retain value; measure selection/runtime before future consolidation, no measured speed gain claimed.
+Nonsense search oracle currently wrong, new A179.
+
+#### A-F179 — Low/Medium test oracle defect, empty catalog search checks a nonexistent old TreeTable surface
+
+workflow-creation.spec.ts `search filters tool list to empty on nonsense query` fills actual tool-search but asserts `.p-treetable-tbody .tool-name-cell` count0.
+Complete current ToolsPanel everyday catalog renders div.tool-list-item with tool-item-* test ids and span.tool-list-name; TreeTable is only separate unopened Manage dialog, and current template does not use tool-name-cell for those catalog rows.
+The asserted selector can already have zero matches before the search is applied, so regression leaving catalog tools visible still satisfies this test.
+Future correction should compare a positively populated actual catalog before search and no actual tool-item rows after, while retaining empty state/query behavior and independent Manage inventory contract.
+No execution or failing UI diagnosis; exact source/test oracle mismatch is statically established. Do not grow duplicate journey solely to add count.
+
+### Existing A-F012 extension — recovery test canonizes manually seeded DataFrame column connectability
+
+Graph persistence fetchRecoveryTools asserts IncrementNumbers (actual DataFrameTool) input number.connectable='by_default'.
+Targeted root-owned dev.py259–281 manually creates that metadata; seed476–489 directly registry.register_tool rather than public serialize_input_schema, so the assertion can pass despite public schema._input_connectable97–103 always returning NEVER for DataFrameTool.
+Thus this is fabricated metadata contract drift/negative-oracle omission, not an inevitable current serializer-induced test failure or evidence canonical DataFrame field pins work.
+The actual recovery graph connects positionally, which is valid independent of the unused number metadata; source transform ignores its declared number constant and operates upstream rows.
+Retain real typed tool classes and public metadata authority; future fixture reconciliation should not reintroduce forbidden DataFrame column pins merely to satisfy an old assertion.
+Root notified; no dev full-file credit or duplicate canonical defect here.
+
+### Coverage
+
+332reviewed+8classified/354,14pending main:3large browser files (agentdraft504/canvas1377/crud506), docs agent361,8historical records and2current specs.
+Next full browser/lifecycle counterparts; full audit and all repairs remain held.
+
+
+### Complete-review checkpoint — A-batch-44
+
+### Full-file judgments and retained test contracts
+
+Agent sync wraps native WebSocket only to observe actual server message JSON/open count; performs real backend structured draft operation against expected revision0, checks correct workflow/agent attributed notice and exact visible node with no main-frame navigation or conflict.
+This proves clean active canvas live update rather than reload; API operation is agent-boundary transport, not actual MCP client/stdio authorization/external active context operation.
+Setup errors outside try can leave named fixtures; finally delete helper swallows request errors and does not blank live page, inherited A101 qualified cleanup debt.
+
+Parameterized agent-copy variants manually mark actual canvas UI dirty to generate a conflict against a real agent draft write; one exercises Keep first then a later agent revision, the other direct copy.
+Click actual conflict copy button, check real PATCH/saved copy equals exact agent graph plus new root name/display, original accepted draft remains exact same revision/graph and title stays original.
+This is a precise accepted-agent versus currently edited-canvas distinction; manually dirtying an unchanged graph does not certify preservation of a complex independently edited local graph.
+Cleanup assumes first free _agent_2; complete source helper1065 starts suffix2 and unique base prevents ordinary collisions, so not asserted universally wrong, but capture returned copy identity would be more robust if fixture assumptions change.
+No fresh failure or additional canonical finding for that conditional cleanup debt.
+
+Recursive copy test strengthens the same ownership boundary with actual local source file authoring/export/import twice for SAME CLASS NAME with different source hashes and prepared embedding destination ownership.
+Actual agent graph remains unsaved and includes root and child bundle; copy graph exact equality, source manifest owned IDs, four distinct file paths and exact bytes, original saved document bytes and accepted draft revision unchanged provide real storage oracles when run.
+Edits copied child only, opens/reloads copy even with later unrelated original recovery timestamp, executes actual Run202/completion and checks UI data-table requests root versus embedded scoped node and exact root2/3/4 versus child41/42/43 rows.
+Original documents/source bytes/draft remain unchanged and no original latest output directory appears, distinguishing source aliasing or wrong runtime context from mere successful serialization.
+DataFrameTool Direct fixture is actual compute/owned-source output evidence, not Wetlands worker/PID/environment isolation; public archive is actual API export/import but not GUI archive chooser or published-package compatibility.
+Synthetic mark-dirty and injected future recovery are deliberate controlled setup; real conflict UI/Run/NodeData gestures remain admitted user consumers.
+Result projection helper asserts scoped node but does not assert every workflow/resultkey/record field; exact output divergence and original-no-results controls substantially constrain wrong-context false positives, without claiming full immutable result provenance acceptance.
+finally navigates blank and deletes captured actual copyName plus allownedsource workflows when page survives; if page alreadyclosed server cleanup is skipped, eventual fixture root remains harness-owned A101 qualification.
+
+CRUD describe mode serial means early failure suppresses later cases, useful state isolation assumption but limits diagnostic failure independence; root owns suite selection/runtime reconciliation.
+Helpers derive ids separately from actual UI and use normalized row testids; complete A170 collisions remain possible but generated unique ASCII cases do not distinguish them.
+Real critical New dialog tests generated-name/API201/title/list, and invalid/occupied Create/SaveAs test exact409 plus retained input/dialog suggestion/cancel/source saved+accepted clean draft/occupied/list unchanged before and after reload.
+Those are strong no-mutation oracles beyond disabled submit spies; no delayed sibling/unmount invocation owner is introduced, so A168 remains untested in these cases.
+Collision import obtains actual portable export, actual filechooser uploads archive, rename dialog chooses raw path/name, actual title/tab/panel/reload and original display control verify root rename persistence rather than only returned info.
+It does not assert nested-name/source-bundle/hash/viewer snapshot integrity; separate backend/library and frozen import tests own those.
+
+SaveAs actually creates catalog node via doubleclick, waits accepted draft, saves, runs real deterministic SeedNumbers and checks exact original rows, then copies into separate root with same node structural id but different graph artifact name/hash and no copied NodeData404.
+Edits copied node presentation through actual NodePanel Enter, accepted copy draft+Save, reopens base and verifies original graph+retained result available, reloads/reopens copy and checks both saved/draft/current graphs independent.
+Result before copy is actual Direct seed compute rather than static seeded output, but no worker/PID; cached source preservation only checks later response availability rather than repeated exact rows after copy (initial exact values + graph unchanged mitigate).
+It combines content/results independence and selection/reload in one coherent journey; split only after measured failure attribution/redundancy benefit, not automatic proliferation.
+
+Delete dialog test Cancel preserves mounted/source, then explicit confirm and404; its title `clears server file` uses HTTP absence not direct filesystem bytes.
+A/B lifecycle case observes DELETE query expected_identity_generation equals captured actual backend generation, exact A tab disappears, B remains selected+saved unchanged, reload has noA/source404 and no implicit creation POST.
+Last workflow case removes all suite-owned workflows, creates one then real Delete, checks same generation query, nonpersistent placeholder/no tabs/listempty, reload source AND draft404/noPOST.
+These prove normal generation-bound cleanup, not held dialog A→B replacement/raced same-ID incarnation or postcommit local cleanup failure (separate units/source findings).
+Several CRUD creation/delete cases omit finally; failure can retain runtime fixture data; helper swallows errors/status and live page cleanup qualification A101/F163 retained.
+No root/source lifecycle defect newly established beyond existing canonical IDs, and no browser pass executed here.
+
+### Agent cookbook full judgment
+
+The361line cookbook clearly distinguishes operating an active workspace through MCP from editing this repository's product source.
+Requires capabilities/context/compact describe and tool metadata before graph mutation, stable structural IDs not inferred labels, coherent topology/layout plan, nonreflow existing user layout, complete batch max10 and only advertised operation types, layout-only nested scope unless broader capability supported, and revision refresh/reapply-intended-change after conflicts.
+Public inputs/outputs keep immutable port ids, explicit null clear flags preserve nullable metadata, node deletion delegates backend referential cleanup, execution lock is authoritative, and explicit management/delete/source-code intent is required.
+Duplicate says saved workflow/tools rather than current unsaved draft, matching complete owned copy APIs; active-workflow deletion refusal matches targeted MCP315–334 and capability117 advertised management/batch facts.
+Examples are illustrative tool names/typed port schemas, not acceptance fixtures; author must derive real fields/types from describe metadata, so legacy illustrative LabelImage spelling should not silently become actual canonical metadata or guessed graph schema.
+MCP route wrappers/types/draft operations remain backend authority; cookbook does not justify direct saved JSON/source editing for ordinary workflow operations or expose read-only platform-source reference as executable authoring target.
+No novel blocking contradiction identified in these operating constraints; prior A source-bound/schema/identity findings and root MCP context qualifications remain, not hidden by documentation.
+No actual MCP interaction or authorization mutation attempted during this read-only audit.
+
+### Coverage
+
+335reviewed+8classified/354,11pending main:canvas-interactions1377,8historical controls and2currentspecs.
+Next complete canvas gesture/persistence cases and normative deltas, then full historical records; gate remains open and no repair plan release.
+
+
+### Complete-review checkpoint — A-batch-45
+
+### Complete fixture and gesture judgment
+
+Full file includes metadata/seed/workflow helpers, actual drag/body handles, complete CSV reference parser, projection request/response correlation, suite setup/teardown and every catalog/graph/run/data/width/history scenario.
+SeedNumbers identity/type/schema is explicitly inspected; UI creates independent named workflow each case, real sourcecatalog exactrow testids/doubleclick/documentation controls and physical drag/handle connections exercise actual canvas rather than directly invoking its mutation method.
+Some waiters match any accepted draft/query response; subsequent named currentDraft graph/exact visible or source request assertions constrain false completion, but those waiters alone are not proof the intended gesture was accepted.
+Serial describe suppresses remaining tests after earlier failure; root owns future runtime/failure-attribution selection audit, no automatic parallelization proposal.
+AfterEach attaches screenshot/ARIA before API delete on failure; a alreadyclosed/crashed page or attach error can prevent that cleanup, while delete failures/status are swallowed and page is not retired first, existing A101/F163 bounded harness debt.
+All mutations here target suite-owned isolated runtime, not production user-workspace/native actions.
+
+Catalog click toggles actual documentation twice with no nodes, doubleclick creates one actual accepted draft node and checks unchanged viewport transform, real header/output/body pins, selected NodePanel/package and validated backend graph.
+Catalog failed-write case intercepts only first PUT500 BEFORE server application, checks local exactly one node plus visible retry/error and backend baseline graph/revision unchanged, then actual retry200 increments exactlyonce, retains exact node id/valid graph and reload matches.
+This is meaningful client persistence failure/retry evidence; it does not simulate ambiguous postcommit response loss or justify replaying a possibly accepted mutation.
+Separate physical catalog drag asserts near exact target graph coordinates, an independent input gesture contract rather than duplicate doubleclick coverage.
+
+Dynamic Generate→CrossJoin uses actual packages/UI parameter list+column edits and DataFrame handle gestures, checks resolved sensitivity pin, accepted valid edge/config and actual202/completion+exact resulting values0.1/0.2.
+It writes execution policy through API as fixture setup; graph configwetlands is not worker execution proof, because every tool in this chain is actual DataFrameTool and effective platform engine selects Direct.
+Full workflow journey uses actual SeedNumbers/IncrementNumbers menu/catalog/parameter/edge/run/NodeData/Save/Open lifecycle.
+It checks immutable platform execution record backend=direct/workflow/draft revision against actual accepted Run request, then exact eachnumber/label/increment row, saved graph+parameters+edge and reopened accepted graph equality after switch.
+This provides actual graph/compute/result context, not configuration-only execution evidence.
+IncrementNumbers ignores its number argument and transforms upstream numbers; accepting parameter10 while resulting2/3/4 demonstrates persistence of that parameter, not semantic influence of it on compute. A012 dev-schema/fixture limitation retained.
+No published-package certification, worker/PID/Core-only source module acceptance or native viewer inferred.
+
+ControlledDirect failure actually executes chosen fail parameter, checks accepted exactdraft revision/context/backend, failed target/no publishedtarget404, successful upstream exact rows/status and detailed failure banner.
+Changing parameter tofalse accepts nextrevision, second distinct execution id/context, exact complete success rows and reload retained status/result/currentgraph proves recovery without partial target publication.
+Upstream immutable attempt reuse/cache identity/PID are not asserted just because upstream output remains; no stronger cache/worker credit.
+This is an intentionally separate failure journey from happy graph/persistence and data query journeys; preserve causal failure isolation before any measured consolidation.
+
+Filter/sort/page/CSV case actually runs ResultTableFixture, not arbitrary seeded dataframe; tests exact starts_with filter request/count/chip, two sort transitions and exact sorted values/index/source_rows, physical paginator sizes/next/directEnter and allfiltered CSV bytes parsed into expected rows/header.
+Expected deterministic60row reference is independently derived from simple declared formula, so source consumer response and rendered rows/CSV all constrain ordering/index/filter false positives.
+Reference CSV parser supports escaped quotes/newlines/CRLF, but selected fixture has uncomplicated strings; this case does not independently certify every CSV escaping edge (backend tests own those).
+Numeric range incomplete Apply remains disabled with60rows, secondbound enables and actual filter exactsource indexes, Clear restores full60; this verifies rejection/recovery with no false data disappearance.
+First/last paging, every nullable/filtertype, malformed backend responses and stale result projection are not all tested here; B source/counterpart coverage owns those omissions.
+
+Merged/stacked journey actually runs related Seed+Increment and independent60row tool; source exactdata/absolute_rows controls, real Shiftselection obtains backend workflow/source labels/merged columns and exact index provider alignment, checks visible values and path label.
+Keyboard separator5Right produces explicit50px width and one persisted key; independent selection checks real fallback and exact stacked2/3columns+3/60rows, then reselection/reload restores merged width and stackedrows, Reset returns original content width/deletesmanualkey.
+Second identity journey intentionally reuses the SAME node id in another workflow with DIFFERENT source schema, asserts widths donotleak and workflow/source key contains expectedidentities, actual distinctfilter/sort response/rows, restoresfirst width/no secondfilters and resets onlyfirstkey while secondkey remains.
+Reload/reopensecond retains explicitsecond40px width but transient filter/sort resets; exact ascending rows/request confirms temporary query state correctly distinguished from persisted widths.
+These cover actual workflow/table/source identity rather than merely samepage dimensions; inherited root generation versus path-only width keys remains respective source-owner qualification and not proved by this no-delete-recreate case.
+No user resize cancellation/hiddenfontmeasurement/pointerdrag assertion here; separate column-width source/tests remain authoritative.
+
+Undo reloadbaseline test saves real twoGenerate nodes, physically moves each with accepted PUT wait, real CtrlZ twice compares first/second renderedpositions to loadedbaseline and nodecount preserved.
+Redo is onlycount2 after two shortcuts, new A180 below; backend accepted undo draft content/revision and full metadata/control-field integrity are not asserted by DOMpositions alone.
+Physical DOM positions meaningful through same viewport; helper10px tolerance is explicit no exactgraph-coordinate claim.
+No newly established production defect; identified shortcomings are exact test oracle/lifecycle scope, not reason to replace actual strong result/persistence checks with mocks.
+
+#### A-F180 — Low test oracle gap, redo shortcuts can no-op without failing the undo journey
+
+`repeated undo returns moved nodes to the loaded workflow baseline` physically moves two nodes, asserts positions after Undo, then issues CtrlShiftZ twice and asserts only nodecount2 (canvas-interactions1359–1375).
+A redo regression that leaves both nodes at the undo baseline still satisfies final assertion because node creation/deletion was never the history action.
+The test title accurately promises Undo, so this is an unasserted adjacent gesture/coverage gap rather than evidence the claimed Undo contract is false.
+Future bounded repair should record moved graph/positions and assert actual redo positions or remove unsupported incidental redo-credit claims; reuse this currentjourney rather than add another lengthy run/data fixture.
+No browser/test execution or production repair. Full history source already inspected; this report does not claim a failing redo implementation.
+
+### Coverage
+
+336reviewed+8classified/354,10pending main:8historical campaign records and current viewer566/v2spec486.
+Next complete normative current deltas then historical evidence/progress/process controls; no whole audit closure or repairs until root final gate.
+
+
+### Complete-review checkpoint — B-batch-35
+
+#### B-F188 — P3 source Clear response differs from authoritative no-output projection
+
+Execution `commit_node_cache_clear:1769–1778` first computes refreshed statuses with the retained-latest predicate, then rewrites every downstream unexecuted status to out_of_date unconditionally.
+For a never-run chain with no retained downstream output, the Clear response therefore marks dependents out of date while later authoritative draft GET reports them unexecuted.
+The context explicitly documents the authoritative GET distinction: pending upstream is out of date only with a retained latest output.
+`test_clear_derives_downstream_statuses_from_submitted_graph` and `test_clear_propagates_out_of_date_to_downstream` use empty temporary storage and assert the forced response status.
+`test_draft_status_before_any_run_has_no_false_downstream_staleness` calls Clear on a never-run chain then asserts the restarted/read projection is unexecuted, but never compares the Clear response.
+The frontend cache-clear merge consumes that immediate response, so it can temporarily advertise rebuild/out-of-date status and prompt for rebuilding never-produced outputs before a subsequent authoritative refresh changes it.
+This is a two-projection consistency/design seam, not a corrupted record, wrong worker target or observed data loss.
+Existing retained downstream output must still remain deliberately out of date after clearing its upstream; no blanket conversion of all downstream states to unexecuted is proposed.
+Future bounded diagnostic should extend the existing before-any-run test to compare immediate Clear and authoritative read, then retain the existing executed-chain/historical-output case to establish intended consistency.
+No new diagnostic was executed.
+
+#### B-F189 — P3 qualified suite/oracle precision for cache parity and subprocess integration
+
+Cache parity's full207-line module accurately checks validator projection against cache seeded by actual Direct compute under both dev modes.
+Its prose says cached flags match what the engine would observe, but the tests never execute the second unchanged/changed workflow or assert a tool call counter; they establish successful seed→plan projection rather than actual second dispatch avoidance/recompute.
+Existing runtime_cache counter/throwing/selected-record tests and real API two-run flags remain complementary stronger execution oracles, so this is a precision/consolidation candidate rather than a demonstrated cache defect or demand for duplicate broad successful journeys.
+The exact selectors are `test_seeded_cache_reports_executed`, `test_constant_change_invalidates_downstream`, and `test_unrelated_node_stays_cached`.
+Future suite reconciliation should either label the projection scope accurately or add the missing execution distinction to an existing meaningful fixture only when it closes an uncovered invariant.
+No measured runtime gain or test deletion recommendation follows from line count or similar setup.
+
+The761-line real-execution module has only an anyio module marker, despite `test_draft_status_after_clear_survives_backend_restart` creating a new subprocess/app with full library imports.
+That subprocess has check=True/captured output but no timeout, extending B012's bounded-failure/cleanup debt with an exact selector.
+This process/reopen case is a concrete candidate for integration lane classification, while small local DataFrame/cache/compile-race cases need individual applicability judgments; do not blanket move the whole module based on its filename.
+Existing ASGITransport app callers omit lifespan, so API authority/cache tests are meaningful but do not establish startup worker/service teardown (B011 qualification).
+No timing cost or lane speedup was measured here; campaign applicability and ordinary default/full execution remain separate.
+
+### Sound structures and evidence distinctions
+
+Real DataFrame tests run actual host-side transform/cache persistence through library-backed ExecutionManager and routes, rather than mocked successful results.
+Exact source/offset values, row indexes and shifted outputs, cached flags, error/traceback propagation and context identity distinguish those boundaries.
+The selected valid branch retains a missing unrelated tool and asserts that unrelated latest output is absent, strongly distinguishing pruning from silently making the whole graph valid.
+Accepted parameter change uses the same source/offset IDs and actual changed data, unlike the confounded class/path miss fixtures root separately reviewed.
+Draft projection compile-race tests inject intervening accepted revision, same-ID recreation and storage relocation and require a retried correct authority.
+Reopening in a separate OS process establishes persisted draft/cache projection independently of the prior live execution service; no lifespan/native claim is made.
+Autouse fixture resets active Workflow context before/after, but is not shared-manager/log-handler lifespan teardown.
+
+Clear tests seed a public canonical current selection and require its removal, not a legacy directory-name check.
+Corruption test alters logical dataframe content while updating transport digest, proving logical corruption rather than only transport-byte mismatch.
+It asserts safely identified corrupt immutable record quarantine preserves exact corrupt bytes, and historical/sibling/other-workflow healthy records and selections remain isolated.
+Historical current selections for the cleared node are invalidated deliberately while immutable historical record values remain readable.
+Invalid graph/missing tool, semantic bad parameter and compiler failure tests retain the preexisting current selection before any effects.
+Unknown nodes and empty cache clearing are idempotent, explicit selected roots take priority over downstream status, and positional/column dependency axes are distinct.
+The tests do not coordinate an external selection advance during invalidate; A-F030 remains the existing qualified current-pointer race authority.
+
+Stale environment test is explicitly external/integration/serial/slow and uses `run_worker`'s actual Workflow.compute(engine=external adapter) dispatch.
+It asserts exact three values and owned report contents, worker PID distinct from orchestrator, one worker for mapped rows, actual public manager recipe/generation inventory, injected Pixi install failure77, no retained retired workers, successful retry and later matching reuse.
+The injected forwarder failure is labeled fault injection through an actual public provisioning operation; it is not an invented install success.
+Unrelated managed codeserver inventory and an explicitly foreign/unmanaged directory's exact bytes remain unchanged, with refused adoption.
+Restart closes the prior manager, checks no workers/prior PID, launches a new OS process with180second timeout, and compares the preserved ready generation/digest against a new worker PID.
+Normal matching reuse and stale recipe replacement are established; force-rebuilding an already matching generation remains B001's held T1 defect and plan-only repair boundary.
+No nonce/private-directory deletion or force contract weakening is introduced.
+Finally cleanup calls shutdown_all before singleton reset; if the former raises, reset is bypassed, an existing B012 cleanup-chain qualification rather than newly executed contamination.
+Tests' actual worker and public manager evidence remains distinct from GUI progress, desktop/native viewing or complete package compatibility certification.
+
+### Next group
+
+Remaining execution/cancellation/failure/nested/export/stale E2E files, public launcher input and cancellation counterparts, then frozen T1/spec/installed-seam exact content.
+All57 pending inputs remain open; read-only review and repair/test freeze continue.
+
+### Complete-review checkpoint — root-batch-27
+
+### Existing A-F180 reconciliation — actual mixed history has distinguishing redo coverage
+
+The canvas moved-position journey's incidental redo assertion remains weak for position history, but this separate everyday suite explicitly verifies accepted draft nodes, edges, constants and exact revisions through Undo and Redo.
+Bulk enabled-state Undo/Redo also distinguishes both actual accepted booleans; atomic deletion restores exact baseline graph and then redone empty nodes/edges with incremented revision.
+Therefore do not claim global redo coverage is absent, add another broad fixture or erase these meaningful assertions; A180 is a bounded moved-position oracle improvement only.
+Workflow switch test deliberately closes/saves then reopens roots and asserts history reset/no accepted PUT/unchanged draft. It does not establish history retention for concurrently open independent canvases, which belongs to the separate source/session tests.
+
+### Existing B-F188 reconciliation — downstream stale status here is appropriate for retained outputs
+
+Actual first Direct compute produces source/target rows; clearing only upstream preserves readable retained target rows and graph/revision while source404 and dependent out_of_date survive reload.
+GUI rebuild explicitly lists target, accepted rerun keeps exact draft revision and restores exact rows/statuses.
+This is the retained-output case that must remain when resolving the never-run immediate Clear versus authoritative GET distinction; blanket conversion to unexecuted would weaken the supported feature.
+
+### Retained full-file judgments and qualified fixture debt
+
+Helpers inspect actual SeedNumbers/IncrementNumbers metadata, create/statelessly validate/save/open real graphs and poll accepted drafts; legacy schema1 is supported fixture normalization, not new source emission.
+Physical click/shift-click/box selection, catalog drag, dataframe disconnect/reconnect and column pin gestures operate actual browser controls; accepted draft assertions preserve structural IDs/edge semantics and reject column-to-DataFrame no-op with unchanged graph/revision after600ms debounce observation.
+Bulk-enable when already enabled verifies no history entry, no accepted write and unchanged revision/graph; cancellation of destructive actions likewise checks exact unchanged server state, not merely dialog closure.
+Clear refused after an injected precommit draft500 sends zero Clear requests and preserves current output and accepted graph. It does not simulate ambiguous accepted-then-response-lost mutation.
+Rename uses Unicode display label while retaining immutable node/edge identity; duplicate label refusal preserves exact accepted revision/edge and reload. Collapse/enabled persisted booleans remain separate UI fields.
+Failed pointer edge writes expose provisional local graph plus baseline accepted server graph; Retry accepts each exactlyonce, then actual Undo/Redo/reload asserts exact edge identity. Connected column-input failure separately checks label-to-pin behavior against typed image metadata; no image engine runs.
+Corruption journey physically alters the actual selected parquet/CSV, checks cache_corrupt diagnostic and409 query/CSV, API and GUI Run refusal, unchanged immutable run views and retained status.
+Actual GUI Clear request carries nodes/workflow/revision; quarantine exact corrupt bytes survive, healthy target/sibling parquet and historical run/sibling metadata remain byte-equal, reload clears refusal, rerun creates distinct run identity with exact rows while history/sibling stay unchanged.
+Transport-digest corruption here complements the backend logical-corruption case; neither replaces the other. Prefix startsWith in test selectedRecord is a fixture assertion, not proof of production path containment for sibling prefixes.
+These actual Direct compute/record/file checks do not claim Wetlands worker/PID, published package certification or native desktop execution.
+AfterEach DELETE suppresses failures and does not blank the live page; setup for second/inactive roots occurs before try, so an early setup failure can leave owned fixture state. B012 remains qualified harness retirement debt, with no newly executed contamination or measured timing savings.
+Root's complete owned frozen source/test slice is now read; other owners and mutable audit controls remain open, followed by synthesis and independent completeness gate.
+
+### Complete-review checkpoint — A-batch-46
+
+### Current napari specification judgment
+
+The complete ten-section contract separates library/Core portable output requirements from local environment registrations, candidate evaluation, structural preferences and native process ownership.
+Carried v2 snapshots including explicit unknown declarations are authoritative independent of live catalog metadata; legacy normalization does not invent viewer declarations, local installation/default/favorite state remains absent from graph/archive/cache identities.
+Actual library serializer/manifests and exact retained artifact/table/resolver boundaries already fully reviewed supply corresponding source evidence; captured declaration/provider identity is sound, while carried executable dispatch/resource precedence remains A001/A002 and is not made correct merely by a coherent viewer manifest.
+Managed recipes use public Wetlands environment contracts and registration UUID/revision identity rather than private folder guessing; inventory/readiness is passive and does not provision, launch or favorite implicitly.
+Candidate selection preserves independent output requirements, deterministic ranking and registered capability validation, with refusal/retry/foreground explicit launch ownership and no replay across stale identities.
+Per-output preference identity uses workspace UUID/workflow generation/scoped node/output, exclusive atomic favorite CAS and move journal recovery; current backend persistence tests independently distinguish actual storage reopen from intercepted GUI reload.
+Current chooser accepted-response versus operation-finalizer ownership barriers are sound under the reviewed client contract; B166 registry revision and B167 request-event correlation gaps belong to those distinct store boundaries, not another chooser rebinding finding.
+Visible Node Data focus preservation has actual event/DOM browser assertions and a narrow fixed source callback boundary; mocked gestures do not prove native reader/Qt launch correctness.
+The default managed recipe and final real desktop acceptance are explicitly unfinished, which is an honest deferred boundary rather than false compatibility certification.
+OS/application permissions, launcher restart, reader/Qt actual initialization, config and selected-environment process proof require later native evidence; headless mocked API launch counts cannot grant that credit.
+
+A177 requirement-change guidance omission applies to current main too: Section7 calls for compatibility checks after requirement changes, but fully read main MenuBar ordinary Save does not refresh the readiness manifest/report when identities remain the same.
+Held I1 adds stronger import/Open ownership clauses and captured creation form transfer; those improve sibling/superseded guidance ownership but do not supply an ordinary accepted requirement-Save refresh producer.
+The consequence remains stale advisory guidance/prefill, not compute or exact retained-result resolution; no new runtime failure is asserted.
+A176 captured requirement-group transfer omits napari version constraint in current and held forms; reviewer-owned current ImageViewers completion consumes the live selected group after await, A168 exact main-only finalizer extension, whereas frozen I1 captures submitted group/prefill version.
+No second canonical finding is created for these already recorded source/spec disagreements.
+
+### Current v2 specification judgment
+
+The full recursive document defines one canonical graph, immutable structural ports, explicit field/DataFrame endpoint kinds, dynamic DataFrame positions, private nested snapshots, source preparation and explicit application to parents.
+Schema1 input normalization versus schema2 emitted authority, strict unknown-field refusal and library-owned ViewerSpec are coherent with actual model/serializer tests; allowing known-schema ViewerSpec=None remains explicit unknown metadata, not arbitrary malformed-type acceptance.
+Embedded graph owns execution, workspace provenance is descriptive and independently preview/apply guarded, source directory IDs remain stable across edits while actual captured content hashes isolate executable imports.
+Source staging under captured identities before graph insertion, no execution lease for fresh unreferenced files, and execution admission at eventual graph mutation are defensible distinct authorities; existing snapshot/source rollback and incarnation findings remain qualified against real owner/failure paths rather than blanket locks.
+Cross-workflow clipboard promises atomically staged local sources; A096 actual source transport omission and A066 live-catalog hydration/pruning disagree with that intended captured-binding boundary, while same-name unbound ordinary catalog nodes legitimately follow catalog authority.
+Nested compatible bindings, atomic destructive-effect confirmation and late parent identity conflicts are essential behavior; A039 required field fanout admission and A040 mixed fallback findings retain exact source-versus-universal-execution qualifications.
+
+Selected Run compiles the full accepted graph and only filters diagnostics with proven unrelated root ownership; unknown/empty/unresolved/global errors remain blocking, avoiding a hidden partial-graph rebuild.
+Declared worker requirements are floors, concurrency is a cap and neither becomes cache identity; engine selection requires actual compiled tool capability, not metadata/config alone.
+Ordinary DataFrame tools execute in the orchestrator even when graph configuration says Wetlands; actual ProcessingTool process/output evidence is required for worker credit.
+Attached execution snapshots/scoped leaf plans and fixed progress denominators are coherent source contracts, but raw cancellation/physical-worker admission issues belong B/root rather than inferred from this prose.
+Graph/cache/live retained status are separate from historical execution records, and draft GET cache reprojection explicitly preserves durable revision/content; A030 current-selection Clear continuation is a distinct frontend owner gap.
+
+Modern table/result/viewer identity binds public run/node/result/record before projection; explicit legacy unpinned fallback is limited to absent provenance, malformed-present/corrupt records refuse without raw file/CSV fallback.
+Latest is a disposable per-node projection potentially mixing runs; workflow-with-results pins one successful run and is intentionally a non-importable platform bundle with nested importable workflow archive.
+Workflow-only export save barriers versus results-only read behavior, staged marked desktop folder replacement, workflow-local results path and definition-only duplication retain distinct safe contracts.
+A164 late export continuation and generation-deferred lifecycle A004 are client ownership omissions despite the correct intended invariant, not evidence these export format distinctions are unnecessary.
+
+Trusted Python authoring is a materialization operation with immutable-byte preview/apply, not Run-time import; the ordinary webapp guard is enforced from configured mode (root's corrected ROOT002 scope), so mutable settings does not establish a Python staging bypass.
+Editor mode A106 is a separate route boundary; no conflation with the retained Python guard.
+Integration settings remain platform-owned and no package executable frontend schema is introduced; generated OpenAPI is normative, acknowledged handwritten draft debt is transitional rather than legitimate second authority (A006).
+Demo install is explicitly new-root/idempotent/canonical-provenance based; no implicit package install or overwrite of user-edited recognized templates, actual scientific/package owners supply separate capabilities.
+Files desktop paths remain local references and webapp selections resolve explicit managed files, with mutual exclusion and one graph edit; ROOT024 late canvas owner and ROOT026 name-versus-class authority qualify actual consumers without declaring native picker behavior executed.
+
+### Coverage and next dependency batch
+
+338reviewed+8classified/354; all8remaining rows are human-authored archived campaign evidence/issues/plans/progress/start controls and will be read, not excluded merely because historical.
+Review historical chronology and exact prospective/passing/deferred/native evidence distinctions next, preserving current comprehensive freeze and all held source hashes.
+This is owned-scope progress only; final whole audit and repair gate remain root-owned and open.
+
+
+### Complete-review checkpoint — B-batch-36
+
+### B012 existing suite-lifetime extension and consolidation candidates
+
+Execution lifecycle source/selected tests clean workflows only at successful fallthrough and suppress deletion failures.
+An earlier assertion failure retains the created workflow; unique per-browser timestamp names mitigate collision but not accumulated state/cleanup review.
+The stale environment replacement test holds real provisioning at a controlled release boundary and has no test-local finally that releases the gate, drains execution and cleans its workflow when a screenshot/status assertion fails.
+The failure/retry and incompatible recipe journeys also leave their created workflows; runner/backend teardown may clean the disposable root, but that is separate from per-case physical-lifecycle release and must be made explicit before stronger isolation credit.
+These are existing B012 cleanup-chain/controlled-fixture extensions, not new product lifecycle failure reproductions.
+The cancellation WorkerControl nextStart waiter has no per-wait deadline, while the failure-rerun copy has a60second deadline and removes timed-out waiters.
+Both local server listeners are acquired before the main try/finally, and socket JSON callbacks assume complete valid trusted worker protocol without bounded pending text/parse failure handling.
+Trusted test-only loopback workers and the global Playwright timeout mitigate normal reachability; a failed worker/listener can still produce less bounded failure/cleanup than the explicit polls imply.
+Main cancellation/failure bodies do release, drain, delete and close under nested finally, which is materially stronger than the stale fixture and must be retained.
+Future suite cleanup should reconcile one controlled worker helper with explicit ownership/timeouts rather than merging away distinct failure/cancel/progress oracles.
+No runtime cost or measured speed improvement is claimed.
+
+### Sound witnesses and precise acceptance boundaries
+
+Execution lifecycle's first local setup test deliberately intercepts retained execution HTTP list/detail with setup and numeric progress snapshots.
+It proves UI setup text/no false numeric progress, periodic detail refresh and correctly rendered numeric33percent, not actual installation or real worker progress.
+Its critical source test performs real GUI workflow creation and API-seeded executable source, actual GUI Run202, backend success/node executed and visible node-data geometry; it does not assert source values itself.
+The selected-branch test supplies the complementary stronger data oracle: accepted invalid unrelated missing-tool branch, exact selected request with accepted draft/no inline graph, exact planned IDs/names, exact three rows and no unrelated record404.
+A second selected run must have a distinct execution ID, all cached flags and unchanged exact values; this is not merely an empty-success assertion.
+The source-only runtime remains host DataFrame computation, not an isolated ProcessingTool PID witness.
+
+Cancellation test actually holds a sequential mapped ProcessingTool through a loopback control event, verifies worker PID differs from backend, genuine task/row progress and partial1/2 node count.
+It reloads while running and restores exact execution/workflow/draft identity and counts; injected stale/malformed events are explicitly browser dispatch tests, with a matching event positive control.
+It checks Save/Clear mutation controls and accepted draft equality while held, then requires both cancellation-observed and acknowledged signals before idle and worker record404.
+No failed/cancelled partial worker record is credited merely from a UI stopped banner.
+The rerun reuses completed source cache, requires distinct execution identity and actual scoped running/progress/completion messages, exact worker values/files and rendered table cells.
+Those literal worker outputs independently support the later table projection, rather than comparing two only-derived arbitrary displays.
+Reload restores successful planned counts and identity, but the ordinary normal whole-workflow mode/requested-target fixture does not cover B186's selected/retry intent omission on fresh reconnect.
+Physical callback/writer drain and manager ownership source remain separately reviewed; no general arbitrary-cancellation or native certification is inferred from a cooperative worker acknowledgment.
+
+Failure-rerun test exercises actual remote tool failure, exact preserved traceback/error category, one unread error history row, one attributed backend log, and absence of a partial worker record.
+GUI correction must persist a higher accepted draft revision with multiplier4, and subsequent GUI Run must use that accepted revision/no inline graph and a new execution ID.
+Exact row values/PID set/files and cleared runtime error distinguish successful recovery from a merely hidden failure.
+The second case combines an exposed root output with Group/Delete refusal during the real run, no draft mutation, later Group/Undo/delete/save/reopen graph equality and removed interface/edges.
+This adds accepted graph editing/undo persistence, not duplicate successful worker execution without an independent contract.
+No parallel scheduling, native viewer launch or desktop bridge is exercised by these sequential web journeys.
+
+Stale recipe journey invokes actual public fixture provisioning, then GUI Run into a managed existing stale generation with visible update screenshot and browser reload while setup remains held.
+It requires new generation and recipe digest, exactly one update event and replace authorization, retired old worker set no longer alive, actual Pixi installed progress step and exact owned files/values/PID inventory agreement.
+A Clear forces real later processing rather than cache-only success, and the second Run must retain the exact same environment identity/worker list and no additional replacement.
+Injected Pixi replacement failure is explicitly fault injection through actual public provisioning, with failed result/no worker record, visible logs and explicit GUI retry recovery.
+Separate incompatible Core fixture verifies GUI refuses submission, direct API422 identifies environment_incompatible, and full environment inventory/preparations remain unchanged.
+Current authoritative Core recipe compatibility remains strict; no old Core seed or changing the essential force-Recreate requirement is inferred.
+These files establish test witnesses for stale replacement, current reuse and failure recovery, not B001's still-held forced rebuild of a matching recipe.
+No newly executed acceptance, desktop/native GUI credit or whole-codebase completion is claimed.
+
+### Next group
+
+Nested execution, result exports and managed UI E2E with public launcher input/cancellation counterparts, then installed authority and frozen held T1/spec inputs.
+All53 remaining B inputs remain pending; audit and all repairs/tests are held.
