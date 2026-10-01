@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 1189 complete (1051 reviewed / 138 classified) / 610 pending, with 426 identified findings.
+Current checkpoint: 1,799 inputs / 1292 complete (1153 reviewed / 139 classified) / 507 pending, with 463 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -4513,3 +4513,517 @@ The socket has30s per-I/O timeout, but continued unrelated events can keep the e
 The CI job30minute timeout limits the whole job, not this request's diagnostic bound; no actual hang or adversarial DAP claim is made.
 Future smallest correction:give the existing helper a total request/event deadline and bounded useful pending diagnostics, while preserving exact response sequence/success and real debugger reconnect/disconnect oracles and client teardown.
 Do not weaken expected messages, retry away a failure or fragment the coherent real environment setup into redundant download fixtures.
+
+### Complete-review checkpoint — B-batch-20
+
+#### B-F143 — P2 source defect: accepted repeated selected columns break scalar projection
+
+`models/data_table.py:DataTableSource.columns` accepts repeated names.
+`data_table_projection.py:186–202` selects with `dataframe.loc[:, source.columns]` without uniqueness validation, then the actual ResultStore type helper calls `_infer_series_type(df[column])`; duplicate column lookup returns a DataFrame rather than the required Series, and its `.dtype` path is invalid.
+Even a fake type helper that bypasses this failure leaves `_build:331–333` obtaining a Series from `row[column]` rather than a scalar; stable column IDs also repeat.
+The router catches only declared projection/not-ready errors, so this accepted selection can escape the advertised typed failure contract.
+A supported GUI producer can generate this shape: `DataTablePanel.vue:entriesForNestedWorkflow` appends each exposed source column, while the public Workflow output declaration guards unique port names/IDs but permits two ports to expose the same source column.
+The alias dictionary then retains only the last name, while the column-filter list contains duplicates.
+This is a source-traced causal path, not an executed failure.
+Existing selectors `test_parent_values_expand_to_finest_selected_lineage`, `test_merged_columns_use_retained_viewer_snapshot`, and router `test_query_validates_sources_and_resolves_workflow_storage` do not distinguish repeated internal columns or two exposed aliases.
+Future decision: define whether same-column exposure yields one consolidated field or distinct alias fields, and guard repeated direct selections with a typed refusal or explicit scalar-safe representation.
+Retain legal repeated interface exposure, captured identities, source-row mapping and ordinary lossless fallback.
+
+#### B-F144 — P3 presentation/export risk: collision qualification can still leave identical CSV headers
+
+`data_table_projection.py:298–310` qualifies colliding base labels with caller-provided source labels, which are not unique.
+Two distinct nodes sharing a display label and column name still produce identical final labels; two aliases within one source may do the same.
+`csv:143` replaces stable internal IDs with those labels and exports ambiguous headers, despite the JSON response retaining unique source IDs for ordinary distinct columns.
+The actual panel uses node display names and nested parent labels, so equal labels are plausible; no guarantee of unique display names was found in this boundary.
+`test_colliding_labels_are_qualified_and_sort_happens_before_paging` uses different labels Input/Result and cannot distinguish this case.
+Future action: specify final unique human-readable headers using a stable source discriminator while preserving ordinary chosen aliases.
+No claim of data-row loss or wrong result identity is made.
+
+#### B-F145 — P2 lifecycle source risk: settings continuation registers after panel unmount
+
+`DataTablePanel.vue:276–287` awaits settings, then changes preferred page size, initiates projection/stacked fetches and registers the Dockview visibility callback.
+`onBeforeUnmount:302–305` disposes only the listener that already exists; if unmount happens while settings are pending, a later callback is installed after cleanup without an alive/registration fence.
+The dataTable store has per-canvas release/request fences for already-started HTTP responses, which are sound and mitigate stale commits; those do not dispose a newly installed panel listener or bind this late continuation to the mount-time canvas.
+The continuation reads active target state after the await, so it may initiate an unnecessary request on a newly active context.
+This is not an executed registration leak or proven cross-workflow data overwrite.
+The panel's owned test is import-only; eventual distinguishing coverage must defer settings until after unmount and assert no registration/refresh.
+Future action: preserve current visibility refresh and per-canvas store fences, add only the panel lifetime/target guard needed by the asynchronous continuation.
+
+#### B-F146 — P3 scalability/test-design candidate: pagination bounds payload, not projection work
+
+Both async routes invoke synchronous source loading, full projection and filtering/sorting directly, and CSV serialization runs on that event-loop thread.
+`_build:277–279` compares each anchor row against candidate rows; same-level large anchors can require quadratic lineage work before a page is selected.
+All projected cells are rebuilt before pagination; collision counting also rescans the label list.
+This is an unmeasured responsiveness/cost risk, not a benchmark result or permission to impose new semantic row limits.
+The default-page route oracle uses 300 rows and proves a 250-row response, not bounded CPU, file loading or event-loop progress.
+Future investigation should measure representative large data and preserve safe alignment, full CSV semantics, captured records and stable sorting; optimize only demonstrated cost.
+
+#### B-F147 — P2 test-oracle gap: named recursive panel test asserts import only
+
+`frontend/src/components/panels/__tests__/DataTablePanel.test.ts` is fully read: eight lines import the component and assert truthiness.
+It has no recursive output graph, mount, request, scope, alias or lifecycle assertion despite its describe/test names.
+Backend service tests strongly distinguish exact identity capture and no-loss lineage fallback; route tests use MagicMock legacy fallback and verify endpoint projection/error contracts, not actual immutable-record verification.
+Those tiers remain useful distinct oracles and are not redundant merely because sample rows overlap.
+Rename the import smoke to its actual guarantee if retained; defer targeted recursive/lifetime/alias coverage until implementation/test execution is released.
+No overall suite runtime gain is claimed.
+
+
+### Complete-review checkpoint — B-batch-21
+
+#### B-F148 — P3 maintenance/test-architecture candidate: retain branch distinctions while consolidating repetitive setup
+
+The source and column-bound SHM modules repeat durable manifest, cache execution counter, fresh segment, corrupt asset and invalidate scaffolding.
+Those branches are not interchangeable: source invocation normalization, mapped input/index handling, and Path|SharedArray union ownership need independent coverage.
+Likewise source/DataFrame cache/progress cases test different engine publication paths and should not be removed merely because their assertions resemble each other.
+A future table-driven helper could share manifest/identity assertions while retaining explicit test IDs and branch-specific entry/oracles.
+No runtime measurement or authorized deletion accompanies this candidate.
+`tests/testkit/runtime_cache.py` retains broad F401-suppressed imports formerly used by monolithic tests, repetitive blank lines, and many exported private helpers; narrow fixture responsibilities may reduce maintenance ambiguity.
+The source-processing module's opening 'split from' text names itself rather than its real historical parent, a low-priority provenance/comment correction.
+The `test_dataframe_tool_parameter_change_creates_distinct_result_record` nonempty-set assertion adds little to two unique current paths; strengthen intended key distinction if retaining the assertion rather than claiming a new behavior defect.
+
+### Existing B-F117 — explicit SHM ownership remains absent from these test lifetimes
+
+The fully reviewed helpers call Core `create_shared_output`, whose public contract closes the local handle but deliberately does not unlink the segment.
+The reviewed source/column tests open and close descriptors, create additional segments on cache rehydration and never explicitly unlink their resulting descriptor names.
+Root/integration fixture inventory already traced has no per-test SHM owner cleanup for this group.
+Python's process resource tracker may remove registered segments at process shutdown; that is different from bounded per-test lifetime and can accumulate resources during a long suite.
+This is an extension of the existing B117 test cleanup finding, not an executed leak count or a proposal to invalidate user-owned results automatically.
+Future tests should explicitly own cleanup of the names they create, including assertion-failure paths, while preserving the product's descriptor lifetime contract.
+
+### Existing B-F134 — Direct shared-memory success does not exercise external task encoding
+
+`test_source_shared_array_processing_tool_publishes_durable_asset_and_rehydrates_hits` and its column counterpart actually consume a rehydrated descriptor, assert array content and a deliberately failing file-reader fallback.
+They correctly prove the Direct pipeline retains typed descriptor values and persistent NPY assets.
+Every workflow in these two modules explicitly uses `engine='direct'`; their successful downstream consumption bypasses the public external `encode_processing_task` `asdict` seam underlying B134.
+Do not discard these tests or turn their guarantees into a Wetlands worker/codec certification claim.
+A future exact external typed-SHM diagnostic belongs to the recorded repair gate, not this audit.
+
+### Other existing risks remain scoped
+
+The coordinated DataFrame publisher tests use Barrier(2), two futures, bounded barrier waits and bounded result calls, and assert actual installed records, selected winner and conflicts.
+These are stronger race oracles than timing-only equality tests.
+B012's executor context can still await an unexpectedly stuck worker when unwinding a timeout; no actual hang was executed here.
+B067 module/qualified-class identity equality is not distinguished by these sample tools and parameters; source hashes already participate, as corrected in B19.
+B068/A-F030 external pointer coordination remains separate: recursive provenance deliberately removes a provider selection within trusted Direct tool code, then asserts explicit nonreusable semantics rather than attempting concurrent replacement ownership.
+B083 durable-directory fsync/crash semantics are not established by normal file assertions.
+B079 transient finalizer correlation/reterminal guards remain separate from tested ordinary failure diagnostics.
+
+
+### Complete-review checkpoint — B-batch-22
+
+#### B-F149 — P2 documentation/source-contract gap: shared-memory guide overstates zero-copy and understates durable caching
+
+`docs/source/how-to/shared_memory.rst:4–6` presents inter-tool shared memory as avoiding intermediate disk writes and markedly faster.
+The current reusable ProcessingTool path materializes returned SharedArray contents into owned NPY assets, persists the record, and rehydrates a newly allocated segment on cache load; full Direct runtime-cache tests actually assert both physical assets and fresh segment names.
+The guide's final recommendation to prefer files for results that persist across runs/caching is therefore misleading if read as lack of durable SHM cache support.
+Zero-copy attachment remains true for a live descriptor view, not an unconditional description of every publication/transport/cache transition.
+No speed comparison has been measured in this audit.
+The guide explicitly says the block persists after producer context exit, but does not describe who unlinks it or how an application should bound descriptor lifetime; this reinforces existing B117 rather than proving every retained descriptor is leaked.
+Its default Wetlands workflow example also does not warn about the currently source-traced typed input encoding B134; successful Direct examples/tests do not certify external codec behavior.
+Future documentation should keep supported typed shared arrays and durable caching, distinguish zero-copy attachment from durable materialization and actual transport, and document ownership without inventing auto-unlink behavior or weakening required compatibility.
+Existing exact oracles: `runtime_cache/test_source_shared_memory.py::test_source_shared_array_processing_tool_publishes_durable_asset_and_rehydrates_hits`, column-bound counterpart, and Core worker-protocol execution tests; these distinguish Direct behavior and codec seams separately.
+
+
+### Complete-review checkpoint — A-batch-27
+
+#### A-F142 — Medium, source-established stale rescan authority; qualified ordinary refresh impact
+
+Tool_registry.py67–176 optionally replaces the library registry and iterates current disk packages, but never clears absent platform _tools/_packages/_sources; missing store returns with all old platform metadata retained.
+A removed package/class or switch to an empty store can therefore leave advertised metadata whose class binding no longer exists in the fresh library registry.
+Package installer no-watcher install/uninstall fallback calls this rescan; normal uninstall explicitly forgets its requested package first and startup scans a fresh service, mitigating those ordinary paths.
+Same-version loader caching also means scan alone does not execute changed source; test_scan_tool_store_refreshes_existing_entries explicitly pre-unloads and cannot assert that broader contract.
+Retain intentional active/newest catalog policy, failed-version diagnostics and workspace custom entries; future reconciliation should establish authoritative scanned package scope and remove only absent entries it owns.
+No removed-store/rescan reproduction or execution result is claimed.
+
+#### A-F143 — Medium, source-established inactive reload restoration lies outside rollback boundary
+
+Tool_registry.py697–740 restores prior state for errors in changed-version load/index, but active-version re-registration at746–768 occurs after that try and catches FileNotFoundError only.
+If an inactive reload succeeds and restoring the active class/schema raises a different error, the operation fails after replacement metadata/classes have already been published, without restoring the previous active snapshot.
+If the active directory is absent, the warning path can return a successful inactive reload while PackageInfo still names the original active version.
+Current test_active_version_preserved_across_inactive_reload supplies a valid unchanged active package, and test_reload_failure_rolls_back_to_prior_snapshot fails the edited version before this restoration phase.
+Retain genuine syntax-failure rollback/public resolver identity and intentional inactive package loading; future transactional authority must encompass restoration or explicitly report/retain an unavailable active state.
+This is a traced failure boundary, not an executed failure or universal corruption claim.
+
+#### A-F144 — Low/Medium, qualified multiple executions/reads of one custom source are not a captured batch
+
+Tool_registry.py308–311/408–431 first executes a source to discover classes, then320–363 reads/executes it again independently for every class.
+reload_custom_tool434–461 uses the same sequence in a staged registry.
+Trusted source import side effects therefore run repeatedly even on one discovery/reload, and a file edited between these reads can produce discovered names and class metadata from different byte revisions.
+The stage prevents publication on ordinary earlier failure and GUI templates usually define one class; no dynamic edit or harmful source side effect was reproduced.
+Current custom tests use stable single-class sources and distinguish timestamp freshness, not one immutable multi-class byte snapshot.
+Retain exact-byte compile and all-class staging; future capture should own one source revision/module plus discovered class identities before publication, without broad import/source redesign during this held audit.
+
+#### A-F145 — Low/Medium, source-established custom sys.modules lifetime leak; retained class dependencies qualify cleanup
+
+Tool_registry.py328–339 publishes a content/path-qualified module; it removes it only when exec itself fails.
+The missing requested class at340–342 and later metadata serialization/registration failure leave that module published, and successful repeated source edits accumulate distinct hash-named modules without a retire protocol.
+Discovery modules do have finally cleanup, so that path is sound.
+Retained class/module globals and already captured workflows can legitimately need prior origins; blindly deleting all old modules would violate those lifetimes.
+The gap is no ownership/retirement boundary and failure cleanup after execution, not a claim every retained historical class is garbage or that small normal edits exhaust memory.
+No current custom selector inspects sys.modules after missing-class/metadata failure or a released owner sequence; future cleanup must separate failed unpublished state from intentionally retained captured classes.
+
+#### A-F146 — Medium, qualified catalog active-version acknowledgment can diverge from usable class authority
+
+set_active_version537–602 records requested active_version on FileNotFoundError despite an unsuccessful class refresh; this production branch is explicitly justified by fake tests rather than a supported unavailable-source state.
+forget_package798–826 removes a selected installed version but does not pick/clear active_version when other versions remain; its display metadata and library binding may instead be absent or from another remaining class.
+Successful switch tests and installer explicit forget mitigate common operations; no actual uninstall/public UI consequence is claimed until B reconciles package lifecycle callers.
+Retain versioned captured-workflow authority separately from the ordinary palette choice.
+Future acknowledgment must describe actual usable/unavailable active identity rather than imply a class changed because only a preference string changed.
+
+#### A-F147 — Low, private registry bridge and partial environment wire are maintenance/contract debt
+
+Tool_registry.py828–865 directly writes library private _key/_classes/_metadata, duplicating canonical LibToolMetadata construction and module-key conventions alongside register_package.
+The class-only platform palette and four-part library registry are distinct useful authorities; collapsing them or rewriting source identity is not authorized.
+Environment metadata223–230 carries name/dependencies but excludes allow_flexible_versions, while the snapshot test intentionally drops environment entirely.
+Actual engine receives the resolved class environment, so this omission alone does not establish wrong execution policy.
+Future contract work should document palette environment summary versus full execution authority and prefer a public already-imported-class registration API if one becomes available, with strict tests for required display fields.
+No broad refactor or new environment compatibility claim follows from this debt.
+
+#### A-F148 — Low, source-established weak snapshot test oracle and implementation-coupled overlap candidate
+
+Test_tool_registry.py638–652 accepts GaussianSmooth in either version snapshot and conditionally asserts each package_version; it can accept the wrong selected version or simultaneous entries despite the fixture expecting newest-only metadata.
+Test_no_leaked_sys_path_after_repeated_reloads asserts at most one entry although its prose says exactly one; other real class loads mitigate this weakened presence oracle.
+Test_reload_package_uses_unload_then_load_primitives asserts internal call choreography, overlapping but not identical to actual class/schema/public-resolution tests.
+Prefer tightening/reusing the expected catalog/identity assertions before adding duplicate end-to-end journeys; deleting the internal spy remains a measured-suite decision, not immediate authorization.
+No test was run and no currently failing result is claimed.
+
+
+### Complete-review checkpoint — A-batch-28
+
+#### A-F149 — Medium, source-established in-flight watcher reload ownership gap across stop/suppress
+
+Tool_hot_reload.py381–392 creates _do_reload tasks without a retained task set; _do_reload399–404 checks _stopped only before executor work, and reload_and_broadcast412–464 broadcasts after that await without another shutdown/suppression ownership check.
+stop137–193 cancels polling and pending TimerHandles and stops the observer, but neither waits for nor retires an already-running registry reload task.
+suppress197–229 cancels timers and records snapshots but does not acquire/drain _reload_lock or block an already-started executor mutation.
+Thus timer cancellation alone cannot establish that stop has ended registry mutation/broadcasts, or that installer suppression excludes concurrent source reload against its disk publication.
+The package install operation lock serializes install operations with each other, not this watcher lock; B owns complete installer/caller reconciliation before any universal mutation conflict claim.
+Ordinary ASGI shutdown may drain some application tasks, but these are private create_task background tasks rather than explicit request-owned work; no process crash or reproduced race is claimed.
+Current test_stop_cancels_pending_timer stops before firing, test_stop_returns_when_observer_stop_blocks controls only Observer.stop, and suppress tests use no held in-flight executor.
+Retain the bounded native observer wait, serialized watcher reload and synchronous fresh-package acknowledgment; future lifetime contract must separate physical executor completion from admission and event publication, not blindly cancel a future and assume its worker stopped.
+
+#### A-F150 — Medium, source-established arbitrary FileNotFound reload error misclassified as full package removal
+
+Tool_hot_reload.py416–439 catches every FileNotFoundError from registry.reload_package as absence of the package/version, forgets that package and broadcasts tool_removed for prior names.
+A trusted package module can raise FileNotFoundError for a missing auxiliary input/resource during import even while the package directory exists.
+ToolRegistryService reload first restores its prior class/meta on load failure; the watcher subsequently discards that retained catalog as if the package were deleted, defeating the intended load-failure preservation.
+The private helper's filename category does not identify which resource is absent; no required disk-presence verification or structured PackageMissing discriminator occurs here.
+Current test_full_package_removal_emits_tool_removed_per_class fakes precisely a missing-package exception, whereas test_reload_failure_broadcasts_system_error uses RuntimeError; no existing distinction covers a still-existing package with a missing internal dependency.
+Retain genuine deleted-package removal and useful syntax/system diagnostics; future classification should follow the actual package directory/source authority rather than broad exception type.
+No package import or failure was executed.
+
+#### A-F151 — Low/Medium, qualified accumulated source-root ownership and polling retirement debt
+
+Tool_registry.py484–496 adds workflow source root→tool-name sets but has no remove/replace operation when graph/workflow/source identity changes or workflows are deleted.
+Hot_reload.py118–134 periodically hashes all remembered owned source roots, and319–335 emits names for any file under those roots before Python-only package filtering.
+A previous tool name can remain in a source-change notification, and repeated live workspace changes accumulate watched roots/schedules; app.py current-workspace cache intentionally retains stores but no explicit source-watch owner retirement is established.
+Catalog/frontend revalidation may ignore absent names or correctly reconcile active projections, so no stale execution result or unintended graph mutation is asserted here.
+Current tests cover source-only root recovery and deletion, but no removal of an owned workflow/source reference and subsequent old-root edit; source roots are not identical to dataset paths and the scan exclusions are retained.
+Future ownership should link watch subscriptions to retained workflow/draft/session identities and replace/remove only retired registrations, preserving historical captured sources still in use.
+No memory/runtime measurement or native watcher was run.
+
+#### A-F152 — Low/Medium, source-established concurrent-suppression test claims more than its oracle
+
+Test_tool_hot_reload.py840–883 joins the bouncer and asserts only not t.is_alive; it does not retain worker-thread exceptions, capture asyncio unhandled task errors or issue a final positive event and await response.
+The prose says no RuntimeError and service responsive, but async/thread exception reporting can occur separately while that final assertion still succeeds.
+Existing deterministic suppress/resume tests retain positive event/batch oracles, so this test is supplemental stress rather than sole basic behavior coverage.
+A future correction should reuse a held/captured boundary and positive final response instead of adding generic repeated sleeps or another opaque stress journey.
+No assertion failure or flakiness was reproduced.
+
+#### A-F153 — Low, loaded-source tests are textual preconditions, not executable/cache provenance oracles
+
+Test_dev_mode_source_change_observable_in_loaded_class947–1012 compares inspect.getsource strings before/after file edit, and sibling-helper test1015–1073 compares unchanged class text while editing an unused helper.
+inspect.getsource reads source text from the module file; it does not establish the new class executes edited bytecode, that an invoked sibling dependency changed or that a compute/cache admission hash changed.
+The tests explicitly present themselves as preconditions, so their narrow source-text oracle is valid; comments implying authoritative CACHED status and frontend reconciliation exceed what they execute.
+B owns actual source/signature/cache authority and A-F026 separately records timestamp/size stale pyc paths; no new duplicate runtime cache defect is created here.
+Future evidence should label these as textual-source boundaries and extend an existing actual cache/source test only if executable provenance is required, retaining source-only construction without external environment provisioning.
+
+
+### Complete-review checkpoint — reviewer-batch-30
+
+#### reviewer-F062 — P2 convenience/loader coercion bypasses original public input refusal
+
+ClusterEnvironment.from_uv_project:181–183 and from_pylock:217–219 call tuple on groups/extras before __post_init__/_string_tuple can reject scalar strings.
+A mistaken string such as gpu becomes three valid character selections; later adapter preflight may reject nonexistent names, but that does not restore the intended local shape refusal and could select different existing groups/extras.
+ParslConfiguration.from_file:488–490 similarly applies truthy defaults and iterates include before validating its original shape; a scalar path string becomes character paths and a dot character can become a broad cwd include.
+Falsey invalid kwargs/ref containers are silently replaced with {}, so convenience factories differ from their stricter direct value constructors.
+No incorrect install, sensitive archive or remote action was executed; downstream complete snapshot/deployment review is pending and may further mitigate capture scope.
+
+The strict from_dict loaders also convert root/results_root/cluster setup/existing Python paths to PurePosixPath before normalized_cluster_path checks the original string, erasing dot/repeated-slash noncanonical spelling; .. and double-leading slash remain refused.
+This is wire-canonical/refusal drift, not a claimed containment escape.
+Existing test_cluster_environment_round_trip_rejects_non_array_selections protects the wire list shape but does not pass scalar groups/extras/include to convenience factories; existing normalized path test exercises the direct factory, not these loader paths.
+Future smallest action:preserve and validate original types/spelling before normalization, extend those existing oracles, and retain supported tuple/list, Path/PurePosixPath, adapter and exact-schema round trips.
+Do not restrict legitimate includes/adapters or invent a new config schema just to repair pre-coercion validation.
+
+#### reviewer-F063 — P2 setup snapshot can block before rejecting a replaced special file
+
+SetupScript.from_file:96–104 checks a path is regular/nonsymlink, then opens it O_RDONLY (plus optional O_NOFOLLOW), and only afterward checks descriptor identities.
+If a same-user filesystem change replaces it with a FIFO between stat and open, the open may wait before reaching fstat/final identity refusal.
+The64KiB read budget and final identity comparison do not protect this earlier blocking point; a before-open symlink is correctly refused on nofollow hosts.
+This is an unexecuted local snapshot concurrency risk, not a remote attack, hostile-code isolation promise or actual hang.
+Existing test_setup_script_rejects_unsafe_local_sources tests already-present FIFO/symlink only.
+After the full gate, establish a bounded controlled source-swap oracle with explicit descriptor/process cleanup, then preserve exact source bytes/identity and regular-file refusal without private deletion or weakening trusted-code boundaries.
+
+#### reviewer-F064 — P4 cluster value fixture assumes POSIX FIFO capability
+
+The same test_values.py:152–162 unconditionally creates os.mkfifo and a symlink.
+It has no local capability/OS guard, so its fixture requires POSIX FIFO and permitted link creation even though the tested shape/source refusal is otherwise an ordinary fast unit contract.
+No non-POSIX test run or supported-platform failure is claimed; the library CI's existing host scope and any cross-platform release selection must be reconciled before requiring a portability change.
+Future proportionate decision:make special-file capability explicit or split only that fixture precondition while retaining actual refusal assertions; do not classify a missing FIFO fixture as a passed refusal.
+
+
+### Complete-review checkpoint — reviewer-batch-31
+
+### Existing B-F089 corroboration — invalid-input errors can escape their advertised stable protocol category
+
+protocol._decode_json:130–141 invokes json.loads before checking depth/value budgets and catches only UnicodeDecodeError/JSONDecodeError; parser RecursionError/deep-integer conversion errors can precede its own structured tree refusal.
+GatewayResponse's diagnostic enum membership:336–339 likewise assumes hashable scalar input before category wrapping, so malformed JSON array/object values can raise raw TypeError.
+Strict UUID/request-version/shape/finite/duplicate checks still fail closed before operation admission, and current request bool-version is explicitly rejected; do not transfer the looser B DTO bool claim to this constructor.
+This extends the existing canonical B-F089 malformed/deep JSON exception seam, not a new finding or demonstrated accepted unsafe command.
+Existing test_request_decoder_rejects_ambiguous_json and complete diagnostic refusal are meaningful; future smallest extension is to their missing structured depth/enum distinction after the gate, while tracing actual client error translation before asserting end-to-end impact.
+
+### Existing reviewer-F062 extension — public report collection loaders erase original shapes
+
+ClusterValidationReport.from_dict:327 tuple-coerces verified/declared/unverified facts before the constructor validates strings; a scalar distinct-character string becomes multiple facts.
+ClusterCleanupReport.from_dict:429 similarly converts a scalar removed identity into character identities, and ClusterCleanupCandidate.from_dict:370 does the same for reasons/consequences.
+These strict JSON-safe values preserve unknown-key refusal and typed booleans/digests, but do not prove original wire-array shape; downstream gateway/client admission is still pending review.
+GatewayRequest.create:245 also silently defaults a falsey request ID before strict UUID validation; operation_id and stable mutation digest remain separate, so no replay or exactly-once failure is inferred from that default alone.
+Future action remains original-shape validation before convenience coercion using existing value round-trip/refusal tests; avoid new schemas or removing supported collection inputs.
+
+#### reviewer-F065 — P3 advertised RFC3339 validation uses a broader ISO parser
+
+reports._utc_timestamp:80–91 requires only string suffixZ plus datetime.fromisoformat and UTC tz identity.
+That parser accepts forms such as a space date/time separator or compact ISO date not matching the advertised RFC3339 grammar; actual expiry arithmetic still uses the parsed UTC time.
+Existing test_reports_reject_inconsistent_or_malformed_state checks tomorrow, not a well-formed broader ISO spelling.
+No expiry bypass, clock race, accepted scheduler allocation or malformed-time runtime result is asserted without execution.
+Smallest future reconciliation:preserve valid UTC RFC3339/fractional timestamps and enforce their original grammar, extending the existing report refusal/round-trip assertion; do not narrow valid timestamps or remove expiry semantics merely to match a parser.
+
+### Complete-review checkpoint — root-batch-16
+
+#### ROOT-F083 — P2 source-established global automatic-name reset can replace an outer graph node
+
+Node._get_next_name uses a process-global dictionary protected only during increment; _reset_name_counters replaces that dictionary on every Workflow.__enter__.
+Workflow.__exit__ restores the active outer workflow but does not restore that outer counter dictionary.
+Node.__init__ checks duplicate names only when the caller supplied name explicitly, and Workflow._register_node assigns directly into _nodes[node.name].
+Thus an unnamed Foo_1 in an outer context, an entered/exited inner context without a Foo, and a second unnamed outer Foo produce the same Foo_1 key and replace the first map entry.
+References to the first object can survive outside the authoritative node map; concurrent independent workflow contexts also share the reset authority despite their context-local active workflow.
+This is a source-traced ordinary supported-context sequence, not an executed graph/result failure.
+Full plan-status and dataframe/source counterparts verify fresh sequential workflows and explicit nested names, not outer unnamed identity after an inner context reset.
+A confirmed no exact existing canonical naming finding.
+Future smallest repair must give counters the actual workflow identity and enforce unique registration for generated names while retaining deterministic reconstruction, explicit names, graph references and nested contexts; do not change compute/cache semantics merely to rename collisions.
+
+#### ROOT-F084 — P2 Core requirement name recognition misses accepted extras/channel-qualified dependencies
+
+_core_dependency._dependency_name manually removes operators/markers/direct-reference separator but not a pip extras bracket or Conda channel prefix.
+The canonicalized names bioimageflow-core[extra] and channel::bioimageflow-core therefore fail _is_core_dependency.
+Core EnvironmentSpec permits such exact-version requirement spelling under its version guard, so core_requirement_conflict misses the explicit incompatible pip requirement and prohibited channel-qualified Conda Core declaration.
+EnvManager._augment_dependencies uses that same predicate for conflict checking and removing existing pip/local Core declarations, then injects the configured Core dependency; the missed requirement survives beside that dependency.
+Later resolution/exact recipe attestation may refuse this inconsistent recipe; no claim of silently installed wrong Core or actual worker failure is made.
+Full494-line metadata and61-line dependency-floor counterparts omit this original-name classification case.
+This is distinct from B-F130's specifier grammar and from known published/local Core version checks, which remain sound.
+Future focused correction should parse backend-appropriate package identity before conflict/injection decisions and extend existing metadata/environment refusal oracles while preserving valid extras, exact configured Core and explicit channel semantics.
+
+#### ROOT-F085 — P2 legacy public config-validation helper loses physical cleanup ownership on exceptional start/timeout
+
+integration.validate_parsl_config_ref starts its spawned process before entering the pipe/process finally block, so process.start failure skips explicit parent/child pipe cleanup.
+The timeout and finalizer use terminate plus bounded joins, without escalation or retained physical owner if the trusted child ignores termination or process cleanup raises.
+A reported validation-timeout therefore does not establish the spawned validator stopped; no DFK allocation is needed to expose that lifetime seam.
+The public helper is distinct from the managed validator B-F126 and no claim the current platform uses this legacy helper is made.
+Parent.poll then blocking recv also needs the shared bounded-frame deadline policy qualification already recorded for other trusted-peer pipes, rather than a new unsafe-command claim.
+Full distributed counterpart checks actual valid factory labels, missing-secret refusal and sanitized failure text, but never holds a validator/start-cleanup fault through the ownership boundary.
+Future bounded fault oracle and ownership repair must preserve nonallocating trusted-factory validation, secret sanitization and honest logical-versus-physical timeout reporting; do not execute arbitrary factories or promise an OS sandbox.
+
+#### ROOT-F086 — P2 default DataFrame merge deletes genuine columns matching its private duplicate suffix
+
+DataFrameTool.merge_dataframes inner-joins with rsuffix=__bif_dup, then filters every output column ending in that suffix.
+That removes not only newly suffixed right duplicates but also an original left column or noncolliding right user column with the same legitimate name.
+Dynamic DataFrame schemas and source-generated column names have no reserved suffix refusal at this public boundary; no user-column merge was executed during this audit.
+The complete dataframe integration counterpart distinguishes passthrough/dynamic columns but supplies no two-input literal-suffix fixture; default left-wins duplicate policy remains intentional.
+This is distinct from B-F055's frontend absoluteRow overwrite and declared explicit catalog merge policies.
+Future smallest correction should track precisely which duplicate columns the merge owns while preserving inner-index alignment, existing left-wins behavior and all genuine user columns.
+
+### Existing A-F041 extension — positional symbolic field refusal occurs after registration outside rollback
+
+Node registers into its workflow before processing positional arguments.
+A field-kind WorkflowInputRef supplied positionally raises BindingError before the keyword-binding try/except removes the node, leaving the rejected node registered.
+Earlier positional table refs can also attach workflow input targets before a later rejection; existing keyword rollback removes the node map only and does not restore already published targets.
+The full dataframe binding counterpart strongly asserts atomic invalid-column keyword refusal including table refs, which occurs in an earlier precheck; it does not distinguish this positional or later-target boundary.
+This corroborates the existing canonical register/publish-before-final-admission issue, not a new duplicate finding.
+Future correction must retain intentional invalid-edit capture mode and make ordinary rejected invocation restore every mutation it owns.
+
+### Qualified maintenance/test/doc candidates and retained structures
+
+The nominal integration type-compatibility file does not construct a workflow despite its opening coverage claim; several annotations/layout/wildcard assertions duplicate unit cases, while unit frozen GUIMeta/scalar-group/extraction assertions remain distinct.
+Consolidation is a future selector/oracle-preserving candidate with no measured runtime gain or automatic deletion.
+The timestamp template test checks only the number of underscore components, not numeric timestamp expansion, and several broad exception assertions could mask incidental failures; tighten an existing oracle after the gate rather than add another opaque journey.
+Template substitution runs multiple passes, so inserted brace-valued data can be interpreted on a later pass; literal-data versus recursive-template policy should be specified before treating it as a defect, and Core output containment is separate.
+Public planning/capability/diagnostic DTO loaders have weaker scalar/boolean/collection validation than strict gateway values; classify consumer trust and intentional compatibility before imposing a new schema or asserting execution admission bypass.
+The metadata-unavailable Core fallback explicitly warns that it installs latest, and empty home override policy is not an actual absolute-path runtime failure.
+Actual Direct template/source/cache-plan/relative-path subprocess tests, exact constructor side effects, and structured resource/failure contracts are preserved as distinct boundaries.
+Python3.9 AST/annotation guard is a useful syntax precondition, not a real Python3.9 dependency import certificate; CLI mocks prove forwarding while storage tests own physical export behavior.
+M1 remains OPEN; repairs, new diagnostics and all application acceptance phases remain held.
+
+Twenty-six complete owned inputs / 5631 lines.
+
+
+### Complete-review checkpoint — B-batch-23
+
+### Existing findings reconciled against complete normative authority
+
+B-F085's documentation distinctions are retained: the scalar identity implementation's missing-value branch maps NaN rather than representing a separate advertised NaN sentinel; B075 numeric category label restoration and B076 NFC column naming remain source mismatches, not mathematical Infinity defects.
+The scratch paragraph permits returned work artifacts while the path-canonicalization chapter rejects any mutable attempt workspace outside assets and current implementation/tests enforce that stricter confinement.
+Future wording must choose the actual owned-assets authority clearly rather than authorize arbitrary scratch-path publication.
+Legacy fixture run names distinguish safe reader compatibility from UUID grammar for generated execution IDs; no new traversal flaw is inferred.
+
+Reviewer-F042 is corroborated again by the recommended planning status list in the storage document, which omits CORRUPT even though the corruption prose and implementation handle it explicitly.
+This is the same canonical documentation family, not a new B finding.
+The current remote guide's golden factory explicitly adds the tool environment's exact dependency/Core attestation alongside the runtime deployment binding.
+It therefore demonstrates the supported explicit workaround and correct refusal boundary for reviewer-F040; the simplified experience/golden runtime-only seam remains separately qualified.
+No wrong-worker dispatch or real scheduler failure was proved.
+
+B067's narrowed logical identity omission conflicts with the normative inclusion of tool identity/output contract; already captured source-content hashes are not omitted.
+B074/075/076 challenge exact logical scalar/schema preservation in separate ways; generic file equality does not replace their intended canonical value contract.
+B068/A-F030 are explicitly limited by the storage specification's permission to coordinate externally: invalidate must use guarded updates or external coordination with active compute.
+A plan is a storage snapshot and legitimately changes if upstream current selection changes before compute; that is not evidence for mandatory frozen-plan dispatch.
+B079 transient terminal metadata guards, B083 directory durability, B080 external replace admission, and B131/132 deterministic retry replay remain bounded source findings against these intended guarantees.
+The document does not promise universal filesystem atomic directory replacement; it expressly promises failure-safe current output restoration, so do not widen B084 cleanup/failed-ack into an unsupported universal atomicity claim.
+
+
+### Complete-review checkpoint — reviewer-batch-32
+
+#### reviewer-F066 — P3 failed local snapshot cleanup loses explicit retry ownership
+
+PreparedClusterInvocation.close:222–232 sets _closed before TemporaryDirectory.cleanup and clears references only after that call returns.
+If cleanup raises, the root/temporary references remain, but a subsequent public close returns immediately because _closed is already true; the public owner cannot explicitly retry physical reclamation through that method.
+This is a qualified local cleanup-failure source candidate, not a reproduced leftover, permanent leak or remote run damage:TemporaryDirectory finalization and external filesystem recovery may still remove bytes.
+The active plan lease correctly refuses close before any destructive action, and successful close removes only the owned temporary root; neither invariant should be weakened.
+Existing test_close_is_idempotent_and_removes_only_owned_snapshot covers successful cleanup, not failure/retry.
+A future bounded diagnosis should distinguish logical closure from retained physical cleanup ownership using that same test family before changing close state semantics; no runtime action is released.
+
+### Existing findings corroborated without new admission claims
+
+reviewer-F062 extends to PreparedInvocationManifest targets and from_dict collection coercion:tuple('ab') becomes individual target strings before shape validation; exact-key refusal and deep-frozen inputs/overrides remain intact.
+RemoteNodePlan's requirement mapping is shallow-frozen, but RemoteExecutionPlan.to_dict/submit verify the complete confirmation digest, so no silent accepted changed plan is claimed.
+The public plan uses the same suffixZ plus broader fromisoformat timestamp parser as reviewer-F065; actual UTC expiry checks remain effective.
+RemoteExecutionPlan.submit keeps one stable attempt/run identity, verifies prepared bytes and digest, revalidates before sealing, and refuses release of a sealed uncertain snapshot.
+Concurrent submission and the client/gateway's durable acknowledgment consumer remain assigned for later complete review; no inferred duplicate allocation or speculative private-attribute security finding is added here.
+The owned preparation enforces finite positive lifetime, unlike the separate older launcher prepared TTL canonical B-F087.
+
+M1, fixes and all runtime checks remain held.
+
+
+### Complete-review checkpoint — A-batch-29
+
+#### A-F154 — Medium, qualified stale catalog GET can overwrite a newer event or newer fetch
+
+ToolRegistry.ts90–110 replaces whole tools/packages after each GET with no request epoch, captured event revision or merge barrier.
+applyToolReload290–323/applyToolRemoved325–350 and install event135–139 can update the catalog while an earlier GET remains pending.
+A late older response can therefore reintroduce removed metadata or erase a newer schema/version until another event/refresh; a GET serving authoritative state after the event is sound, and actual server response order determines the distinguishing schedule.
+Same browser connection events are ordered, but that does not order their retained mutations against independent HTTP completions.
+Both full store test families use immediately resolved GETs and synchronous events; no held older GET versus newer read/reload/remove oracle exists.
+Retain array replacement reactivity and ordinary active catalog semantics; future reconciliation should own accepted snapshot/event revisions at the actual API boundary rather than indiscriminately drop all refreshes.
+No timing reproduction, wrong execution or portable rebind result is claimed.
+
+#### A-F155 — Low/Medium, source-established busy and refresh acknowledgment ownership gaps
+
+Custom actions224–287 share one customToolBusy boolean without cojoin/admission or operation-owned finalizers; two direct concurrent calls let the first finally set false while the second is still pending.
+Package installation has a per-key set and duplicate coalescing, so it already avoids that exact same-key busy collision; caller GUI prevention may mitigate ordinary custom double clicks but the store itself exposes all actions.
+fetchTools/fetchPackages swallow read failures, so create/rename/delete/install Promise.all refresh completes successfully even when a read failed; the outer action then clears error and returns success despite stale read models.
+The write may genuinely have succeeded and must not be replayed as if uncommitted; the defect is indistinguishable refresh/acknowledgment state and diagnostic clearing, not an assertion the backend write failed.
+Current custom error tests reject the write itself, and install busy test releases POST then immediately resolves GETs; neither distinguishes failed postcommit refresh or two held custom operations.
+Future ownership should retain write success separately from refresh failure and operation-specific busy finalization, reusing these focused selectors rather than another full user journey.
+
+#### A-F156 — Medium, qualified compound custom operation loses workflow context between usage/confirmation and action/result consumers
+
+currentWorkflowRequestConfig80–87 captures the current name independently in getToolUsage240–246 and deleteTool267–287; it does not return a context-bearing usage token to subsequent delete.
+Borrowed ToolsPanel requestDeleteCustomTool607–649 awaits usage, shows confirmation and later calls deleteTool using whichever workflow is then current.
+The warned usage/source can belong to workflowA while confirmation executes a same-name tool action under workflowB if selection changes between those steps.
+Creation similarly captures a request workflow, but response lacks owner identity and borrowed onToolCreated327–337 opens that name in the then-current workflow.
+Normal immediate stable selection works, and backend exact source resolution/conflict guards may refuse a missing same-name tool; distinct same-name workflow-owned sources are the distinguishing case, not every palette operation.
+Complete ToolsPanel review is pending, so UI gating mitigation remains qualified until its full lifecycle/judgment.
+Store custom tests run with no current workflow and no context switch; mounted dialog test observes only the emitted name/path.
+Retain per-request captured query and backend ownership/refusal; future compound flow should pass captured workflow/source identity across warning, acknowledgment and editor continuation without replaying writes.
+
+#### A-F157 — Low/Medium, source-established submitted form completion has no visibility/recipe owner
+
+CreateToolDialog.vue65–77 checks only current createDisabled, starts a store action and later emits created and clears form fields without a submission token or visibility/unmount/cancel check.
+The Create button127–132 is not disabled by customToolBusy and onCreate does not guard an existing pending submission.
+After cancel/reopen/new edits while a request is retained, the previous completion can emit an old result and clear the new form; duplicate calls can also send the same write, normally refused by backend conflict rather than creating two same-name tools.
+POST rejection propagates to Vue event error handling without a local form presentation; store.error exists for parent use, so no completely invisible error claim is made.
+Current tests invoke exposed onCreate with immediate success and onCancel separately; no pending form ownership/failed click oracle.
+Retain valid name normalization/backend conflict authority and postcommit write success; future finalizers need submitted form ownership independent of live edited recipe/current selection.
+
+#### A-F158 — Medium for display correctness, declared/effective resource floor UI has no canonical producer
+
+NodeResourcesTab.vue38–58 expects tool.environment.resources, but fully read ToolRegistryService223–230 emits environment name/dependencies only; environment is not the class's independent resources requirement authority.
+Root complete NodePanel confirms1202–1205 directly passes nodeData.tool, no enrichment; ordinary registry/owned-class metadata production therefore displays a dash for real declared floors.
+The Effective column69–74 simply shows override-or-declared; a proposed below-floor override is displayed as effective before authoritative preflight later refuses it, with no local floor distinction.
+The execution engine/library public resource validator still enforces actual resolved class floors/caps, so this is inaccurate/missing user guidance, not wrong worker admission or proof distributed execution ignores requirements.
+The test invents environment.resources and does not assert the real declared/effective numbers; actual Core model/schema source boundaries must supply the future GUI oracle.
+Retain sparse node overrides, strict resource grammar, no invented native/engine limits and actual preflight refusal.
+This is the precise UI consequence of A-F147's partial environment summary; avoid treating environment summary as a new execution authority.
+
+#### A-F159 — Low, specific fixture/oracle drift and duplication candidates
+
+Historical store mockTools20–61 omit current required ToolMetadata flags/row consumption/source_kind/editable, and mockPackages64–81 reverse tools membership keys.
+The generated schema confirms mandatory fields and version→names shape; these targeted fake tests remain useful search/event checks but cannot be cited as current schema compatibility.
+Create dialog Button stub32–36 uses attrs.disabled after declaring disabled as prop, so real button-disabled DOM behavior is untested there.
+Resource test title16 promises declared/override/effective display but assertions22–25 cover headings/local/reset only.
+Fix fixture authority/strengthen existing assertions before adding duplicate tests; retain distinct custom API action versus search/environment behavior, and evaluate behavioral overlap of the two membership families before consolidation.
+No frontend type check/test was run; no claim the current harness necessarily fails type checking or UI gestures is made.
+
+### Complete-review checkpoint — B-batch-24
+
+#### B-F150 — P2 declaration/recipe risk: sampling four versions cannot prove a Python3.12-only constraint
+
+`models/napari_environments.py:_validated_python_constraint` accepts a SpecifierSet by testing3.12.0,3.12.99,3.11.99 and3.13.0.
+The predicate cannot establish that every accepted version is3.12 or that the requested set exactly matches its realization.
+For example, a constraint permitting>=3.12 while explicitly excluding3.13.0 can pass these four checks but still permit3.13.1 and later minors.
+Likewise a3.12-only constraint can exclude an intermediate patch while passing the two required endpoints.
+This is a static PEP440 set/point reasoning example, not a new executed model test.
+The actual service `_environment_spec:1295–1302` hardcodes `python='3.12.*'` and does not pass the stored constraint to Wetlands, mitigating any claim of provisioned wrong-minor Python.
+Its comment says recipe validation proved exact Python3.12, but accepted exclusions can differ from the actual wildcard recipe.
+Existing `test_advanced_recipe_requires_exact_napari_and_qt` rejects plain>=3.12 and correct advanced cases, while managed service translation tests expect stored constraint plus wildcard realization; they do not distinguish disjoint holes or an excluded neighboring endpoint.
+Future action: define whether the declaration denotes supported minor family only or an actual patch restriction, then validate/normalize that contract precisely while retaining the supported3.12 environment matrix.
+Do not claim actual incompatible runtime provisioning from this predicate alone.
+
+#### B-F151 — P3 private protocol robustness: malformed authenticated command can escape typed parser
+
+`_external/napari_manager.py:_validate_command` evaluates `action not in {'open','shutdown'}` before a string/type guard.
+An authenticated decoded object with list/dict action raises TypeError instead of returning the documented typed command error.
+The extra-field path also sorts arbitrary dict keys and joins them as strings; malformed nonstring/mixed keys can escape similarly.
+The Listener loop invokes this parser outside a catch for validation exceptions, so that command can terminate the IPC listener thread and leave the GUI without a response.
+Ordinary launcher commands use string actions and field names, and the caller has a response timeout/outcome-unknown boundary, mitigating any default valid command failure claim.
+No unauthorized network access, exploit, actual listener crash or native outcome was executed.
+Existing exact selectors `test_handle_command_non_dict_returns_error` and `test_validate_command_rejects_unknown_fields` cover nonobject commands and an ordinary extra string, not malformed nested/container action or key shape.
+Future action: make this parser total for its authenticated wire domain, retaining exact strict fields, request correlation and no unsafe retry after uncertain opens.
+
+### Existing test isolation/lifetime findings extended
+
+B056 extends to the manager test loader: `sys.modules.setdefault` permanently registers napari/napari.qt/napari.qt.threading stubs with no restoration.
+The standalone source delays native imports until main, so those stubs are unnecessary for pure parser calls and can contaminate later import/capability expectations in a shared test process.
+This is source isolation risk, not an observed order-dependent failure.
+The historical docstring still references thread_worker despite the current Qt Signal/Slot implementation, and helper stubs reproduce that obsolete mechanism without exercising it.
+B012 applies to the completion test: callback waits without timeout and release is not in finally; assertion failure before release can leave non-daemon waiter/callback threads alive.
+Its ordinary success-path event ordering is meaningful, but a Python Thread invoking helper completion is not native Qt/Listener integration credit.
+
+### Complete-review checkpoint — reviewer-batch-33
+
+#### reviewer-F067 — P2 declared package-root selection can capture an entire repository
+
+_deployment_snapshot._package_directories:286–333 accepts setuptools package-dir values and Hatch wheel package roots directly; a declared value '.' nominates project_root itself.
+_capture_project_inputs:337–361 then passes that root to _copy_tree, which recursively copies all regular non-symlink files up to the limits, rather than selecting distribution members through their declared build metadata.
+A common flat-layout setuptools package-dir {'':'.'} is therefore a source-proven selection candidate for unrelated notes, VCS/configuration files or local runtime material, or an avoidable quota refusal.
+This contradicts the normative explicit selected-project-source boundary in remote_cluster_technical_spec:46/198–199, which excludes recursively uploading an entire repository.
+No actual credential inclusion, upload or unsafe execution has been demonstrated; local build metadata and trusted user code remain explicit trust boundaries.
+Existing test_declared_local_project_sources_are_snapshotted_but_unrelated_files_are_not tests the named inferred package directory, not a valid root-level package-dir declaration.
+Future diagnosis should extend that existing source-selection oracle with valid flat-layout metadata and prove required package files remain included while unrelated root files remain excluded; preserve essential local-project support rather than simply refusing common metadata.
+The exact public entry is prepare_deployment's uv/Pixi/pylock project-input capture; managed Pixi/pylock end-to-end capability flags remain unsupported and must not gain runtime credit.
+
+### Retained capture and boundedness distinctions
+
+reviewer-F063 extends to _copy_regular:the regular-file precheck precedes potentially blocking os.open; a same-user replacement FIFO can block before its post-open fstat/identity check. No remote attacker or reproduced stall is asserted.
+Its stream loop also detects final mutation/bundle limits after copying; all-POSIX installer capture and registry wheel capture accumulate before the final aggregate manifest check. This corroborates B-F093's post-copy resource-budget seam, not bypass of eventual refusal.
+_run_uv captures subprocess PIPE output wholly before its caller considers failure; canonical B-F098's output-memory concern applies to this local trusted-build subprocess too. Timeouts and sanitized/offline environment remain real controls.
+The exact build helper checks sdist/wheel identity and universal wheel tags; main tests intentionally replace it and installer capture with deterministic fixtures, while test_local_distribution_build_is_offline_non_editable_and_hashed is the separate real helper oracle.
+Current capability tests explicitly keep managed Pixi, pylock and wheelhouse end-to-end support false; their local snapshot implementation is not runtime certification.
+PreparedDeployment verifies captured bytes, frozen metadata, identity entries and manifest digest. Its cleanup remains directly retryable, unlike reviewer-F066's early-closed invocation owner.

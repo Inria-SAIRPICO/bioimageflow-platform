@@ -330,3 +330,25 @@ Native desktop acceptance stays final M5.
 `scripts/test check campaign` passed for the 1,189-input administrative checkpoint in 0 s runner-reported (0.25 s measured), at source revision `42222ad` plus four audit-document changes, source-manifest SHA-256 `7ef3a70a687a78b9399df670860288e291072b2daebecee72f637bb77fc25f6a`; the manifest precedes this result-only log entry.
 Dashboard consistency, all 64 active local links and `git diff --check` passed; no document navigation change invalidated the earlier Sphinx result, so Sphinx was not repeated.
 Every application/backend/frontend/browser/worker/external/published-compatibility/native phase remained held and unrun, with no audit or product certification claimed.
+
+### Complete-review source checkpoint: 1,292 entries
+
+A batches 27–29 add fifteen complete human platform inputs and one explicitly producer-linked generated API classification; B batches 20–24 add forty-three complete platform/library implementation, test and human-contract inputs.
+Root batch16 adds twenty-six complete public authoring/runtime/Core-dependency/path/template/logging source and exact counterpart inputs; reviewer batches30–33 add eighteen complete public cluster value/protocol/preparation/deployment source and counterpart inputs.
+Current scope is 1,799 inputs / 1,292 complete snapshot judgments (1,153 reviewed / 139 classified) / 507 pending, with 463 distinct findings.
+Owner progress is A 261/353, B 334/492, root 233/459 and shared reviewer 464/495.
+Three already completely borrowed query/output-view counterparts were formally transferred from root to B before their pending per-file judgment; ownership transfer itself adds no credit.
+All accepted input bytes match their exact owned manifests; no inventory scan or partial source excerpt is counted as a complete human review.
+The registry/watcher/UI review identifies stale snapshot/lifetime/admission/display seams while preserving real exact-byte reload and rollback tests; generated API ownership is explicitly classified without claiming regenerated schema equality.
+Public authoring review records global automatic-name reset, positional rejected-invocation mutation, Core extras/channel identity classification and genuine DataFrame duplicate-suffix column loss; actual Direct path/template/plan and logging ownership oracles are preserved.
+Runtime cache suite and full storage/contracts were reconciled: durable SharedArray assets and Direct cache tests remain essential, while zero-copy/general transport claims and external typed task codec certification stay qualified.
+Cluster review records pre-coercion public input refusal, source-open boundedness, cleanup retry ownership and declared project-root capture risks; later refusal, exact confirmation digests and trusted-local limitations remain explicit.
+All remaining human source/tests/specs, assets/gitlinks/installed-runtime/held-WIP inputs, current mutable controls and generated-ledger producer provenance, cross-owner synthesis and independent completeness acceptance remain pending.
+The finding count includes qualified source risks, documentation/test-oracle discrepancies and unmeasured maintenance/performance candidates; it is not a count of executed failures or approved repairs.
+M1 remains OPEN; repairs, new diagnostic tests and application/backend/frontend/browser/worker/external/published-compatibility/native acceptance remain held and unrun.
+Native desktop acceptance remains final M5.
+
+`scripts/test check campaign` passed for the 1,292-input administrative checkpoint in 0 s runner-reported (0.35 s measured), at source revision `ed5a61b5bdaa7293fd31669115ce7c2f323b700d` plus four audit-document changes, source-manifest SHA-256 `46b31b3b9dee896a4dd751f152184efa6df15a85bc8117a767e6feb7f0bfb8c0`; the manifest precedes this result-only log entry.
+Dashboard consistency, all 64 active local links and `git diff --check` passed.
+Sphinx was not repeated for this routine ledger/checkpoint update, which changes no navigation.
+Every application/backend/frontend/browser/worker/external/published-compatibility/native phase remained held and unrun; no full suite, completeness gate or product certification is claimed.
