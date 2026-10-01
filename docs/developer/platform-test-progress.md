@@ -283,3 +283,26 @@ M1 remains OPEN; repairs, new diagnostic tests and all application/backend/front
 The preceding documentation-only pass took 8.32 s; a corrected human/classified subtotal required the final 4.68 s recheck.
 Campaign-record guards and Sphinx passed, and `git diff --check` passed; backend/frontend/browser/worker/external/published-compatibility/native phases were held and unrun.
 These commands establish audit-document integrity only; complete code review, cross-owner synthesis and independent acceptance remain open.
+
+### Complete-review source checkpoint: 1,034 entries
+
+A batches 21–23 complete 22 additional loading, inspection, public registry/session, GUI guidance and counterpart inputs; B batches 14–16 complete 38 additional Parsl, managed-factory, retry and counterpart inputs.
+Root batches 11–12 complete nineteen Wetlands provisioning/runtime-registry and scientific wrapper/counterpart inputs; reviewer batches 22–25 complete 21 human inputs and 21 individually justified asset/lock/link classifications.
+Every newly accepted owned source hash was checked against actual bytes, and all new reports were read in full before integration.
+Current scope is 1,799 inputs / 1,034 complete snapshot judgments (907 reviewed / 127 classified) / 765 pending, with 392 distinct identified findings.
+Owner progress is A 196/353, B 261/490, root 170/504 and shared reviewer 407/452.
+Fifty-five remaining Wetlands configuration, documentation, CLI/debug/diagnostic, release and counterpart inputs were transferred to the shared reviewer; loader and source/session counterparts were transferred to A.
+Transfers supply no review credit, and the library specs.md link classification supplies no human target credit: its complete human target belongs to B and remains pending at this checkpoint.
+Canonical finding headers were reconciled so the A-F026 and A-F117 extensions do not inflate the distinct count.
+The review distinguishes physical cleanup acknowledgments, malformed registry diagnostics and postinstall lock fidelity from actual new runtime failures; scientific wrapper argument mocks do not certify each external dimensional mode.
+Public-loader cache and dependency lifetime, incremental Session wire/cache authority, retry-after-publication replay and concurrent dispatch ownership retain their specific mitigations and future distinguishing diagnostics.
+The managed-factory trace corroborates reviewer-F040: the current public route refuses ordinary common-tool recipes at exact runtime attestation, rather than demonstrating execution in a wrong worker.
+Five mutable campaign controls were fully reviewed against exact current snapshots; changed administrative deltas still require reopening before final acceptance, and stale historical J1/J3 wording is recorded as reviewer-F052 without releasing repairs.
+All remaining human source, tests and specifications, current mutable-control and generated-ledger provenance reconciliation, cross-owner synthesis and independent completeness acceptance remain pending.
+M1 remains OPEN; repairs, new diagnostic tests and application/backend/frontend/browser/worker/external/published-compatibility/native execution remain held.
+Native desktop acceptance remains final M5.
+
+`scripts/test check campaign` passed for the 1,034-input administrative checkpoint in 0 s (runner-reported) at source revision `c13ff8d140b04fb16ac2d355694be54327560fb8` plus four audit-document changes, source-manifest SHA-256 `3aa5e4e9df22028fe4473834a2c2509b4408ade0fb23161acca63315e8932592`; the manifest precedes this result-only log entry.
+Campaign-record guards and all 64 active local links passed, and `git diff --check` passed.
+This routine ledger/checkpoint update changes no documentation navigation or product behavior, so the documented scoped campaign check is sufficient; the previous Sphinx pass remains historical and was not rerun.
+All application/backend/frontend/browser/worker/external/published-compatibility/native phases remain held and unrun, and no audit or product acceptance follows from this administrative check.

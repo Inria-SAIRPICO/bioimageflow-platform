@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 913 complete (807 reviewed / 106 classified) / 886 pending, with 348 identified findings.
+Current checkpoint: 1,799 inputs / 1034 complete (907 reviewed / 127 classified) / 765 pending, with 392 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -3555,3 +3555,547 @@ Windows Job-close and recursive fallback differ in their physical verification b
 M1 remains OPEN; all fixes, diagnostic tests and campaign execution remain held.
 
 Thirteen new full inputs / 4598 lines; root cumulative151/568,417pending.
+
+### Complete-review checkpoint — root-batch-11
+
+#### ROOT-F068 — P3 source recovery isolation gap: malformed quarantine state containers abort discovery instead of remaining individually untouched
+
+environment_cleanup._read_record validates state through membership in _VALID_STATES without first requiring a string.
+A well-formed candidate JSON with otherwise valid record fields and a list/dict state raises TypeError outside the caught parse block, aborting discover_quarantined_environments's loop rather than skipping that entry.
+The background scanner catches/logs the whole discovery error, so subsequent valid orphan tombstones may remain unreclaimed; already queued records and later repair/wake can mitigate it.
+B confirms its complete test_reclaimer_ignores_malformed_and_unowned_quarantine_entries uses syntactically broken JSON, not a valid JSON container state.
+No malformed file or reclamation was executed; this is static recovery availability/diagnostic debt, not authorization to erase ambiguous entries or a proved unauthorized deletion.
+Future exact refusal should isolate each bad record and preserve all known token/inode ownership requirements.
+
+#### ROOT-F069 — P1/P2 qualified provisioning lifetime gap: unverified process cleanup discards the runner's physical retry owner
+
+ProcessTreeRunner.run's finally clears _active/_active_job even when tree termination, child reap or reader completion supplied cleanup_errors.
+It returns a structured failure rather than a false clean cancellation, but terminate_active can no longer reach that process after the failed terminal handoff; the next provision cleanup can quarantine the environment tree without a registered managed-process owner for the unresolved provisioning command.
+The complete real stream tests retain a blocked reader's close ownership, and injected tree-verification errors normally first kill the process or let a short command finish; they do not keep an actual survivor across the cleared owner and retry/name reuse.
+Manager close drains operation runners but a terminal FAILED operation does not itself prove that an unresolved external tree is physically dead; no additional durable provisioning survivor registry is evident in these fully reviewed owners.
+This is conditional failed-cleanup ownership debt, distinct from ROOT-F053 ExecutionTask early canceled acknowledgment and from supported disk reclamation after proven name detachment.
+No surviving command or filesystem removal was executed; retain honest failure status and diagnose an exact retained survivor before choosing retry/fencing ownership.
+Future correction must preserve identity-safe refusal and not signal an unverified group or silently reuse/delete its generation.
+
+#### ROOT-F070 — P2/P3 qualified crash-durability asymmetry: worker registry replacement omits its parent directory synchronization
+
+runtime_state.atomic_write_json flushes/fsyncs the temporary worker/controller/pool registry file then replaces the destination without synchronizing the parent directory.
+The auth-key publisher in the same fully reviewed module explicitly fsyncs its parent after replacement, and provisioning/quarantine publication does too.
+Those different source durability boundaries matter to the crash-recoverable persistent worker journal; atomic ordinary readers alone are not a complete crash-publication contract.
+Current tests verify ordinary byte identity, concurrent key publication, state corruption, commissioning and descendant reconciliation, without establishing registry replacement durability under crash/power loss.
+No crash or record loss occurred; this is a documented durability-policy/diagnostic candidate, conditional on supported filesystem/platform guarantees and contract strength, not a claim every registry update loses workers.
+Reconcile required versus best-effort directory sync and preserve existing full-record retained cleanup before any helper consolidation.
+
+#### ROOT-F071 — P2 source lockfile contract gap: late post-install/validation changes to a supplied lock are accepted into ready metadata
+
+The complete dependency guide says Wetlands rejects any lockfile change during locked provisioning.
+provision_environment checks supplied_lock_hash immediately after pixi-install, but later post-install commands and validate-runtime run without --locked and final lock/manifest reads publish their new hashes without comparing to the supplied bytes again.
+A trusted post-install command that changes pixi.lock after the initial check can therefore complete readiness with a different lock, contradicting that refusal promise; normal no-mutation recipes remain sound.
+Existing test_modified_supplied_lock_fails_and_removes_incomplete_target modifies the initial install phase only; positive supplied/local-lock tests' fake Pixi does not simulate resolver mutation during run.
+No lock, command or resolver was executed; do not imply ordinary model download post-install necessarily mutates dependencies.
+Future narrow fault oracle should change the lock only in that later admitted stage and preserve exact locked identity/refusal through final ready publication; retain legitimate post-install assets and managed-runtime validation.
+
+#### ROOT-F072 — P3 source diagnostic boundary: an oversized integer timestamp escapes the declared corrupt-registry error type
+
+runtime_state._is_positive_number converts any exact int to float without handling OverflowError.
+A valid JSON integer much larger than float range can reach this timestamp validator in an otherwise well-shaped worker/controller/pool entry and raise outside RuntimeRegistryError's typed refusal.
+The registry still fails closed and remains unchanged; this is diagnostic/error-classification consistency, not an accepted invalid worker or code execution risk.
+The complete corrupt-state tests cover JSON/type/version/missing fields and inaccessible state, not an oversized positive integer timestamp.
+A bounded later validation should preserve finite-positive/exact-bool refusal and ordinary timestamp meaning without rewriting the registry or treating corruption as missing.
+
+### Additional test and architecture decisions
+
+test_v2_provisioning is a broad1,216-line module mixing recipe/lock/local-source/publication tests with actual persistent workers; narrower feature selectors and separation by dependency boundaries are suite-maintenance candidates after the whole review.
+Do not split by speed alone or duplicate actual shared lifecycle fixtures: filesystem/no-follow oracles, locked metadata assertions, real worker admission, cancellation and persistent restart each prove different things.
+Many fake-Pixi tests establish orchestration/materialization/refusal while substituting installation/version resolution; complete marker/global-CI review must keep them distinct from pinned real Pixi/external package certification.
+The stream blocked-reader test explicitly proves bounded failure retains reader-owned close; moving pipe close to the parent would invalidate its physical boundary.
+A Thread.start exception after actual OS start can leave the reclaimer's _thread reference unpublished and allow another worker on later wake; the cross-process purge lock still serializes tree deletion, so do not equate this exceptional bookkeeping possibility with concurrent destructive purge without a discriminating oracle.
+Several helper constructors/mutators assume validated internal values (positive worker count etc.); type-surface tightening should preserve actual public manager validation and not invent supported invalid-call cases.
+Ready publication followed by journal-unlink failure currently enters provisioning cleanup; determine postcommit failure/ack policy before calling that intentional operation rollback a proven data-loss bug.
+Canonical quarantine and worker registry JSON have weaker duplicate-key/shape guards than strict worker protocol; trusted local-state and fail-closed status must be retained when deciding whether to consolidate readers.
+M1 remains OPEN; repairs, new diagnostics and all campaign execution remain held.
+
+Ten new full inputs / 6983 lines; root cumulative161/565,404pending.
+
+
+### Complete-review checkpoint — A-batch-21
+
+#### A-F116 — Low, conditional snapshot invariant debt: frozen manifest contains a mutable output dictionary
+
+viewing.py64–76 defensively copies input entries and validates complete against their statuses, but assigns an ordinary dict to the public Mapping field.
+A caller can mutate manifest.outputs after construction and leave complete=True while inserting an unknown entry, or remove an entry without recomputing completeness; to_dict78–86 does not revalidate.
+The frozen dataclass prevents attribute assignment but does not enforce immutability of this nested dictionary.
+Normal public derivation/inspection constructs fresh valid manifests, and no reviewed consumer mutates outputs, so this is a public invariant/lifetime debt rather than an observed archive corruption.
+The strict wire tests validate construction and malformed dictionaries, not post-construction mutation.
+Retain defensive input copying and offline inspection; future snapshot policy should explicitly make the mapping immutable or revalidate at serialization rather than imply deeper freezing.
+
+#### A-F117 — Medium, qualified nested partial snapshot completeness omission
+
+viewing.py120–154 recursively visits present nested nodes, but expected-minus-present detection164–172 runs only for the root workflow.
+Materialization.py406–426 propagates partial mode into children and retains their build errors; interfaces.py514–516 tracks each child's own expected names.
+A retained partial child with an unavailable internal tool and no surviving interface output requiring that tool can therefore omit its missing scoped wildcard entry, while all remaining entries are known and complete is computed True.
+The root-level missing tool path is represented correctly; strict ordinary imports refuse missing tools, and a child whose output resolution raises may refuse earlier rather than emit a misleading snapshot.
+This is a source-level completeness risk for supported partial materialization, not a claimed failure of the existing missing-module archive-inspection test or a performed partial export reproduction.
+The current recursive viewer test has fully loadable children, and the offline missing-module test inspects a previously complete carried archive, so neither distinguishes fresh derivation from a retained partial child.
+Retain imported carried snapshot independence; future derivation should account for missing scoped expected nodes at every visited definition, with refusal versus unknown explicitly preserved.
+
+#### A-F118 — Medium, qualified installed-origin authority risk: distribution declaration is checked but actual imported module file is not
+
+Core worker_origins.py589–602 verifies the named distribution/version and whether it advertises the requested top package, then calls ordinary import_module.
+Unlike shared425–450 and versioned476–525 branches, it does not verify that the actual module selected from sys.modules/sys.path belongs to that distribution's resolved installed/editable source.
+With an already imported or earlier-path same-name module, matching distribution metadata does not by itself prove the loaded ProcessingTool class came from the captured installed origin.
+Ordinary environments with unambiguous imports are sound, and arbitrary trusted Python code can deliberately modify import machinery; no current deployment shadowing or hostile execution is asserted.
+The exact test_installed_module_requires_explicit_distribution_identity uses the already correct Core module and verifies class identity, so it cannot distinguish the alternate module case.
+Archive loading also relies on isolated import after tree/path verification without a final loaded-file check582; clearing the selected top-package and prepending materialization root materially mitigate normal resolution, so this remains a qualified adjacent consistency concern rather than a separate confirmed escape.
+Retain public ProcessingTool validation, exact version and origin identity; future origin policy should prove actual imported source membership where it claims a distribution-backed origin, not substitute display names or metadata alone.
+This is executable origin loading, distinct from portable platform rebinding A-F001/A-F066 and cache signature B-F067.
+
+#### A-F119 — Medium, qualified versioned import failure/retry ownership risk
+
+Core worker_origins.py503–514 installs a scoped package into sys.modules before executing its initializer; an exception does not remove that partial package.
+A later identical retry sees scoped_root already present and skips initialization, potentially loading a submodule against incomplete package state or repeatedly failing even after transient initialization prerequisites recover.
+Final target path verification still runs, and many packages have trivial initializers or import failure prevents tool instantiation entirely; this is not a universal successful wrong-class claim.
+The source-file branch418–421 cleans its owned module on execution failure, while this versioned branch lacks the analogous failure cleanup.
+The transferred origin-construction tests cover Shared/Installed branches only; no reviewed selector here establishes versioned initialization retry behavior.
+Retain scoped version isolation and exact source-path verification; future retry ownership should discard only the failed package/module incarnation it created without damaging unrelated live imports.
+
+### Existing A-F026 extension — Qualified source hash versus stale timestamp bytecode axis, not a new result-cache finding
+
+Core worker_origins.py405–418 hashes the source bytes, then delegates execution to the normal file-location loader.
+That loader may use timestamp/size-valid cached bytecode for the same path after a same-length edit within filesystem timestamp granularity, despite the new origin source_hash and new private module name.
+This is a separate mechanism from the already reviewed same-source-ID custom class cache, but shares the requirement that executable code match the captured source digest.
+No such edit or bytecode reproduction was executed; content-addressed/stable source paths and ordinary timestamp changes mitigate normal use.
+B confirms no duplicate canonical bytecode/source-import finding; B-F067 concerns result signatures, not loading executable bytes.
+Retain source digest validation, private module names and origin-keyed caching; future diagnostic should distinguish source bytes, cached code and actual returned worker class before proposing a repair.
+
+
+### Complete-review checkpoint — B-batch-14
+
+#### B-F120 — P2, failed DFK cleanup loses the owned retry reference (source lifetime risk).
+
+parsl/engine.py:_cleanup_owned_dfk (:650–657) clears _active_dfk before dfk.cleanup().
+If cleanup raises before releasing all resources, the engine no longer retains that DFK for a retry; execution-lifetime execution can admit a new DFK afterward, while close has already made the engine closed.
+A later close returns immediately because _closed is true, so explicit close failure is not retryable by that handle either.
+The cleanup exception is raised by _finish_execution, so this is not silent ordinary success or evidence that all DFK cleanup fails.
+test_engine_lifecycle.py::test_engine_lifetime_reuses_owned_dfk_until_idempotent_close and ::test_execution_lifetime_creates_and_cleans_one_dfk_per_execution exercise only successful cleanup.
+Future diagnostic must fail cleanup after a retained partial resource, assert exact owner/retry behavior and retain external DFK nonownership and registered-future drain.
+This shares a failure-reference pattern with B-F002 but is a distinct Parsl resource owner.
+
+#### B-F121 — P2, simultaneous close calls do not share a completion barrier (source concurrency risk).
+
+ParslEngine.close at :768–774 marks _closed before cancelling/draining active execution; another close sees true and immediately returns.
+That second successful return can therefore precede the first closer's physical future drain and owned cleanup, despite close's public drain promise.
+Single-close behavior is sound and coordinated with active execution; a closed flag alone does not establish completed closure for overlapping callers.
+test_engine_lifecycle.py::test_close_waits_for_noncancellable_writer_before_owned_cleanup establishes the first closer's wait, not a second concurrent close.
+Future diagnostic should coordinate two closers with one registered running writer and preserve caller-owned DFK isolation, same-thread execution close behavior and idempotence after completed closure.
+No concurrent close was executed during audit.
+
+#### B-F122 — P2, terminal diagnostic failure stops only its local collector (source failure-projection risk).
+
+BoundedParslCollector.run at submission.py:329–342 catches task_terminal failure, records pre_submission_error and cancels its own active window.
+Unlike pre-submission/task-result failures, this branch does not call failure_observed, so ParslEngine._report_task_failure does not set the shared sibling stop flag at that point.
+Other parallel node collectors may continue submitting/processing until their own natural completion before the scheduler returns the failing node.
+The actual terminal hook writes storage diagnostics, so this is a fault-path metadata failure rather than an ordinary worker failure or a claim that all diagnostic failures require immediate global cancellation.
+Full submission tests distinguish iterator/runtime validation/task failures and deterministic late sibling errors, but not a failed terminal diagnostic writer.
+Decide this failure policy and use a narrow coordinated oracle before correction; retain deterministic primary errors, full drain and no replay.
+
+#### B-F123 — P2, collector cancel exceptions can bypass its own drain contract (source failure-isolation risk).
+
+submission.py:204–209 stop_and_cancel calls future.done/cancel without the exception isolation used by ParslEngine._request_submitted_cancellation and _report_task_failure.
+A cancel exception exits run while other futures remain active; the collector alone does not run a finally drain or report all task-terminal callbacks for them.
+The actual ParslBackend registers every submitted future with ParslEngine, whose execute finally still drains them, so this is not a demonstrated default physical writer escape.
+That mitigation does not restore the collector's diagnostics/primary-error behavior or cover standalone callers of its documented drain helper.
+Full submission tests use standard futures with false/successful cancellation, including deliberately running noncancellable futures; no cancel-raises adapter is supplied.
+A future diagnostic should retain the engine safety mitigation and distinguish metadata/primary-error outcomes before deciding whether collector-local exception isolation is required.
+
+#### B-F124 — P3, optional boundary test supplies only a callable oracle (test-name/overlap candidate).
+
+test_optional_dependency.py::test_external_parsl_is_loaded_only_through_focused_boundary imports the internal optional_dependency wrapper and asserts require_parsl is callable.
+It does not demonstrate an external Parsl import occurs through that function or exclude another path.
+The stronger separate subprocess test blocks all external Parsl imports during ordinary public import/construction, and missing/transitive error tests meaningfully distinguish failures.
+Record the weak named oracle for later rename/strengthening or evidence-backed deduplication; no test deletion or speed gain is proposed now.
+
+### Resolved qualifications and structures to retain
+
+**Ordinary registered-future drain is explicit and covered.**
+_submit_future holds the lifecycle condition across submit plus registration, preventing a closer from overtaking successful handoff.
+_close from another thread requests cancellation and waits active execution; _finish_execution drains only this engine's registered futures before owned cleanup and admission release.
+Running futures whose cancel returns false remain awaited; the full lifecycle and partial-window tests establish this with actual concurrent.futures objects.
+An injected external DFK is never cleaned, and two engines sharing it own/cancel only their own registered futures.
+This contradicts a blanket claim that routine engine close ignores physical future completion; actual remote worker/scheduler quiescence remains a separate unexecuted dependency contract.
+
+**B-F104 refinement.**
+The launcher suppresses its extra post-terminal engine.close error, but primary execution-lifetime cleanup failures from ParslEngine.execute's finally propagate to Workflow/run context.
+Do not label that primary cleanup exception silently succeeded.
+B-F120 instead records lost retry ownership after the cleanup attempt.
+
+**B-F059 extends to the Parsl steps wrapper.**
+_ParslEngineSteps eagerly reserves admission; only exhaustion/error or explicit close finishes it.
+Dropping an unstarted iterator supplies no finalizer/context-manager release.
+Full test_steps_reserve_engine_before_first_iteration_and_close_cleanly proves explicit close, not abandonment of the original owner.
+This is the same scoped iterator lifetime decision, not a second global engine admission redesign.
+
+Startup compiles/scopes reachable nodes, treats cached/skipped processing nodes separately and rejects remote SharedArray schemas before DFK acquisition.
+A changed planned cache selection fails closed through PlannedCacheBackend rather than silently allocating workers on a newly missing record.
+Worker preflight futures remain engine-registered and execution cleanup drains them even when a later startup stage fails.
+Actual runtime Config.retries must be exactly integer zero, and labels are checked before DFK acquisition on the real prepared path.
+The factory-reference helper deliberately validates/builds in an isolated process and rebuilds the actual config in the parent; this has repeated trusted factory costs/effects, but isolation is intentional and the later effective runtime validation remains authoritative.
+No generic metadata-purity or immutable arbitrary Config object claim is made; measurement/contract refinement is a maintenance candidate, not authorization to remove validation.
+BoundedParslCollector retains deterministic failure keys across late sibling failures, bounded unfinished future count and row-position publication order.
+ParslBackend eagerly materializes rows/task tuples while the collector submits lazily; this is a memory/cost inspection candidate, not violation of the tested unfinished-future bound or a measured slowdown.
+Structured task error correlation and strict immutable public JSON value types remain supported; root/library Python floors are >=3.10/orchestrator and >=3.9/Core, with platform >=3.12,<3.15, as corrected by the shared reviewer.
+Several thread tests lack finally-based event release after assertion failure (B-F012); no hang or suite contamination was executed.
+Constructor, optional import, resource lifetime, bounded submission and startup refusals cover distinct contracts; textual fixture similarity alone does not make them redundant.
+Next serial batch follows full routing/requirements/materialization, worker attestation/preflight and their counterparts, then retained retry admission.
+Audit remains open; no repair or campaign test release.
+
+
+### Complete-review checkpoint — reviewer-batch-22
+
+#### reviewer-F048 — documentation producer uses permissive legacy record/path reads instead of current validated artifact ownership (P3, source-only fidelity)
+
+`generate_workflow_previews.py::WorkflowArtifacts` reconstructs views/records itself (`:253–419`): it checks only selected link schema/kind/target, accepts absolute targets, falls back to legacy `run_*` enumeration, manually chooses record paths and reads unvalidated Parquet or legacy CSV without requiring the canonical current manifest/transport/logical identity.
+For a relative path cell, `_resolve_record_path` (`:405–419`) tries not only the exact named record but the storage root, source checkout and repository root, selecting the first existing file.
+Thus a missing owned record asset can be substituted by an unrelated equal relative spelling outside that record, and CSV/legacy state can be consumed rather than refused under the current strict format.
+The script also chooses independent latest node records alongside fixed external input crops, so it does not prove a coherent single-run/input binding merely by finding files.
+
+These are documentation-source fidelity risks for a trusted maintainer command, not an exposed HTTP traversal defect, an untrusted-code sandbox claim or demonstrated incorrect scientific data.
+The smallest later correction is to reuse current public `Storage` run-node/record/asset reading contracts (`read_run_node_result`, `load_record_manifest`, `load_record_dataframe`, `resolve_record_asset`) with exact chosen record identities and declared external-path distinctions, rather than maintain another fallback reader.
+Bind the input crop and selected figures to the intended artifact/run provenance when claiming actual outputs.
+Existing storage/record identity, corruption and asset-refusal assertions are source counterparts owned by B/root; their presence does not automatically test this producer.
+Do not add an external model/binary run merely to resolve a helper ownership decision, or allow legacy fallback to weaken the actual product cache contract.
+
+#### reviewer-F049 — committed illustrations are not current-generator provenance (P3, observed static artifact drift)
+
+The committed PNGs contain explicit text that current producer bytes cannot emit:
+
+- `cell_counting_features.png` shows **shape features** as its fourth table label, whereas `cell_counting_assets` fixes **mean_perimeter** (`:564–569`).
+- `tracking_metrics.png` has four qualitative labels **track_length/displacement/mean_speed/scope**, whereas `tracking_assets` fixes six numeric row labels **track_count/mean_track_length/net_displacement/net_speed/gap_count/short_track_fraction** (`:711–718`).
+- `restoration_metrics.png` shows **comparison/metric/checkpoint/preview**, whereas `restoration_assets` fixes **mse_degraded/mse_restored/degraded_psnr/restored_psnr** (`:600–606`).
+- `sairpico_input_psf.png` labels **Generated Gaussian PSF**, whereas the current producer fixes **Workflow-generated Gaussian PSF** (`:641`).
+
+These are direct source-literal versus displayed-asset disagreements, not an inference that geometrical circles prove fabricated science or that any production workflow failed.
+The producer intends to read real artifacts; current exact input/model/binary/run provenance and the original figure-authoring revision were not established.
+The human low-SNR/SAIRPICO/parameter consumers explicitly qualify documentation illustration or typical output, so retain that distinction and do not treat those images as golden fixtures or runtime acceptance.
+Other matching layout/title pairs remain unproved current renders; visual plausibility cannot supply an absent manifest or computation history.
+
+The smallest later documentation/provenance action is to make curated illustrations explicitly distinguishable wherever prose could imply actual measured output, and decide whether the current producer is an actual-result renderer or intended illustration source.
+If real-result regeneration is later selected, capture real inputs/configuration/records and reconcile all14figures with that intended producer; this audit does not authorize running model/binary workloads or replacing captions with fabricated numeric output.
+The exact artifact classification is **opaque curated illustration with known intended producer/consumer and mismatches**, not **verified generated output of current source**.
+
+#### reviewer-F050 — float-valued integer counts use one significant digit (P3, qualified future rendering risk)
+
+`_format_number` (`:447–450`) formats any Python/NumPy float with `.{digits}g`.
+Callers pass `digits=0` for `object_count`, `track_count` and `gap_count` (`:566,713,717`).
+General-format precision zero yields one significant digit, so a multi-digit count arriving as a float is rounded rather than displayed exactly.
+Rows selected from mixed numeric pandas summaries may expose count fields as floats; integer-valued Python inputs take the separate `str` branch and are unaffected.
+No current numeric counter discrepancy was executed or inferred from the qualitative committed tables.
+After the audit, use an explicit exact integral-count formatting boundary (and reject/qualify non-integral values), preserving declared counts rather than converting all scientific measurements to integers.
+This is a narrow renderer candidate, not a processing/measurement result defect or reason to add another scientific runtime suite.
+
+
+### Complete-review checkpoint — reviewer-batch-23
+
+#### reviewer-F051 — UI illustration wiring and result alt text disagree with current contract/content (P3)
+
+`node-editing.png` and `results-inspection.png` show a body-column wire into the numeric `number` field of **Normalize measurements / IncrementNumbers**, which is labelled DataFrame and remains an actual `DataFrameTool` (`routers/dev.py:139–151`).
+Current platform v2 (`:92–94`) explicitly forbids column edges/node shorthand into DataFrameTool keyword fields and serializes them `connectable="never"`; ordinary whole-table inputs must use positional header pins.
+The screenshots therefore illustrate an obsolete development-fixture binding rather than the current supported graph.
+This is a static documentation mismatch, not a newly reproduced application defect or permission to re-enable forbidden field wiring.
+
+The result image shows numeric/string SeedNumbers data, logs and older table sizing buttons, but `docs/user/run-and-results.md:58` describes it as **an image preview and path actions in Node Data**; neither is present in that asset.
+The smallest immediate future correction is accurate alt text describing the visible completed table; no product test or image-generation run is required for the prose correction.
+When illustration refresh is later authorized, use a current faithful whole-DataFrame fixture or a real ProcessingTool field route, and the current result controls, preserving existing metadata/connection/resize requirements.
+Do not narrow the normative constant-only/DataFrame-positional contract to make an old screenshot appear valid.
+No documentation/browser/native refresh is released by this static review; desktop remains campaign-LAST.
+
+### Complete-review checkpoint — root-batch-12
+
+#### ROOT-F073 — P2 qualified example dimension contract: documented planar data is sent to3D while its metric assumes exactly two dimensions
+
+The A-complete SAIRPICO example/data manifest declares a YX crop, applies median2D, generates a depth5PSF, then dispatches RichardsonLucyDeconvolution deconvolution_type=3D.
+The completely reviewed adapter passes the unchanged image path to simgrichardsonlucy3d with that PSF; it performs no hidden volume conversion.
+The human Richardson-Lucy page requires selecting a mode matching input layout and leaves refusal to the external binary.
+The example's _sharpness simultaneously unpacks np.gradient into exactly gy/gx, so an actual3D output cannot follow that metric implementation unchanged.
+This establishes incompatible/underspecified planar-versus-volumetric recipe/metric intent, not an executed simglib rejection or proof that the binary cannot represent a single-plane input.
+The current complete binary profile tests Richardson-Lucy only in2D, and structural factory validation does not execute the example.
+Resolve the intended image/layout/PSF/mode/metric contract coherently before later scientific diagnosis, preserving the original PSF→denoising→deconvolution teaching idea and essential supported2D/3D modes; do not silently remove the PSF or fabricate passing binary evidence.
+
+#### ROOT-F074 — P3 qualified milestone coverage boundary: exported-class real-binary profile covers representative modes, not the declared executable inventory
+
+Eight complete-profile cases cover the two3DPSF generators and only2D deconvolution/median, oneCImg algorithm and hotspot.
+The common declared inventory also includes three2D-slice and three3D deconvolution commands plus3D/4D median; ordinary staged argv tests exercise only selected mappings with monkeypatched outputs.
+Therefore the profile can establish those representative binary routes when actually run, but cannot certify every documented mode/shape simply because every exported binary-tool class has a case.
+Its planar shape[-2:] check permits extra dimensions, and max>=min is redundant after positive-size/finite checks; neither demonstrates restoration effect or scientific quality.
+No profile was run; this is exact coverage/claim/selector guidance, not a mandate to add every parameter combination or rerun external environments during ordinary feature development.
+Retain a narrow development lane for guards/argv/staging and an explicit milestone compatibility matrix for genuinely distinct mode/binary/layout boundaries; retain actual finite/readback/PSF metadata oracles and identify unexecuted routes honestly.
+
+### Existing B-F056 import-isolation pattern and other suite opportunities
+
+The882-line wrapper test directly deletes package modules and subprocess from sys.modules without restoring their original objects.
+Other test code can then retain an older imported module/class while monkeypatches target a replacement, an order-dependent ownership risk matching B-F056 rather than a new canonical finding.
+Several command-refusal tests patch subprocess.run while the actual complete Core runner uses its captured subprocess module; the destructive import test makes that relationship especially fragile, even though the direct guard currently refuses earlier.
+Use isolated subprocess import checks or exact module-state restoration later; do not expand an ordinary external-free package guard into binary provisioning.
+The wrapper module mixes lazy import/schema/environment/argv/numeric/image/scalar-storage tests; split focused selectors/dependency fixtures by actual boundaries only after global suite synthesis.
+Repeated schema class loops and argv parametrization have different purposes; no measured redundancy/speed gain or blanket deletion follows from file length.
+Internal diagnostic finite-timeout/empty-selection policy can be made explicit if those helpers become user-facing; it is not a present public workflow-tool defect.
+M1 remains OPEN; repairs, new diagnostics and execution remain held.
+
+Nine new full inputs / 2510 lines; root cumulative170/504,334pending.
+
+
+### Complete-review checkpoint — A-batch-22
+
+#### A-F120 — Medium, definite supported-metadata parser gap: PEP723 TOML is parsed with quoted-string regexes
+
+Tool_loader.py294–351 recognizes the script comment block but parses dependencies with a non-TOML array regex and double-quoted string extraction335.
+Valid single-quoted TOML dependencies are silently omitted, and a quoted example in a TOML comment inside the matched array can be treated as an actual dependency.
+Valid exact version pins containing local-version '+' are rejected by the narrower name/version regex341 even though exact-pin reproducibility does not require that exclusion.
+No parser action or install occurred in audit.
+The metadata tests cover double quotes, whitespace, missing block and non-exact >= refusal only; test_parse_ignores_non_tool_deps actually tests ignoring requires-python rather than distinguishing package categories.
+Retain exact-pin admission and no-metadata no-op; future public metadata parsing should use the authoritative TOML grammar and explicitly state any narrower supported version policy, rather than silently discard valid declarations.
+
+#### A-F121 — Medium, source-authority risk: package/version module cache ignores selected tool-store root
+
+Tool_loader.py49–53 returns any existing scoped package-and-version module, while the scoped name172–174 contains no selected store_path/source identity.
+Two independently supplied stores holding the same package/version name can therefore return the first store's class even when the caller explicitly selected the second store.
+Ordinary immutable single-store deployments are materially mitigated; this is not a claim that two different version numbers collide in the existing tests.
+The API accepts store_path and the public worker constructor resolves the returned class's actual store, so the wrong-store selection can propagate into a complete otherwise-valid origin.
+Test_cached_on_second_load deliberately exercises the same store; two-version selectors distinguish version numbers only.
+Retain reuse of the same immutable source and distinct versions; future cache ownership must reconcile the requested store/source boundary rather than assuming equal labels prove equal content.
+
+#### A-F122 — Medium, qualified publication race: in-process versioned loader exposes a module before initialization/stamping without its own ownership guard
+
+Tool_loader.py52–53 considers any sys.modules entry a complete cache hit, but inserts that entry72 before exec/materialize/stamp79–91.
+An overlapping direct loader/register call can return the partially initialized module and see missing exports or unstamped tool metadata; unload/load can similarly affect shared global state during construction.
+The Core worker instance loader's RLock from A21 does not guard this public orchestrator loader; ToolRegistry register also has no local lock.
+Platform tool-manager lifecycle guards may serialize its normal calls, while public concurrent callers and independent registry instances remain conditional.
+Existing selectors are sequential, and lazy failure cleanup tests do not distinguish an admitted overlapping cache hit.
+Retain scoped class independence and failure cleanup; future ownership policy should distinguish initializing, ready and failed module incarnations without installing a global catalog name as executable identity.
+No overlapping call was run in audit.
+
+#### A-F123 — Medium, qualified transitive-dependency isolation and lifetime limitation
+
+Tool_loader.py55–60 permanently prepends each loaded version directory to ordinary sys.path, while absolute dependencies share canonical sys.modules entries.
+Two tool versions can keep distinct tool classes but use the first-imported same-name dependency, or a subsequently imported dependency selected by the most recently prepended directory.
+Unloading125 removes every path ending in package/version, not only the exact path insertion owned by that load, affecting independently present stores with that suffix.
+The documented public loader isolates tool package namespaces and intentionally exposes transitive dependencies to main-process DataFrameTool code; this is a scope limitation to reconcile, not proof of full isolated environment support or a current wrong scientific result.
+The shared fixture gives dep_pkg DEP_VALUE=42 in both versions, and both AlphaTool process methods return hardcoded v1/v2 without reading that value; the exact two-worker-version selector cannot distinguish conflicting dependency behavior.
+Fixture-local cleanup removes dummy/lazy/broken module families and their paths but not dep_pkg; broader shared cleanup remains reviewer-owned, so a whole-suite leak is not asserted from this local fixture alone.
+Retain tool version and worker-origin isolation; future compatibility claims should explicitly bound dependency isolation, and any diagnostic must actually use differing dependency values rather than duplicate the already proved class distinction.
+
+#### A-F124 — Medium, qualified install publication/rollback race
+
+Tool_loader.py377–401 checks module directory presence, creates the final target and runs pip directly into it, without a per-target lock or staged atomic publication.
+A concurrent install/load can treat a partially created module directory as installed; a failed contender's unconditional rmtree401/412 can remove another contender's successful target.
+The normal platform manager may hold a lifecycle/admission boundary, and single user-driven calls are sound; public registry/install helpers and independent processes do not establish that serialization in this source.
+Current loader fixtures construct stores completely before calls, and no reviewed selector here admits overlapping installation or partial-target loading.
+Retain explicit install/register separation, argv subprocess and failure diagnostics; future shared store publication should own/stage its target and coordinate rollback rather than delete by package/version label alone.
+No package installation/network or race reproduction occurred.
+
+#### A-F125 — Medium, qualified carried module authority weakening in package class fallback
+
+Resolve_tool_class137–166 checks a requested scoped submodule when loaded, but if that module is absent it falls back to a same-named top-level re-export regardless of its actual canonical defining module.
+A stale/invalid carried tool_module plus an existing top-level class_name can therefore resolve a different module's class rather than refuse the captured module identity.
+Materialization.py682–689 passes graph-carried package/version/module/class directly into this public resolver, making this distinct from an ordinary name-only catalog lookup.
+The fallback is intentionally documented for re-exports, and valid exports of the exact intended class remain sound; its required identity check is the qualified boundary.
+Both existing ResolveToolClass selectors use already loaded correct submodules and inspect version/name, so neither distinguishes absent carried module versus a different same-name top-level export.
+Retain legitimate package re-exports and exact captured package/version; future fallback should verify the actual class's canonical module or explicitly refuse inconsistent carried identity.
+This extends the executable portable binding authority map without duplicating platform A-F001's live registry overwrite.
+
+### Existing A-F117 extension — Child invocation snapshot also drops missing-node provenance
+
+Materialization.py406–426 assigns child build errors and expected node identities, then calls child at447–451.
+Interfaces.py372–413 creates that invocation snapshot by copying nodes/interfaces/custom sources/imported viewing requirements, but omits _expected_node_names, _build_errors and _failed_nodes, which initialize empty/None82–84.
+Thus a retained partial child with missing internal nodes can lose its missing-node provenance before viewing derivation, not merely have provenance that the recursive visit ignores.
+The same omission can make the child snapshot's is_partial/errors views look clean, while the outer materialization error list still retains prefixed child errors.
+A future completeness correction cannot rely on adding recursive expected-name checks alone without preserving the captured partial-build authority.
+The complete inspection counterpart covers root partial errors/failed_nodes/is_partial only; no nested partial snapshot selector distinguishes this path.
+Strict complete children and normal immutable independent invocation copies remain sound; no imported partial archive was executed/exported in this audit.
+This amends canonical A-F117, not a new duplicate finding.
+
+
+### Complete-review checkpoint — B-batch-15
+
+#### B-F125 — P2, provider adapter's version predicate is weaker than reported compatibility (source compatibility risk).
+
+providers.py:_release_tuple extracts only year and month; validate_managed_provider accepts the entire (2026,5) pair.
+Returned evidence states compatible_parsl >=2026.5.25,<2026.6.
+A same-month version below that patch floor, or a dev/post spelling with the same parsed year/month, can pass the predicate despite the stated supported range.
+The full provider tests use the installed public API and do not distinguish below-floor same-month metadata.
+Future bounded version diagnostic should retain exact public executor/provider types, scheduler match and worker_init verification; no installed version was changed and no external API compatibility failure was executed.
+
+#### B-F126 — P2, managed validator startup and secret handoff are not fully inside the bounded lifetime (source failure-isolation risk).
+
+managed_validation.py:validate_managed_factory allocates private_root/pipes and starts the process before entering try/finally.
+Process.start failure can leave private state/pipe handles outside that cleanup owner.
+The subsequent secret_parent.send occurs before timed report_parent.poll; a child stalled before its recv can block the send independently of the advertised timeout, especially with the allowed larger secret payload.
+No deadlock was reproduced; spawned imports/setup must reach recv for the ordinary path, and broken pipe outcomes are caught.
+test_managed_validation.py::test_timeout_terminates_child_and_removes_private_state covers a factory sleeping after handoff, not startup failure or a pre-recv stall.
+Termination sends SIGTERM to the child group but the later SIGKILL fallback targets only the leader; a descendant ignoring TERM is a qualified physical-retirement risk, not proof that trusted factories normally spawn such descendants.
+Future fault diagnostics should retain private secret transfer, safe process identity ownership, normal timeout cleanup and no scheduler allocation during validation.
+
+#### B-F127 — P2, successful structured factory report can carry a resolved secret (source confidentiality risk).
+
+The worker deliberately suppresses arbitrary exception text when secrets are present, but successful _validate_result facts are returned without checking resolved secret values.
+Factory-defined executor labels, attestation strings and allowlisted provider string settings are echoed into the report; a secret-derived value placed in one of those fields can therefore be returned as a supposedly sanitized fact.
+This is a qualified accidental/trusted factory projection risk, not a claim to sandbox malicious Python or redact all arbitrary transformed secrets.
+test_secret_values_use_private_handoff_and_never_enter_report supplies secret_failure only and verifies the failure report; no successful secret-derived label/settings oracle exists in this full module.
+Future diagnostic should preserve safe opaque references and intentional useful deployment facts while deciding how known resolved values are excluded from persistent/report fields.
+
+#### B-F128 — P2, archive readonly conversion failure leaves a reusable writable published tree (source immutability/recovery risk).
+
+materialization.py installs staging with os.rename, then invokes _make_read_only on the already visible destination.
+If chmod fails after publication, the staging path is gone and finally cannot remove/recover the published tree.
+Later reuse calls _validate_materialized, which checks content/hash/symlinks/special files but not write bits; it returns reused=True without repairing or rejecting writable content.
+A concurrent reuser can also return before the winning readonly conversion finishes; the existing concurrency test inspects final trees only after all calls complete.
+The bytes are already fully written before publication, so this is not a claim of partial file content visibility or wrong code execution.
+test_materialization.py::test_existing_valid_destination_is_reused_without_rewriting and ::test_concurrent_materialization_installs_one_complete_tree lack chmod-failure or paused readonly-conversion oracles.
+Future diagnostic should preserve immutable content address, same-content concurrent reuse, no symlink replacement and exact worker origin; B-F083 durability and B-F111 empty-destination rename qualifications also apply without an executed filesystem race.
+
+#### B-F129 — P3, duplicate detection performs quadratic scans (source cost/maintenance candidate).
+
+routing.py computes duplicate node names using names.count for every name; materialization.py:_bundle_files does the same for paths.
+These operations are O(n²) even when all inputs are unique; routing also recomputes stable environment identities across bindings/requirements.
+Current full tests use small sets and prove correct duplicate/refusal/order behavior, not growth cost.
+A future measurement and linear duplicate collection/identity reuse candidate should retain deterministic error ordering, exact duplicate refusal and immutable input validation.
+No measured performance regression or suite speed gain is claimed, and broader input size bounds have not been certified absent repository-wide.
+
+#### B-F130 — P3, canonical Core requirement helper does not validate constraint grammar (source validation/contract candidate).
+
+requirements.py:normalize_core_requirement requires the distribution spelling and an operator-prefixed nonempty suffix, but does not parse that suffix as a version specifier.
+Malformed constraints such as bioimageflow-core>=garbage can become a WorkerRequirement and compare equal to an equally malformed attestation until the worker's actual Core compatibility check refuses them.
+The ordinary startup constant is valid, so no default processing acceptance defect follows; the gap affects public custom requirement/attestation construction and earlier diagnostics.
+test_requirements.py::test_core_requirement_must_name_and_constrain_core tests empty/unconstrained/wrong-name strings only.
+Future diagnostic should decide the claimed canonical requirement grammar while retaining strict distribution identity, conservative exact route comparison and actual worker Core enforcement.
+
+
+### Complete-review checkpoint — A-batch-23
+
+#### A-F126 — Medium, qualified workflow-local registry source identity loss
+
+Registry.py257–272 keys custom workflow classes by package/version/canonical module/class without their _bif_custom_source_id/hash or owning workflow identity.
+Two captured custom sources with the same original module/class and empty package/version can replace each other's class/metadata entry in a shared registry even though their immutable source identities differ.
+The same public qualifiers used to distinguish package versions cannot select both custom-source incarnations.
+The docs describe discovery for a specific workflow and one-registry-per-workflow use mitigates the issue; replacing a revised source within that one scope can be intentional.
+This is a shared-registry capability/source-ownership risk, not an executed wrong-class dispatch or proof every refresh rebinds a workflow.
+The full existing registry test covers package versions only and no custom workflow registration call was found by the source/test search.
+Retain exact package qualifiers and workflow-local discovery; future public source indexing should either state/enforce single-workflow scope or preserve captured custom source identity as a selectable authority.
+A-F026 cached custom source and platform A-F001 binding overwrite remain distinct mechanisms.
+
+#### A-F127 — Medium, source-level editing dual-authority risk: cached constant mutation disagrees with wire reconstruction for edge-bound fields
+
+Session.py167–180 adds a serialized constant and directly edits cached bindings without resolving an existing incoming edge or refusing the edit.
+For an ordinary tool field, its _column_bindings and upstream edge remain alongside the new constant; for a nested input, _input_column_bindings remains while _apply_interface_binding changes child targets.
+Materialization.py440–444 and475–477 explicitly reject graph-carried constant plus incoming edge at the same port/field on a fresh rebuild.
+Thus the cached workflow can remain available after an edit whose canonical serialized graph refuses reconstruction; normal unconnected constants are sound, as the existing edit test proves.
+The setter also stores the original value object in the cached bindings while serialize_constant captures wire values, so a caller later mutating a passed list can diverge the cached object from session.to_dict without a session edit; this is conditional caller-lifetime debt.
+No edit or wrong computation was executed in audit.
+Retain cheap cached edits and canonical wire state; future mutation policy must consistently reject conflicting authority or atomically change the topology/bindings and capture mutable values rather than leave two different representations.
+Existing selectors do not test edge-bound or nested constants, reload equivalence or passed-value alias mutation.
+
+#### A-F128 — Medium, qualified refused-edit state/cache ownership failure
+
+Session.py169 publishes the wire constant,177 mutates the cached nested invocation, then178 applies the port before181 invalidates validation.
+An unknown nested port or a later target application error raises after those earlier writes; a previously cached validation result remains available and session/cache can be partially changed despite the failed setter.
+A valid port and normal complete target set are sound; unknown ports and damaged/adapted definitions are the distinguishing failure boundary.
+The setter intentionally permits invalid values for iterative editing, but an exception must still have an explicit accepted-versus-refused state contract and accurate validation ownership.
+The existing constant test uses only a known ordinary unconnected field and cannot distinguish this path.
+Retain incremental editing and target fanout; future failed edits should either remain a deliberate accepted invalid state with invalidated diagnostics or preserve both authorities atomically, rather than leave a stale validation cache after refusal.
+This is the Session consumer of related interface mutation debt, not a new claim that A-F036's producer rollback already works.
+
+#### A-F129 — Low/Medium, definite lookup contract mismatch on re-registering an existing key
+
+Registry.py265–266 and package discovery assign into an existing dict key; _matching_keys387–394 preserves initial insertion order and _find_key377 selects its last element.
+After registering v1 then v2 then v1 again, the name-only lookup still selects v2 even though its public docstring315–318 promises the most recently registered class.
+Exact package/version/module lookup remains correct; this is ordinary catalog selection, not corruption of already captured portable nodes.
+Test_register_keeps_same_class_name_from_multiple_versions covers first-time v1 then v2 only, so it proves retention but not re-registration recency.
+Retain distinct version entries and qualified selection; future implementation/prose should agree about insertion order versus most recent registration without switching captured executable binding authority to name lookup.
+
+#### A-F130 — Low/Medium, definite documentation drift for current registry and Session mutation admission
+
+Gui/tool_registry.rst123 describes a flat class_name-to-metadata index and recommends two registries or direct resolver to address both versions.
+The actual four-part index and public qualifier parameters already support both versions in one registry; the docs unnecessarily direct callers away from that authority.
+The ToolMetadata table also omits actual row_consumption, while the source publishes it as capability metadata.
+Gui/workflow_session.rst56 says add_edge requires variant endpoint fields, but session139–147 checks only common fields and variant type before storing; stricter endpoint validation happens later during materialization.
+Its set_constant description58–60 says constants dictionary without describing nested bindings stable port IDs.
+The in-source validate docstring254 says cached across nonstructural edits, although both compute-affecting setters invalidate it; the human guide correctly describes caching until such an edit.
+The guide's round-trip wording is semantic dict-copy identity, not literal byte preservation of JSON formatting, which should remain precise for undo/export expectations.
+Retain valid legacy normalization and explicit runtime/wire separation; future guidance should name actual qualified lookup and mutation admission boundaries without inventing extra APIs or requiring premature validation.
+No documentation rendering or app checks ran.
+
+#### A-F131 — Medium, qualified discovery diagnostics/authority debt: schema serialization failure becomes an unmarked empty schema
+
+Registry.py278–285 catches all input/output schema serialization exceptions and publishes {} without error/status provenance.
+An introspection failure therefore looks like a successfully discovered tool with no fields to ordinary palette consumers; the registry preserves the class and row metadata independently.
+Well-formed tool declarations are sound, and a host may deliberately prefer partial discovery; no existing reviewed consumer is shown executing a tool on that empty schema alone.
+The current registry tests assert valid serializers populate fields and have no failing-schema distinction.
+Retain useful best-effort discovery if intended; future metadata should distinguish unavailable schema from a real empty IO model rather than silently present both as authoritative {}.
+This is separate from A-F115's known plain-string image declarations and from offline carried viewer snapshots.
+
+#### A-F132 — Low, conditional metadata snapshot mutability debt
+
+ToolMetadata is frozen but inputs_schema/outputs_schema are mutable dictionaries returned through get_metadata/list_tools without copying.
+A caller can modify stored palette metadata while the registered class remains unchanged; the frozen wrapper does not preserve schema snapshot invariants.
+No reviewed current consumer mutates those dictionaries, and public callers may intentionally treat metadata as mutable, so this is a contract/aliasing qualification rather than an observed stale palette.
+Retain cached discovery and tuple tags; future policy should explicitly define mutable metadata or provide immutable/copying access instead of implying deep freezing.
+The existing tests only read schemas, so their no-mutation oracle is appropriately bounded.
+
+#### A-F133 — Medium, qualified archive-versus-graph Session editing shape mismatch
+
+Session constructor/from_dict preserves arbitrary supplied data, and to_workflow delegates to public Workflow.from_dict, which accepts portable archive envelopes.
+Mutators/nodes/edges operate on top-level nodes/edges rather than an archive's workflow graph, so an accepted archive can materialize initially but later node lookup fail or structural additions append invalid envelope fields.
+The Session docs demonstrate graph-shaped dictionaries and do not explicitly promise archive mutation, materially narrowing this finding; callers can intentionally extract archive.workflow before editing, but would need to preserve its custom sources separately.
+The tests supply ordinary graphs only, and no archived editing scenario was executed.
+Retain executable archive loading and raw graph incremental editing; future constructor contract should explicitly reject unsupported envelopes or model their graph/source/snapshot ownership coherently, without promoting a stale viewer snapshot to live metadata.
+
+
+### Complete-review checkpoint — B-batch-16
+
+#### B-F131 — P1, recompute replay can reject the child's newly published current selections (source idempotence defect).
+
+retry.py:start_retry_plan retains and recognizes the existing child plan and dispatched transaction, but always invokes _cleanup_invalidation_backups inside the allocation guard.
+That helper refuses whenever a targeted current.json exists, even when the child has subsequently recomputed successfully and published a legitimate new selection.
+A second start_retry(plan) after that publication can therefore raise “An invalidated cache pointer was unexpectedly restored” instead of reconnecting to the same child.
+The prior journal phase establishes the old selection was invalidated; it does not establish that the key must remain unselected for the child's entire later lifetime.
+This follows the reachable source path; no new test or actual replay was executed.
+Existing selectors tests/unit/launcher/test_retry.py::test_recompute_resumes_a_partially_journaled_invalidation and ::test_retry_plan_round_trip_and_retained_submission_clone cover interrupted invalidation and ordinary non-recompute completion separately.
+Neither replays the same recompute plan after the child regenerates that key.
+Future diagnostic should join those exact phases, retaining durable journal recovery, current-pointer-only invalidation, child identity, unrelated selections and no launcher replay.
+
+#### B-F132 — P1, concurrent same-plan local retry handoff lacks one dispatch owner (source concurrency/failed-ack risk).
+
+start_retry_plan protects allocation/journal changes with repository.allocation_guard, then releases it before _launch_or_reconnect_retry checks status/backend markers and invokes _launch_prepared_control.
+Two same-plan callers can complete that guard with phase invalidated and both observe prepared/no marker before either creates local logs.
+The local backend uses exclusive log creation, so one caller can fail rather than launch twice; this is an important mitigation against duplicate processes.
+However _launch_prepared_control catches that failure and _mark_launch_failed can commit failed while the first accepted launch has not yet claimed running.
+The second caller's failed handoff can thus publish a terminal failure for the first caller's accepted child launch, even though orchestrator claim/epoch fencing prevents two successful execution owners.
+This is a coordinated source schedule candidate, not an executed race or claim that every backend duplicates jobs.
+Manual command creation and PSI/J intent logic have their own semantics; no general scheduler duplicate claim is inferred.
+Existing ::test_cluster_agent_retry_is_idempotent_and_reconnectable is sequential and patches the launch handoff under a manual backend; ::test_retry_submission_uncertainty_is_never_resubmitted proves the retained uncertain phase only.
+Future exact local same-plan coordination diagnostic should retain one child, one accepted physical launch, immutable receipt and claim fencing, and prevent a losing concurrent observer from failing an accepted owner.
+
+
+### Complete-review checkpoint — reviewer-batch-24
+
+#### reviewer-F052 — P3 stale restart descriptions despite a preserved operative hold
+
+Source:platform-test-start.md:7–8, platform-test-dashboard.md:12, platform-test-plan.md:77–78 and platform-test-issues.md:73–90.
+The fresh restart record still leads with RUNNING/continued execution and the dashboard says Wave2 is delegated, while the current plan and later restart instructions correctly hold all repairs/new diagnostics/application execution for complete review.
+The plan also says current J1 does not assert backend and J3 siblings produce identical rows, although current canvas-interactions.spec.ts:575–580 asserts backend direct plus accepted workflow/revision, and nested-execution.spec.ts:442–445/471–481 supplies distinguishable10/20/30 versus1/2/3 sibling results.
+Those are scoped counterpart reads only, not complete test-file review credit.
+The conditional "if current code still has those gaps" and the explicit zero-pending hold materially mitigate accidental implementation, so this is administrative/specification drift, not a claimed permission bypass or runtime defect.
+Smallest future correction:describe review as running while application execution and repair queues are held; label the J1/J3 gaps as historical now repaired; prefix023/024 next repair actions with after-gate release without weakening their retained real-red contracts.
+Do not rerun accepted readiness solely to refresh prose.
+
+
+### Complete-review checkpoint — reviewer-batch-25
+
+#### reviewer-F053 — P3 obsolete Wetlands IDE launch profiles
+
+.vscode/launch.json:11 points at removed src/wetlands/_internal/module_executor.py and:23/36 at removed src/wetlands/main.py; literal existence checks confirm both targets absent.
+The checked-in Main profiles also bake in one workstation's interpreter and a different project's live Wetlands root.
+Current pyproject.toml:36–37 exposes wetlands.cli:main, and current worker bootstrap is src/wetlands/module_executor.py.
+This affects maintainer launch guidance, not the valid shipped console entry point or CI's module imports.
+Future smallest correction:reconcile the human IDE profiles with the public CLI/debugger documentation and portable selected interpreter/disposable instance root after the gate, preserving debugger versus management ownership rather than launching the private worker directly with an invented v1 invocation.
+No profile was executed and no broken-runtime claim follows.
