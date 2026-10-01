@@ -6,6 +6,7 @@ orphan: true
 
 The campaign is **RUNNING**; use the checkpoint to resume the remaining work.
 The user requested the 2026-10-01 architecture-led revision and continued execution after the independent retrospective.
+M1 agreed-scope review is complete at the current checkpoint; retain its exact inputs and independently accepted judgments, review affected changed bytes, and continue with the M1 retrospective/M2 priorities rather than restarting unchanged full-file reviews.
 Use this prompt when execution is requested; reading or reviewing these documents alone does not start tests, repair branches, or native setup.
 The [plan](platform-test-plan.md) defines outcomes and acceptance; the [checkpoint](platform-test-progress.md) contains the observed baseline and next tasks.
 The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is preserved for audit only.
@@ -20,6 +21,8 @@ Then reconcile current main, dirty files/worktrees and active processes, install
 Retain the known handwritten-draft-type, missing Napari default-recipe, and original-filename metadata debts for bounded owned repair packets; a docs change does not close a code defect or certify behavior.
 Preserve canonical graphs, CAS editing, source/result identity, resource floors/caps, dataset delete-CAS, local/managed execution ownership, viewer metadata and native boundaries; leave future storage/summary/shared-store/security decisions explicitly unresolved.
 Preserve unfinished candidate worktrees and unrelated user files; do not merge, reset, or resume their old instructions wholesale.
+Assign a cleanup owner for each task; after clean integration and verified process retirement, remove its exclusive disposable dependencies/runtime/build stores, move the merged source tree to Trash, prune worktree metadata and delete only its merged branch.
+Record actual reclaimed bytes separately from Trash bytes, preserve failure evidence and held/dirty/unmerged source, and reconcile overdue cleanup at each major checkpoint; follow the plan’s retirement policy without deleting shared/adopted environments.
 Verify current contracts before porting candidate code, especially removed fingerprint fields and changed result/dependency APIs.
 Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.
 

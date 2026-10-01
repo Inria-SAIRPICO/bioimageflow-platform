@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 1702 complete (1558 reviewed / 144 classified) / 97 pending, with 558 identified findings.
+Current checkpoint: 1,799 inputs / 1792 complete (1643 reviewed / 149 classified) / 7 pending, with 573 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -7115,3 +7115,550 @@ No newly executed acceptance, desktop/native GUI credit or whole-codebase comple
 
 Nested execution, result exports and managed UI E2E with public launcher input/cancellation counterparts, then installed authority and frozen held T1/spec inputs.
 All53 remaining B inputs remain pending; audit and all repairs/tests are held.
+
+### Complete-review checkpoint — root-batch-28
+
+#### ROOT-F096 — P2 qualified download asset identity/publication risk in both shipped example implementations
+
+All four platform/library DownloadImages bodies derive the destination from raw URL last slash segment and skip download whenever that path exists, without verifying which URL/bytes published it.
+Two different URLs with the same basename therefore share one artifact: the second returned row advertises its own URL but the first URL's bytes/path.
+A failed local write can leave partial existing bytes; a later invocation skips that destination and treats them as downloaded. Parameter implementation writes while response context is open; Fish reads fully first, but local write failure remains possible.
+The shipped demo URLs have distinct uncomplicated TIFF basenames, which materially mitigates their normal default recipes; this is public adapted-source capability/failure recovery debt, not an executed wrong shipped microscopy result or wrong worker record.
+Raw query/fragment components become filenames rather than parsed URL path; special dot segments may resolve to already-existing directory paths and are not validated as nonempty regular image basenames. No general slash traversal or destructive network diagnostic is claimed.
+The full library test_example_download_tools.py only supplies one sample URL/fake bytes and checks managed-assets location/context refusal; it does not distinguish URL collisions or failed-write existing output.
+Future bounded diagnostic should extend that existing fake response/write seam and establish URL-to-artifact identity plus failure publication semantics before deciding a collision/digest naming policy; retain managed execution context, actual source URL metadata and self-contained examples.
+No test or repair is released.
+
+### Existing A-F114/A-F115 source extensions
+
+The platform-maintained ParameterSweepResults exactly repeats ordinal reset/concat and first-mosaic broadcast; normal six-way parameter source lineage mitigates the conditional changed-order/cardinality risk already canonical in A114.
+Its plain string mosaic_path declaration remains known schema without image/viewer declaration, A115; do not guess image requirements from path-looking strings or remove the output.
+The generated graph explicitly publishes four narrow fields, while intermediate table includes wider values; root versus terminal output distinction A111 remains applicable and no scientific values are lost merely by the narrow interface.
+
+### Retained producer and scientific judgments
+
+Default known packages contains three explicitly selected discovery seeds, not an exhaustive installed-tool inventory. Comments claim missing-file-only fallback; actual KnownPackagesService/refusal policy remains reviewer ownership, not a second parser.
+Manifest identifies both bundle_version5 templates, explicit source recipe and installed Demo paths; complete JSONs bind portable package versions, recursive marker input/output immutable IDs, display names, schema2 graph and document1 metadata with no owned-source IDs before installation materializes its owned tools.
+Fish has four input URLs, explicit CYX channel2 nuclei and separate marker channels0/1, two scoped nested overlap pipelines and ordered two-table summary. Parameter has2 sensitivities times3 sizes, actual CrossJoin inputs/typed parameter edges and row_index-aware ATLAS output template, scoped measurement/mosaic/summary lineage.
+These are full source/configuration judgments, not regenerated artifact hash equality, model quality or current released package compatibility.
+FishLabelOverlaps validates exact2D/numeric/finite/nonnegative/integer/range-compatible labels before uint64 conversion, equal shapes and sparse cooccurrence; includes background associations to preserve nuclei with no marker, explicit original image basename and mapped output rows.
+Average summary requires exactlytwo tables/requiredcolumns, groups by immediate parent expansion index, distinct spot labels per nucleus, counts zero-marker nuclei, weighted total denominators and named global row.
+Existing complete weighted numerical test explicitly establishes four source origins,0.5/2/1/0 per-image values and weighted global0.8/1 with five total nuclei; parallel integration uses constructed marker data and cannot certify external microscopy quality.
+An all-background overlap body returns[] and absent-row images cannot be recovered solely by this aggregator; whether to preserve a zero-image row or refuse empty mapped output is a public cardinality/scientific contract question, not an established silently omitted default image without reconciling engine empty-output policy.
+SpotMaskMetrics explicitly counts axis-adjacent foreground components (4-neighbor2D,2n in nD), not distinct preexisting label IDs; zero-size fraction guarded and no shape/finite check beyond declared input semantics. Python flood fill and two full-size boolean buffers are an unmeasured large-mask cost candidate; do not infer speedup or alter connectivity without a scientific contract decision.
+Maintained curated platform sources are actual exporter inputs, even though JSONs are derived; reviewer047's publication gap must preserve those authorities rather than treating the whole directory as disposable output.
+No duplicate source credit, new test growth, runtime/native pass or full review gate closure is claimed.
+
+### Complete-review checkpoint — B-batch-37
+
+### Findings and refinements
+
+B-F180 is refined by the existing exact test `nested-execution.spec.ts::Run Selected expands recursive dependencies and refuses an invalid nested boundary`.
+It deliberately submits the invalid selected nested root and expects HTTP 422 carrying the scoped leaf error, with prior completed execution status, accepted draft revision/base hash/graph, sibling artifacts and absent invalid results unchanged.
+Thus the frontend root-versus-scoped-leaf early guard is an early UX consistency candidate, not missing overall refusal coverage or evidence of invalid compute admission.
+There is no requirement inferred here to suppress that POST; the backend refusal floor and tested behavior must be preserved.
+
+B-F012 receives precise test-lifetime corroboration: nested setup creates workflows before the main finally; an intermediate creation failure can leave an earlier test workflow, while deletion failures are suppressed.
+The export and managed journeys perform deletion only on successful fallthrough.
+These are fixture cleanup qualifications, not demonstrated leaked runtime processes or failures of the parent runner's isolated runtime teardown.
+No new production defect ID is introduced.
+
+### Per-file judgments
+
+`nested-execution.spec.ts` fully traces actual Direct sequential GUI work through saved/draft graph admission and scoped result lookup.
+The distinct invocation test uses identical internal node IDs with different literal inputs and asserts separate literal values, scoped statuses and stable result identity after reload.
+The selected test proves dependency expansion and pruning of an invalid unrelated nested branch, then the exact invalid selected boundary refusal above.
+The failure/repair test retains the successful source record, rejects failed nested/downstream results, leaves sibling artifacts unchanged, edits a private nested snapshot without changing the parent accepted draft, applies it through GUI and runs a new execution with exact successful rows.
+These are strong invocation, admission and persistence oracles; host Direct results do not establish isolated worker or native GUI compatibility.
+
+`result-exports.spec.ts` traces genuine local workflow execution and downloaded archives, including a later selected run and a separate workflow becoming global latest.
+It checks exact CSV values, per-node execution provenance, archive member names, bundle manifest and nested archive digest, and verifies repeat downloads remain byte-identical while the unrelated run remains active history.
+A single intercepted 409 is explicitly a controlled export conflict, followed by actual retry/download; it does not prove a real concurrent filesystem failure.
+The ZIP helper is a trusted-test archive reader rather than an untrusted ingestion security oracle, and this test does not decode parquet or validate nested graph contents beyond digest.
+Those limits do not diminish its workflow-versus-global-latest and per-node run provenance assertions.
+
+`managed-execution.spec.ts` uses actual local workflow creation and UI but intercepts every remote target, preflight, submit, list, result and cleanup request.
+It precisely asserts profile revision, two-stage path choice, submit token, one submission, retained run/scheduler/progress rendering after reload, cleanup digest and one plan/apply call.
+The result body is literal text labeled ZIP; the succeeded snapshot is constructed by the test.
+This is a protocol/UI integration oracle and gives no real remote provisioning, scheduler, worker PID or validated result-archive evidence.
+Its explicit campaign exclusion is accurate; ordinary/full default applicability remains separate as established by the shared test-runner review.
+
+### Retain / defer
+
+Retain the distinct invocation literal-data oracle, invalid selected boundary no-side-effect oracle, workflow-bound export provenance, real retry after controlled conflict, and managed token/digest request assertions.
+Do not collapse these into one generic execution test or claim each witnesses external workers.
+Defer fixture cleanup strengthening and B-F180 UX policy decisions until the complete audit gate closes.
+No tests were executed and no repair is released.
+
+
+### Complete-review checkpoint — B-batch-38
+
+`tests/integration/launcher/test_node_input_uploads.py` exercises genuine local bundle preparation and public agent allocate/commit/submit materialization, with orchestrator launch explicitly monkeypatched.
+The first test changes original bytes after preparation, then verifies the nested Files constant points to the immutable object and retains prepared bytes; a failed-parent planned retry retains that same installed path and content.
+The second test resolves two root list uploads sharing a basename in original order, with distinct object paths and exact bytes.
+These are strong staging authority, ordering and retry snapshot oracles; they do not execute a scheduler or prove worker routing, despite supplied executor/launch metadata.
+The old Core attestation fixture is not a current worker compatibility witness; the Files-only bundle path does not imply a public processing recipe acceptance defect.
+No new source finding is identified.
+
+`tests/unit/test_wetlands_cancellation.py` injects fake task/manager implementations into the actual tracker/dispatch boundary.
+It distinguishes cancellation before registration, terminal callback removal, partial submission failure retaining the already-created task, a cleanup KeyboardInterrupt followed by a second drain attempt, cancellation stopping further submission, and cancellation winning over coincident completion/failure/timeout.
+Exact submit/cancel/wait counts make these more meaningful than status-only assertions and preserve the primary submission exception.
+The fake task's wait method itself marks terminal; it cannot attest physical worker retirement, public Wetlands cleanup failure behavior or actual task await cancellation.
+Those remain separate source/runtime findings and stronger existing external tests rather than reasons to discard these focused deterministic cases.
+No new defect or redundant test deletion is proposed.
+
+Retain both suites and their distinct oracle scopes.
+The audit remains open and no repair is authorized by this checkpoint.
+
+
+### Complete-review checkpoint — B-batch-39
+
+#### B-F190 — saved-versus-draft user guide authority
+
+P3 documentation defect: `docs/user/run-and-results.md:3` says the active saved workflow is validated before every run.
+The actual local GUI Run captures and validates the latest accepted draft, including unsaved edits; the complete Run, backend execution and draft-derived GUI tests reviewed in earlier batches establish this distinction.
+`docs/agents/execution.md` correctly describes latest draft capture.
+The misleading opening may cause a user to expect Save is necessary or believe unsaved edits cannot execute.
+Future correction should name the accepted active draft without weakening immutable captured-run, validation or conflict-refusal requirements.
+No application behavior defect or missing save action is inferred.
+
+### Existing findings / compatibility
+
+The shipped `parsl.py` calls `runtime.executor_binding` without an explicit processing environment identity.
+This corroborates reviewer-F040: ordinary exact routing can refuse a GENERAL_ENV ProcessingTool recipe when only the runtime/gateway attestation is supplied.
+It is not evidence of a wrong-environment worker execution, nor permission to relax exact recipe/Core admission.
+The optional site setup and explicit trusted script warning remain necessary; setup execution/validation context belongs the reviewer's public gateway findings.
+B-F088 acknowledgement-window ambiguity remains distinct from repeated same-request receipt behavior and the guide explicitly warns about allocation before returned ID.
+
+### Specific no-finding judgments
+
+The agent guide consistently names MCP tools, captured draft semantics, selected upstream dependencies, cooperative stop polling, locks and frontend conflicts.
+Its warning qualification is bounded by capability allowance and does not grant hard-validation bypass.
+The distributed guide distinguishes site facts from installed software, trusted executable files from persisted nonsecret metadata, explicit describe/save/submit from opening a selector, exact planned retry child from uncertain allocation, and run-owned workspace/result retention from current workspace selection.
+The result guide otherwise accurately describes scoped progress, retained cell identity, explicit one-time viewer choice, structural favorites, no automatic environment retry and per-node latest exports.
+Its local filesystem actions must retain existing immutable deployment policy guards; source findings ROOT-F002/B-F042 are separate from editorial availability claims.
+
+The shipped `cluster.py` is explicitly a site-owned placeholder with separate orchestrator and worker requests, existing Python, shared root and optional setup.
+`setup.sh` intentionally contains `CHANGE_ME` module values; it is not claimed usable before editing, and no secrets are embedded.
+No scheduler operation was attempted.
+
+All eight package image-directory READMEs were fully read as human-written maintenance policy, not classified away.
+Common/IO/measurement/restoration/spot/tracking explain generated numerical fixtures versus optional illustrations, segmentation suggests tiny masks, and SAIRPICO states package asset ownership.
+Their narrow prose makes no unsupported worker, numerical accuracy or full-test certification claim.
+Scientific source/test review belongs the root and visual asset provenance belongs the documentation reviewer; no new contradiction was identified in these files.
+
+Retain guide acknowledgement, exact retry/identity and trusted-site boundaries.
+Defer B-F190 correction until the full audit gate closes.
+
+
+### Complete-review checkpoint — reviewer-batch-47
+
+#### reviewer-F095 — captured catalog refresh can overwrite later accepted active/environment updates
+
+P2 qualified read-model race: package_catalog.refresh60–75 captures installed registry metadata before awaited PyPI fanout, then98–105 publishes the entire snapshot from that old capture.
+Concurrent update_active_version106–120/update_environment_status122–132 can patch the current snapshot while lookup awaits, then be replaced by the older active/environment state.
+Borrowed tools router499–500 publishes accepted active selection directly into this read model; startup/manual/post-install refresh callers are real.
+Root's complete counterpart test_catalog_refresh_preserves_active_version and test_catalog_update_active_version_patches_snapshot are sequential, not held lookup/update completion distinctions.
+Preserve registry authority, current active badge, offline no-network list fallback and per-name network isolation; a bounded existing fake-lookup barrier is the later diagnosis seam.
+B-F016 package-level environment granularity is separate; no actual selected tool/worker binding change was executed or alleged.
+
+#### reviewer-F096 — known-list unreadable-text failure falls outside existing fallback/error policy
+
+P3 qualified operational failure source candidate: known_packages45–57 catches OSError around UTF8 read, but UnicodeDecodeError from a present user file escapes that policy.
+Catalog refresh reads known names before its per-name broad isolation, so this can reject the refresh; app startup has a broader logged fallback, and raw installed list/current snapshot can keep the app usable.
+Root's complete known-list tests cover valid override/comments/missing files, not malformed encoding.
+Future smallest existing user-file fixture should establish coherent visible refusal or warned fallback while preserving the explicit user-file override; the audit does not assume silently replacing an invalid override is the only valid policy.
+No malformed file or refresh was executed.
+
+#### reviewer-F097 — syntactically valid malformed PyPI JSON escapes typed lookup failures
+
+P3 qualified external-response failure source candidate: pypi_versions56–63 calls response.json().get and releases.keys while catching ValueError only.
+A valid JSON list/scalar root or nonmapping releases raises AttributeError rather than PackageNetworkError.
+Catalog's broad per-name exception catch correctly isolates lookup failure to installed fallback, but public get_latest_stable is called by PackageInstaller.install130 before the installation try-block, so that caller has no equivalent shape isolation.
+No install side effect occurs before that lookup in the traced caller.
+Root MockTransport tests distinguish404/network/timeout and normal body only; use those existing seams for typed malformed-data diagnostics after M1.
+No live index or installation was accessed.
+
+#### reviewer-F098 — invalid release label can be chosen as latest stable
+
+P3 qualified malformed-upstream source candidate: pypi_versions79–90 sorts InvalidVersion strings after parsed versions and treats them as not prerelease; get_latest_stable70–75 then chooses the last such label as stable.
+This can pass a non-PEP440 release label into the default installer despite valid stable releases being present.
+Keep unknown/local installed versions visible where the catalog requires them and retain the explicitly tested pre-only fallback; latest install selection has a different authority than display sorting.
+Root's complete stable/pre-only/empty MockTransport cases do not distinguish invalid release keys; their existing fixture is the smallest later seam.
+No actual invalid release, command or install failure was observed.
+
+F086 now has complete demo producer/schema corroboration: installed status explicitly returns identity_generation; current frontend removal discards it.
+Demo missing-only publication preserves edited existing demos/conflicts and legitimate missing-root initialization; no seeding or ownership feature is narrowed.
+Actual is_running includes _starting and idle mutation reservations, and the install route's post-check body has no await, so the preliminary missing-start-admission hypothesis is withdrawn rather than elevated into a defect.
+Native reveal's actual deployment policy remains ROOT002; success means process spawn, not completed native reveal. Health means server liveness/version, not readiness or worker certification.
+The six-status enumeration is correct: cache_corrupt is an error type, and batch45's earlier optional seventh-state inference was explicitly corrected before acceptance.
+Unverified compatibility question only: ErrorResponse uses Field(exclude_if) while backend declares pydantic>=2.0; introduction/support at that floor was not established from local primary evidence, so no incompatibility claim or defect ID is added.
+Operation failure text repair/tail rendering preserves specific details and relies on the library's structured redaction contract; mocked platform portability checks are not real Windows/crash evidence.
+Global closure/current controls and all repair/runtime remain held.
+
+### Complete-review checkpoint — A-batch-47
+
+### Full historical record judgments
+
+### Evidence before September30 —87lines
+
+Full ledger preserves expanded source inventory obligations, real worker progress versus controlled setup, confirmed schema migration, recursive imported layout, Logger text/copy, registered viewer controls and strict corrupt-cache reads.
+Commands identify source or patch-equivalent revision, duration, selected counts, unrun/deselected phases, original failed broad commands, exact recoveries and post-final change invalidation.
+Examples correctly retain backend socket failures as original red/composite evidence, refuse same-revision app certification after the final link guard, distinguish real file-backed registration from controlled manager/browser registry and exclude native Qt provisioning.
+Migration public GUI saved document plus recursive backend snapshot/restart/crash-injection are explicitly separate from OS crash/packaged restart.
+Logger store-seeded GUI content/Chromium actual clipboard versus Firefox captured write cannot establish WebSocket provenance or every native permission behavior.
+Imported layout browser test's actual graph/DOM/persisted position controls, fully reviewed in A43, justify one-time deterministic materialization and no-reflow/sibling isolation rather than generic layout snapshots.
+No new finding in this file; the catalog-add broad failure and missing causal breadcrumbs are honestly recorded here and must retain their own task attribution below.
+
+### Evidence through Tier1B —289lines
+
+All heading entries, long completed-feature bullets, tables, release metadata and handoff text fully read.
+The exact BasicUse collection has56tests/28perbrowser,73stable applicable cells and one clean evaluated SHA; collection-only proof, actual independent browser execution, backend/frontend/docs checks and headed confidence are distinct.
+The original snapshot specifically leaves owner acceptance/continuation undecided; later progress records dated owner continuation, which is chronology rather than an active contradiction.
+Excluded managed/distributed/parallel scope, external package runs, sequential worker PID/outputs and mocked orchestrator cases are named; actual cooperative Stop admission/drain proof is stronger than simply HTTP200.
+A deliberately non-cooperative fixture was rejected rather than weakened into fake Stop evidence, and selected worker claims include distinct actual process/result identity.
+Source-preview recreation, selected compiler boundaries, nested conflict/Apply/copy and table/export bytes preserve precise observable outcomes with residual gaps.
+Current fully reviewed main browser fixtures corroborate actual source/copy rows, atomic baseline/failure/retry identities and direct-engine records; A012 fixture catalog type/default/unused argument flaws and A009/A166 possible test overlap remain source-oracle limitations, not reasons to erase valid historic outcomes.
+
+Broad runs retain first failure, passing prefix/unrun tail and independent exact green followups without relabelling the original command green; repeated milestones were eventually stopped by owner and source causal Open repair remained separate.
+The evidence discloses initial sandbox/network/port restrictions and corrected authoring assumptions, not product failures; future execution should request expected privileges first under current AGENTS rather than repeat predictable restrictions.
+Its early retained uncommitted-tree evidence explicitly lacks per-run tree hashes and prior temporary broad exclusions are not reproducible complete certification; durable applicability must be re-established from paths or rerun later when authorized.
+Release/CI/PyPI URLs and historical package versions are human records here, not independently fetched or reverified by this static audit.
+No blanket modern release/native/whole-suite claim follows; temporary logs are explicitly unnecessary for restart and old unfinished runner drafts must not be revived.
+No new finding; revision-specific limitations are a sound decision to retain.
+
+### Issues through Tier1B —233lines
+
+All001–017 decisions and template fully read with corresponding owned source/test and cross-owner entry contracts already inspected.
+Historical generation-1 preview applying to recreated generation3 motivated captured destination generation inside mutation lease, not artifact hash alone.
+Ordinary mutation reservations and actual execution activity require different queue/refusal behavior; delayed writer/physical cancellation is a distinct current B boundary and does not make the earlier ordinary-mutation fix unjustified.
+Run Selected compiles the intact complete graph and scopes only attributable diagnostics, retains global/unresolved/unknown errors and total dangling endpoint traversal.
+Rejected nested overwrite controls lacked generation/surrounding ports/newer private/lifecycle/accepted durable fences; correct refusal/private dirty retention and explicit Discard/reopen remain a defensible not-a-defect decision.
+Private snapshot CAS UseLatest/KeepMyChanges described in later evidence is a different accepted-authority conflict, not authorization to overwrite changed parent content.
+
+Cooperative Wetlands Stop drains submitted possible writers and historical public cancellation/PID/no-partial-output proof is strong; current raw-wrapper cancellation/physical admission debt is independently B/root-owned, not falsely declared resolved by this previous release.
+Nested Save's omitted default:null versus backend canonical graph comparison, one contextual enriched terminal error, graph-owned SaveAs destination identity and cache-status projection preserve focused causes rather than broad arbitrary timing waits.
+Clear backend restart proof uses a separate actual backend process plus HTTP and same-process GUI reload; the archive explicitly does not claim one live GUI spans process restart.
+Open014/017 observations remain cause-unproved, exact-green does not clear original broad red and actual click/command/request/lock/tab breadcrumbs are requested on recurrence; ISSUE018/022 must not be conflated.
+Paths/line selectors and discoverability hints are historical and require current collection/path reconciliation before future reproduction; do not rewrite old results to modern line numbers or create new tests merely because old selectors moved.
+No new canonical source defect; historical decision boundaries remain useful constraints.
+
+### Wave1 resolved ISSUE018 —22lines
+
+Complete controlled event timings, original source/diff/library identity, independently unmodified-latency green diagnostic, reviewed owner plan and exact/stress/composite validation are recorded.
+Observed accepted Open/startup mount/child activation/late explicit Open return establishes that specific root-presentation cause; corrected App startup fence and speculative nonprojecting draft read match full A main source judgments.
+No correction inferred for earlier014/017 or later022 lacking the same causal record, and no native/worker/package/excluded-engine credit.
+Deferred saved-load metadata reset had its own red unit and additional guard, not an unperformed generic review.
+No new finding; retain source-specific causality and bounded original evidence.
+
+### Archived plan —341lines
+
+Complete orchestration, tier ordering, exact73cell BasicUse table/gate, reachability/severity, complete scenario families/dashboard, realistic fixture and exact-first repair ladder, explicit specialist review, lane reuse/invalidation, final certification and durable restart rules read.
+Finished correct user outcome and owned durable state rather than raw test counts is the proper unit of progress; stronger existing journeys should be reused when adequate, but unrelated failure isolation should not become one monolithic suite chain.
+Owner pause requires an explicit decision and leaves systematic campaign incomplete; gate cannot silently erase native/external/lower-tier obligations, rejected Cartesian explosion still retains meaningful scenario boundaries.
+Task-specific reviewers/independent worktrees/dependency isolation/browser resource serialization and per-run revision/artifact records are defensible process decisions.
+The historical routine/refactor execution authorization is superseded by current explicit whole-audit-first freeze; this file's prominent historical wrapper is essential and was obeyed.
+At most one broad milestone attempt and exact recovery preserve honest reds and unchanged phases; this is workflow efficiency, not measured suite-wide runtime/redundancy improvement (A009/A166).
+Do not resurrect historical explicit model names/release baseline as current runtime selection or launch extra agents from the archived prompt.
+No new finding in its normative historical strategy, subject to the user-approved current strategy and full-audit gate.
+
+### Progress before September30 —45lines
+
+Full header/counters/closure paragraphs/next3actions/working-set read.
+Historical50c1af4 BasicUse and primary GUI obligation closure remain revision-limited; expanded500denominator includes new obligations and no current full-suite certification.
+Progress/source inventory dates and later integrated feature entries are historical layers, not proof every visible new case passed on the latest current source.
+Native provisioning/Qt/OS restart and legacy result limitations are explicitly retained.
+One definite low-priority attribution ambiguity is A181 below: catalog-add broad attempt belongs to imported-layout evidence, while immediate pronoun attaches it to corrupt-cache task.
+Archived next-actions N1/import/environment work and unrelated user presentation path are not instructions to resume or alter anything during this audit.
+
+### Progress through Tier1B —131lines
+
+All state/milestone table/gate, every long integration/ownership/worktree bullet and final restart rules read.
+Owner continuation after the gate is explicit and systematic coverage stays incomplete despite219/219primary cells; broad browser red/interrupted commands/remaining obligations survive separately.
+Issue017 focused green5+sequence3 with no speculative repair is correctly distinct from cause-unproved full Firefox failure; fixture Open-prerequisite replacement does not erase ordinary doubleclick contract coverage.
+Startup-precedence source repair, nested/write/worker/copy/result/layout tasks preserve integrated versus patch-equivalent evidence and no post-merge broader lane where absent.
+Worktree archival paths/branch states record historical ownership; no current existence/process state inferred or cleanup performed.
+Important milestone table records earlier179/220 versus currenthistorical219/219 in their dates, not a present denominator conflict.
+Root's complete Everyday1211 corroborates real mixed edit, bulk enable and atomic deletion Redo; A180 is solely the moved-position final oracle gap in canvas-interactions, not global absence of Redo coverage.
+No new finding in this archive beyond possible future concision after retaining exact revision decisions.
+
+### Archived restart —85lines
+
+The entire prompt includes bounded packets/context, disjoint writes, source reconciliation, priority versus final scope, stale/refactor plan/review, real GUI and known expected rows, exact-first/completion ladder and no full-lane chase.
+Model selection is explicitly a runtime setting, not activated by reading text; historical command prompts are retained audit material only.
+Worker source/spec edits and integration commits are old authorized campaign procedures, not an exception to the current explicit no-repair freeze.
+Native/manual/external owner limitations remain visible and unpassed; existing release evidence is retained, hypothetical agent absence cannot be credited as a review and owner status questions do not cancel a task.
+No new finding; historical wrapper avoids accidental replay but current orchestration remains root's authority.
+
+#### A-F181 — Low archived evidence attribution ambiguity after the corrupt-cache closure
+
+`docs/developer/archive/platform-test-progress-before-2026-09-30.md:22` closes RT-EXE-017 at e58b8f1 and the immediately following line23 says "Its broad Chromium completion attempt" failed catalog-add with103unrun.
+The detailed evidence record places that exact eight-pass/catalog-add/103unrun broad attempt in GUI-EDT-014 imported layout at38ac552 (`platform-test-evidence-before-2026-09-30.md:64–68`), while e58b8f1's entry82–87 explicitly reports app success before final link guard plus exact affected checks and no same-final app certificate.
+The original broad red/unrun count is honest, but the pronoun misleadingly attributes that run to the wrong task/revision and can distort invalidation or the reason for selecting a future diagnostic.
+Future documentation-only correction should name the imported-layout task/revision rather than change any observed pass/fail/skip record.
+No current product defect, invented missing evidence or new test is implied; preserve the original exact failure and no proven catalog-add cause.
+
+### Owned coverage and remaining gate
+
+354/354assigned frozen records now have individual judgments:346human-authored complete reviews and8explicit generated/asset classifications; no pending A rows.
+221platform records (220reviewed/1classified),118library (111reviewed/7classified),13heldI1 and2heldtoolbinding separately hashed and reviewed.
+Metadata-only reconciliation verified354manifest members/frozen hashes and no current content drift across their four source roots.
+The first metadata hash command used an incorrect repo-label mapping and failed before the final all-hash scan; its correction used the actual `library` label and completed without drift. This was audit bookkeeping, not test execution or product evidence.
+Root must still reconcile these reports, other owners' scopes/current control updates, opaque classifications and prioritized canonical findings before the whole-audit gate can close.
+Application code, tests, runtime state and WIP remain unchanged; no repair or campaign completion claim.
+
+
+### Complete-review checkpoint — B-batch-40
+
+#### B-F191 — contradictory Clear action description
+
+P3 internal specification defect: v1 Section3.5.2 says Clear sets Unexecuted and removes output data.
+The same specification Sections2.4.5/4.6 and the full runtime/storage source distinguish invalidating current cache selection and removing disposable latest views from deleting retained record bytes; downstream status also depends on retained output availability.
+This short action description can imply disk reclamation or loss of historical results, and is inherited by frozen T1 v1.
+Future editorial reconciliation should describe invalidation/latest-view withdrawal while retaining corrupt-record quarantine, immutable historical records, selected-root scope and existing retained downstream semantics.
+B-F188's never-run downstream response-versus-GET distinction is separate and qualified; the parent's full everyday-node-editing test corroborates the strong real retained downstream Clear/reload/rerun contract.
+
+#### B-F192 — always-development-mode wording versus live supported setting
+
+P3 specification drift: v1 Section2.7 says the GUI always runs with dev_mode=True and has no toggle.
+The no-UI-toggle statement may be accurate, but the unconditional runtime claim conflicts the live SettingsStore provider at app.py431–434, execution.py658/739/761 and graph validation's forwarded dev_mode.
+The settings model/API accept this ordinary field, and the complete cache parity test deliberately checks both values.
+This is not a request to forbid the existing setting or to weaken source identity requirements.
+Future reconciliation must distinguish default/UI policy from supported runtime settings and preserve meaningful both-mode cache tests.
+
+### Existing source findings mapped to explicit requirements
+
+The explicit Create/recreate force-rebuild requirement remains essential, despite the observed matching-generation actual red B-F001 and PLAN-ONLY public wrapper proposal.
+The automatic stale path, matching reuse, public API boundary, unrelated/unmanaged owner isolation, recipe/Core policy and progress observation must remain intact.
+Main v1 accurately describes the accepted E1 shared preparation guard; the frozen T1 delta additionally claims manual full-physical-operation admission, alias/exact-name precedence and full declared recipe protection.
+Those claims map to the complete held route/service/tests under B-F013/B-F014, not integrated production certification.
+The snapshot's historical campaign-running prose is frozen WIP, not current audit gate status.
+
+Other requirements remain binding rather than silently erased by gaps: scoped log context B-F184, reconnect intent restoration B-F186, exact Fiji result addressing B-F049, desktop policy ROOT-F002/B-F042, source/catalog authority A-F001/A-F066 and catalog version semantics A-F156.
+The v1 typed WS union note lists two compatibility events but the complete backend source identifies additional emitted events absent from that union (B-F186); future schema work should reconcile the whole authoritative event surface.
+The specification itself distinguishes normative base, cumulative implemented deltas and future v3; no proposed multiuser/authentication behavior is inferred as implemented.
+
+### No-finding/retained structures
+
+The full specification coherently preserves one recursive graph, accepted root/private nested revisions, complete compilation for selected scope, descendant-owned/global blocking errors, no request-history authority, captured immutable result reading, deliberate unpinned legacy compatibility, resource floors/site allocation separation and independent row/task progress.
+It distinguishes disposable per-node latest exports from a pinned successful-run bundle, shared local run locking from immutable managed submissions, explicit trusted-site setup from credentials, viewer unknown-outcome no-replay from retry, and dataset logical identity from physical paths.
+These remain valuable boundaries; repetition across endpoint, frontend and data-flow sections invites coordinated editorial maintenance but is not grounds to merge unrelated product specifications.
+
+The complete held E2E app separates synthetic WS failure injection from actual PID/environment generation/Pixi fault evidence.
+It fixes isolated roots, freezes the public shared manager before platform configuration, uses offline package-index queries, and registers distinct selected/unrelated/external/protected tools.
+Its added isolation/evidence routes call the already fully reviewed public lifecycle fixture helpers.
+The `worker_manager()` observed-wrapper lazy mutation is not protected against concurrent first dev-endpoint access; current serial fixture use mitigates that instrumentation ownership limitation (B-F012), and it is not a production Run-manager finding.
+No force rebuild, scheduler or native evidence is supplied merely by these dev endpoints.
+
+All T1 bytes and the force-wrapper plan remain preserved.
+The full audit gate remains open; no repair is released.
+
+### Complete-review checkpoint — root-batch-29
+
+#### ROOT-F097 — P3 qualified embedded opener liveness and diagnostic ownership candidate
+
+extension.ts creates one fixed127.0.0.1:60351 server without registering a server error callback; a failed bind has no opener-owned structured readiness/error reporting path.
+Source alone cannot establish the extension host's global error disposition, so no host crash or executed port collision is claimed.
+All non-OPTIONS requests enter one promise chain and await VSCode openTextDocument/showTextDocument/openFolder without an internal operation deadline or aborted-response/disposal owner.
+One indefinitely held editor API request therefore holds later opens, while server.close on disposal does not explicitly retire queued/in-flight operation state.
+The normal one-managed-editor application, trusted loopback requests and platform caller readiness/retry timeout materially mitigate ordinary use; platform correctly refuses false opened success and does not launch a second editor after control failure.
+The fully reviewed Python editor tests inject fake openers/readiness and inspect packaged text markers; they do not execute Node server error/queue/disposal behavior.
+Future bounded existing-source harness should distinguish bind refusal and held/aborted request ownership only when improving this supported bridge; retain ordered opens, unchanged file workspace, explicit readiness refusal and no automatic replay of ambiguous successful native/editor work.
+No runtime liveness failure or security exploit was reproduced, and no new test is authorized by this review.
+
+### Individual producer/classification and retained judgments
+
+Owned TypeScript77 and compiled JS102 were fully read; runtime logic agrees, with TS helper erasure/CommonJS import boilerplate explicit. Compiler targetES2022/Node16 and strict source ownership are configured; no current recompilation equality is claimed.
+VSIX is a valid six-member ZIP with no CRC error. Each member's exact bytes equal its owned package.json, compiledJS, README, CHANGELOG, extension.vsixmanifest or content-types source counterpart.
+Manifest engine/publisher/name/version/activation and entrypoint match package0.1.0; XML declares precisely JSON/Markdown/JS/manifest content types. Both are packaging-derived metadata, not independent product business logic.
+.vscodeignore excludes TS/source, dependencies, lockfiles and maps from VSIX; scripts first compile then package. No new build/toolchain or published extension compatibility evidence follows from static inspection.
+The human source docs distinguish owned source from old Galaxy reference, startup activation, loopback control and ordered request intent; old absolute reference is historical provenance, not a runtime import/dependency.
+File request awaits text open/focus and never Explorer reveal; explicit folder/workspace handling may change the editor workspace, while normal Python manager folders use editorURL navigation and only files invoke this endpoint.
+OPTIONS handles CORS directly; unsupported path400/404 and caught API errors500 are explicit, but non-OPTIONS method admission is not enforced beyond route parsing and loopback trust policy. No remote authentication or untrusted-network deployment is claimed.
+Existing test_default_opener_extension_matches_source_package checks package/name/openQueue/no-reveal markers rather than exact full byte parity; the static archive parity check strengthens artifact provenance without replacing future actual editor readiness/native validation.
+Root source/package slice is complete; other owners/current controls/independent method gate remain open.
+
+### Complete-review checkpoint — reviewer-batch-48
+
+### Complete dependency judgments
+
+The171-line semantic request grammar forbids unknown fields, discriminates each operation, bounds batches1–10 and supports stable workflow-node scopes, exposed port IDs, distinct column/DataFrame endpoints and explicit validate alias.
+It carries expected revision but no expected root incarnation, corroborating A-F004; subsequent backend generation capture is material protection for replacement during an operation, not a client first-admission guard.
+The426-line transform clones the input, processes operations in order, reparses the full recursive graph after every step and returns indexed semantic errors; the111-line route holds an actual idle lease through asynchronous snapshot/commit and publishes only the accepted draft.
+Pure transform atomicity, transport admission and real persisted revision/one-publication counterparts are distinct obligations; remove neither merely because they share operation names.
+Missing/unresolved tool state may be accepted as an editing graph, while execution compilation remains independent.
+Port metadata lookup in _validate_tool_targets347–383 uses the live catalog by tool_name even for carried module/package/version/source nodes, extending A-F001's bound-versus-unbound authority seam; newly catalog-created unbound tools legitimately use the live catalog.
+Shared-input pruning and enclosing-exposure transitions have the material differences below.
+
+Graph router253 lines clones request-local input, owns validation admission through worker completion, captures named workflow generation/storage under its workflow lock and rechecks before returning.
+A move changing storage restarts validation; a same-path generation failure refuses it.
+Legacy custom managers without the lease retain a weaker compatibility fallback, whereas the actual production manager supplies the lease; do not weaken or relabel that distinction.
+The output-schema endpoint uses the real builder and unresolved fallback for transient invalid graph states; ROOT-F019 compiled-result failure and ROOT-F020 private workflow._nodes access remain canonical separate issues.
+No fresh private-access finding or worker/scientific/runtime success is claimed.
+The65-line workflow-status projection traverses enabled selected executable descendants using scoped structural IDs, preserves failed-before-running/out-of-date/executed priority and propagates one failed child detail.
+The actual NodeStatus enumeration remains six values; cache_corrupt is an error type, not a seventh node state.
+No new projection-local defect is established by this read.
+
+Nested snapshot router375 lines retains execution leases around Open/PUT/DELETE, revision/dependent refusal, exact accepted child graph comparison before favorite remap and durable root generation checks.
+It serializes finalization under the snapshot guard then root workflow guard where required, preserving accepted server authority rather than replaying parent mutation.
+A-F072 requested stale root admission, A-F073 unlink durability, A-F074 ordinary corrupt record identity, A-F075 malformed unrelated scan and A-F076 cleanup ownership belong the complete service owner; the route does not close those service findings.
+_structural_output_exists120–146 decides captured tool favorite survival from live catalog outputs plus carried viewer additions/templates, corroborating A-F001/A-F066; the accepted graph comparison itself remains strong.
+Existing root/nested favorite finalization tests establish real ASGI persistence, exact accepted graph/revision, remap hierarchy and idempotent retry, but use an existing declared static output; they do not distinguish carried/live output-schema mismatch or missing session error normalization.
+
+Move journal147 lines is strict, frozen, canonical relative-path constrained, rejects duplicate affected identities and demands exact once generation advances/direct path correspondence and immediate promotion-child topology.
+Recovery coordinator98 lines uses snapshot then structure ownership, checks durable generations/topology, performs idempotent forward artifact/snapshot/preference phases and clears the journal only after the ordered phases.
+The model's merged expected-after dictionary cannot silently overwrite a normal duplicate affected identity because model validation refuses it.
+A-F079 omitted provenance move rewrite remains canonical; actual stored graph definition is independent from that provenance.
+Peer complete direct/folder/promotion/restart/fault tests preserve generation gaps, snapshots/preferences and actual filesystem bytes; they are not power-loss or multi-process evidence.
+Optional absence of the preference store is a supported configuration, not established favorite loss.
+Model-local folder prefix validation questions remain subordinate to the saved-store admission owner, not newly promoted malformed-journal damage claims.
+
+Legacy format387 lines keeps lossless captured metadata/config/defaults where representable, refuses ambiguous legacy nested/published interfaces, uses content-addressed byte backups and staged fsynced replacements and exposes isolated diagnostics for invalid persisted documents.
+A-F086 retains the exact semantic-authority mismatch: normalized legacy draft valid=True/errors=[] is assigned without semantic validation; execution admission is separate, so this is accepted-editing/read-model truth rather than unvalidated compute.
+Backup publication's absent directory fsync corroborates A-F080 only as a qualified durability-policy seam; current process restart cannot prove power-loss persistence.
+Store-level confirmed schema migration concurrency/source availability remain A-F082/A-F084, with existing unauthorized/stale-preview/partial-publication oracles preserved.
+Do not collapse automatic compatibility conversion, confirmed migration and forward recovery into one happy-path test.
+
+Export398 lines uses temporary owning roots, exact latest/successful-run selection, copy materialization, symlink refusal, safe parent boundaries, marked replacement and staged backup rollback.
+The run bundle pins one successful run ID and hashes the captured workflow archive bytes; it does not promise that a later edited saved graph is the historical compute graph.
+Complete peer counterparts distinguish mocked adapter bytes from actual canonical Storage materialization, owned assets/provenance and source-surviving copied results; seeded Direct labels are not actual engine/worker evidence.
+Final external folder admission has the B-F080 extension below.
+Same-workflow mutation ownership is a real mitigation; no blanket race among ordinary same-ID requests is alleged.
+
+Dev router544 lines is explicitly conditionally mounted test tooling: deterministic source/transform DataFrame fixtures, deliberately limited processing/schema-only classes, synthetic package catalog entries and a real canonical seeded image record/run pointer.
+A-F012 fixture metadata/port-policy mismatch remains canonical; simulated catalog processing availability or seeded run metadata must not receive actual released-tool/scientific/worker credit.
+GaussianBlur's declared mapped strategy satisfies current Core class admission but its process_row returns a placeholder path; it is a schema fixture rather than a scientific blur implementation.
+The PNG seed can exercise backend conversion/result resolution but does not certify Avivator/Qt/Fiji/native launch.
+ImageResultFixture writes a process-named temporary directory outside the managed runtime; its no-local-removal lifetime is an optional harness hygiene candidate, not evidence of user-result loss or an ordinary worker leak.
+Preserve deployment mounting gates and synthetic fixture labels rather than making development routes part of production acceptance.
+
+#### reviewer-F099 — missing nested finalization session bypasses typed not-found boundary
+
+P3 narrow API failure candidate: finalize_nested_viewer_preferences266–278 calls service.get_snapshot for the submitted child/parent without a FileNotFoundError mapping.
+Neighboring GET207–209, PUT242–245 and DELETE373–374 explicitly return404, and app's registered exception handlers map HTTPException/validation/move-recovery rather than raw FileNotFoundError.
+A valid nonexistent or already removed session can therefore escape the normal typed response on this finalization route.
+No missing-session request was executed and no preference/snapshot loss is alleged.
+Existing finalization success/revision/parent-acceptance/idempotent-retry fixture is the smallest later missing-session extension; preserve exact accepted graph, owner generation and no replay of the committed parent.
+Root confirmed no canonical duplicate; A-F075 malformed inventory scans is a different service boundary.
+
+#### reviewer-F100 — semantic node deletion drops shared exposed input's surviving targets
+
+P2 source-established semantic mismatch: _apply_local159–166 retains a workflow input only when ALL its targets avoid the deleted node, so one removed target drops the entire input even when unrelated targets survive.
+The active frontend removeNodesFromWorkflowInterface25–37 filters only removed targets and drops an input only when none remain; v1§3.15 and PLATFORM_CONTEXT57 explicitly preserve shared surviving targets in a graph snapshot.
+The semantic endpoint persists the transformed graph through the same recursive draft authority, and structural validation permits the resulting absent public input; it cannot reconstruct the unintentionally removed surviving exposure.
+This is a declared agent mutation path, not a claim that the already-correct frontend deletion helper has regressed.
+Complete semantic service counterpart covers scoped input deletion/edge pruning but contains no DeleteNodeOperation case; A's actual exposed-delete browser oracle goes through full-graph frontend PUT and does not exercise this separate transform.
+Future diagnosis should extend the existing semantic operation fixture with one input targeting removed A and surviving B, retaining the input's immutable ID/name/schema/default and exact B target; no new broad journey is needed.
+No operation/test executed or repair authorized.
+
+### Existing A-F015 extension — scoped semantic port removal leaves enclosing interface exposures
+
+_apply_scoped105–130 repairs parent bindings and direct incoming/outgoing column edges after a child's interface changes, but leaves parent.interface.inputs.targets and parent.interface.outputs pointing at the removed child port.
+The complete GraphState reparsing64–66 then refuses that stale recursive graph rather than persisting corruption, so a legitimate scoped port removal with an enclosing exposure can remain unappliable.
+This is the same enclosing-referential-integrity family as A-F015's source-refresh transform, with a separate concrete semantic owner.
+Existing nested-input counterpart constructs an empty parent interface and bindings={}, so it cannot distinguish this branch or the separately canonical A-F175 claimed-binding oracle gap.
+Preserve structural refusal, stable IDs, cascading target-level pruning and exact confirmation policy; do not bypass model validation to obtain a green result.
+
+### Existing B-F080 extension — platform folder final publication repeats no replacement authorization
+
+Initial export_latest_results_folder267–281 enforces replace=False and matching identity marker before materialization.
+After materialization,299–311 moves any now-existing destination to backup without repeating that policy, installs the staged folder, then removes the backup.
+A newcomer created during export can therefore be replaced even for replace=False or without a matching marker; parent/target symlink identity can also change after the early parent check.
+The same-ID workflow lock serializes ordinary cooperating service calls, and trusted selected local export parents constrain reachability; qualified external writers or independently colliding generated destination names remain the relevant scope.
+safe_workflow_export_stem uses a readable hash for nested names, which is collision-resistant rather than a namespace-wide exclusive reservation; no hash collision or concurrent export was executed.
+Peer B explicitly accepts this separate platform-owner evidence as an extension of canonical public-library B-F080, avoiding duplicate defect IDs.
+Existing marker/replace/rollback tests initialize destination state before the call; their injected staged-install fault correctly proves original backup restoration but does not create a newcomer during materialization.
+After the full gate, use that existing exporter seam to distinguish final replace=False/no-marker admission and ownership before deciding a cooperative target lock or stronger publication policy; retain portability and owned-stage cleanup.
+
+### Architecture/cost dispositions for parent synthesis
+
+Prioritize durable authority and physical completion ownership above test-count growth: dataset staged publication, captured tool/module/recipe binding, client first-admission incarnation, keyring rollback and managed deployment root boundaries have concrete entry paths or existing held diagnostics.
+Force-rebuild semantics remain an existing real-red task on the same injected library/Wetlands manager; preserve explicit force, fail-closed close/removal, admission through physical completion and honest non-atomic destructive failure/retry.
+Treat changed read-model/presentation owners (F091/F092/F095/A168/B175), bounded parser/type refusal (F096–099) and essential recursive interface integrity (A015/F100) as smaller coherent packets, using the exact existing owner seams before additional suites.
+Refactor only demonstrably shared authority/lifetime/serialization rules; preserve separate saved/root/private, captured/unbound, active/retired, committed/acknowledged and mock/actual/native boundaries.
+Spec/tutorial concision and selector/oracle debt should be reconciled with producer source, preserving required controls and honest evidence; F003/F027 marker applicability and A175/F083 weak assertions are not permission to run every full lane on each edit or remove essential external/native certification.
+Optional UI churn, unused legacy helper cleanup and duplicate fixture setup remain deferred/unmeasured, with no claimed suite savings or runtime failure.
+All candidate repairs, new diagnostics, application execution and global completeness acceptance remain held pending the user's complete review gate and final current-control reconciliation.
+
+### Complete-review checkpoint — B-batch-41
+
+### Installed provenance and authority
+
+The three installed files come from `backend/.venv/lib/python3.13/site-packages/wetlands` with published 2.4.2 metadata.
+Their original reconnaissance rows lacked hashes; the parent recorded these current read-only snapshot identities explicitly, not historical baseline equality:
+
+- `_internal/environment_management.py`: `236fec4fdbea6c5362c859a118506709c280f28319017562bc68c8a35fb9d077`.
+- `_internal/provisioning.py`: `4360a7712b74598adaaa1fb93da13d6c4a25e36da4da96965e3dceb28ca1778c`.
+- `environment_manager.py`: `63e3c9d3f641f69b16dc6dc361ceb1b34d94af0174f6be3a90d95d36cc665bd7`.
+
+Each was read completely and is byte-for-byte equal to its checkout counterpart at the declared Wetlands source revision.
+The source comparison does not substitute checkout dependencies for installed authority or prove historical test artifacts used these exact bytes.
+
+Public remove first holds the canonical cross-process environment gate, refuses alias/unmanaged targets, checks cached generation resources and real persistent/nonpersistent workers, seals cancellation at quarantine commit and increments the cached epoch only after detachment.
+Normal provision renders the complete recipe and checks current readiness/manifest/Pixi/optional supplied lock before the replace flag; a matching generation is deliberately reused.
+This corroborates B-F001's actual force-current red and the PLAN-ONLY same-injected-wrapper public remove→provision direction.
+Wrapper close/removal failure must prevent provisioning; a selected destructive rebuild may require explicit retry and carries no atomic old-generation rollback promise.
+No directory deletion or nonce recipe is authorized.
+
+Full runner/Pixi/manifest/local-source/descriptor-identity/journal/readiness/cancellation/failure branches corroborate ROOT-F069's retained failed physical cleanup owner gap and ROOT-F071's final supplied-lock reattestation gap, without duplicate IDs.
+The channel-qualified renderer branch remains unreachable for supported EnvironmentSpec input, as the parent's full spec/dependency guide review established.
+The exact manager close registration/thread-start rollback, current-generation worker lookup, bounded serialized deadline and operation-listener close refusal remain useful structures to preserve.
+
+#### B-F193 — P2/P3 qualified installer staging/publication ownership
+
+`data/code_server_install.py::main` constructs staging/download paths from the PID, and `extract` starts with `staging.mkdir(parents=True)`.
+The outer finally unconditionally removes staging, including when an existing staging directory made that mkdir fail before the invocation acquired ownership.
+Direct same-process concurrent helper calls, reused PID leftovers or a pre-existing conventional staging name therefore lack an explicit acquired-target distinction.
+After successful verified extraction, main removes the destination before `os.replace(staging, destination)`; a publication failure can lose an earlier destination without a retained backup.
+These are qualified helper ownership/failure semantics, not a demonstrated deletion or untrusted HTTP target exploit.
+The real editor caller supplies a fixed relative destination inside a newly provisioned generation, uses pinned release bytes and the Wetlands lifecycle gate; these materially limit the normal path.
+Root's complete installer tests cover verified extraction, reuse, bad digest/download/layout/missing entrypoint and normal relative prefix resolution, without an existing staging collision or failed final publication oracle.
+Future policy should decide whether this standalone helper promises prior-runtime preservation and acquire its staging explicitly; preserve the normal destructive selected-generation semantics and do not impose universal rollback.
+
+#### B-F194 — P3 conditional installer reuse health/oracle gap
+
+`already_installed` requires package.json plus a stamp matching only the archive digest, then main reports successful reuse before checking the actual launch entrypoint.
+A direct helper invocation with the same digest and a missing launch file can therefore report already installed; changing only installer-revision does not affect that predicate either.
+The normal platform matching-generation path may skip post-install entirely, so this is a narrow helper health/metadata policy, not proof of a currently broken code-server deployment or a requirement to re-download every launch.
+The current reuse test preserves a marker after an initially valid install and does not remove the entrypoint or change only the installer revision.
+Retain genuine extension-preserving reuse; clarify required installation-stamp/health guarantees before any diagnostic or repair.
+
+#### B-F195 — P2 qualified public manager reverse-epoch resource ownership
+
+`EnvironmentManager.provision` captures `initial_epoch` before starting its operation, and after real provisioning returns skips caching the returned environment when removal changed that epoch.
+That protects a late old-generation result, as the complete `test_removal_epoch_prevents_late_provision_cache_publication` oracle deliberately demonstrates with a monkeypatched delayed provision returning the removed old generation.
+The reverse legitimate sequence differs: a provision captured the old epoch but is delayed before taking the lifecycle gate; remove completes; real provision then creates a fresh current generation; its returned valid handle is omitted from `_environments` because the original epoch differs.
+`ManagedEnvironment.start/spawn` validate the current generation under the lifecycle gate and track pools/processes on that handle, while manager.close snapshots only cached environments.
+A resource created through that valid returned handle can consequently lack the manager's close-owned cache membership, even though the public worker registry still protects subsequent removal.
+No physical survivor, worker start or concurrent schedule was executed; this is a source-derived conditional public ownership candidate.
+The platform/BioImageFlow shared lifecycle guard mitigates ordinary same-wrapper calls; it is not a default Run failure claim or argument for a universal coordinator.
+Future distinguishing oracle must preserve late-old-generation nonpublication while checking fresh-post-remove handle resources and manager close ownership; investigate ownership registration rather than simply deleting the epoch guard.
+Targeted ManagedEnvironment caller tracing adds no duplicate full-file credit to the parent's checkout source judgment.
+
+### Explicit asset classification
+
+`assets/app_icon.icns` is an opaque generated platform artwork container, not human-authored application code.
+Static inspection verified the 140,190-byte ICNS declared length, table of contents and all eight PNG chunk bounds through exact EOF.
+The ic10 payload declares 1024×1024 and was copied unchanged to a temporary PNG for visual inspection: inset microscope artwork with transparent margin.
+The complete borrowed `scripts/generate_desktop_icons` producer names `logo/microscope.svg` as source and writes/validates the 1024-square inset macOS artifact; desktop.py's targeted Darwin consumer loads this resource through NSImage, and backend packaging explicitly includes it.
+Root's complete desktop counterpart selects the platform-specific format; no native icon launch or generator regeneration was run, and byte reproducibility is not claimed.
+The generator and desktop source retain their separate full-file owners.
+
+All T1 WIP, historical runtime artifacts and force-wrapper plan remain preserved.
+M1 remains OPEN, and all implementation, diagnostics and runtime acceptance remain held.
+
+## Final frozen-source reconciliation, pending current-control acceptance
+
+All source owners have completed their assigned frozen inputs; no product fixes, new tests or application/native execution occurred during this full-review phase.
+The architecture audit contains the cross-subsystem prioritized decision backlog and proportionate test/docs workflow, preserving every canonical candidate and its uncertainty here.
+A dedicated independent reviewer samples other owners' sources/oracles and classification/method; B cross-checks A independently to avoid self-acceptance.
+Seven current controls, including the changed audit and this register, still require exact final-content acceptance; source completion alone does not close M1.
+The generated ledger self-input uses its explicitly documented canonical self-cell placeholder SHA256, and the late installed Wetlands identity is current evidence rather than retrospective baseline equality.
+
+## M1 terminal review acceptance — 2026-10-01
+
+All 1,799 agreed-scope inputs are accepted: 1,649 complete human reviews, 150 justified classifications and zero pending/unmatched/current-hash mismatches.
+The nine current human controls were read fully against exact snapshots and every terminal delta; the generated ledger was classified through complete membership/producer reconciliation and its documented self-cell hash convention.
+Independent method/completeness acceptance samples other owners, with B separately cross-checking A; it does not claim a second full human read of all inputs or independent reproduction of every candidate.
+The 573 canonical candidates remain qualified future actions, with cross-subsystem priority/dependency decisions in the architecture audit and the next retrospective/M2 queue in the checkpoint.
+M1 review is COMPLETE; no product or runtime certification, blanket fix approval or desktop acceptance follows from it, and native execution stays final M5.

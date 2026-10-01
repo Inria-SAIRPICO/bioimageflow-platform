@@ -4,7 +4,7 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — M1 meticulous whole-codebase review OPEN; repairs and campaign tests held; Wave 1/N1/E1 accepted, I1/T1 preserved**.
+Prepared and started 2026-09-30; **RUNNING — M1 meticulous agreed-scope review COMPLETE; M1 retrospective/M2 prioritization next; Wave 1/N1/E1 accepted, I1/T1 preserved**.
 The user authorized the 2026-10-01 campaign revision following an independent GPT-6.1 Sol Ultra retrospective, then continued execution.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -396,3 +396,53 @@ Native desktop acceptance remains final M5.
 `scripts/test check campaign` passed for the1,702-input administrative checkpoint in0s runner-reported (0.17s measured), at source revision `0c723cc57dec569f2f9917e18cdd6c94efdca36a` plus four audit-document changes, source-manifest SHA-256 `6393d673bb7800c4d5b5390e802093110c8babf9c7e64de44f1e5c485ea6a051`; the manifest precedes this result-only entry.
 Dashboard consistency and all64 active local links passed; `git diff --check` passed.
 Sphinx was not repeated for this routine status consolidation, which changes no navigation; all application and external/native phases remained held and unrun, with no complete-review or product certification claimed.
+
+### Complete frozen-source review checkpoint and final-control reopening
+
+All frozen source/test/specification/held-WIP and dependency inputs have now received an individual full review or explicit producer/consumer classification, subject to final current-control reconciliation and independent acceptance.
+A's354, B's438 and root's390 assigned inputs are complete; the shared reviewer has611 previously accepted snapshot judgments, with six pending controls and the changed architecture audit explicitly reopened.
+The installed Wetlands2.4.2 three-seam review is a newly captured current snapshot because the initial reconnaissance lacked hashes; all three full installed bodies match their source checkout bytes, without claiming historical runtime baseline equality.
+All740 frozen platform,909 library and118 Wetlands tracked entries remain inventoried;28 held WIP and3 installed dependency inputs plus the newly authored findings register complete the1,799-input scope.
+The signing row addresses only its identical canonical tracked gitlink descriptor, with private signing content excluded; packaged icons/VSIX/lockfiles/generated schemas have individual producer/consumer limits.
+Reviewed rows no longer retain stale inventory-only depth; the conservative minimum is read, with prior traced/deep evidence retained, while classified rows explicitly record their producer boundary.
+The ledger's generated self-input uses SHA256 of its canonical LF TSV after replacing only its own content_sha256 cell with a literal dash; this avoids an impossible recursive hash and is verified separately from raw human-input SHA256.
+The register and audit are human review deliverables, with the already-reviewed base plus every changed delta requiring final exact-content reconciliation.
+There are1,792 accepted snapshot inputs (1,643 reviewed /149 classified) and seven pending/reopened current controls, with573 canonical identified candidates.
+These candidates include source-established behavior, qualified risks, test/doc discrepancies and unmeasured cost debt; they are not573 reproduced bugs or approved fixes.
+Cross-subsystem synthesis is recorded above, including public force-Recreate, executable authority, destructive publication, invocation ownership, scientific/result semantics and proportionate test/documentation lanes.
+Independent review samples other owners; A does not independently accept its own354 judgments, which B cross-checks separately.
+M1 remains OPEN while the current controls and independent method/evidence gate finish; all repairs, new diagnostic tests and application/external/native acceptance remain held.
+Desktop native acceptance stays final M5.
+
+### Authorized worktree and environment retirement — 2026-10-01
+
+The delegated cleanup owner reconciled all20 registered platform worktrees against main `41641d61bec32595ab17afc3ffff73196fa24fc2`, tracked/untracked state, merged-HEAD ancestry and active process paths.
+Only clean merged unused `.worktrees/napari-environments` at `efb56f977a3b0ca647862082b6e9e82f816c63a3` and detached `.worktrees/napari-review` at `28b17f06bc2cefd01c656afc1bf2e3e53108cd7d` were retired.
+Their exclusive backend `.venv` and frontend `node_modules` directories, plus `napari-environments/frontend/dist` and `napari-environments/docs/_build`, were removed: six rebuildable stores with1,217,171,456 allocated bytes before removal, each confirmed absent afterward.
+Remaining source and test evidence were moved with `mv` to `/Users/amasson/.Trash/bioimageflow-completed-worktrees-20261001-170149`; these45,408,256 retained allocated bytes are not counted as reclaimed space.
+`git worktree prune` succeeded, and only the merged `feature/napari-environments` branch was deleted; the detached tree had no branch to delete.
+Observed volume free space increased59,875,328 bytes across the operation; concurrent writes/APFS accounting prevent equating that observation with the1,217,171,456 bytes of removed stores.
+All held I1/T1/dataset/tool-binding work, dirty or unmerged historical platform/library worktrees, main dependencies/runtime and developer processes were preserved.
+The campaign plan/start/context now require a cleanup owner, evidence retention, physical process retirement, exclusive-store deletion after clean integration, and overdue-retirement reconciliation at each major checkpoint.
+This housekeeping supplies no product, diagnostic, browser, worker or native acceptance and does not itself close M1.
+
+### M1 complete-review closure — 2026-10-01
+
+All 1,799 agreed-scope inputs are accepted: 1,649 complete human reviews and 150 explicit generated/asset classifications, with zero pending, missing, duplicate, unmatched or current-hash-mismatched entries.
+The scope remains 740 platform tracked paths, 909 library/Core paths, 118 entire Wetlands checkout paths, 3 current installed seams, 28 held WIP inputs and 1 new human findings register.
+Final ownership is A 354, B 437, root 390 and shared reviewer 618; the cleanup-policy Context control was formally transferred from B to the reviewer, adding no source credit.
+The reviewer read all nine current human controls completely, including the complete 7,656-line register, recovered truncation holes and all terminal deltas, and classified the ledger through complete row/producer reconciliation plus its documented nonrecursive selfdigest.
+The independent method review supports other owners' source/oracle samples and exact membership; B separately cross-checks A, avoiding self-acceptance and any claim of a second full reading of every input.
+Its specificity, historical/current wording and selfdigest concerns were corrected and reconciled before closure.
+All 573 canonical candidates and their qualifications remain in the register; this is agreed-scope review completeness, not proof of defect absence, 573 reproduced bugs or blanket repair approval.
+The prioritized cross-subsystem synthesis preserves essential project features and defines bounded repair/retain/deepen/defer decisions, proportionate existing test/docs lanes and low-frequency strategic retrospectives.
+No product fixes, new tests, dependency provisioning or application/browser/worker/external/native acceptance occurred during M1; accumulated dashboard evidence remains 276/500 with its historical limits.
+Next is the M1 strategic retrospective and M2 packet prioritization: reconcile demonstrated portable-authority/dataset-publication reds, reachable destructive/credential risks and public force-Recreate ownership before dependent repairs, retaining accepted N1/E1 and held I1/T1 evidence.
+Every later source change reopens its affected review/contract/oracle claims; unchanged review inputs and valid equivalent passing phases are retained rather than blindly repeated.
+Desktop application execution remains final M5.
+
+`env UV_OFFLINE=1 scripts/test check docs` passed, exit 0, for the complete-review/cleanup-policy documentation milestone: 6 s runner-reported and 6.49 s measured at source revision `41641d61bec32595ab17afc3ffff73196fa24fc2` plus the eight reviewed documentation changes, source-manifest SHA256 `90e2a50de17aac5f7b99624681cc500187026b0cd2cae36c0813bfeb1a5a67d3` before this result-only entry.
+Dashboard consistency: 108 rows/500 applicable/276 historical verified/224 primary verified, all 64 local links in 10 active campaign files, and Sphinx 9.1.0 with warnings treated as failures passed.
+`git diff --check` passed; the final generated-ledger and current-content reconciliation retain 1,799 accepted inputs with zero pending/missing/drift/duplicate/unmatched entries and 573 unique canonical candidates.
+No documentation phase was skipped, deselected, flaky or externally blocked; no application/backend/frontend/browser/worker/external/published-compatibility/native phase was run or certified by this documentation-only command.
+This result-only metadata delta was separately reviewed against the accepted source snapshot; no structural documentation change required another Sphinx run.

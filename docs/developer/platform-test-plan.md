@@ -74,8 +74,8 @@ Use the title rather than a historical line number and confirm it still exists b
 For example, run J1 with `scripts/test focus e2e tests/e2e/canvas-interactions.spec.ts --grep 'builds, runs, inspects, saves, and reopens a real workflow through the GUI' --project=chromium --project=firefox`.
 Playwright matches the full title including any parent `describe` block and appended test tags, so do not anchor the bare title to the end when a tag follows it; confirm that exactly the intended case was selected in each project.
 Use the same command shape for J2–J4, with their own file/title.
-Inspect assertions before execution; the current J1 test does not assert the selected backend, and J3's siblings currently produce identical rows despite its scoped-request checks.
-Strengthen only these missing assertions if the current code still has those gaps; a passing test cannot credit an observation it does not distinguish.
+The preparation-time J1 backend and J3 distinguishable-sibling assertion gaps were corrected in the accepted readiness work; the complete source review confirms the current assertions.
+Retain their recorded revision-specific results and inspect the current bodies before any affected rerun; do not add duplicate tests or replay readiness solely because those historical gaps appeared in this plan.
 
 Pass the gate only with 4/4 outcomes, both browser results for each, no retries/skips masking failure, exact command/revision/duration records, and no known reachable unresolved security, data-loss, wrong-identity, or wrong-result defect affecting these paths.
 If a repair changes the baseline, rerun affected outcomes and explicitly justify reuse of unaffected results using source, fixture, dependency, and environment equivalence; do not manufacture a same-SHA run claim.
@@ -244,6 +244,22 @@ Trace those consumers in code and tests rather than selecting only by file proxi
 Writable parallel work must use separate worktrees; shared campaign records belong to the orchestrator.
 Commit only each task's validated changes, integrate after review, and retire only clean integrated task worktrees as `AGENTS.md` requires.
 Leave unrelated files and unfinished worktrees intact.
+
+
+### Worktree and environment retirement
+
+The orchestrator assigns a cleanup owner when each task worktree is created, and records its exclusive dependency/runtime/build directories plus any required failure evidence.
+At task integration, require committed changes, clean tracked/untracked source state, merged HEAD, no active owner/process and preserved actionable evidence before retirement.
+Release task-owned servers/workers through their normal owner and verify physical retirement before deleting their disposable files; a process stop request alone does not prove cleanup.
+Remove only that completed task's rebuildable `.venv`, `node_modules`, build output and disposable test runtime/environment stores, preserving user data, credentials, adopted/shared environments and retained artifacts.
+Follow `AGENTS.md`: move the retired source tree to Trash with `mv`, run `git worktree prune`, then delete only the merged task branch.
+Record paths, branch/HEAD, ownership/status checks, removed bytes, bytes merely moved to Trash and preserved evidence; moving files to Trash alone is not a disk-space reclamation claim.
+Do not run a global cache purge or delete environments by private dependency paths; actual managed resources retain their public lifecycle/ownership rules.
+Held, dirty or unmerged worktrees keep their source changes and explicit owner/disposition; reassess them at each major campaign checkpoint, with no age-only deletion policy.
+Before beginning another milestone, reconcile registered worktrees and task-owned disposable stores against the active/held queue and complete any safe overdue retirement.
+The user's authorized cleanup of completed unused trees may run during M1; it does not release repairs, diagnostics or application/native acceptance.
+
+### Repair and verification
 
 Routine bounded repairs stay with the ordinary worker when cause and contract are clear, including mechanical updates to stale fixtures or renamed fields.
 When a contract conflict remains unresolved after checking current code, tests, and specifications, or a refactor could alter identity, persistence, concurrency, or loss behavior, get one bounded high-reasoning diagnosis/plan and independent review before dependent implementation.

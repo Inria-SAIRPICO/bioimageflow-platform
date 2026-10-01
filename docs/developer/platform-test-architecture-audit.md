@@ -4,11 +4,12 @@ orphan: true
 
 # Architecture and test reconnaissance — 2026-10-01
 
-The earlier bounded pass completed selective reconnaissance only; **M1 complete-codebase review is OPEN**, with repairs and further campaign testing held by the user's clarification.
+The earlier bounded pass completed selective reconnaissance only; **M1 agreed-scope whole-codebase review is COMPLETE**; the final closure below supersedes the dated partial checkpoints.
 The initial synthesis and diagnoses below are preserved as partial historical findings, not a completed whole-codebase review.
 The [campaign plan](platform-test-plan.md#reconnaissance-gate-architecture-and-tests-together) defines the gate and [checkpoint](platform-test-progress.md) owns the executing queue.
 The [per-file ledger](platform-test-file-review.tsv) records exact inventory revisions, subsystem ownership and inspected depths.
-Depth describes the stated invariant or excerpts, not every line of a large file; inventory-only/classified means unreviewed implementation.
+The early selective depth/denominator paragraphs below are historical; the complete-review status, individual current input hashes and later source/control checkpoints govern current completeness.
+Reviewed now means full human input plus its recorded caller/oracle judgment; classified means an explicit generated/asset producer boundary, not human implementation review.
 
 ## Source and inspection limits
 
@@ -269,3 +270,90 @@ Clear's never-run response/read status seam is separate from the useful retained
 No tests or product/spec behavior were changed; candidate findings remain qualified source risks, oracle/documentation discrepancies and unmeasured optimization candidates, not558 reproduced failures or approved repairs.
 M1 remains OPEN; repairs, new diagnostic tests and application/backend/frontend/browser/worker/external/published-compatibility/native acceptance remain held and unrun.
 Native desktop acceptance remains final M5.
+
+## Cross-subsystem synthesis before the completeness gate
+
+The whole-file review identifies a small number of recurring architectural causes across many distinct callers: competing authorities for executable identity, asynchronous continuations without an invocation owner, logical terminal state published before physical retirement, and publication/read models that do not preserve the identity of what was accepted.
+The findings register retains every individual candidate and its counter-evidence; grouping them here does not merge distinct failure mechanisms, turn source risks into executed bugs or authorize implementation while M1 is open.
+A full source review cannot establish that every possible bug was discovered, and none of its file counts replaces behavioral certification.
+
+### Decisions and dependencies for the later repair backlog
+
+| Priority family | Representative canonical findings | Decision required before a repair | Essential behavior and existing evidence to retain |
+| --- | --- | --- | --- |
+| Portable executable/resource authority | A-F001–003, A-F066, A-F097; B-F067 | Distinguish carried qualified binding from ordinary unbound catalog discovery through public library load/materialization, including resource and engine classification. | Explicit rebind, recursively owned source bytes, declaration floors, typed structural validation and actual Direct versus ProcessingTool dispatch; held red diagnostics remain red evidence. |
+| Identity and invocation ownership | A-F004, A-F072, A-F168; ROOT-F016–017, ROOT-F023–024, ROOT-F093–094; reviewer-F092 | Specify root incarnation and request/dialog/source-owner barriers at actual admission and finalization seams; distinguish committing physical work from publishing obsolete UI state. | Accepted CAS, independently open canvases, agent conflict/recovery, exact sibling/source bytes, generation-bound deletion, no replay after ambiguous or committed action. |
+| Publication, destructive effects and credentials | ROOT-F001, ROOT-F006, ROOT-F008–010; A-F076, A-F080, A-F124; B-F168; reviewer-F047 | Resolve the exact owner, publication point, rollback preimage and crash/retry policy; separate single-app serialization from independent cooperating writers. | Streaming progress/cancel, successful sibling uploads, original credentials, atomic favorite/import/result identity, edited demo preservation and maintained exporter source inputs. |
+| Physical execution/environment lifetime | A-F007; B-F001–002, B-F024, B-F120, B-F132, B-F152, B-F162; ROOT-F053–056, ROOT-F069; reviewer-F072–074 | Bind admission and terminal acknowledgment to physical cleanup/retained retry ownership, and establish a supported public force-Recreate capability. | Cooperative acknowledgment, no partial result publication, retained successful cache, exact public recipe/Core attestation, genuine worker PID/files; never private environment deletion or recipe nonce substitution. |
+| Result/source projection and scientific meaning | B-F043–045, B-F188; A-F030, A-F111–115; ROOT-F036, ROOT-F080, ROOT-F096 | Distinguish immutable chosen records from latest projection, immediate Clear from authoritative read, declared image/units from guessed bytes and actual lineage from ordinal association. | Corrupt-present refusal, explicit legacy absent-provenance fallback, quarantine/history/sibling byte preservation, retained downstream stale outputs, exact numeric tests and public row/cardinality policy. |
+| Deployment, external and native boundaries | ROOT-F002, ROOT-F058; A-F106; B-F042, B-F163; reviewer-F040 | Use configured capabilities and exact dependency/public environment routing; decide spawn acknowledgment versus actual reader/editor/native readiness claims. | Desktop/webapp separation, trusted Python materialization guard, local/managed datasets, explicit viewer selection/favorites and public compatibility refusal; native desktop acceptance stays final M5. |
+| Test/specification authority and clarity | A-F006, A-F012, A-F178–180; B-F012, B-F189–190; ROOT-F091, ROOT-F095; reviewer-F020, reviewer-F038, reviewer-F060 | Correct examples/assertions/selection at their existing seams, and measure cost before removing or moving coverage. | Real browser gesture-to-draft/storage witnesses, separate mock transport oracles, ordinary versus campaign/external lane accounting and explicit package/scientific/native prerequisites. |
+
+Prioritize demonstrated wrong-authority/publication failures and reachable destructive/admission risks ahead of optional cleanup or documentation polish.
+Within each family, complete a bounded diagnostic only after M1 closes and only if its existing evidence does not already distinguish the decision; extend a relevant existing fixture rather than duplicate a broad successful journey.
+A source risk with a real mitigation or unresolved contract remains deepen/decide, not an automatic rewrite.
+Accepted N1/E1 product work and unchanged historical evidence are retained; I1/T1/dataset/portable work remains held until its explicit source and completion checks are reconciled.
+No individual family is certified or declared repaired by this ordering.
+
+### Specification reconciliation scope
+
+Reconcile platform v1/v2/viewer documents and library/Core contracts around one explicit authority per concept: canonical recursive GraphState and immutable ports, carried executable/viewer declarations, accepted draft/CAS/incarnation, immutable result provenance, public environment recipes/resources, deployment capabilities and physical lifetime.
+Preserve the project fundamentals and supported features, including explicit exact dependency installation, recursive owned sources, agent editing, parallel/selected execution, force-Recreate, result exports and viewer favorites.
+Conciseness should come from references to authoritative schema/public contracts and a concise feature-to-invariant map, not deletion of essential functionality or silently making the code the definition of intended behavior.
+Current contradictory examples include missing concrete row-consumption declarations, Pydantic-versus-IOModel wording, dependency dialog no-install prose despite implemented install-all, saved-versus-accepted-draft Run wording and global catalog versus carried workflow pins.
+For each such disagreement, the register records current behavior, intended contract and actual distinguishing tests; decide explicitly before changing either side.
+Historical campaign records remain dated evidence, with prospective checks, mocked gestures, red diagnostics and real passes distinguishable.
+
+### Testing and documentation efficiency decisions
+
+During later localized implementation, use the existing authoritative `scripts/test focus` selector and exact failing browser; use five repeats only for a suspected timing/race seam.
+After a coherent increment that will continue, use quick; at completion use the smallest applicable scoped check, without stacking commands subsumed by a later check.
+Use app checks for cross-stack/schema/runtime/dependency changes, all/browser-all only for broad architecture/test-infrastructure changes, full for major milestone/release/package compatibility certification and published common-tools certification where applicable.
+Maintain separate externally blocked and native phases; an offline protocol mock or excluded test body remains useful but earns no actual worker/scheduler/native acceptance.
+Use campaign guards for routine record consolidation, Sphinx for navigation/structure and substantial documentation milestones/final certification; avoid rebuilding docs after each status row.
+
+Preserve focused deterministic CAS/ownership/typed-error tests alongside the fewer real gesture/storage/worker witnesses: these protect different boundaries even when setup looks similar.
+Existing redo accepted-graph tests mitigate the weak incidental moved-position redo check; real source-copy bytes and literal worker rows mitigate broad response waiters without proving every result field.
+Improve old empty-search selectors, copied App shortcut harness and missing node-navigation assertions in place; changing assertions is not evidence of a production defect by itself.
+Shared controlled worker/HTTP helpers need explicit acquisition, timeout, release/drain and failure cleanup before suite parallelism can safely increase.
+Measure comparable source/fixture/dependency/environment revisions, per-selector duration, setup cost, failures, retries/skips and artifacts before moving tests or claiming speed gains.
+Serial shared-workspace/hot-reload tests must retain isolation; no blind global parallelization or measured optimization is claimed during this read-only review.
+
+### Checkpoint and retrospective policy
+
+M1 closes only after zero pending/current-hash-mismatched human inputs, explicitly reviewed/classified producers, reconciled cross-owner findings and independent acceptance of method, evidence samples and prioritized backlog.
+At each later major milestone, revisit architectural causes, test cost/oracle fidelity, specification coherence and remaining risks, then update the next bounded packets; do not run a whole-campaign retrospective after every small edit.
+Source-sensitive evidence is reused only for unchanged equivalent phases, with exact command/revision/duration and skipped/flaky/blocked accounting.
+The final campaign certificate must include complete applicable local checks, real required external compatibility and final desktop acceptance separately; no review count or scoped check stands in for that certificate.
+
+### Complete frozen-source review checkpoint and final-control reopening
+
+All frozen source/test/specification/held-WIP and dependency inputs have now received an individual full review or explicit producer/consumer classification, subject to final current-control reconciliation and independent acceptance.
+A's354, B's438 and root's390 assigned inputs are complete; the shared reviewer has611 previously accepted snapshot judgments, with six pending controls and the changed architecture audit explicitly reopened.
+The installed Wetlands2.4.2 three-seam review is a newly captured current snapshot because the initial reconnaissance lacked hashes; all three full installed bodies match their source checkout bytes, without claiming historical runtime baseline equality.
+All740 frozen platform,909 library and118 Wetlands tracked entries remain inventoried;28 held WIP and3 installed dependency inputs plus the newly authored findings register complete the1,799-input scope.
+The signing row addresses only its identical canonical tracked gitlink descriptor, with private signing content excluded; packaged icons/VSIX/lockfiles/generated schemas have individual producer/consumer limits.
+Reviewed rows no longer retain stale inventory-only depth; the conservative minimum is read, with prior traced/deep evidence retained, while classified rows explicitly record their producer boundary.
+The ledger's generated self-input uses SHA256 of its canonical LF TSV after replacing only its own content_sha256 cell with a literal dash; this avoids an impossible recursive hash and is verified separately from raw human-input SHA256.
+The register and audit are human review deliverables, with the already-reviewed base plus every changed delta requiring final exact-content reconciliation.
+There are1,792 accepted snapshot inputs (1,643 reviewed /149 classified) and seven pending/reopened current controls, with573 canonical identified candidates.
+These candidates include source-established behavior, qualified risks, test/doc discrepancies and unmeasured cost debt; they are not573 reproduced bugs or approved fixes.
+Cross-subsystem synthesis is recorded above, including public force-Recreate, executable authority, destructive publication, invocation ownership, scientific/result semantics and proportionate test/documentation lanes.
+Independent review samples other owners; A does not independently accept its own354 judgments, which B cross-checks separately.
+M1 remains OPEN while the current controls and independent method/evidence gate finish; all repairs, new diagnostic tests and application/external/native acceptance remain held.
+Desktop native acceptance stays final M5.
+
+### M1 complete-review closure — 2026-10-01
+
+All 1,799 agreed-scope inputs are accepted: 1,649 complete human reviews and 150 explicit generated/asset classifications, with zero pending, missing, duplicate, unmatched or current-hash-mismatched entries.
+The scope remains 740 platform tracked paths, 909 library/Core paths, 118 entire Wetlands checkout paths, 3 current installed seams, 28 held WIP inputs and 1 new human findings register.
+Final ownership is A 354, B 437, root 390 and shared reviewer 618; the cleanup-policy Context control was formally transferred from B to the reviewer, adding no source credit.
+The reviewer read all nine current human controls completely, including the complete 7,656-line register, recovered truncation holes and all terminal deltas, and classified the ledger through complete row/producer reconciliation plus its documented nonrecursive selfdigest.
+The independent method review supports other owners' source/oracle samples and exact membership; B separately cross-checks A, avoiding self-acceptance and any claim of a second full reading of every input.
+Its specificity, historical/current wording and selfdigest concerns were corrected and reconciled before closure.
+All 573 canonical candidates and their qualifications remain in the register; this is agreed-scope review completeness, not proof of defect absence, 573 reproduced bugs or blanket repair approval.
+The prioritized cross-subsystem synthesis preserves essential project features and defines bounded repair/retain/deepen/defer decisions, proportionate existing test/docs lanes and low-frequency strategic retrospectives.
+No product fixes, new tests, dependency provisioning or application/browser/worker/external/native acceptance occurred during M1; accumulated dashboard evidence remains 276/500 with its historical limits.
+Next is the M1 strategic retrospective and M2 packet prioritization: reconcile demonstrated portable-authority/dataset-publication reds, reachable destructive/credential risks and public force-Recreate ownership before dependent repairs, retaining accepted N1/E1 and held I1/T1 evidence.
+Every later source change reopens its affected review/contract/oracle claims; unchanged review inputs and valid equivalent passing phases are retained rather than blindly repeated.
+Desktop application execution remains final M5.
