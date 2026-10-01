@@ -809,6 +809,10 @@ The response identifies deleted file/folder IDs and per-file errors.
 Successful files are removed from storage and catalog, while failed files remain and prevent their containing folders from being deleted as empty.
 The client refreshes the catalog and shows actionable partial failures rather than claiming the whole selection was deleted.
 The compatibility `DELETE /datasets/{dataset_id}` returns 204 on success or 404 if absent; panel recursive deletion uses preview/confirmation instead.
+Compatibility deletion requires the exact catalog ID and matching stored filename under a catalog writer transaction; an encoded contained filename or alternate encoding alone never authorizes deletion.
+Unknown identities leave managed siblings, unrecognized files, and the catalog unchanged, while outside-root identities retain the 400 `path_traversal` refusal.
+Containment inspection resolves links, but deletion unlinks only the selected catalog-owned entry, never a link's destination.
+The writer transaction serializes cooperating catalog mutations; filesystem unlink and SQLite commit are not an atomic transaction, and commit failure cannot restore already removed bytes.
 Deletion does not rewrite existing workflow parameters or invalidate prior computation records; a later run that needs a deleted input reports its absence.
 
 **Uploads:** Multipart requests may contain multiple `files` parts and return `{uploaded: [...], errors: [{filename, error, detail}]}`.

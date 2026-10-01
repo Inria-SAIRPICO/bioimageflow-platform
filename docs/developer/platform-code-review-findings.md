@@ -197,6 +197,11 @@ An ID encoding `.bioimageflow-datasets.sqlite3` or another unrecognized file und
 `routers/datasets.py:309–327` exposes this compatibility path. Main tests cover listed IDs, unknown paths and outside-root traversal, not existing non-catalog files or the catalog itself.
 Future action: resolve exact catalog membership/physical ownership before any unlink, preserving compatibility API statuses and root containment; no destructive diagnostic was run.
 
+D1 disposition, 2026-10-01: the disposable existing-unmanaged-file selector reproduced the missing refusal, then passed after exact catalog ID/stored-name admission under BEGIN IMMEDIATE and lexical entry unlink.
+An independent applied review accepted the bounded repair; all 59 dataset owner tests, `scripts/test check app` and `scripts/test check docs` passed at `878cfbae` plus the reviewed five-file source snapshot.
+The [D1 checkpoint](platform-test-progress.md#d1-compatibility-dataset-deletion--accepted-2026-10-01) retains exact commands, revisions, timings, negative/legacy/symlink byte controls and excluded phases.
+ROOT-F008 is repaired within that compatibility-deletion scope; upload publication, recursive CAS/partial errors, arbitrary external-writer races and filesystem/SQLite atomic rollback are not certified by this result.
+
 #### ROOT-F009 — P1, concurrency source risk: delete CAS is read before the SQLite write lock
 
 `dataset_store.py:519–542` checks revision and selects identities using SELECT before BEGIN/first DML, then unlinks physical bytes before DELETE acquires a write transaction.

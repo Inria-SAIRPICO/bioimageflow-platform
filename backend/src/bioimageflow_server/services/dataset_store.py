@@ -556,13 +556,24 @@ class DatasetStore:
 
     def delete(self, dataset_id: str) -> None:
         stored_name = _decode_id(dataset_id)
-        target = (self.root / stored_name).resolve()
-        if not self._is_within_root(target):
+        if not self._is_within_root((self.root / stored_name).resolve()):
             raise PathTraversalError(dataset_id)
-        if not target.exists():
-            raise DatasetNotFoundError(dataset_id)
-        target.unlink()
         with self._connect() as connection:
+            # The catalog owns deletion, not an arbitrary decoded filename.
+            # Acquire the writer before reading that authority or unlinking.
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT stored_name FROM datasets WHERE id = ?", (dataset_id,)
+            ).fetchone()
+            if row is None or row["stored_name"] != stored_name:
+                raise DatasetNotFoundError(dataset_id)
+            target = self.root / row["stored_name"]
+            if not self._is_within_root(target.resolve()):
+                raise PathTraversalError(dataset_id)
+            if not target.exists():
+                raise DatasetNotFoundError(dataset_id)
+            # Inspect containment through links, but remove only the owned entry.
+            target.unlink()
             connection.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
             self._bump_revision(connection)
 

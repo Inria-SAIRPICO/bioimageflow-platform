@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -224,11 +225,35 @@ async def test_delete_success(client: httpx.AsyncClient):
     assert listing.json() == []
 
 
-async def test_delete_unknown_returns_404(client: httpx.AsyncClient):
-    r = await client.delete("/api/v1/datasets/d_bogus")
+@pytest.mark.parametrize("unknown", ["malformed", "catalog", "unmanaged", "alias"])
+async def test_delete_unknown_returns_404(
+    client: httpx.AsyncClient, tmp_path: Path, unknown: str
+):
+    uploaded = await client.post(
+        "/api/v1/datasets/upload", files={"files": ("keep.tif", b"keep", "image/tiff")}
+    )
+    dataset = uploaded.json()["uploaded"][0]
+    root = tmp_path / "datasets"
+    unmanaged = root / "notes.txt"
+    unmanaged.write_bytes(b"unmanaged bytes")
+    catalog = root / ".bioimageflow-datasets.sqlite3"
+    catalog_bytes = catalog.read_bytes()
+    if unknown == "malformed":
+        dataset_id = "d_bogus"
+    elif unknown == "alias":
+        dataset_id = dataset["id"] + "="
+    else:
+        name = catalog.name if unknown == "catalog" else unmanaged.name
+        dataset_id = "d_" + base64.urlsafe_b64encode(name.encode()).rstrip(b"=").decode()
+    r = await client.delete(f"/api/v1/datasets/{dataset_id}")
     assert r.status_code == 404
     body = r.json()
     assert body["error"] == "not_found"
+    assert catalog.read_bytes() == catalog_bytes
+    assert unmanaged.read_bytes() == b"unmanaged bytes"
+    assert Path(dataset["path"]).read_bytes() == b"keep"
+    assert [item["id"] for item in (await client.get("/api/v1/datasets")).json()] == [dataset["id"]]
+    assert (await client.delete(f"/api/v1/datasets/{dataset['id']}")).status_code == 204
 
 
 async def test_delete_traversal_id_returns_400(client: httpx.AsyncClient):

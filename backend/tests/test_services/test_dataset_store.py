@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterable
 from pathlib import Path
 
@@ -205,10 +206,30 @@ async def test_delete_removes_file(tmp_path: Path):
     assert store.list() == []
 
 
-async def test_delete_unknown_raises(tmp_path: Path):
+@pytest.mark.parametrize("unknown", ["malformed", "catalog", "unmanaged", "alias"])
+async def test_delete_unknown_raises(tmp_path: Path, unknown: str):
     store = _make_store(tmp_path)
+    dataset = await store.store("keep.tif", _bytes_stream([b"managed bytes"]))
+    unmanaged = store.root / "notes.txt"
+    unmanaged.write_bytes(b"unmanaged bytes")
+    catalog = store.root / ".bioimageflow-datasets.sqlite3"
+    catalog_bytes = catalog.read_bytes()
+    if unknown == "malformed":
+        dataset_id = "d_unknown"
+    elif unknown == "alias":
+        dataset_id = dataset.id + "="
+    else:
+        name = catalog.name if unknown == "catalog" else unmanaged.name
+        dataset_id = "d_" + base64.urlsafe_b64encode(name.encode()).rstrip(b"=").decode()
     with pytest.raises(DatasetNotFoundError):
-        store.delete("d_unknown")
+        store.delete(dataset_id)
+    assert catalog.read_bytes() == catalog_bytes
+    assert unmanaged.read_bytes() == b"unmanaged bytes"
+    assert Path(dataset.path).read_bytes() == b"managed bytes"
+    reopened = _make_store(tmp_path)
+    assert [item.id for item in reopened.list()] == [dataset.id]
+    reopened.delete(dataset.id)
+    assert reopened.list() == []
 
 
 async def test_delete_rejects_traversal_id(tmp_path: Path):
@@ -218,8 +239,31 @@ async def test_delete_rejects_traversal_id(tmp_path: Path):
     import base64
 
     evil = base64.urlsafe_b64encode(b"../../../etc/passwd").rstrip(b"=").decode("ascii")
-    with pytest.raises((PathTraversalError, DatasetNotFoundError)):
+    with pytest.raises(PathTraversalError):
         store.delete(f"d_{evil}")
+
+
+@pytest.mark.parametrize("outside", [False, True])
+async def test_delete_owns_symlink_entry_not_destination(tmp_path: Path, outside: bool):
+    store = _make_store(tmp_path)
+    selected = await store.store("selected.tif", _bytes_stream([b"selected bytes"]))
+    sibling = await store.store("sibling.tif", _bytes_stream([b"sibling bytes"]))
+    external = tmp_path / "external.tif"
+    external.write_bytes(b"external bytes")
+    selected_path = Path(selected.path)
+    selected_path.unlink()
+    selected_path.symlink_to(external if outside else Path(sibling.path))
+
+    if outside:
+        with pytest.raises(PathTraversalError):
+            store.delete(selected.id)
+        assert selected_path.is_symlink()
+    else:
+        store.delete(selected.id)
+        assert not selected_path.is_symlink()
+        assert [item.id for item in _make_store(tmp_path).list()] == [sibling.id]
+    assert Path(sibling.path).read_bytes() == b"sibling bytes"
+    assert external.read_bytes() == b"external bytes"
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +309,11 @@ async def test_legacy_files_are_catalogued_without_moving(tmp_path: Path):
     assert Path(dataset.path) == legacy
     assert dataset.display_name == "cells.tif"
     assert dataset.folder_id is None
+    sibling = await store.store("keep.tif", _bytes_stream([b"keep"]))
+    store.delete(dataset.id)
+    assert not legacy.exists()
+    assert Path(sibling.path).read_bytes() == b"keep"
+    assert [item.id for item in _make_store(tmp_path).list()] == [sibling.id]
 
 
 async def test_folder_rename_and_move_do_not_change_dataset_path(tmp_path: Path):

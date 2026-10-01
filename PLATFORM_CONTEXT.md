@@ -158,6 +158,8 @@ Managed bytes default to `<workspace>/datasets`, while logical folders and displ
 Selection resolution expands folder descendants into explicit ordered file records; recursive deletion requires a preview and catalog-revision confirmation, with actionable partial failures.
 Ordinary browser path parameters use the panel's transient single-file picker, and Files sources use normal multi-selection; desktop inputs use native/local filesystem paths.
 Resolve-and-containment checks remain authoritative for uploads and deletion.
+Compatibility single-file deletion additionally requires the exact catalog ID and matching stored filename under a writer transaction; encoded filenames alone cannot select unmanaged files or the catalog.
+It checks resolved containment and unlinks only the selected lexical entry, preserving a contained symlink's destination; filesystem deletion and catalog commit have no atomic rollback guarantee.
 Exact submitted-original-filename metadata fidelity remains a known store implementation gap, distinct from safe stored naming.
 
 ### Execution and results
