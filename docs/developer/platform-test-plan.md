@@ -6,7 +6,8 @@ orphan: true
 
 Establish confidence in the platform people use today by reviewing architecture and tests together, repairing demonstrated defects and validated structural weaknesses, then completing systematic coverage of implemented in-scope behavior.
 This campaign was prepared from the previous campaign's results; execution started after the user requested it on 2026-09-30.
-Application execution is **HELD FOR COMPLETE REVIEW**; the 2026-10-01 retrospective inserts whole-system reconnaissance before the remaining repairs and coverage expansion.
+M1 complete agreed-scope review is accepted; the dated M1 retrospective and first bounded M2 queue in the [checkpoint](platform-test-progress.md) now govern diagnosis and repair release.
+The complete-review hold below describes the gate while it was open; its closure does not authorize every candidate repair, resume held I1/T1 automatically, or release systematic coverage expansion.
 The checkpoint records actual readiness outcomes separately from historical coverage.
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
@@ -143,7 +144,7 @@ Recheck E1 consumers affected by shared helper or lifecycle changes; retain only
 ## Wave 2: finish the risky user flows
 
 The initial N1/E1 queue has already produced accepted repairs.
-Before finishing I1/T1 or expanding Wave 3, complete the reconnaissance gate below and rank remaining work by its findings rather than blindly resuming the old test queue.
+Before finishing I1/T1 or expanding Wave 3, use the accepted reconnaissance gate and dated M2 queue to resolve each packet's remaining contract, source and validation prerequisites rather than blindly resuming the old test queue.
 A demonstrated loss/wrong-result or permission defect takes precedence and independent work may continue when one item is externally blocked.
 
 | Batch | Concrete acceptance and test boundaries | Completion evidence |
