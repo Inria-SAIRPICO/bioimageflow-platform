@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 501 complete (447 reviewed / 54 classified) / 1298 pending, with 229 identified findings.
+Current checkpoint: 1,799 inputs / 705 complete (605 reviewed / 100 classified) / 1094 pending, with 269 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -2227,7 +2227,7 @@ After reviewing onboarding/normative workspace ownership, either specify reserve
 
 #### ROOT-F050 — P2 qualified layout contract gap: Mosaic reads only the initial frame
 
-mosaic.py:48–55 declares scalar image semantics without restricting layout; process_batch:121–124 loads/copies the initial Pillow frame without seek/n_frames selection or multiframe refusal.
+mosaic.py:48–55 declares scalar image semantics without restricting layout; process_batch:112–115 loads/copies the initial Pillow frame without seek/n_frames selection or multiframe refusal.
 A multi-page volume/channel/time TIFF therefore contributes its initial frame to the montage, with no explicit selected-plane policy in the complete source/guide.
 This is source behavior and a contract question, not an executed pixel-loss result or a demand that QC montage preserve every volume dimension.
 Full common-workflow tests cover planar grayscale/RGB/RGBA/palette behavior; the multi-channel TIFF fixture is used only by Files.
@@ -2244,10 +2244,464 @@ Use existing merge schema oracles if this distinction is required; no new broad 
 
 #### ROOT-F052 — P2 qualified side-effect/cache contract gap: cached WriteTable does not recreate its destination
 
-table.py:142–147 writes Inputs.path then returns only a passthrough table; the destination is not a declared owned Path output.
+table.py:163–167 writes Inputs.path then returns only a passthrough table; the destination is not a declared owned Path output.
 B's full node_execution/dataframe/cache trace confirms valid DataFrameTool cache hits return before merge/transform, and publication supplies outputs=[] without independently checking Inputs.path destination existence/content.
 A deleted destination can therefore remain absent after an otherwise-valid cache hit while the guide still describes a written output table.
 This is a traced source path, not an executed lost file; explicit external side-effect rematerialization remains a tool/cache contract decision.
 Full WriteTable tests call transform once and check CSV/TSV bytes; they do not distinguish subsequent cache reuse after destination removal.
 After cache/storage/spec synthesis, define destination ownership and cache-validity semantics, preserving arbitrary explicitly selected CSV/TSV destinations and passthrough behavior; do not take externally authored files into owned-cache deletion silently.
 A single existing tool/cache oracle should own any required distinction instead of repeated successful E2E table journeys.
+
+### Complete-review checkpoint — A-batch-11
+
+#### A-F079 — Medium/High, source defect: move recovery omits interrupted global provenance rewriting
+
+Normal direct move calls _rewrite_moved_source_provenance at2971; folder/promotion use _rewrite_moved_workflows1173–1178, which invokes the same operation.
+That helper at1199–1239 rewrites workspace source IDs in every saved workflow, draft and private nested snapshot, not merely the moved workflow.
+Forward recovery _recover_workflow_move_documents1028–1050 restores moved document metadata/display and draft path identity but never repeats this global provenance rewrite.
+The full recovery coordinator then moves snapshot root owners and favorites; complete move_root_workflows changes owner fields only, not embedded graph source IDs.
+A committed interruption before or partway through global provenance writes can therefore finish and clear the durable move journal with source references still naming the old ID.
+Embedded definitions remain authoritative, so this is not a claim that ordinary execution loses graph bytes; source refresh/provenance/containment behavior and explicit source navigation can become stale.
+test_move_rewrites_saved_workspace_provenance_without_changing_hash proves the ordinary path; existing direct/folder recovery tests prove moved artifacts/owners/results but do not inspect an unrelated parent's interrupted saved/draft/snapshot provenance.
+No fault was executed in this audit.
+Retain exact mapping, embedded content and artifact-hash invariants; future repair must make the whole existing provenance effect forward-idempotent without silently adding another source authority.
+
+#### A-F080 — Medium, durability source risk: archive/source/copy publication has weaker directory ordering than templates/saved writes
+
+Archive import1693–1726 fsyncs workflow.json then renames the staging directory and fsyncs its destination parent, but does not fsync the staging directory containing the newly created workflow.json before publication.
+OwnedWorkflowSources.stage/publish writes and fsyncs source files but publish performs atomic replacements without reaffirming affected directories; newly created nested source/package directories are not flushed through a durable parent chain.
+Duplicate2925–2942 fsyncs staging after source publication and copytree, but recursively copied editable tools and nested source directories/files do not share the stronger explicit durability treatment used by templates2650–2677.
+Archive/copy parent creation also uses mkdir rather than the store's durable parent-chain helper.
+Ordinary successful restart and current copy isolation tests cannot distinguish OS power-loss ordering; no power failure, missing file or byte loss was reproduced.
+Retain staging, exact source verification, owned-byte isolation and atomic destination publication; future policy must define the promised durability level consistently before adding fault tests or claiming transaction survival.
+This is related to A-F073 deletion durability but a separate publication boundary.
+
+#### A-F081 — Low/Medium, exceptional cleanup defect: current template staging is untracked until preparation finishes
+
+install_workflow_templates2643 creates staging and writes workflow.json/tools before adding the directory to prepared2677.
+An invalid tool filename or write/fsync failure before that append enters cleanup, which removes only prepared and published directories; the current staging directory is retained.
+The advertised atomic multi-template install still avoids publishing its intended destination, but can leave hidden temporary directories containing a canonical workflow.json and prevent parent/root cleanup.
+Nested temporary paths are particularly relevant because list_workflows excludes names beginning with a dot, rather than every dot-prefixed path segment; workflow_tree also inventories plain directories.
+No failed template install was executed; full demo/template tests remain pending, and trusted bundled inputs mitigate invalid-filename likelihood without covering operational write failures.
+Retain all-or-nothing intended destination publication and existing generation reservations; future cleanup should track the current stage before fallible preparation and distinguish incomplete temporary artifacts from user workflow identities.
+
+#### A-F082 — Medium/High, qualified concurrency risk: format migration does not join draft/snapshot mutation boundaries
+
+apply_workflow_format_migrations1994 acquires only workflow_structure_mutation; recover_workflow_format_migration2101 does likewise.
+Target application2189–2258 checks current byte digest and later calls atomic _write_schema_v2_json without holding each workflow identity lock or the nested snapshot mutation lock used by ordinary editing writes.
+The complete HTTP format-migration route348–362 supplies no snapshot/identity/execution boundary itself.
+Pending-format guards block ordinary editable access to affected workflows after the preview sees a pending plan, which materially mitigates new root requests.
+They do not establish that a previously admitted draft write or separately locked nested snapshot write cannot commit between the digest read and migration replacement, nor that an old admitted writer cannot later overwrite the migrated state.
+The global structure lock serializes moves, not every saved/draft/snapshot write; test_workflow_mutation_serialization covers save/delete/move, not migration-versus-write.
+Full schema-format tests remain pending; no controlled concurrent schedule or data loss was executed.
+Retain stale-plan refusal, backups, forward journal and canonical target validation; future authority decision must coordinate admitted physical writers rather than merely add a GUI wait.
+
+#### A-F083 — Medium/High, source deadlock risk: containment validation recursively acquires identities outside sorted multi-lock admission
+
+save_workflow2757 is identity-locked for its destination and calls validate_containment1551, whose resolve_saved_graph invokes identity-locked get_workflow for source IDs.
+B-owned complete containment walker44 follows the saved source while the original destination lock remains held.
+Concurrent saves of A referencing B and B referencing A can therefore hold A→waitB and B→waitA despite the store's sorted workflow_mutations primitive.
+Even when existing saved graphs are empty and eventual source-cycle refusal is required, the lock inversion can occur before that traversal finishes.
+The service uses RLocks, which support same-thread recursion but do not resolve this cross-thread cycle.
+test_direct_and_transitive_source_containment_cycles_are_rejected is sequential; existing mutation tests do not distinguish a two-workflow containment schedule.
+No concurrent diagnostic ran during the audit; this is an exact source risk, not observed hung production.
+Retain transitive cycle refusal and missing-source embedded authority; future design must provide a coherent containment snapshot/admission order without replacing public graph semantics.
+
+#### A-F084 — Medium, source availability risk: global migration preview can fail on one missing owned source
+
+_plan_schema_v2_workflows1830–1835 and1901 collect owned sources for migration candidates outside the per-document parse/validation error handling.
+OwnedWorkflowSources.collect_for_graph/read raises when an owned manifest/file is missing or invalid.
+The planner is called by list_workflows1727, workflow_format_status2261 and ensure_workflow_format_current2294; an unrelated malformed schema-v1 candidate can therefore abort a workspace-wide list/status or editable access to another current workflow instead of becoming an isolated format notice.
+Invalid JSON/model documents are deliberately hidden/reported per file, making this source-error asymmetry observable in control flow.
+No corrupt-source fixture was executed; full schema-migration/format/source-registry counterparts remain pending and may refine intended fail-closed policy.
+Retain refusal to manufacture missing source bytes and preserve explicit notices; future diagnosis should distinguish protecting the affected workflow from blocking unrelated identities.
+
+
+### Complete-review checkpoint — A-batch-12
+
+#### A-F085 — Low, test-oracle naming gap: distinct layout points do not establish nonoverlapping node rectangles
+
+test_bundled_graphs_flow_left_to_right_without_overlapping_nodes57–73 asserts unique position tuples and increasing source/target x positions.
+Two differently positioned nodes can still have overlapping rendered rectangles, especially if label/tool-specific size varies.
+The first half of the test name is established; the nonoverlap wording overstates this point-only oracle.
+No actual demo overlap was observed or renderer run, and no source-layout defect is claimed.
+Retain recursive schema/layer direction and distinct positions; future maintenance should describe the actual geometric guarantee or use the existing layout dimensions/renderer boundary if full rectangle separation is a required contract.
+Do not add broad GUI repetition merely to satisfy a misleading title.
+
+#### A-F086 — Medium, source/test authority risk: legacy conversion promotes invalid accepted draft validation without semantic validation
+
+B-owned normalize_legacy_workflow_draft293–305 replaces the old draft validation with valid=True/errors=[] while preserving old node_statuses, without calling graph semantic validation.
+The complete owned test_migrates_legacy_workflow_and_dirty_draft_with_backups explicitly starts with valid=False and expects valid=True after migration; it uses an ExampleTool identity in an otherwise empty registry and does not distinguish converted structure from executable semantic acceptance.
+Complete A draft service GET299–312 calls _read_projected_draft; its read-time projection retains accepted non-cache errors and adds only projected cache_corrupt errors at663–670, so cleared semantic errors are not generally reconstructed by reading the migrated draft.
+get_draft_snapshot likewise returns the accepted persisted validation rather than rerunning full semantic validation.
+This can present converted invalid or unresolved graph state as accepted-valid and can retain failed node statuses beside valid=True.
+Execution compilation/validation remains a separate admission authority, so this is not a claim of unvalidated compute or observed scientific output corruption.
+No migration/runtime diagnostic ran in this audit; B received the implementation/consumer seam.
+Retain lossless graph conversion, original backups and refusal to guess unsupported interfaces; future authority choice should explicitly distinguish migrated structural acceptance from semantic validation and adjust the existing oracle accordingly.
+
+
+### Complete-review checkpoint — A-batch-13
+
+#### A-F087 — Medium/High, qualified source-update ownership risk: clean-parent check does not survive asynchronous preview/apply/reset
+
+updateContextWorkflowFromSource1546–1606 checks the owning ID and canvas dirty state only at entry.
+It then awaits critical freshness, saved artifact GET, preview, source apply and draft reset, without acquiring a lifecycle operation or checking rootEditEpoch, registration token, canvas disposal, current workflow incarnation or newer dirty state at those boundaries.
+Graph commands remain available through most of this sequence; the context menu handler also does not reject isLocked at entry.
+The server preview captures saved-artifact identity and confirms destructive effects, which protects its own source operation but does not represent new unsaved client edits.
+The final reset uses the live accepted draft revision and installs saved truth; edits made during the sequence can be replaced or fail behind a conflict after saved source mutation already committed.
+No controlled loss or external source update ran here; current confirmation/CAS barriers materially mitigate stale saved artifacts, and full App/other source-editor callers remain pending.
+Prior full canvas persistence tests establish ordinary critical operations, not this context-source sequence with a held preview/new local edit.
+Retain explicit preview/effect confirmation, accepted source ownership and independent draft authority; future diagnosis must capture the exact edited/submitted graph and operation owner rather than add speculative waits.
+This concretizes an adjacent consumer of A-F055; it does not release a global Open repair.
+
+#### A-F088 — Medium, qualified graph-install concurrency risk: shared boolean and unmount guard do not own a specific application
+
+applyGraphState839–909 clears nodes/edges and yields twice before installing nodes/edges and accepted history.
+It checks only isCanvasUnmounted across those yields, and isApplyingGraphState is a shared boolean reset by every finalizer.
+Callers include initial mounting, authoritative agent draft installation, restore-saved event, replace-root event and nested-source-edit event; those handlers do not all acquire the same installation lease or monotonic operation token.
+Overlapping admitted replacements can therefore interleave node/edge/interface/history state and an older finalizer can permit reconciliation while another installation remains pending.
+Most current App lifecycle work and agent actions supply separate guards, materially limiting ordinary overlap; the full App and code-editor producer contracts remain pending, so this is a bounded source risk, not a demonstrated startup overwrite or ISSUE022 cause.
+Existing import-only CanvasView test cannot distinguish it; prior mounted persistence tests cover disposed and accepted graph cases but no claimed exact overlap oracle here.
+Retain two-tick handle mounting and independently captured authority; future diagnosis should compare actual admitted graph application tokens and owner lifetime before changing presentation behavior.
+
+#### A-F089 — Medium, source race: asynchronous clipboard read bypasses later lock/disposal admission
+
+pasteFromClipboard2840 checks isLocked before awaiting readClipboardPayloadResult.
+After the read it prepares nodes/edges and directly calls addNodes/addEdges/emitGraphChanged at2886–2897 without another lock, unmount or registration check.
+Execution may enter starting/running or the mounted canvas may be disposed while native clipboard permission/IO is pending; the continuation can still mutate its graph and queue persistence.
+onDrop's asynchronous native-path branch at2386 instead delegates to onAddNode, which rechecks the lock, demonstrating a stronger immediate admission barrier (although disposal remains separate).
+B's complete 'pasteFromClipboard is a no-op when locked' test sets running before calling paste, so it proves entry refusal but cannot distinguish a held clipboard read followed by starting/disposal.
+No clipboard race test or gesture ran in audit.
+Retain real clipboard parsing/reconciliation and canvas identity; future correction must refuse superseded admission at the physical mutation boundary, without replaying the paste onto a newly active canvas.
+
+#### A-F090 — Medium, source interface-integrity defect: grouping does not remap the enclosing exposed interface
+
+createSelectedNestedWorkflow2900–2934 passes nodes/edges/selection to groupIntoWorkflow, then replaces rendered nodes/edges and emits the graph.
+The complete grouping helper returns nodes/edges/created nested node but does not receive or rewrite the enclosing interface.
+Unlike deleteNodes2590, this consumer does not reconcile rootWorkflowInputs/rootWorkflowOutputs or a nested editor's current enclosing interface after selected nodes become internal children.
+An exposed parent input/output targeting a selected node can therefore keep its old target/source ID, which no longer exists at that enclosing graph level, causing canonical GraphState refusal rather than successful grouping.
+Existing complete grouping unit fixtures exercise ordinary edge boundaries, not an already exposed enclosing interface; the large real workflow-interface browser file remains pending full read and may refine its exact oracle.
+No group operation ran here.
+Retain portable nested structure, external boundary connections and source identity; future design must remap enclosing stable ports together with node grouping, without dropping viewer metadata (A-F064) or confusing DataFrame port kind (A-F065).
+
+#### A-F091 — Low/Medium, conditional edge-update shape debt: endpoint rewrite retains the previous renderer edge discriminant
+
+onEdgeUpdate2010–2084 changes source/target handles through updateEdge but does not update edge.type.
+isValidConnection checks the new endpoints' header/body regions; a callback changing both endpoints to a valid different-region pair would retain the old column/dataframe discriminant.
+The usual single-endpoint drag keeps the other endpoint fixed and rejects cross-region moves, which materially mitigates the ordinary GUI path; no normal two-endpoint gesture is established.
+The complete serializer uses edge.type and then validates matching endpoint-handle kinds (useGraphSync118–145); mismatched retained type can throw during emitGraphChanged after the renderer edge already changed.
+The locked-edge-update test proves late stopping refusal; it does not distinguish an unlocked edge reroute across valid regions, and broader real connection GUI tests remain pending.
+No Vue Flow gesture or serializer failure was executed here; this remains conditional debt for programmatic or otherwise reachable two-endpoint updates, not an asserted current user gesture defect.
+Retain in-place update identity needed for Vue Flow pointerup cleanup; future diagnosis should distinguish gesture reachability from the source's incomplete discriminant update and preserve rejection cleanup.
+
+
+### Complete-review checkpoint — A-batch-14
+
+#### A-F092 — Medium, qualified lifetime risk: nonstartup shell continuations lack the mount fence used by startup
+
+activateWorkflowFallback1048–1076 captures DockviewApi, then awaits loadRootWorkflowPresentation and can call openWorkflowCanvasPanel/showEmptyCanvasState afterward without checking isUnmounting or API membership.
+replaceMountedWorkflowGeneration1140–1176 removes a panel, awaits presentation reset/load and similarly opens a panel after those awaits; its catch can invoke fallback.
+finalizeNestedWorkflowClose740–763 can queue reopening after a late DELETE error, while openNestedWorkflowPanel671 has no unmount fence.
+onBeforeUnmount sets isUnmounting and removes listeners/disposables but does not clear dockviewApi or invalidate these independent operations.
+The full startup path explicitly checks both isUnmounting and dockviewApi.value===capturedApi after awaiting, demonstrating that the corresponding guard is a deliberate supported lifetime contract.
+Late nonstartup operations can therefore call the detached shell API and mutate shared presentation/session state after disposal.
+No late response diagnostic ran; actual Dockview teardown may refuse some physical additions, so this remains qualified source risk rather than observed visible reopening.
+AppShell's late-startup test does not distinguish fallback/generation/delete-close continuations, and full real browser counterparts are pending.
+Retain durable admitted deletion/persistence effects; future consumer correction must fence presentation/finalizers without pretending an already committed backend operation was cancelled.
+
+#### A-F093 — Low/Medium, qualified background-presentation design risk: generation replacement always activates its reopened root
+
+replaceMountedWorkflowGeneration captures the affected panel/context but not whether it is the active canvas/dock presentation.
+After reset/load it calls openWorkflowCanvasPanel, which always setActive for either an existing or newly added root at1405/1450.
+A background collection refresh replacing an inactive workflow incarnation can therefore select that workflow over the user's current root, nested editor or dock; a user activation made during the awaited replacement is likewise not a barrier.
+This is distinct from explicit user Open, whose activation is intentional and covered by startup tests.
+No current selection loss or replaced graph loss was reproduced; a product decision to foreground replacement would change classification, and full real identity-refresh browser assertions remain pending.
+Retain automatic stale-incarnation disposal and fresh authoritative loading; future policy should specify whether a background replacement restores its prior visibility or receives new presentation authority.
+
+#### A-F094 — Low/Medium, conditional owner-finalizer debt: global close busy state can be finalized by an older target
+
+saveAndCloseRootCanvas and discardAndCloseRootCanvas each capture a target but use the shared rootCloseBusy boolean as their finalizer ownership predicate.
+disposeRemovedWorkflowCanvases1100 resets that boolean/dialog when an external removal disposes the target, allowing another close action while the original await still exists.
+If a new close sets rootCloseBusy before the old operation's finally runs, the old finally can clear the new dialog's busy state and call canvasLifecycleStore.finish on its old canvas ID.
+Ordinary modal/lifecycle behavior prevents overlapping closes until the exceptional external removal path, so this is conditional debt, not a reproduced common close race.
+Same-ID recreation makes the lifecycle finalization axis particularly relevant because canvas IDs are reusable while registration tokens identify mount lifetime.
+The helper tests guard persistence membership/newer edits, but do not distinguish two shell close operation finalizers after removal/replacement.
+Retain exact mounted panel and recovery semantics; future ownership should associate finalization with the admitted close operation rather than rely on a reusable global boolean.
+
+
+### Complete-review checkpoint — B-batch-8
+
+#### B-F065 — P2 source defect: numeric coercion changes declared string outputs and labels
+
+`engine/dataframes.py:256–265` tries pd.to_numeric on every string-typed column, irrespective of tool annotations or identifier semantics.
+`engine/node_execution.py` applies it after transform, after validated processing output assembly/publication and on cache reads.
+A declared Outputs.label:str value such as "001" passes the strict output validator, then becomes numeric1 in the returned dataframe; analogous DataFrameTool labels lose leading zeros too.
+For processing output the published canonical record can preserve string while returned/cache-consumed frame is coerced; selected immutable record identity then describes the canonical stored representation, while downstream tools see a different runtime type/value.
+This is deterministic source behavior, not an executed scientific failure.
+Full `tests/unit/test_processing_output_validation.py::test_output_values_use_strict_annotation_validation` establishes strict declared type validation, but its label fixtures are nonnumeric and never exercise the later engine pipeline.
+Column/source cache tests assert asset identity and counts, not numeric-looking declared string labels.
+Future diagnostic should trace "001"/large identifier/ordinary numeric columns through first compute, exact record and cache hit, preserving intentional legacy numeric handling only where its authority is explicit.
+
+#### B-F066 — P2 source defect: environment cache hash discards ordered channel priority
+
+`cache/identity.py:15–28` sorts/deduplicates every dependency list, including dependencies.channels.
+`env_manager.py` forwards declared channel ordering into public Wetlands EnvironmentSpec, and complete Wetlands specs.py preserves first-occurrence channel order and includes it in recipe serialization/hash (`473,522,553`).
+Reordering Conda channels can therefore change the provisioned recipe/solver priority while leaving compute_env_hash and the tool cache result key identical.
+The engine may accept the previous cache hit before inspecting/provisioning the changed environment; no version or actual solved-package mismatch is asserted without runtime evidence.
+Full `tests/unit/test_cache.py::TestNormalizeDependencies::test_sorts_and_strips_lists` only checks an unordered pkgs example; dictionary-order independence is valid and should remain.
+Future diagnostic must distinguish requirement sets from ordered channels and verify both Wetlands recipe identity and cache identity across channel reorder, retaining supported channels and ordinary requirement-order reuse.
+
+#### B-F067 — P1 source-risk/identity defect: different tool origins can share a cache signature
+
+`engine/identity_runtime.py:84–108` supplies only class.__name__, tool version, environment requirements, parameters/upstreams and optional dev-mode source hash to compute_signature_hash.
+No module/qualified class/custom-source content identity participates when dev_mode=False.
+`cache/identity.py:70–108` then derives result key from tool kind, node key and this logical digest.
+Lookup validates the record for that result key but does not compare requested tool origin; tool_identity is recorded in attempt diagnostics, not admission of a cache hit.
+Different accepted classes with the same class name/version/params at the same node key can therefore reuse an earlier class's result even when captured-source dispatch correctly resolves the new class.
+This is separate from A-F001/A-F066 name-only catalog binding; A confirmed no existing cache-origin collision finding.
+It is a source identity defect and unexecuted wrong-result risk, not a claim that all package upgrades require unconditional cache invalidation or editable source mutation must always be detected outside dev mode.
+Full cache hash tests distinguish params/source-hash changes only; no same-name/different-module or captured source digest oracle exists there.
+Future diagnostic should use distinct accepted tool origins with identical public names/versions and compare cache/materialization/plan signatures, retaining deliberate version-based source identity policy and portable module/source bindings.
+
+#### B-F068 — P1 source-risk: record identity is recaptured independently of the consumed frame
+
+`cache/dataframe.py:39–47` and `cache/processing_lookup.py:247–272` snapshot current once to load recordA but return only dataframe.
+`engine/node_execution.py:121–159` later reads current again to record a provider outcome; completed/cached progress does likewise.
+`engine/cache_runtime.py:57–81` reads current anew when writing the run-node record; `engine/identity_runtime.py:31–56` later recaptures current to sign a downstream consumer whose arguments came from the already-loaded frame.
+A public Clear/removal followed by a new selection between those operations can attach recordB identities/signatures/provenance to values from recordA or make a successfully consumed immutable frame appear unselected.
+Borrowed complete repository.select_current_record uses first-winner hard-link publication and retains current on nondeterministic competing publication; ordinary concurrent publication does NOT overwrite recordA.
+The risk specifically requires pointer removal/new selection, such as another public Workflow sharing storage, not a claim that default platform Run/Clear admission is unguarded.
+Platform's same workflow idle lease mitigates its own coordinated route calls; per-object library execution exclusion does not itself serialize independent Workflow objects/storage publishers.
+A-F030 inspect-current→unlink race is related but remains A canonical; this finding concerns frame/identity handoff after lookup/publication.
+Full `test_compute_steps_processing_tool_cached_step_emits_progress_identity` verifies matching IDs in a stable snapshot; full column invalidation tests preserve immutable records but do not interleave a reader and replacement.
+Future diagnostic should coordinate pointer advance around one actual frame read and assert provider outcome, run view, downstream signature and consumed values all refer to the same immutable record, preserving first-winner arbitration and no wholesale current-pointer overwrite.
+
+#### B-F069 — P2 source defect/confinement asymmetry: dataframe attempts follow symlinked parent directories
+
+`cache/dataframe.py:66–80` recursively mkdir's result/attempt/staging paths before calling public start_cache_attempt, then writes canonical parquet there.
+Borrowed complete `storage/repository.py:73–116` validates IDs and rejects only the final attempt directory symlink; it does not reject a symlinked attempts parent or establish storage-root confinement for that path.
+A preexisting attempts symlink can therefore create a real new attempt directory and write attempt metadata/parquet outside the intended result subtree.
+`processing_prepare_attempt` instead checks each child and rejects the attempts symlink before dispatch; the complete `test_source_processing_tool_rejects_symlinked_attempts_directory_before_execution` proves that intended protection only for ProcessingTool.
+This is a source path ownership defect for tampered/preexisting cache state, not a claim of arbitrary remote path injection or a prohibition on an intentionally symlinked user-selected workspace root.
+Future diagnostic should pair DataFrameTool and ProcessingTool attempts confinement and assert no outside writes, preserving portable explicit storage roots and immutable candidate installation.
+
+#### B-F070 — P2 source-risk: attempt failure metadata can remain running or replace the original diagnostic
+
+`cache/dataframe.py:73–139` creates running attempt metadata, then writes/validates/installs/selects without a failure-finalization scope; exceptions after start leave that attempt marked running despite no remaining writer.
+Processing source/column paths do have failure handlers, but `engine/node_execution.py:424–438,653–691` calls finish metadata while handling the original exception without isolating a second metadata failure.
+Corrupt/unwritable attempt metadata can replace the actual tool/processing error with a status-persistence error.
+A completed immutable record can also be selected before a later success-status write fails; treat acknowledgement and durable selection separately rather than promising atomic rollback.
+Existing safety tests correctly assert no current on earlier unsafe publication, but do not inject parquet/candidate/status persistence failures and inspect terminal metadata/original error together.
+Future faults should establish no physical writer remains, stable primary diagnostic with secondary persistence evidence, and truthful record/attempt status; retain physical cancellation drain and any valid selected immutable record.
+
+#### B-F071 — P3 source defect: malformed selected result metadata raises untyped shape errors
+
+`cache/metadata.py:151–179` catches unreadable/invalid JSON syntax but calls metadata.get without proving a mapping.
+A JSON list/scalar/null in result.json therefore raises AttributeError and aborts public iter_dataframe_result_metadata/iter_processing_result_metadata rather than returning a qualified corrupt/missing metadata result.
+A-complete invalidation has metadata-less fallback, but this shape failure prevents it from reaching that fallback; do not silently treat a corrupted canonical record as ordinary absent cache.
+This is separate from B-F027 legacy dataframe JSON shape handling.
+Full cache/hash tests and column metadata-less invalidation tests do not cover nonmapping valid JSON result metadata.
+Future diagnostic should preserve exact typed corruption/selection identity rather than skip arbitrary malformed records blindly.
+
+#### B-F072 — P3 maintenance debt: unused path fixup helper retains obsolete flattening behavior
+
+`engine/arguments.py:361–372` _fixup_output_paths strips all nested components to Path.name.
+Whole library source search found no caller; current staging/template resolution and immutable publication preserve nested asset paths, established by full column nested-owned-path test.
+Do not claim a present runtime flattening defect from this unused method.
+Future cleanup can remove the obsolete helper or document its unsupported internal status after confirming public compatibility, avoiding future reuse that would contradict nested paths.
+
+#### B-F073 — P3 test oracle/redundancy candidate: engine/configuration claims weaker than their assertions
+
+Full `test_engine_injection.py::test_engine_parameter_is_keyword_only` only calls a keyword engine; no prohibited positional call is attempted.
+Marker/state-accessible tests assert preexisting attributes survive, whereas TrackingEngine override tests genuinely distinguish the actual injected execute path.
+The default test's prose says SequentialEngine even though a default parallel Workflow creates DefaultEngine; returned dataframe cannot distinguish that class.
+Full environment management header promises Core auto-add and reuse, but this89-line module tests simple spec properties and one enabled dependency conflict with pytest.raises(Exception); the actual Core/manager counterparts are separate B1 unit modules.
+These are confidence/maintenance candidates, not measured suite redundancy or proof of missing coverage across the whole suite.
+Future revision should strengthen the distinguishing assertions and consolidate only genuinely duplicate contracts after the complete suite inventory/cost review; no automatic test deletion.
+
+
+### Complete-review checkpoint — B-batch-9
+
+#### B-F074 — P1, logical numeric identity source risk.
+
+storage/identity.py:288 uses DataFrame.iterrows for canonical cells.
+  Pandas' installed frame.py iterrows implementation/doc explicitly permits row dtype coercion; a mixed float/integer row can round integers above 2^53 before canonical scalar encoding.
+  Distinct exact integer data may therefore share logical identity while the physical Parquet bytes differ; transport digest is deliberately excluded from content identity.
+  tests/unit/storage/test_identity.py::test_canonical_dataframe_digest_is_stable_and_rejects_objects and ::test_canonical_dataframe_digest_includes_schema_material cover small/single-column integers, not this distinction.
+  Future diagnostic should compare exact mixed int64/uint64 and float rows without weakening integer or schema identity.
+
+#### B-F075 — P2, numeric categorical normalization mismatch.
+
+identity.py:279 stringifies category schema labels, while cell encoding retains numeric labels; manifests.py:157 reconstructs categorical dtype from those string labels.
+  Numeric category cells can become missing during manifest validation and then fail their own logical digest.
+  Native transport with an already matching dtype can avoid that conversion, so this is not a claim that every categorical transport fails.
+  test_manifests.py::test_record_manifest_validation_checks_files_and_digest and launcher/test_inputs.py categorical cases use string labels.
+  Choose consistent lossless normalization or an explicit early refusal; do not silently replace values.
+
+#### B-F076 — P2, column-name NFC consistency.
+
+identity.py:274 normalizes schema column names but retains original DataFrame column keys; transport restoration requires declared schema names to exist in the original columns.
+  Decomposed Unicode column names can be written and later refused, and normalized name collisions are not explicitly rejected before publication.
+  test_identity.py NFC coverage addresses values, not column names or collisions.
+
+#### B-F077 — P2, transport no-clobber admission gap.
+
+dataframe_transport.py:179 checks destination existence before staging and later unconditionally os.replace installs it.
+  A destination created meanwhile can be overwritten despite the nonreplacement contract.
+  Unique internal paths mitigate routine callers; no default launcher loss was demonstrated.
+  A bounded interval oracle should distinguish final admission from initial refusal.
+
+#### B-F078 — P2, record reference validation asymmetry.
+
+manifests.py validates listed assets and bytes but does not prove every record-relative Path cell references an owned listed asset.
+  Processing cache hydration confines paths without the stronger named-membership check in storage/records.py.
+  A self-consistent public record with an unlisted/missing reference can pass one boundary and fail the exact record reader; normal processing publication emits matching assets.
+  test_current_pointer.py and test_manifests.py cover tampered named assets, not an internally rehashed unlisted cell reference.
+  Preserve external path and owned asset distinctions when aligning validation.
+
+#### B-F079 — P3, transient finalization weaker than backend diagnostics.
+
+repository.py:383 overwrites transient status without validating run/node/invocation correlation or a running-to-terminal transition.
+  Repeated finalization or swapped metadata can be accepted; valid nonmapping JSON produces an untyped failure.
+  test_transient.py::test_transient_invocation_has_exact_identity_and_terminal_metadata is positive-only here, while test_backend_diagnostics.py distinguishes repeated terminal refusal.
+  No late-writer outcome was executed.
+
+#### B-F080 — P1, explicit export destination ownership race.
+
+exports.py initially refuses an existing destination for replace=False, but after staging it backs up and replaces any destination then present without rechecking that flag.
+  A foreign directory created during materialization can consequently be replaced and its backup deleted without replacement authorization.
+  test_output_export_destination.py::test_destination_requires_replace_and_replaces_the_whole_tree tests an initially existing destination; ::test_destination_materialization_failure_cleans_staging does not introduce one in the interval.
+  Next diagnostic should distinguish final no-replace admission while retaining explicit whole-tree replacement, source-overlap refusal and independent copies.
+
+#### B-F081 — P2, canonical terminal finalization source risk.
+
+run_views.py checks current running status and then writes a terminal result without holding an allocation guard or compare-and-set.
+  Independent finalizers can observe running and publish contradictory terminal outcomes.
+  The same WorkflowExecutionContext serializes its ordinary local finalization, and public cross-process recovery admission remains to be traced; this is not a demonstrated default race.
+  test_run_finalization.py::test_canonical_terminal_state_cannot_be_rewritten proves sequential refusal only.
+
+#### B-F082 — P3, derived run-view failure maintenance.
+
+output_views.py:332 removes the existing derived node view and writes the replacement in place.
+  Failure can leave a partial derived run tree and lose its preceding projection, while canonical immutable records remain rematerializable.
+  test_output_materialization.py validates successful representations; latest-view rollback is a separate stronger contract.
+  Do not infer a canonical record loss or silently impose transactional guarantees on every derived projection.
+
+#### B-F083 — P2, durability recommendation gap.
+
+identity.py:147 atomically replaces JSON without file/parent fsync; canonical cache publication also has paths without explicit durability barriers.
+  The complete storage specification recommends supported file/parent fsync before visibility.
+  Existing tests prove logical atomicity and process-readable state, not power-loss durability.
+  Launcher durability must be reviewed separately; this is a qualified policy/source gap, not an executed recovery failure.
+
+#### B-F084 — P2, postcommit cleanup failed acknowledgment.
+
+explicit export/latest replacement installs the new tree before deleting the old backup.
+  Backup cleanup failure can report failure after committed installation, leaving the new tree and backup instead of restoring the previous tree.
+  test_output_replacement.py and test_output_export_destination.py::test_destination_replacement_rolls_back_and_cleans_staging inject preparation/install failures, not cleanup after installation.
+  Define the commit boundary and recoverable cleanup outcome; retain backup safety rather than deleting unrelated paths.
+
+#### B-F085 — P3, storage specification distinctions.
+
+identity scalar encoding maps NaN through its missing-value branch although the document separately promises a NaN sentinel; deliberate infinite PSNR remains valid and is not a scientific defect.
+  The work-scratch exception prose conflicts with stricter owned-assets confinement elsewhere and in implementation/tests.
+  Numeric categorical prose links B-F075; source/tool/output contract identity links B-F067.
+  Low-level safe legacy run names used by fixtures should be distinguished from UUID generation grammar, not labeled a traversal defect.
+  Full documentation judgment remains pending its launcher chapters.
+
+
+### Complete-review checkpoint — reviewer-batch-9
+
+#### reviewer-F036 — direct segmentation examples omit required resolved output paths (P3)
+
+`packages/bioimageflow-segmentation-tools/docs/tools/threshold_segment.md:28–30`, `watershed_segment.md:29–31` and `postprocess_labels.md:27` directly call `process_row(Arguments(...))` without `labels`, `labels` and `output_labels` respectively.
+The actual methods directly access these fields at `bioimageflow_segmentation_tools/classical.py:153`, `:424` and `:783`.
+Core `arguments.py:101–120` only copies supplied keyword fields and raises `AttributeError` for an absent field; `tool.py:139–230` does not wrap these calls or resolve the declared output template.
+Thus a reader supplying otherwise valid image/parameter inputs reaches a missing output field rather than the promised minimal result; this is source-established documentation failure, not an executed red.
+After the full audit, the smallest faithful correction is to add explicit output file arguments to these three examples, consistent with adjacent examples and the direct worker-method contract.
+Do not alter processing semantics or inject engine template resolution into direct methods merely to match prose.
+Existing package execution tests use explicit output paths and can be reused as documentation counterparts; no new model/browser suite is justified by this example-only correction.
+
+### Existing reviewer-F035 extension — concise pages omit essential public usage guidance (P3)
+
+The complete reads add CellposeSAM (16 lines), InstanSeg (11), Nagini3D (12), BilateralDenoise (15), CAREamicsPredict (7), RestorationMetrics (8) and TotalVariationDenoise (14) to the already held thin-public-tool-doc finding.
+These pages name the operation and some important constraints but omit usable configured examples and/or the implemented input/output/refusal guidance required by the already reviewed custom package documentation contract.
+Populate only those actual schema/weight/device/axis/checkpoint/range essentials from existing implementation and package workflow/contract selectors after the audit; avoid a duplicate long model manual or invented model availability guarantee.
+Preserve pinned worker environments, model/license provenance and distinct real-runtime markers/skips.
+
+
+### Complete-review checkpoint — reviewer-batch-10
+
+### Existing reviewer-F036 extension — DetectSpots direct example omits resolved fields (P3)
+
+`packages/bioimageflow-spot-tools/docs/tools/detect_spots.md:28–30` calls `process_row(Arguments(input_image=..., method="dog", threshold=0.3))`.
+The implementation accesses `arguments.sigma`, `sigma_ratio`, `min_distance` and `output_labels` directly at `bioimageflow_spot_tools/detection.py:148–152` and `:188`.
+Its declared Inputs defaults and Outputs template are resolved by the engine, not by Core's plain `Arguments` namespace or a direct method call.
+The example therefore has the same source-established missing-field problem as the three segmentation examples in batch 9, beginning at sigma for an otherwise valid image.
+The smallest future correction is explicit defaults plus output path in the direct example, or a coherent graph-node example that actually runs through the resolver; do not modify the scientific method or invent direct template/default injection.
+By contrast, the concise FilterSpots, SpotSummary, SpotQualityMetrics and rasterization examples use implemented `getattr` defaults and explicit output paths where needed, so their omitted optional values are not blanket defects.
+The Core/source excerpts remain separately owned; no execution or new test request is made.
+
+
+### Complete-review checkpoint — reviewer-batch-11
+
+No additional finding IDs.
+Each classified navigation wrapper has exact source, generator and Sphinx/MyST consumer evidence in its ledger judgment; human source and runtime credit remain separate.
+
+
+### Complete-review checkpoint — reviewer-batch-12
+
+No additional finding IDs.
+Each classified navigation wrapper has exact source, generator and Sphinx/MyST consumer evidence in its ledger judgment; human source and runtime credit remain separate.
+
+
+### Complete-review checkpoint — reviewer-batch-13
+
+No additional finding IDs.
+Complete human/curated content judgments retain documented boundaries and distinct existing selectors; no incidental counterpart receives credit.
+
+
+### Complete-review checkpoint — reviewer-batch-14
+
+#### reviewer-F037 — explicitly implemented strategy clauses are stale despite roadmap disclaimer (P3)
+
+`docs/tool_package_strategy.md` correctly labels itself a candidate strategy and defers metadata/release authority to current package references.
+However, its explicit **Implemented tools** clauses describe `CellposeSegment`/`StarDist2DSegment`, make `ThresholdSegment` a multi-algorithm entry point, assign hole/border filtering to `PostprocessLabels`, call absent `LabelAdjacency`/`ColocalizationMetrics` implemented, and say `RestorationMetrics` reports SSIM.
+The completely read current package docs and scoped actual export maps instead expose `Cellpose3`/`CellposeSAM`/`StarDistSegmenter`, separate Otsu/local/distance/filter tools, no exported adjacency/colocalization tool, and restoration MSE/PSNR/residual noise outputs.
+The strategy also says the current common-tools package still contains the already moved model/axis/Atlas tools, contradicting its own later stabilized-boundary paragraph and current package overview.
+The general candidate disclaimer should not make explicitly current/implemented claims false or turn essential implemented behavior into a proposal.
+After the audit, minimally update exact current names/semantics or label actual future algorithms as candidates, preserving the dated planning inventories and workflow/provenance/validation standards.
+A concise current-boundary table linking authoritative package pages can replace duplicated stale lists; do not implement roadmap tools or expand the campaign merely to satisfy stale prose.
+No upstream release/date facts were independently browsed or presented as current external verification.
+
+#### reviewer-F038 — primary custom-tool examples violate current concrete-class and worker contracts (P2)
+
+`docs/source/how-to/custom_tool.rst`'s GaussianBlur, MeasureIntensity, BatchClassifier and TileImage examples and `tool_packaging.rst`'s MySegmenter omit an explicit `RowConsumption` enum declaration.
+Core `tool.py:149–173` rejects those concrete classes at definition time, exactly as normative `docs/source/specs.md:609` requires; `tests/unit/test_tool.py::TestProcessingToolValidation::test_missing_row_consumption_raises` is the existing guard counterpart.
+The custom guide additionally uses plain inner Inputs/Outputs classes and returns `self.Outputs(field=...)`; plain Outputs has no kwargs initializer whereas `IOModel` supplies that constructor in Core `tool.py:108–119`.
+Even after fixing the first declaration refusal, those Outputs examples therefore remain unusable.
+Declare the appropriate mapped or collective row meaning and inherit `IOModel` in concise runnable examples, keeping batch consumption distinct from output cardinality and parallelism.
+Do not weaken class validation or add automatic backwards compatibility to make documentation pass.
+
+The versioned packaging guide also eagerly imports `.pipeline.build_workflow` from package `__init__.py`, while that module imports the main-process orchestrator.
+Workers importing `my_tools.segmenter` first execute the package initializer and should not require the orchestrator; the guide's own processing import rule and already reviewed first-party lazy-export maps contradict that recommended mixed barrel.
+Use a lazy export or an explicit main-process factory import while preserving relative versioned imports and public workflow ownership.
+The old `requires-python >=3.10` new-package scaffold should match the current dependency-supported Python minimum; this is the existing F002 prerequisite/documentation drift, not a new unrelated runtime finding.
+Existing class-declaration, IOModel, package-import-boundary and versioned-loader assertions are appropriate source counterparts after audit closure; these prose changes do not justify redundant model/browser/full-suite execution.
+
+
+### Complete-review checkpoint — reviewer-batch-15
+
+`docs/developer/workspace-storage-and-demos.md` ends by saying ordinary platform development and CI use registry packages, whereas the actual backend lock and `local-development.md:116–126` require editable sibling orchestrator/Core source, including CI uv sync.
+This extends held F001/F002 mode/prerequisite inconsistency; keep the clear distinction between source acceptance and published-package certification and correct the single stale sentence after closure.
+The Node-only alternative in the development prerequisite repeats F002 because current documented runner/build commands require Bun; this is not an observed install failure.
+
+`docs/agents/troubleshooting.md:17`'s required-first-call sequence omits `get_workspace_context`, unlike `docs/agents/README.md:23–26`, backend generated instructions and `workflow_draft.py`'s current recommendation.
+This is a curated operational-doc corroboration proposed under root's existing ROOT-F048 interface/documentation drift family, not a duplicated new ID or permission to change MCP behavior.
+Use the exact authoritative sequence rather than broadening client commands or copying long API reference examples into public pages.
+
+
+### Complete-review checkpoint — reviewer-batch-16
+
+No additional finding IDs.
+Complete human/curated content judgments retain documented boundaries and distinct existing selectors; no incidental counterpart receives credit.
