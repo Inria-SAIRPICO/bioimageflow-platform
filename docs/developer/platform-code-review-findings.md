@@ -25,7 +25,7 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 1034 complete (907 reviewed / 127 classified) / 765 pending, with 392 identified findings.
+Current checkpoint: 1,799 inputs / 1189 complete (1051 reviewed / 138 classified) / 610 pending, with 426 identified findings.
 The newly authored findings register remains a pending current-document input beyond the frozen baseline.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
@@ -2454,13 +2454,15 @@ Future diagnostic must distinguish requirement sets from ordered channels and ve
 #### B-F067 — P1 source-risk/identity defect: different tool origins can share a cache signature
 
 `engine/identity_runtime.py:84–108` supplies only class.__name__, tool version, environment requirements, parameters/upstreams and optional dev-mode source hash to compute_signature_hash.
-No module/qualified class/custom-source content identity participates when dev_mode=False.
+Module, qualified class and explicit output-contract identity are absent from this logical material.
+Full get_tool_version review establishes that captured source hashes participate through the version value; the earlier blanket exclusion of custom-source content identity was overbroad and is withdrawn.
 `cache/identity.py:70–108` then derives result key from tool kind, node key and this logical digest.
 Lookup validates the record for that result key but does not compare requested tool origin; tool_identity is recorded in attempt diagnostics, not admission of a cache hit.
-Different accepted classes with the same class name/version/params at the same node key can therefore reuse an earlier class's result even when captured-source dispatch correctly resolves the new class.
+Distinct accepted classes with the same public class name/version/params at the same node key can therefore share a signature, for example different modules within one installed distribution/version or distinct qualified classes with the same source-file version.
+Ordinary different captured source hashes are not asserted to collide.
 This is separate from A-F001/A-F066 name-only catalog binding; A confirmed no existing cache-origin collision finding.
 It is a source identity defect and unexecuted wrong-result risk, not a claim that all package upgrades require unconditional cache invalidation or editable source mutation must always be detected outside dev mode.
-Full cache hash tests distinguish params/source-hash changes only; no same-name/different-module or captured source digest oracle exists there.
+Full cache hash tests distinguish params/source-hash changes; a discriminating collision diagnostic must deliberately preserve equal version while changing accepted module/qualified output identity.
 Future diagnostic should use distinct accepted tool origins with identical public names/versions and compare cache/materialization/plan signatures, retaining deliberate version-based source identity policy and portable module/source bindings.
 
 #### B-F068 — P1 source-risk: record identity is recaptured independently of the consumed frame
@@ -4099,3 +4101,415 @@ Current pyproject.toml:36–37 exposes wetlands.cli:main, and current worker boo
 This affects maintainer launch guidance, not the valid shipped console entry point or CI's module imports.
 Future smallest correction:reconcile the human IDE profiles with the public CLI/debugger documentation and portable selected interpreter/disposable instance root after the gate, preserving debugger versus management ownership rather than launching the private worker directly with an invented v1 invocation.
 No profile was executed and no broken-runtime claim follows.
+
+### Complete-review checkpoint — root-batch-13
+
+#### ROOT-F075 — P2 qualified local-model cache/provenance identity divergence
+
+InstanSegSegment._get_model keys its retained loaded model only by model_source path and device.
+Each later local-bundle invocation recomputes _digest_path on current directory bytes before reusing that cached model; the resulting provenance can claim a new model_sha256 while inference still uses previously loaded weights at the same path.
+The source schedule requires a reused tool instance and a local bundle changing between rows/calls; immutable named/local weights avoid it, and no changed-model inference was executed.
+The three existing adapter tests create a fresh instance and check only presence/model_kind provenance, so they do not distinguish reuse after same-path content change.
+Named-model metadata is also looked up separately from the cached loaded model; this remains a qualification until the pinned dependency's exact cache/load authority is established.
+Input digests are computed after inference in both InstanSeg and NAGINI, and NAGINI bundle digest is computed after its model/config were loaded; concurrently changing caller-owned files can therefore misattribute bytes even without the instance-cache seam.
+Preserve useful reuse, local-model support and provenance; future ownership must bind loaded model/input snapshots to the recorded digest, or explicitly enforce immutable content for the invocation lifetime.
+This is model-content provenance, not evidence that normal worker recipe attestation or all model caches are defective.
+
+#### ROOT-F076 — P2/P3 qualified InstanSeg singleton spatial-axis refusal
+
+_instanseg_labels uses np.squeeze without selecting only prediction wrapper axes, then requires exactly two remaining dimensions.
+A valid one-row or one-column selected-target YX mask loses a spatial axis and is rejected before the later expected_shape validation; other adapters preserve spatial singleton dimensions.
+The public adapter declares YX with no minimum spatial extent, but actual model support for thin images was not executed or established, so the real-runtime consequence remains qualified.
+The current fake returns a normal five-by-six array wrapped as [None,None], and the optional runtime uses96-by96; neither distinguishes wrapper singleton axes from legitimate spatial singleton axes.
+Preserve selected-target extraction and strict spatial shape checks; future adapter contract should remove only known wrapper axes or explicitly document/enforce required minimum spatial dimensions.
+
+#### ROOT-F077 — P3 scientific acceptance scope and misleading test-oracle names
+
+The NAGINI optional runtime test checks constructor/inference/sampler signature names only and never performs volumetric inference, loads a real bundle or verifies surface/curvature alignment.
+Its fake adapter counterpart checks archive field names and provenance-key presence, but not numeric surface contents, resolved settings, digest identity or returned curvature count.
+The real InstanSeg test imports the ambient interpreter package directly, while Cellpose3/SAM/StarDist tests create actual Wetlands workflows using declared recipes; these establish different compatibility scopes.
+InstanSeg/NAGINI optional files have complete/package_tools but no model_runtime marker, so a milestone selector restricted to model_runtime misses them despite their model-related names; the repository hook still skips them by complete unless explicitly enabled.
+The real Cellpose/StarDist examples permit zero objects by their count/readback assertions, which is valid API output but supplies no segmentation-quality certification.
+test_cellpose_sam_environment_includes_fastremap_runtime_dependency only asserts packaging==26.2; it cannot distinguish absence of the named fastremap prerequisite, though that dependency may be intentionally transitive.
+The integration file globally skips after any ModuleNotFoundError in segmentation imports, including its common-package ownership test; an unavailable optional package must not be reported as proved package separation.
+These are exact claim/oracle/selector limitations, not fresh runtime failures or a mandate to provision every model during feature development.
+Retain focused schema, guard, cache and mocked adapter tests; preserve genuine worker tests and declare separate milestone recipe/API/inference/scientific-quality scopes with explicit skipped evidence and configured model bundles where necessary.
+
+#### ROOT-F078 — P3 data-dependent invalid marker-setting admission
+
+_distance_watershed returns immediately for an empty foreground before calling integer_parameter(min_distance, minimum=1).
+DistanceWatershedSegment therefore succeeds on empty foreground with an invalid marker distance that the same public call refuses for nonempty foreground; SplitTouchingObjects validates before entering its own loop and does not share that admission inconsistency.
+The human DistanceWatershed guide says invalid marker settings raise; its nominal example also omits min_distance when directly constructing Arguments, extending existing reviewer-F036 rather than proving class defaults are automatically resolved at process_row.
+The two touching-object tests and sparse-ID split test do not distinguish empty-foreground parameter admission.
+Preserve zero-object success and explicit invalid-setting diagnostics; future parameter validation should have one input-independent boundary or the accepted empty-data exception should be documented.
+No test was executed and no scientific segmentation output was inferred from this static inconsistency.
+
+
+### Complete-review checkpoint — B-batch-17
+
+#### B-F133 — P3, dependency canonicalization and JSON formatter claims exceed the available library surface (documentation drift).
+
+specs.md §3.1 explicitly promises that version spellings such as 3.0 and 3.0.0 normalize to equivalent PEP 440 cache material.
+The complete cache/identity.py:_normalize_dependency_value strips string whitespace and sorts/deduplicates list encodings without parsing requirement/version strings; compute_env_hash hashes that retained spelling.
+Existing tests/unit/test_cache.py normalization tests cover sorted keys, whitespace and lists; no version-equivalence oracle establishes this promise.
+This is a false current specification claim rather than a proposal to equate all package strings or weaken ordered channel identity; B-F066 separately records that ordered channel priority is currently lost.
+A later bounded contract/diagnostic decision should preserve actual resolver semantics and distinguish package pins from ordered channels/direct references.
+
+§11 advertises an available JsonFormatter for structured machine-readable output without specifying an import.
+Complete logging_config.py only constructs logging.Formatter split handlers, its full tests cover explicit host setup/idempotence/levels/force preservation/delegation, and source/test text inventory has no JsonFormatter implementation.
+This is an unavailable advertised library helper, not evidence that application JSON logging or Wetlands logging is broken.
+Future documentation reconciliation should name the actual supported formatter API if one exists in another owner/dependency or remove the unsupported library claim without weakening required logging/progress semantics.
+
+
+### Complete-review checkpoint — reviewer-batch-26
+
+#### reviewer-F054 — P3 artifact-trust oracles omit the distinguishing content/refusal boundary
+
+The complete tests/test_update_artifact_registry.py exercises checksum syntax/name refusals, incomplete allowlisted release, stable exact latest resolution, deterministic rendering and nonmutating check.
+Its FakeDownloader always returns matching calculated bytes/checksum; no test makes a fully formed artifact disagree with its pinned sidecar, or a present GitHub digest disagree with the calculated digest.
+Thus tests/test_artifact_registry.py's source-string presence plus normalized embedded hashes do not establish the updater's essential wrong-bytes refusal or unchanged registry after failed generation.
+Production fetch_github_hashes:315–323 and write-after-generate main:426–441 have the expected source structure; this is an unexecuted distinguishing-test gap, not a demonstrated bad download or unsafe registry mutation.
+Future smallest extension:reuse the existing fake download seam to provide well-formed wrong bytes/digest and assert RegistryUpdateError, then reuse temporary REGISTRY_PATH/main to assert existing bytes survive the generation refusal.
+HTTPS redirect allowlist and release-tag/draft/duplicate metadata branches should remain intact; add further oracles only where that trust boundary requires them, not a generic branch-coverage framework or live network test.
+
+### Complete-review checkpoint — root-batch-14
+
+#### ROOT-F079 — P2/P3 qualified LapTrack returned-row cardinality check loses duplicate identity evidence
+
+LapTrackLink writes every returned tracked row into output_by_position[position], then compares only the set of dictionary keys to all original positions.
+An extra returned row with a duplicate input_position overwrites the earlier row; if all original positions remain present, the advertised exactly-one-row-per-input refusal does not detect the duplicate.
+It also accepts returned position through int conversion rather than requiring an exact integral identity and does not compare returned frame/label/coordinates with that captured input identity.
+The pinned dependency's ordinary valid dataframe output preserves input_position, so this is an adapter trust/correlation boundary, not a claim that real LapTrack produces malformed duplicate rows or a newly executed tracking failure.
+The existing fake returns the intact input dataframe and the actual optional fixture exercises four valid rows; neither supplies a duplicated/mutated external response.
+Preserve reordering support, normalized lineage IDs, no-merges policy and public collective row correlation; future response validation should distinguish exact one-to-one identity from set coverage before an overwrite discards evidence.
+Generation's recursive ancestor traversal rejects explicit cycles but can reach Python recursion depth on a sufficiently deep valid returned lineage; keep as a bounded-scale policy/diagnostic qualification, with no ordinary microscopy or pinned-runtime failure inferred.
+
+
+### Complete-review checkpoint — B-batch-18
+
+#### B-F134 — P1, the task codec flattens a typed SharedArray argument without reconstructing it (source boundary defect).
+
+worker_protocol.py:encode_processing_task invokes dataclasses.asdict(row) before _encode_portable_value.
+The row's arguments dictionary can contain a SharedArray descriptor; recursive dataclass conversion replaces it with a plain {name,shape,dtype} dictionary.
+_decode_row_invocation validates only the outer arguments dictionary, and worker.py builds Arguments directly from those values without typed descriptor reconstruction.
+Wetlands dispatch.py constructs RowInvocationV1 from the resolved arguments, so a SharedArray input passes through this boundary and no longer reaches load_image/open_shared_array as its declared runtime type.
+load_image's isinstance branch then cannot attach the reference and its fallback Path(dictionary) is incompatible.
+This is a traced source cause, not a newly executed worker failure.
+The completed Direct shared-memory integration exercises actual numeric values but bypasses task encoding; Parsl explicitly refuses SharedArray inputs, so its existing refusal tests do not certify Wetlands transport.
+Full test_codecs.py covers scalar values and recursive Path conversion; test_execution.py covers scalar row/batch context only.
+Future exact codec and Wetlands producer→consumer diagnostic must preserve typed SharedArray descriptors, output ownership, cache rehydration and no shared-memory forwarding to remote Parsl hosts.
+Do not implement reconstruction of arbitrary dataclasses or loosen strict envelope/origin validation based on this finding.
+
+#### B-F135 — P2, several real-worker test names/assertions do not distinguish their stated contract (test oracle weakness).
+
+Full tests/integration/test_wetlands_task_api.py contains real-worker calls but several observations are too weak:
+- TestRowParallelism::test_row_ordering_preserved checks only that each file contains processed:, without comparing that file's exact input/index/order.
+- TestWetlandsResourceRequirements::test_get_environment_override and ::test_workflow_level_max_workers_default assert row counts; they do not observe actual pool size, worker identities or overlap, so successful values do not prove configuration precedence.
+- TestSubRowProgress::test_batch_progress_events checks completed events only, so it can pass without any task.update delivery.
+- TestBranchParallelism::test_dataframe_tool_never_concurrent creates add_col as a detached node, then computes only the unrelated processing target; the DataFrameTool never runs on that target path and no thread/concurrency witness exists.
+- ::test_independent_branches_concurrent measures a 7-second aggregate that includes provisioning/startup; fixture sleep comments misstate the one-worker two-branch baseline, and the threshold alone does not prove independent branch overlap.
+These are source oracle gaps, not proof that the underlying engine violates row ordering, configuration or scheduling.
+The successful separate-worker/process and real Parsl interval/thread oracles remain distinct and useful; do not delete entire real-worker coverage or replace it with private implementation equality.
+Future focused improvements should observe the exact promised public value/worker/event/thread boundary in existing fixtures, with bounded cleanup and without duplicated broad journeys.
+The GpuTool fixture merely writes ordinary files, which correctly demonstrates no synthesized worker environment state; it is not actual GPU allocation/availability certification.
+
+#### B-F136 — P3, scoped invalidation repeats full metadata discovery for every target (source cost candidate).
+
+workflow/invalidation.py:_invalidation_candidates runs iter_dataframe_result_metadata or iter_processing_result_metadata over the full storage root separately for each selected real-tool target.
+A broad invalidate/cascade can inspect the same record namespace O(targets × stored records), after already computing a complete plan.
+The historical-metadata fallback is necessary when a downstream final key is pending; test_invalidate.py::TestInvalidate::test_pending_downstream_invalidation_uses_metadata_not_logical_signature establishes that retained contract.
+No growth cost was measured and no premature metadata caching is proposed.
+A later measurement/one-pass indexed discovery candidate should preserve all historical result keys, scoped names, corruption diagnostics, no-cascade semantics and externally coordinated current selections.
+
+#### B-F137 — P3, task/result encoding traverses row payloads twice (source cost/maintenance candidate).
+
+encode_processing_task first asdict(task) recursively converts all rows/arguments, then replaces rows with a second per-row asdict plus portable path traversal.
+encode_processing_result similarly asdict(result) traverses output values before replacing rows with manually built output dictionaries.
+The discarded initial rows add copying/traversal cost and complicate ownership; B-F134 is the specific typed-value failure in the retained task row conversion, not merely this discarded traversal.
+No payload memory/runtime cost was measured; dataclass payloads are already bounded by caller/task policy where applicable.
+Future single-pass codec work must preserve exact schema/correlation, recursive path conversion, allowed worker-safe scalar/collection values and typed shared-memory semantics rather than claiming a generic JSON-only protocol.
+
+### Complete-review checkpoint — A-batch-24
+
+#### A-F134 — Low/Medium, normative portable grammar omission for actual node resource overrides
+
+Unified_workflow_contract.md's tool-node example/optional-field list lists viewer additions but omits resource_overrides and the portable NodeResourceOverrides shape/policy.
+Complete serialization.py159–160 emits that field, materialization resolves it through the public override parser and A21's full resources source enforces declaration floors/concurrency ceilings.
+The document identifies itself as the normative library-to-host recursive wire contract and separately says unknown fields are rejected, so omission leaves hosts without the current accepted resource field authority.
+This is missing normative description, not an execution failure or a proposal that resources enter viewer/cache identities.
+The golden fixtures intentionally exercise legacy normalization without overrides; the resource declaration integration counterpart does not distinguish strict graph override wire shapes.
+Reviewer confirms no duplicate grammar finding; reviewer-F029 concerns older emitted-schema prose instead.
+Retain portable worker-resource identity and actual class declaration floors; future normative grammar should state the current accepted field and reference its strict public schema rather than handwrite an incompatible host variant.
+
+### Existing reviewer-F038 extension — Exact current authoring drift in A-owned basic/graph guides
+
+Basic_workflow.rst defines Segment/Measure with Outputs but omits explicit RowConsumption, so Core ProcessingTool.__init_subclass__149–174 refuses those class declarations before graph construction.
+Their Inputs/Outputs and LoadImages.Inputs are plain classes rather than IOModel, so schema/constructor methods required by the actual model are also absent.
+Graph.rst's LoadDicom demonstration has the same missing row_consumption and plain IO-model declarations.
+Its EnvironmentSpec dependencies={'pydicom':'*'} is not the current package-index exact-pin form shown by the authoring playbook; Core only validates pip/conda sections, so no claim that this arbitrary key itself raises at construction or installs a particular dependency is made.
+The basic test imports current dedicated stubs, never the prose snippets, and therefore cannot detect their drift.
+Reviewer-F038 is the canonical missing RowConsumption/IOModel documentation finding; these owned pages extend its exact source scope rather than duplicate its ID.
+Retain the distinction between DataFrame source main-process work and worker ProcessingTool declarations; future guide code must obey the current public authoring protocol while preserving explicit illustrative scientific-stub wording.
+The shown Segment writes zeros, so printed positive count rows are illustrative hypothetical real-tool outputs rather than outputs validated by that stub; this should remain clearly labeled, not read as a scientific benchmark claim.
+
+#### A-F135 — Low/Medium, qualified initialization-order guidance falsely couples package/graph loading to Wetlands initialization
+
+Basic_workflow.rst34–40 says configure_wetlands must precede Workflow.load or require_tool_packages because those initialize Wetlands.
+The complete public tool_loader's installation uses the current interpreter's pip and explicitly declares independence from Wetlands; ordinary graph/package materialization need not create the worker environment manager.
+Actual compute using Wetlands must still configure the manager before its first initialization, and imported trusted Python could itself initialize resources, materially narrowing this finding.
+No process initialization or package loading was executed here, and no broader claim that every Workflow.load branch is side-effect free is made.
+Reviewer confirms no existing initialization-order ID.
+Retain explicit runtime paths and the actual first-manager-initialization rule; future tutorial prerequisites should not incorrectly require unrelated package-load ordering or imply configuring Wetlands controls tool-store pip.
+
+#### A-F136 — Low/Medium, definite basic-test oracle overclaim for shared execution and empty-root completion
+
+Test_shared_upstream_not_reexecuted at177 only checks seg_a/seg_b dictionary keys; there is no upstream invocation count/record/PID/observable side-effect oracle.
+A duplicate upstream execution can satisfy those assertions, so its title claims more than it distinguishes, independent of whether the reviewed engine actually deduplicates correctly.
+Test_compute_no_args_runs_root_boundary_and_returns_empty_frame_without_outputs at160 checks only the final0x0 DataFrame, not completion of each enabled terminal branch.
+Returning an empty frame without executing all branches could satisfy that selector; stronger recursive terminal/cache tests in the previously complete unified suite provide separate evidence.
+These are test-oracle precision/reuse candidates, not engine defect claims or authorization to add duplicate journeys.
+Retain actual column-binding/record identity regression, and future suite optimization should rely on existing distinguishing completion/deduplication assertions or strengthen the minimal owner oracle before claiming coverage from these titles.
+No measured runtime gain or deletion recommendation is asserted without the full suite inventory synthesis.
+
+#### A-F137 — Low/Medium, qualified constructor versus runtime-required storage contract discrepancy
+
+Unified_workflow_contract.md9–20 presents storage_path as required at Workflow construction and82–84 states no default storage location.
+The complete interfaces.py constructor38–65 actually defaults storage_path=None and permits a structure-only object with no storage root, while public load/session APIs require an explicit supplied root and execution separately needs valid runtime storage.
+There is no evidence of silently selecting a filesystem default or executing against an unintended path; storage-free definition construction can be a sound authoring capability.
+The normative surface should distinguish a permitted storage-free structure from required execution/materialization state, or explicitly enforce the declared constructor rule if that is intended.
+The basic implicit-node compute test explicitly checks missing runtime storage refusal, but does not distinguish Workflow constructor omission itself.
+This is a source/documentation contract qualification, not a performed runtime red or a demand to remove valid structural editing.
+Retain storage independence and no serialized runtime paths; future public signature/prose must agree with accepted build-only versus execution behavior.
+
+### Existing A-F127 extension — Existing runtime column-precedence oracle limits consequence
+
+The complete basic stale-constant regression intentionally inserts None beside input_image's column binding and asserts returned mask paths derive from upstream cell names rather than None_mask.
+It corroborates a defensive runtime precedence rule, so the cached Session conflict must not be described as inevitably overriding connected values or wrong scientific computation.
+Its distinguishing unresolved boundary remains wire mutual-exclusion/reload consistency and nested port/value ownership, not failure of that existing runtime mitigation.
+
+
+### Complete-review checkpoint — A-batch-25
+
+#### A-F138 — Medium/High, qualified local worker-module boundary violation: ProcessingTool entry modules import orchestrator/tool packages at module load
+
+NaginiSurfaceSummary is defined in example_workflows/nagini3d_caps_segmentation/workflow.py, whose top-level imports7/18 require bioimageflow.Workflow and bioimageflow_segmentation_tools.
+Its declared GENERAL_ENV adds scientific dependencies and authoritative Core; B's complete environment/worker preparation trace confirms no supported guarantee that it installs the orchestrator BioImageFlow or arbitrary tool-package distribution.
+Core public source/archive origin loading executes the entire selected module before class extraction, so delaying numpy inside process_row does not avoid those top-level imports.
+The same already complete A20 entry-module pattern affects RestorationPreview (low_snr_restoration workflow.py imports Workflow/common/restoration package) and BBBC reference/preparation/benchmark ProcessingTools (entry imports BioImageFlow/common/segmentation packages).
+This violates the complete authoring playbook's stdlib+Core worker-module declaration boundary unless the explicitly declared worker environment separately supplies those modules.
+Direct execution in the orchestrator environment and a deployment with additional accidental installs can succeed; no isolated worker import failure was executed, and merely accessing the source root does not prove its other packages are importable.
+The current factory inventory test only builds/validates in the orchestrator and does not materialize these local helpers through the worker origin protocol; generic package tool tests cannot stand in for the entry-module import boundary.
+Retain fresh factory capture, explicit public worker origins and main-process graph construction.
+Future bounded diagnosis should distinguish actual isolated whole-module loading of a tiny local helper from graph validation/direct main-process execution before proposing relocation/dependency changes.
+This is a declaration/executable module boundary, distinct from portable source-ID cache A-F026, raw package classifier A-F031 and result-cache B-F067.
+No repair or diagnostic execution is authorized by this record.
+
+### Existing A-F111 extension — Additional published-interface versus documentation output claims
+
+Cell lineage's central page says canonical output includes migration/track-quality metrics, but the root publishes only five track/label fields; those metrics are computed detached tables, not returned columns by default compute().
+NAGINI package overview promises summary centers, while root publishes only surface_index/mean_abs_curvature from the local summary; center_z/y/x remain its explicit terminal-node fields.
+The wider tables exist and can be queried by explicit target; this is the same output-description distinction as A-F111, not missing scientific computation or an automatic failure to execute detached branches.
+B confirms boundary output alignment supports exact/ancestor-index broadcasting before ordered-index equality, so mixing per-object and per-image providers is not blindly classified as incompatible.
+Exact producer index conventions/scientific adapters remain root/B authorities; no mismatched multi-output execution is asserted from row counts alone.
+Retain deliberate root publication and full terminal outputs; future pages should specify the actual returned interface or an explicit wider target.
+
+### Existing A-F113 extension — Additional declarative scientific invariants remain unexecuted by factory inventory
+
+These manifests assert lineage relationships, harmonic/frequency preservation, label-count/mask-shape agreement and surface-count consistency.
+Full factory-only public loading/validate/export assertions do not establish those executed results, external bytes/hashes/models or provider indexes.
+The declared public_data/model_runtime markers are acceptance requirements, not passing evidence or permission to run them during freeze.
+No duplicate generic tests are proposed; full suite synthesis must identify actual distinguishing package/integration counterparts and qualified external limits.
+
+
+### Complete-review checkpoint — reviewer-batch-27
+
+#### reviewer-F055 — P3 bounded-management timeout is a readiness deadline, not demonstrated complete-frame deadline
+
+management.py:27–30/74–80/140–152 polls readiness then calls blocking Connection.recv_bytes/recv after detaching a blocking socket.
+There is no remaining-deadline enforcement around that full receive or the corresponding send.
+A ready incomplete authenticated frame could therefore hold a debugger management call beyond its stated bounded timeout; actual public-worker frame size/order/reachability needs a controlled diagnostic after the gate.
+This is not a demonstrated default-client hang, unauthenticated endpoint attack or failure of identity/authentication.
+Current test_management_connect_timeout_is_wrapped_as_public_runtime_error only injects a connect exception; test_management_identity_mismatch_fails_closed correctly retains the independent identity oracle.
+Future action:establish partial-frame versus no-readiness behavior with owned transport teardown first, then clarify or enforce the actual advertised deadline without weakening authentication/protocol checks or inventing a global async coordinator.
+
+#### reviewer-F056 — P3 editor-launcher exceptional cleanup loses explicit completion ownership
+
+cli.py:147–153 catches reaper acceptance failure and calls process.kill then wait(timeout=5), with no enclosing fallback if either cleanup action raises.
+The success case appropriately reaps the immediate launcher; tests/test_cli.py:43–57 proves only successful fallback cleanup and preservation of its original thread-start exception.
+On kill/wait failure this wrapper has no explicit retained retry owner and cannot claim physical completion; secondary errors may replace the originally raised launcher-ownership failure.
+Normal subprocess/platform cleanup may later reap a process, so no permanent orphan or real VSCode leak is asserted.
+Future smallest diagnosis:extend this existing controlled fallback test with cleanup failure, then retain/describe the same immediate-child ownership and primary/cleanup details; no editor automation or whole process-framework rewrite is justified.
+CLI manager-construction and final close errors also sit outside its friendly error-return catch; preserve strict cleanup failure rather than suppressing it, and consider message/exit consistency only if a concrete public failure requires it.
+
+#### reviewer-F057 — P2 public host exception conversion lacks the worker producer's recursion bounds
+
+RemoteExceptionInfo.from_exception:38–48 recursively walks both __cause__ and __context__ with no active identity/depth budget; from_payload/to_payload similarly recurse unbounded graphs supplied directly to this public utility.
+ExecutionFailure.from_exception:156–175 calls that converter, and ExecutionTask._set_failed:355–364 normalizes a BaseException before setting terminal status.
+An explicitly cyclic host exception chain can prevent structured normalization, and ordinary shared cause/context chains duplicate traversal; no runtime reproduction was run.
+Existing TestExecutionFailureDiagnostics.test_exception_from_chained_exception_preserves_cause checks one short acyclic chain and remains useful.
+Important mitigation:module_executor._remote_exception_payload:295–330 already has active/depth protection, and root-owned worker-protocol tests reject recursive/excessively deep received payloads.
+This finding is the host/public normalization seam, not a claim default remote reporting is unbounded or an unauthenticated injection vulnerability.
+After the gate, extend the existing public diagnostic oracle for cycle/deep/shared chains and preserve the typed failure/traceback/cause-context contract with bounded explicit truncation rather than dropping diagnostics.
+
+#### reviewer-F058 — P3 failed-provisioning recovery prose overstates cleanup success
+
+how-to/errors.md:46–47 says incomplete environments are removed before terminal state and corrected calls can therefore reuse the same name.
+Canonical provisioner:2690–2725 attempts owned cleanup but can terminally raise a ProvisioningError carrying cleanup_error when detach/removal itself fails.
+Successful logical detach also differs from later physical quarantine reclamation; the stronger unconditional prose should not imply reclaimed disk or same-name success after cleanup refusal.
+The current real example and reference/errors.md already distinguish structured cleanup_error and safe task retry.
+Smallest future documentation clarification:qualify successful owned cleanup/logical removal, require inspection of cleanup_error or state before same-name recovery, and retain actual no-overwrite/ownership/force-Recreate essentials.
+No product behavior is narrowed, no hidden cleanup exception is suppressed, and no selected-generation rollback promise is added.
+
+### Complete-review checkpoint — root-batch-15
+
+#### ROOT-F080 — P2 qualified scientific grouping authority: root lineage is different from the immediate image parent
+
+SpotSummary and SpotColocalization default grouping both take the prefix before the first ::.
+B's complete engine/dataframe trace confirms successive list expansions preserve the entire parent prefix and append ::child; a root0 yielding independent images0::0 and0::1 then spots0::0::spot and0::1::spot is supported.
+The default prefix therefore merges those immediate image groups at0; SpotSummary can combine same-label counts, and SpotColocalization can refuse repeated per-image spot IDs or match across images if IDs happen to be unique.
+The human tool pages explicitly describe lineage-root grouping, while PLATFORM_CONTEXT claims immediate parent image grouping; this is an actual contract/context discrepancy plus a qualified deeper-expansion capability limitation, not a claim every single-level workflow or current Fish Analysis is incorrect.
+Existing default tests use first::spot/second::spot only; explicit group_by image IDs already provide a supported mitigation.
+Explicit grouping stringifies values, so distinct typed values with the same textual spelling share authority; preserve this as a public grouping-policy qualification, not a claim ordinary string image IDs collide.
+Future synthesis must choose/document the intended source identity and match root versus immediate-parent policy coherently before changing calculations, retaining explicit grouping, recursive index lineage and valid existing single-level results.
+No grouping or scientific result was executed during review.
+
+#### ROOT-F081 — P2 empty RenderSpots bypasses the ordinary source/output/configuration admission
+
+RenderSpots.process_batch immediately renders every anchor independently when no row has either coordinate, before grouping and output_sources collision checks.
+Two distinct blank reference images can therefore write the same output_image sequentially and each returned row names the last written bytes; ordinary nonempty/mixed groups refuse that collision.
+The same early path skips radius validation and consistent same-source shape/label_mode policy, so empty-data admission differs from ordinary rendering.
+The test for cross-reference collision supplies coordinates, and the two-anchor blank test supplies different output paths; neither distinguishes two differently shaped blank references targeting one path.
+Core staged result ownership still protects committed workflow records on a raised error, and no actual immutable publication failure was reproduced; this source issue can also occur through the directly documented public process_batch seam.
+Preserve blank artifacts, per-input cardinality, source separation and visible-label/binary modes; future empty handling should share the same source/output/configuration admission before rendering.
+Do not remove zero-row support or infer that all aggregate repeated artifact paths are forbidden: one valid collective source intentionally shares its path.
+
+#### ROOT-F082 — P2/P3 unbalanced colocalization memory cost candidate
+
+SpotColocalization._match_group first allocates an R-by-Q distance matrix, then an additional (R+Q)-by-(R+Q) dense assignment matrix with dummy unmatched rows/columns.
+For highly unbalanced nonempty spot counts, the latter is quadratic in the larger side even when the useful distance problem is nearly linear; this is a source allocation bound, not a measured slowdown or executed memory failure.
+NearestNeighborLink already expresses valid-link cardinality priority with a rectangular penalized assignment, but scientific matching semantics, thresholds, unmatched policy and deterministic order must be proven equivalent before any reuse.
+The existing tiny adversarial two-by-two colocalization fixture is an essential correctness oracle and supplies no scale evidence.
+Future focused measurement should use representative balanced and unbalanced tables, then preserve maximum-cardinality/minimum-distance matching and explicit grouping; no speedup, runtime budget or generic caching is asserted now.
+
+
+### Complete-review checkpoint — reviewer-batch-28
+
+#### reviewer-F059 — P3 example background ownership is incomplete on exceptional paths
+
+examples/minimal_example.py:6–21 closes the manager only after successful provisioning/start/call/print, whereas the primary getting-started example and user tutorial correctly use manager contexts on all paths.
+Its worker pool context protects an entered pool, so this is not evidence every error leaks a live worker; manager completion is simply not explicitly owned after early failure.
+examples/async_example.py:24–30 creates a report Task but only awaits it after successful operation await; provisioning failure or caller cancellation can leave its outcome unconsumed while manager final cleanup runs.
+Ordinary operation terminal events may finish that reporter promptly; no unexecuted reporter leak, real unhandled exception or claim cancellation automatically cancels provisioning is made.
+B confirms no existing canonical finding for these files; B-F008's await-cancellation lifetime is a separate operation owner.
+Future smallest correction:teach the same manager context/finally discipline in the minimal example and retain/consume the reporter in a structured exceptional path, preserving original failures and actual operation/physical-close ownership.
+Reuse appropriate existing documentation-example acceptance oracles if a meaningful failure distinction is added after the gate; do not build a new example framework or execute examples during review.
+
+### Complete-review checkpoint — B-batch-19
+
+#### B-F138 — P3, public constant decoder coerces malformed envelopes instead of preserving/refusing their claimed type (public helper validation candidate).
+
+constants.py:deserialize_constant directly indexes the envelope and calls bool/int/float/str on the payload without checking exact keys or payload shape/type.
+A bool envelope carrying string false becomes True; an int envelope carrying a fractional float truncates it; malformed containers can fail with incidental built-in errors.
+The serializer produces well-typed values, so its own supported finite ordinary roundtrips are sound.
+Strict graph parsing is a separate authority reviewed by A; no portable graph bypass or accepted untrusted workflow mutation is inferred from this public helper alone.
+The curated API explicitly exposes these helpers for host encodings outside graph code paths, making consistent public misuse diagnostics a candidate.
+Future bounded malformed-envelope tests should first establish intended direct-helper strictness while retaining strict graph format and lossless Path/list/tuple/dict serialization.
+No new test ran; current workflow roundtrips cover valid envelopes rather than malformed direct helper calls.
+
+#### B-F139 — P2, metadata under an optional wrapper is lost by schema extraction (source schema/compatibility risk).
+
+extract_image_spec checks only a top-level Annotated, and schema serialization also calls Core extract_gui_meta on the original annotation before optional unwrapping.
+Optional[Annotated[Path, ImageSpec(...), GUIMeta(...)]] therefore has a Union at that extraction boundary and loses image/GUI facts.
+_display_type_name's image branch runs before generic optional unwrapping; after that branch misses, generic unwrapping labels it Path rather than ImageFile.
+Scalar Optional[Annotated[int, ...]] display is explicitly covered in test_primitives.py, but the inner image/GUI variation is absent across the complete input/output/helper test group.
+is_path_type separately unwraps the optional and can still identify its Path, so this is not a claim that every optional path becomes non-path or runtime IO necessarily fails.
+The consequence is missing display/connection/compatibility metadata for supported resolved annotations, qualified by which wrapper ordering the author uses; top-level Annotated[Path | None, ...] works at the metadata boundary.
+Future paired annotations should retain required/nullability orthogonality and equivalent effective image/GUI facts, without inventing thirdparty worker interface types.
+
+#### B-F140 — P3, curated validation/error/constant guidance retains obsolete guarantees (documentation/API contract drift).
+
+models.py and reference/api/validation.rst describe SchemaSerializationError being raised when serializers cannot instantiate Inputs/Outputs.
+The complete serializers do not instantiate those models and have no SchemaSerializationError raise site; annotation/default/template failures propagate their original exceptions.
+The existing test_schema_serialization_error_exists proves class availability only, not promised failure mapping.
+The API constant section says unsupported values stringify lossily and lists an older scalar/list/tuple set; current serialize_constant supports None/Path/dict recursively and explicitly raises TypeError for unsupported values.
+live_validation.rst unconditionally calls Workflow.validate and check_type_compat non-raising, but declaration introspection/Pydantic model construction can fail outside error-list conversion.
+Actionable declaration errors are intentional in the current Core contract; this is a scope/wording or diagnostic mapping decision, not a request to silently replace malformed annotations with Any.
+The old five-check list also omits newer Core/source/environment validation; its capture example uses JoinOnColumn(..., column=...) rather than join_column and describes a different expected failure.
+Future reconciliation should state the precise supported declaration/failure scope, supported constants and class-based no-constructor introspection; retain existing structured graph diagnostics.
+The general converter overstatement remains reviewer-F026, not another B finding.
+
+#### B-F141 — P3, some split validation tests overlap or have misleading names/weak sub-oracles (test strategy candidate).
+
+TestIntegration::test_I3_plan_parity_under_dev_mode never passes dev_mode=True; actual true/false hashing is independently covered by TestPlan::test_plan_parity_dev_mode.
+::test_I1_full_round_trip only compares the first node's key set after a multi-stage roundtrip, whereas TestFromDictToDict separately covers valid constants/node sets and strict matrix behavior.
+::test_I2_broken_graph_survey's comment promises more error kinds than its fixture/assertions distinguish; it checks unknown_tool and parameter_invalid only.
+No-Wetlands constructor spies are substantially equivalent in TestIntegration::test_I4_no_wetlands_under_plan and TestPlan::test_plan_does_not_launch_wetlands.
+Unit metadata tests and integration introspection tests repeat source/ProcessingTool/merge metadata and resolved/unresolved Generate facts without adding an actual GUI transport or worker boundary in those repeated cases.
+The shared _canonical helper sorts every list; current ConnectedComponents golden only has set-valued constraints, so no present ordered-choice corruption is claimed, but future ordered defaults/choices would be invisible to that canonical comparison.
+The repeated broad unused import lists and F401 suppressions are split-file maintenance debt, not measured runtime bottlenecks.
+These are concrete candidates for role clarification/consolidation after the audit, not deletion authorization or a demonstrated global suite speed gain.
+Actual cache lifecycle, cycle diagnostics, partial-load matrix, full wire shape, nullability, template failure and per-field helper oracles remain useful independent contracts.
+
+#### B-F142 — P2, compatibility checks ignore resolved inherited image metadata (source type-safety gap).
+
+schema.py:check_type_compat and Node._check_type_compat inspect only upstream_tool.Outputs._get_all_annotations.
+For a Passthrough DataFrameTool or dynamic merge, a column inherited from an upstream image may be absent from those raw declarations even when Node.get_output_schema exposes its exact resolved image_spec.
+Both checks return without validating its producer metadata, so a resolvable inherited LABEL image can bypass a strict INTENSITY consumer check through that intermediate tool.
+The complete specification says Passthrough uses the upstream schema for construction validation; column existence does consult resolved schema, but semantic compatibility does not.
+This is a traced source gap, not an executed scientific wrong-output claim; unresolved dynamic metadata must remain honestly unknown, and runtime image contents are not independently certified by annotations.
+Current raw and wire tests distinguish direct image declarations and resolved column names but do not join inherited image metadata to a negative consuming binding.
+Future precise direct→Passthrough/merge→consumer negative should preserve intentionally overlapping ImageSpec sets/asymmetric wildcards and avoid imposing a guaranteed-subset semantics the contract never promises.
+No repair, metadata synthesis redesign or test execution is authorized yet.
+
+### Complete-review checkpoint — A-batch-26
+
+#### A-F139 — Low/Medium, source-established descriptor ownership leak on early cleanup parent failure
+
+Gateway_archive.py212–227 opens/appends root_descriptor and then opens the namespace before entering the component-walk try/finally ownership cleanup at240–263.
+If the namespace open raises (missing/refused/replaced component), the root descriptor remains open and is not returned to the caller.
+The callers cleanup_state324/379 assign their descriptor list only after a successful helper return, so their surrounding cleanup cannot close the leaked root handle.
+The normal validated namespace exists and unsafe-mode checks after both successful opens explicitly close handles; no arbitrary filesystem escape is asserted.
+Repeated failures can accumulate process descriptors, but no descriptor count or actual exhaustion was reproduced.
+Relevant current cleanup selectors cover changed/unsafe/symlink candidates and identity refusal, not this helper's early namespace-open handle lifetime; reviewer complete counterpart review remains pending.
+Retain descriptor-relative no-follow traversal and close only handles this operation acquired; future error handling must cover every acquisition before transferring ownership.
+
+#### A-F140 — Medium, qualified extraction rollback deletes a destination it did not acquire
+
+Gateway_archive.py454 destination.mkdir occurs inside the encompassing extraction try, while493–495 unconditionally rmtree(destination) on any failure.
+If mkdir refuses because the destination already exists, cleanup can remove that pre-existing tree even though this invocation created nothing.
+Run_state397–399's existence guard mitigates normal repeated submission; an overlapping direct/helper call or another creator between the guard and mkdir remains the distinguishing ownership risk.
+Actual gateway serialization/locking may exclude that cross-call race in its supported public path, and the helper is private; reviewer will trace complete run-state/admission ownership before any universal data-loss or severity escalation.
+The existing archive drift selector uses fresh independent destinations and asserts their absence, so it cannot distinguish unowned rollback.
+Retain exact archive inventory/hash checks and cleanup of partially created owned extraction; future rollback must condition deletion on acquired destination ownership, without weakening immutable-object or idempotent-run boundaries.
+No extraction/deletion or race reproduction occurred.
+
+#### A-F141 — Low/Medium, qualified archive refusal diagnostic normalization gap
+
+Gateway_archive.py353–357/421–425 wraps ZipFile constructor errors as deployment-tampered, but later archive.open/stream.read/CRC/decompression errors365–395/466–486 are not converted locally to that structured failure.
+Extraction removes its destination and reraises the raw exception; validation likewise leaves a raw ZIP/OS stream error rather than the helper's advertised tamper category.
+A complete public gateway catch boundary may intentionally normalize it, and corrupt streams can refuse safely even with a less useful diagnostic; actual caller/handler classification is pending reviewer full trace.
+Tampered byte-content/missing/extra fixtures remain valid safety checks but do not corrupt the ZIP compressed stream/CRC itself.
+Retain refusal, exact byte validation and retry identity; future error ownership should consistently classify source corruption versus transient IO at the actual public boundary, not catch all failures as a misleading generic success or retry.
+No corrupt archive or public failure was executed.
+
+
+### Complete-review checkpoint — reviewer-batch-29
+
+#### reviewer-F060 — P2 CI never selects the transport-specific physical lease oracles
+
+All five tests in test_v2_transport_integration.py are marked integration (three also agent_integration).
+The sole .github/workflows/ci.yml fast matrix:67 excludes integration; its sole real-Pixi command:110 selects only test_v2_pixi_integration.py, and weekly/manual triggers reuse the same jobs.
+Compat selects only compat; no collection hook silently selects these transport tests.
+The real-Pixi release test:434–443 proves actual array copy-in/out and independence, but does not assert segment unlink/empty lease ledger after cancellation/death or predispatch missing-NumPy codec refusal as the separate transport tests do.
+The manual release checklist's full suite can include them; this is automatic-CI selection/oracle debt, not a claim they never ran locally or all integration tests must run on every push.
+Fake Pixi skips real provisioning but starts actual workers and tests physical shared-memory ownership; it is distinct from real-download provisioning acceptance.
+Future action:inspect retained cost and make an explicit owner decision to select the existing bounded transport file/appropriate cases at a proportionate CI or scheduled boundary, reporting its POSIX-only NumPy Windows skip and missing-prerequisite outcomes.
+No new test is needed merely to repair selection and no broad suite rerun or measured speedup is established here.
+
+#### reviewer-F061 — P3 DAP acceptance helper has no total expected-message deadline
+
+_DAPClient._wait_for:112–120 repeatedly reads and saves unrelated messages until its predicate matches.
+The socket has30s per-I/O timeout, but continued unrelated events can keep the expected response/event absent indefinitely while _pending grows.
+The CI job30minute timeout limits the whole job, not this request's diagnostic bound; no actual hang or adversarial DAP claim is made.
+Future smallest correction:give the existing helper a total request/event deadline and bounded useful pending diagnostics, while preserving exact response sequence/success and real debugger reconnect/disconnect oracles and client teardown.
+Do not weaken expected messages, retry away a failure or fragment the coherent real environment setup into redundant download fixtures.

@@ -306,3 +306,27 @@ Native desktop acceptance remains final M5.
 Campaign-record guards and all 64 active local links passed, and `git diff --check` passed.
 This routine ledger/checkpoint update changes no documentation navigation or product behavior, so the documented scoped campaign check is sufficient; the previous Sphinx pass remains historical and was not rerun.
 All application/backend/frontend/browser/worker/external/published-compatibility/native phases remain held and unrun, and no audit or product acceptance follows from this administrative check.
+
+### Complete-review source checkpoint: 1,189 entries
+
+A batches 24–26 add 42 fully reviewed library contract/example/counterpart inputs and seven exact producer-linked wrapper classifications; B batches 17–19 add thirty fully reviewed specification/protocol/validation/counterpart inputs.
+Root batches 13–15 add 37 fully reviewed segmentation/tracking/spot runtime/helper and complete numerical/model/worker/mock counterparts; reviewer batches 26–29 add 35 human Wetlands source/tutorial/release-test inputs and four individually justified artifact classifications.
+Current scope is 1,799 inputs / 1,189 complete snapshot judgments (1,051 reviewed / 138 classified) / 610 pending, with 426 distinct findings.
+Owner progress is A 245/353, B 291/489, root 207/462 and shared reviewer 446/495.
+The public cluster source and its 43 root-owned pending counterparts were transferred cohesively to the reviewer; two complete Wetlands protocol counterparts went to B, and the segmentation execution counterpart plus two scientific helper sources went to root.
+Ownership transfer itself grants no credit, and all newly accepted source hashes matched actual current bytes.
+The complete 3,314-line human library specification is now B-reviewed; the navigational specs.md alias adds no second human body credit.
+A's entire assigned library slice and the reviewer's newly transferred Wetlands slice are individually complete, while other library/platform/current-control and held-WIP inputs remain pending; neither subtotal closes the global audit.
+Complete scientific counterparts preserve useful sparse-ID, numerical assignment/motion/plateau, empty immutable artifact, cache/readback and distinct mock/actual-runtime oracles.
+New scientific findings qualify local-model digest versus reused model ownership, singleton spatial-axis extraction, root versus immediate-image grouping, empty rendering admission and unbalanced assignment matrix costs; no model/binary execution or measured optimization occurred.
+The whole specification narrows B-F067: captured custom-source hashes already participate through tool version, so its earlier blanket exclusion was withdrawn in the canonical finding; the remaining equal-version different-origin/output-contract risk is explicit.
+Current public authoring grammar, constructor storage scope, inherited image metadata and typed shared-memory task serialization were reconciled against actual consumers without treating a surviving partial plan as permission for invalid execution.
+Wetlands suite review identifies existing transport oracles omitted from automatic CI and bounded-versus-total debugger deadlines; the real-Pixi chain's distinct lifetime/oracle/setup amortization remains valuable and unrun.
+The review keeps future repairs, diagnostic selectors, documentation reconciliation and unmeasured performance candidates separate from accepted runtime evidence.
+All remaining platform/library/cluster/installed-runtime/held-WIP inputs, current mutable-control and generated-ledger provenance reconciliation, cross-owner synthesis and independent completeness acceptance remain pending.
+M1 remains OPEN; every repair, new diagnostic test and application/backend/frontend/browser/worker/external/published-compatibility/native execution phase remains held.
+Native desktop acceptance stays final M5.
+
+`scripts/test check campaign` passed for the 1,189-input administrative checkpoint in 0 s runner-reported (0.25 s measured), at source revision `42222ad` plus four audit-document changes, source-manifest SHA-256 `7ef3a70a687a78b9399df670860288e291072b2daebecee72f637bb77fc25f6a`; the manifest precedes this result-only log entry.
+Dashboard consistency, all 64 active local links and `git diff --check` passed; no document navigation change invalidated the earlier Sphinx result, so Sphinx was not repeated.
+Every application/backend/frontend/browser/worker/external/published-compatibility/native phase remained held and unrun, with no audit or product certification claimed.
