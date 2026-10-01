@@ -352,3 +352,26 @@ Native desktop acceptance remains final M5.
 Dashboard consistency, all 64 active local links and `git diff --check` passed.
 Sphinx was not repeated for this routine ledger/checkpoint update, which changes no navigation.
 Every application/backend/frontend/browser/worker/external/published-compatibility/native phase remained held and unrun; no full suite, completeness gate or product certification is claimed.
+
+### Complete-review source checkpoint: 1,550 entries
+
+Since the1,292-input checkpoint, accepted additions are A65 human, B35 human, root55 human plus5 individual artifact/pointer classifications, and reviewer98 human inputs.
+These encompass A batches30–38, B25–30, root17–19 and reviewer34–41.
+Current scope is1,799 inputs / 1,550 complete snapshot judgments (1,406 reviewed / 144 classified) / 249 pending, with532 distinct findings.
+Owner progress is A 326/354, B 369/493, root 293/365, reviewer 562/587.
+Pending coherent UI/utilities/error/WebSocket counterparts and installer/preference tests were formally reassigned before individual review; ownership transfer itself grants no credit.
+Complete public runtime/cache/integration and worker/cluster counterpart review distinguishes seeded records, mocked transport and actual Direct execution test bodies without claiming fresh passes.
+The unused IndexedDB helper is separated from current recovery storage, and active ImageCell clipboard handling is traced through the real hidden-action PathCell consumer.
+Ordinary same-app workspace mutation serialization narrows B-F157/B-F159/B-F161; internal callbacks, draft bypasses and independent writers retain separately qualified concerns.
+Source-established uninstall target escape, Tree key collision and demo-removal identity discard join the held backlog; no destructive diagnostic or repair occurred.
+The signing pointer hash explicitly addresses its canonical tracked gitlink descriptor, not private signing contents; each visual artifact has an individual producer/consumer qualification with no native rendering claim.
+Frozen I1 source review preserves its captured recipe/provenance improvements and distinguishes constructed archive/runtime test bodies from untouched roundtrip or published/native certification.
+Documentation/test process findings concern existing selectors and assertion fidelity; no coverage removal or measured speedup is claimed.
+All remaining human inputs, current mutable controls and generated-ledger/self-hash provenance, cross-owner synthesis and independent completeness acceptance remain pending.
+M1 remains OPEN: repairs, new diagnostic tests and application/backend/frontend/browser/worker/external/published-compatibility/native acceptance remain held and unrun.
+Native desktop acceptance remains final M5.
+
+`scripts/test check campaign` passed for the1,550-input administrative checkpoint in0s runner-reported (0.17s measured), at source revision `17fbf13a7eabbd5e4aed36414835e6de1630f8bb` plus four audit-document changes, source-manifest SHA-256 `ccb5e5930a703d28d73df47f361364b07ebf27a37df0119eb5b91152a7c6d71b`; the manifest precedes this result-only entry.
+Dashboard consistency and all64 active local links passed; `git diff --check` passed.
+This routine consolidation changes no documentation navigation, so Sphinx was not repeated; earlier structural validation remains historical.
+All application/backend/frontend/browser/worker/external/published-compatibility/native phases remain held and unrun, with no whole-audit or product certification claimed.
