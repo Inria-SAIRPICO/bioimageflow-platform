@@ -10,9 +10,11 @@ from pathlib import Path
 import httpx
 import pytest
 from httpx import ASGITransport
+from starlette.datastructures import UploadFile
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services.dataset_store import DatasetPublicationError, DatasetStore
 
 pytestmark = pytest.mark.anyio
 
@@ -128,6 +130,54 @@ async def test_upload_multi_file(client: httpx.AsyncClient):
     assert names == {"a.tif", "b.png"}
 
 
+async def test_spooled_upload_is_hidden_from_concurrent_dataset_listing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    datasets_root = tmp_path / "datasets"
+    cfg = AppConfig(datasets_root=datasets_root, max_upload_size=4 * 1024**2)
+    payload = b"pixels" * 350_000
+    entered = asyncio.Event()
+    resume = asyncio.Event()
+    original_read = UploadFile.read
+    reads = 0
+
+    async def held_read(upload: UploadFile, size: int = -1) -> bytes:
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            assert getattr(upload.file, "_rolled", False), "fixture must use a real spooled upload"
+            entered.set()
+            await resume.wait()
+        return await original_read(upload, size)
+
+    monkeypatch.setattr(UploadFile, "read", held_read)
+    async for client in _client(cfg):
+        upload_task = asyncio.create_task(client.post(
+            "/api/v1/datasets/upload",
+            files={"files": ("cells.tif", payload, "image/tiff")},
+        ))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=10)
+            listing = await client.get("/api/v1/datasets")
+        finally:
+            resume.set()
+            outcomes = await asyncio.wait_for(
+                asyncio.gather(upload_task, return_exceptions=True), timeout=10,
+            )
+
+        assert listing.status_code == 200
+        assert listing.json() == []
+        response = outcomes[0]
+        assert isinstance(response, httpx.Response), response
+        assert response.status_code == 200
+        uploaded = response.json()["uploaded"]
+        assert len(uploaded) == 1
+        assert uploaded[0]["size"] == len(payload)
+        assert Path(uploaded[0]["path"]).read_bytes() == payload
+        reopened = await client.get("/api/v1/datasets")
+        assert [item["id"] for item in reopened.json()] == [uploaded[0]["id"]]
+
+
 async def test_upload_oversize_mid_stream(small_cap_client: httpx.AsyncClient):
     r = await small_cap_client.post(
         "/api/v1/datasets/upload",
@@ -210,6 +260,48 @@ async def test_upload_multi_file_total_over_per_file_cap(
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/datasets/{id}
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fault", ["publication", "multipart_close"])
+async def test_upload_preserves_accepted_files_after_storage_or_cleanup_failure(
+    client: httpx.AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+):
+    publish, close = DatasetStore._publish, UploadFile.close
+    failed = False
+
+    def failing_publish(store, *args, **kwargs):
+        nonlocal failed
+        if not failed:
+            failed = True
+            return publish(store, *args, **kwargs)
+        raise DatasetPublicationError("controlled storage failure")
+
+    async def failing_close(upload):
+        nonlocal failed
+        await close(upload)
+        if not failed:
+            failed = True
+            raise OSError("controlled multipart close failure")
+
+    if fault == "publication":
+        monkeypatch.setattr(DatasetStore, "_publish", failing_publish)
+    else:
+        monkeypatch.setattr(UploadFile, "close", failing_close)
+    response = await client.post(
+        "/api/v1/datasets/upload",
+        files=[("files", ("keep.tif", b"keep", "image/tiff")),
+               ("files", ("next.tif", b"next", "image/tiff"))],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    expected = [b"keep"] if fault == "publication" else [b"keep", b"next"]
+    assert [Path(item["path"]).read_bytes() for item in body["uploaded"]] == expected
+    assert body["errors"] == ([{
+        "filename": "next.tif", "error": "storage_error", "detail": "controlled storage failure",
+    }] if fault == "publication" else [])
+    listing = (await client.get("/api/v1/datasets")).json()
+    assert {item["id"] for item in listing} == {item["id"] for item in body["uploaded"]}
+    assert not list((tmp_path / "datasets").glob(".bioimageflow-upload-*"))
 
 
 async def test_delete_success(client: httpx.AsyncClient):

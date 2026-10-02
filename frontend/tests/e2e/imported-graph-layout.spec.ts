@@ -61,11 +61,12 @@ async function expectVisibleNodesSeparated(page: Page, count: number) {
   }
 }
 
-test('portable recursive layout materializes once and keeps graph identities separate', async ({ page }) => {
+test('portable recursive layout materializes once and keeps graph identities separate', async ({ page, request }) => {
   const suffix = `${test.info().project.name}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   const source = `layout_source_${suffix}`
   const imported = `layout_imported_${suffix}`
   const other = `layout_other_${suffix}`
+  let bodySucceeded = false
   try {
     expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
     expect((await page.request.post(`${API}/workflows`, { data: { name: source } })).status()).toBe(201)
@@ -118,6 +119,8 @@ test('portable recursive layout materializes once and keeps graph identities sep
     expect(positions(edited).child).toEqual(positions(first).child)
     expect(positions((await saved(page, other)).graph)).toEqual(positions(untouched))
 
+    // Selection opens docks; fit the current canvas before the nested gesture.
+    await page.locator('.vue-flow__controls-fitview').click()
     await page.locator('.vue-flow__node[data-id="nested"]').dblclick()
     await expect(page.locator('.nested-workflow-editor')).toBeVisible()
     await expectVisibleNodesSeparated(page, 3)
@@ -138,8 +141,16 @@ test('portable recursive layout materializes once and keeps graph identities sep
     expect(reopened.ok()).toBeTruthy()
     expect(positions((await reopened.json()).graph)).toEqual(positions(edited))
     expect(positions((await saved(page, other)).graph)).toEqual(positions(untouched))
+    bodySucceeded = true
   } finally {
-    await page.goto('about:blank')
-    for (const name of [imported, other, source]) await page.request.delete(`${API}/workflows/${name}`)
+    // Detach autosave even after timeout; cleanup must not mask the body failure.
+    await page.close().catch(() => undefined)
+    const cleanup = await Promise.allSettled([imported, other, source].map(name => request.delete(`${API}/workflows/${name}`)))
+    if (bodySucceeded) {
+      for (const outcome of cleanup) {
+        expect(outcome.status).toBe('fulfilled')
+        if (outcome.status === 'fulfilled') expect(outcome.value.ok() || outcome.value.status() === 404).toBeTruthy()
+      }
+    }
   }
 })

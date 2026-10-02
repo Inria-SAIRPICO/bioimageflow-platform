@@ -12,6 +12,8 @@ from typing import Any, cast
 
 from bioimageflow.workflow import Workflow as BioImageFlowWorkflow
 
+from bioimageflow_server.services.materialized_resources import materialized_resource_errors
+
 
 def safe_workflow_export_stem(workflow_id: str) -> str:
     """Return a readable collision-resistant filename stem for one workflow ID."""
@@ -63,6 +65,9 @@ class BioImageFlowWorkflowArchiveAdapter:
             storage_path=storage_path,
         )
         workflow = cast(Any, result)
+        errors = materialized_resource_errors(workflow, workflow_data)
+        if errors:
+            raise ValueError("; ".join(error.detail for error in errors))
         workflow.export(archive_path)
 
     def read_archive(

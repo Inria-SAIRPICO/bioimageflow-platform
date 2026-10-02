@@ -139,7 +139,9 @@ Source identifiers bind nodes to working directories and remain stable across so
 Package tools remain versioned package dependencies.
 Same-named local tools with different content must coexist without registry shadowing.
 Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
-Validation includes `node_tools`, keyed by scoped node identity, so an imported node's schemas come from its bound source rather than a same-named catalog entry.
+Validation includes `node_tools`, keyed by scoped node identity, so a successfully compiled source-bound or explicitly module/class-bound node's schemas come from its actual class rather than a same-named catalog entry.
+Installed bindings retain package/version and read-only package provenance; owned sources retain editable custom provenance.
+This response metadata does not certify preservation of unresolved or pre-validation frontend schemas/templates, whose catalog fallback remains a separate consumer boundary.
 Invalid edits remain visible on disk and invalidate execution; keeping previous catalog metadata must never cause Run to execute old code.
 
 Portable archives are transport artifacts only.
@@ -187,6 +189,13 @@ All accepted root drafts, nested snapshots, execution requests, cache operations
 
 Validation covers recursive graph structure, discriminator correctness, unique node/edge/interface IDs, field and DataFrame interface targets, binding and edge compatibility, recursive tool availability, workflow-local source ownership, workspace containment, source-update preconditions, and execution mutation locking.
 It also validates ProcessingTool-only resource overrides, tool-declared resource floors, concurrency caps, exact execution intent, target availability, and invocation-only remote path choices.
+A complete carried module/class binding, including its package/version when present, precedes catalog-name discovery; an unavailable binding produces the public loader's scoped diagnostic rather than executing a same-named active tool.
+Explicit owned-source or custom-package bindings own locality, explicit package references own dependency requirements, and module/class-only references do not acquire a package from unrelated catalog metadata.
+Only genuinely unbound nodes use catalog discovery; explicit version rebind changes package versions recursively while preserving graph presentation and other bindings.
+Rebind uses the carried package's own active version, or metadata from that same package; absent either authority, it preserves the carried version rather than borrowing an unrelated same-named tool's version.
+Serialization preserves accepted root and child configuration without loading carried packages.
+Compilation resolves enabled recursive capabilities, supplies one derived root engine to one public materialization, and does not install missing dependencies.
+Bound resource overrides survive serialization; actual Processing declarations enforce floors/caps, while actual DataFrame overrides are refused through the public node resource setter, including before actual archive export can publish content.
 Errors use scoped paths such as `segment_and_measure/cellpose_segmenter`.
 
 Full Run rejects every diagnostic from complete-graph compilation. Run Selected derives its requested root nodes and transitive upstream root nodes from the accepted graph edges and ignores only diagnostics whose scoped node path proves ownership by an unrelated root node. Descendant diagnostics within a selected or upstream workflow boundary, global or unattributable diagnostics, unknown or unresolved requested targets, and a missing compiled workflow remain blocking.

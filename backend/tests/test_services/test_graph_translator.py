@@ -120,13 +120,24 @@ def _graph(name: str, nodes: list[dict[str, Any]] | None = None) -> dict[str, An
     }
 
 
-def test_translation_preserves_workflow_scheduling() -> None:
+def test_translation_preserves_workflow_scheduling(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _graph("sequential")
     graph["config"]["execution"] = "sequential"
 
     translated = graph_state_to_lib_dict(GraphState.model_validate(graph), _registry())
 
     assert translated.lib_dict["config"]["execution"] == "sequential"
+    child = _graph("child", [{**_tool("inner"), "tool_module": "unavailable.module", "tool_class": "Bound", "tool_package": "absent", "tool_package_version": "1.0.0"}])
+    child["config"]["engine"] = "wetlands"
+    graph["nodes"] = [{"type": "workflow", "id": "nested", "name": "Nested", "workflow": child, "bindings": {}, "position": [0, 0]}]
+    import bioimageflow.tool_loader as loader
+    def unexpected(*args, **kwargs):
+        pytest.fail("Serialization must not load a bound package")
+    monkeypatch.setattr(loader, "load_versioned_package", unexpected)
+    translated = graph_state_to_lib_dict(GraphState.model_validate(graph), ToolRegistryService())
+    assert translated.lib_dict["config"] == graph["config"]
+    assert translated.lib_dict["nodes"][0]["workflow"]["config"] == child["config"]
+
 
 
 def test_recursive_translation_uses_one_library_grammar() -> None:
@@ -493,11 +504,13 @@ def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() ->
     assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 2
 
 
-def test_requirements_and_version_rebinding_recurse() -> None:
+@pytest.mark.parametrize("catalog_custom", [False, True])
+def test_requirements_and_version_rebinding_recurse(catalog_custom: bool) -> None:
     child = _graph("child", [_tool("inner")])
     parent = _graph(
         "parent",
         [
+            _tool("outer"),
             {
                 "type": "workflow",
                 "id": "child",
@@ -508,25 +521,79 @@ def test_requirements_and_version_rebinding_recurse() -> None:
             }
         ],
     )
-    library = graph_state_to_lib_dict(
+    portable = graph_state_to_lib_dict(
         GraphState.model_validate(parent), _registry()
     ).lib_dict
-    # Exercise the portable package fields independently of local test-module
-    # package discovery.
-    inner = library["nodes"][0]["workflow"]["nodes"][0]
-    inner["tool_package"] = "example-tools"
-    inner["tool_package_version"] = "1.0.0"
+    # A portable binding exists before reverse/forward translation. Catalog
+    # metadata refresh must not silently perform the explicit rebind action.
+    carried = {
+        "tool_module": "example_tools.filters",
+        "tool_class": "ExampleTool",
+        "tool_package": "example-tools",
+        "tool_package_version": "1.0.0",
+    }
+    portable["nodes"][0].update(carried)
+    portable["nodes"][1]["workflow"]["nodes"][0].update(carried)
+    active = _registry()
 
-    packages, local = collect_required_packages(library, _registry())
-    rebound = rebind_lib_dict_versions(library, _registry())
+    class ActiveExampleTool(ExampleTool):
+        _bif_package = "example-tools"
+        _bif_package_version = "2.0.0"
+        _bif_canonical_module = "example_tools.filters"
+
+    ActiveExampleTool.__name__ = "ExampleTool"
+    active.register_tool(
+        "ExampleTool",
+        ToolMetadata(
+            name="ExampleTool", display_name="Example", package="example-tools",
+            package_version="2.0.0", tool_type="DataFrameTool", row_consumption=None,
+        ),
+        tool_class=ActiveExampleTool,
+    )
+    if catalog_custom:
+        metadata = active.get_tool("ExampleTool")
+        active.register_tool("ExampleTool", metadata.model_copy(update={"source_kind": "custom"}), tool_class=ActiveExampleTool)
+    translated = graph_state_to_lib_dict(lib_dict_to_graph_state(portable), active)
+    assert translated.errors == []
+    library = translated.lib_dict
+    for node in (library["nodes"][0], library["nodes"][1]["workflow"]["nodes"][0]):
+        assert {key: node[key] for key in carried} == carried
+
+    packages, local = collect_required_packages(library, active)
+    rebound = rebind_lib_dict_versions(library, active)
 
     assert [(item.name, item.version) for item in packages] == [
         ("example-tools", "1.0.0")
     ]
     assert local == []
-    assert rebound["nodes"][0]["workflow"]["nodes"][0][
-        "tool_package_version"
-    ] == "2.0.0"
+    assert rebound["nodes"][0]["tool_package_version"] == "2.0.0"
+    assert rebound["nodes"][1]["workflow"]["nodes"][0]["tool_package_version"] == "2.0.0"
+
+    # A same display/class name cannot lend another package's version to the
+    # carried dependency when its own package has no active record.
+    metadata = active.get_tool("ExampleTool")
+    assert metadata is not None
+    active.register_package("example-tools", PackageInfo(
+        name="example-tools", installed_versions=["1.0.0", "2.0.0"],
+        active_version=None,
+    ))
+    same_package_rebound = rebind_lib_dict_versions(library, active)
+    for node in (same_package_rebound["nodes"][0], same_package_rebound["nodes"][1]["workflow"]["nodes"][0]):
+        assert node["tool_package_version"] == "2.0.0"
+    active.register_tool("ExampleTool", metadata.model_copy(update={
+        "package": "__custom__" if catalog_custom else "unrelated-package",
+        "package_version": "local" if catalog_custom else "7.0.0",
+    }), tool_class=ActiveExampleTool)
+    assert rebind_lib_dict_versions(library, active) == library
+
+    # The carried package's own explicit active version still authorizes rebind.
+    active.register_package("example-tools", PackageInfo(
+        name="example-tools", installed_versions=["1.0.0", "2.0.0"],
+        active_version="2.0.0",
+    ))
+    rebound = rebind_lib_dict_versions(library, active)
+    for node in (rebound["nodes"][0], rebound["nodes"][1]["workflow"]["nodes"][0]):
+        assert {key: node[key] for key in carried} == {**carried, "tool_package_version": "2.0.0"}
 
 
 def test_missing_packages_report_scoped_node_paths() -> None:
@@ -586,6 +653,16 @@ def test_custom_tools_are_local_references_not_installable_packages() -> None:
     assert missing_tools == []
     assert rebound["nodes"][0]["tool_package"] == "__custom__"
     assert rebound["nodes"][0]["tool_package_version"] == "local"
+    module_only = {**library["nodes"][0], "tool_module": "installed.module", "tool_package": None, "tool_package_version": None}
+    module_only.pop("source_module")
+    library["nodes"] = [module_only]
+    registry = _registry()
+    module_only["tool_class"] = "ExampleTool"
+    packages, local = collect_required_packages(library, registry)
+    assert packages == []
+    assert local[0].node_ids == ["custom"]
+    assert rebind_lib_dict_versions(library, registry)["nodes"][0] == module_only
+
 
 
 def test_owned_tool_identity_takes_precedence_over_same_named_registry_tool() -> None:
