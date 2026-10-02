@@ -765,7 +765,7 @@ The reviewed owning six-file candidate is committed as `0652aa5ede5bed10e189be7d
 The separate routine platform `scripts/test check campaign` checkpoint check passed in 0.127 seconds against main `d8a50bb` plus this progress append; no platform runtime or full certification was repeated.
 
 
-### October 2 Wetlands 2.5.0 local candidate — draft PR open, upstream CI pending
+### October 2 Wetlands 2.5.0 local candidate — draft PR open, required CI passed
 
 The independently reviewed completion implementation is prepared as a clean 2.5.0 candidate at `f4409ce8b551be6dff62e26ee535ccdd9b47c131` on the local `campaign/wetlands-completion` branch.
 Package, worker-runtime and owning lock versions match; execution/management protocols remain 1, and all other 105-package lock content is unchanged.
@@ -785,8 +785,9 @@ Automatic approval review rejected branch upload and draft-PR creation before ex
 The user then explicitly approved source push and draft-PR creation; the SSH attempt failed before upload (0.922 seconds, public-key/askpass authentication), and the same authorized destination succeeded through per-command existing gh HTTPS authentication (push 2.687 seconds, PR creation 2.520 seconds).
 [Draft PR #5](https://github.com/arthursw/wetlands/pull/5) is open at exact head `f4409ce8b551be6dff62e26ee535ccdd9b47c131`; no global authentication configuration or credentials were printed or changed.
 The exact-head [CI run 37048171797](https://github.com/arthursw/wetlands/actions/runs/37048171797) has all 25 required jobs present: lint, eighteen three-OS/Python 3.9–3.14 fast jobs, Python 3.9 compatibility, three real-Pixi jobs, strict docs and package validation.
-The independent October 2 snapshot contains successful, running and queued jobs; the final required-CI outcome is pending, while push-only documentation deployment is outside the PR gate.
-Local library development may consume the frozen unpublished wheel in its own private environment after handoff, but cannot claim published-floor, upstream-CI or platform/worker certification.
+The final independently inspected exact-head run passed all 25 required jobs; the push-only documentation deployment is intentionally skipped for a pull request and is outside that gate.
+Local library development may consume the frozen unpublished wheel in its own private environment after handoff; passed upstream CI does not establish publication, a supported dependency floor or platform/worker certification.
+The concrete release transaction has been reviewed, but user approval for owner-main merge, tagging, GitHub release and PyPI publication remains pending.
 No owner-main merge, tag, GitHub release, PyPI publication or platform-pin change is authorized or credited.
 
 
@@ -801,3 +802,37 @@ The initial Ruff unused-import failure is retained; its behavior-neutral correct
 Strict whole-library Sphinx `-W --keep-going` passed in 53.192 seconds; these are qualified source-development results, not another whole-library suite or physical worker/process certification.
 Current library source version 0.8.7, root/package Wetlands floor ≥2.4.2 and committed lock 2.4.2 remain unaligned with the new public API; release metadata/floor/lock alignment against published Wetlands and subsequent published-wheel/platform/worker acceptance still block supported source delivery.
 Platform installed dependencies remain unchanged; original full/browser failures, final Firefox admission block and desktop-final-M5 restriction remain open.
+
+
+### Workflow-tree pending request coalescing — October 2
+
+Two passive startup consumers now share one pending tree request only within the same catalog authority and structural generation.
+Accepted same-ID metadata changes and deliberate post-mutation/workspace/migration/reconnect refreshes invalidate that authority; tree and flat-list endpoints retain their own response contracts, request-owned loading/error finalizers and at most one stale retry per caller.
+Successful results are not cached, and stale retry never awaits its own expired flight.
+The original six public-store controls failed on unchanged source, and the reverse flat/tree interleave failed separately; all seven controls passed after the repair, with 135 affected owner tests passing in seven files (no skips, measured 3.226 seconds).
+
+The same frozen production harness used 100 empty workflows, 1,000 managed 16-byte files and six fixture tools, with accepted-graph/paint and search-row oracles unchanged.
+Every first-navigation/warm-reload observation reduced identical tree GETs from two to one, and decoded tree response-body bytes from 95,930 to 47,965 per startup.
+The second baseline request was created while the first was still pending; later post-settlement reads remain uncached.
+
+| Measured task | Before | After |
+| --- | --- | --- |
+| First navigation, one observation | 3,055.096 ms | 2,628.775 ms |
+| Warm reload, five-observation median (range) | 2,829.650 ms (2,576.708–3,281.462) | 2,533.470 ms (2,382.890–2,915.163) |
+| Fresh Browse Open, five-observation median (range) | 543.009 ms (538.385–587.633) | 545.075 ms (531.754–582.267) |
+| Workflow search, five-observation median (range) | 41.571 ms (33.535–50.119) | 40.618 ms (38.910–47.555) |
+| Dataset search, five-observation median (range) | 175.106 ms (161.449–179.512) | 174.014 ms (161.095–253.220) |
+
+Warm-startup median improved by an observed 296.180 ms (~10.5%) in these sequential synthetic cohorts, with overlapping ranges; this is not a randomized or universal latency guarantee.
+Repeatability beyond these cohorts remains unverified.
+Request-work reduction is established independently of latency, while unchanged Browse Open and search tasks show no established improvement.
+Both 21-task headless Chromium batches passed with zero page errors (measured 34.983/30.976 seconds); their owned servers and synthetic roots were retired, preserving traces and exact source/build/runtime/harness manifests under `/private/tmp/bioimageflow-m2-performance/`.
+Main installed BioImageFlow `dff04e3`, Wetlands 2.4.2, dependency metadata and locks remain unchanged; the unpublished candidate library environment is separate and untouched.
+
+The one `env UV_OFFLINE=1 scripts/test check frontend` invocation remains **FAIL** (exit 1, measured 23.949 seconds) because the new test fixture omitted required `WorkflowInfo.folder`.
+Its unchanged lint (10 seconds), production build (6 seconds) and all 1,357 units in 135 files (24 seconds, no skips) passed and are retained.
+Adding only the required empty folder recovered all seven exact controls in measured 1.936 seconds, type checking in 5.628 seconds and lint in 5.169 seconds; no frontend lane or build was repeated.
+This is qualified assembled frontend completion, not a monolithic passing check invocation or full/browser certification.
+The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed (exit 0, runner 3 seconds, measured 2.811 seconds) at `788d67b` plus the exact reviewed source/specification/record snapshot.
+The separate product/test/specification task is committed as `f32c9b4`; this record adds only its disposition and observed evidence.
+Prior full/browser failures, final Firefox admission block, published-package/worker acceptance and native desktop-final-M5 gates remain open.

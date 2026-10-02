@@ -372,4 +372,6 @@ Use the same disposable cardinalities and cache assumptions for before/after inv
 Develop with distinguishing functional regressions and owner checks, then one proportionate scoped completion/docs gate for the accepted repair wave; use app at cross-stack milestones; retain unmeasured cold provisioning, results/dense graphs and published/worker/native limits.
 Do not create a benchmark subsystem, broaden frozen M1 inventory or rewrite the suite to obtain these measurements.
 
-After this measured draft repair and its scoped backend/docs gate, resume the preservation-first library force-Recreate/lifetime packet before the separate workflow-tree singleflight repair; both preserve the published/worker/native certification boundaries.
+After the measured draft repair, the preservation-first library force/public-completion adaptation reached a reviewed local WIP checkpoint; supported source delivery remains blocked on published dependency/floor/lock alignment.
+The separate workflow-tree singleflight repair now establishes two→one startup request work with qualified assembled frontend completion; preserve its measured workload, original completion-command failure and release/browser/native limits.
+Next performance candidates remain request-local shared environment discovery and one dataset-list reconciliation, subject to their own public-visibility/ownership controls and evidence of value; do not expand into tool caches or reuse the tree request authority as another endpoint's cache.
