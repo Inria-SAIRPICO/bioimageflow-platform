@@ -157,6 +157,9 @@ Building from Python materializes a canonical graph and its allowed source bundl
 
 The implemented dataset catalog and docked panel have their normative home in v1 Sections 2.4.10 and 3.14; v2 Section 16 owns Files-source integration.
 Managed bytes default to `<workspace>/datasets`, while logical folders and display names live in a SQLite catalog and do not change physical paths or file IDs.
+Uploads stream into exclusive unrecognized staging, then publish complete bytes and their catalog record under a short cooperating-writer transaction; name, revision and selection decisions acquire that writer before inspection.
+Short writes complete before publication, interrupted staging is cleaned by its owner, and accepted/ambiguous commits retain complete bytes; recovery may import unacknowledged complete legacy files without their original logical metadata.
+Per-file storage failures preserve earlier successes, and multipart cleanup cannot roll back accepted bytes; snapshot reads remain separate from writer admission and no power-loss or arbitrary external-writer atomicity is promised.
 Selection resolution expands folder descendants into explicit ordered file records; recursive deletion requires a preview and catalog-revision confirmation, with actionable partial failures.
 Ordinary browser path parameters use the panel's transient single-file picker, and Files sources use normal multi-selection; desktop inputs use native/local filesystem paths.
 Resolve-and-containment checks remain authoritative for uploads and deletion.

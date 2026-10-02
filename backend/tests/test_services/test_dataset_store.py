@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import base64
+import asyncio
+import sqlite3
+import threading
 from collections.abc import AsyncIterable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -11,12 +15,14 @@ import pytest
 from bioimageflow_server.services.dataset_store import (
     CatalogConflictError,
     DatasetNotFoundError,
+    DatasetPublicationError,
     DatasetStore,
     FileTooLargeError,
     InvalidMoveError,
     NameConflictError,
     PathTraversalError,
 )
+from bioimageflow_server.services import dataset_store as store_module
 
 
 pytestmark = pytest.mark.anyio
@@ -82,12 +88,32 @@ async def test_store_writes_file(tmp_path: Path):
     assert stored.name.endswith("_cells.tif")
 
 
+async def test_streaming_upload_is_not_published_by_a_concurrent_store(tmp_path: Path):
+    store = _make_store(tmp_path)
+    during_upload = []
+
+    async def chunks() -> AsyncIterable[bytes]:
+        yield b"hello"
+        observer = _make_store(tmp_path)
+        during_upload.extend(observer.list())
+        yield b"world"
+
+    record = await store.store("cells.tif", chunks())
+
+    assert during_upload == []
+    reopened = _make_store(tmp_path)
+    assert reopened.list() == [record]
+    assert record.size == 10
+    assert Path(record.path).read_bytes() == b"helloworld"
+
+
 async def test_store_rejects_oversize(tmp_path: Path):
     store = _make_store(tmp_path, cap=4)
     with pytest.raises(FileTooLargeError):
         await store.store("big.bin", _bytes_stream([b"12", b"345"]))
     # No partial file left behind
     assert not any(path.is_file() and not path.name.startswith(".bioimageflow") for path in store.root.iterdir())
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
 
 
 async def test_store_cleans_up_on_error(tmp_path: Path):
@@ -100,6 +126,264 @@ async def test_store_cleans_up_on_error(tmp_path: Path):
     with pytest.raises(RuntimeError, match="boom"):
         await store.store("boom.bin", exploding())
     assert not any(path.is_file() and not path.name.startswith(".bioimageflow") for path in store.root.iterdir())
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+
+
+@pytest.mark.parametrize("progress", [2, 0])
+async def test_store_handles_partial_or_zero_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, progress: int,
+):
+    store = _make_store(tmp_path)
+    write = store_module.os.write
+    monkeypatch.setattr(store_module.os, "write", lambda fd, chunk: write(fd, chunk[:progress]))
+    if progress:
+        record = await store.store("cells.tif", _bytes_stream([b"hello", b"world"]))
+        assert record.size == 10
+        assert Path(record.path).read_bytes() == b"helloworld"
+    else:
+        with pytest.raises(OSError, match="no progress"):
+            await store.store("cells.tif", _bytes_stream([b"hello"]))
+        assert store.list() == []
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+
+
+async def test_store_cancellation_removes_only_owned_staging(tmp_path: Path):
+    store = _make_store(tmp_path)
+    sibling = await store.store("keep.tif", _bytes_stream([b"keep"]))
+    entered = asyncio.Event()
+
+    async def blocked():
+        yield b"partial"
+        entered.set()
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(store.store("cancel.tif", blocked()))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert Path(sibling.path).read_bytes() == b"keep"
+    assert store.list() == [sibling]
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+
+
+async def test_store_close_failure_removes_unpublished_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    store = _make_store(tmp_path)
+    close = store_module.os.close
+    failed = False
+
+    def failing_close(fd):
+        nonlocal failed
+        close(fd)
+        if not failed:
+            failed = True
+            raise OSError("staging close failed")
+
+    monkeypatch.setattr(store_module.os, "close", failing_close)
+    with pytest.raises(OSError, match="staging close failed"):
+        await store.store("cells.tif", _bytes_stream([b"complete but unclosed"]))
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+    assert store.list() == []
+
+
+async def test_store_refuses_folder_removed_during_streaming(tmp_path: Path):
+    store = _make_store(tmp_path)
+    folder = store.create_folder("removed")
+
+    async def chunks():
+        yield b"complete"
+        other = _make_store(tmp_path)
+        preview = other.preview_delete([], [folder.id])
+        other.delete_selection([], [folder.id], expected_revision=preview.revision)
+
+    with pytest.raises(store_module.FolderNotFoundError):
+        await store.store("cells.tif", chunks(), folder_id=folder.id)
+    assert store.list() == []
+    assert store.list_folders() == []
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+
+
+@pytest.mark.parametrize("fault", [
+    "insert", "commit_held", "commit_rolled_back", "commit_accepted", "close_accepted",
+    "programming", "interface", "cleanup",
+])
+async def test_publication_failure_preserves_commit_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+):
+    store = _make_store(tmp_path)
+    open_connection = store._open_connection
+
+    class FaultConnection:
+        def __init__(self):
+            self.connection = open_connection()
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def execute(self, sql, *args):
+            if sql.startswith("INSERT INTO datasets"):
+                if fault in {"insert", "cleanup"}:
+                    raise sqlite3.IntegrityError("original insert failure")
+                if fault == "programming":
+                    raise sqlite3.ProgrammingError("original programming failure")
+                if fault == "interface":
+                    raise sqlite3.InterfaceError("original interface failure")
+            return self.connection.execute(sql, *args)
+
+        def commit(self):
+            if fault == "commit_held":
+                raise sqlite3.OperationalError("commit still held")
+            if fault == "commit_rolled_back":
+                self.connection.rollback()
+                raise sqlite3.OperationalError("commit outcome ambiguous")
+            self.connection.commit()
+            if fault == "commit_accepted":
+                raise sqlite3.OperationalError("accepted commit acknowledgement failed")
+
+        def rollback(self):
+            self.connection.rollback()
+            if fault == "cleanup":
+                raise sqlite3.OperationalError("secondary rollback failure")
+
+        def close(self):
+            self.connection.close()
+            if fault in {"cleanup", "close_accepted"}:
+                raise sqlite3.OperationalError("secondary close failure")
+
+    monkeypatch.setattr(store, "_open_connection", FaultConnection)
+    error = {
+        "programming": sqlite3.ProgrammingError, "interface": sqlite3.InterfaceError,
+    }.get(fault, DatasetPublicationError)
+    with pytest.raises(error) as failure:
+        await store.store("cells.tif", _bytes_stream([b"complete bytes"]))
+    if fault == "cleanup":
+        assert "original insert failure" in str(failure.value.__cause__)
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+    physical = [p for p in store.root.iterdir() if not p.name.startswith(".bioimageflow")]
+    retained = fault in {"commit_rolled_back", "commit_accepted", "close_accepted"}
+    assert len(physical) == int(retained)
+    if retained:
+        assert physical[0].read_bytes() == b"complete bytes"
+    # Reopen uses the real connection and reconciles only complete legacy bytes.
+    reopened = _make_store(tmp_path)
+    records = reopened.list()
+    assert len(records) == int(retained)
+    if retained:
+        assert Path(records[0].path).read_bytes() == b"complete bytes"
+        assert records[0].size == len(b"complete bytes")
+
+
+async def test_failed_publication_rename_preserves_unowned_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    store = _make_store(tmp_path)
+    folder = store.create_folder("Experiment")
+    sibling = await store.store("sibling.tif", _bytes_stream([b"accepted sibling"]), folder_id=folder.id)
+    before = store.preview_delete([], [folder.id])
+    candidate: Path | None = None
+    rename = Path.rename
+
+    def fail_upload_rename(source: Path, target: Path) -> Path:
+        nonlocal candidate
+        if source.parent == store.root and source.name.startswith(".bioimageflow-upload-"):
+            assert source.read_bytes() == b"upload bytes"
+            candidate = target
+            # An entry appearing after reservation is not owned by this upload.
+            target.write_bytes(b"unowned candidate sentinel")
+            raise OSError("controlled rename failure")
+        return rename(source, target)
+
+    monkeypatch.setattr(Path, "rename", fail_upload_rename)
+    with pytest.raises(OSError, match="controlled rename failure"):
+        await store.store("cells.tif", _bytes_stream([b"upload bytes"]), folder_id=folder.id)
+
+    assert candidate is not None
+    assert candidate.read_bytes() == b"unowned candidate sentinel"
+    assert Path(sibling.path).read_bytes() == b"accepted sibling"
+    assert not list(store.root.glob(".bioimageflow-upload-*"))
+    # Use the catalog projection, avoiding legacy reconciliation of the sentinel.
+    assert store.preview_delete([], [folder.id]) == before
+    assert store.resolve_selection([sibling.id], []) == [sibling]
+
+
+async def test_publication_preserves_dangling_entry_and_reserved_catalog_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    store = _make_store(tmp_path)
+    monkeypatch.setattr(store_module, "_now_compact", lambda: "20260101T010000")
+    dangling = store.root / "20260101T010000_cells.tif"
+    missing = store.root / "missing.tif"
+    dangling.symlink_to(missing)
+    reserved = await store.store("cells.tif", _bytes_stream([b"first"]))
+    Path(reserved.path).unlink()
+    replacement = await store.store("cells.tif", _bytes_stream([b"second"]))
+    assert dangling.is_symlink()
+    assert dangling.readlink() == missing
+    assert replacement.id != reserved.id
+    assert Path(replacement.path).read_bytes() == b"second"
+    assert Path(replacement.path).name.endswith("_cells_2.tif")
+
+
+@pytest.mark.parametrize("operation", ["folder", "upload", "delete"])
+async def test_catalog_admission_waits_for_competing_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
+):
+    owner, contender = _make_store(tmp_path), _make_store(tmp_path)
+    dataset = await owner.store("keep.tif", _bytes_stream([b"keep"]))
+    preview = owner.preview_delete([dataset.id], [])
+    entered, release, admission = threading.Event(), threading.Event(), threading.Event()
+    bump = owner._bump_revision
+
+    def held_bump(connection):
+        # The public folder operation has already inserted and owns SQLite's
+        # real writer here; pause before its revision and commit become visible.
+        entered.set()
+        assert release.wait(timeout=5), "writer fixture was not released"
+        bump(connection)
+
+    monkeypatch.setattr(owner, "_bump_revision", held_bump)
+    open_connection = contender._open_connection
+
+    def observed_connection():
+        connection = open_connection()
+        # Explicit and SQLite implicit BEGIN both reach this physical boundary.
+        connection.set_trace_callback(lambda sql: admission.set() if sql.startswith("BEGIN") else None)
+        return connection
+
+    monkeypatch.setattr(contender, "_open_connection", observed_connection)
+
+    def competing_operation():
+        if operation == "folder":
+            return contender.create_folder("taken")
+        if operation == "upload":
+            return asyncio.run(contender.store("Taken", _bytes_stream([b"upload"])))
+        return contender.delete_selection([dataset.id], [], expected_revision=preview.revision)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        winner = executor.submit(owner.create_folder, "Taken")
+        loser = None
+        try:
+            assert entered.wait(timeout=2)
+            loser = executor.submit(competing_operation)
+            assert admission.wait(timeout=2)
+            assert Path(dataset.path).read_bytes() == b"keep"
+        finally:
+            release.set()
+        winner.result(timeout=5)
+        assert loser is not None
+        if operation == "upload":
+            record = loser.result(timeout=5)
+            assert record.display_name == "Taken (2)"
+            assert Path(record.path).read_bytes() == b"upload"
+        else:
+            with pytest.raises(NameConflictError if operation == "folder" else CatalogConflictError):
+                loser.result(timeout=5)
+    assert Path(dataset.path).read_bytes() == b"keep"
+    assert [folder.name for folder in _make_store(tmp_path).list_folders()] == ["Taken"]
 
 
 async def test_store_sanitizes_path_traversal(tmp_path: Path):
@@ -375,3 +659,44 @@ async def test_recursive_delete_requires_current_preview_revision(tmp_path: Path
     result = store.delete_selection([], [folder.id], expected_revision=fresh.revision)
     assert result.deleted_dataset_ids == [dataset.id]
     assert result.deleted_folder_ids == [folder.id]
+
+
+async def test_recursive_delete_commits_successes_and_preserves_failed_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    store = _make_store(tmp_path)
+    folder = store.create_folder("Experiment")
+    good, escaped, denied = [
+        await store.store(name, _bytes_stream([name.encode()]), folder_id=folder.id)
+        for name in ["good.tif", "escaped.tif", "denied.tif"]
+    ]
+    outside = tmp_path / "outside.tif"
+    outside.write_bytes(b"outside")
+    escaped_path = Path(escaped.path)
+    escaped_path.unlink()
+    escaped_path.symlink_to(outside)
+    unlink = Path.unlink
+
+    def fail_selected(path, *args, **kwargs):
+        if path == Path(denied.path):
+            raise OSError("selected deletion denied")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_selected)
+    preview = store.preview_delete([], [folder.id])
+    result = store.delete_selection([], [folder.id], expected_revision=preview.revision)
+    assert result.deleted_dataset_ids == [good.id]
+    assert result.deleted_folder_ids == []
+    assert {error["id"] for error in result.errors} == {escaped.id, denied.id}
+    assert not Path(good.path).exists()
+    assert escaped_path.is_symlink()
+    assert outside.read_bytes() == b"outside"
+    assert Path(denied.path).read_bytes() == b"denied.tif"
+    assert store.preview_delete([], [folder.id]).dataset_count == 2
+    with pytest.raises(DatasetNotFoundError):
+        store.preview_delete([good.id], [])
+    escaped_path.unlink()
+    escaped_path.write_bytes(b"escaped.tif")
+    reopened = _make_store(tmp_path)
+    assert {record.id for record in reopened.list()} == {escaped.id, denied.id}
+    assert [item.id for item in reopened.list_folders()] == [folder.id]

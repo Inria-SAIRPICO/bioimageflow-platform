@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterable
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from bioimageflow_server.models.datasets import (
 from bioimageflow_server.services.dataset_store import (
     CatalogConflictError,
     DatasetNotFoundError,
+    DatasetPublicationError,
     DatasetStore,
     FileTooLargeError,
     FolderNotFoundError,
@@ -33,6 +35,7 @@ from bioimageflow_server.services.dataset_store import (
 )
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+logger = logging.getLogger(__name__)
 
 
 # Defence-in-depth: reject multipart bodies whose declared size is clearly
@@ -140,6 +143,10 @@ async def upload_datasets(
                     filename=filename, error="folder_not_found", detail=str(exc)
                 )
             )
+        except DatasetPublicationError as exc:
+            errors.append(
+                UploadError(filename=filename, error="storage_error", detail=str(exc))
+            )
         except (ValueError, OSError) as exc:
             errors.append(
                 UploadError(filename=filename, error="invalid_file", detail=str(exc))
@@ -158,7 +165,10 @@ async def upload_datasets(
                 )
             )
         finally:
-            await upload.close()
+            try:
+                await upload.close()
+            except OSError:
+                logger.exception("Multipart cleanup failed; preserving dataset upload outcomes")
 
     return UploadResponse(uploaded=uploaded, errors=errors)
 

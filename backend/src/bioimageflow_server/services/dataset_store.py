@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import mimetypes
 import os
 import re
@@ -19,6 +20,7 @@ _MAX_FILENAME_BYTES = 255
 _STORED_NAME_RE = re.compile(r"^(\d{8}T\d{6})_(.+)$")
 _CATALOG_NAME = ".bioimageflow-datasets.sqlite3"
 _UNSET = object()
+logger = logging.getLogger(__name__)
 _WINDOWS_RESERVED = {
     "con", "prn", "aux", "nul",
     *{f"com{i}" for i in range(1, 10)},
@@ -56,6 +58,10 @@ class InvalidMoveError(DatasetStoreError):
 
 class CatalogConflictError(DatasetStoreError):
     pass
+
+
+class DatasetPublicationError(DatasetStoreError):
+    """Ordinary storage failure publishing a complete upload."""
 
 
 @dataclass(frozen=True)
@@ -180,20 +186,47 @@ class DatasetStore:
         self._initialize_catalog()
         self._reconcile()
 
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _open_connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._catalog_path, timeout=5)
         try:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
-            yield connection
         except BaseException:
-            connection.rollback()
+            try:
+                connection.close()
+            except sqlite3.Error:
+                logger.exception("Failed closing dataset connection after setup failure")
             raise
-        else:
-            connection.commit()
+        return connection
+
+    @contextmanager
+    def _connect(
+        self, *, write: bool = False, snapshot: bool = False,
+    ) -> Iterator[sqlite3.Connection]:
+        connection = self._open_connection()
+        failed = False
+        try:
+            if write:
+                connection.execute("BEGIN IMMEDIATE")
+            elif snapshot:
+                connection.execute("BEGIN")
+            yield connection
+            if connection.in_transaction:
+                connection.commit()
+        except BaseException:
+            failed = True
+            try:
+                connection.rollback()
+            except sqlite3.Error:
+                logger.exception("Dataset rollback failed; preserving original failure")
+            raise
         finally:
-            connection.close()
+            try:
+                connection.close()
+            except sqlite3.Error:
+                if not failed:
+                    raise
+                logger.exception("Dataset connection cleanup failed; preserving original failure")
 
     def _initialize_catalog(self) -> None:
         with self._connect() as connection:
@@ -234,7 +267,7 @@ class DatasetStore:
         connection.execute("UPDATE metadata SET value = value + 1 WHERE key = 'revision'")
 
     def _reconcile(self) -> None:
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             changed = False
             known = {row[0]: row[1] for row in connection.execute("SELECT stored_name, id FROM datasets")}
             for path in self.root.iterdir():
@@ -342,9 +375,11 @@ class DatasetStore:
     ) -> StoredDataset:
         sanitized = _sanitize_filename(filename)
         timestamp = _now_compact()
-        target_path = self._reserve_target(timestamp, sanitized)
+        staging = self.root / f".bioimageflow-upload-{uuid.uuid4().hex}"
+        if not self._is_within_root(staging.resolve()):
+            raise PathTraversalError(filename)
         written = 0
-        fd = os.open(str(target_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        fd: int | None = os.open(str(staging), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
         try:
             async for chunk in stream:
                 if not chunk:
@@ -352,40 +387,75 @@ class DatasetStore:
                 written += len(chunk)
                 if written > self.max_upload_size:
                     raise FileTooLargeError(f"upload exceeded cap of {self.max_upload_size} bytes")
-                os.write(fd, chunk)
-        except BaseException:
-            os.close(fd)
-            target_path.unlink(missing_ok=True)
-            raise
-        else:
-            os.close(fd)
+                remaining = memoryview(chunk)
+                while remaining:
+                    count = os.write(fd, remaining)
+                    if count <= 0:
+                        raise OSError("dataset write made no progress")
+                    remaining = remaining[count:]
+            closing_fd, fd = fd, None
+            os.close(closing_fd)
+            return self._publish(staging, timestamp, sanitized, written, folder_id)
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    logger.exception("Dataset staging descriptor cleanup failed")
+            try:
+                staging.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Dataset staging cleanup failed")
 
+    def _publish(
+        self, staging: Path, timestamp: str, sanitized: str, written: int,
+        folder_id: str | None,
+    ) -> StoredDataset:
         original = _original_from_sanitized(sanitized)
         try:
-            with self._connect() as connection:
-                self._ensure_folder(connection, folder_id)
-                display = self._unique_display_name(connection, original, folder_id)
-                connection.execute(
-                    "INSERT INTO datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        _encode_id(target_path.name), target_path.name, original, display,
-                        display.casefold(), folder_id, written, _timestamp_to_iso(timestamp),
-                        mimetypes.guess_type(original, strict=False)[0],
-                    ),
-                )
-                self._bump_revision(connection)
-                row = connection.execute(
-                    "SELECT * FROM datasets WHERE stored_name = ?", (target_path.name,)
-                ).fetchone()
-        except BaseException:
-            target_path.unlink(missing_ok=True)
-            raise
-        return self._dataset_from_row(row)
+            with self._connect(write=True) as connection:
+                renamed = committed = False
+                target: Path | None = None
+                try:
+                    self._ensure_folder(connection, folder_id)
+                    target = self._reserve_target(connection, timestamp, sanitized)
+                    display = self._unique_display_name(connection, original, folder_id)
+                    staging.rename(target)
+                    renamed = True
+                    connection.execute(
+                        "INSERT INTO datasets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            _encode_id(target.name), target.name, original, display,
+                            display.casefold(), folder_id, written, _timestamp_to_iso(timestamp),
+                            mimetypes.guess_type(original, strict=False)[0],
+                        ),
+                    )
+                    self._bump_revision(connection)
+                    row = connection.execute(
+                        "SELECT * FROM datasets WHERE stored_name = ?", (target.name,)
+                    ).fetchone()
+                    record = self._dataset_from_row(row)
+                    connection.commit()
+                    committed = True
+                    return record
+                except BaseException:
+                    # Cleanup belongs to this upload only while its uncommitted
+                    # writer still excludes reconciliation. Ambiguous/accepted
+                    # publication must retain complete, recoverable bytes.
+                    if renamed and not committed and connection.in_transaction:
+                        try:
+                            assert target is not None
+                            target.unlink(missing_ok=True)
+                        except OSError:
+                            logger.exception("Uncommitted dataset publication cleanup failed")
+                    raise
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as exc:
+            raise DatasetPublicationError("Could not publish dataset; check storage and retry") from exc
 
     def create_folder(self, name: str, parent_id: str | None = None) -> StoredFolder:
         cleaned = name.strip()
         normalized = _normal_name(cleaned)
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             self._ensure_folder(connection, parent_id)
             if self._name_taken(connection, normalized, parent_id):
                 raise NameConflictError(cleaned)
@@ -404,7 +474,7 @@ class DatasetStore:
         name: str | None = None,
         parent_id: str | None | object = _UNSET,
     ) -> StoredFolder:
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             row = connection.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
             if row is None:
                 raise FolderNotFoundError(folder_id)
@@ -430,7 +500,7 @@ class DatasetStore:
         display_name: str | None = None,
         folder_id: str | None | object = _UNSET,
     ) -> StoredDataset:
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             row = connection.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
             if row is None:
                 raise DatasetNotFoundError(dataset_id)
@@ -494,7 +564,7 @@ class DatasetStore:
     def resolve_selection(
         self, dataset_ids: Iterable[str], folder_ids: Iterable[str]
     ) -> list[StoredDataset]:
-        with self._connect() as connection:
+        with self._connect(snapshot=True) as connection:
             selected, _ = self._selection_ids(connection, dataset_ids, folder_ids)
             if not selected:
                 return []
@@ -512,7 +582,7 @@ class DatasetStore:
     def preview_delete(
         self, dataset_ids: Iterable[str], folder_ids: Iterable[str]
     ) -> DeletePreview:
-        with self._connect() as connection:
+        with self._connect(snapshot=True) as connection:
             datasets, folders = self._selection_ids(connection, dataset_ids, folder_ids)
             return DeletePreview(self._revision(connection), len(datasets), len(folders))
 
@@ -523,7 +593,7 @@ class DatasetStore:
         *,
         expected_revision: int,
     ) -> DeleteResult:
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             if self._revision(connection) != expected_revision:
                 raise CatalogConflictError("dataset catalog changed")
             datasets, folders = self._selection_ids(connection, dataset_ids, folder_ids)
@@ -531,12 +601,12 @@ class DatasetStore:
             errors: list[dict[str, str]] = []
             for dataset_id in sorted(datasets):
                 row = connection.execute("SELECT stored_name FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
-                target = (self.root / row[0]).resolve()
                 try:
-                    if not self._is_within_root(target):
+                    target = self.root / row[0]
+                    if not self._is_within_root(target.resolve()):
                         raise PathTraversalError(dataset_id)
                     target.unlink()
-                except OSError as exc:
+                except (OSError, PathTraversalError) as exc:
                     errors.append({"id": dataset_id, "detail": str(exc)})
                 else:
                     connection.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
@@ -558,10 +628,9 @@ class DatasetStore:
         stored_name = _decode_id(dataset_id)
         if not self._is_within_root((self.root / stored_name).resolve()):
             raise PathTraversalError(dataset_id)
-        with self._connect() as connection:
+        with self._connect(write=True) as connection:
             # The catalog owns deletion, not an arbitrary decoded filename.
             # Acquire the writer before reading that authority or unlinking.
-            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT stored_name FROM datasets WHERE id = ?", (dataset_id,)
             ).fetchone()
@@ -577,7 +646,9 @@ class DatasetStore:
             connection.execute("DELETE FROM datasets WHERE id = ?", (dataset_id,))
             self._bump_revision(connection)
 
-    def _reserve_target(self, timestamp: str, sanitized: str) -> Path:
+    def _reserve_target(
+        self, connection: sqlite3.Connection, timestamp: str, sanitized: str,
+    ) -> Path:
         stem, dot, ext = sanitized.rpartition(".")
         if not dot:
             stem, ext = sanitized, ""
@@ -587,7 +658,10 @@ class DatasetStore:
             target = self.root / f"{timestamp}_{candidate}"
             if not self._is_within_root(target.resolve()):
                 raise PathTraversalError(candidate)
-            if not target.exists():
+            reserved = connection.execute(
+                "SELECT 1 FROM datasets WHERE stored_name = ?", (target.name,),
+            ).fetchone()
+            if not os.path.lexists(target) and reserved is None:
                 return target
         raise RuntimeError("too many collisions disambiguating")
 

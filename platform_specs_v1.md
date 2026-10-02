@@ -813,6 +813,7 @@ Canvas Files-source actions use those explicit paths and preserve the one-edit r
 
 **Deletion:** Preview returns `revision`, `dataset_count`, and `folder_count` for the recursive selection.
 Confirmation submits the selected IDs and that `expected_revision`; any intervening catalog change returns HTTP 409 `catalog_conflict` before deletion.
+The catalog writer transaction is acquired before revision, selection, sibling-name and publication decisions across cooperating store instances.
 The response identifies deleted file/folder IDs and per-file errors.
 Successful files are removed from storage and catalog, while failed files remain and prevent their containing folders from being deleted as empty.
 The client refreshes the catalog and shows actionable partial failures rather than claiming the whole selection was deleted.
@@ -825,6 +826,13 @@ Deletion does not rewrite existing workflow parameters or invalidate prior compu
 
 **Uploads:** Multipart requests may contain multiple `files` parts and return `{uploaded: [...], errors: [{filename, error, detail}]}`.
 Each successful record has the file fields above, and per-file failures do not conceal successful files in the same request.
+Streaming writes use an exclusive unrecognized staging entry, handle short writes completely and refuse zero progress; listing and legacy reconciliation cannot publish incomplete uploads.
+After successful close, a short writer transaction admits the destination folder, chooses a filename absent from both lexical storage entries and catalog reservations, and publishes complete bytes with their record and revision.
+No streaming await holds the writer transaction; multi-query selection/preview reads use a consistent catalog snapshot.
+Ordinary storage publication failures report per-file `storage_error`; multipart-close cleanup errors are logged without discarding already accepted file outcomes, while cancellation and programming faults remain distinct.
+Cleanup removes an uncommitted published file only while its writer ownership remains held; a successful or ambiguous commit never authorizes subsequent file deletion.
+Interrupted publication may leave complete unacknowledged legacy bytes that reconciliation recovers without the original logical folder metadata; this is not filesystem/SQLite atomic rollback or power-loss durability.
+The cooperating-writer boundary does not guarantee atomic no-clobber against arbitrary external filesystem replacement.
 The panel sends one file per request for per-file progress, cancel, and explicit retry.
 
 **Upload validation:**
