@@ -284,6 +284,37 @@ Use M0–M5 above to review the combined impact map and confirm affected shared 
 Use `full` after a completed large cross-stack plan, for package-loading/external-compatibility changes, or for final comprehensive certification when that broader scope is chosen; it includes product, external, coverage, and both-browser phases but documentation remains separate.
 `check app` includes backend/frontend completion plus critical Chromium, and `check all` expands that browser scope to full Chromium; neither supplies Firefox or documentation evidence.
 
+### Dependency PyPI releases with gh
+
+Verified 2026-10-02 against BioImageFlow [`7c718a0` release workflow](https://github.com/Inria-SAIRPICO/bioimageflow/blob/7c718a094e2741d738b27fc52cb560b7e84722c6/.github/workflows/release.yml) and [release guide](https://github.com/Inria-SAIRPICO/bioimageflow/blob/7c718a094e2741d738b27fc52cb560b7e84722c6/docs/source/reference/releasing.md), and Wetlands [`3ee2ffe` release workflow](https://github.com/arthursw/wetlands/blob/3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1/.github/workflows/release.yml) and [release checklist](https://github.com/arthursw/wetlands/blob/3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1/RELEASING.md).
+Before a needed release, reconcile upstream, commit the reviewed versions/dependency ranges/lockfile, and require successful `ci.yml` for the exact release SHA; Wetlands additionally requires the documented full checks and Linux/macOS/Windows real-Pixi acceptance.
+Configured PyPI Trusted Publishers and GitHub `pypi` environments are prerequisites; neither repository's environment had required-reviewer rules at verification, so these are not approval-gated publication examples.
+
+**BioImageFlow/Core:** From its clean release checkout, preview then push the same selected package set; append `bioimageflow-core` to both tag commands only when Core also needs a release.
+The helper returns annotated `<package>-v<major>.<minor>.<patch>` tags matching each package version at one commit, including `bioimageflow-v…` and, when selected, `bioimageflow-core-v…`.
+Use its exact `release_tags` string; the dispatch validates CI/dependencies/artifacts and publishes in dependency order (`validate` is an optional artifact-only mode, not a required extra run).
+
+```sh
+uv run --no-project --with packaging python scripts/release_set.py tag --dry-run bioimageflow
+release_tags="$(uv run --no-project --with packaging python scripts/release_set.py tag --push origin bioimageflow | jq -r .release_tags)"
+gh workflow run release.yml --repo Inria-SAIRPICO/bioimageflow --ref main -f release_tags="$release_tags" -f mode=publish
+gh run list --repo Inria-SAIRPICO/bioimageflow --workflow release.yml --limit 5
+gh run watch RUN_ID --repo Inria-SAIRPICO/bioimageflow --exit-status
+```
+
+**Wetlands:** Set `WETLANDS_TAG` to the already pushed `v<version>` tag on the reviewed commit; its version must equal both `[project].version` and `WORKER_RUNTIME_VERSION`.
+Publishing this GitHub release triggers the validated-build/trusted-publishing workflow; tag pushes or draft releases alone do not.
+
+```sh
+gh release create "$WETLANDS_TAG" --repo arthursw/wetlands --verify-tag --title "Wetlands $WETLANDS_TAG" --generate-notes
+gh run list --repo arthursw/wetlands --workflow release.yml --limit 5
+gh run watch RUN_ID --repo arthursw/wetlands --exit-status
+```
+
+Replace `RUN_ID` with the matching run and confirm its success plus every exact package/version on PyPI before updating platform/worker Core pins and certifying published wheels.
+Wetlands also supports `gh workflow run release.yml --repo arthursw/wetlands --ref main -f tag="$WETLANDS_TAG"` for an existing non-draft release; use this recovery route instead of creating a second release, check PyPI first, and never replace uploaded files.
+Earlier local/manual publication instructions describe historical releases; the current Wetlands route is the workflow above.
+
 ## Final acceptance
 
 Use the existing audited `--campaign-local` selectors and `tests/campaign-local-scope.json` to cover complete in-scope backend, unit, Chromium, and Firefox collections.
