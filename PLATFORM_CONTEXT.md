@@ -67,6 +67,7 @@ Do not conflate the following states:
    The envelope contains the canonical graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source identifiers.
 2. An open root canvas edits a durable workflow draft under that workflow directory.
    Draft writes use expected-revision compare-and-swap, record their writer, validate the accepted graph, and track whether the draft differs from the saved artifact.
+   Revision-zero synthesis captures one saved graph/hash/metadata snapshot per existing mutation-lock phase; captures expire as current saved authority at lock release and later phases and requests recheck current saved/draft authority, generation and storage.
    After an interrupted draft write, a newer browser recovery snapshot may temporarily supply the startup canvas graph; it is reconciled through the accepted draft's revision compare-and-swap rather than becoming another backend authority.
    An accepted named Open supersedes pending startup presentation and its late presentation writes; the winning Open retains newer same-workflow recovery and the accepted draft CAS base, while nested inspection and unrelated recovery remain scoped to their owners.
    The Workflows panel owns explicit row/folder browsing independently of loaded metadata; late automatic startup preserves it, and deliberate presentation or canvas activation retakes selection through synchronously consumed immutable intent.

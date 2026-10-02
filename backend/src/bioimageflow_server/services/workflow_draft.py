@@ -16,6 +16,7 @@ from typing import Any
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import NodeStatus, ValidationResult
+from bioimageflow_server.models.workflow import WorkflowFile
 from bioimageflow_server.models.workflow_draft import (
     DraftWriter,
     WorkflowDraftResponse,
@@ -596,12 +597,11 @@ class WorkflowDraftService:
         existing = self._read_existing_draft_locked(store, workflow_id)
         if existing is not None:
             return existing
+        workflow = store.get_workflow(workflow_id)
         return self._synthesized_draft(
-            store,
             workflow_id,
-            validation=self._default_validation(
-                store.get_workflow(workflow_id).graph,
-            ),
+            workflow=workflow,
+            validation=self._default_validation(workflow.graph),
         )
 
     def _read_validated_snapshot(
@@ -709,13 +709,12 @@ class WorkflowDraftService:
                         identity_generation=identity_generation,
                         storage_path=storage_path,
                     )
-                saved_revision = self._saved_revision(store, workflow_id)
+                workflow = store.get_workflow(workflow_id)
+                saved_revision = workflow.artifact_hash
                 synthesized = self._synthesized_draft(
-                    store,
                     workflow_id,
-                    validation=self._default_validation(
-                        store.get_workflow(workflow_id).graph,
-                    ),
+                    workflow=workflow,
+                    validation=self._default_validation(workflow.graph),
                 )
 
             validation = self._validate(store, workflow_id, synthesized.graph)
@@ -867,15 +866,14 @@ class WorkflowDraftService:
 
     def _synthesized_draft(
         self,
-        store: WorkflowStoreService,
         workflow_id: str,
         *,
+        workflow: WorkflowFile,
         validation: ValidationResult,
     ) -> WorkflowDraftResponse:
-        workflow = store.get_workflow(workflow_id)
         return WorkflowDraftResponse(
             workflow_id=workflow_id,
-            base_saved_revision=self._saved_revision(store, workflow_id),
+            base_saved_revision=workflow.artifact_hash,
             draft_revision=0,
             updated_at=workflow.info.last_modified,
             updated_by="system",

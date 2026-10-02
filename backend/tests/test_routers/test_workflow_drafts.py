@@ -26,7 +26,7 @@ from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.graph import GraphState
-from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
+from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody, WorkflowUpdate
 from bioimageflow_server.models.validation import GraphValidationError, ValidationResult
 from bioimageflow_server.routers.execution import (
     get_workflow_draft_service as execution_get_workflow_draft_service,
@@ -946,3 +946,149 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
     assert run.json()["error"] == "workflow_move_recovery_required"
     assert manager.is_running is False
     assert manager.context is None
+
+
+async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authorities_fresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    other = WorkflowStoreService(store.root_dir, registry)
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=_ExecutionManager(),
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    original_get = store.get_workflow
+    captures: list[tuple[Any, dict[str, Any]]] = []
+
+    def observed_get(name: str):
+        saved = original_get(name)
+        captures.append((saved, saved.model_dump(mode="json")))
+        return saved
+
+    monkeypatch.setattr(store, "get_workflow", observed_get)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        first = await ac.get("/api/v1/workflow-drafts/wf")
+        assert first.status_code == 200
+        first_body = first.json()
+        assert first_body["graph"] == captures[0][1]["graph"]
+        assert first_body["base_saved_revision"] == captures[0][0].artifact_hash
+        assert first_body["updated_at"] == captures[0][0].info.last_modified
+        assert first_body["draft_revision"] == 0
+        assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
+        assert all(saved.model_dump(mode="json") == raw for saved, raw in captures)
+        assert len(captures) == 3
+
+        changed = other.get_workflow("wf").graph.model_copy(deep=True)
+        changed.display_name = "Saved by another owner"
+        other.save_workflow("wf", WorkflowSaveBody(graph=changed))
+        saved_now = other.get_workflow("wf")
+        captures.clear()
+        next_read = await ac.get("/api/v1/workflow-drafts/wf")
+        assert next_read.status_code == 200
+        assert next_read.json()["graph"] == changed.model_dump(mode="json")
+        assert next_read.json()["base_saved_revision"] == saved_now.artifact_hash
+        assert next_read.json()["updated_at"] == saved_now.info.last_modified
+        assert len(captures) == 3
+        assert all(saved.model_dump(mode="json") == raw for saved, raw in captures)
+
+        accepted_graph = changed.model_copy(deep=True)
+        accepted_graph.display_name = "Accepted durable draft"
+        accepted = workflow_draft_service.WorkflowDraftService(lambda: other).put_draft(
+            "wf",
+            graph=accepted_graph,
+            expected_revision=0,
+        )
+        durable_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        durable_before = durable_path.read_bytes()
+        captures.clear()
+        accepted_read = await ac.get("/api/v1/workflow-drafts/wf")
+        assert accepted_read.status_code == 200
+        assert accepted_read.json()["graph"] == accepted_graph.model_dump(mode="json")
+        assert accepted_read.json()["draft_revision"] == accepted.draft_revision
+        assert accepted_read.json()["base_saved_revision"] == saved_now.artifact_hash
+        assert durable_path.read_bytes() == durable_before
+
+
+@pytest.mark.parametrize("authority", ["saved", "draft"])
+async def test_revision_zero_get_observes_other_owner_during_initial_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authority: str,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    other = WorkflowStoreService(store.root_dir, registry)
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=_ExecutionManager(),
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    entered = threading.Event()
+    release = threading.Event()
+    original_validate = drafts._validate
+    captured_graphs: list[dict[str, Any]] = []
+
+    def held_validate(_store, name, graph):
+        captured_graphs.append(graph.model_dump(mode="json"))
+        if len(captured_graphs) == 1:
+            entered.set()
+            assert release.wait(timeout=5)
+        return original_validate(_store, name, graph)
+
+    monkeypatch.setattr(drafts, "_validate", held_validate)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        pending = asyncio.create_task(ac.get("/api/v1/workflow-drafts/wf"))
+        try:
+            async with asyncio.timeout(5):
+                while not entered.is_set():
+                    await asyncio.sleep(0)
+            changed = other.get_workflow("wf").graph.model_copy(deep=True)
+            changed.display_name = f"Other owner accepted {authority}"
+            if authority == "saved":
+                other.save_workflow("wf", WorkflowSaveBody(graph=changed))
+                expected_revision = 0
+                expected_saved = other.get_workflow("wf").artifact_hash
+            else:
+                accepted = workflow_draft_service.WorkflowDraftService(lambda: other).put_draft(
+                    "wf",
+                    graph=changed,
+                    expected_revision=0,
+                )
+                expected_revision = accepted.draft_revision
+                expected_saved = accepted.base_saved_revision
+            assert not pending.done()
+        finally:
+            release.set()
+        response = await pending
+    assert response.status_code == 200
+    body = response.json()
+    assert body["graph"] == changed.model_dump(mode="json")
+    assert body["draft_revision"] == expected_revision
+    assert body["base_saved_revision"] == expected_saved
+    assert captured_graphs[0]["display_name"] != changed.display_name
+    if authority == "saved":
+        assert len(captured_graphs) == 2
+        assert captured_graphs[1] == changed.model_dump(mode="json")
