@@ -7702,3 +7702,13 @@ Final corrected Chromium startup ownership and all 18 canonical critical cases p
 Qualified app-equivalent evidence assembles retained unchanged phases with exact recovery controls; the original `check app` remains FAIL (289 seconds), and the isolated unchanged Napari probe pass does not establish the cause of its original concurrent-run timeout.
 This bounded repair does not certify the full browser projects, published compatibility, native application, or M2 completion.
 Frozen review counts, original failed commands and historical unrun browser counts remain separate from this new behavioral evidence.
+
+
+### M2 configured-policy disposition — ROOT-F002/003
+
+The settings owner now refuses deployment_mode presence in both process modes and workspaces_root presence in webapp generic patches before validation, credential reads/writes or JSON publication, returning the existing structured 403 shape with a safe field-specific detail.
+Settings load/get expose constructor policy and common writes persist it while retaining other preferences and object identity during normalization; accepted preference patches keep their existing snapshot replacement semantics.
+App construction refuses conflicting injected store mode before runtime setup, captures that exact store and process mode for consumers, and normalizes no-store fallback mode on every live read without freezing development preferences.
+Twelve causal REDs now pass within 131 owner controls; actual sparse frontend requests require no adaptation, and loaded persisted administrator roots/explicit deployment precedence/desktop editing remain covered.
+The checkpoint records qualified app phase recovery after sandbox localhost denial, unchanged source/dependencies, original app FAIL and continued Firefox/full/published/native limits; thread fixtures are not public worker certification.
+Initial/distributed pre-load root capture, ROOT-F022 inert dataset-setting clarity, ROOT-F004 cooperating writers, missing guards at other desktop actions and public force/lifetime remain separate open boundaries.

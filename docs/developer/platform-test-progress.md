@@ -652,3 +652,31 @@ Configured-policy ROOT-F002/003 is the next bounded owner packet; public force-R
 
 The one consolidated `scripts/test check docs` passed in 4 s (exit 0; campaign dashboard/links and warning-clean Sphinx) at `3fb17ac` plus the accepted packet/specification/result-record bytes; the exact log is `selection-credential-final-docs.log` in the retrospective directory.
 Selection is task commit `40958bffa6a0daf80390e679f3eb52d767bbd716`; credential rollback is `3f4a20765eced75e878902b02336caac70115291`, preserving exact sequential shared-file ownership.
+
+## Configured-policy repair checkpoint — October 2
+
+ROOT-F002/003 are repaired within process-mode authority and generic webapp administrator-root refusal on `e5a3d0c` plus the frozen ten-path policy source/specification manifest `policy-app-frozen-source.json` in `/private/tmp/bioimageflow-m2-configured-policy/`.
+Twelve distinguishing controls reproduced the owner/load/typed-write/injected-mismatch/fallback-consumer/router defects before source repair and now pass; two initial unloaded-root fixtures failed at `/data` setup before correction and receive no causal policy credit.
+The exact GREEN has pytest 1.58 s and measured 9.696 s but runner output 412 s; that unexplained discrepancy is preserved, not a measured optimization or diagnosed clock shift.
+Focused owners pass all 131 controls in 22 s (measured 22.131 s, pytest 17.41 s, no skipped cases), preserving desktop workspace editing, legitimate web preferences, live development/file-only unsafe behavior and captured new-workflow scheduling.
+Actual frontend callers send sparse preference fields, so no frontend adaptation or duplicate UI regression was added.
+
+The one `env UV_OFFLINE=1 scripts/test check app` FAILED in 177 s (measured 177.616 s): backend 1,923 PASS, two localhost-bind failures and ten external tests intentionally deselected; backend lint passed in 1 s and frontend lint/types/build in 9/1/6 s, with all 1,350 units in 134 files passing in 25 s and zero skipped.
+The app was mistakenly run in the restricted sandbox; both failed held-fixture controls reached EPERM at `socket.create_server(127.0.0.1:0)` before threaded/current-PID worker admission.
+The same two unchanged selectors passed with required local-loopback escalation in 2 s (measured 2.780 s, pytest 0.16 s); these are fixture/thread controls, not spawned Wetlands worker certification.
+Previously unrun logging-order controls passed all seven in 4 s (measured 4.007 s); `env UV_OFFLINE=1 scripts/test check browser-smoke` passed all 18 native critical Chromium cases in 80 s (measured 79.739 s), with required local-server/browser escalation.
+The qualified assembly is 1,923 retained backend successes plus two recovered cases and all app phase obligations; the original app invocation remains FAIL, and no app/full/browser-all repeat was run.
+All ten source/specification hashes remained unchanged; six lock/config files, five installed dependency metadata files and clean editable library `dff04e3` match the preceding accepted main baseline, recorded in `policy-source-dependency-applicability.json`.
+Native titles distinguish 18 cases across 17 source locations because the viewport location has separate small/large parameters; `policy-native-critical-runtime-proof.json` records these exact identities and unchanged fixture sources.
+The final Firefox gate remains externally blocked before application admission, with no retries or new Firefox credit; original full/browser failures, published compatibility and native final-M5 gates remain open.
+The existing per-file ledger stays bound to first-wave `df675a9`; this current dated policy manifest remains separate without rewriting frozen M1 membership/history or the 1,800 rows.
+
+For this policy packet, no new environment or worktree was created: private main dependencies were reused, browser-owned scratch cleanup follows the runner's exit trap, actionable logs/last-run metadata are preserved outside scratch, and the known completed server/runner PIDs and localhost listeners are absent.
+No new recovered-storage claim is made; the preceding first-wave retirement measurements remain the checkpoint above.
+The initial/distributed service graph's pre-load workspace-root capture, ROOT-F022 inert settings metadata and independent-writer ROOT-F004 remain separate open seams.
+The next force/lifetime packet is library-owned explicit-force semantics rather than an inferred Wetlands reuse defect: preserve/reconcile the observed four-ahead/two-behind library histories and dirty held library/T1 trees before bounded source assembly, then strict selected-owner close → public managed removal → provision with replacement false → worker start → successful cache publication.
+False matching warm reuse and established best-effort stop remain supported; close failure retains the retry owner, physical cancellation retains admission until completion, and no compound generation CAS or availability rollback is promised.
+Library-only preservation/reconciliation and repair are authorized for that next packet; its conditional readiness receipts in the retrospective directory are not implementation, runtime, release or published-pin acceptance.
+
+The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed in 5 s (measured 4.562 s, Sphinx phase 4 s, exit 0) at `e5a3d0c` plus the reviewed thirteen-path source/specification/record snapshot; `policy-check-docs.log` and `policy-docs-frozen-source.json` retain the exact gate.
+Policy source, existing-family controls and affected specifications are task commit `07d02a90055f17a5c95711cc339b4120db84c38c`; the separate campaign records preserve the qualified limits without changing accepted product bytes.

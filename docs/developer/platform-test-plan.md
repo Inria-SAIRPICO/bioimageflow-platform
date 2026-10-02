@@ -295,6 +295,7 @@ Run `quick` after a coherent coding increment when development will continue; om
 At feature/repair completion run the smallest required scoped check once before committing or integrating; changed GUI journeys also need exact Chromium and Firefox evidence.
 Cross-stack API/schema/dependency/runtime changes require `check app`; broad architectural/test-infrastructure changes require `check all`, plus `check browser-all` when broad browser/E2E infrastructure is affected, as the lane table requires.
 Do not overlap browser-heavy lanes; do not start a broad browser project while its exact failing selector remains red.
+For lanes or exact controls that start local servers or browsers, select the execution context permitting localhost binding/browser launch on the first attempt; retain any denied original invocation separately from unchanged exact recovery.
 After late failure preserve successful unchanged phases only with relevant source, fixture, dependency/editable-library, generated-artifact, and runtime equivalence; record the original red/interrupted command and all failed/skipped/unrun portions, then rerun only invalidated checks.
 A composite record must identify each phase's revision and applicability rather than call the original command passed.
 Routine status edits use `check campaign` once per consolidated batch before commit; navigation/structure changes, substantial documentation milestones, and final documentation acceptance use `check docs`, which includes it, without a separate preceding campaign check or Sphinx runs for each review draft.
@@ -350,3 +351,11 @@ Native application execution belongs to M5 after automated and external phases; 
 An unavailable obligation remains blocked; explicit owner acceptance may permit closure with a named limitation, never a fabricated pass or a removed denominator cell.
 Readiness alone, raw test counts, and historical dashboard percentages cannot establish completion.
 The final report gives exact validation revisions/results/durations and any retained limitations, with clean committed task changes and a restartable checkpoint.
+
+
+### Next bounded force/lifetime packet after configured policy
+
+The current policy checkpoint qualifies app-phase delivery separately from open full/browser/published/native certification.
+The next library-owned force contract begins with preservation-first reconciliation of the observed four-ahead/two-behind histories and dirty held library/T1 inputs; do not reset, overwrite, import whole WIP trees or publish automatically.
+The reviewed boundary is strict selected-owner close → public managed removal → provision with replacement false → start → cache publication, preserving False warm reuse, retry ownership on failed close and established best-effort stop.
+Platform physical admission/cancellation and later published API pins/worker compatibility require their own aligned acceptance; conditional readiness is not implemented or released behavior.
