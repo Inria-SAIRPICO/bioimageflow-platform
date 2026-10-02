@@ -359,6 +359,8 @@ workspace/
       results/                         # BioImageFlow runtime storage
 ```
 
+In webapp mode the workspace root is administrator-managed; the generic settings route and direct workspace route both refuse client retargeting, while a persisted administrator root becomes authoritative after settings load.
+
 `GET /workspace` reports the workspace, workflow, and reserved tool roots. Each named workflow owns its runtime data under `<workflow-directory>/results`, so moving or deleting the workflow naturally carries or removes its results. Dataset uploads use the configured dataset root or `<workspace>/datasets`.
 
 Saved workflows are organized under `workspace/workflows/` as folders. Each workflow is a directory that contains `workflow.json` and optional workflow-local files such as `tools/`.
@@ -657,7 +659,7 @@ The frontend derives each canvas's visible status projection from its local prov
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/settings` | Get all settings (returns `Settings` model) |
-| `PATCH` | `/settings` | Update settings (partial update, same `Settings` fields) |
+| `PATCH` | `/settings` | Update editable preferences (partial update; deployment-policy and typed-registry fields have separate authorities) |
 
 **Settings schema:**
 
@@ -691,6 +693,16 @@ class Settings(BaseModel):
     workspace_path: str | None = None
     workspaces_root: str | None = None
 ```
+
+Deployment mode is configured by the application process, captured when the application is constructed, and cannot be changed by a settings file or API preference update.
+Settings load and reads expose that effective mode; accepted writes persist it.
+Mode normalization preserves the settings object identity and other live preferences; accepted preference updates retain their existing snapshot replacement semantics.
+Loading a valid conflicting file keeps unrelated values and does not require a mode-only rewrite; existing schema migrations retain their documented write behavior.
+An injected SettingsStore must have the same configured mode as the application; a mismatch is refused before runtime setup, including when the store has not loaded yet.
+Generic settings updates containing `deployment_mode` in either mode or `workspaces_root` in webapp mode are refused with HTTP 403 and `error: settings_policy_read_only`, `field` and a fixed deployment-configuration detail, even if the submitted value echoes the current value.
+The settings owner refuses the whole update before candidate validation, credential access or JSON replacement; it does not silently apply other submitted fields.
+A webapp administrator root may come from explicit deployment configuration or the trusted settings file loaded at startup; request-time workspace, workflow and dataset resolution preserves that authority rather than accepting generic client retargeting.
+Explicit deployment roots retain precedence, desktop workspace editing and ordinary live preferences remain supported, and this policy does not change new-workflow scheduling seeds or file-only unsafe-webapp debugging.
 
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 

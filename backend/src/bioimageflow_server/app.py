@@ -267,6 +267,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = AppConfig(settings_store=SettingsStore.default())
 
+    _deployment_mode = (
+        config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
+    )
+    settings_store = config.settings_store
+    if settings_store is not None and settings_store.deployment_mode != _deployment_mode:
+        raise ValueError("SettingsStore deployment mode must match AppConfig deployment mode")
+
     from bioimageflow.paths import get_tool_store_path
 
     tool_store_path = get_tool_store_path()
@@ -287,10 +294,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # Resolve Settings once: a loaded SettingsStore wins, then caller-supplied
     # settings, then a minimal default. Used for the initial services graph;
     # request-time settings still go through _live_settings().
-    _deployment_mode = (
-        config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
-    )
-    settings_store = config.settings_store
     try:
         store_settings = settings_store.get() if settings_store is not None else None
     except RuntimeError:
@@ -298,6 +301,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     resolved_settings: Settings = (
         store_settings or config.settings or Settings(deployment_mode=_deployment_mode)
     )
+    resolved_settings.deployment_mode = _deployment_mode
     execution_profile_store = config.execution_profile_store
     if execution_profile_store is None and settings_store is not None:
         execution_profile_store = ExecutionProfileStore(
@@ -348,8 +352,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             )
 
     def _live_settings() -> Settings:
-        if config.settings_store is not None:
-            return config.settings_store.get()
+        if settings_store is not None:
+            return settings_store.get()
+        resolved_settings.deployment_mode = _deployment_mode
         return resolved_settings
 
     # Always provide a ConnectionManager in the default app. Production launch
@@ -429,8 +434,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return cached
 
     def _live_dev_mode() -> bool:
-        if config.settings_store is not None:
-            return config.settings_store.get().dev_mode
+        if settings_store is not None:
+            return settings_store.get().dev_mode
         return resolved_settings.dev_mode
 
     workflow_draft_service = WorkflowDraftService(
@@ -498,7 +503,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
     workflow_source_service = WorkflowSourceService(
         _current_workflow_store,
-        deployment_mode_provider=lambda: config.deployment_mode,
+        deployment_mode_provider=lambda: _deployment_mode,
         unsafe_webapp_features_provider=lambda: bool(_live_settings().unsafe_webapp_features),
         has_open_nested_editor=nested_workflow_snapshot_service.has_open_at_or_below,
     )
@@ -580,6 +585,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     catalog = config.package_catalog or PackageCatalogService(
         registry=registry, known=known, pypi=pypi
     )
+
     def _protected_tool_environment_names() -> set[str]:
         if napari_environment_service is None:
             return set()
@@ -617,7 +623,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
             processing_environment_lock=getattr(
-                tool_environment_service, "processing_environment_lock", None,
+                tool_environment_service,
+                "processing_environment_lock",
+                None,
             ),
             environment_replacement_authorizer=getattr(
                 tool_environment_service,
@@ -670,8 +678,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def _lifespan(_app: FastAPI):
         # Settings must load before catalog.refresh() so any settings the
         # catalog might consult (tool_store_path, etc.) are in place.
-        if config.settings_store is not None:
-            await config.settings_store.load()
+        if settings_store is not None:
+            await settings_store.load()
         if (
             napari_environment_service is not None
             and napari_environment_service.store.deployment_mode == "desktop"
@@ -681,8 +689,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             await napari_environment_service.reconcile_managed_operations()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()
-            if config.settings_store is not None:
-                await config.settings_store.ensure_default_execution_target(
+            if settings_store is not None:
+                await settings_store.ensure_default_execution_target(
                     {profile.id for profile in profiles if profile.enabled}
                 )
         if distributed_registry is not None:
@@ -794,8 +802,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     logging.getLogger("bioimageflow").removeHandler(ws_log_handler)
                     logging.getLogger("wetlands").removeHandler(ws_log_handler)
                 ws_manager._loop = None
-            if config.settings_store is not None:
-                await config.settings_store.flush()
+            if settings_store is not None:
+                await settings_store.flush()
             if execution_profile_store is not None:
                 await execution_profile_store.flush()
             if _owns_pypi:
@@ -971,9 +979,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.fiji_launcher = fiji_launcher
     app.dependency_overrides[get_napari_launcher] = lambda: napari_lifecycle
     app.dependency_overrides[get_fiji_launcher] = lambda: fiji_launcher
-    if config.settings_store is not None:
+    if settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
-        app.dependency_overrides[settings_get_store] = lambda: config.settings_store
+        app.dependency_overrides[settings_get_store] = lambda: settings_store
         app.dependency_overrides[settings_get_output_view_probe_path] = (
             _current_stateless_storage_path
         )
@@ -1032,7 +1040,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_workflow_store] = _current_workflow_store
-    app.dependency_overrides[napari_get_deployment_mode] = lambda: config.deployment_mode
+    app.dependency_overrides[napari_get_deployment_mode] = lambda: _deployment_mode
     app.dependency_overrides[fiji_get_result_store] = lambda: result_store
     app.dependency_overrides[fiji_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[fiji_get_settings] = _live_settings
@@ -1041,7 +1049,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app.dependency_overrides[get_workflow_root] = _current_workflow_root
 
-    app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
+    app.dependency_overrides[get_deployment_mode] = lambda: _deployment_mode
     app.dependency_overrides[get_unsafe_webapp_features_enabled] = lambda: (
         _live_settings().enable_unsafe_webapp_features
     )

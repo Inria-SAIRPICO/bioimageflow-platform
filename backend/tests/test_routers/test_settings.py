@@ -309,6 +309,108 @@ class TestPatchSettings:
         assert response.status_code == 403
         assert "desktop mode" in response.json()["detail"]
 
+    @pytest.mark.parametrize(
+        "field,preloaded,explicit_root",
+        [
+            ("deployment_mode", False, False),
+            ("workspaces_root", False, False),
+            ("workspaces_root", True, True),
+        ],
+    )
+    async def test_webapp_policy_patch_keeps_administrator_root_and_consumers(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        field: str,
+        preloaded: bool,
+        explicit_root: bool,
+    ) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+        from types import SimpleNamespace
+        from bioimageflow_server.routers.datasets import get_datasets_root
+
+        path = tmp_path / "settings.json"
+        stored_root = tmp_path / "administrator-users"
+        configured_root = tmp_path / "configured-users"
+        path.write_text(
+            json.dumps({"deployment_mode": "webapp", "workspaces_root": str(stored_root)})
+        )
+        store = SettingsStore(
+            path=path, deployment_mode="webapp", omero_credentials=FakeOmeroCredentials()
+        )
+        if preloaded:
+            await store.load()
+        reveal = MagicMock()
+        export = MagicMock()
+        monkeypatch.setattr("bioimageflow_server.routers.workflows.reveal_in_file_browser", reveal)
+        monkeypatch.setattr(
+            "bioimageflow_server.routers.workflows.WorkflowExportService.export_latest_results_folder",
+            export,
+        )
+        app = create_app(
+            AppConfig(
+                deployment_mode="webapp",
+                settings_store=store,
+                # Initial services precede load; keep their independent fallback disposable.
+                settings=Settings(
+                    deployment_mode="webapp", workspaces_root=str(tmp_path / "initial-only-users")
+                ),
+                user_id="fixture-user",
+                workspaces_root=configured_root if explicit_root else None,
+                tool_registry=ToolRegistryService(),
+                disable_hot_reload=True,
+                package_catalog=SimpleNamespace(refresh=AsyncMock(), list_packages=lambda: []),
+            )
+        )
+        expected_workspace = (
+            (configured_root if explicit_root else stored_root) / "fixture-user" / "workspace"
+        )
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                initial = await client.get("/api/v1/workspace")
+                assert initial.json()["workspace_path"] == str(expected_workspace)
+                before = path.read_bytes()
+                current = store.get()
+                value = "desktop" if field == "deployment_mode" else str(tmp_path / "client-root")
+                refused = await client.patch("/api/v1/settings", json={field: value})
+                assert refused.status_code == 403
+                assert refused.json()["error"] == "settings_policy_read_only"
+                assert refused.json()["field"] == field
+                assert path.read_bytes() == before
+                assert store.get() is current
+                assert (await client.get("/api/v1/settings")).json()["deployment_mode"] == "webapp"
+                workspace = (await client.get("/api/v1/workspace")).json()
+                assert workspace["workspace_path"] == str(expected_workspace)
+                assert workspace["workflows_root"] == str(expected_workspace / "workflows")
+                assert (
+                    app.dependency_overrides[get_datasets_root]() == expected_workspace / "datasets"
+                )
+                assert (
+                    await client.patch(
+                        "/api/v1/workspace",
+                        json={"workspace_path": str(tmp_path / "client-workspace")},
+                    )
+                ).status_code == 403
+                assert (
+                    await client.patch("/api/v1/settings", json={"node_data_page_size": 50})
+                ).status_code == 200
+                assert (
+                    await client.post("/api/v1/workflows/missing/outputs/latest/reveal")
+                ).status_code == 403
+                assert (
+                    await client.post(
+                        "/api/v1/workflows/missing/exports/latest-results-folder",
+                        json={"destination_parent": str(tmp_path), "replace": False},
+                    )
+                ).status_code == 403
+                assert (
+                    await client.patch("/api/v1/settings", json={"fiji_path": "/server/Fiji.app"})
+                ).status_code == 403
+        reveal.assert_not_called()
+        export.assert_not_called()
+
     async def test_patch_empty_body(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={})
         assert response.status_code == 200

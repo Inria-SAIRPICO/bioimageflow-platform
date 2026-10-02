@@ -76,7 +76,8 @@ You can temporarily choose another page size in an individual table.
 ### Workspace path
 
 The workspace contains saved workflows and their workflow-local tools.
-Click **Reveal** to open the displayed location, or click **Browse...** to switch to another workspace.
+In the native desktop app, click **Reveal** to open the displayed location, or click **Browse...** to switch to another workspace.
+In webapp mode the server administrator controls the workspace location; ordinary preferences cannot switch that location or deployment mode.
 
 Changing the workspace does not move workflows from the previous location.
 Local workflow runtime results remain in each workflow's `results` folder.

@@ -442,6 +442,10 @@ Nested source preparation returns the updated accepted snapshot along with the e
 Application-wide integration settings are platform-owned and are not contributed by installed tool packages through schemas, HTML, Vue components, or other executable frontend extensions.
 An integration that needs global configuration is added to the platform core with its storage, validation, secret handling, UI, tests, and compatibility behavior.
 
+Integration consumers use the captured process deployment mode, including when a reused settings file or mutable fallback metadata names another mode.
+The generic settings API cannot switch deployment mode or a webapp administrator workspace root; these policy refusals precede credential access and persistence.
+Trusted startup administrator roots, desktop workspace editing, live development preferences and the explicit file-only unsafe-webapp debug switch retain their existing authority; this introduces no authentication or administrator-role framework.
+
 Managed remote profiles are platform-owned integration settings.
 Desktop users select and explicitly trust a local configuration script, while webapp profiles are provisioned out of band and remain read-only without introducing a new administrator role.
 SSH host, scheduler, project or account, queue, writable root, and optional Modules or Spack initialization remain genuine site facts in the selected script and reusable templates rather than duplicated platform form state.

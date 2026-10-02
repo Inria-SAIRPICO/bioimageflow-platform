@@ -35,6 +35,14 @@ class SettingsRevisionConflict(Exception):
     """A typed registry write targeted an obsolete settings revision."""
 
 
+class SettingsPolicyError(PermissionError):
+    """A generic preference update attempted to change process policy."""
+
+    def __init__(self, field: str) -> None:
+        self.field = field
+        super().__init__(f"{field} is controlled by deployment configuration")
+
+
 class SettingsStore:
     """Async, filesystem-backed Settings holder with atomic writes."""
 
@@ -144,8 +152,8 @@ class SettingsStore:
             payload["new_workflow_execution"] = (
                 "parallel" if legacy_execution == "parsl" else legacy_execution
             )
-        # Ensure deployment_mode is present (it's required on the model).
-        payload.setdefault("deployment_mode", self._deployment_mode)
+        # Persisted metadata cannot override the configured process policy.
+        payload["deployment_mode"] = self._deployment_mode
 
         try:
             self._current = Settings.model_validate(payload)
@@ -168,6 +176,7 @@ class SettingsStore:
         """Return the in-memory snapshot. Call :meth:`load` first."""
         if self._current is None:
             raise RuntimeError("SettingsStore.load() must be awaited before get()")
+        self._current.deployment_mode = self._deployment_mode
         return self._current
 
     @property
@@ -180,12 +189,17 @@ class SettingsStore:
         async with self._lock:
             if self._current is None:
                 raise RuntimeError("SettingsStore.load() must be awaited before patch()")
+            if "deployment_mode" in changes:
+                raise SettingsPolicyError("deployment_mode")
+            if self._deployment_mode == "webapp" and "workspaces_root" in changes:
+                raise SettingsPolicyError("workspaces_root")
             # NOTE: ``model_copy(update=changes)`` does NOT run validators in
             # Pydantic v2. Use ``model_validate`` over the merged dict so
             # extra="forbid" and custom validators apply.
             merged = {
                 **self._current.model_dump(),
                 **self._strip_omero_passwords(changes),
+                "deployment_mode": self._deployment_mode,
             }
             candidate = Settings.model_validate(merged)
             password_writes = self._prepare_omero_passwords(changes, candidate)
@@ -317,6 +331,7 @@ class SettingsStore:
 
     def _write_atomic(self, settings: Settings) -> None:
         """Write ``settings`` atomically: temp file then ``os.replace``."""
+        settings.deployment_mode = self._deployment_mode
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         envelope: dict[str, Any] = {"settings_version": CURRENT_SETTINGS_VERSION}
         envelope.update(settings.model_dump(mode="json"))

@@ -108,13 +108,19 @@ async def test_create_app_creates_missing_tool_store(
     assert store.is_dir()
 
 
-async def test_automatic_environment_preparation_uses_one_service_guard(empty_tool_store: Path) -> None:
+async def test_automatic_environment_preparation_uses_one_service_guard(
+    empty_tool_store: Path,
+) -> None:
     from bioimageflow_server.routers.execution import get_execution_manager
     from bioimageflow_server.routers.tools import get_tool_environment_service
 
-    app = create_app(AppConfig(
-        tool_registry=ToolRegistryService(), pypi_versions=_FakePypi(), disable_hot_reload=True,
-    ))
+    app = create_app(
+        AppConfig(
+            tool_registry=ToolRegistryService(),
+            pypi_versions=_FakePypi(),
+            disable_hot_reload=True,
+        )
+    )
     service = app.dependency_overrides[get_tool_environment_service]()
     execution = app.dependency_overrides[get_execution_manager]()
     workflow = SimpleNamespace(
@@ -644,6 +650,7 @@ async def test_installer_receives_hot_reload_service(
     app = create_app(config=config)
 
     from bioimageflow_server.routers.tools import get_package_installer
+
     installer = app.dependency_overrides[get_package_installer]()
     assert isinstance(installer, PypiPackageInstaller)
     # Installer holds a reference to the hot-reload service.
@@ -698,3 +705,49 @@ def test_app_config_accepts_both_settings_and_settings_store(tmp_path: Path):
     cfg = AppConfig(settings=settings, settings_store=store)
     assert cfg.settings is settings
     assert cfg.settings_store is store
+
+
+@pytest.mark.parametrize("process_mode,store_mode", [("webapp", "desktop"), ("desktop", "webapp")])
+def test_conflicting_store_mode_is_refused_before_runtime_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, process_mode: str, store_mode: str
+) -> None:
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    def forbidden_setup(*args: object, **kwargs: object) -> None:
+        pytest.fail("conflicting policy reached runtime setup")
+
+    monkeypatch.setattr("bioimageflow_server.app.configure_wetlands", forbidden_setup)
+    store = SettingsStore(path=tmp_path / "settings.json", deployment_mode=store_mode)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="deployment mode"):
+        create_app(AppConfig(deployment_mode=process_mode, settings_store=store))
+    assert not store.path.exists()
+
+
+async def test_fallback_mode_mutation_cannot_change_process_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import MagicMock
+    from bioimageflow_server.routers import napari, tools, workflows
+
+    reveal = MagicMock()
+    monkeypatch.setattr("bioimageflow_server.routers.workflows.reveal_in_file_browser", reveal)
+    settings = Settings(deployment_mode="desktop", workspaces_root=str(tmp_path / "users"))
+    config = AppConfig(
+        deployment_mode="webapp", settings=settings, tool_registry=ToolRegistryService()
+    )
+    app = create_app(config)
+    config.deployment_mode = "desktop"
+    settings.deployment_mode = "desktop"
+    settings.external_editor = "live-preference-retained"
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/v1/workflows/missing/outputs/latest/reveal")
+    assert response.status_code == 403
+    reveal.assert_not_called()
+    effective = app.dependency_overrides[workflows.get_settings]()
+    assert effective is settings
+    assert effective.deployment_mode == "webapp"
+    assert effective.external_editor == "live-preference-retained"
+    assert app.dependency_overrides[tools.get_deployment_mode]() == "webapp"
+    assert app.dependency_overrides[napari.get_deployment_mode]() == "webapp"

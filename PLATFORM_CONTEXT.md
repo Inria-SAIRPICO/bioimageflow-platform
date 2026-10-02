@@ -259,6 +259,8 @@ Preserve these invariants unless an approved specification change explicitly rep
 - Path resolution, archive extraction, uploads, editor launches, and trusted Python authoring must reject traversal, symlink escape, and unintended server-path access.
 - Mutation, publication, export, execution, and result reads operate on explicitly identified accepted snapshots.
 - Expected operational failures return stable, actionable error categories and leave durable state coherent.
+- Deployment mode is captured process configuration: SettingsStore load/read/write and no-store live Settings reads expose that mode, and generic settings updates reject `deployment_mode` in both modes and `workspaces_root` in webapp mode before credential or JSON effects.
+  App construction refuses an injected store with a conflicting configured mode before runtime setup; persisted administrator webapp roots remain available after authoritative settings load, while desktop workspace editing and ordinary live preferences remain supported.
 - SettingsStore owns secret-free settings JSON and synchronous OMERO credential compensation: every distinct planned password-write key is read before any attempted write, and known pre-replacement failures preserve settings while attempting exact restoration of attempted credentials.
   Restoration is best effort through the injected provider; cross-resource atomicity, later replacement/acknowledgement faults and process termination are outside this guarantee.
 

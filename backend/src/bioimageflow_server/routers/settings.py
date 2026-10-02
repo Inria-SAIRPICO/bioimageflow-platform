@@ -13,7 +13,7 @@ from pydantic import ConfigDict, ValidationError
 from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.settings import OMEROInstanceResponse, Settings
 from bioimageflow_server.services.omero_credentials import OmeroCredentialError
-from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.settings_store import SettingsPolicyError, SettingsStore
 from bioimageflow_server.services.fiji_launcher import (
     FijiInstallationError,
     resolve_fiji_installation,
@@ -95,13 +95,15 @@ def _resolved_tool_store_path(store: SettingsStore):
 
 def _keyring_http_error(exc: OmeroCredentialError) -> HTTPException:
     _logger.error("Settings keyring operation failed: %s", exc, exc_info=exc)
-    return mark_exception_logged(HTTPException(
-        status_code=500,
-        detail={
-            "error": "settings_keyring_error",
-            "detail": str(exc),
-        },
-    ))
+    return mark_exception_logged(
+        HTTPException(
+            status_code=500,
+            detail={
+                "error": "settings_keyring_error",
+                "detail": str(exc),
+            },
+        )
+    )
 
 
 @router.get("", response_model=SettingsResponse)
@@ -165,6 +167,11 @@ async def patch_settings(
         )
     try:
         await store.patch(body)
+    except SettingsPolicyError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "settings_policy_read_only", "detail": str(exc), "field": exc.field},
+        ) from exc
     except ValidationError as exc:
         # Re-raise as RequestValidationError so the existing handler in
         # app.py produces the standard ErrorResponse shape.

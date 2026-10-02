@@ -58,6 +58,22 @@ class FakeOmeroCredentials:
 
 
 class TestLoad:
+    @pytest.mark.parametrize("configured,persisted", [("webapp", "desktop"), ("desktop", "webapp")])
+    async def test_persisted_mode_cannot_override_process_policy(
+        self, tmp_path: Path, configured: str, persisted: str
+    ) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"deployment_mode": persisted, "external_editor": "code"}))
+        before = path.read_bytes()
+        store = SettingsStore(path=path, deployment_mode=configured)  # type: ignore[arg-type]
+        current = await store.load()
+        assert current.deployment_mode == configured
+        assert current.external_editor == "code"
+        assert path.read_bytes() == before
+        result = await store.patch({"node_data_page_size": 50})
+        assert result.deployment_mode == configured
+        assert _read_disk(path)["deployment_mode"] == configured
+
     async def test_default_uses_standard_user_path(
         self,
         tmp_path: Path,
@@ -283,6 +299,60 @@ class TestGet:
 
 
 class TestPatch:
+    @pytest.mark.parametrize(
+        "configured,field,value",
+        [
+            ("webapp", "deployment_mode", "desktop"),
+            ("desktop", "deployment_mode", "desktop"),
+            ("webapp", "workspaces_root", "/client-root"),
+        ],
+    )
+    async def test_process_policy_refusal_precedes_credentials_and_publication(
+        self, tmp_path: Path, configured: str, field: str, value: str
+    ) -> None:
+        path = tmp_path / "settings.json"
+        credentials = FakeOmeroCredentials()
+        store = SettingsStore(path=path, deployment_mode=configured, omero_credentials=credentials)  # type: ignore[arg-type]
+        current = await store.load()
+        before = path.read_bytes()
+        with pytest.raises(PermissionError) as refused:
+            await store.patch(
+                {
+                    field: value,
+                    "omero_instances": [
+                        {
+                            "name": "disposable",
+                            "host": "fixture.invalid",
+                            "username": "fake-user",
+                            "password": "fake-password",
+                        }
+                    ],
+                }
+            )
+        assert refused.value.field == field
+        assert "fake-password" not in str(refused.value)
+        assert store.get() is current
+        assert path.read_bytes() == before
+        assert credentials.read_keys == credentials.writes == credentials.deleted == []
+        assert credentials.passwords == {}
+
+    async def test_typed_registry_write_keeps_effective_mode_and_live_preferences(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "settings.json"
+        store = SettingsStore(path=path, deployment_mode="webapp")
+        current = await store.load()
+        current.deployment_mode = "desktop"
+        current.external_editor = "retained-live-value"
+        result = await store.patch_napari_registry(0, {"napari_filename_rules": []})
+        assert result.deployment_mode == "webapp"
+        assert result.external_editor == "retained-live-value"
+        assert store.get() is result
+        assert _read_disk(path)["deployment_mode"] == "webapp"
+        result.deployment_mode = "desktop"
+        assert store.get() is result
+        assert result.deployment_mode == "webapp"
+
     @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     async def test_patch_updates_state_and_disk(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
