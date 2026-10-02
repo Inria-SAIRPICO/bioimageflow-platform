@@ -194,16 +194,12 @@ class TestPatchSettings:
             mac_launcher.write_text("launcher")
             mac_launcher.chmod(0o755)
 
-        response = await settings_client.patch(
-            "/api/v1/settings", json={"fiji_path": str(root)}
-        )
+        response = await settings_client.patch("/api/v1/settings", json={"fiji_path": str(root)})
 
         assert response.status_code == 200
         assert response.json()["fiji_path"] == str(root)
 
-        cleared = await settings_client.patch(
-            "/api/v1/settings", json={"fiji_path": None}
-        )
+        cleared = await settings_client.patch("/api/v1/settings", json={"fiji_path": None})
         assert cleared.status_code == 200
         assert cleared.json()["fiji_path"] is None
 
@@ -213,9 +209,7 @@ class TestPatchSettings:
         root = tmp_path / "Fiji.app"
         root.mkdir()
 
-        response = await settings_client.patch(
-            "/api/v1/settings", json={"fiji_path": str(root)}
-        )
+        response = await settings_client.patch("/api/v1/settings", json={"fiji_path": str(root)})
 
         assert response.status_code == 422
         assert response.json()["error"] == "invalid_fiji_path"
@@ -234,9 +228,7 @@ class TestPatchSettings:
         assert response.status_code == 200
         assert response.json()["node_data_page_size"] == 100
 
-        invalid = await settings_client.patch(
-            "/api/v1/settings", json={"node_data_page_size": 75}
-        )
+        invalid = await settings_client.patch("/api/v1/settings", json={"node_data_page_size": 75})
         assert invalid.status_code == 422
 
     async def test_patch_unknown_key(self, settings_client: httpx.AsyncClient) -> None:
@@ -261,9 +253,7 @@ class TestPatchSettings:
             root_dir=workflows_root,
             tool_registry=ToolRegistryService(),
         )
-        store.create_workflow(
-            WorkflowCreate(name="retargeted", display_name="Retargeted")
-        )
+        store.create_workflow(WorkflowCreate(name="retargeted", display_name="Retargeted"))
         workflow_file = workflows_root / "retargeted" / "workflow.json"
 
         response = await settings_client.patch(
@@ -420,36 +410,53 @@ class TestPatchSettings:
         assert response.status_code == 200
         assert credentials.deleted == ["omero.example.com:4064:admin"]
 
+    @pytest.mark.parametrize("mutate_first", [False, True], ids=["before", "after"])
     async def test_patch_omero_keyring_failure_returns_error_without_persisting(
         self,
         omero_settings_client: tuple[httpx.AsyncClient, SettingsStore, FakeOmeroCredentials, Path],
         caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+        mutate_first: bool,
     ) -> None:
         client, store, credentials, path = omero_settings_client
-        before_disk = path.read_text()
-        before_settings = store.get()
-        credentials.fail_set = True
+        instance = {"name": "Existing", "host": "omero.example.com", "username": "admin"}
+        await store.patch({"omero_instances": [instance]})
+        credentials.passwords["omero.example.com:4064:admin"] = "prior-password"
+        before_disk, before_settings = path.read_bytes(), store.get()
+        failure = OmeroCredentialError("keyring write failed")
+        original_set = credentials.set_password
+        fired = False
 
+        def set_once(key: OmeroCredentialKey, password: str) -> None:
+            nonlocal fired
+            if not fired:
+                fired = True
+                if mutate_first:
+                    original_set(key, password)
+                raise failure
+            original_set(key, password)
+
+        monkeypatch.setattr(credentials, "set_password", set_once)
         with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.settings"):
             response = await client.patch(
                 "/api/v1/settings",
-                json={
-                    "omero_instances": [
-                        {
-                            "host": "omero.example.com",
-                            "username": "admin",
-                            "password": "secret",
-                        }
-                    ]
-                },
+                json={"omero_instances": [{**instance, "password": "replacement-secret"}]},
             )
-
         assert response.status_code == 500
         assert response.json()["error"] == "settings_keyring_error"
-        assert path.read_text() == before_disk
-        assert store.get() is before_settings
+        assert path.read_bytes() == before_disk and store.get() is before_settings
+        assert credentials.passwords == {"omero.example.com:4064:admin": "prior-password"}
         assert "Settings keyring operation failed" in caplog.text
         assert "HTTP 500 returned" not in caplog.text
+        followup = await client.get("/api/v1/settings")
+        assert followup.status_code == 200
+        assert followup.json()["omero_instances"] == [
+            {**instance, "port": 4064, "password_stored": True}
+        ]
+        assert "prior-password" not in followup.text and "replacement-secret" not in followup.text
+        assert all(
+            '"password"' not in text for text in [followup.text, response.text, path.read_text()]
+        )
 
 
 class TestDevModeAtModelLayer:

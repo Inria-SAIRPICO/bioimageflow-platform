@@ -188,19 +188,33 @@ class SettingsStore:
                 **self._strip_omero_passwords(changes),
             }
             candidate = Settings.model_validate(merged)
-            written_password_keys = self._write_omero_passwords(changes, candidate)
+            password_writes = self._prepare_omero_passwords(changes, candidate)
+            preimages: dict[OmeroCredentialKey, str | None] = {}
+            for key, _password in password_writes:
+                if key not in preimages:
+                    preimages[key] = self._omero_credentials.get_password(key)
+            attempted: dict[OmeroCredentialKey, None] = {}
             try:
+                for key, password in password_writes:
+                    attempted.setdefault(key, None)
+                    self._omero_credentials.set_password(key, password)
                 self._write_atomic(candidate)
-            except Exception:
-                for key in written_password_keys:
+            except BaseException:
+                failed_restorations = 0
+                for key in reversed(attempted):
                     try:
-                        self._omero_credentials.delete_password(key)
-                    except OmeroCredentialError:
-                        logger.warning(
-                            "Failed to roll back OMERO credential %s after settings write failure",
-                            key.username,
-                            exc_info=True,
-                        )
+                        original = preimages[key]
+                        if original is None:
+                            self._omero_credentials.delete_password(key)
+                        else:
+                            self._omero_credentials.set_password(key, original)
+                    except BaseException:
+                        failed_restorations += 1
+                if failed_restorations:
+                    logger.warning(
+                        "OMERO credential rollback could not restore %d keys",
+                        failed_restorations,
+                    )
                 raise
             self._cleanup_removed_omero_passwords(self._current, candidate)
             self._current = candidate
@@ -334,9 +348,9 @@ class SettingsStore:
         ]
         return stripped
 
-    def _write_omero_passwords(
+    def _prepare_omero_passwords(
         self, changes: dict[str, Any], candidate: Settings
-    ) -> list[OmeroCredentialKey]:
+    ) -> list[tuple[OmeroCredentialKey, str]]:
         if "omero_instances" not in changes:
             return []
         raw_instances = changes["omero_instances"]
@@ -353,23 +367,7 @@ class SettingsStore:
             key = OmeroCredentialKey.from_instance(candidate.omero_instances[index])
             to_write.append((key, patch_instance.password))
 
-        written: list[OmeroCredentialKey] = []
-        try:
-            for key, password in to_write:
-                self._omero_credentials.set_password(key, password)
-                written.append(key)
-        except Exception:
-            for key in written:
-                try:
-                    self._omero_credentials.delete_password(key)
-                except OmeroCredentialError:
-                    logger.warning(
-                        "Failed to roll back OMERO credential %s after keyring write failure",
-                        key.username,
-                        exc_info=True,
-                    )
-            raise
-        return written
+        return to_write
 
     def _cleanup_removed_omero_passwords(self, previous: Settings, candidate: Settings) -> None:
         old_keys = [

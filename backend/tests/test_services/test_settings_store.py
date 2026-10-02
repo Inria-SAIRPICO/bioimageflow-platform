@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -35,12 +36,16 @@ class FakeOmeroCredentials:
         self.fail_set = False
         self.fail_set_after: int | None = None
         self.set_calls = 0
+        self.read_keys: list[OmeroCredentialKey] = []
+        self.writes: list[tuple[OmeroCredentialKey, str]] = []
 
     def get_password(self, key: OmeroCredentialKey) -> str | None:
+        self.read_keys.append(key)
         return self.passwords.get(key.username)
 
     def set_password(self, key: OmeroCredentialKey, password: str) -> None:
         self.set_calls += 1
+        self.writes.append((key, password))
         if self.fail_set:
             raise OmeroCredentialError("keyring write failed")
         if self.fail_set_after is not None and self.set_calls > self.fail_set_after:
@@ -104,9 +109,7 @@ class TestLoad:
         assert result.new_workflow_execution == "sequential"
 
     @pytest.mark.campaign_excluded(reason="parsl")
-    async def test_legacy_execution_engine_parsl_loads_as_parallel(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_legacy_execution_engine_parsl_loads_as_parallel(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         path.write_text(
             json.dumps(
@@ -142,9 +145,7 @@ class TestLoad:
         assert result.new_workflow_execution == "parallel"
         assert result.default_execution_target_id == "local"
 
-    async def test_legacy_cache_pruning_keys_are_ignored_on_load(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_legacy_cache_pruning_keys_are_ignored_on_load(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         path.write_text(
             json.dumps(
@@ -296,9 +297,7 @@ class TestPatch:
         assert store.get().new_workflow_execution == "parallel"
 
     @pytest.mark.campaign_excluded(reason="parsl")
-    async def test_patch_old_execution_engine_is_rejected(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_patch_old_execution_engine_is_rejected(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)
         await store.load()
@@ -450,20 +449,28 @@ class TestPatch:
         credentials = FakeOmeroCredentials()
         store = SettingsStore(path=tmp_path / "s.json", omero_credentials=credentials)
         await store.load()
-        await store.patch(
+        aliases = [
             {
-                "omero_instances": [
-                    {
-                        "host": "omero.example.com",
-                        "username": "admin",
-                        "password": "secret",
-                    }
-                ]
-            }
+                "name": "First",
+                "host": "omero.example.com",
+                "username": "admin",
+                "password": "first",
+            },
+            {
+                "name": "Second",
+                "host": " omero.example.com ",
+                "username": " admin ",
+                "password": "last",
+            },
+        ]
+        await store.patch({"omero_instances": aliases})
+        assert credentials.passwords == {"omero.example.com:4064:admin": "last"}
+        await store.patch(
+            {"omero_instances": [{k: v for k, v in aliases[1].items() if k != "password"}]}
         )
-
+        assert credentials.deleted == []
+        assert credentials.passwords == {"omero.example.com:4064:admin": "last"}
         await store.patch({"omero_instances": []})
-
         assert credentials.deleted == ["omero.example.com:4064:admin"]
         assert credentials.passwords == {}
 
@@ -515,39 +522,38 @@ class TestPatch:
         assert store.get() is before_memory
         assert credentials.passwords == {}
 
+    @pytest.mark.parametrize(
+        "original", [None, "", "prior-password"], ids=["absent", "empty", "populated"]
+    )
     async def test_omero_settings_write_failure_rolls_back_written_password(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original: str | None
     ) -> None:
         credentials = FakeOmeroCredentials()
         path = tmp_path / "s.json"
         store = SettingsStore(path=path, omero_credentials=credentials)
         await store.load()
-        before_disk = path.read_text()
-        before_memory = store.get()
+        instance = {"host": "omero.example.com", "username": "admin"}
+        await store.patch({"omero_instances": [instance]})
+        key = OmeroCredentialKey("bioimageflow-omero", "omero.example.com:4064:admin")
+        if original is not None:
+            credentials.passwords[key.username] = original
+        before_passwords = dict(credentials.passwords)
+        before_disk, before_memory = path.read_bytes(), store.get()
+        failure = OSError("rename failed")
 
         def boom(*_: Any, **__: Any) -> None:
-            raise OSError("rename failed")
+            raise failure
 
         monkeypatch.setattr(os, "replace", boom)
-
-        with pytest.raises(OSError):
-            await store.patch(
-                {
-                    "omero_instances": [
-                        {
-                            "host": "omero.example.com",
-                            "username": "admin",
-                            "password": "secret",
-                        }
-                    ]
-                }
-            )
-
-        assert path.read_text() == before_disk
+        with pytest.raises(OSError) as raised:
+            await store.patch({"omero_instances": [{**instance, "password": "replacement-secret"}]})
+        assert raised.value is failure
+        assert path.read_bytes() == before_disk
         assert store.get() is before_memory
-        assert credentials.passwords == {}
-        assert credentials.deleted == ["omero.example.com:4064:admin"]
-        assert "password" not in path.read_text()
+        assert credentials.passwords == before_passwords
+        assert credentials.deleted == ([key.username] if original is None else [])
+        assert "replacement-secret" not in path.read_text()
+        assert '"password"' not in path.read_text()
 
     async def test_omero_partial_keyring_set_failure_rolls_back_written_keys(
         self, tmp_path: Path
@@ -579,7 +585,190 @@ class TestPatch:
 
         assert path.read_text() == before_disk
         assert credentials.passwords == {}
-        assert credentials.deleted == ["one.example.com:4064:admin"]
+        assert credentials.deleted == ["two.example.com:4064:admin", "one.example.com:4064:admin"]
+
+    @pytest.mark.parametrize("fault", ["before", "after", "interruption"])
+    async def test_omero_attempted_set_failure_restores_originals(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        records = [
+            {"host": f"{name}.example.com", "username": "admin"} for name in ["one", "two", "three"]
+        ]
+        await store.patch({"omero_instances": records})
+        keys = [OmeroCredentialKey.from_instance(x) for x in store.get().omero_instances]
+        credentials.passwords = {keys[0].username: "old-one", keys[2].username: "untouched"}
+        before = dict(credentials.passwords)
+        before_disk, before_memory = path.read_bytes(), store.get()
+        failure = (
+            asyncio.CancelledError("interrupted")
+            if fault == "interruption"
+            else OmeroCredentialError("write refused")
+        )
+        original_set = credentials.set_password
+        fired = False
+
+        def set_once(key: OmeroCredentialKey, password: str) -> None:
+            nonlocal fired
+            if key == keys[1] and not fired:
+                fired = True
+                if fault != "before":
+                    original_set(key, password)
+                raise failure
+            original_set(key, password)
+
+        monkeypatch.setattr(credentials, "set_password", set_once)
+        with pytest.raises(type(failure)) as raised:
+            await store.patch({"omero_instances": [{**x, "password": "new"} for x in records]})
+        assert raised.value is failure
+        assert credentials.passwords == before
+        assert path.read_bytes() == before_disk
+        assert store.get() is before_memory
+        assert credentials.deleted == [keys[1].username]
+        assert keys[2] in credentials.read_keys
+        assert all(key != keys[2] for key, _ in credentials.writes)
+
+    async def test_omero_preimage_read_failure_precedes_all_mutations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        before_disk, before_memory = path.read_bytes(), store.get()
+        credentials.passwords["one.example.com:4064:admin"] = "prior"
+        before = dict(credentials.passwords)
+        failure = OmeroCredentialError("snapshot refused")
+        original_get = credentials.get_password
+
+        def get_once(key: OmeroCredentialKey) -> str | None:
+            value = original_get(key)
+            if key.username.startswith("two."):
+                raise failure
+            return value
+
+        def no_write(_settings: Settings) -> None:
+            pytest.fail("settings publication attempted before complete preimages")
+
+        monkeypatch.setattr(credentials, "get_password", get_once)
+        monkeypatch.setattr(store, "_write_atomic", no_write)
+        with pytest.raises(OmeroCredentialError) as raised:
+            await store.patch(
+                {
+                    "omero_instances": [
+                        {"host": f"{name}.example.com", "username": "admin", "password": "new"}
+                        for name in ["one", "two"]
+                    ]
+                }
+            )
+        assert raised.value is failure
+        assert credentials.writes == [] and credentials.deleted == []
+        assert credentials.passwords == before
+        assert path.read_bytes() == before_disk and store.get() is before_memory
+
+    async def test_omero_alias_failure_restores_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        credentials.passwords["omero.example.com:4064:admin"] = "prior"
+        before_disk, before_memory = path.read_bytes(), store.get()
+        failure = OSError("replace refused")
+
+        def boom(*_: Any, **__: Any) -> None:
+            raise failure
+
+        monkeypatch.setattr(os, "replace", boom)
+        with pytest.raises(OSError) as raised:
+            await store.patch(
+                {
+                    "omero_instances": [
+                        {
+                            "name": "First",
+                            "host": "omero.example.com",
+                            "username": "admin",
+                            "password": "first",
+                        },
+                        {
+                            "name": "Second",
+                            "host": " omero.example.com ",
+                            "username": " admin ",
+                            "password": "second",
+                        },
+                    ]
+                }
+            )
+        assert raised.value is failure
+        assert len(credentials.read_keys) == 1
+        assert [password for _key, password in credentials.writes] == ["first", "second", "prior"]
+        assert credentials.passwords == {"omero.example.com:4064:admin": "prior"}
+        assert credentials.deleted == []
+        assert path.read_bytes() == before_disk and store.get() is before_memory
+
+    async def test_omero_failed_restoration_continues_without_secret_logs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        records = [
+            {"host": f"{name}.example.com", "username": "admin"} for name in ["one", "two", "three"]
+        ]
+        await store.patch({"omero_instances": records})
+        keys = [OmeroCredentialKey.from_instance(x) for x in store.get().omero_instances]
+        credentials.passwords = {keys[0].username: "old-one", keys[2].username: "old-three"}
+        before_disk, before_memory = path.read_bytes(), store.get()
+        failure = OmeroCredentialError("initial write refused")
+        sentinel = "RESTORE-SECRET-SENTINEL"
+        original_set, original_delete = credentials.set_password, credentials.delete_password
+        rollback: list[tuple[str, OmeroCredentialKey]] = []
+        failing = False
+
+        def set_fault(key: OmeroCredentialKey, password: str) -> None:
+            nonlocal failing
+            if failing:
+                rollback.append(("set", key))
+                if key == keys[2]:
+                    raise OmeroCredentialError(sentinel) from RuntimeError(sentinel)
+            original_set(key, password)
+            if key == keys[2] and not failing:
+                failing = True
+                raise failure
+
+        def delete_fault(key: OmeroCredentialKey) -> None:
+            rollback.append(("delete", key))
+            if key == keys[1]:
+                raise OmeroCredentialError(sentinel) from RuntimeError(sentinel)
+            original_delete(key)
+
+        monkeypatch.setattr(credentials, "set_password", set_fault)
+        monkeypatch.setattr(credentials, "delete_password", delete_fault)
+        with caplog.at_level(logging.WARNING, logger="bioimageflow_server.services.settings_store"):
+            with pytest.raises(OmeroCredentialError) as raised:
+                await store.patch({"omero_instances": [{**x, "password": "new"} for x in records]})
+        assert raised.value is failure
+        assert rollback == [("set", keys[2]), ("delete", keys[1]), ("set", keys[0])]
+        assert credentials.passwords == {
+            keys[0].username: "old-one",
+            keys[1].username: "new",
+            keys[2].username: "new",
+        }
+        assert path.read_bytes() == before_disk and store.get() is before_memory
+        records_logged = [
+            x for x in caplog.records if x.name == "bioimageflow_server.services.settings_store"
+        ]
+        assert len(records_logged) == 1
+        record = records_logged[0]
+        assert record.getMessage() == "OMERO credential rollback could not restore 2 keys"
+        assert record.args == (2,) and record.exc_info is None
+        assert sentinel not in caplog.text
+        assert all(key.username not in caplog.text for key in keys)
 
 
 class TestFlush:

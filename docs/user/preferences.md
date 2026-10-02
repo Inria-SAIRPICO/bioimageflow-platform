@@ -106,7 +106,8 @@ Click **Remove demos** to remove only recognized bundled examples and their mana
 Add an OMERO connection with a display name, host, port, username, and password.
 BioImageFlow stores the password in the operating system credential service and reports only whether one is stored.
 
-Removing a connection also removes its stored credential after confirmation.
+Connections with the same host, port and username share a password.
+After confirmation, removing a connection deletes that password only when no remaining connection uses it.
 Tools that support OMERO let you choose one of these named connections in their own parameters.
 
 ## Launcher version and updates

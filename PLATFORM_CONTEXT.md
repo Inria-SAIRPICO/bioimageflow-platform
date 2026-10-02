@@ -259,6 +259,8 @@ Preserve these invariants unless an approved specification change explicitly rep
 - Path resolution, archive extraction, uploads, editor launches, and trusted Python authoring must reject traversal, symlink escape, and unintended server-path access.
 - Mutation, publication, export, execution, and result reads operate on explicitly identified accepted snapshots.
 - Expected operational failures return stable, actionable error categories and leave durable state coherent.
+- SettingsStore owns secret-free settings JSON and synchronous OMERO credential compensation: every distinct planned password-write key is read before any attempted write, and known pre-replacement failures preserve settings while attempting exact restoration of attempted credentials.
+  Restoration is best effort through the injected provider; cross-resource atomicity, later replacement/acknowledgement faults and process termination are outside this guarantee.
 
 ## Repository map
 

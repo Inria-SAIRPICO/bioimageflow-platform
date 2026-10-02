@@ -694,6 +694,14 @@ class Settings(BaseModel):
 
 `GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
+Before any attempted password write, the settings owner validates all planned writes and captures one original string-or-absent value for every distinct planned write key.
+Submitted writes retain their order: an omitted or null password requests no write, while an explicit empty string is a stored value.
+On a known failure before settings JSON replacement, it attempts to restore every distinct attempted key once in reverse first-attempt order, including a setter that changed its value before raising or synchronously interrupted the operation.
+Original strings, including empty strings, are restored exactly; only an originally absent credential is deleted.
+Restoration continues after individual provider failures, preserves the original failure, and reports failed restorations using only a fixed warning and integer count, without credential identities, values or restoration exception text/tracebacks.
+This is best-effort compensation within one settings operation, not an atomic settings/keyring transaction or protection against other credential writers; restoration can fail, and accepted replacement, later acknowledgement faults and process termination have no rollback guarantee.
+Known pre-replacement failures preserve the previous in-memory settings and exact settings JSON bytes, independently of whether the credential provider permits full restoration.
+
 Settings schema version 3 persists the Phase B napari environment registry and ordered filename rules while preserving Fiji. The settings store reads the former `execution_engine` preference from existing files when `new_workflow_execution` is absent; the live model, API, and new writes use only `new_workflow_execution`.
 When a user forgets an adopted legacy napari installation, settings also retain its canonical root as an opt-out from automatic startup adoption.
 The generic `PATCH /settings` route returns these fields but rejects direct napari registry or durable-operation mutation; revision-checked typed routes own environment registration, rename/locate/forget, managed create/copy/retry/removal, operation polling/cancellation, default selection, probe, rule creation/reordering, and first-match preview.
@@ -1511,7 +1519,8 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 OMERO data access is supplied by dedicated tool packages; the platform UI manages credentials but does not browse or broker OMERO data itself.
 
-The OMERO tab lists named server instances with host, port, username, password status, and Add, Save, Duplicate, and Remove actions. The display name defaults to `{host}:{username}` and must be unique. Passwords are submitted only when explicitly saved, stored through the operating-system keyring under service `bioimageflow-omero` and username `{host}:{port}:{username}`, omitted from settings JSON, and represented by `password_stored` in API responses. Removing an instance asks for confirmation and removes its stored credential.
+The OMERO tab lists named server instances with host, port, username, password status, and Add, Save, Duplicate, and Remove actions. The display name defaults to `{host}:{username}` and must be unique. Passwords are submitted only when explicitly saved, stored through the operating-system keyring under service `bioimageflow-omero` and username `{host}:{port}:{username}`, omitted from settings JSON, and represented by `password_stored` in API responses. Named instances with the same normalized host, port and username share one credential; the last explicitly submitted password wins.
+Removing an instance asks for confirmation and deletes that shared credential only when no retained instance still references it.
 
 ### 3.13 Drag and Drop (File Import)
 
