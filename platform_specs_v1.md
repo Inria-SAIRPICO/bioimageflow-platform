@@ -1146,6 +1146,8 @@ Its contents are independent of the Tools panel search field; opening the dialog
 | **"Use in workflow" button** | Sets the selected version as the active version for the current workflow. Only available for installed versions. When clicked, if the workflow already uses a different version of this package, a confirmation dialog is shown: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Their cached results will need re-execution. Continue?" |
 
 Multiple versions of the same package can be installed simultaneously. Each workflow uses **one version per package**, selected via the "Use in workflow" button.
+Portable nodes retain their explicit module/class/package/version binding through translation and compilation even when a same-named catalog tool has another active version or class kind.
+Only explicit version rebind changes that package dependency; module/class-only references do not become package dependencies through catalog-name matching.
 
 Below the TreeTable, the dialog includes an inline footer explicitly labelled **Install tool package**. The footer has one line of controls: a GitHub/GitLab repository URL text field, an **or** label, a **Select .zip archive** file picker, and an **Install** button. This footer installs unknown package sources that are not yet listed in the table; it must not be represented as a row-level action, search flow, or secondary modal. URL and archive inputs are mutually exclusive. In locked-down webapp mode this arbitrary package-source footer is hidden and the backend rejects it; approved package rows may still be installed through their version controls.
 
@@ -1257,7 +1259,8 @@ For `ProcessingTool` nodes, the Node Panel includes a collapsible **Resources** 
 **Defaults:** Fields are pre-filled from the tool's `ResourceSpec` declaration (the tool author's minimum requirements). If the tool has no `ResourceSpec`, fields use the library defaults (1 CPU, 0 GPU, no declared memory requirement, unlimited concurrency).
 
 **Semantics:** CPU, GPU, memory, and GPU-memory values are worker requirements used to select workers or request backend capacity, with the tool author's declaration as a minimum floor.
-The GUI assists entry and backend/library validation enforces those floors.
+The GUI assists entry and backend/library validation enforces those floors against the actual materialized class, including for portable and source-bound nodes.
+A same-named catalog class cannot reject or reinterpret bound overrides; actual DataFrame overrides are refused during validation and before publishing a portable archive.
 Users may raise capacity requirements, but a nonzero maximum-concurrency override may only lower an existing nonzero declared cap; zero cannot remove that cap.
 Actual available capacity, allocation, and enforcement belong to the execution backend or deployment site, so these portable requirements do not promise OS memory limits or a guaranteed allocation.
 Requirements do not affect cache identity, and sequential/parallel scheduling remains workflow configuration ([v2 Sections 2 and 8](platform_specs_v2.md#2-canonical-graph-document)).
@@ -1666,6 +1669,8 @@ A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`m
 Its `graph` is the sole recursive editable definition, including layout and node presentation state; there is no separate persisted `workflow` payload or `gui` graph.
 Root draft revision-CAS, private nested-snapshot revision-CAS, explicit promotion/apply, identity generations, source ownership, and workflow-owned runtime results follow [v2 Sections 2, 7, and 12](platform_specs_v2.md#2-canonical-graph-document).
 The library workflow is compiled from the accepted graph in memory for validation, execution, and portable export.
+Default serialization preserves accepted root and nested engine/scheduling configuration without loading carried bound packages; compilation derives the root engine from enabled recursive actual capabilities and materializes once without installing missing packages.
+Validation supplies actual bound-node schemas in `node_tools`, retaining installed package/version and read-only provenance separately from editable owned sources.
 
 Panel layout preferences (which panels are open, sizes) are stored in **user-level settings** (not per-workflow).
 

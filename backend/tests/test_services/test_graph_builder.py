@@ -3,6 +3,8 @@
 # Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
 # pyright can't evaluate this runtime metadata statically.
 
+import hashlib
+import os
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,6 +24,7 @@ from bioimageflow_server.models.graph import (
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
 
 
 # ---- Mock tool classes (module-level so from_dict can re-import) -----------
@@ -174,6 +177,216 @@ def test_built_workflow_uses_wetlands(
     assert errors == []
     assert workflow.engine_type == "wetlands"
     assert workflow.execution == "parallel"
+
+
+@pytest.mark.parametrize("catalog_kind", ["dataframe", "higher_processing_floor"])
+def test_owned_processing_resources_follow_captured_source_not_catalog(
+    tmp_path: Path, catalog_kind: str,
+) -> None:
+    """Materialize real owned bytes before testing the platform adapter boundary."""
+    from bioimageflow import NodeResourceOverrides, Workflow
+    from bioimageflow_core import ResourceSpec
+
+    source = """from bioimageflow_core import IOModel, ProcessingTool, RowConsumption, ResourceSpec, EnvironmentSpec
+class Outputs(IOModel):
+    value: int
+class BoundTool(ProcessingTool):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(name='binding-test', dependencies={})
+    resources = ResourceSpec(cpu=2)
+    Outputs = Outputs
+    def process_row(self, arguments, *, context=None):
+        return self.Outputs(value=1)
+"""
+    record = {
+        "id": "bound-source", "module": "bound", "filename": "bound.py",
+        "source_hash": hashlib.sha256(source.encode()).hexdigest(), "source": source,
+    }
+    node = {
+        "type": "tool", "name": "bound", "tool_module": "bound",
+        "tool_class": "BoundTool", "tool_package": None,
+        "tool_package_version": None, "source_module": record["id"], "constants": {},
+        "resource_overrides": NodeResourceOverrides(cpu=3).to_dict(),
+    }
+    payload = {
+        "archive_version": 1, "custom_sources": [record],
+        "workflow": {
+            "schema_version": 1, "name": "bound", "display_name": "Bound",
+            "nodes": [node], "edges": [], "interface": {"inputs": [], "outputs": []},
+            "config": {"engine": "wetlands", "execution": "sequential"},
+        },
+    }
+    # This control uses the actual public loader and actual source class. It
+    # neither provisions a worker nor computes a mocked result.
+    control = Workflow.from_dict(payload, storage_path=tmp_path / "control", auto_install=False)
+    assert isinstance(control.nodes["bound"].tool, ProcessingTool)
+    assert type(control.nodes["bound"].tool).__name__ == "BoundTool"
+    assert control.nodes["bound"].effective_resources.cpu == 3
+    assert control.engine_type == "wetlands"
+    node["resource_overrides"]["cpu"] = 1
+    with pytest.raises(ValueError, match="below tool floor 2"):
+        Workflow.from_dict(payload, storage_path=tmp_path / "invalid-control", auto_install=False)
+    node["resource_overrides"]["cpu"] = 3
+
+    from bioimageflow_server.services.graph_translator import lib_dict_to_graph_state
+    graph = lib_dict_to_graph_state(payload["workflow"])
+    owned = OwnedWorkflowSources(tmp_path / "owned")
+    staged = owned.stage([record])
+    try:
+        owned.publish(staged)
+    finally:
+        owned.discard(staged)
+    registry = ToolRegistryService()
+    if catalog_kind == "dataframe":
+        catalog_class = MockDataFrameTool
+    else:
+        class CatalogProcessingTool(MockProcessingTool):
+            row_consumption = RowConsumption.MAPPED
+            resources = ResourceSpec(cpu=8)
+        catalog_class = CatalogProcessingTool
+    registry.register_tool("BoundTool", _make_metadata("BoundTool", catalog_class), tool_class=catalog_class)
+    built = build_workflow(graph, registry, storage_path=tmp_path / "owned" / "outputs")
+
+    assert built.errors == []
+    assert isinstance(built.workflow.nodes["bound"].tool, ProcessingTool)
+    assert type(built.workflow.nodes["bound"].tool).__name__ == "BoundTool"
+    assert built.workflow.nodes["bound"].effective_resources.cpu == 3
+    assert built.workflow.engine_type == "wetlands"
+    assert built.workflow.execution == "sequential"
+    graph.nodes[0].resources.cpu = 1
+    invalid = build_workflow(graph, registry, storage_path=tmp_path / "owned" / "invalid-outputs")
+    assert any(
+        error.type == "parameter_invalid" and error.node == "bound"
+        and "below tool floor 2" in error.detail
+        for error in invalid.errors
+    )
+
+
+@pytest.mark.parametrize("case", ["preserve", "rebind", "missing_version", "missing_class", "dataframe_resources", "export_resources", "metadata"])
+def test_portable_version_binding_uses_public_loaded_class_and_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
+) -> None:
+    """Two local package versions distinguish executable identity, not only wire fields."""
+    from bioimageflow import Workflow
+    from bioimageflow.tool_loader import load_versioned_package, unload_versioned_package
+    from bioimageflow_server.services.graph_translator import lib_dict_to_graph_state
+
+    package = "binding_probe"
+    store = Path(os.environ["BIOIMAGEFLOW_TOOL_STORE"])
+    definitions = {
+        "1.0.0": """from bioimageflow_core import IOModel, ProcessingTool, RowConsumption, EnvironmentSpec
+class Outputs(IOModel):
+    value: int
+class BoundTool(ProcessingTool):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(name='bound-v1', dependencies={})
+    Outputs = Outputs
+    def process_row(self, arguments, *, context=None):
+        return self.Outputs(value=1)
+""",
+        "2.0.0": """from bioimageflow import DataFrameTool
+from bioimageflow_core import IOModel
+class Outputs(IOModel):
+    value: int
+class BoundTool(DataFrameTool):
+    accepts_upstream = False
+    Outputs = Outputs
+""",
+    }
+    for version, source in definitions.items():
+        directory = store / package / version / package
+        directory.mkdir(parents=True)
+        (directory / "__init__.py").write_text(source)
+    portable = {
+        "schema_version": 1, "name": "bound", "display_name": "Bound",
+        "nodes": [{
+            "type": "tool", "name": "bound", "tool_module": package,
+            "tool_class": "BoundTool", "tool_package": package,
+            "tool_package_version": "1.0.0", "constants": {},
+        }],
+        "edges": [], "interface": {"inputs": [], "outputs": []},
+        "config": {"engine": "wetlands", "execution": "sequential"},
+    }
+    try:
+        first = load_versioned_package(package, "1.0.0", store)
+        second = load_versioned_package(package, "2.0.0", store)
+        control = Workflow.from_dict(portable, storage_path=tmp_path / "control", auto_install=False)
+        assert type(control.nodes["bound"].tool) is first.BoundTool
+        assert control.engine_type == "wetlands"
+        registry = ToolRegistryService()
+        metadata = _make_metadata("BoundTool", second.BoundTool).model_copy(update={
+            "package": package, "package_version": "2.0.0",
+        })
+        registry.register_tool("BoundTool", metadata, tool_class=second.BoundTool)
+        if case == "rebind":
+            from bioimageflow_server.services.graph_translator import rebind_lib_dict_versions
+            portable = rebind_lib_dict_versions(portable, registry)
+        elif case == "missing_version":
+            portable["nodes"][0]["tool_package_version"] = "9.0.0"
+        elif case == "missing_class":
+            portable["nodes"][0]["tool_class"] = "MissingClass"
+        elif case in {"dataframe_resources", "export_resources"}:
+            from bioimageflow import NodeResourceOverrides
+            portable["nodes"][0]["tool_package_version"] = "2.0.0"
+            portable["nodes"][0]["resource_overrides"] = NodeResourceOverrides(cpu=3).to_dict()
+            registry = ToolRegistryService()
+        elif case == "metadata":
+            registry = ToolRegistryService()
+
+        if case == "export_resources":
+            from bioimageflow_server.services.workflow_archive import BioImageFlowWorkflowArchiveAdapter
+            destination = tmp_path / "invalid.zip"
+            with pytest.raises(ValueError, match="ProcessingTool"):
+                BioImageFlowWorkflowArchiveAdapter().export_archive(
+                    portable, destination, storage_path=tmp_path / "export-results",
+                )
+            assert not destination.exists()
+            return
+
+        graph = lib_dict_to_graph_state(portable)
+        if case == "missing_class":
+            graph.nodes[0].tool_name = "BoundTool"
+        before = graph.model_dump(mode="json")
+        calls = []
+        real_from_dict = Workflow.from_dict
+        def materialize(*args, **kwargs):
+            calls.append(kwargs)
+            return real_from_dict(*args, **kwargs)
+        monkeypatch.setattr(Workflow, "from_dict", materialize)
+        built = build_workflow(graph, registry, storage_path=tmp_path / "outputs")
+        assert len(calls) == 1
+        assert graph.model_dump(mode="json") == before
+        if case in {"missing_version", "missing_class"}:
+            assert any(error.node == "bound" for error in built.errors)
+            assert "bound" not in built.workflow.nodes
+        elif case == "dataframe_resources":
+            assert any(
+                error.type == "parameter_invalid" and error.node == "bound"
+                and error.field == "resources" and "ProcessingTool" in error.detail
+                for error in built.errors
+            )
+        elif case == "metadata":
+            from bioimageflow_server.services.graph_validator import _validation_from_compilation
+            validation = _validation_from_compilation(graph, built, dev_mode=False)
+            metadata = validation.node_tools["bound"]
+            assert metadata.tool_type == "ProcessingTool"
+            assert metadata.outputs["value"]["type"] == "int"
+            assert (metadata.package, metadata.package_version) == (package, "1.0.0")
+            assert metadata.source_kind == "package"
+            assert metadata.editable is False
+        else:
+            assert built.errors == []
+            expected_class, expected_engine = (
+                (second.BoundTool, "direct") if case == "rebind"
+                else (first.BoundTool, "wetlands")
+            )
+            assert (type(built.workflow.nodes["bound"].tool), built.workflow.engine_type) == (
+                expected_class, expected_engine,
+            )
+
+    finally:
+        for version in definitions:
+            unload_versioned_package(package, version)
 
 
 def test_processing_tool_can_feed_dataframe_tool_positionally(

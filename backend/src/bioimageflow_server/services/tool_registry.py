@@ -496,10 +496,16 @@ class ToolRegistryService:
         return set().union(*(names for root, names in self._owned_source_roots.items() if path.is_relative_to(root)))
 
     @classmethod
-    def metadata_for_class(cls, tool_class: type) -> ToolMetadata:
+    def metadata_for_class(
+        cls, tool_class: type, *, package: str = "__custom__",
+        version: str = "local", editable: bool = True,
+    ) -> ToolMetadata:
         """Describe a resolved node without modifying the workspace registry."""
         registry = cls()
-        registry._register_tool_from_class(tool_class, tool_class.__name__, "__custom__", "local", source_kind="custom", editable=True)
+        registry._register_tool_from_class(
+            tool_class, tool_class.__name__, package, version,
+            source_kind="custom" if editable else "package", editable=editable,
+        )
         metadata = registry.get_tool(tool_class.__name__)
         assert metadata is not None
         return metadata

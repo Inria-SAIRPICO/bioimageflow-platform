@@ -111,7 +111,8 @@ Complete upstream DataFrames connect positionally, and the library rejects colum
 Tool annotation introspection resolves postponed and inherited annotations while preserving GUI and image metadata, so registry schemas and execution validation describe the same declared types.
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
-The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound tools, without replacing same-named registry entries.
+The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
+Installed bindings retain their package/version and read-only provenance; owned sources retain their editable custom provenance.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain the previous usable registry entries.
 Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
@@ -121,6 +122,8 @@ Do not infer structural names from UI labels or filenames.
 Installed package tools are versioned dependencies resolved through the tool store.
 Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
 An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
+A carried module/class/package/version binding takes precedence over a same-named catalog entry during translation and compilation; only explicit version rebind changes that dependency.
+Explicit package references remain package requirements even when the catalog has a same-named custom tool, while module/class-only references are local references without an invented package requirement.
 The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
@@ -194,7 +197,9 @@ The backend uv lock currently resolves the sibling BioImageFlow orchestrator and
 
 The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
 Local execution preserves Direct and Wetlands through the existing local path.
-The platform selects Direct for ordinary DataFrame-only graphs and Wetlands when enabled recursive processing or source-bound nodes require it; the graph's engine field is not proof that a worker ran.
+Default library serialization preserves accepted root and child engine/scheduling configuration without loading carried packages.
+Compilation derives one root engine from enabled recursive actual bound capabilities, selects Direct for ordinary DataFrame-only graphs and Wetlands for processing or owned-source nodes, and materializes once without installing packages; the graph's engine field is not proof that a worker ran.
+Resources are checked against the actual materialized class, including a scoped refusal of DataFrame overrides during validation and refusal before publishing a portable archive.
 DataFrameTool execution stays in the orchestrator in either case, while platform worker acceptance tests use a real ProcessingTool and verify process identity and outputs.
 Direct remains useful for focused library tests and does not certify worker serialization, isolation, or lifecycle behavior.
 Managed remote execution delegates deployment, validation, Parsl orchestration, scheduler submission, attachment, progress, diagnostics, cancellation, retry, result transfer, and cleanup to the public `bioimageflow.cluster` API.

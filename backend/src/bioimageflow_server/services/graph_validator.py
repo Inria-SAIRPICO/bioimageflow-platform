@@ -167,10 +167,17 @@ def _validation_from_compilation(
                     continue
                 if isinstance(item, WorkflowNodeState):
                     collect(node.workflow, item.workflow, (*scope, item.id))
-                elif item.source_module:
-                    node_tools["/".join((*scope, item.id))] = (
-                        ToolRegistryService.metadata_for_class(type(node.tool))
-                    )
+                elif item.source_module or (item.tool_module and item.tool_class):
+                    if item.source_module:
+                        metadata = ToolRegistryService.metadata_for_class(type(node.tool))
+                    else:
+                        from bioimageflow.tool_loader import get_tool_package_info
+                        package, version, _module = get_tool_package_info(node.tool)
+                        metadata = ToolRegistryService.metadata_for_class(
+                            type(node.tool), package=package or item.tool_package or "",
+                            version=version or item.tool_package_version or "", editable=False,
+                        )
+                    node_tools["/".join((*scope, item.id))] = metadata
 
         collect(workflow, graph)
 

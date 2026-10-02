@@ -21,6 +21,7 @@ from bioimageflow_server.services.graph_translator import (
     graph_requires_wetlands,
     lib_validation_error_to_graph_error,
 )
+from bioimageflow_server.services.materialized_resources import materialized_resource_errors
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_artifacts import capture_working_graph, capture_library_sources
 
@@ -64,7 +65,8 @@ def _build_workflow(
 
     graph, sources = capture_working_graph(graph, storage_path.parent, registry)
     registry.watch_owned_sources(storage_path.parent, graph)
-    translation = graph_state_to_lib_dict(graph, registry)
+    root_engine = "wetlands" if graph_requires_wetlands(graph, registry) else "direct"
+    translation = graph_state_to_lib_dict(graph, registry, root_engine=root_engine)
     errors: list[GraphValidationError] = list(translation.errors)
     # Named workflows own their sources beside their results directory. Nested
     # graphs use that same root storage context and archive-level source table.
@@ -76,12 +78,13 @@ def _build_workflow(
         validate_only=True,
         partial=True,
         on_progress=on_progress,
-        engine="wetlands" if graph_requires_wetlands(graph, registry) else "direct",
+        engine=root_engine,
         execution=translation.lib_dict["config"]["execution"],
         auto_install=False,
     )
     assert isinstance(result, tuple)
     workflow, lib_errors = result
+    errors.extend(materialized_resource_errors(workflow, translation.lib_dict))
 
     for library_error in lib_errors:
         translated = lib_validation_error_to_graph_error(library_error)

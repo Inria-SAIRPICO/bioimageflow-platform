@@ -45,8 +45,8 @@ def _tool_library_identity(
 ) -> tuple[str, str, str | None, str | None]:
     """Resolve one tool without inspecting private library state."""
 
-    if node.source_module is not None and node.tool_module and node.tool_class:
-        # Owned source identity takes precedence over a same-named live tool.
+    if node.tool_module and node.tool_class:
+        # Carried executable identity takes precedence over a same-named catalog tool.
         return (
             node.tool_module,
             node.tool_class,
@@ -61,17 +61,6 @@ def _tool_library_identity(
 
         package, version, module = get_tool_package_info(tool_class)
         return module, tool_class.__name__, package, version
-
-    if node.tool_module and node.tool_class:
-        # Portable imports can carry a fully specified tool that is not in the
-        # live registry yet.  The library's public loader reports the precise
-        # missing package/source error during validation.
-        return (
-            node.tool_module,
-            node.tool_class,
-            node.tool_package,
-            node.tool_package_version,
-        )
 
     error_type: Literal["missing_tool", "missing_package"] = (
         "missing_package" if metadata is not None else "missing_tool"
@@ -155,7 +144,10 @@ def _graph_to_library(
             if node.resources.has_overrides():
                 from bioimageflow_core.tool import ProcessingTool
 
-                tool_class = registry.get_tool_class(node.tool_name)
+                tool_class = (
+                    None if node.tool_module and node.tool_class
+                    else registry.get_tool_class(node.tool_name)
+                )
                 if tool_class is not None and not issubclass(tool_class, ProcessingTool):
                     errors.append(
                         GraphValidationError(
@@ -217,44 +209,63 @@ def graph_requires_wetlands(
     graph: GraphState,
     registry: ToolRegistryService,
 ) -> bool:
-    """Return whether any enabled recursive node requires worker execution."""
+    """Resolve enabled recursive capabilities for compilation only.
 
+    Serialization never calls this helper: resolving a carried package can
+    execute its trusted initialization, but cannot install or provision it.
+    """
+    import importlib
+    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
     from bioimageflow_core.tool import ProcessingTool
 
-    for node in graph.nodes:
-        if not node.enabled:
-            continue
-        if isinstance(node, WorkflowNodeState):
-            if graph_requires_wetlands(node.workflow, registry):
+    classes: dict[tuple[str, str, str | None, str | None], type | None] = {}
+
+    def requires(current: GraphState) -> bool:
+        for node in current.nodes:
+            if not node.enabled:
+                continue
+            if isinstance(node, WorkflowNodeState):
+                if requires(node.workflow):
+                    return True
+                continue
+            if node.source_module:
                 return True
-            continue
-        # Owned source bytes are resolved during compilation, not by the global
-        # catalog. Use the worker-capable engine rather than a same-named class.
-        if node.source_module:
-            return True
-        tool_class = registry.get_tool_class(node.tool_name)
-        if tool_class is None or issubclass(tool_class, ProcessingTool):
-            return True
-    return False
+            if node.tool_module and node.tool_class:
+                key = (node.tool_module, node.tool_class, node.tool_package, node.tool_package_version)
+                if key not in classes:
+                    try:
+                        if node.tool_package and node.tool_package_version:
+                            load_versioned_package(node.tool_package, node.tool_package_version)
+                            candidate = resolve_tool_class(
+                                node.tool_package, node.tool_package_version,
+                                node.tool_module, node.tool_class,
+                            )
+                        else:
+                            candidate = getattr(importlib.import_module(node.tool_module), node.tool_class)
+                        classes[key] = candidate if isinstance(candidate, type) else None
+                    except Exception:
+                        # The canonical materializer supplies the scoped error.
+                        classes[key] = None
+                tool_class = classes[key]
+            else:
+                tool_class = registry.get_tool_class(node.tool_name)
+            if tool_class is None or issubclass(tool_class, ProcessingTool):
+                return True
+        return False
+
+    return requires(graph)
 
 
 def graph_state_to_lib_dict(
     graph: GraphState,
     registry: ToolRegistryService,
+    *,
+    root_engine: str | None = None,
 ) -> TranslationResult:
-    """Translate the accepted recursive graph through one code path."""
-
+    """Serialize the accepted graph, preserving config unless compilation overrides it."""
     errors: list[GraphValidationError] = []
-    resolved_engine = (
-        "wetlands" if graph_requires_wetlands(graph, registry) else "direct"
-    )
     return TranslationResult(
-        lib_dict=_graph_to_library(
-            graph,
-            registry,
-            errors,
-            root_engine=resolved_engine,
-        ),
+        lib_dict=_graph_to_library(graph, registry, errors, root_engine=root_engine),
         errors=errors,
     )
 
@@ -636,11 +647,13 @@ def _is_local_tool_reference(
 ) -> bool:
     """Return whether a tool is workflow-local rather than installable."""
 
-    return (
-        node.get("tool_package") == "__custom__"
-        or isinstance(node.get("source_module"), str)
-        or getattr(metadata, "source_kind", None) == "custom"
-    )
+    if node.get("tool_package") == "__custom__" or isinstance(node.get("source_module"), str):
+        return True
+    if node.get("tool_package") is not None:
+        return False
+    if node.get("tool_module") and node.get("tool_class"):
+        return True
+    return getattr(metadata, "source_kind", None) == "custom"
 
 
 def _has_embedded_tool_source(node: dict[str, Any]) -> bool:
@@ -762,7 +775,7 @@ def rebind_lib_dict_versions(
         package_name = str(node.get("tool_package") or (metadata.package if metadata else ""))
         package = registry.get_package(package_name) if package_name else None
         version = package.active_version if package and package.active_version else None
-        if version is None and metadata is not None:
+        if version is None and metadata is not None and metadata.package == package_name:
             version = metadata.package_version
         if package_name and version:
             node["tool_package"] = package_name

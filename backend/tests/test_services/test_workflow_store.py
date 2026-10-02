@@ -124,6 +124,10 @@ def test_save_and_get_use_the_graph_as_display_authority(tmp_path: Path) -> None
 def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="demo"))
+    from bioimageflow_server.models.tools import PackageInfo
+    store.tool_registry.register_package("example-tools", PackageInfo(
+        name="example-tools", installed_versions=["1.0.0", "2.0.0"], active_version="2.0.0",
+    ))
     child_payload = _graph("child").model_dump(mode="json", by_alias=True)
     child_payload["nodes"] = [
         {
@@ -156,6 +160,9 @@ def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path)
     graph = GraphState.model_validate(graph_payload)
     store.save_workflow("demo", WorkflowSaveBody(graph=graph))
 
+    loaded = store.get_workflow("demo").graph
+    assert loaded.nodes[0].workflow.nodes[0].tool_package_version == "1.0.0"
+    assert loaded == GraphState.model_validate(graph_payload)
     rebound = store.rebind_versions("demo").graph
 
     child_node = rebound.nodes[0]
@@ -167,6 +174,9 @@ def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path)
     assert inner.position == (37, 91)
     assert inner.collapsed is True
     assert inner.name == "Inner label"
+    assert inner.tool_package == "example-tools"
+    assert inner.tool_package_version == "2.0.0"
+    assert store.get_workflow("demo").graph == rebound
 
 
 def test_unknown_persisted_sections_are_rejected_without_fallback(tmp_path: Path) -> None:
