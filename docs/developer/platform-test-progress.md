@@ -763,3 +763,41 @@ These results bind `3ee2ffe` plus the six-file `wetlands-completion-applied.json
 
 The reviewed owning six-file candidate is committed as `0652aa5ede5bed10e189be7db328da0c8d6e419e` on `campaign/wetlands-completion`; it is not merged to the owning release branch or published.
 The separate routine platform `scripts/test check campaign` checkpoint check passed in 0.127 seconds against main `d8a50bb` plus this progress append; no platform runtime or full certification was repeated.
+
+
+### October 2 Wetlands 2.5.0 local candidate — draft PR open, upstream CI pending
+
+The independently reviewed completion implementation is prepared as a clean 2.5.0 candidate at `f4409ce8b551be6dff62e26ee535ccdd9b47c131` on the local `campaign/wetlands-completion` branch.
+Package, worker-runtime and owning lock versions match; execution/management protocols remain 1, and all other 105-package lock content is unchanged.
+Three affected handshake/runtime controls passed (pytest 2.22 seconds; command wall duration not separately captured, with Python 3.14 pytest/pluggy SyntaxWarnings retained); unchanged implementation retains its prior 616-test/static/strict-doc evidence.
+Clean wheel and sdist build passed in 3.531 seconds and Twine accepted both artifacts; all 29 Python modules plus `py.typed` in the wheel match the candidate source, and sdist required/excluded contents were verified.
+Separate source-disabled Python 3.14 installs each passed nine public completion/outcome/callback controls, with eighteen unrelated controls deselected, plus package/worker-version, module-origin and CLI checks; measured installation/control batches were 3.961 seconds for wheel and 13.540 seconds for sdist.
+Artifact/source/dependency closure is frozen in `wetlands-250-artifacts-proof.json` and the installed-wheel/sdist receipts; these are local candidate checks, not published package or physical worker acceptance.
+
+The initial release-only reconciliation of the mixed private environment remained silent at an observed 4 minutes 10 seconds before the owned command chain was stopped; its setup boundary is preserved and no cause is attributed.
+The same frozen release preparation succeeded in a fresh minimal `.venv-release` (27 locked tools installed in 1.34 seconds), without repeating the unchanged fast suite.
+The unused mixed environment and both completed artifact-smoke environments were removed after library runtime stopped; all three paths are absent, while candidate artifacts/source and receipts remain preserved.
+Cleanup removed 126,672,838 regular-file reference bytes (147,038,208 stat-block reference bytes) in 137.251 seconds; these are reference counts, not attributed reclaimed allocation.
+The observed free-space deltas were /Users/amasson/Travail/bioimageflow-platform: +18,927,616 bytes, /private/tmp: +18,927,616 bytes; observations may describe the same volume and are not summed or attributed to deletion.
+The unmerged candidate worktree and minimal release tools remain owned for candidate/release handoff; platform installed dependencies and all protected roots are unchanged.
+
+Automatic approval review rejected branch upload and draft-PR creation before execution because exporting candidate source to `arthursw/wetlands` requires explicit trusted-user authorization.
+The user then explicitly approved source push and draft-PR creation; the SSH attempt failed before upload (0.922 seconds, public-key/askpass authentication), and the same authorized destination succeeded through per-command existing gh HTTPS authentication (push 2.687 seconds, PR creation 2.520 seconds).
+[Draft PR #5](https://github.com/arthursw/wetlands/pull/5) is open at exact head `f4409ce8b551be6dff62e26ee535ccdd9b47c131`; no global authentication configuration or credentials were printed or changed.
+The exact-head [CI run 37048171797](https://github.com/arthursw/wetlands/actions/runs/37048171797) has all 25 required jobs present: lint, eighteen three-OS/Python 3.9–3.14 fast jobs, Python 3.9 compatibility, three real-Pixi jobs, strict docs and package validation.
+The independent October 2 snapshot contains successful, running and queued jobs; the final required-CI outcome is pending, while push-only documentation deployment is outside the PR gate.
+Local library development may consume the frozen unpublished wheel in its own private environment after handoff, but cannot claim published-floor, upstream-CI or platform/worker certification.
+No owner-main merge, tag, GitHub release, PyPI publication or platform-pin change is authorized or credited.
+
+
+### Local library public-completion adaptation — qualified WIP checkpoint
+
+The isolated library at `3859b318dbdf69271f1d3fd6f5f7d7df7e8b0a96` has six reviewed source/test/specification working inputs frozen in `public-completion-final-source.json`; it is not integrated or committed as a supported release.
+Only its private environment installs the unpublished Wetlands 2.5.0 wheel (`17cdfb01e3bba26218b1580dc4b752d7fc86083f5d6e824b7b5781b6d469c062`), with all 29 modules plus `py.typed` matching the candidate and module origins outside source.
+The force-only unsupported-runtime refusal failed once before repair, then seven exact unit controls passed in pytest 1.13 seconds (measured 1.491 seconds); five affected owner families passed 76 tests with no skips in pytest 1.21 seconds (measured 1.593 seconds).
+The first owner invocation's optional `atlas_env` collection error is preserved; recovery exposes only own-tree fixture code, not a published-tool compatibility result.
+Force controls/shared fakes were split into an existing core family, a focused recreation family and testkit to meet the mandatory size/import guards; historical→current selector mapping is preserved without duplicate coverage credit.
+The initial Ruff unused-import failure is retained; its behavior-neutral correction recovered whole-tree Ruff in 0.066 seconds, while scoped env-manager Pyright passed in 1.709 seconds and size/import guards passed in 0.191/0.516 seconds.
+Strict whole-library Sphinx `-W --keep-going` passed in 53.192 seconds; these are qualified source-development results, not another whole-library suite or physical worker/process certification.
+Current library source version 0.8.7, root/package Wetlands floor ≥2.4.2 and committed lock 2.4.2 remain unaligned with the new public API; release metadata/floor/lock alignment against published Wetlands and subsequent published-wheel/platform/worker acceptance still block supported source delivery.
+Platform installed dependencies remain unchanged; original full/browser failures, final Firefox admission block and desktop-final-M5 restriction remain open.
