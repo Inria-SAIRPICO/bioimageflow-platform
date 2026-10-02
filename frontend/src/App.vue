@@ -58,7 +58,7 @@ import { useSettingsPanel } from './composables/useSettingsPanel'
 import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
 import { useNestedWorkflowSessionsStore } from './stores/nestedWorkflowSessions'
-import { useWorkflowStore } from './stores/workflow'
+import { useWorkflowStore, type WorkflowPresentationCause } from './stores/workflow'
 import { useCanvasLifecycleStore } from './stores/canvasLifecycle'
 import type { GraphState, MissingTool } from './api/types'
 import type { WorkflowDraftResponse } from './api/workflowDrafts'
@@ -308,6 +308,11 @@ const openCanvasPanelIds = new Set<string>()
 const rootPanelActivationOrder: string[] = []
 let canvasActivationRequest = 0
 let rootOpenRequest = 0
+let pendingRootActivation: Readonly<{
+  api: DockviewApi
+  targetPanelId: string
+  cause: WorkflowPresentationCause
+}> | null = null
 function onRootWorkflowOpenStarted(): void {
   // An accepted user Open owns presentation before its asynchronous load ends.
   rootOpenRequest += 1
@@ -446,7 +451,7 @@ async function resolveAndOpenStartupWorkflow(api: DockviewApi): Promise<void> {
     if (!openRootPanel(api)) showEmptyCanvasState(api)
     return
   }
-  if (startup && openWorkflowCanvasPanel(startup)) {
+  if (startup && openWorkflowCanvasPanel(startup, 'startup')) {
     if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(startup.workflowName).catch(() => undefined)
     return
   }
@@ -765,13 +770,17 @@ function dockviewParams(panel: IDockviewPanel): Record<string, unknown> {
 }
 
 function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
+  const cause = pendingRootActivation?.api === dockviewApi.value
+    && pendingRootActivation.targetPanelId === panel.id
+    ? pendingRootActivation.cause
+    : 'foreground'
   const canvasId = canvasIdFromPanelId(panel.id)
   const workflowNameFromId = workflowIdFromPanelId(panel.id)
   const sessionId = sessionIdFromNestedWorkflowPanelId(panel.id)
   if (sessionId) {
     const session = nestedWorkflowSessionsStore.sessionById(sessionId)
     if (session?.parentWorkflowName) {
-      workflowStore.activateWorkflow(session.parentWorkflowName, canvasId)
+      workflowStore.activateWorkflow(session.parentWorkflowName, canvasId, cause)
     }
     uiStore.setCanvasWorkflow(
       canvasId,
@@ -782,7 +791,7 @@ function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
     rememberRootActivation(panel.id)
     const params = dockviewParams(panel)
     const workflowName = workflowNameFromId
-    workflowStore.activateWorkflow(workflowName, canvasId)
+    workflowStore.activateWorkflow(workflowName, canvasId, cause)
     const label = canvasContexts.get(panel.id)?.workflowDisplayName
       ?? params.workflowDisplayName
       ?? workflowName
@@ -1051,8 +1060,8 @@ async function activateWorkflowFallback(
       const workflowName = workflowInfoId(workflow)
       if (excludedWorkflowNames.has(workflowName)) continue
       try {
-        const presentation = await loadRootWorkflowPresentation(workflowName)
-        if (openRootPanel(api) || openWorkflowCanvasPanel(presentation)) {
+        const presentation = await loadRootWorkflowPresentation(workflowName, { presentationCause: 'passive' })
+        if (openRootPanel(api) || openWorkflowCanvasPanel(presentation, 'passive')) {
           if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
           return
         }
@@ -1145,8 +1154,8 @@ async function replaceMountedWorkflowGeneration(
     closeAndForgetNestedCanvasesForWorkflow(workflowName)
     api.removePanel(panel)
     await workflowStore.resetWorkflowPresentationGeneration(workflowName)
-    const presentation = await loadRootWorkflowPresentation(workflowName)
-    if (!openWorkflowCanvasPanel(presentation)) {
+    const presentation = await loadRootWorkflowPresentation(workflowName, { presentationCause: 'passive' })
+    if (!openWorkflowCanvasPanel(presentation, 'passive')) {
       throw new Error(`Workflow '${workflowName}' could not be reopened at its fresh generation.`)
     }
     if (desktopRuntime) void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
@@ -1379,7 +1388,7 @@ function openWorkflowCanvasPanel(detail: {
   draft?: WorkflowDraftResponse
   identityGeneration?: number
   serverIdentityGeneration?: number | null
-}): boolean {
+}, cause: WorkflowPresentationCause = 'foreground'): boolean {
   const api = dockviewApi.value
   if (!api || !detail.graph) return false
   const workflowName = detail.workflowName
@@ -1396,51 +1405,57 @@ function openWorkflowCanvasPanel(detail: {
     detail.workflowDisplayName
     ?? workflowName
   const panelId = workflowPanelId(workflowName)
-  const existing = api.getPanel(panelId)
-  if (existing) {
-    rememberRootActivation(existing.id)
-    existing.api.setActive()
-    removeCanvasPlaceholder(api)
-    return true
-  }
-  canvasContexts.set(panelId, {
-    workflowName,
-    workflowDisplayName,
-    serverIdentityGeneration: detail.serverIdentityGeneration ?? null,
-  })
-  uiStore.setCanvasWorkflow(
-    canvasIdFromPanelId(panelId),
-    workflowName,
-    workflowDisplayName,
-  )
-  const canvasPanel = layoutAnchorPanel(api)
-  const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
-  const panel = api.addPanel({
-    id: panelId,
-    component: 'canvasView',
-    tabComponent: 'canvasTab',
-    title: workflowDisplayName,
-    params: {
-      panelId,
+  const previousActivation = pendingRootActivation
+  pendingRootActivation = Object.freeze({ api, targetPanelId: panelId, cause })
+  try {
+    const existing = api.getPanel(panelId)
+    if (existing) {
+      rememberRootActivation(existing.id)
+      existing.api.setActive()
+      removeCanvasPlaceholder(api)
+      return true
+    }
+    canvasContexts.set(panelId, {
       workflowName,
       workflowDisplayName,
-      graph: detail.graph,
-      missingTools: detail.missingTools ?? [],
-      dirty: detail.dirty ?? false,
-      draft: detail.draft,
       serverIdentityGeneration: detail.serverIdentityGeneration ?? null,
-    },
-    position: canvasPanel
-      ? { referencePanel: canvasPanel.id, direction: 'within' }
-      : bottomPanel
-        ? { referencePanel: bottomPanel.id, direction: 'above' }
-        : { direction: 'below' },
-  })
-  openCanvasPanelIds.add(panel.id)
-  rememberRootActivation(panel.id)
-  panel.api.setActive()
-  removeCanvasPlaceholder(api)
-  return true
+    })
+    uiStore.setCanvasWorkflow(
+      canvasIdFromPanelId(panelId),
+      workflowName,
+      workflowDisplayName,
+    )
+    const canvasPanel = layoutAnchorPanel(api)
+    const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
+    const panel = api.addPanel({
+      id: panelId,
+      component: 'canvasView',
+      tabComponent: 'canvasTab',
+      title: workflowDisplayName,
+      params: {
+        panelId,
+        workflowName,
+        workflowDisplayName,
+        graph: detail.graph,
+        missingTools: detail.missingTools ?? [],
+        dirty: detail.dirty ?? false,
+        draft: detail.draft,
+        serverIdentityGeneration: detail.serverIdentityGeneration ?? null,
+      },
+      position: canvasPanel
+        ? { referencePanel: canvasPanel.id, direction: 'within' }
+        : bottomPanel
+          ? { referencePanel: bottomPanel.id, direction: 'above' }
+          : { direction: 'below' },
+    })
+    openCanvasPanelIds.add(panel.id)
+    rememberRootActivation(panel.id)
+    panel.api.setActive()
+    removeCanvasPlaceholder(api)
+    return true
+  } finally {
+    pendingRootActivation = previousActivation
+  }
 }
 
 function onApplyGraph(event: CustomEvent<{

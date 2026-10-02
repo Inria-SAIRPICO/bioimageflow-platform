@@ -1,7 +1,7 @@
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
 import { fetchWorkflowDraft, type WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
-import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowStore, type WorkflowPresentationCause } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { workflowPanelId } from '@/utils/canvasPanels'
 
@@ -27,7 +27,7 @@ export function workflowInfoId(workflow: WorkflowInfo): string {
 
 export async function loadRootWorkflowPresentation(
   workflowName: string,
-  options: { background?: boolean; canPresent?: () => boolean } = {},
+  options: { background?: boolean; canPresent?: () => boolean; presentationCause?: WorkflowPresentationCause } = {},
 ): Promise<RootWorkflowPresentation> {
   const workflowStore = useWorkflowStore()
   const identityGeneration = workflowStore.captureWorkflowIdentity(workflowName)
@@ -38,6 +38,7 @@ export async function loadRootWorkflowPresentation(
     canvasId,
     {
       rememberAsLastOpened: false,
+      presentationCause: options.background ? 'startup' : options.presentationCause ?? 'foreground',
       ...(options.background ? { canUpdatePresentation: options.canPresent ?? (() => false) } : {}),
     },
   )

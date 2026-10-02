@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { watch } from 'vue'
+import { useWorkflowStore } from '@/stores/workflow'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
@@ -38,6 +40,7 @@ function dockview() {
     const panel = {
       id: options.id, params: options.params,
       api: { setTitle: vi.fn(), setActive: vi.fn(() => {
+        if (active === panel) return
         active = panel
         onActivation?.(panel)
       }) },
@@ -100,6 +103,47 @@ describe('application shell startup ownership', () => {
     await flushPromises()
     expect(dock.panels.has('workflow:analysis')).toBe(true)
     expect(dock.panels.has('canvas-loading')).toBe(false)
+  })
+
+  it('bounds canonical startup cause to its target and restores foreground activation for existing roots', async () => {
+    const loading = deferred<RootWorkflowPresentation>()
+    startup.resolve.mockReturnValueOnce(loading.promise)
+    const { dock } = mountShell()
+    const workflow = useWorkflowStore()
+    workflow.workflows = [
+      { id: 'analysis', name: 'analysis', display_name: 'Analysis', identity_generation: 0 },
+      { id: 'other', name: 'other', display_name: 'Other', identity_generation: 0 },
+    ] as typeof workflow.workflows
+    const other = dock.api.addPanel({ id: 'workflow:other', component: 'canvasView' })
+    const observed: Array<{ name: string; cause: string }> = []
+    const stop = watch(() => workflow.presentationPublication, publication => {
+      if (!publication) return
+      observed.push({ name: publication.workflowName, cause: publication.cause })
+      expect(Object.isFrozen(publication)).toBe(true)
+      // Reentrant activation of a different target must not inherit startup cause.
+      if (publication.cause === 'startup') other.api.setActive()
+    }, { flush: 'sync' })
+    try {
+      loading.resolve(presentation())
+      await flushPromises()
+      expect(observed).toEqual([
+        { name: 'analysis', cause: 'startup' },
+        { name: 'other', cause: 'foreground' },
+      ])
+      dock.api.getPanel('workflow:analysis')!.api.setActive()
+      // A same-active setActive emits no Dockview active-change notification.
+      applyOpen()
+      other.api.setActive()
+      applyOpen()
+      await flushPromises()
+      expect(observed.slice(2)).toEqual([
+        { name: 'analysis', cause: 'foreground' },
+        { name: 'other', cause: 'foreground' },
+        { name: 'analysis', cause: 'foreground' },
+      ])
+    } finally {
+      stop()
+    }
   })
 
   it('does not mount competing startup content while accepted Open is loading', async () => {

@@ -54,6 +54,8 @@ const workflowStore = useWorkflowStore()
 const settingsStore = useSettingsStore()
 const searchQuery = ref('')
 const selectedName = ref<string | null>(workflowStore.currentName)
+let browseOwnsSelection = false
+let foregroundObserved = false
 const selectedFolderId = ref<string | null>(null)
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
@@ -236,10 +238,29 @@ function folderHasChildren(id: string): boolean {
 }
 
 watch(
+  () => workflowStore.presentationPublication,
+  (publication) => {
+    if (!publication) return
+    if (publication.cause === 'foreground') {
+      foregroundObserved = true
+      browseOwnsSelection = false
+      selectedFolderId.value = null
+      selectedName.value = publication.workflowName
+    } else if (!browseOwnsSelection && !foregroundObserved) {
+      selectedName.value = publication.workflowName
+    }
+  },
+  { flush: 'sync' },
+)
+
+watch(
   () => workflowStore.currentName,
   (name) => {
-    if (name) selectedName.value = name
+    // Matching intent was already consumed synchronously, including refusal.
+    if (workflowStore.presentationPublication?.workflowName === name) return
+    if (name && !browseOwnsSelection) selectedName.value = name
   },
+  { flush: 'sync' },
 )
 
 watch(
@@ -368,6 +389,7 @@ function formatModifiedTime(value: string): string {
 }
 
 function selectWorkflow(name: string): void {
+  browseOwnsSelection = true
   selectedName.value = name
   const workflow = workflowStore.flattenedWorkflows.find((item) => workflowId(item) === name)
   selectedFolderId.value = (
@@ -378,6 +400,7 @@ function selectWorkflow(name: string): void {
 }
 
 function selectFolder(id: string): void {
+  browseOwnsSelection = true
   selectedName.value = null
   selectedFolderId.value = id
   selectedKeys.value = { [nodeKey(`folder:${id}`)]: true }
@@ -817,6 +840,7 @@ defineExpose({
         data-testid="workflow-tree"
         @node-drop="onTreeNodeDrop"
         @node-select="onNodeSelect"
+        @node-unselect="browseOwnsSelection = true"
       >
         <template #default="{ node }">
           <div

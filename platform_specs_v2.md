@@ -404,6 +404,7 @@ Thumbnail requests are initiated only when their rendered row enters the visible
 In an opened nested canvas, selecting an internal node queries its own result using the full root-relative instance path and root workflow storage identity.
 Focusing an already visible Node Data dock preserves the projection and in-progress cell gesture; revealing a previously hidden dock refreshes its projection.
 Node Data dock focus preserves that canvas selection; pending startup restoration cannot reactivate the root after an accepted Open and subsequent nested inspection (v1 Section 3.8).
+The Workflows panel separately owns explicit row/folder browsing: automatic startup loading and canonical activation preserve that choice, while a later deliberate presentation or canvas activation follows its named workflow (v1 Section 3.8).
 Nested node status and progress are projected from the same scoped root execution when that editor still presents the applied instance; private edits retain the ordinary validation and cached-result behavior until applied and rerun.
 
 ## 14. API Surface

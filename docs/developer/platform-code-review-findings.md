@@ -7679,3 +7679,17 @@ No claim covers arbitrary catalog-construction/server-storage failures, noncoope
 ROOT-F008 and B-F168 retain their earlier bounded D1/B accepted dispositions.
 C fixes only a browser fixture prerequisite and failure-preserving owned cleanup; the separate startup/Browse selection RED remains a product ownership packet, with the full/browser failures retained.
 Historical source descriptions and adjacent open findings above remain evidence, not erased by these bounded dispositions.
+
+
+### M2 selection ownership — ROOT-F098, controlled frontend defect
+
+WorkflowsPanel previously followed every current-workflow name update, so delayed automatic startup loading could replace a newer explicit row/folder choice and retarget its details Open action.
+The preserved component regression and a deterministic browser witness holding only startup's saved GET reproduce the selection loss; these controlled witnesses do not establish the network cause of the earlier full-suite Napari failures.
+The actual browser diagnostic retained the same panel instance and observed only a startup-classified canonical activation: clicking the already selected fallback Tree row emitted `node-unselect`, bypassing the previous `node-select` Browse owner.
+The bounded repair separates synchronously consumed immutable startup/foreground presentation intent from passive metadata updates, preserves explicit Browse through both Tree selection events, and retains the exact target-bound cause through canonical App activation.
+Ordinary Save, dependency refresh, rebind and structural remapping remain passive; same-name deliberate activation, initial Create/Open, and existing Save As/Duplicate/Import producers retain their normal presentation semantics.
+Controlled stale-pairing and already-selected-row REDs are preserved alongside green owner controls and exact Chromium/Firefox held-startup witnesses.
+Final corrected Chromium startup ownership and all 18 canonical critical cases pass; the final Firefox fixture and smoke gate remain externally blocked by an independently observed page-admission crash before application setup.
+Qualified app-equivalent evidence assembles retained unchanged phases with exact recovery controls; the original `check app` remains FAIL (289 seconds), and the isolated unchanged Napari probe pass does not establish the cause of its original concurrent-run timeout.
+This bounded repair does not certify the full browser projects, published compatibility, native application, or M2 completion.
+Frozen review counts, original failed commands and historical unrun browser counts remain separate from this new behavioral evidence.

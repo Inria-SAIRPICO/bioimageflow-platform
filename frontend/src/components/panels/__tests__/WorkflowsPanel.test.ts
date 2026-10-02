@@ -13,6 +13,7 @@ import {
 } from '@/sessions/canvasSessionRegistry'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import WorkflowsPanel from '../WorkflowsPanel.vue'
 import type { WorkflowInfo } from '@/api/types'
 
@@ -92,11 +93,11 @@ async function dropTreeNode(wrapper: ReturnType<typeof mount>, dragKey: string, 
   } as any)
 }
 
-function mountPanel(items: WorkflowInfo[] = workflows, pinia = createPinia()) {
+function mountPanel(items: WorkflowInfo[] = workflows, pinia = createPinia(), current: WorkflowInfo | null = items[0] ?? null) {
   setActivePinia(pinia)
   const store = useWorkflowStore()
   store.workflows = [...items]
-  store.current = items[0] ?? null
+  store.current = current
 
   return mount(WorkflowsPanel, {
     global: {
@@ -282,6 +283,157 @@ describe('WorkflowsPanel', () => {
     expect(revealButton.element.closest('dt')?.textContent).toContain('Latest outputs')
   })
 
+
+  it('keeps an explicit row selection when a pending startup workflow finishes loading', async () => {
+    const wrapper = mountPanel(workflows, createPinia(), null)
+    const store = useWorkflowStore()
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    try {
+      await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
+
+      // The saved startup read completes after the user's newer row selection.
+      store.current = workflows[0]!
+      await flushPromises()
+      await wrapper.find('[data-testid="workflow-open-btn"]').trigger('click')
+
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
+      expect(wrapper.emitted('open-workflow')?.[0]).toEqual(['beta_api'])
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'bioimageflow:workflow-command',
+        detail: { action: 'open', name: 'beta_api', folderId: undefined },
+      }))
+    } finally {
+      dispatchSpy.mockRestore()
+      wrapper.unmount()
+    }
+  })
+
+  it.each(['row', 'padding', 'keyboard'])('the already selected fallback %s gesture acquires Browse ownership', async (gesture) => {
+    const wrapper = mountPanel(workflows, createPinia(), null)
+    const store = useWorkflowStore()
+    try {
+      await flushPromises()
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('alpha_api')
+      if (gesture === 'keyboard') await wrapper.find('.p-tree-node').trigger('keydown', { code: 'Space', key: ' ' })
+      else if (gesture === 'padding') await wrapper.find('.p-tree-node-content').trigger('click')
+      else await wrapper.find('[data-testid="workflow-row-alpha_api"]').trigger('click')
+      store.activateWorkflow('beta_api', undefined, 'startup')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('alpha_api')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it.each(['row', 'folder'])('preserves %s Browse through a deferred public startup load and activation', async (selection) => {
+    const wrapper = mountPanel(workflows, createPinia(), null)
+    const store = useWorkflowStore()
+    let release!: (value: unknown) => void
+    vi.mocked(api.get).mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    const loading = store.loadWorkflow('alpha_api', undefined, {
+      rememberAsLastOpened: false, presentationCause: 'startup',
+    })
+    try {
+      if (selection === 'row') {
+        await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+      } else {
+        store.workflowFolders = [{ id: 'Analysis', name: 'Analysis', parentId: null }]
+        await flushPromises()
+        await wrapper.find('[data-testid="workflow-folder-Analysis"]').trigger('click')
+        await wrapper.find('[data-testid="workflow-folder-Analysis"]').trigger('click')
+      }
+      release({ data: { info: workflows[0], graph: makeGraph() } })
+      await loading
+      store.activateWorkflow('alpha_api', undefined, 'startup')
+      await flushPromises()
+      if (selection === 'row') {
+        await wrapper.find('[data-testid="workflow-open-btn"]').trigger('click')
+        expect(wrapper.emitted('open-workflow')?.[0]).toEqual(['beta_api'])
+      } else {
+        await wrapper.find('[data-testid="workflow-new-btn"]').trigger('click')
+        expect(wrapper.emitted('new-workflow')?.[0]).toEqual(['Analysis'])
+      }
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it.each([['foreground', 'startup'], ['startup', 'foreground']] as const)(
+    'consumes %s then %s in one flush without passive metadata undoing foreground intent',
+    async (first, second) => {
+      const wrapper = mountPanel(workflows, createPinia(), null)
+      const store = useWorkflowStore()
+      try {
+        for (const cause of [first, second]) store.activateWorkflow(cause === 'foreground' ? 'beta_api' : 'alpha_api', undefined, cause)
+        store.activateWorkflow(store.currentName!, undefined, 'passive')
+        // Same-name metadata refresh clears the pairing marker but has no name transition.
+        vi.mocked(api.get).mockResolvedValueOnce({ data: { info: { ...store.current }, graph: makeGraph() } })
+        await store.refreshWorkflowDependencies(store.currentName!)
+        await flushPromises()
+        expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
+
+  it.each(['load', 'create'])('first deliberate %s owns selection before late startup', async (operation) => {
+    const wrapper = mountPanel(workflows, createPinia(), null)
+    const store = useWorkflowStore()
+    try {
+      await wrapper.find('[data-testid="workflow-row-alpha_api"]').trigger('click')
+      if (operation === 'create') {
+        vi.mocked(api.post).mockResolvedValueOnce({ data: workflows[1] })
+        await store.createWorkflow({ name: 'beta_api', display_name: 'Beta Workflow' })
+      } else {
+        vi.mocked(api.get).mockResolvedValueOnce({ data: { info: workflows[1], graph: makeGraph() } })
+        await store.loadWorkflow('beta_api', undefined, { rememberAsLastOpened: false })
+      }
+      store.activateWorkflow('alpha_api', undefined, 'startup')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('a same-name deliberate activation retakes Browse ownership while metadata refresh preserves it', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    try {
+      await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+      vi.mocked(api.get).mockResolvedValueOnce({ data: { info: workflows[0], graph: makeGraph() } })
+      await store.refreshWorkflowDependencies('alpha_api')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
+      store.activateWorkflow('alpha_api')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('alpha_api')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('follows passive public loads after a same-name foreground activation', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    try {
+      store.activateWorkflow('alpha_api')
+      store.activateWorkflow('alpha_api')
+      for (const info of [workflows[1]!, workflows[0]!]) {
+        vi.mocked(api.get).mockResolvedValueOnce({ data: { info, graph: makeGraph({ name: info.id ?? info.name }) } })
+        await store.loadWorkflow(info.id!, undefined, {
+          rememberAsLastOpened: false,
+          presentationCause: 'passive',
+        })
+        await flushPromises()
+        expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain(info.id)
+      }
+    } finally {
+      wrapper.unmount()
+    }
+  })
 
   it('edits the selected workflow description from the detail section', async () => {
     vi.mocked(api.patch).mockResolvedValueOnce({

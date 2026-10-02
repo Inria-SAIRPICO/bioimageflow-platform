@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { AxiosError } from 'axios'
 import { api } from '@/api/client'
@@ -22,6 +22,14 @@ import type {
   WorkflowResultsFolderExportResponse,
   WorkflowUpdate,
 } from '@/api/types'
+
+export type WorkflowPresentationCause = 'startup' | 'foreground' | 'passive'
+
+export interface WorkflowPresentationPublication {
+  readonly sequence: number
+  readonly workflowName: string
+  readonly cause: Exclude<WorkflowPresentationCause, 'passive'>
+}
 
 type WorkflowInfoWithTreeFields = WorkflowInfo & {
   id?: string | null
@@ -154,6 +162,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const workflowFolderIds = ref<Record<string, string | null>>({})
   const workflowOrder = ref<string[]>([])
   const current = ref<WorkflowInfo | null>(null)
+  const presentationPublication = shallowRef<WorkflowPresentationPublication | null>(null)
+  let presentationSequence = 0
   const missingPackages = ref<MissingPackage[]>([])
   const missingTools = ref<MissingTool[]>([])
   const isLoading = ref(false)
@@ -523,7 +533,20 @@ export const useWorkflowStore = defineStore('workflow', () => {
     sanitizeWorkflowTreeState()
   }
 
-  function setCurrent(info: WorkflowInfo | null, canvasId?: CanvasId): void {
+  function setCurrent(
+    info: WorkflowInfo | null,
+    canvasId?: CanvasId,
+    cause: WorkflowPresentationCause = 'passive',
+  ): void {
+    if (info && cause !== 'passive') {
+      // Consume deliberate/startup intent before the paired metadata assignment.
+      presentationPublication.value = Object.freeze({
+        sequence: ++presentationSequence, workflowName: workflowId(info), cause,
+      })
+    } else {
+      // Passive metadata cannot leave a stale intent paired with a later write.
+      presentationPublication.value = null
+    }
     current.value = info
     const id = info === null ? null : workflowId(info)
     if (canvasId !== undefined) {
@@ -537,10 +560,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  function activateWorkflow(name: string, canvasId?: CanvasId): WorkflowInfo | null {
+  function activateWorkflow(
+    name: string,
+    canvasId?: CanvasId,
+    cause: WorkflowPresentationCause = 'foreground',
+  ): WorkflowInfo | null {
     const info = workflows.value.find((workflow) => workflowId(workflow) === name) ?? null
     if (info) {
-      setCurrent(info, canvasId)
+      setCurrent(info, canvasId, cause)
     }
     return info
   }
@@ -598,7 +625,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       assertWorkflowInfoIdentity(data, requestedName)
       const identityGeneration = invalidateWorkflowIdentity(createdName)
       upsertWorkflow(data)
-      setCurrent(data, canvasId)
+      setCurrent(data, canvasId, 'foreground')
       missingPackages.value = []
       missingTools.value = []
       markPresentationClean(canvasId)
@@ -615,7 +642,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function loadWorkflow(
     name: string,
     canvasId?: CanvasId,
-    options: { rememberAsLastOpened?: boolean; canUpdatePresentation?: () => boolean } = {},
+    options: { rememberAsLastOpened?: boolean; canUpdatePresentation?: () => boolean; presentationCause?: WorkflowPresentationCause } = {},
   ): Promise<GraphState> {
     const identityGeneration = captureWorkflowIdentity(name)
     const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`)
@@ -625,7 +652,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     upsertWorkflow(data.info)
     if (options.canUpdatePresentation?.() !== false) {
-      setCurrent(data.info, canvasId)
+      setCurrent(data.info, canvasId, options.presentationCause ?? 'foreground')
       missingPackages.value = data.missing_packages ?? []
       missingTools.value = data.missing_tools ?? []
       markPresentationClean(canvasId)
@@ -646,7 +673,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     upsertWorkflow(data.info)
     if (currentName.value === name) {
-      current.value = data.info
+      setCurrent(data.info)
       missingPackages.value = data.missing_packages ?? []
       missingTools.value = data.missing_tools ?? []
     }
@@ -692,7 +719,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       canvasSessionRegistry.activeCanvasId.value === target.canvasId
       && currentName.value === targetWorkflowName
     ) {
-      current.value = data
+      setCurrent(data)
       await autoSave.setLastOpenedWorkflow(workflowId(data))
     }
     return data
@@ -981,7 +1008,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       upsertWorkflow(data, patch.action === 'update' ? name : undefined)
       if (target === undefined) {
         if (patch.action === 'update' && currentName.value === name) {
-          current.value = data
+          setCurrent(data)
         }
         return data
       }
@@ -994,7 +1021,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         canvasSessionRegistry.activeCanvasId.value === target.canvasId
         && currentName.value === target.workflowName
       ) {
-        current.value = data
+        setCurrent(data)
         await autoSave.setLastOpenedWorkflow(dataId)
       }
       return data
@@ -1030,7 +1057,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       canvasSessionRegistry.activeCanvasId.value === target.canvasId
       && currentName.value === targetWorkflowName
     ) {
-      current.value = data.info
+      setCurrent(data.info)
       missingPackages.value = data.missing_packages ?? []
       missingTools.value = data.missing_tools ?? []
     }
@@ -1100,7 +1127,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     await renameAutoSavesForIdentityMoves(identityMoves)
     assertWorkflowIdentitiesCurrent(appliedIdentities)
     await fetchWorkflowTree()
-    if (nextCurrent) activateWorkflow(nextCurrent)
+    if (nextCurrent) activateWorkflow(nextCurrent, undefined, 'passive')
   }
 
   async function renameWorkflowFolder(id: string, name: string): Promise<void> {
@@ -1164,7 +1191,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       assertWorkflowIdentitiesCurrent(appliedDestinations)
       await fetchWorkflowTree()
       if (nextCurrent) {
-        activateWorkflow(nextCurrent)
+        activateWorkflow(nextCurrent, undefined, 'passive')
       }
     } finally {
       for (const workflowName of fencedWorkflowIds) {
@@ -1297,6 +1324,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     flattenedWorkflows,
     current,
     currentName,
+    presentationPublication: computed(() => presentationPublication.value),
     hasWorkflow,
     missingPackages,
     missingTools,

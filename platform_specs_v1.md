@@ -1391,6 +1391,10 @@ opened, or treated as workflow id collisions.
   system file browser. It does not show a separate workflow-file row because
   that duplicates the storage/path information.
 
+An explicit workflow or folder selection owns the panel details and actions against passive metadata updates and late automatic startup loading or activation.
+A later deliberate Open, accepted Create, Save As, Duplicate or Import presentation, or actual root/nested canvas activation follows that workflow, including same-name activation.
+Startup initializes selection only when no newer Browse or deliberate presentation owns it; ordinary Save, dependency refresh, rebind and structural metadata remapping do not acquire presentation intent.
+
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a workflow node containing an executable snapshot. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
 
 **Actions:**

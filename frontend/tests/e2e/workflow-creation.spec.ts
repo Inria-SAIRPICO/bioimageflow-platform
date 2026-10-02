@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { APIResponse, Page } from '@playwright/test'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -161,6 +161,81 @@ test.describe('workflow creation', () => {
       expect(workflowPosts).toHaveLength(1)
     } finally {
       await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+    }
+  })
+
+  test('delayed startup preserves a browsed workflow until its normal details Open', async ({ page, request }) => {
+    const suffix = `${test.info().project.name}_${Date.now()}`
+    const startupName = `startup_selection_${suffix}`
+    const browseName = `browse_selection_${suffix}`
+    const startupLabel = `Startup ${suffix}`
+    const browseLabel = `Browse ${suffix}`
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let held = false
+    let consumed = false
+    const openedRequests: string[] = []
+    let cleanup: PromiseSettledResult<APIResponse>[] = []
+    try {
+      for (const [name, displayName] of [[startupName, startupLabel], [browseName, browseLabel]]) {
+        const response = await request.post(`${API_BASE}/api/v1/workflows`, { data: { name, display_name: displayName } })
+        expect(response.status()).toBe(201)
+      }
+      const saved = await request.get(`${API_BASE}/api/v1/workflows/${startupName}`)
+      const draft = await request.get(`${API_BASE}/api/v1/workflow-drafts/${startupName}`)
+      expect(saved.ok()).toBeTruthy()
+      expect(draft.ok()).toBeTruthy()
+      const savedBody = await saved.json()
+      const draftBody = await draft.json()
+      expect(savedBody.info.id ?? savedBody.info.name).toBe(startupName)
+      expect(draftBody.workflow_id).toBe(startupName)
+      expect(draftBody.base_saved_revision).toBe(savedBody.artifact_hash)
+      expect(draftBody.dirty_against_saved).toBe(false)
+      expect(savedBody.graph.nodes).toEqual([])
+      expect(draftBody.graph.nodes).toEqual([])
+      await page.evaluate(async name => {
+        const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+        await useAutoSave().clearAutoSave(name)
+      }, startupName)
+      await rememberLastOpenedWorkflow(page, startupName)
+      expect(await page.evaluate(async () => {
+        const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+        return useAutoSave().getLastOpenedWorkflow()
+      })).toBe(startupName)
+      await page.route(`**/api/v1/workflows/${startupName}`, async route => {
+        if (route.request().method() !== 'GET' || consumed) return route.continue()
+        consumed = true
+        held = true
+        const response = await route.fetch()
+        await gate
+        await route.fulfill({ response })
+      })
+      await page.reload()
+      await expect.poll(() => held).toBe(true)
+      await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+      await page.getByTestId(`workflow-row-${browseName}`).click()
+      await expect(page.getByTestId('workflow-detail-api-name')).toHaveText(browseName)
+      release()
+      // Prove the saved GET and canonical startup activation actually completed.
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: startupLabel })).toBeVisible()
+      await expect(page.getByTestId('workflow-title')).toContainText(startupLabel)
+      await expect(page.getByTestId('workflow-detail-api-name')).toHaveText(browseName)
+      page.on('request', request => {
+        if (request.method() === 'GET') openedRequests.push(new URL(request.url()).pathname)
+      })
+      await page.getByTestId('workflow-open-btn').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(browseLabel)
+      expect(openedRequests).toContain(`/api/v1/workflows/${browseName}`)
+      expect(openedRequests).toContain(`/api/v1/workflow-drafts/${browseName}`)
+      expect(openedRequests).not.toContain(`/api/v1/workflows/${startupName}`)
+    } finally {
+      release()
+      cleanup = await Promise.allSettled([startupName, browseName].map(name => request.delete(`${API_BASE}/api/v1/workflows/${name}`)))
+    }
+    // A body failure propagates through finally and skips cleanup validation.
+    for (const outcome of cleanup) {
+      if (outcome.status === 'rejected') throw outcome.reason
+      expect(outcome.value.ok()).toBeTruthy()
     }
   })
 
