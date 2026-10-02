@@ -787,8 +787,8 @@ The user then explicitly approved source push and draft-PR creation; the SSH att
 The exact-head [CI run 37048171797](https://github.com/arthursw/wetlands/actions/runs/37048171797) has all 25 required jobs present: lint, eighteen three-OS/Python 3.9–3.14 fast jobs, Python 3.9 compatibility, three real-Pixi jobs, strict docs and package validation.
 The final independently inspected exact-head run passed all 25 required jobs; the push-only documentation deployment is intentionally skipped for a pull request and is outside that gate.
 Local library development may consume the frozen unpublished wheel in its own private environment after handoff; passed upstream CI does not establish publication, a supported dependency floor or platform/worker certification.
-The concrete release transaction has been reviewed, but user approval for owner-main merge, tagging, GitHub release and PyPI publication remains pending.
-No owner-main merge, tag, GitHub release, PyPI publication or platform-pin change is authorized or credited.
+The concrete release transaction has been reviewed; the user has now merged PR #5, while approval for tagging, GitHub release and PyPI publication remains pending.
+No tag, GitHub release, PyPI publication or platform-pin change is authorized or credited.
 
 
 ### Local library public-completion adaptation — qualified WIP checkpoint
@@ -836,3 +836,23 @@ This is qualified assembled frontend completion, not a monolithic passing check 
 The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed (exit 0, runner 3 seconds, measured 2.811 seconds) at `788d67b` plus the exact reviewed source/specification/record snapshot.
 The separate product/test/specification task is committed as `f32c9b4`; this record adds only its disposition and observed evidence.
 Prior full/browser failures, final Firefox admission block, published-package/worker acceptance and native desktop-final-M5 gates remain open.
+
+
+### Wetlands user merge verified — October 2
+
+The user merged [PR #5](https://github.com/arthursw/wetlands/pull/5) at 19:15:53 UTC as main `3cda2236fe000b30dabf42a04e9ad347265630a0`, preserving reviewed head `f4409ce8b551be6dff62e26ee535ccdd9b47c131` as its second parent.
+Both commits have identical full tracked Git tree `eb14911f8f8b7ddae54dfdc7f4c13c4f0379bc52`, so candidate source, metadata, lock and package bytes are unchanged.
+The exact merged-head [main CI run 37052970686](https://github.com/arthursw/wetlands/actions/runs/37052970686) passed all 25 required jobs and the additional main documentation-deployment job (26 successes, no skips or failures); unchanged local candidate tests/builds were not repeated.
+Read-only primary checks at 19:59:59 UTC found no `v2.5.0` tag or GitHub release and no PyPI 2.5.0 version; PyPI latest remains 2.4.3.
+Explicit authorization for creating/pushing the tag and publishing the GitHub release, which triggers PyPI publication, remains required; no agent publication action was taken.
+The frozen library WIP/private candidate environment, platform installed dependencies and protected owning roots remain unchanged; published-wheel acceptance, library floor/lock alignment and subsequent platform/worker certification remain open.
+
+
+### Performance-review retrospective — October 2
+
+M1's completed file-review coverage did not establish common-task performance assurance: the static synthesis missed repeated saved-workflow reads/format plans within draft synthesis, the two startup tree loads and dataset-list double reconciliation.
+It recorded related stale-generation collection risk (`A-F068`) but missed same-ID Save freshness and request-owned error/loading/finalizer effects; shared environment inventory (`B-F020`) and Core codec duplication (`B-F137`) were already recorded as unmeasured P3/deferred work.
+Performance magnitude required later comparable task measurements; those static duplication and ownership omissions could have been identified before profiling, while folder/index improvements remain conditional candidates rather than demonstrated bottlenecks.
+The correction adds shared end-to-end startup/Open/edit-Save/dataset-browse/Run-start maps with work multiplicity and authority/freshness/error/loading ownership, lead/cross-owner synthesis and explicit deferred-finding dispositions; bounded user-task measurement sets magnitude and priority at coherent milestones.
+`B-F020` remains queued with library/platform environment owners for measured Run-start inventory multiplicity; `B-F137` remains with the Core owner until supported task-payload cost and transport controls justify repair, without blanket P3 promotion.
+Frozen M1 file-ledger counts and history remain intact; reuse accepted evidence and review only uncovered paths, without repeating the entire audit or suite.

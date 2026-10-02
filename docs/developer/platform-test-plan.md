@@ -114,6 +114,9 @@ Assign ordinary agents by subsystem, with the orchestrator owning shared records
 | Test architecture and cost | Fixture authorities, assertion oracles, selection/markers, shared helpers, real versus intercepted paths, repeated setup, artifact retention and comparable timing evidence |
 
 Trace sensitive paths from user gesture or API through validation, ownership, persistence and public dependency calls.
+At architecture milestones, jointly map five common tasks end to end: startup, workflow Open, edit/Save, dataset browsing and Run startup.
+Record request/scan/validation/environment-work multiplicity and freshness/error/loading ownership, then cross-review subsystem maps; static review must identify duplicated work before bounded profiling establishes its user-visible cost and priority.
+Reuse existing source/baseline evidence, review only uncovered paths, reassess performance at coherent milestones rather than every edit and keep deferred P3 findings queued with named owners and measurable triggers; frozen M1 file coverage does not establish task-level performance assurance.
 Look for redundant authorities, duplicated business rules, private dependency coupling, inconsistent error/recovery semantics and tests whose assertions do not distinguish their stated outcomes.
 Treat complexity or repetition as a candidate to investigate, not proof that a rewrite or deletion is needed.
 For each finding record the source/contract, demonstrated defect or unproved risk, consequence, existing distinguishing selectors, repair/retain/deepen/defer decision and owner.
