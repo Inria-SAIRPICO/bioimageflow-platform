@@ -7667,3 +7667,15 @@ The nine current human controls were read fully against exact snapshots and ever
 Independent method/completeness acceptance samples other owners, with B separately cross-checking A; it does not claim a second full human read of all inputs or independent reproduction of every candidate.
 The 573 canonical candidates remain qualified future actions, with cross-subsystem priority/dependency decisions in the architecture audit and the next retrospective/M2 queue in the checkpoint.
 M1 review is COMPLETE; no product or runtime certification, blanket fix approval or desktop acceptance follows from it, and native execution stays final M5.
+
+## Bounded M2 first-wave dispositions — 2026-10-02
+
+Ordinary merge `df675a9` integrates separately reviewed D2 `be90dd5`, A `afb1b3a` and C `56db73d`; the current checkpoint records accepted scoped phases and all remaining certification gates.
+A-F001/A-F002 are repaired within carried executable/class/resource authority and one public materialization; the helper also refuses actual DataFrame overrides before builder/archive publication.
+A-F003 locality and same-package rebind authority are repaired; exact missing-class GET-array availability and frontend metadata/template consumers remain open, and the platform guard does not repair the upstream materializer.
+ROOT-F006/ROOT-F007/ROOT-F009/ROOT-F010/ROOT-F011 are repaired within complete staging, short-write progress, cooperating catalog writers, transaction/cleanup ownership and logical sibling admission.
+ROOT-F015 is repaired for ordinary publication OperationalError/IntegrityError through typed per-file outcomes; actual SQLite service faults and the real ASGI typed-failure/earlier-success fixture are distinct evidence.
+No claim covers arbitrary catalog-construction/server-storage failures, noncooperating filesystem replacement, power loss, atomic filesystem/SQLite rollback, or original filename fidelity.
+ROOT-F008 and B-F168 retain their earlier bounded D1/B accepted dispositions.
+C fixes only a browser fixture prerequisite and failure-preserving owned cleanup; the separate startup/Browse selection RED remains a product ownership packet, with the full/browser failures retained.
+Historical source descriptions and adjacent open findings above remain evidence, not erased by these bounded dispositions.

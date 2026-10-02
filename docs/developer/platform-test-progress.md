@@ -561,13 +561,13 @@ The complete retirement receipt is `/private/tmp/bioimageflow-uninstall-cleanup-
 Independent strategic review confirms a real architecture-driven campaign and recommends closing bounded packets before accumulating more integration state.
 M1's accepted historical scope remains 1,799 inputs: 1,649 reviewed and 150 classified; the 573 recorded candidates are qualified findings, not 573 proved bugs or mandatory rewrites.
 The frozen platform set remains 740 inputs.
-The new materialized-resource helper is an independently reviewed current M2 source addition; add its separately named ledger row only after actual integration, without changing the frozen M1 history.
+The integrated materialized-resource helper is a separately named current M2 source addition; the current ledger has 1,800 entries (1,650 reviewed / 150 classified), without changing the frozen M1 history.
 
 | Packet | Current state and next gate |
 | --- | --- |
 | D1 exact dataset deletion; B confined uninstall | Integrated; bounded source/results and B retirement recorded above |
-| A executable/resource authority; D2 staged dataset publication | Source-approved in the combined acceptance tree; task-only commits/integration await independent scoped phase acceptance and sequential index handoff |
-| C imported-layout fixture | Independently accepted exact Chromium/Firefox controls and lint; fixture-only commit remains separate |
+| A executable/resource authority; D2 staged dataset publication | Independently accepted scoped phase assembly; separate commits integrated by ordinary merge `df675a9`, exact combined source proved |
+| C imported-layout fixture | Independently accepted exact Chromium/Firefox controls and lint; separate fixture commit `56db73d` integrated |
 | Startup/Browse selection ownership | Existing-component deterministic RED preserved outside first-wave delivery; next bounded product/spec repair maps every actual presentation writer |
 | Credentials, configured deployment policy, public force-Recreate/lifetime | Urgent next owner-contract packets before M3 expansion; force-Recreate is unresolved across public owners, not assigned to Wetlands by inference |
 | Suite optimization | No measured suite-wide speedup; evaluate one costed artifact/fixture candidate after architecture repair, retaining distinct oracles |
@@ -605,3 +605,19 @@ The platform DataFrame override guard does not close the upstream materializatio
 No publication is performed automatically by this campaign update.
 Use targeted development regressions and owner checks, broader integration/docs/browser at coherent milestones, and a low-frequency strategic review after accepted repair integration or material scope change.
 The effort split in the plan is a heuristic; no measured allocation or suite optimization is claimed.
+
+### First-wave integration result — October 2
+
+Independent scoped acceptance and one `env UV_OFFLINE=1 scripts/test check docs` PASS (runner 3 s, measured 3.538 s, exit 0) accepted the strategic documentation at `40c62b8` plus its three-file delta, committed as `23882ec`.
+D2 is task commit `be90dd5`; A is `afb1b3a`; C is `56db73d`; ordinary merge `df675a9b953d1b639dfff55f731751f48394adec` preserves their ancestry and the B cleanup/verified release-instruction commits.
+All 742 accepted C manifest entries match integrated main except the three accepted campaign documents; the editable library remains clean at `dff04e3`, and all five recorded installed dependency metadata files remain unchanged in the acceptance environment.
+Receipts are `firstwave-premerge-source-equivalence.json` and `firstwave-main-source-equivalence.json` in `/private/tmp/bioimageflow-m2-retrospective`.
+Main's exact six D2 paths were preserved as patch SHA-256 `724ef000a55bd7fae4d6bae4fd09ab0fb5e940f5dcf77fd76ef05bb7a1dbdb55` and recovery stash `79e7619494ffb31499cf21cac44aa9fcec9bc39a`; the prior alignment stash remains intact.
+The held selection RED remains independently preserved as `napari-selection-unit-red.patch`, SHA-256 `e8629508b50be4c283d8effad7025e02ad35718f1c0a191cb16f66b8e39f50d6`, with its original file and failure log, excluded from first-wave commits.
+
+Five live Wetlands checkout inputs have changed beyond the frozen review: `CHANGELOG.md`, `RELEASING.md`, `pyproject.toml`, `src/wetlands/protocol.py` and `uv.lock`.
+Their M1 rows and historical judgments remain frozen; independent current five-path source review at clean Wetlands `3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1` is recorded separately in `independent-wetlands-five-path-drift-review.md`.
+The live revision/status/exact hashes are recorded in `wetlands-current-drift-boundary.json`; this does not retroactively invalidate M1 or the unchanged installed-package first-wave evidence.
+The current M2 ledger checker binds platform source to accepted `df675a9`, preserves frozen membership and separately inventories the new helper; the five Wetlands drift hashes remain historical comparisons with their separate dated source-delta review.
+That delta is release documentation and a consistent package/runtime/lock 2.4.2→2.4.3 bump, with protocol integers unchanged; published 2.4.3 wheel/host-worker compatibility has not been executed and requires compatible pins and recreated persistent workers.
+Full/browser/published/native gates and the 50/51 browser gaps remain open after this integration.
