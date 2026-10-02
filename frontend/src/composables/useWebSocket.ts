@@ -97,7 +97,7 @@ function cancelAllPending(reason: Error) {
 async function refreshWorkflowTree(): Promise<void> {
   try {
     const workflowStore = useWorkflowStore()
-    await workflowStore.fetchWorkflowTree()
+    await workflowStore.fetchWorkflowTree({ fresh: true })
     window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
       detail: {
         workflows: workflowStore.workflows.map((workflow) => {

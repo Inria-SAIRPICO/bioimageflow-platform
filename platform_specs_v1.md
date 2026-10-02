@@ -1361,6 +1361,10 @@ Displays real-time logs streamed via WebSocket.
 
 ### 3.8 Workflows Panel
 
+Concurrent startup consumers share a workflow-tree HTTP request only while it is pending under the same catalog authority and structural generation.
+Successful metadata/catalog writes and deliberate post-mutation, workspace, migration or reconnect refreshes invalidate that pending authority; a completed response is never a persistent catalog cache.
+Tree and flat-list endpoints retain separate response contracts, bounded stale retries and request-owned loading/error state, so an older response or finalizer cannot undo accepted metadata or clear a newer refresh.
+
 The application has a persistent **Workflows** panel, analogous to the Tools
 panel. The workflow menu may expose the same commands, but the panel is the
 primary browsing and management surface.

@@ -156,6 +156,7 @@ describe('StorageSection demo workflows', () => {
       accept?.click()
       await flushPromises()
       expect(deleted).toEqual(['Demo/Fish Analysis', 'Demo/Parameters Space Exploration'])
+      expect(useWorkflowStore().fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     } finally {
       wrapper.unmount()
       host.remove()

@@ -310,6 +310,8 @@ The destination becomes visible only after its graph and sources are prepared su
 The copy request carries the captured source identity generation to reject a deleted and recreated source.
 
 Workflow identities are path-derived and carry durable identity generations.
+Catalog read freshness also includes accepted same-ID metadata updates such as Save and dependency refresh; these are not identity-generation changes.
+Pending tree reuse is limited to that current catalog authority, and a caller retries a stale catalog read at most once without joining its own expired request.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves update drafts, retained snapshots, and provenance references atomically.
 

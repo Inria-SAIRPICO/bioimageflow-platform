@@ -211,6 +211,7 @@ describe('WorkflowsPanel', () => {
     await flushPromises()
 
     expect(applyWorkflowFormatMigrations).toHaveBeenCalledWith(`sha256:${'1'.repeat(64)}`)
+    expect(store.fetchWorkflowTree).toHaveBeenLastCalledWith({ fresh: true })
     expect(wrapper.find('[data-testid="workflow-format-dialog"]').exists()).toBe(false)
     const warning = wrapper.get('[data-testid="workflow-format-warning"]').text()
     expect(warning).toContain('A backup was preserved')

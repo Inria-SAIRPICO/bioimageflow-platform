@@ -174,6 +174,19 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const workflowRemovalPromises = new Map<string, Promise<void>>()
   const workflowPresentationResetPromises = new Map<string, Promise<void>>()
   let workflowCollectionGeneration = 0
+  let catalogAuthorityEpoch = 0
+  let catalogMessageOwner = 0
+  const pendingCatalogReads = new Set<number>()
+  type CatalogReadResult<T> = { current: true; value: T } | { current: false }
+  let pendingTreeRead: {
+    generation: number
+    epoch: number
+    promise: Promise<CatalogReadResult<WorkflowTreeNode[]>>
+  } | null = null
+
+  function noteCatalogAuthorityChange(): void {
+    catalogAuthorityEpoch += 1
+  }
 
   const uiStore = useUIStore()
   const autoSave = useAutoSave()
@@ -205,13 +218,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (known !== null && generation < known) return false
     if (known === null || generation > known) {
       workflowServerIdentityGenerations.set(name, generation)
-      if (options.structuralEvent) workflowCollectionGeneration += 1
+      if (options.structuralEvent) noteWorkflowStructuralEvent()
     }
     return true
   }
 
   function noteWorkflowStructuralEvent(): void {
     workflowCollectionGeneration += 1
+    noteCatalogAuthorityChange()
   }
 
   function acceptWorkflowInfoGeneration(info: WorkflowInfo): boolean {
@@ -224,7 +238,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function invalidateWorkflowIdentity(name: string): number {
     const generation = workflowIdentityGeneration(name) + 1
     workflowIdentityGenerations.set(name, generation)
-    workflowCollectionGeneration += 1
+    noteWorkflowStructuralEvent()
     return generation
   }
 
@@ -507,6 +521,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!acceptWorkflowInfoGeneration(info)) {
       throw new WorkflowIdentityChangedError(workflowId(info))
     }
+    noteCatalogAuthorityChange()
     const existing = workflows.value.filter((item) => (
       workflowId(item) !== previousName || workflowId(item) === workflowId(info)
     ))
@@ -572,44 +587,83 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return info
   }
 
-  async function fetchWorkflows(attempt = 0): Promise<WorkflowInfo[]> {
+  async function readWorkflowCatalog<T, V>(
+    url: string,
+    apply: (data: T) => V,
+  ): Promise<CatalogReadResult<V>> {
+    const generation = workflowCollectionGeneration
+    const epoch = catalogAuthorityEpoch
+    const owner = ++catalogMessageOwner
+    pendingCatalogReads.add(owner)
     isLoading.value = true
-    const collectionGeneration = workflowCollectionGeneration
+    const isCurrent = () => generation === workflowCollectionGeneration
+      && epoch === catalogAuthorityEpoch
     try {
-      const { data } = await api.get<WorkflowInfo[]>('/api/v1/workflows')
-      if (collectionGeneration !== workflowCollectionGeneration) {
-        if (attempt === 0) return fetchWorkflows(1)
-        throw new Error('Workflow identities changed while refreshing the workflow list.')
-      }
-      applyWorkflowList(data)
-      error.value = null
-      return data
+      const { data } = await api.get<T>(url)
+      if (!isCurrent()) return { current: false }
+      const value = apply(data)
+      noteCatalogAuthorityChange()
+      if (owner === catalogMessageOwner) error.value = null
+      return { current: true, value }
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : String(err)
+      if (isCurrent() && owner === catalogMessageOwner) {
+        error.value = err instanceof Error ? err.message : String(err)
+      }
       throw err
     } finally {
-      isLoading.value = false
+      pendingCatalogReads.delete(owner)
+      isLoading.value = pendingCatalogReads.size > 0
     }
   }
 
-  async function fetchWorkflowTree(attempt = 0): Promise<WorkflowTreeNode[]> {
-    isLoading.value = true
-    const collectionGeneration = workflowCollectionGeneration
-    try {
-      const { data } = await api.get<WorkflowFolderResponse>('/api/v1/workflows/tree')
-      if (collectionGeneration !== workflowCollectionGeneration) {
-        if (attempt === 0) return fetchWorkflowTree(1)
-        throw new Error('Workflow identities changed while refreshing the workflow tree.')
-      }
-      applyWorkflowTree(data)
-      error.value = null
-      return workflowTree.value
-    } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : String(err)
-      throw err
-    } finally {
-      isLoading.value = false
+  async function fetchWorkflows(): Promise<WorkflowInfo[]> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await readWorkflowCatalog<WorkflowInfo[], WorkflowInfo[]>(
+        '/api/v1/workflows',
+        (data) => {
+          applyWorkflowList(data)
+          return data
+        },
+      )
+      if (result.current) return result.value
     }
+    throw new Error('Workflow identities changed while refreshing the workflow list.')
+  }
+
+  function pendingWorkflowTreeRead(): Promise<CatalogReadResult<WorkflowTreeNode[]>> {
+    if (pendingTreeRead?.epoch === catalogAuthorityEpoch
+      && pendingTreeRead.generation === workflowCollectionGeneration) {
+      return pendingTreeRead.promise
+    }
+    const entry = {
+      generation: workflowCollectionGeneration,
+      epoch: catalogAuthorityEpoch,
+      promise: readWorkflowCatalog<WorkflowFolderResponse, WorkflowTreeNode[]>(
+        '/api/v1/workflows/tree',
+        (data) => {
+          applyWorkflowTree(data)
+          return workflowTree.value
+        },
+      ),
+    }
+    entry.promise = entry.promise.finally(() => {
+      // Relinquish this flight before a stale result can admit a retry.
+      if (pendingTreeRead === entry) pendingTreeRead = null
+    })
+    pendingTreeRead = entry
+    return entry.promise
+  }
+
+  async function fetchWorkflowTree(
+    options: { fresh?: boolean } = {},
+  ): Promise<WorkflowTreeNode[]> {
+    if (options.fresh) noteCatalogAuthorityChange()
+    // Retry belongs to each caller; a shared flight never resets this budget.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await pendingWorkflowTreeRead()
+      if (result.current) return result.value
+    }
+    throw new Error('Workflow identities changed while refreshing the workflow tree.')
   }
 
   async function createWorkflow(
@@ -1094,6 +1148,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       name: data.display_name,
       parentId: parentFolderPath(data.path),
     }
+    noteCatalogAuthorityChange()
     workflowFolders.value = [...workflowFolders.value, folder]
     return folder
   }
@@ -1126,7 +1181,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       : null
     await renameAutoSavesForIdentityMoves(identityMoves)
     assertWorkflowIdentitiesCurrent(appliedIdentities)
-    await fetchWorkflowTree()
+    await fetchWorkflowTree({ fresh: true })
     if (nextCurrent) activateWorkflow(nextCurrent, undefined, 'passive')
   }
 
@@ -1177,7 +1232,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       if (policy !== 'empty') forgetRetainedDrafts(previousWorkflowIds)
       if (policy === 'delete_children') {
         await Promise.all(previousWorkflowIds.map(forgetDeletedWorkflow))
-        await fetchWorkflowTree()
+        await fetchWorkflowTree({ fresh: true })
         return
       }
       const nextCurrent = previousCurrent
@@ -1189,7 +1244,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       await renameAutoSavesForIdentityMoves(identityMoves)
       assertWorkflowGenerationValues(fencedIdentityGenerations)
       assertWorkflowIdentitiesCurrent(appliedDestinations)
-      await fetchWorkflowTree()
+      await fetchWorkflowTree({ fresh: true })
       if (nextCurrent) {
         activateWorkflow(nextCurrent, undefined, 'passive')
       }

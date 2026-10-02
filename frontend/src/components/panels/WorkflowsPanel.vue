@@ -371,7 +371,7 @@ async function confirmFormatUpdate(): Promise<void> {
     workflowFormatNotices.value = status.notices ?? []
     pendingFormatPlanId.value = status.pending_plan_id ?? null
     formatDialogVisible.value = false
-    await workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
+    await workflowStore.fetchWorkflowTree({ fresh: true }).catch(() => workflowStore.fetchWorkflows())
   } catch (error) {
     formatUpdateError.value = apiErrorMessage(error)
   } finally {

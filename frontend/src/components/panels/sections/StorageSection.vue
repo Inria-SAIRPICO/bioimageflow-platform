@@ -121,7 +121,7 @@ async function installDemos(): Promise<void> {
     await refreshDemoStatus()
     if (!demoStatus.value?.can_install) return
     demoStatus.value = await installDemoWorkflows()
-    await workflowStore.fetchWorkflowTree()
+    await workflowStore.fetchWorkflowTree({ fresh: true })
     toast?.add({
       severity: 'success',
       summary: 'Example workflows installed',
@@ -152,7 +152,7 @@ async function removeInstalledDemos(): Promise<void> {
     for (const workflowId of workflowIds) {
       await requestWorkflowDeletion(captureDeletionRequest(workflowId))
     }
-    await workflowStore.fetchWorkflowTree()
+    await workflowStore.fetchWorkflowTree({ fresh: true })
     const demoHasWorkflows = workflowStore.workflows.some(
       workflow => workflowId(workflow).startsWith('Demo/'),
     )
@@ -181,7 +181,7 @@ async function removeInstalledDemos(): Promise<void> {
     })
   } finally {
     demoBusy.value = false
-    await workflowStore.fetchWorkflowTree().catch(() => undefined)
+    await workflowStore.fetchWorkflowTree({ fresh: true }).catch(() => undefined)
     await refreshDemoStatus()
   }
 }

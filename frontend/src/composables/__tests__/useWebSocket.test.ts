@@ -313,6 +313,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     await Promise.resolve()
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
   })
 
   it('invalidates an older list response for an unversioned folder structural event', async () => {
@@ -357,6 +358,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     await refresh
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     expect(get).toHaveBeenCalledTimes(2)
     expect(workflow.workflows.map(item => item.id ?? item.name)).toEqual(['kept'])
   })
@@ -414,6 +416,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     await Promise.resolve()
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     expect(removed).not.toHaveBeenCalled()
     window.removeEventListener('bioimageflow:workflow-removed', removed)
   })
@@ -459,6 +462,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     await Promise.resolve()
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     expect((refreshed.mock.calls[0]![0] as CustomEvent).detail).toEqual({
       workflows: [{ workflowName: 'wf', identityGeneration: 12 }],
     })
@@ -486,6 +490,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     await Promise.resolve()
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     expect(commandListener).toHaveBeenCalledOnce()
     expect((commandListener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
       action: 'open',

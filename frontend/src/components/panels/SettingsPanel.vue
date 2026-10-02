@@ -99,7 +99,7 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
     { [payload.field]: payload.value } as Partial<WorkspaceSettings>,
   )
   if (payload.field === 'workspace_path' && !settingsStore.error) {
-    await workflowStore.fetchWorkflowTree()
+    await workflowStore.fetchWorkflowTree({ fresh: true })
     await storageSection.value?.refreshWorkspaceInfo()
     await storageSection.value?.refreshDemoStatus()
   }

@@ -72,6 +72,8 @@ Do not conflate the following states:
    An accepted named Open supersedes pending startup presentation and its late presentation writes; the winning Open retains newer same-workflow recovery and the accepted draft CAS base, while nested inspection and unrelated recovery remain scoped to their owners.
    The Workflows panel owns explicit row/folder browsing independently of loaded metadata; late automatic startup preserves it, and deliberate presentation or canvas activation retakes selection through synchronously consumed immutable intent.
    Ordinary Save, dependency refresh, rebind and structural metadata remapping remain passive; canonical automatic activation retains its exact target-bound cause.
+   Workflow-tree startup consumers share only an in-flight read under the same catalog authority and structural generation; accepted same-ID metadata writes and explicit post-mutation/workspace/migration/reconnect refreshes invalidate that authority.
+   Flat-list and tree requests keep separate response contracts and owned loading/error lifetimes, with at most one stale retry per caller and no resolved-response cache.
 3. An open nested canvas edits a private durable nested snapshot.
    It has its own session identity, ownership chain, revision compare-and-swap, and validation result, and it changes its parent workflow node only when explicitly applied.
 
