@@ -7712,3 +7712,14 @@ App construction refuses conflicting injected store mode before runtime setup, c
 Twelve causal REDs now pass within 131 owner controls; actual sparse frontend requests require no adaptation, and loaded persisted administrator roots/explicit deployment precedence/desktop editing remain covered.
 The checkpoint records qualified app phase recovery after sandbox localhost denial, unchanged source/dependencies, original app FAIL and continued Firefox/full/published/native limits; thread fixtures are not public worker certification.
 Initial/distributed pre-load root capture, ROOT-F022 inert dataset-setting clarity, ROOT-F004 cooperating writers, missing guards at other desktop actions and public force/lifetime remain separate open boundaries.
+
+### M2 performance investigation disposition — October 2
+
+Current request/production-headless evidence at `dc6e976` prioritizes the draft-synthesis repeated-read portion of the existing architecture debt: eight saved reads and eleven workspace format scans even for an empty target, with 682.175 ms warm ASGI draft GET at 100 workflows.
+The first repair is one saved capture per existing lock phase; fresh generation/saved/draft rechecks, migration refusal, source binding, compilation and agent context remain required, and no persistent authority/cache is introduced.
+The measured production startup duplicates workflow-tree requests; B-F020 request-local environment inventory and dataset double reconciliation are bounded follow-on candidates, with estimates and unknowns in the campaign checkpoint.
+No finding is closed by profiling alone; folder/dynamic/results candidates and B-F137 library/Core copy work need relevant semantic/performance evidence before implementation, and frozen M1 coverage is not rewritten.
+
+The bounded same-lock repeated-read repair now passes the exact public controls and 38 affected owners plus the documented backend completion (1,928 PASS, 10 external intentionally deselected, seven logging-order PASS).
+Identical synthetic route/headless workloads verify saved reads eight→three and format scans eleven→six; fresh Browse Open median 829.097→587.439 ms is an observed ~29% reduction for 100 empty workflows, while startup/search improvement remains unestablished.
+This closes only the demonstrated lock-phase duplication; broader workflow-list scans, source/runtime architecture and other performance candidates remain open, with immutable before/after evidence separate from frozen M1 review.

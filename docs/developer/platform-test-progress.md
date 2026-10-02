@@ -680,3 +680,57 @@ Library-only preservation/reconciliation and repair are authorized for that next
 
 The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed in 5 s (measured 4.562 s, Sphinx phase 4 s, exit 0) at `e5a3d0c` plus the reviewed thirteen-path source/specification/record snapshot; `policy-check-docs.log` and `policy-docs-frozen-source.json` retain the exact gate.
 Policy source, existing-family controls and affected specifications are task commit `07d02a90055f17a5c95711cc339b4120db84c38c`; the separate campaign records preserve the qualified limits without changing accepted product bytes.
+
+## Common-task performance investigation — October 2
+
+The read-only batch at clean `dc6e976e2af7a512800a323ad51d1f988bec817a` reused the main private environment and production frontend build with disposable synthetic data; source, dependencies and developer state remained unchanged.
+The actual ASGI routes used 20/100 current-schema empty workflows with five folders and zero sources, and 100/1,000 managed files of 16 bytes with no folders; five sequential warm request medians were draft GET 163.508/682.175 ms, workflow tree 33.878/150.038 ms and dataset list 11.782/61.435 ms.
+The first call is route-first rather than process/OS-cold; folder calls follow catalog initialization and draft calls follow saved reads, while the retained initial unregistered-filename dataset fixture supplies only scan evidence.
+The production headless Chromium batch used 100 flat empty workflows, 1,000 managed files and six fixture tools, real platform lifespan with offline package metadata, no injected response delays and no native desktop.
+Server/build/seeding and search-reset work are outside gesture timers; trace/snapshot recording and Playwright gesture/oracle overhead remain included; graph tasks require the matching post-application canvas event, visible active canvas and two animation frames, and search tasks require the correct painted row.
+
+| Measured task | Actual baseline |
+| --- | --- |
+| First browser navigation to accepted graph/paint | 3,483.916 ms, one observation |
+| Warm reload to accepted graph/paint | median 2,773.944 ms, five observations (2,615–3,444 ms) |
+| Fresh Browse Open | median 829.097 ms, five distinct targets (812–871 ms) |
+| Workflow search, 100 flat rows | median 41.315 ms, five observations |
+| Dataset search, 1,000 flat rows | median 171.034 ms, five observations (159–183 ms) |
+
+Every measured startup sends two workflow-tree GETs with identical 47,965-byte responses; this proves redundant work rather than twice the user latency.
+Synthesized-draft GET performs eight saved reads and eleven workspace format scans; sharing one saved capture within each existing lock would remove five repeated reads/scans while retaining six format-plan evaluations and all fresh authority checks.
+The nonnested scan span supports a conditional equal-pass opportunity of about 64/298 ms at 20/100 workflows; these are allocation-model estimates, not measured improvements or guaranteed speedups, and nested read spans are not added.
+Dataset list reconciles twice per request; at 1,000 managed files the total reconciliation span is 28.082 ms, suggesting roughly 14 ms if one equally costly pass is removed while preserving fresh external-file visibility.
+Tool environment discovery repeats per tool, including shared names; its latency and folder-index, dynamic-schema, results-page, dense/source graph, process startup and cold/warm worker gains remain unmeasured.
+
+The authorized gesture batch passed in measured 35.180 s with 21 tasks and zero page errors; a preceding fixture-only admission failure consumed SettingsStore before load, yielded no gesture result and is retained separately after exact harness correction.
+Exact harnesses, request starts/body sizes, traces, source/build manifests and cleanup proof remain in `/private/tmp/bioimageflow-m2-performance/`; the benchmark is investigation evidence, not a new product completion or full/browser certification.
+Only disposable synthetic runtime was retired, with its server PID/listener independently absent; the 57,667,584-byte stat-based file-reference enumeration can follow links and is not exclusive allocation or recovered-volume evidence.
+No existing environment/worktree cleanup is claimed.
+The frozen M1/first-wave ledger and prior qualified acceptance remain unchanged; independent review precedes implementation, then the same request batch measures actual before/after gains.
+
+### Draft snapshot reuse: observed repair result — October 2
+
+The reviewed internal helper captures one saved `WorkflowFile` per existing locked synthesis phase; graph, base hash and timestamp derive from that capture, which does not retain current authority after lock release.
+All later saved/draft, identity-generation and storage checks, whole-workspace format admission, actual compilation/source binding and agent-context updates remain; no cross-request cache, API/schema, dependency or frontend change was made.
+The public graph/hash/mtime/purity/no-persistence control failed with eight reads instead of three before repair, while both held-validation saved/draft authority controls already passed; the same three controls then passed in 3 s (measured 2.731 s, pytest 0.58 s).
+All 38 targeted public-draft, CAS/reset, format/migration, validation, compile-generation/storage, Clear/restart and source-binding owners passed in 8 s (measured 8.343 s, pytest 6.12 s), including exact durable draft byte preservation.
+
+The unchanged request harness verifies eight→three saved reads and eleven→six format scans; five warm draft medians at 20/100 workflows changed 163.508→110.869 ms and 682.175→449.708 ms.
+The same source-pinned production build, real isolated app, 100 empty workflows/1,000 managed 16-byte files and matching graph/paint oracle measured fresh Browse Open 829.097→587.439 ms (five distinct targets per cohort): an observed 241.658 ms/~29% reduction in this fixture, compared with the prior conditional 298 ms model.
+Post-repair headless batch passed in measured 33.058 s with 21 tasks and zero page errors, against the original 35.180 s investigation batch; total harness duration is not a user-task latency.
+Warm startup medians 2,773.944→2,731.356 ms have overlapping broad ranges; workflow search 41.315→42.122 ms and dataset search 171.034→168.249 ms provide no established improvement.
+Unchanged tree and saved-route timing drift also demonstrates machine/batch variability; this sequential synthetic comparison is not a randomized benchmark or universal speedup guarantee.
+Before/after artifacts and exact seven-path accepted-source delta are preserved in `draft-performance-before-after-comparison.json` and `draft-performance-after-frozen-source.json`, with immutable `.before` route/headless/trace/build records in the performance receipt directory.
+Both production cohorts retired their owned synthetic roots and server PIDs/listeners; existing main dependencies remain in place.
+Their pre-retirement enumeration reports 57,667,584 stat-based file-reference bytes per cohort, but follows links and does not establish exclusive allocation or recovered-volume bytes.
+The next independently bounded frontend packet is pending-only workflow-tree singleflight with exact freshness epochs, explicit post-mutation refresh, stale-response fences and retry semantics; tool-catalog epochs and broader caches remain separate.
+
+The documented `env UV_OFFLINE=1 scripts/test check backend` passed in 135 s (measured 135.007 s, exit 0): 1,928 tests passed, 10 external cases were intentionally deselected, and seven logging-order controls passed; lint passed.
+The frozen source is `dc6e976` plus the exact seven-path manifest, and all six lock/configuration files, five installed dependency metadata files and clean editable BioImageFlow `dff04e3` remain unchanged.
+This scoped backend acceptance adds no full, cross-browser, published-package, worker-provisioning or native final-M5 certification; prior qualified failures and the final Firefox admission block remain recorded.
+
+The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed in 4 s (measured 4.016 s, Sphinx phase 3 s, exit 0) at `dc6e976` plus the reviewed seven-path source/specification/record snapshot.
+A subsequent reviewed plain-prose lane clarification follows the existing smallest-scope rule and adds no link, structure or product-contract change.
+
+The internal source/test/specification repair is task commit `5653800902db35a78dea89e55aaa0660f6322916`; its separate campaign record commit retains the measured workload and certification limits.

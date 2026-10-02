@@ -359,3 +359,15 @@ The current policy checkpoint qualifies app-phase delivery separately from open 
 The next library-owned force contract begins with preservation-first reconciliation of the observed four-ahead/two-behind histories and dirty held library/T1 inputs; do not reset, overwrite, import whole WIP trees or publish automatically.
 The reviewed boundary is strict selected-owner close → public managed removal → provision with replacement false → start → cache publication, preserving False warm reuse, retry ownership on failed close and established best-effort stop.
 Platform physical admission/cancellation and later published API pins/worker compatibility require their own aligned acceptance; conditional readiness is not implemented or released behavior.
+
+## Measured platform performance repair queue — October 2
+
+Use common-task request and accepted-graph/paint measurements alongside architecture review; test-command duration is not application latency.
+The accepted first repair uses one saved `WorkflowFile` capture per existing locked draft-synthesis phase, preserving fresh unlocked-phase generation/saved/draft rechecks, full workspace migration admission, compilation, source freshness and agent context.
+Then coalesce simultaneous workflow-tree requests without caching away later mutations or failed-request retries; request-local shared environment discovery and a single dataset-list reconciliation are smaller candidates to validate at their owning boundary.
+Folder/ancestry indexes, affected-node dynamic schema refresh and library/Core repeated preparation/codec work remain conditional source candidates until relevant task evidence establishes value and contract safety.
+Use the same disposable cardinalities and cache assumptions for before/after investigation, report request multiplicity separately from user latency, and avoid absolute timing assertions in CI.
+Develop with distinguishing functional regressions and owner checks, then one proportionate scoped completion/docs gate for the accepted repair wave; use app at cross-stack milestones; retain unmeasured cold provisioning, results/dense graphs and published/worker/native limits.
+Do not create a benchmark subsystem, broaden frozen M1 inventory or rewrite the suite to obtain these measurements.
+
+After this measured draft repair and its scoped backend/docs gate, resume the preservation-first library force-Recreate/lifetime packet before the separate workflow-tree singleflight repair; both preserve the published/worker/native certification boundaries.
