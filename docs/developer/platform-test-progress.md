@@ -621,3 +621,34 @@ The live revision/status/exact hashes are recorded in `wetlands-current-drift-bo
 The current M2 ledger checker binds platform source to accepted `df675a9`, preserves frozen membership and separately inventories the new helper; the five Wetlands drift hashes remain historical comparisons with their separate dated source-delta review.
 That delta is release documentation and a consistent package/runtime/lock 2.4.2→2.4.3 bump, with protocol integers unchanged; published 2.4.3 wheel/host-worker compatibility has not been executed and requires compatible pins and recreated persistent workers.
 Full/browser/published/native gates and the 50/51 browser gaps remain open after this integration.
+
+## Selection and credential repair checkpoint — October 2
+
+The bounded selection packet and ROOT-F001 credential rollback are independently accepted with qualified completion on `3fb17ac` plus their exact 15-path source union.
+The selection-only 11-path patch is SHA-256 `9d49802160857f6a645d55a7e7943f046418b97f76fc5219dd0c163697b528bc`; the sequential credential six-path patch is `70e0d56581aadab59fe22079d56495832378c8871c0a006bac4b89a796dde726`.
+The overlapping Context/v1 ownership is proved by applying selection first and credential second in disposable scratch files; all 15 hashes match the accepted final source in `/private/tmp/bioimageflow-m2-credential-rollback/selection-credential-final-union-proof.json`.
+The existing per-file ledger remains explicitly bound to first-wave `df675a9`; this current accepted-source manifest is separate and does not rewrite the frozen M1 history or rebind all 1,800 rows.
+
+Credential controls distinguish populated-key loss, mutate-then-raise and preimage-read failure before the repair (one FAIL and two FAIL), then the same three selectors pass; measured commands took 5.833 s, 21.910 s and 42.711 s respectively.
+Focused SettingsStore/settings-route/credential owners pass all 71 tests in 20 s (measured 19.295 s), with no skipped cases or live keyring/account access.
+The bounded contract captures all distinct planned password-write preimages before attempts, restores each attempted key once including mutate-then-raise, preserves the original BaseException and continues best-effort provider restoration with a fixed count-only warning.
+Shared aliases retain ordered last-explicit-password behavior and credentials until their last referencing record is removed; known pre-replacement failure preserves disk/memory independently of provider restoration success.
+No guarantee covers accepted replacement, acknowledgement ambiguity, process termination, noncooperating writers or native keyring atomicity.
+
+The one `env UV_OFFLINE=1 scripts/test check app` invocation FAILED in 289 s; backend had 1,912 PASS, one subprocess-boundary failure and 10 external tests intentionally deselected, while frontend units passed all 1,350 tests.
+The unchanged exact Napari probe selector subsequently passed in 3 s (measured 2.545 s, pytest 0.11 s); backend acceptance is 1,912 retained plus this recovered case, not a successful original backend invocation.
+The original concurrent-run five-second output-probe timeout remains unresolved; isolated recovery does not establish its startup/read/termination cause.
+Two selection test-static defects were corrected; their two owner controls passed in 4 s with 38 title-filtered skips, and frontend lint/type recovery passed with durations not captured.
+Retained backend lint (PASS, 10 s), frontend production build (PASS, 42 s), and all 1,350 frontend units in 134 files (zero skipped), plus the corrected exact Chromium witness (one PASS, 11 s), logging-order controls (seven PASS, 3 s), and canonical critical Chromium cases (18 PASS, 82 s) complete the independently accepted scoped phase assembly.
+The final Firefox witness/smoke is externally blocked by an independently observed Mach subprocess/page-admission crash before application setup; it supplies no new cross-browser completion credit and is not retried without a changed admission environment.
+Original app/full/browser failures, contextual probe uncertainty, historical coverage/gaps, published compatibility and native final-M5 gates remain open; this is qualified repair delivery, not monolithic app/full/browser certification.
+Phase logs and final source/static recovery manifests remain in `/private/tmp/bioimageflow-m2-retrospective/` and the credential receipt directory.
+
+The clean merged first-wave acceptance tree was retired after preserving the held RED/alignment evidence and proving no consumers: only exclusive `.venv`, `node_modules` and production build stores were removed, totaling 616,853,504 allocated file-reference bytes.
+Residual source/caches/evidence retain 140,771,328 allocated file-reference bytes in `/Users/amasson/.Trash/bioimageflow-firstwave-completed-20261002-130401-85dc7bb5`; prune and merged-branch deletion completed, with registered worktrees reduced from 19 to 18.
+Observed volume-free space changed by −219,131,904 bytes during concurrent activity; no recovered-volume attribution is made from file allocations, shared/APFS blocks or that observation.
+The exact retirement receipts are `firstwave-retirement-before.json`, `firstwave-retirement-removal.json` and `firstwave-retirement-final.json` in the retrospective directory; held/shared/adopted/user environments and recovery stashes remain preserved.
+Configured-policy ROOT-F002/003 is the next bounded owner packet; public force-Recreate/lifetime, suite cost measurement and published dependency reconciliation remain separate obligations.
+
+The one consolidated `scripts/test check docs` passed in 4 s (exit 0; campaign dashboard/links and warning-clean Sphinx) at `3fb17ac` plus the accepted packet/specification/result-record bytes; the exact log is `selection-credential-final-docs.log` in the retrospective directory.
+Selection is task commit `40958bffa6a0daf80390e679f3eb52d767bbd716`; credential rollback is `3f4a20765eced75e878902b02336caac70115291`, preserving exact sequential shared-file ownership.

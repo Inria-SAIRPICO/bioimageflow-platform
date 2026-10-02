@@ -7681,6 +7681,15 @@ C fixes only a browser fixture prerequisite and failure-preserving owned cleanup
 Historical source descriptions and adjacent open findings above remain evidence, not erased by these bounded dispositions.
 
 
+### M2 credential rollback disposition — ROOT-F001
+
+The injected-provider populated-key and mutate-then-raise/read-failure REDs now pass on the exact repaired SettingsStore; all 71 existing owner controls pass.
+All distinct planned password-write key preimages are read before attempts, ordered alias writes remain supported, and attempted keys are recorded before setters and restored once in reverse first-attempt order.
+Best-effort compensation continues across provider restoration faults and preserves the original BaseException, emitting only a fixed warning with failed-key count.
+Known pre-replacement failures preserve disk and live settings even if credential restoration is incomplete; accepted replacement, ambiguous acknowledgement, process termination, external writers and OS keyring atomicity are outside this guarantee.
+The shared-alias removal control retains credentials while referenced and deletes only after the last alias; ROOT-F002/003 configured policy and ROOT-F004 independent writers remain separate open findings.
+The checkpoint records the original app FAIL and qualified recovered phases, external Firefox admission block and remaining full/published/native limits; these controls do not certify live credentials or native desktop.
+
 ### M2 selection ownership — ROOT-F098, controlled frontend defect
 
 WorkflowsPanel previously followed every current-workflow name update, so delayed automatic startup loading could replace a newer explicit row/folder choice and retarget its details Open action.

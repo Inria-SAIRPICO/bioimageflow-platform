@@ -272,6 +272,7 @@ The orchestrator assigns a cleanup owner when each task worktree is created, and
 At task integration, require committed changes, clean tracked/untracked source state, merged HEAD, no active owner/process and preserved actionable evidence before retirement.
 Release task-owned servers/workers through their normal owner and verify physical retirement before deleting their disposable files; a process stop request alone does not prove cleanup.
 Remove only that completed task's rebuildable `.venv`, `node_modules`, build output and disposable test runtime/environment stores, preserving user data, credentials, adopted/shared environments and retained artifacts.
+Bulk dependency deletion acquires the heavy-work token or runs outside timing-sensitive browser/subprocess validation; prior timing failures have no established causal attribution to cleanup.
 Follow `AGENTS.md`: move the retired source tree to Trash with `mv`, run `git worktree prune`, then delete only the merged task branch.
 Record paths, branch/HEAD, ownership/status checks, removed bytes, bytes merely moved to Trash and preserved evidence; moving files to Trash alone is not a disk-space reclamation claim.
 Do not run a global cache purge or delete environments by private dependency paths; actual managed resources retain their public lifecycle/ownership rules.
