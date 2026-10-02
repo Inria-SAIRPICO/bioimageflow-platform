@@ -4,7 +4,8 @@ orphan: true
 
 # New platform confidence campaign checkpoint
 
-Prepared and started 2026-09-30; **RUNNING — M1 meticulous agreed-scope review COMPLETE; bounded M2 decision queue below; Wave 1/N1/E1 accepted, I1/T1 preserved**.
+Prepared and started 2026-09-30; **RUNNING — M1 agreed-scope review COMPLETE; M2 first-wave delivery and separate selection repair; full/browser/published/native certification OPEN**.
+The user authorized the October 2 retrospective update and continued execution; the [current queue and gates](#october-2-strategic-checkpoint-and-first-wave-delivery) supersede earlier dated status statements.
 The user authorized the 2026-10-01 campaign revision following an independent GPT-6.1 Sol Ultra retrospective, then continued execution.
 J1–J4 now pass in Chromium and Firefox on the repaired baseline; J3 also passed five deliberate race repetitions in each browser.
 Readiness frontend composite acceptance, two-browser critical smoke, independent implementation review and documentation milestone validation are complete; the task-only main commit is `4b58e44404b7502f2df7b3f1f1b7bbaa9d0d3117`; native checks are not yet credited, and no historical candidate branch has been integrated.
@@ -554,3 +555,53 @@ Observed volume-free space increased by 104,169,472 bytes over the interval, wit
 `git worktree prune` succeeded, only merged branch `campaign/package-uninstall-current` was deleted, and registered platform worktrees decreased from 20 to 19; all held/dirty/unmerged trees, main dependencies/runtime, user data and managed/shared/adopted environments remain preserved.
 The complete retirement receipt is `/private/tmp/bioimageflow-uninstall-cleanup-receipt.json`, with filtered process and pre-deletion allocation companions; runtime/browser metadata was preserved before removal.
 `env UV_OFFLINE=1 scripts/test check campaign` passed for this routine B integration/retirement checkpoint at `1ca3ff26571d5f341ce67ac8097cd7a6b9fb01e4` plus this progress-only documentation delta (exit 0; runner 2 s, measured 2.28 s; dashboard and 68 active local links); the log is `/private/tmp/bioimageflow-uninstall-cleanup-campaign-check.log`, and no product/Sphinx phase was rerun or credited by this checkpoint.
+
+## October 2 strategic checkpoint and first-wave delivery
+
+Independent strategic review confirms a real architecture-driven campaign and recommends closing bounded packets before accumulating more integration state.
+M1's accepted historical scope remains 1,799 inputs: 1,649 reviewed and 150 classified; the 573 recorded candidates are qualified findings, not 573 proved bugs or mandatory rewrites.
+The frozen platform set remains 740 inputs.
+The new materialized-resource helper is an independently reviewed current M2 source addition; add its separately named ledger row only after actual integration, without changing the frozen M1 history.
+
+| Packet | Current state and next gate |
+| --- | --- |
+| D1 exact dataset deletion; B confined uninstall | Integrated; bounded source/results and B retirement recorded above |
+| A executable/resource authority; D2 staged dataset publication | Source-approved in the combined acceptance tree; task-only commits/integration await independent scoped phase acceptance and sequential index handoff |
+| C imported-layout fixture | Independently accepted exact Chromium/Firefox controls and lint; fixture-only commit remains separate |
+| Startup/Browse selection ownership | Existing-component deterministic RED preserved outside first-wave delivery; next bounded product/spec repair maps every actual presentation writer |
+| Credentials, configured deployment policy, public force-Recreate/lifetime | Urgent next owner-contract packets before M3 expansion; force-Recreate is unresolved across public owners, not assigned to Wetlands by inference |
+| Suite optimization | No measured suite-wide speedup; evaluate one costed artifact/fixture candidate after architecture repair, retaining distinct oracles |
+| Published compatibility and native desktop | Release/pin/wheel prerequisites remain open; desktop only at final M5 |
+
+### First-wave completion evidence and open certification
+
+The combined `scripts/test full` at base `670200c3596d429c705f7dc473a91f25f6345e69` plus the frozen A/D2 source manifest `e4e4f199489bd03e857bd471d2bc19a0176a49135b2b24555a1375112f097edc` FAILED in 1,069 s.
+Its successful unchanged phases are retained: backend 1,914 tests with branch coverage, frontend 1,337 units with branch coverage, 7 logging-order controls, lint/types/build, published common-tools 0.2.1 compatibility and real worker/stale-generation/failure-retry controls.
+This used frozen editable BioImageFlow/Core sources and published common-tools; it is not certification of future published BioImageFlow/Core or CommonTools fixes.
+Original Chromium stopped after 61 passes at the imported-layout failure; original Firefox failed initial mount before its remaining 123 cases, with its original cause still unexplained.
+The later Firefox completion and both browser tails also FAILED and remain recorded; isolated single/five timing passes do not erase those failures or establish the original request order.
+
+C's frozen manifest is `75239bcc0148b5ccea1a8ff5f5e267e1e8ac7521df1b07366334a9e05d3d0c48`.
+The five missing native critical Chromium selectors (`workflow-crud.spec.ts:87,:114,:208,:243` and `workflow-interface.spec.ts:396`) passed through `scripts/test focus e2e --project=chromium` with those exact selectors and `--trace=on`: runner 33 s, measured 32.979 s, no skipped/unrun cases.
+Their before/after source manifest is `38a07a15b99ac177e8b86074f0ee38349b7c77266bd6df80bb249ec5e70aa98b`; its sole product-snapshot difference from C is the separately held jsdom selection RED, with E2E product/config/locks/library/metadata unchanged.
+The native critical collection is now 18/18 unique actual successes: 13 retained plus these five; independent review accepted the bounded scoped phase assembly and source applicability.
+Current conservative unique browser coverage is 74/124 Chromium and 73/124 Firefox, with 50/51 remaining gaps; original tails' 55/51 unrun counts remain historical outcomes.
+Repeats contribute stability evidence, not extra unique cases.
+The completion proof is `/private/tmp/bioimageflow-m2-retrospective/firstwave-critical-five-completion-proof.json`; independent acceptance is `independent-first-wave-assembly-and-strategy-acceptance.md` beside it, with source/identity/phase logs and original failures.
+
+The integration owner and peer must verify each phase's source, fixture, generated artifacts, editable library, installed dependency and runtime applicability before accepting the scoped assembly.
+This satisfies only the reviewed first-wave task scope, not M2 completion or a monolithic app/full PASS.
+Preserve the selection RED patch independently; stage D2's exact six-file patch first, then A-only shared-file residuals, then C-only fixture changes, each separately reviewable.
+Snapshot and stash only main's six owned D2 paths before cherry-picking accepted commits; preserve the B cleanup and verified gh-release documentation commits and all recovery evidence.
+Verify final combined source equivalence before updating accepted source ledger rows, then retire only the committed, clean, merged, physically inactive task worktree and exclusive rebuildable stores.
+
+### Next sequence and durable gates
+
+Repair selection through the public presentation owners and distinguishing deferred-startup/explicit-intent tests, retaining normal Create/Open/Save As/Duplicate/Import and root/nested activation.
+A frontend ownership change invalidates affected frontend/browser evidence; preserve backend/external phases only with equivalence and run the exact failures before broader affected completion.
+Then address credential rollback, configured policy, force-Recreate and physical lifetime in their actual owning repositories before expanding coverage.
+Before published certification, reconcile editable library baseline `dff04e3` with upstream `7c718a0`, address the unpublished BioImageFlow parallel-name fix `9ae7b2c` and CommonTools LabelOverlaps fix `fd6d53e`, release affected packages through the [verified gh flow](platform-test-plan.md#dependency-pypi-releases-with-gh), update platform and worker Core pins, and validate actual published wheels.
+The platform DataFrame override guard does not close the upstream materialization defect; prior BioImageFlow 0.8.6 and Wetlands 2.4.2 publications are not campaign releases.
+No publication is performed automatically by this campaign update.
+Use targeted development regressions and owner checks, broader integration/docs/browser at coherent milestones, and a low-frequency strategic review after accepted repair integration or material scope change.
+The effort split in the plan is a heuristic; no measured allocation or suite optimization is claimed.

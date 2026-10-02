@@ -236,6 +236,25 @@ Trigger an exceptional targeted review for a contradictory public dependency con
 Use independent high-reasoning review for unresolved high-impact decisions, retaining the ordinary two-worker and specialist arrangement.
 The campaign is a learning and repair process, not a percentage-filling exercise.
 
+### October 2 repair-wave decision
+
+Close the bounded first wave A/D1/B/D2/C: executable/resource authority, exact dataset deletion/publication, confined uninstall and the imported-layout fixture correction.
+Keep the demonstrated startup-versus-Browse selection ownership defect in a separate next repair packet; preserve its RED regression independently and exclude it from first-wave commits.
+Complete that packet before the urgent populated-credential rollback, configured deployment-policy admission, public force-Recreate and physical-lifetime packets; resolve or explicitly block those architectural priorities before M3 coverage expansion.
+Force-Recreate remains a public ownership/contract seam to reconcile in the correct repository, not an assumed Wetlands defect.
+
+Accept each task through its reviewed impact map and smallest applicable completion scope.
+For this first wave, independently inspect the retained backend/frontend/logging/external and current fixture phases plus all 18 critical Chromium cases, with exact source, dependency, fixture and runtime equivalence.
+Record this as scoped phase assembly; the original full invocation, browser failures and remaining broad-browser gaps stay open and cannot become a monolithic app/full PASS.
+After a selection product change, rerun its exact causal/original failures and affected frontend completion, then both-browser completion unless per-case independence justifies narrower reuse; unchanged backend/external phases need no automatic repeat.
+Keep documentation checks at coherent increments and native desktop acceptance at final M5.
+
+Use about 50% of the next repair wave's effort for owner/caller analysis and implementation, 30–35% for meaningful verification, and the remainder for specifications, integration and cleanup as a planning heuristic, not a measured quota.
+Suite-wide optimization has not been measured.
+After the architectural repairs, evaluate one separately measurable suite candidate, prioritizing reliable first-failure artifacts or deterministic fixture ownership; compare baseline/candidate cost and preserve distinct contracts, entry points and failure oracles before merging or removing tests.
+Take one strategic checkpoint after the accepted repair wave or a material scope change, before M3 and before final certification; combine adjacent triggers instead of reviewing strategy after each test failure.
+The [current checkpoint](platform-test-progress.md#october-2-strategic-checkpoint-and-first-wave-delivery) owns the active queue, completion evidence and remaining gates.
+
 ## Repair, delegation, and validation
 
 The executing session is the orchestrator and may use at most two ordinary workers, keeping one slot available for a specialist.

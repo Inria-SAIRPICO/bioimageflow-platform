@@ -4,10 +4,10 @@ orphan: true
 
 # Complete codebase review findings
 
-**Review open; fixes and further campaign tests held.**
+**M1 agreed-scope review complete; bounded M2 repairs and remaining certification gates are tracked in the [current checkpoint](platform-test-progress.md#october-2-strategic-checkpoint-and-first-wave-delivery).**
 This register records every identified candidate from the complete review, preserving source risks separately from executed defects and accepted design limitations.
 The [audit](platform-test-architecture-audit.md) and [per-file ledger](platform-test-file-review.tsv) define scope, hashes, owners and actual review status.
-Recording an action does not authorize its implementation before the complete-review gate closes.
+The M1 gate is closed; each future repair still requires its own reviewed scope and completion evidence.
 
 ## Carried partial findings
 
@@ -25,8 +25,8 @@ Accepted complete-file batches: A batch 1 (20 platform files), root batch 1 (27 
 B batch 1 adds 19 complete files; shared-infrastructure batch 1 adds 25 reviewed and one specifically classified file.
 A batches 2–3 add 17 full-content files (11 platform and six library); the checkpoint contains 121 complete entries (120 reviewed / one classified), with 1,677 baseline entries still pending.
 B batch 2, A batch 4, root batch 3 and shared batch 2 add 76 more full-content judgments.
-Current checkpoint: 1,799 inputs / 1792 complete (1643 reviewed / 149 classified) / 7 pending, with 573 identified findings.
-The newly authored findings register remains a pending current-document input beyond the frozen baseline.
+Historical pre-terminal checkpoint: 1,799 inputs / 1792 complete (1643 reviewed / 149 classified) / 7 pending, with 573 identified findings.
+At that dated checkpoint the newly authored findings register was a pending current-document input beyond the frozen baseline; the terminal accepted M1 record below supersedes that status.
 Ownership was corrected for nine existing counterpart tests without silently granting review credit.
 Each accepted finding will name its ID/severity/classification, exact source and relevant lines, causal reasoning/consequence, existing test/oracle or missing distinction, essential contracts to retain, uncertainty and proposed future action.
 Files with no finding retain specific review reasoning in the ledger rather than an implied clean bill.
