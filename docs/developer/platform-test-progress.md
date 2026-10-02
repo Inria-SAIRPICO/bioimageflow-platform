@@ -734,3 +734,32 @@ The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed in 4 s (m
 A subsequent reviewed plain-prose lane clarification follows the existing smallest-scope rule and adds no link, structure or product-contract change.
 
 The internal source/test/specification repair is task commit `5653800902db35a78dea89e55aaa0660f6322916`; its separate campaign record commit retains the measured workload and certification limits.
+
+
+### October 2 owning Wetlands completion prerequisite — local checks complete, release gates open
+
+The next force/lifetime gate now fixes the completion boundary in its owning Wetlands repository; repeated terminal exception identity is not accepted as a public completion guarantee.
+Installed Wetlands 2.4.2 and live `3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1` operation source are identical; the currently published GitHub/PyPI version is 2.4.3, verified October 2 before work began.
+This extends existing B-F007's notification-before-completion seam without adding a frozen M1 row or changing historical review credit.
+The isolated `campaign/wetlands-completion` candidate adds `Operation.wait_for_completion(timeout=None) -> None`, keeps `wait_for()` result/stored-error behavior, isolates callback `BaseException` during live delivery and replay, and refuses incomplete self-wait by the runner or live notification publisher.
+A `KeyboardInterrupt` inside callback execution is also isolated; outside waiter interruption still propagates, and completion does not independently certify every thread, PID or deferred reclamation.
+
+Actual manager-returned public operation controls on original source produced nine failures: terminal listener escape stranded the completion wait, progress changed the outcome, replay escaped the caller, and self-wait timed out; the other five failures identified the missing completion-only API.
+The original bounded RED log retains one expected unhandled-thread warning; no physical worker/Pixi certification was performed.
+The same nine controls then passed with fourteen unrelated controls deselected (pytest 0.34 seconds); final owner coverage, including cleanup-safe fixtures, ordinary/stored interrupt outcomes, completed replay and runner self-wait, passed 51 tests (pytest 0.94 seconds).
+Private fast/static dependencies were prepared from the frozen owning lock; main remains at `d8a50bb`, installed platform dependencies and all protected held inputs are unchanged.
+
+The additive API makes 2.5.0 a candidate next minor version under the owning release guide, not a prepared or published release and not a supported dependency floor yet.
+Owning fast/static/strict-doc checks, independent applied review and task-only source acceptance precede version preparation; cross-platform/real-Pixi release CI, gh release/PyPI confirmation, library/platform/worker pin alignment and published compatibility remain separate required gates.
+No push, tag, release, publication, desktop or Firefox retry is authorized or credited by this packet.
+
+
+The owning README fast lane `uv run --frozen --no-sync --extra shared-memory pytest -m "not integration and not compat and not manual"` passed: 616 tests, three platform skips and twelve integration/compat/manual deselections (pytest 53.19 seconds; measured command 53.550 seconds).
+Two skipped controls require a case-sensitive filesystem and one requires Windows native file IDs.
+`uv run --frozen --no-sync ruff check`, `ruff format --check` and `mypy src/wetlands` passed; individual static durations were not captured.
+The strict owning docs command `uv run --frozen --python 3.14 --extra docs --no-dev mkdocs build --strict` passed in 142.435 seconds including its private environment replacement; MkDocs build reported 7.20 seconds.
+Fast/static checks used private Python 3.13; strict docs replaced only that worktree's `.venv` with frozen Python 3.14 docs dependencies, preserving locks, source and all platform environments.
+These results bind `3ee2ffe` plus the six-file `wetlands-completion-applied.json` source manifest; public API candidate acceptance is distinct from release CI, published wheels, pins and worker certification.
+
+The reviewed owning six-file candidate is committed as `0652aa5ede5bed10e189be7db328da0c8d6e419e` on `campaign/wetlands-completion`; it is not merged to the owning release branch or published.
+The separate routine platform `scripts/test check campaign` checkpoint check passed in 0.127 seconds against main `d8a50bb` plus this progress append; no platform runtime or full certification was repeated.
