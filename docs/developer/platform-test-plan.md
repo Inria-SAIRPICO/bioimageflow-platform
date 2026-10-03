@@ -395,3 +395,8 @@ Cross-review producer/consumer contracts, generated/model/session/UI types and s
 Use retained evidence and targeted uncovered-path review rather than repeating unchanged file review or broad suites; no source changes, new tests, benchmarks, environment installation, Firefox or desktop execution supply this gate.
 Record all confirmed findings and qualified risks before repair, with prioritized bounded packets and explicit deferred-owner triggers; independent cross-owner completeness review must confirm covered families, known unknowns and every new finding before root acceptance and implementation.
 The intended review report, task/source coverage matrix, suite/specification assessment and consequential plan/checkpoint update are committed after one applicable documentation gate; frozen M1 counts/history remain unchanged, and architecture acceptance supplies no runtime or publication certification.
+
+
+The [supplemental architecture report](platform-supplemental-architecture-review.md) and [573-ID dispositions](platform-architecture-candidate-dispositions.tsv) now supply the intended findings/coverage/priority decision packet for this gate.
+Root and independent completeness acceptance of the supplemental findings/triage gate is recorded on October 3; the dependency-ordered waves explicitly separate public release prerequisites, library floor/lock closure, recovery/incarnation, physical lifetime/writer ordering, dataset/canvas ownership, result/scientific identity and suite/specification maintenance.
+Treat source qualification and mitigations as evidence for exact owning controls, not confirmed incidents or permissions for broad rewrites; preserve deliberate owner-trigger deferrals and dynamic unknowns.

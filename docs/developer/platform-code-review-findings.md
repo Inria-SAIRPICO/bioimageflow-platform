@@ -7723,3 +7723,28 @@ No finding is closed by profiling alone; folder/dynamic/results candidates and B
 The bounded same-lock repeated-read repair now passes the exact public controls and 38 affected owners plus the documented backend completion (1,928 PASS, 10 external intentionally deselected, seven logging-order PASS).
 Identical synthetic route/headless workloads verify saved reads eight→three and format scans eleven→six; fresh Browse Open median 829.097→587.439 ms is an observed ~29% reduction for 100 empty workflows, while startup/search improvement remains unestablished.
 This closes only the demonstrated lock-phase duplication; broader workflow-list scans, source/runtime architecture and other performance candidates remain open, with immutable before/after evidence separate from frozen M1 review.
+
+
+### Supplemental architecture review — October 3
+
+The [supplemental report](platform-supplemental-architecture-review.md) and [original candidate dispositions](platform-architecture-candidate-dispositions.tsv) preserve the frozen573-ID set and qualify current source annotations; no product repair, new runtime reproduction or all-candidate confirmation is supplied by this review.
+
+### Existing A-F061 extension — editable catalog omission is not authoritative absence
+
+Current startupWorkflow.ts59–68 clears recovery/last-opened state on catalog omission, while workflow_store.py1714–1733 deliberately hides pending-format workflows and invalid documents from the editable list.
+The direct saved read distinguishes true absence from pending migration or missing source; catch-all saved-load cleanup79–93 remains part of A-F061.
+This is a current-source extension of the existing recovery authority finding, not a newly reproduced lost workflow; the startup/recovery owner must preserve typed failure/absence distinctions and accepted offline recovery.
+
+### Existing A-F004 extension — explicit Save promotion and first-admission semantics
+
+rootWorkflowSave.ts and the critical persistence helper cross fresh draft GET, graph-only saved PUT and later draft CAS as separate publications; a failed later draft promotion does not undo an already accepted saved document.
+The current backend captures and rechecks identity/generation after admission, which protects in-flight replacement but does not distinguish a delayed old caller first admitted after same-ID recreation; A-F059 retained notices and A-F072 explicit nested-owner admission are related, separate consumers.
+Choose the intended Save-promotion/acknowledgement contract before repair, preserve ordinary close lifecycle/CAS mitigations, and reuse exact target/edit/conflict controls rather than claiming newly demonstrated loss.
+
+#### ROOT-F099 — P3 qualified root presentation diagnostic tuple coupling
+
+rootWorkflowPresentation.ts49 copies global workflowStore.missingTools after loadWorkflow696–719 returns only the addressed graph; that load publishes global diagnostics only when presentation is permitted.
+Overlapping foreground continuation scheduling can therefore expose another load's diagnostics instead of a request-scoped graph/info/diagnostic tuple; this is an unconfirmed, unmeasured source projection candidate, not an observed wrong badge or executable-binding defect.
+App supersession prevents rejected startup mounting, and later accepted validation node_tools can repair schema diagnostics; those mitigations are retained.
+The root presentation/API owner should decide one immutable addressed presentation record and add a crossed-response diagnostic control only when this bounded packet is selected.
+The existing immediate accepted-background diagnostic test does not establish crossed-response authority; ROOT-F099 is supplemental and excluded from the frozen573 denominator.

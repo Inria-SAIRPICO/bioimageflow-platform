@@ -872,3 +872,17 @@ The supplemental gate is now planned before further repair/integration: three co
 Preparatory read-only traces are not completed gate acceptance; the intended report and final consequential record will be delivered after independent review, preserving frozen M1 history, current library WIP/private environment and all protected roots.
 
 The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed against `ec65a54` plus the reviewed three-file plan/resume/publication snapshot (exit 0, runner 3 seconds, measured 3.100 seconds, Documentation phase 2 seconds); this sentence records its result without changing the accepted gate or published source.
+
+
+### Supplemental architecture findings gate — October 3
+
+Three coordinated read-only packets now supply the intended [supplemental report](platform-supplemental-architecture-review.md) and [original candidate dispositions](platform-architecture-candidate-dispositions.tsv): detailed startup/Open/edit-Save and dataset/Run task chains, cross-package ownership/contract maps, broader high-risk families, normative disagreements and a dedicated suite/fixture/lane/oracle assessment.
+The exact original573 candidates remain A181/B195/ROOT97/reviewer100;144 distinct current keyed annotations cover all56 highest original severity candidates with specific owners/mitigations, while429 without current annotations retain historical qualifications and responsible owners/triggers.
+Annotation is not synonymous with reproduction or confirmation;21 unranked headings retain body priority or explicit unranked treatment, and reviewer084 accessibility remains annotated but historical/deferred.
+Current source-qualified open mechanisms include recovery deletion on editable-list omission, explicit stale nested-owner generation replacement, Save promotion/acknowledgement choices, raw execution cancellation/physical admission, dataset attempt/publication, public source/transport/export and scientific lineage boundaries.
+A-F061/A-F004 receive concise existing-finding extensions; new ROOT-F099 is a qualified P3 diagnostic projection candidate with no reproduced wrong badge, separate from the frozen573 set.
+The five maps are navigation into broader architectural families, not certification of all engines, packages, security, viewers or numerical behavior.
+No product code/tests, new profiling, environments or runtime checks were added; frozen M1 coverage and prior failed/unrun/blocked/native gates remain unchanged.
+Root and independent intended-byte completeness acceptance passed on October 3 within the report’s explicit scope; this accepts the recorded findings/triage gate, not all573 source confirmation or an architectural safety guarantee.
+The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed against `04f9588` plus these six reviewed documentation paths (exit 0, runner 4 seconds, measured 4.442 seconds): dashboard, 74 active local links and warning-clean Sphinx.
+No test/runtime phase was run or reclassified; subsequent repair starts only against the selected owning contract and explicit dependency/publication prerequisites after this durable task delivery.
