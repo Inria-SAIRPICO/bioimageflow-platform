@@ -969,7 +969,9 @@ Reloading an inactive package version preserves both the active class bindings a
 **Shutdown sequence:**
 1. If execution is running, send stop signal and wait (with timeout)
 2. Terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`)
-3. Clean up shared memory segments (`bioimageflow clean-shm`)
+3. Request explicit release of only the application-owned shared-array controller scopes after their worker grants have physically retired.
+   Wait for local mapped readers to drain before deleting owned backing files; if the shutdown deadline expires or cleanup fails, report the exact scope as pending or failed and retain its backing rather than claim successful cleanup.
+   Do not force-close live NumPy views, delete another owner’s files or perform global prefix-based shared-memory cleanup.
 4. Save any pending settings changes
 5. Stop FastAPI server
 
