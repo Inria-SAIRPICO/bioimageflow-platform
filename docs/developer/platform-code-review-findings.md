@@ -751,6 +751,9 @@ Single-file loading explicitly replaces sys.modules instead, raising a separate 
 Golden archive roundtrip and helper freshness tests do not reload a directory bundle with the same ID and changed bytes.
 Retain independent compiled snapshots/public worker-origin authority; future diagnostic should use valid changed-hash bundle records and actual compute before selecting content scoping or conflict refusal.
 
+**October 3 owning-source follow-up:** A-F026 is independently accepted and committed at `063d81ce9a8534716d13d9de1097d720274368a7`: the same-ID changed-bundle public control failed with stale A, then passed with content-scoped namespaces retaining both live executable snapshots and exact declared hashes.
+Twenty-three mapped owners, affected static checks and one strict documentation build passed; this is unpublished source, not closure of concurrent global import-state, general temporary-source lifetime or current platform dependency adoption.
+
 #### A-F027 — Low/Medium, temporary-source lifetime and error cleanup debt
 
 Public `loading.py:88–91,169` and `custom_sources.py:294,324` create persistent mkdtemp trees.
@@ -4216,6 +4219,12 @@ Do not implement reconstruction of arbitrary dataclasses or loosen strict envelo
 **October 3 next-boundary decision:** the user superseded the earlier V1 passthrough/optional-frame proposal: implement one clean current public task/result/value contract with unambiguous literal dictionaries and type-faithful Path/container/SharedArray transport, preserving essential correlation and exact current-worker origin/version admission.
 The current public contract change is an intended Core minor; the nine existing tool `<0.5` bounds need a coherent validated current release cohort and affected metadata releases, not old-version compatibility matrices or duplicate legacy DTOs.
 No transport fix, version bump, worker witness or published floor is claimed yet; real public WorkerPool input/output controls remain mandatory.
+
+**October 3 owning-source follow-up:** B-F134's current typed task/result/value contract and callers are independently accepted at `8c1e668a2163394501fcee80213dfbe1d2d3fe7c`, with 105 mapped owner successes, a typing-only 44-codec recovery, affected static/docs checks and real source-disabled developer-worker serialization input/output/combined witnesses.
+The baseline task roundtrip failed, local result roundtrip passed, and the actual baseline worker separately raised SharedArray-specific `ValueEncodingError`; no local-result failure is invented.
+**Distinct B-F134 lifetime extension:** the actual attached-worker candidate transported all three cases but its overall command failed at parent unlink after worker shutdown removed the parent's segment; the final no-attach worker witness proves serialization only.
+Uniform file/mmap plus controller-owned current lifetime is the selected next proposal, not implemented or certified; this extension is separate from B-F116 scalar/empty formats, and blocks Core release for ordinary attaching tools pending actual ownership controls.
+Core 0.5 remains a developer version overlay until owning metadata/lock, coherent nine-tool/current-library cohort, source-disabled artifacts and normal CI/release gates are completed; platform runtime and frozen M1 classifications are unchanged.
 
 #### B-F135 — P2, several real-worker test names/assertions do not distinguish their stated contract (test oracle weakness).
 
