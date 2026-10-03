@@ -15,6 +15,10 @@ The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is
 Execute or resume the user-authorized Platform confidence campaign in docs/developer/platform-test-plan.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
 You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
+Approve one scope/contract/oracle packet, then let its owner execute exact RED/fix/GREEN and mapped checks autonomously; independently review one coherent final source/spec/causal/artifact/check packet, then the writer verifies the exact task-only index and commits.
+Reuse unchanged source/closure evidence, parallelize immutable artifact baseline and explicitly disjoint source work, and avoid readiness/token/hash/Git acknowledgement loops for every tiny step.
+Batch already-decided mechanical chores on an available lighter executor only with the plan's literal capsule (absolute repo/HEAD/branch, finite paths/hashes, exact commands, preconditions/results/retry/permissions/ownership/protected roots/evidence); stop and return to the owner on mismatch, without choosing scope, fixing code, merging/resetting, publishing or ambiguous cleanup.
+Use one check campaign for process-only campaign records; preserve the appropriate strict docs gate for API/specification/navigation/structure changes and substantial documentation milestones, and keep all meaningful checks.
 The October 3 supplemental findings gate is durably accepted at feb128b; retain its five task maps, cross-cutting triage, suite assessment and frozen M1, and resume the selected owning release-prerequisite repairs rather than restart unchanged file review.
 Archive containment d4ba925 and Core dtype safety 86a84fd are source-only accepted commits in the isolated library tree; platform installed dff/Core0.4.1/Wetlands2.4.2 and held force work remain unchanged.
 Do not preserve backward compatibility: platform has no users; evolve owned platform/library/Core specs and code to one clean coherent current design while preserving essential features and project ideas.

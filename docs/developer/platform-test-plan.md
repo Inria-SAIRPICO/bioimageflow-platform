@@ -277,6 +277,27 @@ Writable parallel work must use separate worktrees; shared campaign records belo
 Commit only each task's validated changes, integrate after review, and retire only clean integrated task worktrees as `AGENTS.md` requires.
 Leave unrelated files and unfinished worktrees intact.
 
+**Throughput and review cadence — October 3.**
+Set one bounded scope, contract, impact map and distinguishing oracles upfront, then let the owning worker execute causal RED → correction → exact GREEN → mapped owner checks autonomously.
+Review one coherent final source/specification/causal/artifact/check packet independently; the writer verifies the exact task-only index and commits after content acceptance without another permission or acknowledgement loop for each setup edit, hash check or Git command.
+Reopen the decision only for a changed invariant, scope, authority, permission boundary or unexplained failure; routine fixture/bootstrap diagnostics stay within the approved packet and retain their original failures.
+Reuse one final source/closure manifest and existing dependency metadata while those inputs remain unchanged, rather than regenerating equivalent proofs at every handoff.
+Immutable installed baseline artifacts may run alongside source development, and explicitly disjoint owned files may be edited in parallel; serialize index ownership and timing-sensitive runtime/cleanup as before.
+Run one `scripts/test check campaign` for consolidated process-only plan, resume, status, evidence or dashboard edits; API/specification or documentation navigation/structure changes and substantial documentation milestones retain their appropriate single strict documentation gate under `docs/testing.md`.
+Do not remove meaningful cases or weaken acceptance to reduce elapsed time.
+
+**Bounded mechanical executor.**
+A capable owner retains architecture, debugging, test selection, contract/version/release decisions and independent review; delegate only already-decided, repeatable chores to an available lighter model when a useful batch justifies spawning and coordination overhead.
+Select from models actually available to the session, with supported reasoning settings; GPT-6 Luna is an example, not a required model or a campaign benchmark, and this policy changes no running agent or account configuration.
+[Official OpenAI subagent guidance](https://learn.chatgpt.com/docs/agent-configuration/subagents) supports narrow roles/model selection and notes that subagents add token work; compare actual task elapsed time, coordination and errors before claiming savings.
+The orchestrator supplies a literal task capsule: absolute repository/worktree, expected HEAD/branch and exclusive ownership; finite approved paths and content/index hashes; exact commands and arguments; preconditions, expected results and retry limit; required permissions, protected roots, cleanup ownership and evidence destination.
+The executor checks those preconditions, performs only the supplied actions and returns commands, exit status, duration, source SHA, hashes and actual skips/deselections/blocked phases; any mismatch or unexpected failure stops the capsule and returns to the owner without improvisation.
+It may run an exact owner-selected check, stage/commit approved bytes, create a precisely named worktree at an exact ref, or retire explicitly accepted exclusive resources; it cannot choose tests/files/versions, interpret unknown dirty state, fix source, reset, restore stashes, rebase, merge, publish packages, change configuration or perform broad network/deletion work.
+For commits, require exclusive index ownership and exact approved staged path/hash equality; never use `git add -A`, include unrelated changes or silently replace an unexpected index.
+For worktree creation, require the exact approved path/ref/branch with no collision, reuse/reset or shared installed environments.
+For retirement, require an explicitly approved clean merged tree, no source/runtime consumers and exact exclusive disposable paths; preserve evidence, move source to Trash, prune metadata and delete only the named merged branch, without broad filesystem discovery or deletion.
+Keep one capsule/result boundary for a mechanical batch; do not add an executor acknowledgement gate to every command, and let the existing writer perform tiny chores when delegation would add overhead.
+
 
 ### Worktree and environment retirement
 

@@ -927,3 +927,15 @@ A-F026 now has one actual public causal RED on unchanged `86a84fd`: the same sou
 After the pending A-F026/B-F134 source gates, reconcile accepted source/held force work, published Core/Wetlands floors, library release and platform T1; no new version, floor, package release, blind bounds widening or renewed architecture audit is claimed.
 Evidence is retained in `/private/tmp/bioimageflow-a024-containment/` and `/private/tmp/bioimageflow-supplemental-architecture/core-next-readiness/`, including exact committed-path/closure identities and cleanup protection proof.
 The one main `env UV_OFFLINE=1 scripts/test check docs` passed on `feb128b` plus these five reviewed documentation paths (exit 0, runner 5s, measured 4.605s; Sphinx phase 4s), including dashboard, 74 local links and warning-clean documentation; no application/runtime test was run.
+
+
+### Campaign throughput and bounded executors — October 3
+
+The A-F026 throughput audit records eight actual subprocess commands totaling 16.583 seconds (approximately 15.379 seconds on a parallel static-check critical path) within a 657.917-second first-patch-to-final-proof artifact timestamp envelope.
+The envelope is not a complete attribution of idle time, model latency or handoff cost; it identifies a coordination opportunity without proving a test/runtime regression or a model speedup.
+The plan/resume now use one upfront scope/oracle packet, autonomous exact RED/fix/GREEN/mapped checks, one final independent coherent review and writer-owned task-only index verification/commit, reusing unchanged closure evidence and permitting immutable-artifact/disjoint-file parallelism.
+Already-decided mechanical batches may use an actually available lighter executor with literal repository/HEAD/paths/hashes/commands/preconditions/permissions/ownership/cleanup/evidence instructions; mismatches stop and return to the capable owner, which retains architecture, debugging, test/version selection and releases.
+No executor was spawned, running model/configuration changed, test case removed or measurable model saving claimed by this documentation task.
+Process-only campaign changes use one campaign consistency/link gate; API/specification/navigation and substantive documentation gates remain as documented, with all current clean-design and standing release authorization instructions preserved.
+Library/Core source work, artifact/worker runtimes, installed dependencies and their existing release gates are unchanged by these three main campaign-documentation paths.
+The one `env UV_OFFLINE=1 scripts/test check campaign` passed (exit0, measured0.112 seconds, runner0s) against main `749f1a0` plus the reviewed three-path process-documentation snapshot: dashboard consistency and74 active local links; no product, runtime or Sphinx phase was selected.
