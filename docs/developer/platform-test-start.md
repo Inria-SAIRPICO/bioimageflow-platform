@@ -15,6 +15,8 @@ The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is
 Execute or resume the user-authorized Platform confidence campaign in docs/developer/platform-test-plan.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
 You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
+Apply the October 3 supplemental architecture acceptance gate before further repair/library integration: five complete task maps, cross-cutting contract triage, a dedicated suite architecture review, independent synthesis and accepted recorded findings before fixes; retain frozen M1 rather than restart unchanged file review.
+Necessary campaign Wetlands/BioImageFlow/Core releases are already user-authorized, including source/main integration, tags, GitHub release and PyPI publication; do not ask again, but enforce the plan’s owning-repository review, exact-head CI, artifact/pin and published compatibility gates.
 
 First record the reviewed platform/library specification revisions and reconcile their contracts with current code before application assertions.
 Then reconcile current main, dirty files/worktrees and active processes, installed dependencies/editable library source, and platform changes since inventory audit 15c5cc7.

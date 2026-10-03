@@ -310,6 +310,10 @@ Use `full` after a completed large cross-stack plan, for package-loading/externa
 
 ### Dependency PyPI releases with gh
 
+On 2026-10-03 the user explicitly authorized Wetlands publication and instructed “In the future, don’t ask.”
+Necessary campaign Wetlands/BioImageFlow/Core releases, including reviewed source push/PR/main integration, version tags, GitHub releases and PyPI publication, proceed under this standing authorization without another user confirmation.
+Keep owning-repository public API/specification ownership, independent candidate review, exact-head CI, artifact/source/dependency validation, published pins and compatibility gates; this authorization does not cover unrelated destructive actions or bypass a rejected automatic review.
+
 Verified 2026-10-02 against BioImageFlow [`7c718a0` release workflow](https://github.com/Inria-SAIRPICO/bioimageflow/blob/7c718a094e2741d738b27fc52cb560b7e84722c6/.github/workflows/release.yml) and [release guide](https://github.com/Inria-SAIRPICO/bioimageflow/blob/7c718a094e2741d738b27fc52cb560b7e84722c6/docs/source/reference/releasing.md), and Wetlands [`3ee2ffe` release workflow](https://github.com/arthursw/wetlands/blob/3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1/.github/workflows/release.yml) and [release checklist](https://github.com/arthursw/wetlands/blob/3ee2ffe1da7b6f1cfe97a8d88e6de67797d031d1/RELEASING.md).
 Before a needed release, reconcile upstream, commit the reviewed versions/dependency ranges/lockfile, and require successful `ci.yml` for the exact release SHA; Wetlands additionally requires the documented full checks and Linux/macOS/Windows real-Pixi acceptance.
 Configured PyPI Trusted Publishers and GitHub `pypi` environments are prerequisites; neither repository's environment had required-reviewer rules at verification, so these are not approval-gated publication examples.
@@ -359,7 +363,7 @@ The final report gives exact validation revisions/results/durations and any reta
 ### Next bounded force/lifetime packet after configured policy
 
 The current policy checkpoint qualifies app-phase delivery separately from open full/browser/published/native certification.
-The next library-owned force contract begins with preservation-first reconciliation of the observed four-ahead/two-behind histories and dirty held library/T1 inputs; do not reset, overwrite, import whole WIP trees or publish automatically.
+The next library-owned force contract begins with preservation-first reconciliation of the observed four-ahead/two-behind histories and dirty held library/T1 inputs; do not reset, overwrite or import whole WIP trees; publish necessary validated dependency releases through the standing authorization and owning-repository release gates above.
 The reviewed boundary is strict selected-owner close → public managed removal → provision with replacement false → start → cache publication, preserving False warm reuse, retry ownership on failed close and established best-effort stop.
 Platform physical admission/cancellation and later published API pins/worker compatibility require their own aligned acceptance; conditional readiness is not implemented or released behavior.
 
@@ -378,3 +382,16 @@ Do not create a benchmark subsystem, broaden frozen M1 inventory or rewrite the 
 After the measured draft repair, the preservation-first library force/public-completion adaptation reached a reviewed local WIP checkpoint; supported source delivery remains blocked on published dependency/floor/lock alignment.
 The separate workflow-tree singleflight repair now establishes two→one startup request work with qualified assembled frontend completion; preserve its measured workload, original completion-command failure and release/browser/native limits.
 Next performance candidates remain request-local shared environment discovery and one dataset-list reconciliation, subject to their own public-visibility/ownership controls and evidence of value; do not expand into tool caches or reuse the tree request authority as another endpoint's cache.
+
+
+## Supplemental architecture acceptance gate — October 3
+
+Before further repair code or library/platform integration, supplement frozen M1 with five current end-to-end task maps: startup, explicit Open, edit/Save, dataset browsing and Run startup, including late/error/cancellation/supersession variants through durable and public dependency owners.
+Record source hashes and request/read/scan/validation/compilation/copy/environment multiplicity; distinguish redundant same-phase work from required fresh rechecks, and map identity/incarnation/revision, loading/error/finalizer, commit-versus-acknowledgement, cancellation and physical-completion ownership.
+A lead owns startup/Open/edit-Save, a cross-owner reviewer owns dataset/Run, and a third reviewer owns platform/library/Wetlands test-suite architecture: fixture and lane ownership, meaningful versus mirrored assertions, repeated setup, distinct evidence layers, skips/external selections, redundancy candidates and proportionate selected/full/docs gates.
+Produce a module/dependency/ownership overview for platform backend/frontend, library/Core and Wetlands, then inventory all 573 original M1 candidate IDs by architecture family and current disposition; these are qualified candidates, not 573 confirmed defects.
+Source-validate highest-risk, current-task and cross-layer candidates; preserve explicit owners, measurable triggers and unknowns for deferred others, and do not claim every candidate is source-validated.
+Cross-review producer/consumer contracts, generated/model/session/UI types and specifications, plus persistence/recovery/admission/cancellation, competing graph/agent authorities, lifecycle teardown, source/migration/portable identity, results/scientific semantics, public dependency provenance and deployment boundaries.
+Use retained evidence and targeted uncovered-path review rather than repeating unchanged file review or broad suites; no source changes, new tests, benchmarks, environment installation, Firefox or desktop execution supply this gate.
+Record all confirmed findings and qualified risks before repair, with prioritized bounded packets and explicit deferred-owner triggers; independent cross-owner completeness review must confirm covered families, known unknowns and every new finding before root acceptance and implementation.
+The intended review report, task/source coverage matrix, suite/specification assessment and consequential plan/checkpoint update are committed after one applicable documentation gate; frozen M1 counts/history remain unchanged, and architecture acceptance supplies no runtime or publication certification.

@@ -787,8 +787,8 @@ The user then explicitly approved source push and draft-PR creation; the SSH att
 The exact-head [CI run 37048171797](https://github.com/arthursw/wetlands/actions/runs/37048171797) has all 25 required jobs present: lint, eighteen three-OS/Python 3.9–3.14 fast jobs, Python 3.9 compatibility, three real-Pixi jobs, strict docs and package validation.
 The final independently inspected exact-head run passed all 25 required jobs; the push-only documentation deployment is intentionally skipped for a pull request and is outside that gate.
 Local library development may consume the frozen unpublished wheel in its own private environment after handoff; passed upstream CI does not establish publication, a supported dependency floor or platform/worker certification.
-The concrete release transaction has been reviewed; the user has now merged PR #5, while approval for tagging, GitHub release and PyPI publication remains pending.
-No tag, GitHub release, PyPI publication or platform-pin change is authorized or credited.
+At this October 2 checkpoint the user had merged PR #5 but tagging, GitHub release and PyPI publication still awaited authorization; the October 3 standing authorization below supersedes that gate.
+No tag, GitHub release, PyPI publication or platform-pin change was credited by that October 2 checkpoint.
 
 
 ### Local library public-completion adaptation — qualified WIP checkpoint
@@ -844,7 +844,7 @@ The user merged [PR #5](https://github.com/arthursw/wetlands/pull/5) at 19:15:53
 Both commits have identical full tracked Git tree `eb14911f8f8b7ddae54dfdc7f4c13c4f0379bc52`, so candidate source, metadata, lock and package bytes are unchanged.
 The exact merged-head [main CI run 37052970686](https://github.com/arthursw/wetlands/actions/runs/37052970686) passed all 25 required jobs and the additional main documentation-deployment job (26 successes, no skips or failures); unchanged local candidate tests/builds were not repeated.
 Read-only primary checks at 19:59:59 UTC found no `v2.5.0` tag or GitHub release and no PyPI 2.5.0 version; PyPI latest remains 2.4.3.
-Explicit authorization for creating/pushing the tag and publishing the GitHub release, which triggers PyPI publication, remains required; no agent publication action was taken.
+That verification preceded the October 3 explicit publication authorization; no agent publication action had yet been taken.
 The frozen library WIP/private candidate environment, platform installed dependencies and protected owning roots remain unchanged; published-wheel acceptance, library floor/lock alignment and subsequent platform/worker certification remain open.
 
 
@@ -856,3 +856,19 @@ Performance magnitude required later comparable task measurements; those static 
 The correction adds shared end-to-end startup/Open/edit-Save/dataset-browse/Run-start maps with work multiplicity and authority/freshness/error/loading ownership, lead/cross-owner synthesis and explicit deferred-finding dispositions; bounded user-task measurement sets magnitude and priority at coherent milestones.
 `B-F020` remains queued with library/platform environment owners for measured Run-start inventory multiplicity; `B-F137` remains with the Core owner until supported task-payload cost and transport controls justify repair, without blanket P3 promotion.
 Frozen M1 file-ledger counts and history remain intact; reuse accepted evidence and review only uncovered paths, without repeating the entire audit or suite.
+
+
+### Wetlands 2.5.0 publication and next architecture gate — October 3
+
+The user explicitly authorized publication and future necessary campaign package releases without renewed confirmation; the plan and resume instructions retain this standing authorization together with technical owning-repository review/CI/artifact/published-compatibility gates.
+An annotated `v2.5.0` tag targets reviewed merge `3cda2236fe000b30dabf42a04e9ad347265630a0`; the single [GitHub release](https://github.com/arthursw/wetlands/releases/tag/v2.5.0) triggered [release workflow 37116004043](https://github.com/arthursw/wetlands/actions/runs/37116004043), whose validation/build and trusted-publishing jobs passed.
+[PyPI Wetlands 2.5.0](https://pypi.org/project/wetlands/2.5.0/) publishes wheel SHA256 `17cdfb01e3bba26218b1580dc4b752d7fc86083f5d6e824b7b5781b6d469c062` and sdist `5172cfb846776763d41e61a8cdfad18d3252d630ec3e47528b4e2fb61099b84e`; both match the independently reviewed candidate artifacts byte for byte.
+Tag push passed in 1.969 seconds and release creation in 1.107 seconds; the published-wheel source-disabled batch passed nine public completion/outcome/callback controls with eighteen unrelated controls deselected (pytest 0.22 seconds, command 3.853 seconds), plus CLI/origin/version/runtime checks; retained Python 3.14 pluggy SyntaxWarnings are not suppressed.
+All 29 installed Python modules plus `py.typed` match the published wheel and exact release source; package/worker versions are 2.5.0, protocols remain 1, and the minimal installed dependency closure is retained in the identity receipt.
+The exclusive smoke environment had no active consumers and was removed in 0.181 seconds, preserving artifacts/logs/closure proof; 6,569,361 file-reference bytes and 7,397,376 stat-block reference bytes are not claimed reclaimed allocation, and the observed free-space change +3,231,744 bytes is unattributed.
+No unchanged 616-test/build/strict-doc candidate phases or source-identical sdist install were repeated; published upload and these public controls do not certify physical worker/process lifecycle, the library’s still-unaligned floor/lock or platform/worker pins.
+
+The supplemental gate is now planned before further repair/integration: three coordinated reviewers produce five detailed current task maps, a cross-repository module/ownership overview, all 573 candidate IDs grouped by family/disposition and a dedicated suite/specification assessment, then source-validate high-risk/current-task/cross-layer candidates and cross-review coverage/known unknowns before fixes; deferred qualified candidates retain owners/triggers rather than becoming presumed defects.
+Preparatory read-only traces are not completed gate acceptance; the intended report and final consequential record will be delivered after independent review, preserving frozen M1 history, current library WIP/private environment and all protected roots.
+
+The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed against `ec65a54` plus the reviewed three-file plan/resume/publication snapshot (exit 0, runner 3 seconds, measured 3.100 seconds, Documentation phase 2 seconds); this sentence records its result without changing the accepted gate or published source.
