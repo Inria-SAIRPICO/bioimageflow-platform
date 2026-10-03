@@ -15,7 +15,11 @@ The [former restart prompt](archive/platform-test-start-before-2026-09-30.md) is
 Execute or resume the user-authorized Platform confidence campaign in docs/developer/platform-test-plan.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then docs/developer/platform-test-progress.md and the relevant plan sections.
 You are the orchestrator; keep shared evidence and status ownership, and use bounded workers as the plan requires.
-Apply the October 3 supplemental architecture acceptance gate before further repair/library integration: five complete task maps, cross-cutting contract triage, a dedicated suite architecture review, independent synthesis and accepted recorded findings before fixes; retain frozen M1 rather than restart unchanged file review.
+The October 3 supplemental findings gate is durably accepted at feb128b; retain its five task maps, cross-cutting triage, suite assessment and frozen M1, and resume the selected owning release-prerequisite repairs rather than restart unchanged file review.
+Archive containment d4ba925 and Core dtype safety 86a84fd are source-only accepted commits in the isolated library tree; platform installed dff/Core0.4.1/Wetlands2.4.2 and held force work remain unchanged.
+Do not preserve backward compatibility: platform has no users; evolve owned platform/library/Core specs and code to one clean coherent current design while preserving essential features and project ideas.
+Remove/replace legacy-only DTOs, dual formats, deprecated fallbacks and old-version-only test/migration obligations through reviewed owning changes; preserve current durable data/recovery, scientific results, in-flight authority and actual current published-package loading.
+Next are B134 single current typed-contract/minor/current-tool-cohort acceptance and separate A026 public cache authority, then published floors, library release and platform T1; source acceptance is not published worker certification.
 Necessary campaign Wetlands/BioImageFlow/Core releases are already user-authorized, including source/main integration, tags, GitHub release and PyPI publication; do not ask again, but enforce the plan’s owning-repository review, exact-head CI, artifact/pin and published compatibility gates.
 
 First record the reviewed platform/library specification revisions and reconcile their contracts with current code before application assertions.
@@ -29,15 +33,9 @@ Verify current contracts before porting candidate code, especially removed finge
 Keep historical releases, validations, and inventory evidence; revalidate only affected claims and never present historical percentages as current certification.
 
 Retain the accepted readiness/N1/E1 evidence and preserved I1/T1 work; do not restart those paths solely because the campaign sequence changed.
-Begin with the complete-codebase review gate: inventory platform/library/Core and the entire Wetlands checkout at exact revisions, plus every held I1/T1/diagnostic WIP file by content hash.
-Read every human-written implementation, test, script/configuration and specification in dependency-ordered batches; review callers, invariants, failure paths and distinguishing test oracles.
-Record every identified fix/optimization/specification candidate before implementing or executing anything else; earlier selective reconnaissance is not completion.
-Use two ordinary subsystem reviewers plus a reserved independent specialist; review code and test oracles together, not a swarm of disconnected file reports.
-The orchestrator owns the complete manifest, deployment/persistence and suite-cost review, shared documents and cross-boundary synthesis.
-Do not release repairs, new diagnostic tests or campaign execution while the review gate is open.
-Close it only with zero pending/unmatched/hash-mismatched human-written files, specifically justified generated/asset classifications, recorded findings and independent completeness/cross-boundary review.
-Keep batch checkpoints truthful and leave M1 open until this is achieved; no time limit substitutes for complete review.
-Static review earns no coverage credit; do not call inventory-only files reviewed or representative reading exhaustive.
+The original exhaustive M1 review and supplemental findings/triage gate are complete within their recorded scope; preserve exact inputs, qualifications, all573 original IDs and separately recorded new findings.
+Use their recorded owner/priority/trigger and review only changed or uncovered contract paths before the selected repair, with bounded independent source/oracle review; static findings are not runtime coverage or confirmation of all573 candidates.
+For any new material review scope, record all newly identified candidates before dependent fixes and obtain independent completeness/cross-boundary acceptance; do not relabel representative reading exhaustive or overwrite frozen history.
 Resolve T1 force-Recreate via supported public capabilities before dependent lifecycle acceptance; preserve ownership, concurrency, failure and unrelated-environment invariants without private-state workarounds or silently weakening the feature.
 Then finish applicable I1/T1 work and priority repairs, inspecting existing assertions before adding missing coverage.
 Split independent failure modes into short scenarios and distinguish mocked client, real API/storage, real GUI/backend, real worker, and native evidence.

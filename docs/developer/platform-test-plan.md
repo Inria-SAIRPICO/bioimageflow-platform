@@ -21,6 +21,15 @@ Track the user outcome, available assertions, and executed evidence separately: 
 Keep the existing stable feature inventory for systematic closure, while using a short outcome queue for daily work instead of treating five cells per feature as five separate tasks.
 Reuse valid historical evidence explicitly and retain successful unchanged validation phases; do not restart completed releases or whole suites to chase an unrelated intermittent failure.
 
+## Clean current design — user direction, October 3
+
+Do not preserve backward compatibility: the platform has no users.
+Evolve the owned platform, library and Core specifications and code into one clean coherent current design, as if starting fresh, while preserving essential functionality and the project's core ideas.
+Replace or remove legacy DTOs, dual wire formats, deprecated aliases/API fallbacks and old-version-only migration/compatibility obligations when they serve only backward compatibility; update affected owning specifications and current consumers together.
+Reclassify legacy-only findings as redesign/retirement candidates with an owner and trigger, without deleting frozen review records or treating scientific/current-package loading controls as obsolete.
+Preserve current workspace recovery, durable committed data, scientific results, literal value identity, in-flight ownership/cancellation and physical-resource rules; current published dependencies and all selected tool packages must still install and execute as one validated release cohort.
+Historical checkpoints describe their then-current contracts; they do not override this direction or require old producers, schemas, workers or releases to remain supported.
+
 ## Scope and authorities
 
 Follow `AGENTS.md`, `PLATFORM_CONTEXT.md`, the implemented v1/v2 and applicable later specifications, and [Test lanes](../testing.md).
@@ -400,3 +409,12 @@ The intended review report, task/source coverage matrix, suite/specification ass
 The [supplemental architecture report](platform-supplemental-architecture-review.md) and [573-ID dispositions](platform-architecture-candidate-dispositions.tsv) now supply the intended findings/coverage/priority decision packet for this gate.
 Root and independent completeness acceptance of the supplemental findings/triage gate is recorded on October 3; the dependency-ordered waves explicitly separate public release prerequisites, library floor/lock closure, recovery/incarnation, physical lifetime/writer ordering, dataset/canvas ownership, result/scientific identity and suite/specification maintenance.
 Treat source qualification and mitigations as evidence for exact owning controls, not confirmed incidents or permissions for broad rewrites; preserve deliberate owner-trigger deferrals and dynamic unknowns.
+
+
+### Public release prerequisite wave — October 3
+
+The supplemental findings gate is durably accepted at `feb128b`; the first two separate owning repairs are archive containment `d4ba925` and Core object-dtype safety `86a84fd`, with scoped public/owner/static/docs acceptance and no current platform dependency upgrade.
+The earlier B-F134 V1 passthrough/optional-frame proposal is superseded by the user direction: implement one current public task/result/typed-value contract, using a single current schema and DTO set, unambiguous literal dictionaries, type-faithful Path/container/SharedArray transport and unchanged essential correlation/worker-origin checks.
+The wire-contract change is an intended Core 0.5 minor, not a declared or published version: require actual current public-worker input/output controls and one coherent tested Core/tool cohort; update the nine tool packages’ current `<0.5` bounds and publish affected metadata releases only with demonstrated current installability and execution, without old-to-new compatibility matrices.
+Keep `A-F026` executable-cache identity as a separate public causal packet, then reconcile accepted source with held force work, published Core/Wetlands floors, library release and platform T1; no private dependency workaround or reopened full-file audit.
+For owning-repository commands, reconcile `.python-version` with the chosen frozen private interpreter before uv setup; reuse that admitted interpreter for exact pytest without resync, and request expected uv-cache or network-dependent intersphinx/docs access on the first attempt.

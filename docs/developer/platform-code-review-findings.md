@@ -726,6 +726,10 @@ Reviewed public golden archive tests contain safe names; platform `test_import_r
 Retain public source/hash authority and independent bundles; future action should enforce the same complete source-path/ID containment before any file write or execution, then inspect actual public negative selectors rather than infer coverage from platform staging.
 Parent/root received the security handoff; this is A's canonical finding.
 
+**October 3 owning-source follow-up:** library commit `d4ba925` admits the complete custom-source table into immutable bytes/paths before any custom staging/import, rejecting absolute/traversal/drive/separator/colon and Windows device components while retaining safe Unicode/hyphen IDs, defaults, nested helpers/assets and trusted Python execution.
+Four public entry controls failed causally with the existing valid roundtrip passing; one additional reserved-device staging sentinel failed without opening a device, then all six exact controls passed, followed by 117 workflow owners and affected static/docs checks.
+This is accepted isolated source repair, not an upgraded platform dependency, a Python sandbox, a platform-import exploit, A-F026 origin-cache repair or published worker certification.
+
 #### A-F025 — Medium potential impact, public import-state concurrency risk; Low deterministic restoration defect
 
 Library `loading.py:83–161` mutates process-global sys.path/sys.modules and restores an old sys.path snapshot without a serialization lock.
@@ -3459,6 +3463,10 @@ This is an unexecuted public-helper safety candidate, not evidence that existing
 The full shared-memory/return tests use numeric types only; worker-envelope validation remains next-batch pending.
 Future exact diagnostic should reject unsupported object-containing storage before allocation/attachment while retaining numeric/structured non-object layouts and declared metadata validation.
 
+**October 3 owning-source follow-up:** Core commit `86a84fd` rejects object-containing dtypes at create/open/load before SharedMemory allocation/attachment, including structured object storage, without allocating an unsafe segment.
+The same four preallocation/attachment sentinel variants failed before the fix and passed afterward; 65 numeric/Path/cache/validation/metadata owners and affected static/docs checks passed.
+This is accepted isolated source at unchanged Core 0.4.1 metadata, not published Core, B-F116 array-format/lifetime closure or B-F134 worker transport.
+
 #### B-F116 — P2, scalar and empty array helper behavior lacks a declared restriction (source behavior/contract gap).
 
 create_shared_output uses arr[:] on both sides; a zero-dimensional scalar array cannot follow that indexing path.
@@ -4204,6 +4212,10 @@ The completed Direct shared-memory integration exercises actual numeric values b
 Full test_codecs.py covers scalar values and recursive Path conversion; test_execution.py covers scalar row/batch context only.
 Future exact codec and Wetlands producer→consumer diagnostic must preserve typed SharedArray descriptors, output ownership, cache rehydration and no shared-memory forwarding to remote Parsl hosts.
 Do not implement reconstruction of arbitrary dataclasses or loosen strict envelope/origin validation based on this finding.
+
+**October 3 next-boundary decision:** the user superseded the earlier V1 passthrough/optional-frame proposal: implement one clean current public task/result/value contract with unambiguous literal dictionaries and type-faithful Path/container/SharedArray transport, preserving essential correlation and exact current-worker origin/version admission.
+The current public contract change is an intended Core minor; the nine existing tool `<0.5` bounds need a coherent validated current release cohort and affected metadata releases, not old-version compatibility matrices or duplicate legacy DTOs.
+No transport fix, version bump, worker witness or published floor is claimed yet; real public WorkerPool input/output controls remain mandatory.
 
 #### B-F135 — P2, several real-worker test names/assertions do not distinguish their stated contract (test oracle weakness).
 

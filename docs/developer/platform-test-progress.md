@@ -886,3 +886,44 @@ No product code/tests, new profiling, environments or runtime checks were added;
 Root and independent intended-byte completeness acceptance passed on October 3 within the report’s explicit scope; this accepts the recorded findings/triage gate, not all573 source confirmation or an architectural safety guarantee.
 The one consolidated `env UV_OFFLINE=1 scripts/test check docs` passed against `04f9588` plus these six reviewed documentation paths (exit 0, runner 4 seconds, measured 4.442 seconds): dashboard, 74 active local links and warning-clean Sphinx.
 No test/runtime phase was run or reclassified; subsequent repair starts only against the selected owning contract and explicit dependency/publication prerequisites after this durable task delivery.
+
+
+### First owning public-release repairs and retirement — October 3
+
+The supplemental architecture findings gate remains accepted at `feb128b`; its frozen 573-ID inventory/history and qualified report are unchanged.
+A-F024 is committed separately as `d4ba925f58ce1576939bcaf4803131a7d18d2382`, then B-F115 as `86a84fd6904818d1c10f10ef6644e3f1d76c3bb1`, on the same clean isolated `campaign/library-source-containment` tree with sequential source/runtime ownership.
+The library loader captures/admit-checks complete immutable source paths/bytes before custom writes/imports, preserving nested helpers/assets, defaults and safe Unicode/hyphen IDs; Core rejects object-containing dtypes before shared-memory create/attach, including structured object storage.
+Owning specifications changed with each repair; trusted Python remains executable, and neither repair closes cache-origin, general array-format, physical-worker or published compatibility gates.
+
+All commands below use that tree’s frozen private Python 3.12.9 environment; `.venv/bin/python -m pytest` is the admitted owning README pytest equivalent and does not resync its 104-package closure.
+
+| Owning command/scope | Actual result and measured duration | Source |
+| --- | --- | --- |
+| `.venv/bin/python -m pytest tests/integration/test_custom_source_containment.py -q` | Original 4 causal FAIL + 1 valid PASS, pytest 44.05s / command 50.180s; final 6 PASS, no skips, pytest 1.60s / command 2.256s | Frozen `3859b318` plus tests → reviewed four-path snapshot committed `d4ba925` |
+| Same file’s exact reserved-device selector | 1 causal FAIL, 1.726s; staging sentinel prevents any device open; included in final six GREEN | Unchanged baseline → `d4ba925` |
+| README mapped ten workflow owner families | 117 PASS, 10 retained declaration warnings, pytest 27.64s / command 28.336s | Exact `d4ba925` source/spec/test bytes |
+| `pytest tests/unit/test_development_workflow.py tests/unit/test_complete_test_gating.py tests/unit/test_release_tooling.py -q` through private Python | 61 PASS, 10.187s | Same archive snapshot |
+| `.venv/bin/ruff check .`; private Python file-size/import-boundary guards; scoped `.venv/bin/pyright packages/bioimageflow/bioimageflow/workflow/custom_sources.py` | PASS 1.302s / 0.479s / 0.685s / 2.179s; typing is owner-only | Same archive snapshot |
+| Private Python `docs/generate_tool_package_docs.py`, then `.venv/bin/sphinx-build -W --keep-going docs/source docs/_build/html` | Generation PASS 3.493s; original strict docs FAIL 67.089s, exactly two intersphinx DNS warnings; unchanged incremental permitted-network recovery PASS 5.630s | Same archive snapshot, no source edit or warning suppression |
+| Private Python exact `test_object_dtype_refused_before_shared_memory` + `test_structured_object_dtype_refused_before_creation` selectors | 4 causal FAIL, 1.985s → same 4 PASS, 1.848s | `d4ba925` plus tests → reviewed five-path snapshot committed `86a84fd` |
+| Private Python `test_shared_memory.py`, both runtime-cache shared-memory families, `test_core_package_metadata.py` and `test_validation.py` | 65 PASS, no skips, 9.628s | Exact `86a84fd` bytes |
+| Core full Ruff, file/import guards, scoped Pyright `shm.py io.py`, unchanged strict Sphinx command | PASS 0.119s / 0.450s / 0.667s / 0.835s / 5.483s | Same Core snapshot; archive generation retained |
+
+These are proportionate localized owning checks, not full-fast/full-workspace, complete/resource, native or published-worker acceptance; original full/browser failures and final Firefox admission block remain open.
+The archive setup first failed at package-scoped `--group dev` (0.389s; the group belongs to the workspace root), then prepared the frozen root group in 92.177s.
+An exact UV invocation failed before pytest at sandbox cache access (0.038s), and default/interpreter replacement runs were stopped with zero test admission at 73.992s and 241.246s; the exclusive partial environment was preserved, a fresh same-lock Python 3.12 closure completed in 13.028s, and all subsequent controls used its private interpreter.
+Preflight chosen interpreter versus `.python-version`, locked closure/cache access and network-dependent docs permissions before starting; these setup/permission failures are retained and supply no product RED credit.
+
+After all archive runtimes stopped, the merged Wetlands release tree’s exclusive release/build/cache stores and the unused partial interpreter environment were retired in 68.198s; clean merged source moved to unique Trash, worktree metadata was pruned and only its merged branch deleted.
+Removed stores total 346,497,715 file-reference bytes and 368,353,280 stat-block reference bytes; these are not unique reclaimed allocation, retained Trash source is not recovered space, and observed volume-free change +36,204,544 bytes is unattributed.
+Artifact/log receipts, owning mains, platform source, held force WIP and the active containment environment are preserved; that environment/tree remains owned for follow-up repairs until integration/retirement gates are met.
+
+Platform installed BioImageFlow `dff04e3`, Core 0.4.1 and Wetlands 2.4.2, platform locks and the held force source/private candidate environment remain unchanged.
+Published Wetlands 2.5.0 proof remains valid, but the archive/Core repairs are unpublished isolated source and not yet a current platform dependency.
+The user superseded the earlier B-F134 V1 passthrough/optional-frame direction before implementation: one clean current public task/result/value contract, unambiguous literal dictionaries and type-faithful values; no duplicated legacy DTOs, dual wire or old-producer compatibility tests.
+Core 0.5 remains an intended truthful minor, with actual current public bidirectional worker/source/artifact proof and a coherent nine-tool dependency-bounds/metadata-release cohort required before pins/releases.
+Campaign-wide legacy-only migration/alias/fallback obligations become reviewed redesign/retirement candidates; essential features, current workspace recovery/durable state and scientific/ownership invariants remain required, and frozen historical evidence is not rewritten.
+A-F026 now has one actual public causal RED on unchanged `86a84fd`: the same source ID with newly verified bundle content executes stale A value 1 instead of B value 9 (pytest 2.31s, command 4.645s); the source fix remains pending separate review.
+After the pending A-F026/B-F134 source gates, reconcile accepted source/held force work, published Core/Wetlands floors, library release and platform T1; no new version, floor, package release, blind bounds widening or renewed architecture audit is claimed.
+Evidence is retained in `/private/tmp/bioimageflow-a024-containment/` and `/private/tmp/bioimageflow-supplemental-architecture/core-next-readiness/`, including exact committed-path/closure identities and cleanup protection proof.
+The one main `env UV_OFFLINE=1 scripts/test check docs` passed on `feb128b` plus these five reviewed documentation paths (exit 0, runner 5s, measured 4.605s; Sphinx phase 4s), including dashboard, 74 local links and warning-clean documentation; no application/runtime test was run.
