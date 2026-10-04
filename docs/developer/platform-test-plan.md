@@ -45,7 +45,8 @@ Do not widen this phase into distributed capability CI, a whole scientific-packa
 The user's later October 4 instruction requires S → T → C.
 [S intent is accepted](library-specification-intent-review.md) after cross-domain review and focused corrections preserving genuinely dynamic DataFrame tools and isolated collective batch aggregation.
 Its coherent documentation clarification is committed at owning `e0f41b1`, with the checkpoint retaining the original documentation failure and bounded recovery.
-[Test quality T is accepted](library-test-quality-review.md) after one cross-domain review against the sixteen S flows; advance to C main causal review, hold secondary until all primary owner packets are ready, then complete C secondary and global findings acceptance before fixes.
+[Test quality T is accepted](library-test-quality-review.md) and [C main/secondary global findings are accepted](library-causal-architecture-review.md) after their single independent cross-domain reviews against the sixteen S flows.
+The ordered review gate is complete; current source mechanisms, accepted essential feature gaps and prior bounded runtime evidence remain distinct, with no new product execution during C.
 Earlier production-first notes do not accept these ordered gates.
 
 **S — specifications first.**
@@ -71,6 +72,9 @@ Every future review assignment must carry its stage, accepted intent and causal 
 
 **Phase 2 — main architecture and features first, then secondary repairs.**
 After the global findings gate, implement small coherent primary architecture/refactor/specification packets in dependency order, preserving essential project behavior and clean current APIs.
+That gate is now accepted: freeze the combined current interface once, then implement main graph/schema/capture; collective association/scientific identity/captured record; immutable resource/group lifetime/outcome; and exact source/publication/result closure, followed by secondary native helpers/metadata/tooling/science.
+Scientific identity depends on admitted origin; collective association and reference/group ownership share DTO/assembly boundaries, so waves are implementation order rather than independent contracts.
+The [C report](library-causal-architecture-review.md) records thirteen consolidated families, decisive existing or missing oracles, preserved strong controls and finite subordinate scientific mechanisms; do not manufacture one new test per file or duplicate cross-layer causes.
 Use existing meaningful tests first; establish exact causal or contract failures, correct the owning boundary, run exact GREEN once and mapped primary feature/negative/recovery/physical-lifetime controls before moving to secondary implementations.
 Then address accepted secondary findings with the same bounded method; deliberate deferrals require owner, reason, trigger and explicit effect on milestone acceptance.
 Do not interleave primary fixes before the secondary causal review and global S/T/C findings acceptance merely to obtain early green results.
@@ -82,6 +86,7 @@ The suite owner must define the concrete applicable command and evidence-layer o
 The owning README fast lane omits local Wetlands controls, so map the required focused `--run-complete` local public WorkerPool cases separately; a `not parsl` marker alone does not exclude every mocked distributed folder, and mixed local result-return cases must remain selected.
 Report selected cases, commands, revisions, timings, skips/deselections/blocked phases and retained failures; current artifact/OS or published-package gates not executed by this milestone remain open.
 Resume publication/platform integration only after root and independent acceptance of the completed Phase 3 library milestone; standing release authorization persists and does not bypass technical gates.
+Necessary candidate-source uploads/capability-only CI may validate the repaired milestone under an exact coordinated task plan; no source release merge/tag/PyPI or platform adoption occurs before that milestone, and no published-candidate dependency is imposed on the prepublication milestone itself.
 Every delegated task packet must carry the active phase/stage, accepted specification intent, causal path scope, primary/secondary classification, exact read-before-fix gate, baseline/owned paths and distributed exclusions, plus existing literal executor/stop-on-mismatch, cleanup-after-consumers and desktop-last rules.
 Keep review notes temporary while working; commit the intended review report, qualified coverage/flow ledger, suite/specification synthesis and consequential campaign records as the phase deliverable.
 
