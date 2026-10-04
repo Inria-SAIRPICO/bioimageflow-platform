@@ -42,7 +42,10 @@ Read only shared interfaces needed to establish a local public contract; record 
 Do not widen this phase into distributed capability CI, a whole scientific-package OS matrix, platform browser work or native desktop execution.
 
 **Phase 1 — ordered specification, test and causal code-path review before fixing.**
-The user's later October 4 instruction requires S → T → C; resume at S now, without treating earlier production-first notes as acceptance of these ordered gates.
+The user's later October 4 instruction requires S → T → C.
+[S intent is accepted](library-specification-intent-review.md) after cross-domain review and focused corrections preserving genuinely dynamic DataFrame tools and isolated collective batch aggregation.
+Its coherent documentation clarification is committed at owning `e0f41b1`; proceed to T, with the checkpoint retaining the original documentation failure and bounded recovery.
+Earlier production-first notes do not accept these ordered gates.
 
 **S — specifications first.**
 Review the complete current in-scope normative contracts and developer-facing public examples for coherent essential features, domain ownership, API/data/lifetime invariants, contradictions, omissions, redundant obligations and concise current design.

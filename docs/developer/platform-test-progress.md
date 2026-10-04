@@ -1031,3 +1031,21 @@ Current Core 0.5/BioImageFlow 0.9 metadata/artifacts, protected held WIP and the
 Publication, platform adoption/T1 and further platform testing stay paused until the completed library milestone is accepted; local Direct/managed WorkerPool and shared local result/export/launcher seams remain in scope, while distributed-only symbols, implementations and capability testing remain excluded.
 Standing release authorization, one clean current design without backward-only layers, focused/subsumed checks, environment reuse/cleanup after consumers, literal batched executor rules, one upfront/final review and desktop-last are unchanged.
 This four-path process/authority/checkpoint update changes no library/Core source, dependency/runtime or public API/specification behavior.
+
+
+### Accepted library specification intent and clarification — October 4
+
+The [S intent review](library-specification-intent-review.md) is accepted against owning library source `2cd79a24c59cf1093e934da9aa97744d2f8709c8` after one cross-domain critique and focused essential-feature corrections.
+The thirteen merged decisions and sixteen finite main/secondary flows preserve dynamic DataFrame tools without Outputs, isolated whole-batch training/inference/aggregation and empty-input artifacts, all nine scientific packages, exact origin/data/provenance and controller lifetime ownership.
+Whole assigned normative sections and public guides were read; section/file ledgers supply completeness evidence, not code conformance, scientific accuracy or OS certification.
+The ensuing docs-only increment updates the shared specification and disjoint workflow/Core/runtime/public guides, distinguishing editorial correction from accepted semantic targets and T/C verification obligations without inventing lifecycle methods or aggregate wire fields.
+Known source/runtime/artifact proofs remain qualified; changing documentation means candidate docs/sdist bytes no longer match older artifact receipts, while unchanged source-module bytes retain their original bounded proof.
+No product source, tests, dependency bounds, lock, environment or installed platform runtime is changed by this task.
+Next is whole in-scope T oracle/fixture/selector review, then causal main→secondary C and global findings acceptance before code fixes; publication, platform adoption/T1 and platform testing remain paused until the accepted scoped library milestone.
+Windows/Linux, actual Python3.9/NumPy1.26 annotation/numeric lifetime, optional models/binaries/pinned scientific references, current-cohort normal installs and exact-head CI remain named later capability gates, not passed by S.
+Owning clarification commit `e0f41b11e62defcd84b913db12b14e481b7c9a0b` contains exactly 48 reviewed documentation paths over `2cd79a24`; committed/working hashes match, with a clean tree and empty index.
+`.venv/bin/python docs/generate_tool_package_docs.py --check` passed in 0.409s; `.venv/bin/sphinx-build -W --keep-going docs/source docs/_build/html` passed initially in 12.175s and after the named reciprocal-review prose/example corrections in 4.243s.
+Platform `env UV_OFFLINE=1 scripts/test check docs` failed overall in 0.996s at `daf4300` plus the five-document snapshot: dashboard and 77 local links passed; only Documentation admission failed because the declared Furo package was unavailable offline.
+The exact Documentation argv from `scripts/test` recovered with network enabled in 23.834s against unchanged content, retaining the successful dashboard/link phases and original overall FAIL; this is qualified phase assembly, not a full command PASS.
+Warning-clean owning/platform Sphinx supplied documentation evidence only; no product tests, source/API implementation conformance, scientific/OS certification, source fix or test addition was run/credited.
+The final result/commit sentences are factual updates after the validated projection; T is ready next against the accepted S intent, while C/global findings and milestone gates remain open.
