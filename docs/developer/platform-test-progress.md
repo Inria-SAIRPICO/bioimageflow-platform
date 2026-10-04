@@ -1017,3 +1017,17 @@ Future task packets must explicitly carry this priority, phase, main-first class
 One independent changed-plan review accepted this priority/phase authority, including the clarification that releases/platform work wait for the completed Phase 3 milestone.
 The one offline `env UV_OFFLINE=1 scripts/test check campaign` passed against main `ce419b38` plus these four process/authority/status documentation paths (exit 0, runner 0 seconds, measured 0.134 seconds); dashboard and active local links passed, with no Sphinx, product, network or capability phase.
 Only this factual result sentence was added after the check; no library review completion or runtime certification is credited by this record.
+
+
+### Ordered library review refinement — October 4
+
+The user's later ordering supersedes the production-first review sequence above: resume Phase 1 at S, reviewing current in-scope library/Core specifications and public developer examples, recording accepted essential feature/domain/API/ownership intent, contradictions and a finite feature-flow catalog before T.
+T then reviews the whole applicable suite/fixtures/oracles/selectors against that intent; C follows causal main-feature paths and then secondary paths, from trigger through public API/state/data/effects/error/cancellation/cleanup/return with cross-module ownership and lifetimes.
+Spec → test oracle → code-path traceability, differential confidence and explicit gaps are the primary synthesis; the path/hash ledger remains a supplemental completeness check.
+The prior read-only production/test/spec notes at unchanged `2cd79a2`, including fourteen workflow candidates, are retained as provisional evidence to reconcile rather than discarded or presented as completed ordered S/T gates or causal closure; no new runtime checks or fixes have begun.
+Independent acceptance of S, T, both C passes and all main/secondary findings precedes repairs; S critically resolves intent rather than canonizing stale specs/code, separates editorial consolidation from semantic decisions and may authorize coherent owning specification clarification before T, while behavior-changing choices remain findings through global synthesis.
+The actual S specification deliverable is a separate increment from this process update, with no code-fix or runtime claim.
+Current Core 0.5/BioImageFlow 0.9 metadata/artifacts, protected held WIP and the preceding qualified local results remain preserved; supported-OS/exact-head CI/Complete local Wetlands/publication gates remain unexecuted or pending as already recorded.
+Publication, platform adoption/T1 and further platform testing stay paused until the completed library milestone is accepted; local Direct/managed WorkerPool and shared local result/export/launcher seams remain in scope, while distributed-only symbols, implementations and capability testing remain excluded.
+Standing release authorization, one clean current design without backward-only layers, focused/subsumed checks, environment reuse/cleanup after consumers, literal batched executor rules, one upfront/final review and desktop-last are unchanged.
+This four-path process/authority/checkpoint update changes no library/Core source, dependency/runtime or public API/specification behavior.

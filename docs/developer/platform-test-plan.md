@@ -16,7 +16,7 @@ The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its his
 
 The user's October 4 priority overrides every older “next task”, release, platform-integration and systematic platform-testing instruction below.
 Pause publication, platform dependency adoption/T1 and platform testing through completion and acceptance of the October 4 Phase 3 library milestone.
-Hold new library repairs, test additions and refactors until both ordered review passes and the global in-scope findings gate are accepted.
+Hold new library repairs, test additions and refactors until specification intent (S), the whole in-scope suite review against it (T), both causal code-path passes (C: main then secondary) and the global findings gate are accepted.
 Review the actual library/Core snapshot `2cd79a24c59cf1093e934da9aa97744d2f8709c8` in `.worktrees/campaign-library-source-containment`; preserve its committed metadata/lock, current candidate artifacts, held force source/environment and unrelated user work without rollback.
 Core 0.5/BioImageFlow 0.9 declarations already committed are source metadata, not published certification; Windows/Linux/Python 3.9/NumPy 1.26, applicable Complete local Wetlands, exact-head CI, artifact/installability and publication gates remain pending for the later release decision.
 Historical M1, supplemental architecture review and accepted owning repairs remain named evidence with their original source/runtime limits; none substitutes for the newly requested deep current-library review.
@@ -41,21 +41,35 @@ Parsl, Dask, remote-cluster, distributed-engine implementations and their capabi
 Read only shared interfaces needed to establish a local public contract; record that seam depth explicitly and preserve excluded delivered features, files and regression tests.
 Do not widen this phase into distributed capability CI, a whole scientific-package OS matrix, platform browser work or native desktop execution.
 
-**Phase 1 — review the whole in-scope source, suite and specifications before fixing.**
-Complete two ordered review passes: primary features first, then secondary features; synthesize and record all in-scope findings before any new source fix, test addition or refactor.
-For each pass, inspect complete current human-written source and relevant specification/test bodies with a path/hash ledger, actual review depth, feature/contract owner and evidence reference; classify generated files/assets deliberately.
-Also trace essential cross-module calls from declaration/type/row planning through compilation, local WorkerPool dispatch, accepted/correlated results, cache/provenance and return ownership, including source/archive and physical lifetime/error/cancellation paths.
-Assess module dependencies, API boundaries, duplicated responsibility, coupling, data/identity/lifetime authorities, stale paths, error propagation and specification coherence rather than reducing architecture review to performance or file counts.
-Review the quality of the whole in-scope test suite: meaningful public oracles, faithful fixtures, negative/race/recovery/cleanup controls, skipped or unproved capabilities, redundancy by entry point/failure mode/evidence layer, and lane/setup ownership; do not blindly add tests or delete distinct coverage because titles overlap.
-Consolidate current findings, mitigations, severity, owner, distinguishing controls and known unknowns; link existing canonical candidates when applicable, preserving frozen historical classifications.
-One independent cross-module/source/test/specification completeness review must accept both passes and the global findings/triage synthesis before implementation starts; unresolved critical architecture decisions stay explicit owned gates.
-A ledger establishes inspected inputs, not architecture correctness; sampled reading, passing historical tests or previously accepted patch counts do not complete this phase.
+**Phase 1 — ordered specification, test and causal code-path review before fixing.**
+The user's later October 4 instruction requires S → T → C; resume at S now, without treating earlier production-first notes as acceptance of these ordered gates.
+
+**S — specifications first.**
+Review the complete current in-scope normative contracts and developer-facing public examples for coherent essential features, domain ownership, API/data/lifetime invariants, contradictions, omissions, redundant obligations and concise current design.
+Establish a finite essential-feature flow catalog and record accepted specification intent, unresolved decisions and proposed specification changes before test review.
+Critically resolve essential intent rather than canonizing stale specifications or implementation as the test oracle; separate proposed editorial consolidation from semantic design changes.
+Accepted S intent may authorize a coherent owning specification clarification/consolidation before T; behavior-changing design choices remain explicit findings until global synthesis, and the actual specification deliverable is a separate increment from this priority/process update.
+
+**T — the whole in-scope test suite against accepted intent.**
+Review all applicable test modules, fixtures, oracles and selectors against S's accepted intent, classifying main features before secondary evidence and mapping coverage, stale assumptions, false confidence, redundancy and missing negative/error/cancel/recovery/cleanup controls.
+Preserve distinct public, pure model, real storage and actual local managed-worker evidence; overlapping titles alone do not justify deletion, and review does not require a blind full-suite runtime.
+Define the later applicable local validation obligations and explicit distributed-only exclusions, including shared local symbols and mixed-file tests that remain essential.
+
+**C — main causal code paths, then secondary code paths.**
+For each catalogued feature follow trigger → public API → dispatch/state/data transition → effect, error, cancellation, cleanup and returned value, identifying the owner and lifetime of every authoritative fact across modules.
+Review main local features first, then every remaining in-scope secondary feature, evaluating dependencies, coupling, duplicated responsibility, current API/spec coherence and stale constructs through these actual chains.
+A supplemental path/hash/depth ledger checks whole-file completeness and deliberately classifies generated/assets/excluded symbols; file counts or blind file-by-file reading are not the primary success measure.
+
+Reuse prior `2cd79a2` source/test/specification notes where their hashes and scope still apply, reconciling them to accepted S intent and the spec → test oracle → causal code-path traceability before assigning confidence; do not restart unchanged reads mechanically.
+Preserve all existing workflow/Core/engine candidates and frozen historical qualifications, distinguish source mechanisms, meaningful existing oracles and actual runtime proofs, and record uncovered paths rather than papering over gaps.
+Consolidate all main and secondary findings, mitigations, severity, owners, distinguishing controls and known unknowns; one independent cross-module completeness review must accept S, T, both C passes and global findings before any source fix, test addition or refactor.
+Every future review assignment must carry its stage, accepted intent and causal path scope, not passive file-reading instructions; unresolved critical architecture decisions remain explicit owned gates.
 
 **Phase 2 — main architecture and features first, then secondary repairs.**
 After the global findings gate, implement small coherent primary architecture/refactor/specification packets in dependency order, preserving essential project behavior and clean current APIs.
 Use existing meaningful tests first; establish exact causal or contract failures, correct the owning boundary, run exact GREEN once and mapped primary feature/negative/recovery/physical-lifetime controls before moving to secondary implementations.
 Then address accepted secondary findings with the same bounded method; deliberate deferrals require owner, reason, trigger and explicit effect on milestone acceptance.
-Do not interleave primary fixes before the secondary review merely to obtain early green results.
+Do not interleave primary fixes before the secondary causal review and global S/T/C findings acceptance merely to obtain early green results.
 Retain focused/subsumed checks, existing isolated environments, immutable artifact evidence, one upfront scope/oracle decision and one coherent final review per repair/phase; unchanged successful projections and original failures remain separate.
 
 **Phase 3 — one scoped library milestone.**
@@ -64,7 +78,7 @@ The suite owner must define the concrete applicable command and evidence-layer o
 The owning README fast lane omits local Wetlands controls, so map the required focused `--run-complete` local public WorkerPool cases separately; a `not parsl` marker alone does not exclude every mocked distributed folder, and mixed local result-return cases must remain selected.
 Report selected cases, commands, revisions, timings, skips/deselections/blocked phases and retained failures; current artifact/OS or published-package gates not executed by this milestone remain open.
 Resume publication/platform integration only after root and independent acceptance of the completed Phase 3 library milestone; standing release authorization persists and does not bypass technical gates.
-Every delegated task packet must carry the active phase, primary/secondary classification, exact read-before-fix gate, baseline/owned paths and distributed exclusions, plus existing literal executor/stop-on-mismatch, cleanup-after-consumers and desktop-last rules.
+Every delegated task packet must carry the active phase/stage, accepted specification intent, causal path scope, primary/secondary classification, exact read-before-fix gate, baseline/owned paths and distributed exclusions, plus existing literal executor/stop-on-mismatch, cleanup-after-consumers and desktop-last rules.
 Keep review notes temporary while working; commit the intended review report, qualified coverage/flow ledger, suite/specification synthesis and consequential campaign records as the phase deliverable.
 
 ## What changes from the previous campaign
