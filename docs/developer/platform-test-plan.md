@@ -44,7 +44,8 @@ Do not widen this phase into distributed capability CI, a whole scientific-packa
 **Phase 1 — ordered specification, test and causal code-path review before fixing.**
 The user's later October 4 instruction requires S → T → C.
 [S intent is accepted](library-specification-intent-review.md) after cross-domain review and focused corrections preserving genuinely dynamic DataFrame tools and isolated collective batch aggregation.
-Its coherent documentation clarification is committed at owning `e0f41b1`; proceed to T, with the checkpoint retaining the original documentation failure and bounded recovery.
+Its coherent documentation clarification is committed at owning `e0f41b1`, with the checkpoint retaining the original documentation failure and bounded recovery.
+[Test quality T is accepted](library-test-quality-review.md) after one cross-domain review against the sixteen S flows; advance to C main causal review, hold secondary until all primary owner packets are ready, then complete C secondary and global findings acceptance before fixes.
 Earlier production-first notes do not accept these ordered gates.
 
 **S — specifications first.**

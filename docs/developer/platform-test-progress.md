@@ -1049,3 +1049,16 @@ Platform `env UV_OFFLINE=1 scripts/test check docs` failed overall in 0.996s at 
 The exact Documentation argv from `scripts/test` recovered with network enabled in 23.834s against unchanged content, retaining the successful dashboard/link phases and original overall FAIL; this is qualified phase assembly, not a full command PASS.
 Warning-clean owning/platform Sphinx supplied documentation evidence only; no product tests, source/API implementation conformance, scientific/OS certification, source fix or test addition was run/credited.
 The final result/commit sentences are factual updates after the validated projection; T is ready next against the accepted S intent, while C/global findings and milestone gates remain open.
+
+
+### Accepted library test-quality review — October 4
+
+The [T review](library-test-quality-review.md) is accepted after one independent cross-domain critique and two bounded schema/exclusion clarifications, against owning documentation `e0f41b1` and unchanged production/test source `2cd79a24`.
+Three domain packets were deduplicated: 145 of 194 root test modules have full-body evidence, 49 distributed/remote modules are explicitly excluded without a full-body claim, and all 22 scientific tool test modules were read; mixed local launcher/Direct/resource/result contracts remain covered.
+The 210 unique hashed review inputs match once with no drift; input counts overlap and AST selector stems are not collected/parameter-expanded cases or executed tests.
+Keep exact atomic refusal/source identity/numeric/view/grant/selected-record/concurrent-publication and scientific expected-value controls; named weak/vacuous assertions, stale expectations and lane omissions have explicit keep/merge/retire/strengthen priorities for C.
+The README Wetlands smoke command lacks `--run-complete`, while the complete job's `complete and wetlands` predicate omits wetlands-only positive smoke/task-API cases; these are source-inspected selection defects, not newly run skip results.
+Known heterogeneous int/str concat may honestly publish Any/dynamic schema, independently of unavailable/failed schema fabricated as successful empty/Any.
+No runtime/collection/import, product source/test/dependency/environment change, OS/model/binary capability or new defect reproduction is credited; the historical 351 PASS/1 skip remains historical and its uncaptured skip reason UNKNOWN.
+Next is C main causal review against S/T, then secondary only after all main packets are ready, then global findings acceptance before repairs; publication/platform/T1 remain paused through the accepted scoped library milestone.
+`scripts/test check docs` passed once (exit 0, runner 23s / measured 23.594982s) at platform `0500b25` plus the five-document projection: dashboard, 80 active local links and warning-clean Sphinx passed; no product lane or T runtime test ran.
