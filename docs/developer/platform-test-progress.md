@@ -994,3 +994,26 @@ The frozen 573 inventory/dispositions remain unchanged; no platform product/full
 Active owning dev/artifact environments and public package cache remain intentionally retained for the next consumer; no cleanup or reclaimed-byte claim is added.
 The one applicable `env UV_OFFLINE=1 scripts/test check docs` passed against main `5bab8c6` plus these six documentation paths: exit 0, runner 6 seconds, measured 5.534 seconds, campaign dashboard/local links and warning-clean Sphinx.
 This check validates the developer-context/shutdown-target/checkpoint documentation projection; no product tests, preliminary campaign check or repeated Sphinx check were run, and only this factual result sentence was appended afterward.
+
+
+### Highest-priority current library/Core phase — October 4
+
+The user's new priority supersedes the prior publication/platform-integration queue: conduct a deep current-library/Core architecture, whole in-scope suite and specification review, main features first and secondary features next, before any further fixes.
+The current owning baseline is clean committed `2cd79a24c59cf1093e934da9aa97744d2f8709c8` in `.worktrees/campaign-library-source-containment`; semantic force/cohort integration is delivered, including declared Core 0.5/BioImageFlow 0.9 bounds/lock and the narrow array capability CI job.
+The four local source-disabled artifact families passed on macOS/Python 3.12 (1.100 seconds), and the current five managed cases passed (19.949 seconds); initial harness admission failures/corrections remain in their owning receipts, and none proves the unexecuted Linux/Windows/Python 3.9 jobs or published cohort loading.
+Source/delivery evidence is `/private/tmp/bioimageflow-force-cohort/final-delivery-proof.json`; preserve earlier failures, current candidate artifacts/metadata, original held force source/environment and unrelated user trees.
+No metadata rollback, publication, platform dependency change or new product checks are part of this priority-documentation task.
+
+Phase 1 establishes the actual primary/secondary/excluded file-feature-test-spec map, then completes primary source/flow/suite review followed by secondary review and a global recorded findings/mitigation/unknown synthesis accepted independently before any source fixes or test additions.
+The owner supplied the actual initial map: primary Core/contracts, workflow construction and local engine/cache/storage/results; secondary public API/support, nine scientific tool implementations and package/suite/release architecture.
+Core 16/orchestrator 159/root test 194/tool test 22/tool production 55 are mechanical counts, not review coverage; complete-file ledger status and cross-module essential-flow review remain separate qualified evidence.
+Local export/launcher return/assets/routes/schema/download/bundle owners are explicitly retained inside mixed directories; the suite map must identify exact local nodes and focused opt-in managed-worker controls rather than assume the README fast lane or a not-parsl marker supplies that scope.
+Phase 2 implements and causally validates bounded primary architecture/features first, then secondary repairs/tests; suite assertions, redundancy, fixtures and lane ownership must be assessed before choosing new tests.
+Phase 3 executes one applicable local-library milestone with an explicit non-distributed collection proof and remaining technical gates reported honestly.
+Within-machine managed WorkerPool/Direct processing is primary; Parsl, Dask, remote and distributed engine implementations/testing/certification are excluded, while essential shared local API seams remain reviewed and excluded delivered features are preserved.
+Historical M1/supplemental results, accepted patches and frozen 573 classifications are preserved but do not substitute for this new deep current-library gate.
+Publication/platform T1 and platform testing remain paused through acceptance of the completed Phase 3 library milestone; actual supported-OS/artifact/current resolver/exact-head CI/local Complete Wetlands and published-package obligations remain deferred, not passed or canceled.
+Future task packets must explicitly carry this priority, phase, main-first class, read-before-fix gate and exclusions alongside focused/subsumed checks, environment reuse, literal executor stop-on-mismatch, cleanup-after-consumers, standing release authorization and desktop-last.
+One independent changed-plan review accepted this priority/phase authority, including the clarification that releases/platform work wait for the completed Phase 3 milestone.
+The one offline `env UV_OFFLINE=1 scripts/test check campaign` passed against main `ce419b38` plus these four process/authority/status documentation paths (exit 0, runner 0 seconds, measured 0.134 seconds); dashboard and active local links passed, with no Sphinx, product, network or capability phase.
+Only this factual result sentence was added after the check; no library review completion or runtime certification is credited by this record.

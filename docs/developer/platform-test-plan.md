@@ -12,6 +12,61 @@ The checkpoint records actual readiness outcomes separately from historical cove
 The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
 
+## Highest priority: deep library/Core review and validation — October 4
+
+The user's October 4 priority overrides every older “next task”, release, platform-integration and systematic platform-testing instruction below.
+Pause publication, platform dependency adoption/T1 and platform testing through completion and acceptance of the October 4 Phase 3 library milestone.
+Hold new library repairs, test additions and refactors until both ordered review passes and the global in-scope findings gate are accepted.
+Review the actual library/Core snapshot `2cd79a24c59cf1093e934da9aa97744d2f8709c8` in `.worktrees/campaign-library-source-containment`; preserve its committed metadata/lock, current candidate artifacts, held force source/environment and unrelated user work without rollback.
+Core 0.5/BioImageFlow 0.9 declarations already committed are source metadata, not published certification; Windows/Linux/Python 3.9/NumPy 1.26, applicable Complete local Wetlands, exact-head CI, artifact/installability and publication gates remain pending for the later release decision.
+Historical M1, supplemental architecture review and accepted owning repairs remain named evidence with their original source/runtime limits; none substitutes for the newly requested deep current-library review.
+The goal is one clean well-designed current architecture with essential features intact, removing demonstrated redundant responsibility, stale/legacy paths and flaws without backward-only layers or a promise that review proves the absence of all defects.
+
+**Scope and classification.**
+The library review owner first supplies the actual module/feature/test/specification map, classifying every current input as primary, secondary, generated/asset or excluded, with owner, reason and shared-contract seams.
+Primary means the essential user pipeline: tool/type/IOModel and row semantics; graph compilation and local execution; result correlation, cache/provenance and recovery; source/archive identity; local environment/WorkerPool preparation; shared-array and physical resource/error/cancellation ownership.
+Secondary covers the remaining in-scope library conveniences, tooling and optional feature surfaces identified by that actual map; do not assign a scientifically essential flow to secondary merely because its file is small or optional packaging exists.
+The owner's actual `2cd79a2` map supplies these starting partitions; the phase ledger must refine mixed files and record inspected depth before claiming accepted coverage.
+
+| Review order/owner partition | Actual source-bound starting scope | Review obligations |
+| --- | --- | --- |
+| Primary 1 — Core/contracts | Core's 16 modules; orchestrator tool/DataFrameTool, type/IO/row validation, registry and loader | Follow declaration/value/resource contracts through current codecs and managed-worker origins; do not treat the Parsl-specific Core preflight schema as the default local worker entry point. |
+| Primary 2 — workflow construction | `node`, `workflow_node`, `session`, templates and the 12 workflow modules | Compile/materialize interfaces and row/nested flows, capture source/archive identity and coherent session/returned ownership. |
+| Primary 3 — local execution/results | 14 engine, 9 cache and 13 storage modules, backends/environment manager/Core dependency/resources/events/paths, plus local launcher result owners | Include `WorkflowExecutionContext.export_result` → `launcher.attached_result` → returns/assets/routes/schema/download/bundle and shared helpers; do not exclude `launcher/` wholesale because it also contains remote features. |
+| Secondary — remaining local features/support | Public API/CLI/logging/viewer metadata/docs/examples; nine scientific tool packages; package/build/CI/fixture/selector/release architecture | Preserve essential scientific behavior and inspect actual consumer/recipe semantics, test quality and developer contracts after the primary pass; classify stale README aliases such as `BIOIMAGEFLOW_USE_LOCAL_CORE` before choosing retirement. |
+
+Mechanical mapping counts are 159 orchestrator modules, 194 root test modules, 22 tool test modules and 55 tool production Python files; they are inventory inputs, not reviewed-file counts or a completion denominator until exact exclusions/generated/mixed scope are reconciled.
+Direct and within-machine managed WorkerPool processing are in primary scope.
+Parsl, Dask, remote-cluster, distributed-engine implementations and their capability tests/certification are excluded from this phase, including their historical test results as current acceptance.
+Read only shared interfaces needed to establish a local public contract; record that seam depth explicitly and preserve excluded delivered features, files and regression tests.
+Do not widen this phase into distributed capability CI, a whole scientific-package OS matrix, platform browser work or native desktop execution.
+
+**Phase 1 — review the whole in-scope source, suite and specifications before fixing.**
+Complete two ordered review passes: primary features first, then secondary features; synthesize and record all in-scope findings before any new source fix, test addition or refactor.
+For each pass, inspect complete current human-written source and relevant specification/test bodies with a path/hash ledger, actual review depth, feature/contract owner and evidence reference; classify generated files/assets deliberately.
+Also trace essential cross-module calls from declaration/type/row planning through compilation, local WorkerPool dispatch, accepted/correlated results, cache/provenance and return ownership, including source/archive and physical lifetime/error/cancellation paths.
+Assess module dependencies, API boundaries, duplicated responsibility, coupling, data/identity/lifetime authorities, stale paths, error propagation and specification coherence rather than reducing architecture review to performance or file counts.
+Review the quality of the whole in-scope test suite: meaningful public oracles, faithful fixtures, negative/race/recovery/cleanup controls, skipped or unproved capabilities, redundancy by entry point/failure mode/evidence layer, and lane/setup ownership; do not blindly add tests or delete distinct coverage because titles overlap.
+Consolidate current findings, mitigations, severity, owner, distinguishing controls and known unknowns; link existing canonical candidates when applicable, preserving frozen historical classifications.
+One independent cross-module/source/test/specification completeness review must accept both passes and the global findings/triage synthesis before implementation starts; unresolved critical architecture decisions stay explicit owned gates.
+A ledger establishes inspected inputs, not architecture correctness; sampled reading, passing historical tests or previously accepted patch counts do not complete this phase.
+
+**Phase 2 — main architecture and features first, then secondary repairs.**
+After the global findings gate, implement small coherent primary architecture/refactor/specification packets in dependency order, preserving essential project behavior and clean current APIs.
+Use existing meaningful tests first; establish exact causal or contract failures, correct the owning boundary, run exact GREEN once and mapped primary feature/negative/recovery/physical-lifetime controls before moving to secondary implementations.
+Then address accepted secondary findings with the same bounded method; deliberate deferrals require owner, reason, trigger and explicit effect on milestone acceptance.
+Do not interleave primary fixes before the secondary review merely to obtain early green results.
+Retain focused/subsumed checks, existing isolated environments, immutable artifact evidence, one upfront scope/oracle decision and one coherent final review per repair/phase; unchanged successful projections and original failures remain separate.
+
+**Phase 3 — one scoped library milestone.**
+Complete one coherent milestone validation against the accepted current source/specification/dependency projection after primary and secondary work, using the owning README's applicable commands and an explicit collection/selector proof that excludes distributed-engine tests.
+The suite owner must define the concrete applicable command and evidence-layer obligations from the reviewed suite before execution; do not invent a blanket full command or substitute import-only checks for local managed execution.
+The owning README fast lane omits local Wetlands controls, so map the required focused `--run-complete` local public WorkerPool cases separately; a `not parsl` marker alone does not exclude every mocked distributed folder, and mixed local result-return cases must remain selected.
+Report selected cases, commands, revisions, timings, skips/deselections/blocked phases and retained failures; current artifact/OS or published-package gates not executed by this milestone remain open.
+Resume publication/platform integration only after root and independent acceptance of the completed Phase 3 library milestone; standing release authorization persists and does not bypass technical gates.
+Every delegated task packet must carry the active phase, primary/secondary classification, exact read-before-fix gate, baseline/owned paths and distributed exclusions, plus existing literal executor/stop-on-mismatch, cleanup-after-consumers and desktop-last rules.
+Keep review notes temporary while working; commit the intended review report, qualified coverage/flow ledger, suite/specification synthesis and consequential campaign records as the phase deliverable.
+
 ## What changes from the previous campaign
 
 Start with the actual platform and installed library state before trusting old fixtures or branches.
@@ -35,7 +90,7 @@ Historical checkpoints describe their then-current contracts; they do not overri
 Follow `AGENTS.md`, `PLATFORM_CONTEXT.md`, the implemented v1/v2 and applicable later specifications, and [Test lanes](../testing.md).
 Cover implemented desktop and webapp behavior, including their different permission and persistence contracts.
 Parallel scheduling, HPC, Parsl, managed remote execution, distributed engines, and future v3 proposals remain excluded from campaign execution.
-Their tracked human-written source, tests and specifications remain included in the complete codebase review.
+Their tracked human-written source, tests and specifications were included in historical M1; the October 4 library phase excludes distributed implementations and tests, inspecting only shared seams required for local API coherence.
 Keep Direct execution and real local Wetlands execution with one sequential worker; selecting a worker engine is not proof that a worker ran.
 Preserve existing out-of-scope regression tests and specification contracts; campaign exclusions do not authorize deleting delivered parallel, HPC, Parsl, or managed remote/distributed capabilities.
 The catalog contract remains single-click to toggle bottom tool information, double-click to create exactly one node, and drag as an independent creation gesture.
@@ -433,7 +488,7 @@ Root and independent completeness acceptance of the supplemental findings/triage
 Treat source qualification and mitigations as evidence for exact owning controls, not confirmed incidents or permissions for broad rewrites; preserve deliberate owner-trigger deferrals and dynamic unknowns.
 
 
-### Public release prerequisite wave — October 3
+### Public release prerequisite wave — October 3 (paused by October 4 library priority)
 
 The supplemental findings gate is durably accepted at `feb128b`; the first two separate owning repairs are archive containment `d4ba925` and Core object-dtype safety `86a84fd`, with scoped public/owner/static/docs acceptance and no current platform dependency upgrade.
 The earlier B-F134 V1 passthrough/optional-frame proposal is superseded by the user direction: implement one current public task/result/typed-value contract, using a single current schema and DTO set, unambiguous literal dictionaries, type-faithful Path/container/SharedArray transport and unchanged essential correlation/worker-origin checks.
@@ -442,7 +497,8 @@ A-F026 executable-cache identity is source-accepted at `063d81c`; B-F134 single-
 Uniform file/mmap controller-owner lifetime is independently source-accepted at `6551f0b`; its five source-disabled real worker cases and focused drain-before-controller-acceptance control passed, with the original failures retained.
 Controller references and retained NumPy views outlive temporary Workflow execution; explicit cleanup waits for local readers and physically retired worker grants, with no global segment cleanup, Python-3.13-only exclusion, private tracker unregister or legacy backend fallback.
 Before Core 0.5 publication, retain narrowly scoped actual Windows and Python 3.9/NumPy 1.26 mmap artifact/owner witnesses in the owning CI; current Ubuntu normal CI and macOS/Python 3.12 evidence do not establish those essential support surfaces.
-Next semantically reconcile accepted source with the preserved held force patch: its manager/core-dependency fixture hunks no longer apply cleanly after grant tracking, and successful physical close must drain only selected grants before removal while failure keeps all owners retryable.
-Then align Core/BioImageFlow/Wetlands floors and all nine tool declarations/locks, validate the current source-disabled package cohort and normal exact-head CI, publish in dependency order under standing authorization, then integrate platform T1 and scoped shutdown ownership.
-The prospective cohort is Core 0.5/BioImageFlow 0.9, Core `>=0.5,<0.6` for all nine tools and BioImageFlow `>=0.9,<1` for the four dependent DataFrame-tool packages; optional Phasor publication/publisher admission remains separate from the base cohort, and no bounds/version change is claimed here.
+This release sequence is now paused by the October 4 deep library gate; the force/current-cohort follow-up is committed at `2cd79a2`, retaining selected physical grant drain and close-failure retry ownership.
+After the completed Phase 3 library milestone is accepted, reassess current source-disabled cohort/OS/normal exact-head CI and publication gates, then resume dependency-ordered release and platform T1/scoped shutdown adoption under standing authorization.
+The current owning source at `2cd79a2` declares Core 0.5/BioImageFlow 0.9, Core `>=0.5,<0.6` for all nine tools and BioImageFlow `>=0.9,<1` for the four dependent DataFrame-tool packages; this does not establish publication or installability across all supported workers.
+Optional Phasor publication/publisher admission remains separate from the base cohort.
 For owning-repository commands, reconcile `.python-version` with the chosen frozen private interpreter before uv setup; reuse that admitted interpreter for exact pytest without resync, and request expected uv-cache or network-dependent intersphinx/docs access on the first attempt.
