@@ -1106,3 +1106,56 @@ Windows/Linux/Python 3.9/NumPy 1.26, real current scientific/native recipes, app
 No tag, push, release, dependency/environment reconciliation, platform runtime adoption or held-WIP modification occurred; prepared development/artifact environments and evidence are retained for their next consumers.
 This four-document checkpoint updates existing status/authority prose only; it adds no navigation, API contract or documentation structure.
 The one `env UV_OFFLINE=1 scripts/test check campaign` passed against main `acc7246e` plus this four-document projection: exit 0, runner 0s/measured 0.154670s, dashboard and 84 active local links verified; no product phase, test skip/deselection or repeated Sphinx phase was run.
+
+
+### Bounded MAIN numerical identity, pinned selection and loader admission — October 4
+
+Owning commit `d6865b1206747655ac93b280c7a61866aee466f2`, parent `936c44003f759075a16629d290bb3a5a227fe194`, delivers exactly 32 reviewed task paths (1,109 additions/324 removals), with committed/working/approved bytes equal, clean tree and empty index.
+Canonical DataFrame identity now reads each column's scalar without row-Series float promotion; independent signed/unsigned adjacent values above 2**53 beside float data distinguish digests, while the existing actual large-integer ProcessingTool argument/result guard remains intact.
+Numeric-looking strings such as `001` stay strings unless a workflow explicitly converts them; ordered lists/tuples retain recipe dependency/channel precedence while true sets and dictionary keys stay canonical.
+One SelectedResult binds the loaded frame, key, record ID, detached manifest metadata and public record address once; both lookup and first-valid publication select that actual winner's frame.
+Planning, provider outcomes, progress, run views, downstream provenance and local result export consume the same binding without reselecting a moving current pointer.
+A removed pointer after admission preserves that record's reuse; actual selected parquet absence before admission refuses before downstream dispatch and preserves downstream current bytes.
+This does not seal the mutable frame or accepted array values (C07), and the formerly pointer-removal-based transient fixtures no longer certify a genuine unselected-provider execution.
+The owner packet found and fixed an inherited Wave1 dynamic DataFrame declaration regression: default Outputs=None remains unknown/dynamic, while an explicit configured empty schema remains known-empty and refuses nonexistent selectors.
+A cached NodeStep executed after its iterator finalized the context now preserves its valid cached value without recording into the finished context; active execution still records the pinned provider outcome.
+SourceFile admission hashes and compiles the same captured bytes, verifies class/module membership, refuses foreign same-path namespaces unless the exact module is loader-owned, preserves legitimate repeat loads and publishes ownership only after success.
+Version-store cached imports must match the selected module/root, including legitimate PEP420 child paths; standalone source archives and failed initialization preserve existing namespace/import-path owners.
+Ordinary programmatic/installed/versioned caching remains enabled; full admitted executable/dependency content as cache-key authority is still open, not supplied by selector/version labels or this bounded loader change.
+
+All command durations below are measured wall time against parent `936c440` plus the named working projections; exact final 32-path bytes and eight closure files bind the accepted completion assembly.
+The numeric baseline had four genuine failures/one retained processing precision PASS (3.624755s); the public pointer-switch baseline had one genuine identity failure (3.125097s), with separate in-flight import collection failures carrying no causal credit.
+The original combined command remains **FAIL**, 199 PASS/25 FAIL in 14.491131s (13.98s pytest); failures included dynamic admission, internal SelectedResult return-shape fixtures and obsolete pointer-removal assumptions.
+The focused recovery remains **FAIL**, 29 PASS/2 FAIL in 8.478s; cached late-step source behavior and failed-attempt fixture correlation then recovered with exact 2 PASS in 4.890s.
+The one invalidated-owner command remains **FAIL**, 145 PASS/1 FAIL in 14.754s; its remaining regex-filter chain was adapted to explicit conversion, independently checking extracted identifiers remain strings and declaring the changed slice:int output.
+That exact final selector passed in 2.151s (1.60s pytest); the earlier corrected exact conversion PASS in 3.224s is retained separately.
+These are qualified focused-owner completion, not a relabeled original command or full-suite certification; zero skips were reported, and no new warning summary appeared in these owner receipts.
+Original numeric/pinning GREEN was 5 PASS/one incorrect export-path fixture FAIL in 2.054403s; the exact corrected pin test passed in 1.546675s with consumed A=4, downstream=8, current B=99 and outcome/progress/runview/export/provenance all A.
+Core loader causal baselines (four Core and two loader failures) precede exact recoveries; the final named namespace/reuse controls passed 11/0 skips in 1.588392s.
+
+| Completion command | Result and measured duration |
+| --- | --- |
+| Prepared `.venv/bin/python -m pytest` affected runtime/cache/storage/loader owner packet | Overall FAIL, 199 PASS/25 FAIL, 14.491131s; unchanged successes retained |
+| Exact affected dynamic/publication/provenance/step/pinning recovery | Overall FAIL, 29 PASS/2 FAIL, 8.478s; exact final two PASS, 4.890s |
+| `.venv/bin/python -m pytest` invalidated column/shared-array/DataFrame/recursive/steps/pinning/Node-plan/loader families | Overall FAIL, 145 PASS/1 FAIL, 14.754s; exact remaining conversion selector PASS, 2.151s |
+| `.venv/bin/ruff check .` | PASS, 0.128s; initial named unused-import attempt retained |
+| `.venv/bin/python scripts/check_file_sizes.py` | PASS, 0.413s |
+| `.venv/bin/python scripts/check_import_boundaries.py` | PASS, 0.809s |
+| `.venv/bin/pyright --pythonversion 3.12` on the 17 changed production paths | Original 3-error FAIL, 2.227s; equivalent path/narrowing correction PASS, 1.938s |
+| `.venv/bin/python docs/generate_tool_package_docs.py` | PASS, 1.673208s |
+| `.venv/bin/sphinx-build -W --keep-going docs/source docs/_build/html` | PASS, 20.487194s, no warnings/errors |
+| `uv build --package bioimageflow-core --python .venv/bin/python --no-sources --wheel --out-dir <task artifacts>` | Final normal candidate PASS, 8.831374s; pre-typing build PASS8.612260s retained superseded |
+| `uv pip install --python .venv-b134-core-artifact/bin/python --no-sources --reinstall-package bioimageflow-core <current wheel>` | PASS, 1.149s, existing exclusive artifact host reused |
+| Existing artifact interpreter `-I <public worker witness> --wheel … --root … --manager-root … --receipt …`, outside checkout | PASS, 25.632s; one actual SourceFile scalar task 4→8, physical worker exit and owned HTTP/manager cleanup |
+
+Normal Core0.5 candidate wheel SHA-256 `9b5943959d031fe81b3669828646a650e411bca17f904343a0ca93791ab4ee57` contains all 17 actual current Core Python modules equal to source, noneditable host and actual worker; no py.typed marker or source/version overlay is invented.
+The worker proof directly invokes current Core's public entry point; unchanged older artifact-host BioImageFlow/tool wheels do not certify every current library source or a newly installed complete cohort.
+The eight source/dependency/configuration closure files and all 104 development METADATA hashes remain unchanged; original held six-path force WIP, saved patch, source and environment stay protected.
+Reciprocal review accepted other writers' final source, the late terminal-context guard, truthful exact record fixtures, explicit conversion metadata and equivalent typing corrections; final source bytes and retained commands are bound in the task delivery receipt.
+Next is C05 true isolated collective/all-consumed and empty aggregation with actual auxiliary inputs, then C07/C08 immutable access/exact group/discard/repeated-run/quota/physical cleanup and remaining MAIN source/outcome obligations before SECONDARY.
+Windows/Linux/Python 3.9/NumPy 1.26, native/scientific recipes, current full-cohort artifacts/resolver, broader Complete/CI/published gates remain unexecuted here; no collective, accepted-array/lifetime or library-milestone closure is claimed.
+No tag/push/release/merge, metadata/floor/lock change, dependency reconciliation, platform adoption/testing or distributed/native execution occurred; retained environments/artifacts remain available to their next consumers.
+This main four-document checkpoint changes existing authority/status prose only; one offline check campaign is the applicable completion lane, without repeated Sphinx/product checks.
+
+The retained [byte-bound completion command receipts](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/completion-summary.json), [32-path source/closure manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/final-manifest.json), [exact committed delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/final-delivery-proof.json) and [actual installed-worker/cleanup receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/public-worker-origin-proof.json) provide exact argv, command result/duration, final bytes and intermediate-projection qualifications.
+The one offline `env UV_OFFLINE=1 scripts/test check campaign` passed on main `8c01f20` plus the initial four-document status projection: exit0/measured0.206766s, dashboard and84active links; the later provenance links invalidate only the cheap link phase, recovered once on the final document projection: `python3 scripts/verify-platform-test-links.py` PASS/exit0/measured0.086311s, 88 active links, without repeating product or Sphinx checks.
