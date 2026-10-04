@@ -1159,3 +1159,64 @@ This main four-document checkpoint changes existing authority/status prose only;
 
 The retained [byte-bound completion command receipts](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/completion-summary.json), [32-path source/closure manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/final-manifest.json), [exact committed delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/final-delivery-proof.json) and [actual installed-worker/cleanup receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/wave2/public-worker-origin-proof.json) provide exact argv, command result/duration, final bytes and intermediate-projection qualifications.
 The one offline `env UV_OFFLINE=1 scripts/test check campaign` passed on main `8c01f20` plus the initial four-document status projection: exit0/measured0.206766s, dashboard and84active links; the later provenance links invalidate only the cheap link phase, recovered once on the final document projection: `python3 scripts/verify-platform-test-links.py` PASS/exit0/measured0.086311s, 88 active links, without repeating product or Sphinx checks.
+
+
+### MAIN collective association, preserved outputs and measured speed — October 4
+
+Owning commit `cb83afc969df97a2159120f9c0c43cfdc8524e13`, parent `d6865b1206747655ac93b280c7a61866aee466f2`, delivers exactly 64 independently reviewed task paths (1,634 additions/675 removals), with committed/working/approved bytes equal, clean tree and empty index.
+The single current task/result v3 separates scientific row consumption from physical dispatch: mapped groups retain exact singleton input associations with zero/one/many outputs, while isolated collective tools return one full actual-batch association including a genuine empty batch.
+Aggregate output identity has its own stable domain; record v2 persists authoritative compact consumed/output relations, and transient/pinned provider bindings carry them without dataframe attrs or parsing display indices.
+Empty batches retain declared constants, output paths and genuinely selected auxiliary reference records, with row/batch/reference SharedArrays admitted under the same physical task scope before trusted tool import.
+Mosaic, spot/track rendering and LapTrack adapters publish aggregate outputs once; explicitly joining selected model outputs to prediction data preserves distinct scientific input/output domains without fabricated observation rows.
+The cell-lineage example uses a source-key left join to retain rendered images when tracks are absent, with nullable right-side signed/unsigned integer columns preserving large IDs and metadata.
+Its empty and nonempty structural witnesses use deterministic tracking outputs plus actual image read/write, not native LapTrack accuracy certification.
+Path outputs echoing a same-named Path input without an explicit Template/override now retain that input; genuine new destinations and explicit Template/override declarations retain staging behavior, and public sentinels verify source files remain unchanged.
+Processing/DataFrame publication validates relation shape and exact output membership before staging/assets/record/current effects; malformed relations refuse without writes.
+One public exact-record admission returns the validated frame, detached manifest and address together, preserving corruption/assets/containment and fixed selected-record authority while removing repeated parquet reads.
+Accepted frame/array sealing (C07), exact group/discard/repeated-run/quota cleanup (C08), executable-content cache-key closure and remaining source/outcome obligations are still open.
+Ordinary caching remains enabled; this increment does not certify the full library milestone or all C05 scientific/native capabilities.
+
+The original focused owner command remains **FAIL**, 335 PASS/3 FAIL in 25.842471s (25.26s pytest), with zero skips and no warning summary.
+Its three failures were old manual-record fixtures missing mandatory current relation metadata: `test_downstream_result_key_tracks_selected_upstream_record`, `test_workflow_keeps_consumed_record_when_current_changes_after_frame_read` and `test_record_manifest_validation_checks_files_and_digest`.
+Current-v2 fixture corrections retain all independent pointer/digest/path/corruption assertions; the exact failures plus only invalidated processing-publication owners recovered with 18 PASS/0 skips in 2.399s.
+Affected common/spot/tracking owners passed 128/1 skip in 9.453s; `test_real_laptrack_links_two_deterministic_tracks` explicitly skipped because the optional `laptrack` dependency is unavailable, without installation or native credit.
+The final template plus actual empty/nonempty tracking example command passed 26/0 skips in 3.710s; earlier 25-PASS and fixture-error attempts remain separate projections.
+Core genuine aggregate cardinality and empty-invocation failures precede exact recoveries; missing-scope row/batch/reference controls also establish actual pre-import refusal, while the earlier 62-PASS/2 stale adapter-fixture FAIL command and exact two recovery remain recorded.
+B's public collective, publication no-effects and nullable join baselines/recoveries retain setup-only fixtures and the literal unsigned dtype spelling failure separately; no overall failed command is relabeled PASS.
+This is qualified focused owner assembly, not the full suite.
+
+| Completion command | Result and measured duration |
+| --- | --- |
+| Prepared `.venv/bin/python -m pytest` focused runtime/cache/storage/worker owner packet | Overall FAIL, 335 PASS/3 FAIL, 25.842471s; exact/invalidated 18 PASS, 2.399s |
+| Prepared pytest affected common/spot/tracking owners | 128 PASS/1 optional LapTrack dependency skip, 9.453s |
+| Prepared pytest template family plus actual tracking example | Final 26 PASS/0 skips, 3.710s |
+| `.venv/bin/python -m ruff check .` | Final PASS, 0.207s; earlier PASS 0.614s retained |
+| `.venv/bin/python scripts/check_file_sizes.py` | PASS, 0.327s |
+| `.venv/bin/python scripts/check_import_boundaries.py` | PASS, 0.863s |
+| `.venv/bin/pyright` on changed production/tooling paths | Original 7-error FAIL, 4.143s; literal return annotation/path/narrowing recovery PASS, 3.698s |
+| `.venv/bin/python docs/generate_tool_package_docs.py` | PASS, 1.917747s |
+| `.venv/bin/sphinx-build -W --keep-going docs/source docs/_build/html` | PASS, 24.478463s, no warnings/errors |
+| Normal `uv build --package bioimageflow-core --python .venv/bin/python --no-sources --wheel` | PASS, 9.541s; all 17 Python module bytes exact |
+| Normal Core reinstall into retained noneditable artifact host | PASS, 1.236924s; current normal resolver, no source injection |
+| Artifact interpreter `-I` public managed worker witness outside checkout | PASS, 21.457847s; three actual current-Core cases and physical/owner/HTTP cleanup |
+
+The normal Core 0.5 wheel SHA-256 is `ddd4d4a032bdb0e1d3d7c917865b901283ffc214749abf44f995f09ae8e9b4f5`; all 17 host/child module hashes equal current source, with no py.typed marker or version/source overlay invented.
+Real worker cases verify three observations→one sum/full consumed association, empty observations with actual uint16 SharedArray reads in both batch_arguments and reference_rows plus constant/resolved NPY artifact, and mapped zero/one/two outputs with exact association and values.
+Successful public pool close precedes physical PID retirement and grant drain; the array owner reports closed with zero readers/grants/files/errors, and HTTP/manager cleanup completes.
+This current Core protocol capability proof uses an unchanged older BioImageFlow artifact-host cohort; it does not certify all current library package sources, supported OS/Python floors, native scientific recipes or accepted read-only access.
+Seven closure files and all 104 development METADATA hashes remain unchanged; worker.py is intentionally updated and bound to the new artifact rather than falsely described as an unchanged eighth closure file.
+The original held force head/six dirty paths and current hashes were rechecked without mutation; retained saved patch/original environments are preserved, with no new complete original-hash equivalence claim inferred from prior receipts lacking those fields.
+
+The user additionally requires checking straightforward library speed opportunities during repairs.
+For one actual 1,000-row/four-column workflow, three measured planning/cached-reuse rounds improve median planning 0.335038→0.039624s (8.46×) and cached reuse 0.589500→0.133329s (4.42×), with parquet reads per round 4→2 and 6→4 and exactly one source execution.
+These are combined column-array identity and single-record-admission gains in the measured workflow, not isolated attribution or a general platform/model speed promise; the initial benchmark fixture error receives no timing credit.
+Bounded components improve numeric/mixed identity hashing about 10.17×/8.71×, 5,000→15,000-row parent expansion 0.418773→0.025773s (16.25×), and the warm cheap 1,000-row worker loop 40.618→23.544ms (about 42% lower).
+Parity controls preserve signed/unsigned precision, strings, nullable/extension values, index/order, SharedArray owner identity and physical boundaries; the old row-Series parent expansion's actual integer corruption is fixed, rather than dismissed as a timing-only issue.
+Measurements distinguish warm components from end-to-end/public paths and exclude unmeasured provisioning/model/native/OS costs.
+Streaming staging-parquet copies, eagerly discarded NodePlan defaults and repeated installed-origin RECORD resolution remain named small candidates with measurement/semantic-proof requirements; no claim that all opportunities are exhausted is made.
+Next continue C07/C08 and remaining MAIN identity/source/publication/outcome work before SECONDARY and one accepted library milestone.
+Publication, merge/tag, dependency/platform adoption/T1/testing and desktop remain paused; no broad/full/native/distributed lane or OS/CI/published capability is credited here.
+Development/artifact environments and managed candidate resources remain retained for their next consumers; no global cache, shared environment, held WIP or unrelated worktree was deleted.
+This four-document checkpoint changes existing process/status authority only, so offline check campaign is the applicable main completion lane without repeating library Sphinx or product phases.
+
+The retained [exact completion argv/results/timings](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/completion-summary.json), [64-path final source manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/final-manifest.json), [committed delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/final-delivery-proof.json), [current managed-worker/cleanup proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/public-worker-collective-proof.json) and [main campaign check receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/main-check-campaign.json) bind source and validation scopes.

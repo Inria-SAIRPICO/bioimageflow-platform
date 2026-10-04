@@ -75,7 +75,8 @@ After the global findings gate, implement small coherent primary architecture/re
 That gate and the combined current interface design are now accepted; the first coherent graph transaction/effective definition capture/resolved schema increment is committed at owning `936c440`, with its qualified focused validation recorded in the checkpoint.
 The next bounded numerical/order/pinned-record and loader-admission increment is committed at owning `d6865b1206747655ac93b280c7a61866aee466f2` (32 paths), with qualified failed-command/recovery assembly and one actual current Core artifact SourceFile worker witness.
 Ordinary caching stays enabled; source-selector/version policy still does not establish executable-content cache identity, and accepted DataFrame/array sealing remains C07.
-Next implement C05 true isolated collective/all-consumed and empty aggregate association, then C07/C08 immutable access/exact group/discard/quota/physical cleanup and the remaining origin-cache/source/publication/outcome boundaries before secondary native helpers/metadata/tooling/science.
+The C05 collective/empty association and measured common-path increment is committed at owning `cb83afc969df97a2159120f9c0c43cfdc8524e13` (64 paths), with current v3 groups, persisted record-v2 relations, explicit tracking image joins and three actual current Core packaged-worker cases.
+Continue C07/C08 immutable access/exact group/discard/quota/physical cleanup and the remaining origin-cache/source/publication/outcome boundaries before secondary native helpers/metadata/tooling/science.
 These increments do not close every C01–06 candidate or the library milestone.
 Planning currently acquires array-owner metadata before run execution, as it did at `2cd79a2`; this remains an explicit C08 ownership/cleanup obligation, not a claim of effect-free planning or complete S10 conformance.
 Scientific identity depends on admitted origin; collective association and reference/group ownership share DTO/assembly boundaries, so waves are implementation order rather than independent contracts.
@@ -302,7 +303,9 @@ Correct misleading test titles and fixture/marker boundaries when demonstrated, 
 
 Establish comparable costs from retained timings first, then collect only missing measurements needed for an optimization decision.
 Distinguish cold/warm dependency setup, collection/fixture time, execution/waits, repeated work, wall time and summed parallel phases.
-Report the before/after scope, revision and prerequisites for each accepted optimization; no global speedup or redundancy removal is established yet.
+Report the before/after scope, revision and prerequisites for each accepted optimization; measured library components and one public 1,000-row workflow now improve within the checkpoint's bounds, with no global platform/model or suite-wide speed claim.
+During each library repair, inspect obvious repeated I/O/hashing/copies, row-wise pandas work and avoidable dispatch in the changed causal paths; measure representative public planning, first-run, cached reuse or local-worker boundaries when relevant, preserve precision/lineage/resource ownership, and avoid a separate optimization framework.
+The current bounded changes reduce column-local hashing, parent expansion, record re-admission and worker-loop repeated preparation; staging-parquet streaming copy, eager discarded NodePlan construction and repeated installed-origin RECORD resolution remain named candidates requiring proportionate measurement or semantic proof, not promises of zero remaining improvements.
 Avoid predictable sandbox failures by requesting known socket/network/system access on the first applicable command; confirm exact selectors exist before execution.
 Preserve failure artifacts before runtime cleanup or pytest retention can remove them, and capture first-attempt browser traces for unexplained ordering failures when the fixture supports it.
 Do not create new runner infrastructure without a demonstrated need.
