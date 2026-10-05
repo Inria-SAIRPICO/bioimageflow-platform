@@ -1357,3 +1357,53 @@ Remaining broader DataFrame sealing/quota/planning cleanup, MAIN outcomes/archiv
 No full/quick/native/distributed/browser/platform/OS/scientific-cohort/release/adoption lane ran.
 The [31-path manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/final-delivery-proof.json) retain exact argv/source projections/results and original failures.
 Held six WIP files and HEAD3859b318, immediate accepted metadata/environment/artifact stores remain protected; the next readiness test is separate untracked WIP and excluded from this 31-path commit.
+
+
+### Finite MAIN staged installation and dependency authority — October 5
+
+Owning f1bc2f90fc4579644337a571ce501f1548a8a45f commits exactly 20 task paths on `80444eb27c1833f05d6afd75ef5fe4b715059cf1`; the source tree was clean at that task commit before the separately assigned native-value test was prepared.
+Fresh installation uses private same-filesystem staging, strict canonical requested distribution/version plus contained METADATA/RECORD/import-member readiness and native no-replace publication.
+Invalid selectors and escaping child links refuse before effects; occupied incomplete/mismatched/foreign targets refuse without pip or deletion.
+Valid prerelease/local versions remain usable, complete installations reuse once, and original pip failures clean only their owned stage without masking the primary exception.
+Actual Darwin empty/nonempty winner collisions preserve the winner inode and sentinel; Linux/Windows primitives have source/API justification but no local cross-OS capability credit.
+
+One Core admission/context owns explicit selected-installation versus managed-runtime dependency authority.
+Selected tools keep their synthetic exact root; controller dependencies require coherent selected versions and metadata-backed module membership, while managed workers use compatible actual runtime dependencies without adding the controller dependency store to their import path.
+Preloaded foreign/unknown owners and incompatible requirements refuse precisely; constructor, initializer and successful lazy-import boundaries restore caller paths without module purges or suffix-based unrelated-path deletion.
+Selected declared dependency versions join captured scientific identity, while actual observed dependency authority remains qualified provenance rather than byte-equivalence proof.
+Operation-owned admission shares metadata facts per root/package/version and clears on a new operation; live module/file identities and newly imported dependencies still revalidate.
+Dynamic/no-Outputs DataFrame late imports and ordinary Direct cached reuse remain essential and exercised.
+
+The original installer command is 3FAIL/1positivePASS/0skip1.241286s: missing/wrong metadata was advertised as requested1.2.3, and failed pip deleted a pre-existing foreign sentinel.
+The corrected occupied-target contract intentionally refuses before pip; separate fresh-stage guards retain original pip-error/cleanup coverage.
+Native no-replace/readiness controls first passed8 cases1.781768s, and the final affected owner command passed101 cases27.441285s with zero skips or pytest warnings.
+The original mapped25PASS/42FAIL3.846779s remains FAIL; standard METADATA/RECORD and staged-target fixture recoveries preserve actual registry/source/cache/retry assertions.
+The new helper snapshot owner attempt remains 8PASS/1diagnostic-fixtureFAIL4.756757s; its exact regex-only recovery passes1 case0.673004s, proving bounded reads across20 contexts, live foreign-module refusal and next-admission version refresh.
+
+Ruff initially retained one unused-import failure, then passed0.040580s; the invalidated snapshot helper/test pass0.074685s.
+Import boundaries passed0.663317s and size0.231645s.
+Full pyright remains FAIL5/8.081430s; the four owning errors were corrected, while the conditional tomli support-environment gap remains a factual milestone prerequisite without changing the protected development environment.
+The scoped nine-file owning check passes1.731847s, and the invalidated snapshot helper passes0.706824s with zero errors/warnings.
+Strict docs retained one underline-warning FAIL6.978944s and its exact invalidated recovery passes3.189903s with zero warnings; unchanged package-page discovery inputs do not require a generator repeat.
+
+The user speed directive exposed an introduced repeated-metadata hotspot rather than treating it as acceptable overhead.
+The SAME actual copied Core/NumPy/Pandas/SciPy two-root fixture preserves scientific5, module identities and caller paths while isolated loader times change16.499→1.781s and16.749→1.696s after admission-owned lazy provider snapshots.
+Repeated validation boundaries change roughly5.3s each to0.235–0.238s, with first snapshot admission1.09–1.16s; fixture copy/cleanup totals are not computation-speed claims.
+The separate shared-root capture component changes three admissions to one and median231.140→79.600ms, preserving each instance's key across paths rather than claiming different tools share one key.
+Public mapped N=1/N=100 has one admission/four boundaries in each case, with after-only0.457/0.501s timings; it rules out introduced per-row metadata admission, not a general throughput certification.
+Remaining ownership-local importer-cache cleanup, full environment inventory/record costs and representative cached-workflow costs stay queued without a claim that every speed opportunity is exhausted.
+
+The normal current SDK wheel a6712d034cde165767df4e8fbfd3280b7e8149df1f0d112b57fbf30acabf213f has all20 actual module bytes exact; its build passes but total elapsed duration was not captured by the asynchronous wrapper, so no invented build time is credited.
+Normal reinstall of only Core into the retained artifact environment passes1.154795s.
+The reused actual two-VersionedRoot worker passes17.196262s: compatible runtime NumPy2.5.3 computes native integer9 despite poisoned selected-store NumPy999, while numpy==999 refuses before the scientific method.
+All20 source/wheel/normal-host/actual-child module hashes match; physical PID exit precedes grant drain, HTTP is stopped and scope cleanup is closed with zero files/readers/grants/leases/errors.
+The prior52ba wheel/23.997370s worker witness is retained as its earlier source projection, not upgraded to snapshot evidence.
+This is a current source controller and normally installed source-disabled SDK witness, not a current packaged-BioImageFlow/full tool cohort, supported OS/native accuracy or solver-generation/transitive-byte certification.
+
+The [20-path manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/installed-dependencies/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/installed-dependencies/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/installed-dependencies/final-delivery-proof.json) retain exact commands/source projections, original failures and independent source/artifact reviews.
+Held HEAD3859b318 and all six WIP bytes match the actual October5 reference; all104 development METADATA bytes and artifact other26 metadata remain unchanged, with only the authorized normal Core reinstall.
+No dependency sync, global cache removal, held mutation, full/quick/native/distributed/browser/platform/release/adoption lane ran.
+Next C07/C08 genuine public controls are 3FAIL/2positivePASS/0skip3.344914s: singleton ndarray scalarization, multi-array cache failure and custom-merge mutation of accepted upstream memory; default-copy and retained-original-table/cache controls pass.
+The native failure paths did not reach their later producer-mutation assertions and therefore supply no array-seal proof.
+Exact root/task marker acquisition faults separately expose exclusive namespace orphans while preserving existing/sibling buffers and outside sentinels.
+Continue immediately with finite native immutable-byte ndarray acceptance/NPY hydration, one execution-owned working DataFrame copy before the merge hook and exact newly acquired namespace rollback, then remaining MAIN/SECONDARY and the accepted library milestone before technically gated publication/platform adoption and DesktopM5 last.
