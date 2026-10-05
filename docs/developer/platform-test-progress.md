@@ -1315,3 +1315,45 @@ No unavailable historical original-byte equivalence is inferred; retained enviro
 
 The routine main four-document [campaign navigation check](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/source-identity-review/main-check-campaign.json) passes; no platform product or strict library phase is repeated by this checkpoint.
 The prior proof recipe under the retained public manager is preserved because exclusive authority over every possible consumer is not established; both proof pools are retired, no environment is overwritten, and reclaimed bytes are0.
+
+### Finite MAIN managed declaration parity and operation metadata — October 5
+
+Owning 80444eb27c1833f05d6afd75ef5fe4b715059cf1 commits 31 task paths on `116a40015da048bf669aa2fb9412b03dc9977d8f`.
+The user explicitly authorizes continuation until the whole campaign finishes; this checkpoint is a progress boundary, and the next installed readiness/dependency slice is already causally baselined.
+Current task/result v4 requires the portable captured Inputs/Outputs descriptor and successful actual declaration digest.
+One shared Core projector owns ordered portable types, requiredness, nullability, image constraints and supported bounds; the old controller grammar module is removed without an alias.
+The worker compares its loaded instance before the scientific method, Direct compares before the retained callback, and the controller validates successful digest correlation before accepting or publishing outputs.
+Errors remain primary operation exceptions, without a parallel error DTO; input-grant admission remains before source import and physical settlement remains separate.
+The contract epoch joins scientific cache keys, so prior unattested records cannot satisfy the new key.
+Concrete ProcessingTools attest this descriptor; local dynamic DataFrame/no-Outputs/Passthrough remains explicit.
+This attests represented declarations without certifying arbitrary initializer effects, custom validator behavior, post-load mutation or installed/transitive byte closure.
+
+The genuine unchanged-v3 baseline is 1FAIL/1PASS/0skip2.330925s: resident integer/controller authority accepted actual float4.0 and a scientific-method marker under unchanged primary code.
+The same current-v4 pair passes2 cases1.930711s with a precise output-type path refusal before that marker, and a matching native integer/actual digest.
+Core protocol/declaration/execution owners pass81 cases1.113587s; controller capture/cache/type/steps owners pass177 cases16.193630s, with zero skips or pytest warnings.
+New operation-map/version/negative-refresh, current contract-key and Direct pre-call refusal guards are target coverage; initial new fixture wrong-import/private-engine errors have no causal credit.
+The scoped type check first retains one Mapping annotation error2.042655s, then passes1.793130s with zero errors/warnings after literal narrowing.
+Ruff passes0.226176s with a later literal-fixture recovery0.099536s, imports0.556679s, and size0.165443s after compacting the duplicated structural fixture in the excluded distributed DTO seam; original507/502-line failures remain retained.
+Actual distributed execution stays excluded; only current import/DTO/type coherence is adapted.
+ONE strict documentation build passes8.072943s with zero warnings.
+The package-page generator is not rerun: no package page/index/pyproject inputs changed, and its actual discovery/wrapper implementation does not generate Core API schemas.
+
+The normal new SDK wheel `9bf0de0555409b251e4743e7aebe487e4e25fb30a127feb6e3c59d4198519ab2` builds17.541476s and all19 actual Core module bytes match the source.
+The corrected actual normal-artifact local worker passes2.517153s with all four cases: collective sum6/all-consumed, genuine empty auxiliary reference plus constant12/NPY, mapped0/1/N, and precise declaration mismatch before the method.
+All19 normal SDK host/child modules match; physical PID exit precedes grant drain, HTTP ends and owner cleanup has zero readers/grants/files/leases/errors.
+The original17.183883s driver-context layout refusal remains setup-only evidence; the reusable corrected fixture uses actual ExecutionContext constructors and preflights the same four payload factories.
+Recovery reuses the exact content-bound artifact URL/HTTPport51863 and existing root-qualified recipe without overwriting or creating another environment.
+This witness uses the current source controller and a normally installed source-disabled SDK child; it does not certify a current packaged-BioImageFlow cohort, supported OS/native/scientific matrix or the entire campaign.
+
+The user speed directive remains active.
+Actual admission of three development tools across common/io/tracking import roots changes package-map calls3→1 and median three-round admission546.681→174.002ms.
+These tools had absent declared distribution facts in the editable environment, preserved in both paths; this is a metadata/admission component measurement, also including the shared projector change, not installed membership or public cached-workflow speed certification.
+Operation-owned facts clear between compute/plan/steps; no global mutable-source cache is introduced and selected version roots remain exact-root scans.
+Broader repeated RECORD traversal, streaming publication copies and representative workflow costs remain queued; no claim that all trivial speed opportunities are exhausted.
+
+Next MAIN baselines expose requested1.2.3 installation accepting missing metadata/actual9.9.9, and failed pip deleting a pre-existing foreign sentinel:3FAIL/1positivePASS1.241286s, without product fixes in this checkpoint.
+The next finite design is owned same-filesystem staging, validated declared distribution/version/import membership, no-replace publication and precise canonical dependency conflict while preserving caller namespace; universal transitive Python closure remains outside that design.
+Remaining broader DataFrame sealing/quota/planning cleanup, MAIN outcomes/archive boundaries and SECONDARY scientific/helpers/tooling stay open before the library milestone.
+No full/quick/native/distributed/browser/platform/OS/scientific-cohort/release/adoption lane ran.
+The [31-path manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/declaration-parity/final-delivery-proof.json) retain exact argv/source projections/results and original failures.
+Held six WIP files and HEAD3859b318, immediate accepted metadata/environment/artifact stores remain protected; the next readiness test is separate untracked WIP and excluded from this 31-path commit.
