@@ -1269,3 +1269,49 @@ The [38-path frozen manifest](/private/tmp/bioimageflow-library-deep-review/arch
 All104 development METADATA hashes and the held six dirty files equal this task’s October5 baseline; held head remains3859b318 and the original saved-patch digest is preserved separately.
 The retained27-package artifact host keeps26 METADATA hashes unchanged; only Core METADATA intentionally changes to the normally rebuilt README/artifact bytes and equals the final wheel.
 No full historical six-file byte equivalence is inferred beyond this task’s actual baseline, and no global cache/shared environment/held worktree is deleted.
+
+### Finite MAIN executable admission and normal cache identity — October 5
+
+Owning `116a40015da048bf669aa2fb9412b03dc9977d8f` commits 34 independently reviewed task paths on `b6f84cc`.
+Normal cache identity now uses one operation-admitted executable record before lookup, retained callbacks for actual Direct/DataFrame dispatch, and the same scientific authority in provenance.
+Source-backed managed admission reads/compares supported primary/default/literal/helper facts once and carries the exact origin; same-ID single-file custom sources have content-qualified namespaces.
+Captured IO declaration order/type/required/nullability/image/bounds and distribution/version facts participate without copying owner-bearing defaults or invoking dynamic resolvers solely for a key.
+Declared versions remain manual dependency invalidators, not proof of executed bytes.
+Installed/Versioned modes remain usable under declared-installation authority.
+Obsolete `dev_mode` and `get_source_hash` public/internal plumbing and namespace-only tests are removed; future platform T1 adoption must migrate those APIs, while the installed platform baseline and pins remain unchanged.
+
+Three genuine Direct REDs proved changed body/global/helper B9 reusing cached A1; the fourth proved retained custom A1 resolving to a canonical SDK origin that executed B9 after same-ID archive B.
+Custom Direct A/B/A was already a passing baseline control and is not defect credit.
+The original 209PASS/1FAIL owner command remains FAIL26.246342s; the original later 91PASS/2FAIL remains FAIL24.162658s, with obsolete dev-only namespace, stale graph schema1 and obsolete sorted-list recipe expectations identified and retired/adapted to current contracts.
+Preserved key-contract owners pass160 cases68.738646s; final exact public/origin/helper/content-cache owners pass37 cases9.016759s, including same-byte hits/changed-byte misses, retained dispatch, version-token refresh and IO dtype/Optional bounds.
+No selected Python tests skip or emit pytest warnings; baseline PyArrow sandbox sysctl stderr diagnostics remain recorded.
+Helper implementation regression4FAIL/3PASS1.856409s is retained separately from exact7PASS1.649386s, and setup-only None-target/Optional-name fixtures have no causal credit.
+
+Final Ruff passes0.104873s, size0.291357s, imports0.618601s and scoped typing2.367889s with zero errors/warnings; the final tuple qualification and trailing-test-EOF cleanup are literal reviewed changes without altered behavior.
+Original size802 failure and two AST optional-value typing errors remain retained alongside their focused corrections.
+Generator passes2.328296s on unchanged package inputs; original strict documentation PASS20.350175s remains its prior projection, with one invalidated strict recovery PASS7.616139s and zero warnings on final normative docs.
+Exact argv, source projections, results and durations are in the [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/source-identity-review/completion-summary.json).
+
+The final real local managed witness passes16.785018s using the current editable BioImageFlow controller and unchanged normally installed Core wheel `3f726ae0071215326346bc3de0dc596adb88f3defb37cf73cf99bd0a58df04e7`.
+Actual A/B/A/B values and exact record reuse invoke only A1 and B9 once each in one child PID; all17 Core module bytes match, pools physically retire and HTTP cleanup finishes without errors.
+Prior19.431610s actor PASS remains historical to its earlier key projection; the final retry's0.512646s recipe-fingerprint refusal remains setup-only FAIL before any worker, with no pool or HTTP leak.
+A root-qualified exclusive proof recipe preserves the old retained environment rather than replacing it.
+Future fixture preflight must include stable content-bound artifact dependency URLs and expected recipe fingerprints as well as exact generated-source imports/current DTOs; ephemeral URL changes must not silently rebuild retained stores.
+This is a current source-controller/normal SDK witness, not current packaged-BioImageFlow cohort, OS or managed IO-declaration parity certification.
+
+The user speed directive remains active.
+Admission and source read/compile/hash are memoized only within their owned operation; same-package distribution resolution is once per operation, metadata refreshes on the next operation, and eager discarded NodePlan construction is removed.
+After-only actual Direct admission measurement across three fresh operations/two classes in one installed package gives median228.357ms first capture and0.645ms warm capture, exactly one package-map resolution per operation; helper-only median runtime0.108ms/compile-validation0.143ms excludes metadata, IO, storage and workflow.
+The next bounded performance candidate is operation-wide packages-to-distributions map reuse across distinct import roots, measured with version-refresh and representative public cached-workflow before/after controls; no global mutable-source cache or end-to-end speedup is claimed here.
+Streaming publication copies and broader repeated RECORD work remain queued with measurements; no claim that all trivial optimizations are exhausted.
+
+C04 remains OPEN for ordinary managed whole-class/declaration/module-initializer IO parity: Task has no controller schema token and the worker normalizes under its loaded Outputs.
+The Direct dtype guard does not certify that parity; source-captured custom definitions are stronger byte authority, not arbitrary post-load state sealing.
+Installed/transitive imported/native dependency closure, opaque dynamic initializers/custom validators and concurrent global/class mutations remain qualified, alongside broader C07/C08 DataFrame sealing/quota/planning cleanup and remaining MAIN/SECONDARY debts.
+No full/quick/native/distributed/browser/platform/OS/scientific-cohort/release/adoption lane ran, and the library milestone remains open.
+The [34-path manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/source-identity-review/final-task-manifest.json), [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/source-identity-review/final-delivery-proof.json) and [final actual worker receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/next-main/executable-helper/managed-proof-final-recovery.json) retain byte-bound evidence.
+All104 development and27 retained artifact-host METADATA hashes equal their immediate accepted predecessor; the held six files equal the actual October5 baseline and held HEAD remains3859b318.
+No unavailable historical original-byte equivalence is inferred; retained environments/artifacts/held source remain protected.
+
+The routine main four-document [campaign navigation check](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/source-identity-review/main-check-campaign.json) passes; no platform product or strict library phase is repeated by this checkpoint.
+The prior proof recipe under the retained public manager is preserved because exclusive authority over every possible consumer is not established; both proof pools are retired, no environment is overwritten, and reclaimed bytes are0.
