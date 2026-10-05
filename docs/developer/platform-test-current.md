@@ -10,18 +10,19 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 5, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `7dbe0a73954d9add3d2630e04002894621a7c005` in `.worktrees/campaign-library-source-containment`.
-The exact MAIN/source revisions and validation commands are retained by the direct delivery proof.
-The [C10 publication delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/atomic-publication/final-delivery-proof.json) links the source-bound task manifest, completion ledger and independent review; these results are scoped evidence, not a whole-library milestone.
+Last completed library source: `97dc3fddc3fb078feb1601018bdd366408a58654` in `.worktrees/campaign-library-source-containment`.
+The [processing-context delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/context-correlation/final-delivery-proof.json) retains exact source/MAIN revisions, commands, original failures and scoped validation.
 
-The finite C10 archive/output/return publication repair is committed: private staging and native exclusive publication preserve competing destinations, while completed JSON/ZIP file replacement preserves prior bytes on writing failures.
-Imports load from the final stable root; a later tool-initialization failure retains that published definition.
-The proof retains four genuine publication failures, exact recoveries, affected owners and OS/execution limitations.
-No SDK rebuild or worker rerun was required.
+Current Task4 rejects mismatched row context role/index and batch role before source import or scientific dispatch.
+Three malformed and three supported cases passed through the normal packaged SDK and actual managed worker; all 20 Core module bytes and physical cleanup were verified.
+Ordinary Processing execution requires concrete pinned selected-record identity before workspace acquisition or dispatch.
+The unreachable private transient fallback was removed; its forced private-branch failure was retired, not reported as a primary-error recovery.
+Independent public Storage transient workspaces and launcher-returned assets remain supported.
+The owner packet retains 127 passes and one stale hydration-owner failure followed by its exact recovery; current scoped checks and strict documentation passed.
+Two completed, unused proof environments were removed through their owning lifecycle after consumer checks; all other environments and held work remain protected.
 
-Next MAIN is the transient Processing terminal-persistence branch: a failed `finish_transient_invocation()` can mask the original scientific exception in `engine/node_execution.py`.
-Capture its public causal baseline before reusing the existing detached failure/retry authority.
-C05/C08 ownership, quota and pointer joins and the accepted remaining MAIN/SECONDARY queue remain open; full typing support-environment debt, SDK `py.typed`, source CI and supported OS/cohort gates remain milestone obligations.
+Next work follows the accepted remaining MAIN/SECONDARY causal queue; C05/C08 ownership, quota and pointer joins remain open.
+Full typing support-environment debt, SDK `py.typed`, source CI and supported OS/cohort gates remain milestone obligations.
 
 ## Remaining sequence and authority
 
