@@ -1518,3 +1518,29 @@ The [15-path task manifest](/private/tmp/bioimageflow-library-deep-review/archit
 This is finite record-container repair, not C01/C05 family closure: actual constant/default input signature values still reach legacy JSON normalization, collapsing tuple/list and primitive dictionary-key distinctions or refusing bytes/NumPy leaves.
 Continue with a public causal baseline and the same portable identity adapter for that named join, then prepared C10 atomic-publication and the transient Processing failure-persistence primary masking residual from C09.
 Other C05 pointer/key and C08 quota/planning/global-grant, remaining MAIN/SECONDARY and one accepted library milestone remain before standing-authorized technically gated publication/platform adoption and DesktopM5 last.
+
+
+### Finite MAIN actual parameter identity — October 5
+
+Owning e2def49cbb3cf637001e59413933aa4c214c228b commits5 task paths on `d9a17b79`.
+A single `_compute_sig_hash` projection applies the existing neutral portable identity to actual source/column-bound Processing constants/defaults and declared DataFrame parameter fields.
+Container kind, ordered primitive-key types, bytes and exact scalar facts no longer pass through lossy generic JSON for those field values.
+Runtime arguments are not mutated; config/code/provenance, binding/template descriptors and synthetic root-frame digest facts retain their separate structural grammar, and declared Enum choices retain explicit primitive-value semantics.
+Unsupported finite values refuse without a legacy JSON fallback; no framework epoch or SDK/task-format change is required because the newly represented parameter facts distinguish prior collisions directly.
+
+The unchanged public baseline remains3 genuine wrong-reuseFAIL/1equal-defaultpositivePASS5.650989s.
+Source and column-bound list→tuple→list calls actually return list/list/list with one scientific invocation and the same selected key/record; DataFrame int-key→string-key→int-key likewise returns int/int/int from one invocation.
+All three calls/outcomes are captured before each failure assertion; four Arrow sandbox sysctl stderr diagnostics remain in the original log, with zero pytest warnings/skips.
+The same4 controls pass6.912632s, reaching distinct correct types/keys/records and unchanged warm reuse; omitted effective defaults still equal explicit values.
+The affected key/planning/cache command remains88PASS/1FAIL45.281482s because its public-export allowlist omitted the already documented and committed `ResultGroup`/`result_groups` API.
+Only that stale oracle is corrected; its exact selector passes1.827960s, preserving all88 unchanged owner results without relabelling the original command PASS or removing public exports.
+
+Scoped Ruff passes0.279870s, literal allowlist Ruff0.133276s, import guard0.906891s, size0.463061s and owning pyright1.270235s with zero type errors/warnings.
+ONE final strict docs build passes4.213085s with zero warnings and stable doc/Python hashes; package-page discovery inputs are unchanged, so no generator repeat occurs.
+The [5-path task manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parameter-value-identity/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parameter-value-identity/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parameter-value-identity/final-delivery-proof.json) retain exact commands/source projections and the original failures.
+Held HEAD3859b318/all six actual October5 WIP files, development104 and immediate-predecessor artifact27 METADATA remain equal; no SDK build/install/actual-worker/provisioning/environment deletion repeats and reclaimed bytes are0.
+Normal SDK22c0/default Task4/native/group/record proofs remain their valid unchanged projections; this source-controller increment does not gain a fresh packaged SDK/cohort/Python3.9/OS/native-scientific certificate.
+The full-typing conditional tomli support-environment gap and SDK py.typed residual remain library milestone prerequisites.
+
+Continue immediately to prepared C10 public no-replace destination/ZIP partial-failure/public-return causes with genuine baselines first, then transient C09 terminal-persistence primary preservation and remaining named C05/C08/MAIN/SECONDARY gates.
+This closes the represented field-value collision join, not the whole C01 family, local library milestone, release/platform adoption or DesktopM5; whole-campaign continuation and standing authorized technical dependency order remain unchanged.
