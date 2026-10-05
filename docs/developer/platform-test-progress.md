@@ -1482,3 +1482,39 @@ No full/quick/platform/browser/native/distributed/release/adoption lane ran; pri
 This is finite C09 repair, not family closure: `engine/node_execution.py` still directly writes failed transient invocation metadata before re-raising, so a future exact supported transient scientific-failure plus `finish_transient_invocation` persistence-fault selector must test primary preservation before the library milestone.
 Continue immediately to accepted C01 finite-container record admission, including nested native/Shared/Path assets and group ownership rather than JSON-only Parquet acceptance, then the prepared C10 no-replace/ZIP/public-return causes.
 C05 pointer/key, C08 quota/planning/global-grant, other MAIN/SECONDARY and one accepted library milestone remain explicit; standing authorized publication/platform adoption follows technical gates, and DesktopM5 remains last.
+
+
+### Finite MAIN portable record cells — October 5
+
+Owning d9a17b79600552b251a5103a52d73b0be1aa3ff7 commits15 task paths on `b1c2a553`.
+One Core finite dict/list/tuple traversal admits leaf roles without discarding original SharedArray owners, while one neutral portable-cell adapter supplies typed identity, canonical JSON Parquet cells, manifest authority and warm hydration.
+Container kind, ordered primitive keys, large integers, exact scalar NumPy dtype/bytes, raw float nonfinite/signed-zero facts and bytes survive record reuse.
+Nested Path/native/SharedArray leaves bind to validated owned asset roles and exact outer cells; a pure full descriptor pass precedes attachment, and existing scoped recursive result groups govern SharedArray release.
+No task/result v4 change, pickle, arbitrary object grammar, new shared lifetime API or compatibility format is introduced.
+
+Original public baseline remains2 genuine admissionFAIL11.111875s: both list[int] callbacks execute before Parquet refusal; all mutation, merge, warm and selected-record assertions were unreached.
+The initial missing-row_consumption collection error remains setup-only3.800256s with zero causal credit.
+Early same2 selectors pass with pytest2.80s; full monotonic duration/projection was not captured, so the authoritative source-stable joined public7PASS7.272861s supplies final fidelity, cold/warm one-call/same-record, producer/custom-merge isolation, nested asset groupA-versusB release and mapped0/N evidence.
+Core hook/default-codec/native owners pass88 cases3.680918s, with zero skips/pytest warnings.
+Pure malformed key/asset role/outer cell/later leaf guards pass4 cases1.544315s before any hydration.
+Repeated ownedPath leaf dedup is a source-review correction followed by1 postpatch positive1.989136s; no executable pre-fix RED was recorded or claimed.
+The affected record/cache/shared/worker command remains111PASS/1FAIL41.616180s: the failing namespace refusal diagnostic assertion was already stale against committed HEAD after native-array namespaces were added.
+The exact unchanged refusal selector passes2.277648s after only its regex correction; successful111 unchanged owners are retained without labelling the original command PASS.
+
+Scoped Ruff passes0.173762s, the diagnostic-only test Ruff0.169799s, import guard0.715395s and size0.310747s.
+An initial scoped typing command reports3 callback-name/buffer annotation errors; literal fixes produce0 errors/warnings in the final six-owner check1.964789s, without claiming the full typing milestone or resolving earlier conditional tomli support-environment debt.
+Final strict docs pass9.115769s with zero warnings and stable doc/Python hashes; package-page discovery inputs are unchanged, so the generator is not repeated.
+After-only1000-list-cell component medians are encoding16.183ms, logical identity7.171ms and pure admission8.506ms over three samples; these are component costs, not parent speedup, overall workflow throughput or process memory claims.
+
+The normal SDK20 wheel22c0eccba723f91b01c2cbe45d0f0ed7d366d1cf908e310d214b5928774ed77f builds18.180404s and installs without dependencies into the retained artifact host1.231202s.
+The source-disabled normal SDK actual worker passes20.477241s with unchanged default Task4 nested typed scalars/keys, Path/native/Shared leaves and retained raw-producer mutation controls.
+All20 live/wheel/normal-host/actual-child module bytes match; physical PID exit precedes grant drain, HTTP stops and scope cleanup is closed with zero readers/files/grants/leases/errors.
+One NumPy2.5 shape-setting fixture DeprecationWarning is retained; this is no zero-warning actor or whole packaged BioImageFlow/cohort/Python3.9/NumPy1.26/Windows/Linux/native-scientific certificate.
+Held HEAD3859b318/all six actual October5 WIP files and development104 METADATA remain equal; the other26 artifact distributions remain equal, while the authorized current Core METADATA matches the new wheel's changed README long description.
+The initial all27-equality protection assertion is retained as a setup-only scope error, corrected to other26 protection plus current-Core wheel binding.
+General manager/old task recipes/held stores remain retained without exclusive-consumer deletion evidence; reclaimed bytes are0.
+The [15-path task manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/portable-cells/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/portable-cells/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/portable-cells/final-delivery-proof.json) preserve exact commands/source projections, original failures and independent review.
+
+This is finite record-container repair, not C01/C05 family closure: actual constant/default input signature values still reach legacy JSON normalization, collapsing tuple/list and primitive dictionary-key distinctions or refusing bytes/NumPy leaves.
+Continue with a public causal baseline and the same portable identity adapter for that named join, then prepared C10 atomic-publication and the transient Processing failure-persistence primary masking residual from C09.
+Other C05 pointer/key and C08 quota/planning/global-grant, remaining MAIN/SECONDARY and one accepted library milestone remain before standing-authorized technically gated publication/platform adoption and DesktopM5 last.
