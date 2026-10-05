@@ -1220,3 +1220,52 @@ Development/artifact environments and managed candidate resources remain retaine
 This four-document checkpoint changes existing process/status authority only, so offline check campaign is the applicable main completion lane without repeating library Sphinx or product phases.
 
 The retained [exact completion argv/results/timings](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/completion-summary.json), [64-path final source manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/final-manifest.json), [committed delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/final-delivery-proof.json), [current managed-worker/cleanup proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/public-worker-collective-proof.json) and [main campaign check receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/collective/main-check-campaign.json) bind source and validation scopes.
+
+
+### Finite MAIN accepted arrays, exact groups and retryable physical retirement — October 5
+
+Owning `b6f84cc499d7938602d51f2796d1f76406195828` commits 38 independently reviewed task paths on `cb83afc`.
+Mutable SharedArray admission now publishes one independent sealed NPY backing, records its content digest and uses that same accepted snapshot for cache identity and task input; retained producer views can change to99 without changing accepted4.
+Already accepted pass-through values retain their original owner/backing, while task admission acquires an independent local capability before handoff so caller-group release does not revoke an already admitted worker task.
+Mapped/collective v3 correlation and mandatory record-v2 relations remain intact.
+Read-only accepted opens and SDK writable-path operations enforce admitted same-FD identity, including canonical hard/symlink aliases; no arbitrary DataFrame/native ndarray immutability is claimed.
+
+Caller-visible ResultGroup handles own exact deduplicated leases, with reference→group pins and weak context observation rather than a strong cycle.
+Default successful result discard releases exact groups without closing the whole owner or automatically retiring the idle worker pool.
+Retained views/task leases/physical grants delay backing reclamation truthfully; independent output-group retention precedes task-input settlement.
+Captured cached NodeStep results keep their exact provider/consumed relation and original run-context metadata after engine maps are cleared.
+Detached old-context exports retain immutable storage/routes/exact outcome records rather than retaining the Workflow or rereading a moving current pointer.
+Explicit idle retirement refuses active tasks, drains grants only after successful physical pool close and preserves failed-close state/original errors for retry; engine close separately records requested versus physically completed state.
+Hydrated array groups settle their owned child scope while remaining openable until exact lease/read/grant drain.
+
+Genuine initial failures remain recorded: Core producer/read-only/hardlink/symlink four-case RED, public ordinary-discard RED, engine failed-close retry RED and repeated-cell admission RED.
+The original owner command remains FAIL (73 passed/4 failed, measured9.404897s); adapted explicit-lease and failed-stop fixtures preserve pending-view/grant and retry assertions, with exact two-case recovery PASS1.466886s.
+The affected shared-owner command passes45 cases in8.825075s with no skips or pytest warnings, and the late cached-step/rollback join recovers five exact cases in3.844517s after an implementation-error context assignment (the original5FAIL/4PASS remains FAIL).
+The final cached-step family passes6 cases in3.431493s; neutral repeated-cell admission goes1FAIL1.398891→1PASS1.390284 and proves one physical accepted backing, original uint64/index/caller-frame preservation and read-only bytes, without certifying whole DataFrame cache publication.
+Core publication/lease twelve controls pass2.520006s; the final structured Latin1 header-budget control passes0.622649s.
+Ruff passes0.095716s, scoped typing including cached-step consumers passes2.537840s and import boundaries pass0.682s.
+The late size guard remains an original FAIL (801 lines,0.479s); removing a dangling empty section comment gives PASS0.238006s without semantic change.
+Tool documentation generation passes1.354370s and one strict Sphinx build passes23.852161s with zero warnings, using the prepared interpreter and the first expected network escalation.
+No quick/full/native/distributed/browser/platform/OS capability lane was selected.
+
+The final normal Core0.5 wheel SHA256 is `3f726ae0071215326346bc3de0dc596adb88f3defb37cf73cf99bd0a58df04e7`, built15.442036s; every actual17 package module equals final source, with no source/version overlay or py.typed claim.
+Normal local reinstall into the retained noneditable artifact host passes1.087s.
+Four current Core artifact readonly/lifetime families pass1.240244s with0skips.
+The source-disabled public normal-artifact managed-worker witness passes20.758086s. Two calls to the same public worker/tool retain a writable producer, observe producer99 versus accepted read-only4, release caller leaseA after the next task is admitted, and return independent groupB on the same owner/backing. Actual PID exit precedes grant drain; groupB release remains pending while a derived view is retained, then closes. HTTP cleanup finishes and final owner status has zero readers/grants/files/leases/errors.
+Earlier actor fixture mode and missing declaration failures remain setup-only evidence, with zero causal credit and truthful physical/HTTP/owner cleanup; current-schema declaration/task/result sanity and generated-source import closure against declared isolated recipe dependencies are now checked before the final runner.
+Future source-disabled normal-artifact proof setup must load the exact generated source against its declared isolated recipe dependencies before the real worker; host imports and current-wire roundtrips alone cannot prove that fixture closure. Reuse current public constructors without product compatibility layers.
+The managed-worker proof covers the current SDK artifact inside an unchanged older BioImageFlow artifact-host cohort, not every current library source or an OS/scientific cohort.
+
+The user speed instruction remains active.
+Measured32MiB median-of-three necessary publication plus digest costs66.446ms, already-sealed publication3.229ms, persisted content identity3.015ms and endpoint-read mapping10.184ms; already accepted reuse creates no additional NPY files.
+The one-call frame admission fixes repeated per-cell copies without global mutable-buffer memoization, and preserves native precision/owners.
+These bounded component measurements exclude model computation, full-scan throughput, provisioning and other OS; no claim of exhaustive speed optimization is made.
+Streaming staging-parquet copies, eager discarded NodePlan defaults and repeated installed-origin RECORD resolution remain queued with measurement requirements.
+Broader DataFrame sealing, quota-pressure scheduling, owner-global grant independence, executable-content cache keys, planning metadata cleanup, remaining MAIN/SECONDARY scientific/helper outcomes and supported Python/OS/native/published gates remain open before one library milestone.
+Publication, merge/tag, platform dependency adoption/T1 and desktop stay paused.
+
+The [38-path frozen manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/sealed/final-manifest.json), [exact completion argv/results/durations](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/sealed/completion-summary.json), [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/sealed/final-delivery-proof.json), [current SDK worker proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/sealed/public-worker-closure.json) and [campaign check receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/sealed/main-check-campaign.json) retain byte-bound scopes and original failures.
+
+All104 development METADATA hashes and the held six dirty files equal this task’s October5 baseline; held head remains3859b318 and the original saved-patch digest is preserved separately.
+The retained27-package artifact host keeps26 METADATA hashes unchanged; only Core METADATA intentionally changes to the normally rebuilt README/artifact bytes and equals the final wheel.
+No full historical six-file byte equivalence is inferred beyond this task’s actual baseline, and no global cache/shared environment/held worktree is deleted.
