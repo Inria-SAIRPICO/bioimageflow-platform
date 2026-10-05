@@ -6,10 +6,13 @@ orphan: true
 
 Establish confidence in the platform people use today by reviewing architecture and tests together, repairing demonstrated defects and validated structural weaknesses, then completing systematic coverage of implemented in-scope behavior.
 This campaign was prepared from the previous campaign's results; execution started after the user requested it on 2026-09-30.
-M1 complete agreed-scope review is accepted; the dated M1 retrospective and first bounded M2 queue in the [checkpoint](platform-test-progress.md) now govern diagnosis and repair release.
+The [current checkpoint](platform-test-current.md) owns the operational baseline, active task and next queue.
+The dated M1 retrospective and earlier repair queues in the [historical progress log](platform-test-progress.md) retain their original scope and are optional exact-look-up evidence.
 The complete-review hold below describes the gate while it was open; its closure does not authorize every candidate repair, resume held I1/T1 automatically, or release systematic coverage expansion.
-The checkpoint records actual readiness outcomes separately from historical coverage.
-The [checkpoint](platform-test-progress.md) owns the current baseline, queue, and status; [start](platform-test-start.md) is the fresh-session execution prompt.
+The current checkpoint links source-bound evidence without redefining validation scope; [start](platform-test-start.md) is the fresh-session execution prompt.
+Dated stages and baseline pointers below describe their recorded phase; use the current checkpoint to determine which gates remain open rather than restarting completed reviews.
+Resume from the checkpoint and relevant task/specification sections, not a full progress-log or inherited-transcript read.
+Stop detailed diary appends; update concise current status and link direct receipts at coherent boundaries.
 The [previous plan](archive/platform-test-plan-before-2026-09-30.md) and its historical 73-cell gate remain audit records, not this campaign's starting certification.
 
 The user explicitly authorizes continued execution until the END of the whole campaign: coherent source commits/checkpoints are progress boundaries, not stopping points or requests for renewed permission.
@@ -389,12 +392,13 @@ Use about 50% of the next repair wave's effort for owner/caller analysis and imp
 Suite-wide optimization has not been measured.
 After the architectural repairs, evaluate one separately measurable suite candidate, prioritizing reliable first-failure artifacts or deterministic fixture ownership; compare baseline/candidate cost and preserve distinct contracts, entry points and failure oracles before merging or removing tests.
 Take one strategic checkpoint after the accepted repair wave or a material scope change, before M3 and before final certification; combine adjacent triggers instead of reviewing strategy after each test failure.
-The [current checkpoint](platform-test-progress.md#october-2-strategic-checkpoint-and-first-wave-delivery) owns the active queue, completion evidence and remaining gates.
+The [current checkpoint](platform-test-current.md) owns the active queue and remaining gates; dated history supplies only the particular evidence needed by a task.
 
 ## Repair, delegation, and validation
 
 The executing session is the orchestrator and may use at most two ordinary workers, keeping one slot available for a specialist.
-Workers receive a fresh bounded packet with current contract, one outcome, owned paths/worktree, inventory IDs, baseline/dependencies, acceptance conditions, exact checks, and escalation triggers.
+Workers receive a fresh bounded packet with current contract, one outcome, causal paths, owned paths/worktree, relevant finding IDs, baseline/dependencies, acceptance conditions, exact checks, and escalation triggers.
+Use narrow task context/forks when appropriate; do not require the full history or inherited campaign transcript.
 Include a short impact map: changed files → owning service/session and callers → storage/event/generated-type/library consumers → exact distinguishing selectors in each affected layer/browser → required completion scope.
 Trace those consumers in code and tests rather than selecting only by file proximity; include negative, recovery, permission, and identity cases when the changed contract can affect them.
 Writable parallel work must use separate worktrees; shared campaign records belong to the orchestrator.
