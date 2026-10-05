@@ -1407,3 +1407,43 @@ Next C07/C08 genuine public controls are 3FAIL/2positivePASS/0skip3.344914s: sin
 The native failure paths did not reach their later producer-mutation assertions and therefore supply no array-seal proof.
 Exact root/task marker acquisition faults separately expose exclusive namespace orphans while preserving existing/sibling buffers and outside sentinels.
 Continue immediately with finite native immutable-byte ndarray acceptance/NPY hydration, one execution-owned working DataFrame copy before the merge hook and exact newly acquired namespace rollback, then remaining MAIN/SECONDARY and the accepted library milestone before technically gated publication/platform adoption and DesktopM5 last.
+
+### Finite MAIN native values, working inputs and acquisition rollback — October 5
+
+Owning c5c759ec0b9971febc99de580de5c26293c428cf commits exactly24 task paths on `f1bc2f90fc4579644337a571ce501f1548a8a45f`.
+Plain object-free native ndarray inputs and outputs retain exact dtype/shape/values, immutable bytes and independent view metadata through native NPY publication/hydration; accepted C-contiguous data reuses bytes and noncontiguous values normalize to C layout.
+Object arrays and dtype metadata refuse explicitly; SharedArray owner/backing and exact leases remain separate resource authority.
+One owned mutable working DataFrame precedes the captured custom merge hook, with numeric/extension/index preservation and independent native pixel/finite container leaves; the default merge reuses that owned input.
+Aligned structured native records preserve their original flags using validated dtype/layout equality and an independent expected-dtype view, while full dtype labels join scientific identity.
+The execution-contract epoch separates earlier framework semantic keys from current Processing and DataFrame records without a record-format migration; actual public prior-key projection/current recompute/unchanged warm reuse guards pass2 cases3.460962s with exactly two scientific calls.
+The original aligned record refusal is1FAIL1.808226s; the intermediate parser trial1FAIL/1PASS2.196405s and prematurely started mapped45PASS/1FAIL2.933373s remain implementation-error projections, followed by packed/aligned exact2PASS2.052570s and record/key owner48PASS4.234558s.
+Final late parser/epoch Ruff passes0.089294s and owning pyright1.657306s; the strengthened public fixture Ruff passes0.048221s.
+The current record-cell grammar still refuses list/tuple/dict object cells before downstream execution; the typed worker container grammar does not certify record reuse, and C01 essential finite-container admission remains an explicit next disposition.
+Exclusive root/task marker failures roll back only newly acquired namespaces without masking primary errors; secondary cleanup failures stay diagnostic, and nested lexical owner activation restores outer/caller authority without closing it.
+
+The original native/scalar public command remains3FAIL/2positivePASS3.344914s: singleton scalarization, multi-array cache failure and custom-merge upstream mutation.
+The exact corrected public5 pass5.129342s with zero skips/warnings, reaching producer mutation/isolation, readonly backing and same-record/one-call cache assertions previously unreached.
+Marker fault and nested-owner misrouting baselines remain causal evidence; primitive/acquisition exact19 controls pass1.252831s.
+A later callback timing join exposed genuine Direct raw-output99/99/9 versus4/7/9 (1FAIL3.015459s) and separate canonical worker native/Shared controls (1FAIL1.338434s and1FAIL1.345385s).
+The initial Direct terminal-per-callback trial passes2.061120s but is retained only as its superseded projection; final nonterminal callback publication keeps input grants and disposition pending, with one final group/acceptance and physical drain afterward.
+The corrected worker pair passes2 cases0.736771s; snapshot-budget refusal retains raw backing while the physical grant is live and passes1 case0.570713s.
+Final callback/cache/group owners pass33 cases6.622246s, controller/nonterminal failure-drain owners pass9 cases4.260816s, and current Core context/native/codecs/execution owners pass96 cases1.437904s, with zero skips or pytest warnings.
+The earlier155-case owner command passes9.665920s at its original projection; successful unchanged owners are preserved rather than broadly repeated.
+A native working-frame/index oracle setup failure is retained (stale pandas index-engine lookup after direct values mutation), followed by its exact positional-assertion recovery3PASS2.956059s.
+The list[int] public observation remains1 admissionFAIL1.974047s before the merge hook, with no downstream-corruption or supported-list-cache claim.
+
+Final scoped Ruff passes0.195591s after retaining the two E731 test-style failures; owning pyright passes2.405025s after the ndarray buffer typing failure/correction.
+Import boundaries pass0.594490s and size0.237935s; the previous full-pyright conditional tomli support-environment gap remains an unclosed milestone prerequisite.
+Final epoch strict docs pass6.601923s with zero warnings; the earlier3.800293s callback-guide recovery remains its pre-epoch projection; the prior8.116721s success remains its pre-callback-guide projection, with package-page discovery inputs unchanged and no generator repeat.
+After-only three-sample bounded32MiB component medians are native immutable snapshot2.681ms, independent accepted view0.031ms and accepted buffer digest14.076ms; a1000-row numeric working-frame copy measures0.370ms.
+These are component costs with tracemalloc observations, not overall workflow/scientific throughput, total process memory or OS certification.
+
+Normal current SDK wheel1b6f43aaa1633c6dfa56224af2c538d04d8efb62c0284a509b49edc518d8e08e builds18.480971s, normal artifact installation passes1.324409s, and raw-return actual worker passes21.751099s at the final callback acceptance source projection.
+The two actual tasks preserve earlier uint16 arrays4/[4,7,8] after a later row mutates retained raw producers99, then verify those accepted values again in the same child.
+All20 live/wheel/normal-host/actual-child module bytes match; physical PID exit precedes grant drain, HTTP stops and scope cleanup closes with zero files/readers/grants/leases/errors.
+One NumPy2.5 shape-setting DeprecationWarning comes from the view-metadata fixture and is retained without a zero-warning actor claim.
+The earlier b21 wheel/native API build18.643283s remains its pre-worker-boundary projection.
+Current source-controller/source-disabled normal SDK evidence does not certify the whole packaged BioImageFlow cohort, Python3.9/NumPy1.26, Windows/Linux, native scientific accuracy, solver generation or release readiness.
+The [task manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/final-delivery-proof.json) retain exact commands/projections and original failures.
+Continue immediately with bounded C09 run setup/outcome/callback reentrancy/under-lock shutdown causal paths, then C01 container-record admission, C05 pointer/key joins and explicit C08 quota/planning/global-grant residuals before SECONDARY and the accepted library milestone.
+Campaign completion, publication/platform adoption and DesktopM5 remain in their established technical dependency order; this checkpoint is not a stop instruction.
