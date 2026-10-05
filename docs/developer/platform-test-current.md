@@ -10,14 +10,18 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 5, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `e2def49cbb3cf637001e59413933aa4c214c228b` in `.worktrees/campaign-library-source-containment`.
-Corresponding completed MAIN checkpoint: `d866dd5cd3ae4d60304a0d3255eee7ee19b6ab53`.
-The [parameter-identity delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parameter-value-identity/final-delivery-proof.json) links the source-bound task manifest, completion ledger and independent review; these results are scoped evidence, not a whole-library milestone.
+Last completed library source: `7dbe0a73954d9add3d2630e04002894621a7c005` in `.worktrees/campaign-library-source-containment`.
+The exact MAIN/source revisions and validation commands are retained by the direct delivery proof.
+The [C10 publication delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/atomic-publication/final-delivery-proof.json) links the source-bound task manifest, completion ledger and independent review; these results are scoped evidence, not a whole-library milestone.
 
-C10 archive/export publication is IN PROGRESS on that library base; current uncommitted changes and final validation are not supplied by the completed checkpoint.
-The active packet covers public persistent archive import, requested JSON/ZIP export, data-output export and local return-bundle publication, with a shared native no-replace primitive.
-A owns integration/Git and runner scheduling; B owns public archive tests/specs and the bounded read-policy change; Core owns the neutral publication helper.
-Use the current task assignment and its direct receipts for exact writer paths, running processes and validation disposition.
+The finite C10 archive/output/return publication repair is committed: private staging and native exclusive publication preserve competing destinations, while completed JSON/ZIP file replacement preserves prior bytes on writing failures.
+Imports load from the final stable root; a later tool-initialization failure retains that published definition.
+The proof retains four genuine publication failures, exact recoveries, affected owners and OS/execution limitations.
+No SDK rebuild or worker rerun was required.
+
+Next MAIN is the transient Processing terminal-persistence branch: a failed `finish_transient_invocation()` can mask the original scientific exception in `engine/node_execution.py`.
+Capture its public causal baseline before reusing the existing detached failure/retry authority.
+C05/C08 ownership, quota and pointer joins and the accepted remaining MAIN/SECONDARY queue remain open; full typing support-environment debt, SDK `py.typed`, source CI and supported OS/cohort gates remain milestone obligations.
 
 ## Remaining sequence and authority
 
