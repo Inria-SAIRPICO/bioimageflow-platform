@@ -10,22 +10,22 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 5, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `3a248eda669045fb93874a4ff489ad78166a0d03` in `.worktrees/campaign-library-source-containment`.
-The [processing-context delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/context-correlation/final-delivery-proof.json) retains exact source/MAIN revisions, commands, original failures and scoped validation.
+Last completed library source: `e2d3084fbed6ad02227530cf6d18bebd2d27ee60` in `.worktrees/campaign-library-source-containment`.
+The [ready-runtime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) holds exact source/provider revisions, command results, durations, original failures and qualifications.
 
-Current Task4 rejects mismatched row context role/index and batch role before source import or scientific dispatch.
-Three malformed and three supported cases passed through the normal packaged SDK and actual managed worker; all 20 Core module bytes and physical cleanup were verified.
-Ordinary Processing execution requires concrete pinned selected-record identity before workspace acquisition or dispatch.
-The unreachable private transient fallback was removed; its forced private-branch failure was retired, not reported as a primary-error recovery.
-Independent public Storage transient workspaces and launcher-returned assets remain supported.
-The owner packet retains 127 passes and one stale hydration-owner failure followed by its exact recovery; current scoped checks and strict documentation passed.
-Two completed, unused proof environments were removed through their owning lifecycle after consumer checks; all other environments and held work remain protected.
+Managed Processing admits a ready runtime's actual installed content before scientific key construction and cache lookup.
+One admission per augmented recipe and operation supplies scientific content identity; generation/recipe/lock remain operational fences.
+Planning uses the configured backend and write-free inspection, reporting PENDING_RUNTIME when unavailable; Direct and local DataFrame authority remain unchanged.
+Closed-pool ready warm hits and identical-content recreated generations reuse the selected record without starting a scientific pool.
+The natural baseline returned stale1 after a changed installed dependency actually returned9 under the same recipe and lock; the final actual chain returned1/1/9/9/9/9 with scientific calls1/1/2/3/3/3 and complete physical cleanup.
+Published Wetlands2.6.0 is the independently validated prerequisite; its ordinary registry lock is coherent, all31 provider modules match reviewed source, and required CI/OS real-Pixi jobs passed.
+The provider full suite passed648 cases with6 qualified skips; library focused owners, statics, strict docs and actual packaged worker checks passed with earlier fixture failures retained.
+Proven unused owned runtime caches were retired; held6 files, development104 metadata, artifact27 metadata and unrelated environments remain unchanged.
 
-The [Parquet copy delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parquet-copy/final-delivery-proof.json) records the one-line copy optimization, seven affected cases and component measurement.
-For a 33.1 MB staged file, warm copy time fell from 32.5–40.8 ms to 12.9–14.3 ms and Python allocation from 33.1 MB to 10.4 KB with identical bytes; this does not measure whole publication, RSS or platform speed.
-
-Next work follows the accepted remaining MAIN/SECONDARY causal queue; C05/C08 ownership, quota and pointer joins remain open.
-Full typing support-environment debt, SDK `py.typed`, source CI and supported OS/cohort gates remain milestone obligations.
+Next MAIN is C04 selected primary executable bytes and resident-module attestation; this bounded runtime receipt does not close all C04 or Phase3.
+C05/C06/C08 lineage, pointer, quota and lifetime obligations remain in the accepted queue.
+Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
+Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
 
 ## Remaining sequence and authority
 

@@ -116,6 +116,8 @@ C07's file-alias subcase concerns the supported selected-output materialization 
 The acceptance policy must define those public aliases as read-only canonical access and reserve mutable consumers for independent work/copies; arbitrary hostile filesystem edits outside the API are not assumed as a current concurrency guarantee.
 The separately source-proved writable mmap path suffices to establish the borrowed-value contract gap without that filesystem assumption.
 C04 requires admitted executable bytes/root/module membership and either actual dependency closure or honest conflict refusal; it does not promise a sandbox for arbitrary trusted Python or all process-global imports.
+The ready-runtime slice now admits normalized actual installed content before managed Processing identity and lookup, preserves same-content warm reuse independently of generation UUID, and keeps cheap operational generation fences separate from scientific content.
+Selected primary executable bytes and resident-module attestation remain open; this slice does not close the C04 family.
 
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
@@ -146,7 +148,8 @@ Verified shared/captured SAIRPICO3.9 source can use Core3.9; explicit installed 
 Windows/Linux3.9/3.12 capability jobs, normal current cohort installation, optional named native/model/data proof and exact released artifact closure remain later gates.
 The library milestone is prepublication candidate capability, not a circular requirement to publish before release is unlocked.
 Candidate-source capability-only CI may be used after repairs as milestone validation while publication, release merge/tag actions and platform adoption remain paused; root coordinates the exact authorized source/CI plan rather than this report inventing jobs or prerequisites.
-Release/platform/T1 adoption remains paused until the accepted scoped library milestone; desktops remain last.
+Library/Core/tool releases and platform/T1 adoption remain paused until the accepted scoped library milestone; desktops remain last.
+The plan permits a necessary Wetlands prerequisite release earlier only after its independent technical, actual normal-candidate and required exact-head CI/OS gates; Wetlands2.6.0 completed those gates for the ready-runtime slice.
 
 ## Checkpoint reflection
 
