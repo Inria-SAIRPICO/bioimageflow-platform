@@ -31,7 +31,8 @@ Full typing support-environment debt, SDK `py.typed`, source CI and supported OS
 
 The [accepted library causal findings](library-causal-architecture-review.md) and affected owning library specifications define the remaining MAIN and SECONDARY obligations; completed finite repairs do not close whole finding families.
 Finish remaining MAIN, then SECONDARY/scientific obligations, then one applicable Phase 3 library milestone.
-Only after that milestone proceed through technically gated release/publication, platform adoption, headless platform validation, and desktop acceptance LAST.
+Library/Core/tool release, platform adoption, headless platform validation and desktop acceptance LAST follow that milestone.
+The [plan's Wetlands prerequisite exception](platform-test-plan.md#highest-priority-deep-librarycore-review-and-validation--october-4) permits a necessary dependency release earlier only after its independent technical gates and actual normal-candidate proof; it does not advance the other gates.
 Distributed execution remains excluded from the current local-library phase; supported local Direct/managed features remain essential.
 Preserve held/user work and consumer-owned environments; use AGENTS/Context for validation and environment rules.
 
