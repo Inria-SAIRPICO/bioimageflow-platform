@@ -1447,3 +1447,38 @@ Current source-controller/source-disabled normal SDK evidence does not certify t
 The [task manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/task-manifest.json), [completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-values/final-delivery-proof.json) retain exact commands/projections and original failures.
 Continue immediately with bounded C09 run setup/outcome/callback reentrancy/under-lock shutdown causal paths, then C01 container-record admission, C05 pointer/key joins and explicit C08 quota/planning/global-grant residuals before SECONDARY and the accepted library milestone.
 Campaign completion, publication/platform adoption and DesktopM5 remain in their established technical dependency order; this checkpoint is not a stop instruction.
+
+
+### Finite MAIN failure finalization and retry ownership — October 5
+
+Owning b1c2a553d3b9ec879603b1322a5d8334e989c8dc commits28 task-owned physical paths on `c5c759ec`; Git displays27 changed entries because the progress serialization test is renamed to dispatch isolation.
+Setup failure handlers require this execution's actual context binding, separately from the exact canonical run-directory dev/inode acquired before the first metadata write.
+Before-acquisition refusal never invents or overwrites a foreign view, and failed persistence releases the graph binding while retaining only detached owned storage/run/attempt facts for retry.
+Reusable Processing and DataFrame attempt failures preserve the original scientific exception; exact directory identity is validated before retry, and only identical terminal status/error facts are idempotent.
+Deferred-success finalization retains its distinct strict retry authority.
+Optional progress observers receive frozen events outside scheduler locks, may run concurrently, and cannot select the scientific outcome; diagnostic formatting itself tolerates unprintable exceptions.
+Strict manager shutdown attempts all captured pools, preserves original close/retirement details and failed owners, and allows explicit engine-close retry; execute/steps/context-manager cleanup preserves an existing primary error.
+Context `cleanup_pending` describes registered persistence actions only, independently of physical pool/grant pending ownership.
+
+Original public setup/attempt baseline remains5FAIL/2positivePASS5.339986s, with original exceptions, prior bytes and fresh-next-run assertions reached before failure.
+Its first new-secondary target projection remains7PASS/1transient-fixtureFAIL8.013818s; the corrected8 pass5.401705s, preserving detached diagnostic history and resolving both pending writes through retry.
+The cancellation-fault publication variant passes1 case2.530246s as new fault-injected semantics coverage, without a real cancellation/physical-drain claim.
+The manager-backed engine baseline remains1FAIL/1positivePASS1.402413s, followed by the same pair2PASS1.743792s and5 new/retained manager controls1.246369s; injected underlying pools do not certify real worker PIDs.
+Observer baseline2 genuineFAIL1.746914s recovers with reentrant cancel/status and execute/steps/with primary-cleanup controls6PASS2.334761s.
+Review then exposed3 genuine current-WIP context-binding failures3.348045s, followed by the same3PASS2.510893s, and a genuine Processing scientific-primary masking failure1FAIL2.772702s followed by1PASS2.141865s.
+Original TEMP ancestor-scan setup failures and the two task-commit rename/index guard errors are retained as setup-only evidence, not causal defect credit.
+
+The coherent affected-owner batch passes127 cases41.690472s with zero skips/pytest warnings at its pre-neutral-import projection.
+Import boundaries then exposed4 real architectural violations; one neutral cancellation class and structural cleanup-recorder protocol remove storage/cache dependencies on engine/workflow without duplicate definitions or compatibility shims.
+Affected neutral-boundary owners pass43 cases10.000123s, and final public facade/cancellation/observer selectors pass8 cases4.197626s with zero skips/pytest warnings.
+Final Ruff passes0.059152s, import recovery0.777205s, size0.213574s and scoped owning pyright2.356266s with zero type errors/warnings; the earlier full-pyright conditional tomli support-environment gap remains a milestone prerequisite.
+The first strict docs build passes10.572587s with zero warnings at the prior cancellation-class source-link projection.
+The neutral public exception move invalidates autodoc source links; its ONE strict-only recovery passes8.414988s on committed `b1c2a553` with zero warnings and unchanged docs/Python hashes.
+Package-page discovery inputs remain unchanged, so no generator repeat is needed.
+The [28-path task manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/failure-finalization/task-manifest.json), [exact completion ledger](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/failure-finalization/completion-summary.json) and [final delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/failure-finalization/final-delivery-proof.json) retain precise command/source projections, original failures and independent reviews.
+Held HEAD3859b318/all six actual October5 WIP hashes, development104 and retained current artifact27 METADATA remain equal; no SDK build/install/worker/environment deletion occurs and reclaimed bytes are0.
+No full/quick/platform/browser/native/distributed/release/adoption lane ran; prior SDK20 actual-worker evidence retains its earlier controller projection rather than gaining C09 scope.
+
+This is finite C09 repair, not family closure: `engine/node_execution.py` still directly writes failed transient invocation metadata before re-raising, so a future exact supported transient scientific-failure plus `finish_transient_invocation` persistence-fault selector must test primary preservation before the library milestone.
+Continue immediately to accepted C01 finite-container record admission, including nested native/Shared/Path assets and group ownership rather than JSON-only Parquet acceptance, then the prepared C10 no-replace/ZIP/public-return causes.
+C05 pointer/key, C08 quota/planning/global-grant, other MAIN/SECONDARY and one accepted library milestone remain explicit; standing authorized publication/platform adoption follows technical gates, and DesktopM5 remains last.

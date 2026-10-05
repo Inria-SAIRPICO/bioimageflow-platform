@@ -108,7 +108,14 @@ Current Processing/DataFrame keys include one execution-contract epoch, invalida
 Direct and worker row callbacks publish before the next callback, batches once, with nonterminal snapshots separated from one final result group and physical grant drain.
 Execution supplies one owned mutable working DataFrame to the captured merge hook; native pixels and finite container leaves are independent, while sealed SharedArray descriptors retain their admitted owner/backing.
 Exclusive root/task acquisition failures roll back only newly created namespaces and preserve the primary error; nested lexical owner activation restores the outer owner and caller without implicit close.
-Next MAIN is bounded C09 run setup/outcome/reentrancy/shutdown evidence, with C01 finite record-container admission and C05 pointer/key joins queued; C08 quota/planning/global-grant and broader ownership residuals remain explicit.
+At that checkpoint, bounded C09 failure evidence was next; the following accepted increment supersedes that active pointer.
+
+The finite C09 failure-finalization increment is committed at b1c2a553d3b9ec879603b1322a5d8334e989c8dc on `c5c759ec` (28 owned physical paths, including one renamed test).
+Newly admitted execution contexts become logically failed on setup/scientific failure, while an exact run-directory acquisition ticket and detached attempt-directory authority restrict persistence retries to owned identities.
+Original scientific errors survive failed terminal writes, optional progress observers and strict engine-owned shutdown; rejected reuse preserves prior active/deferred/succeeded contexts.
+Observers receive frozen events outside scheduler locks and own concurrency safety; immutable diagnostic history and registered-persistence-only `cleanup_pending` remain separate from physical pool/grant retirement through explicit `engine.close()` retry.
+The accepted scoped source/owner/quality/docs checkpoint changes no SDK bytes and does not close the entire C09 family: transient Processing failure-persistence masking remains an explicit MAIN residual.
+Next MAIN is C01 finite-container record admission with one Core traversal/neutral portable-cell adapter, then the prepared C10 atomic-publication causes, C05 pointer/key and explicit C08 quota/planning/global-grant residuals; remaining MAIN/SECONDARY and one accepted library milestone still precede technically gated publication/platform adoption and DesktopM5 last.
 The campaign continues through remaining MAIN/SECONDARY, the accepted library milestone, technically gated publication/platform adoption and DesktopM5 last.
 
 **Phase 3 — one scoped library milestone.**
