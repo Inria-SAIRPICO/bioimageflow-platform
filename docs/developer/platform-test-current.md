@@ -10,7 +10,7 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 5, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `97dc3fddc3fb078feb1601018bdd366408a58654` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `3a248eda669045fb93874a4ff489ad78166a0d03` in `.worktrees/campaign-library-source-containment`.
 The [processing-context delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/context-correlation/final-delivery-proof.json) retains exact source/MAIN revisions, commands, original failures and scoped validation.
 
 Current Task4 rejects mismatched row context role/index and batch role before source import or scientific dispatch.
@@ -20,6 +20,9 @@ The unreachable private transient fallback was removed; its forced private-branc
 Independent public Storage transient workspaces and launcher-returned assets remain supported.
 The owner packet retains 127 passes and one stale hydration-owner failure followed by its exact recovery; current scoped checks and strict documentation passed.
 Two completed, unused proof environments were removed through their owning lifecycle after consumer checks; all other environments and held work remain protected.
+
+The [Parquet copy delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/parquet-copy/final-delivery-proof.json) records the one-line copy optimization, seven affected cases and component measurement.
+For a 33.1 MB staged file, warm copy time fell from 32.5–40.8 ms to 12.9–14.3 ms and Python allocation from 33.1 MB to 10.4 KB with identical bytes; this does not measure whole publication, RSS or platform speed.
 
 Next work follows the accepted remaining MAIN/SECONDARY causal queue; C05/C08 ownership, quota and pointer joins remain open.
 Full typing support-environment debt, SDK `py.typed`, source CI and supported OS/cohort gates remain milestone obligations.
