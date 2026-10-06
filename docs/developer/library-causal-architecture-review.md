@@ -119,6 +119,8 @@ C04 requires admitted executable bytes/root/module membership and either actual 
 The ready-runtime slice now admits normalized actual installed content before managed Processing identity and lookup, preserves same-content warm reuse independently of generation UUID, and keeps cheap operational generation fences separate from scientific content.
 The finite selected-primary slice now admits selected package Python inventory and inherited constructor/row/batch owners before cache lookup, rejects stale controller and resident worker code, and retains held bytes through canonical worker callbacks and lazy imports.
 Direct actual callback authority remains unchanged, and arbitrary trusted Python state/dependency closure and remaining C04 obligations stay open; the [current checkpoint](platform-test-current.md) holds the committed source and bounded normal-wheel proof.
+The finite explicit-table merge slice passes actual positional working inputs to the declared merge and advances the existing execution epoch, preserving Processing column-pin and workflow-output alignment.
+Its independent pairs and same-Storage stale-record control are proven; conservative whole merged-input provenance remains, without claiming exact per-row join lineage or closing C05.
 
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.

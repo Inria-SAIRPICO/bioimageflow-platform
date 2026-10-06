@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `0486f978394a8937922dbc4b6431181c91166ca6` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `c79fc158cf9ca387e3d65beef608e9be2020e287` in `.worktrees/campaign-library-source-containment`.
+The [explicit merge delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json) holds this controller-only source, independent values, preserved Storage control, checks and qualifications.
 The [selected-primary delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json) holds the source, corrected normal candidate, commands, durations, original failures, cleanup and qualifications.
 The earlier [ready-runtime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) remains the completed installed-runtime prerequisite.
 
@@ -28,8 +29,11 @@ Five actual owners physically closed without pending resources; scientific worke
 Held6 files, development104 metadata, artifact27 metadata and unrelated environments remain unchanged; the owned candidate, proof/storage fixtures and next-task old record are retained.
 Published Wetlands2.6.0 remains the independently validated prerequisite; library/Core candidates are unpublished and platform adoption remains later.
 
-Next MAIN is C05 explicit table merge operand integrity: declared DataFrame merges must receive their actual positional working inputs, preserving column-pin and workflow-output alignment as distinct mechanisms.
-Its public Direct baseline confirms correct CrossJoin pairs A/I,A/J,B/I,B/J versus engine cold/warm A/I,A/J,A/I,A/J; the original Storage is retained for authoritative execution-epoch invalidation.
+The C05 explicit merge slice now passes actual positional working inputs to the declared callback and advances the existing execution contract to `bioimageflow.execution.v2`; column-pin and workflow-output alignment remain distinct mechanisms.
+Its public Direct baseline returned wrong engine pairs A/I,A/J,A/I,A/J; the same retained Storage now produces correct A/I,A/J,B/I,B/J under a new key/record, warms that record and preserves the old immutable record.
+Four independent value controls passed, 92 unchanged scoped cases remain passed, and the one obsolete Collect-broadcast fixture recovered with every precision/dtype/weight/order/copy assertion preserved through Processing column pins; statics and strict docs passed.
+Conservative whole merged-input provenance remains; exact per-row join lineage is not claimed, and no Core rebuild or managed runtime was needed for this controller-only increment.
+Next MAIN candidate is Direct batch delegate identity and its effective row-callback closure; a temporary public baseline is authorized before any product correction.
 Existing collective and selected-result repairs remain completed; remaining C04/C05/C06/C08 lineage, pointer, quota and lifetime obligations stay queued without claiming those whole families or Phase3 complete.
 Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
