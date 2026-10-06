@@ -123,6 +123,9 @@ The finite explicit-table merge slice passes actual positional working inputs to
 Its independent pairs and same-Storage stale-record control are proven; conservative whole merged-input provenance remains, without claiming exact per-row join lineage or closing C05.
 Direct Processing now captures effective row and batch scientific roots independently of its retained dispatch callbacks; all source-bound Direct tools include actual supported inherited/runtime callback evidence alongside source admission, repairing both the same-delegate/different-row-closure collision and the unchanged-archive/inherited-DataFrame-transform collision without changing managed admission or active dispatch.
 
+The bounded actual managed successful-discard/quota proof joins released exact groups, retained worker grants, preallocation refusal and explicit selected idle retirement; a live mapped view and independent accepted owner remain valid, the identical controller allocation then fits, and final physical resources reach zero.
+The initial finite-budget sizing failure remains qualified in the [current checkpoint](platform-test-current.md); this establishes explicit retirement, not automatic pressure scheduling or whole C08 certification.
+
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
 Keep pending/accepted/rejected disposition independent of physical drain, actual failed-close grant retention, root/slice/asarray reader ownership and unopened references after temporary Workflow collection.
