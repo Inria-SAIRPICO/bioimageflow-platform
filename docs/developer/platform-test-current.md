@@ -10,11 +10,11 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 ## Status — October 6, 2026
 
 The campaign is RUNNING; continuation through its end is authorized.
-Latest accepted library source is `04af3127af29bdf9b066ccb1c2fbf9c777fbedb0` in `.worktrees/campaign-library-source-containment`.
-The combined SECONDARY A+B source is committed: URL-bound example downloads, keyed metric association and held preview selection; strict viewer wire versus Python shorthand, detached typed manifest metadata, full TOML/canonical project identity, all-artifact release preflight, finite relative/guarded/worker import guards and Core `py.typed`.
-The [secondary delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json) holds exact commands, source projection, durations, original fixture/static failures, retained successes and exact recoveries.
-Independent public controls and existing owners passed; global Ruff, changed-path typing, size/import/generated-doc checks and the 8.865 s strict incremental docs check passed.
-Actual downloads, uploads, managed execution, normal package builds and whole milestone certification were not performed in this wave.
+Latest accepted library source is `66e8efe0bfef65bd1d2952a66f41df7217d83d2b` in `.worktrees/campaign-library-source-containment`.
+Combined Gate C+D is committed: absent-only native staged-file publication preserves late owners, explicit PATH and primary cleanup diagnostics; TIFF/OME axes, separate size units and harmonic-aware Phasor calibration/lifetime preserve numerical meaning.
+The [native/numerical proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json) links actual child and pinned PhasorPy baselines, current commands, original setup/fixture failures, retained successes and exact recoveries.
+Independent numerical/ownership controls, relevant existing owners, scoped static/type checks and the 16.601 s strict incremental docs check passed.
+Actual local science used PhasorPy0.12/NumPy2.4.2/TIFF2026.6.1 after the original TIFF pin proved unresolvable; this is not Wetlands recipe, whole OS or normal artifact certification.
 
 ## Accepted outcomes and evidence
 
@@ -29,6 +29,7 @@ Completed increments establish bounded contracts rather than universal family cl
 - [Cold own-winner reuse](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json): both publishers reuse exact emitted sealed references only after canonical own-selected record/frame/manifest/asset/address admission; conflicting winners and mutable inputs hydrate normally. Fresh actual managed results used two physical backings instead of four, a 50% residency saving at the measured publication point, without an end-to-end speed claim. Quota/idle/view/independent-owner invariants and final zero resources remained intact.
 - [Export replacement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json): captured lexical target identity or initial absence, exclusive installation/restoration and late-owner preservation; exact errors report recoverable backups or already committed output with pending superseded-backup cleanup, without promising a complete original after partial deletion.
 - [EnvironmentSpec recipe admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json): one privately captured recipe, detached ordinary projections, explicit equal snapshot reconstruction, complete Pip grammar and finite Conda exact/flexible/version/build/prefix rules preserve declared text and provider translation.
+- [SECONDARY A+B](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json): URL/keyed example identity, held previews, strict viewer wire and detached typed metadata, canonical TOML project identity, release preflight, finite import guards and source `py.typed`.
 
 Conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling remain explicit accepted boundaries, not unnamed repair promises.
 Previously accepted schema/container/parameter/collective/selected-result/failure-finalization contracts remain preserved by the causal review and owning specifications.
@@ -38,17 +39,20 @@ Previously accepted schema/container/parameter/collective/selected-result/failur
 Published Wetlands2.6.0 is the independently validated prerequisite.
 The retained `.venv-c04-runtime-receipt` is the owned candidate; its normal unpublished Core0.5 wheel is the earlier `11aee` artifact.
 At the selected-primary checkpoint all22 source/wheel/candidate Python modules matched; child worker hashes were not independently inventoried, so the hash-bound wheel plus actual behavior proved that finite increment without whole certification.
-Later EnvironmentSpec/viewer/typed-marker source changes were checked through explicit source imports and are not contained in that wheel; coherent normal package/artifact validation remains later.
+Later EnvironmentSpec/viewer/typed-marker/native/numerical source changes were checked through explicit source imports and are not contained in that wheel; coherent normal package/artifact validation remains later.
 The source `py.typed` control passed; the actual wheel/sdist marker control is authored but intentionally unrun.
 
 The last actual managed boundary physically closed owners, exited recorded scientific workers, stopped HTTP and removed owned environments.
 Both proven finished manager roots and their Pixi caches were actually deleted after their final consumer; proof/scientific records, source, candidate and user/shared caches were retained.
-Held `.worktrees/campaign-force-library` work, its six files/private interpreter, development104 and artifact27 metadata remain protected; source-only later waves made no installation or runtime-owner changes.
+Held `.worktrees/campaign-force-library` work, its six files/private interpreter, development104 and artifact27 metadata remain protected; the numerical wave installed only its exclusively owned disposable science interpreter and package cache.
+The final pinned-science consumer finished; its exclusively owned interpreter and package cache were deleted, while numerical fixtures, resolved metadata and receipts remain available.
 Do not clean unknown/shared caches or consumer-owned environments.
 
 ## Remaining sequence
 
-Next essential work is the finite SECONDARY native/scientific gates: Gate C owns native helper and SAIRPICO/Nagini caller contracts; Gate D owns numerical policy/discriminators; The integration owner independently owns C+D tests/shared specifications; Gate E waits if it would dilute that independence or overlap Nagini before C freezes.
+Next essential work is Gate E finite model admission, numerical association and output/temporary ownership; Nagini uses Python model inference and is not a native-helper caller.
+Gate C found no demonstrated SAIRPICO caller change; Gate D numerical policies are accepted.
+Existing stronger controls and public discriminators determine each remaining packet before edits, including verification-only dispositions and bounded future affected-test routing support.
 Their read-only policies and public baselines precede product edits; the sole integration owner performs any eventual managed/environment operation.
 No SDK wheel is rebuilt after each small source edit: one coherent source freeze precedes the applicable normal package cohort and support-floor checks.
 Full typing support-environment debt, actual SDK marker/artifact closure and the scoped Phase 3 library milestone remain open.
