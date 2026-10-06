@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `2d18b2645beac6ff1103c3fb50a76b3d6ab523ee` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `9a4de47b212a37f7e0cdb8c54b128a69cd2e1b37` in `.worktrees/campaign-library-source-containment`.
+The [source-backed Direct callback delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/archived-dataframe/final-delivery-proof.json) holds the current finite inherited DataFrame callback contract, public archive regression, preserved Storage control and qualifications.
 The [Direct delegate delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/direct-delegate/final-delivery-proof.json) holds the current finite callback contract, public collision/recovery, retained Storage proof and qualifications.
 The [explicit merge delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json) holds this controller-only source, independent values, preserved Storage control, checks and qualifications.
 The [selected-primary delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json) holds the source, corrected normal candidate, commands, durations, original failures, cleanup and qualifications.
@@ -37,7 +38,9 @@ Conservative whole merged-input provenance remains; exact per-row join lineage i
 Direct Processing now includes both effective framework row and batch callbacks in scientific identity while preserving the selected execution map; source-bound Processing adds actual runtime evidence alongside its source admission.
 The public same-batch/different-row-closure collision is repaired: retained Storage returns1/1/9/9 with separate keys/records and warm reuse, confirmed by fresh9; its diagnostic elapsed was uncaptured and was not rerun solely for timing.
 The exact public regression passed after a genuine red result, 60 owner cases and two capture-seam controls passed, and statics/strict docs passed; managed evidence, DataFrame policy and epochv2 remain unchanged.
-Next MAIN is source-bound Direct DataFrame inherited framework callback identity; its temporary public archive baseline is authorized before product correction.
+All source-bound Direct tools now pair admitted source bytes with actual supported callback facts; unchanged archive bytes/id/hash with inherited DataFrame transform1→9 selects a new key/record and warms9, while the old record and its publicly loaded value1 remain preserved.
+The final public archive regression passed, 52 existing owner cases passed, statics and strict docs passed; the retained Storage follow-up took2.269s, with no SDK rebuild, managed runtime or epoch change.
+Next MAIN is one joined actual managed successful-discard/finite-quota/explicit-idle-retirement/live-view/unrelated-owner proof for C08; existing retirement and truthful refusal are the accepted contract, and automatic scheduling remains optional.
 Existing collective and selected-result repairs remain completed; remaining C04/C05/C06/C08 lineage, pointer, quota and lifetime obligations stay queued without claiming those whole families or Phase3 complete.
 Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
