@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `d8b3024a4d51e4bc19e5ab2428e426b9bcec7580` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `36932be61a8c05b4ab1476069d2afad30ed240f6` in `.worktrees/campaign-library-source-containment`.
+The [export replacement delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json) holds the captured owner, exclusive installation/restoration, truthful cleanup diagnostics and scoped checks.
 The [cold own-winner reuse delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json) holds the admitted reuse contract, independent value/integrity/winner/lease controls, measured backing saving and exact cache cleanup.
 The [joined managed lifetime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/managed-discard/final-delivery-proof.json) holds the actual successful-discard/quota/explicit idle-retirement result, physical cleanup, protected boundary and original sizing qualification.
 The [source-backed Direct callback delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/archived-dataframe/final-delivery-proof.json) holds the current finite inherited DataFrame callback contract, public archive regression, preserved Storage control and qualifications.
@@ -51,8 +52,10 @@ Fresh actual managed results used two 131200-byte physical backings each instead
 The actual proof passed in 29.196 s with two scientific calls and unchanged quota/refusal/idle/view/independent-owner/final-zero invariants; 62 unchanged scoped controls passed with two NumPy warnings, four independent controls and one contingent pin-cleanup control passed, and statics/strict docs passed.
 Both exclusively owned finished manager roots and their Pixi caches were deleted after the final consumer, preserving proof/records/candidate/user/shared caches; held6/development104/artifact27 hashes remain unchanged.
 Current selective dispositions preserve completed collective and selected-result repairs; conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling are explicit accepted boundaries rather than unnamed repair promises.
-Next MAIN is C10 explicit export replacement ownership: the public temporary baseline confirms late-created and substituted destination owners are removed by current replace=True, so the next slice binds initial absence or captured target identity, installs exclusively and never overwrites a late owner during rollback.
-EnvironmentSpec exact grammar and detached recipe discriminator/design follows that finite repair.
+C10 explicit export replacement now binds initial absence or captured lexical target identity, installs and restores exclusively, and preserves late independent owners.
+Occupied restoration reports a recoverable original backup; a post-install cleanup failure preserves the exact error and committed destination while reporting pending superseded-backup cleanup, without promising a complete original after partial deletion.
+Four exact owner controls and 13 mapped export controls remain passed, one final contingent cleanup control and 21 other publication controls passed, and typing/statics plus the final 8.000 s strict incremental docs check passed; the initial full docs result is qualified before the late clause.
+Next MAIN is EnvironmentSpec recipe admission: complete exact/flexible grammar and detached captured recipes, with source SDK tests qualified until coherent normal-package milestone validation.
 Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
 

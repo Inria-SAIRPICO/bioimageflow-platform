@@ -129,6 +129,10 @@ The initial finite-budget sizing failure remains qualified in the [current check
 Cold own-winner publication now reuses emitted already sealed SharedArray references through canonical exact record admission and mapping in both publishers; conflicting winners and mutable inputs retain hydration, with independent corruption/value/lease controls.
 The actual managed publication point uses two physical backings per result instead of four, while quota and idle drain/view preservation remain intact; this proves a 50% backing-residency saving without claiming end-to-end speed or broader certification.
 
+Explicit output-tree replacement binds initial absence or lexical target identity, installs and restores exclusively, and preserves late independent owners.
+Occupied restoration retains a reported recoverable original backup; post-install cleanup failures truthfully report the installed destination and pending superseded backup without promising a complete original after partial deletion.
+This is a bounded cooperating publication fence, with arbitrary ancestor/filesystem tampering outside the accepted contract.
+
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
 Keep pending/accepted/rejected disposition independent of physical drain, actual failed-close grant retention, root/slice/asarray reader ownership and unopened references after temporary Workflow collection.
