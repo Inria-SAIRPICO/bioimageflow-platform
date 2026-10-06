@@ -133,6 +133,9 @@ Explicit output-tree replacement binds initial absence or lexical target identit
 Occupied restoration retains a reported recoverable original backup; post-install cleanup failures truthfully report the installed destination and pending superseded backup without promising a complete original after partial deletion.
 This is a bounded cooperating publication fence, with arbitrary ancestor/filesystem tampering outside the accepted contract.
 
+EnvironmentSpec now captures a detached recipe before validation and exposes fresh ordinary projections; explicit snapshot reconstruction preserves semantic equality.
+Complete parsed Pip requirements and finite Conda exact/flexible/version/build/prefix rules preserve declared text and provider translation, with source SDK qualification kept distinct from normal-package certification.
+
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
 Keep pending/accepted/rejected disposition independent of physical drain, actual failed-close grant retention, root/slice/asarray reader ownership and unopened references after temporary Workflow collection.

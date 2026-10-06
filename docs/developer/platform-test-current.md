@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `36932be61a8c05b4ab1476069d2afad30ed240f6` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `2ac80d21a5f2997458c1d1fd13e2948741627c04` in `.worktrees/campaign-library-source-containment`.
+The [EnvironmentSpec recipe delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json) holds the captured recipe, complete requirement grammar, source-qualified checks and retained normal-artifact distinction.
 The [export replacement delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json) holds the captured owner, exclusive installation/restoration, truthful cleanup diagnostics and scoped checks.
 The [cold own-winner reuse delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json) holds the admitted reuse contract, independent value/integrity/winner/lease controls, measured backing saving and exact cache cleanup.
 The [joined managed lifetime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/managed-discard/final-delivery-proof.json) holds the actual successful-discard/quota/explicit idle-retirement result, physical cleanup, protected boundary and original sizing qualification.
@@ -28,7 +29,8 @@ The finite primary slice admits selected package Python inventory and inherited 
 Canonical worker tasks retain the same admission through callbacks, result handling and lazy same-package imports; incomplete selected tool/helper inventories and stale same-size/timestamp bytecode are independently tested.
 Direct retains actual callbacks, editable source remains supported, and ordinary canonical namespaces are never unloaded to make a changed resident appear fresh.
 The natural inherited baseline returned1/1/9/1/9; the corrected normal-wheel chain returned1/1/9/9 with calls1/1/2/2, a new key/record for clean9, stale-controller refusal before Storage, and resident17 refusal before constructor/science.
-All22 source/wheel/candidate Python modules match; child worker hashes were not independently inventoried, so the hash-bound normal wheel and actual behavior establish this bounded increment without whole certification.
+At the selected-primary checkpoint, all22 source/wheel/candidate Python modules matched; child worker hashes were not independently inventoried, so the hash-bound normal wheel and actual behavior established that bounded increment without whole certification.
+The later EnvironmentSpec SDK source increment is validated through explicit source imports and has not been rebuilt into the retained normal Core11aee wheel.
 The final controller scope passed21 cases, new SDK regressions passed4, scoped typing/statics and strict docs passed, and unchanged earlier267 controller and202 SDK successes remain qualified with their original failures and exact recoveries.
 Five actual owners physically closed without pending resources; scientific workers and HTTP stopped, managed environments were removed, and three proven unused owned runtime roots were retired.
 Held6 files, development104 metadata, artifact27 metadata and unrelated environments remain unchanged; the owned candidate, proof/storage fixtures and next-task old record are retained.
@@ -55,8 +57,11 @@ Current selective dispositions preserve completed collective and selected-result
 C10 explicit export replacement now binds initial absence or captured lexical target identity, installs and restores exclusively, and preserves late independent owners.
 Occupied restoration reports a recoverable original backup; a post-install cleanup failure preserves the exact error and committed destination while reporting pending superseded-backup cleanup, without promising a complete original after partial deletion.
 Four exact owner controls and 13 mapped export controls remain passed, one final contingent cleanup control and 21 other publication controls passed, and typing/statics plus the final 8.000 s strict incremental docs check passed; the initial full docs result is qualified before the late clause.
-Next MAIN is EnvironmentSpec recipe admission: complete exact/flexible grammar and detached captured recipes, with source SDK tests qualified until coherent normal-package milestone validation.
-Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
+EnvironmentSpec recipe admission is complete: one private captured recipe, fresh ordinary public projections and explicit snapshot reconstruction preserve equality without mutation authority; complete Pip parsing and finite Conda exact/flexible/version/build/prefix validation preserve declared text and translation.
+Independent new23, prefix/translation4 and existing spec8 controls passed; retained64 owner and public8 controls, cold source import, scoped typing/statics and the 8.037 s source-qualified strict incremental docs check passed.
+No normal SDK wheel rebuild, managed run or support-floor runtime certification is claimed for this source increment.
+Next essential SECONDARY wave B covers strict viewer wire versus authoring shorthand and detached metadata authority, documentation tool-package project-name authority, all-artifact release preflight, relative imports/worker guards and SDK `py.typed`; read-only design/public discriminators precede product edits.
+Parallel disjoint secondary example URL-basename reuse and documentation preview recapture remain separately owned.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
 
 ## Remaining sequence and authority
