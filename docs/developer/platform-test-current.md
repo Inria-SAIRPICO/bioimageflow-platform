@@ -7,23 +7,30 @@ orphan: true
 This is the single operational status and resume pointer for the campaign.
 Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md) for project instructions, then only the [plan](platform-test-plan.md) sections and owning specifications relevant to the current task.
 
-## Status — October 5, 2026
+## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `e2d3084fbed6ad02227530cf6d18bebd2d27ee60` in `.worktrees/campaign-library-source-containment`.
-The [ready-runtime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) holds exact source/provider revisions, command results, durations, original failures and qualifications.
+Last completed library source: `0486f978394a8937922dbc4b6431181c91166ca6` in `.worktrees/campaign-library-source-containment`.
+The [selected-primary delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json) holds the source, corrected normal candidate, commands, durations, original failures, cleanup and qualifications.
+The earlier [ready-runtime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) remains the completed installed-runtime prerequisite.
 
 Managed Processing admits a ready runtime's actual installed content before scientific key construction and cache lookup.
 One admission per augmented recipe and operation supplies scientific content identity; generation/recipe/lock remain operational fences.
 Planning uses the configured backend and write-free inspection, reporting PENDING_RUNTIME when unavailable; Direct and local DataFrame authority remain unchanged.
 Closed-pool ready warm hits and identical-content recreated generations reuse the selected record without starting a scientific pool.
-The natural baseline returned stale1 after a changed installed dependency actually returned9 under the same recipe and lock; the final actual chain returned1/1/9/9/9/9 with scientific calls1/1/2/3/3/3 and complete physical cleanup.
-Published Wetlands2.6.0 is the independently validated prerequisite; its ordinary registry lock is coherent, all31 provider modules match reviewed source, and required CI/OS real-Pixi jobs passed.
-The provider full suite passed648 cases with6 qualified skips; library focused owners, statics, strict docs and actual packaged worker checks passed with earlier fixture failures retained.
-Proven unused owned runtime caches were retired; held6 files, development104 metadata, artifact27 metadata and unrelated environments remain unchanged.
+The finite primary slice admits selected package Python inventory and inherited constructor/row/batch owners before runtime preparation and cache lookup; canonical origins carry mandatory proofs and the SDK owns one source/resident validator.
+Canonical worker tasks retain the same admission through callbacks, result handling and lazy same-package imports; incomplete selected tool/helper inventories and stale same-size/timestamp bytecode are independently tested.
+Direct retains actual callbacks, editable source remains supported, and ordinary canonical namespaces are never unloaded to make a changed resident appear fresh.
+The natural inherited baseline returned1/1/9/1/9; the corrected normal-wheel chain returned1/1/9/9 with calls1/1/2/2, a new key/record for clean9, stale-controller refusal before Storage, and resident17 refusal before constructor/science.
+All22 source/wheel/candidate Python modules match; child worker hashes were not independently inventoried, so the hash-bound normal wheel and actual behavior establish this bounded increment without whole certification.
+The final controller scope passed21 cases, new SDK regressions passed4, scoped typing/statics and strict docs passed, and unchanged earlier267 controller and202 SDK successes remain qualified with their original failures and exact recoveries.
+Five actual owners physically closed without pending resources; scientific workers and HTTP stopped, managed environments were removed, and three proven unused owned runtime roots were retired.
+Held6 files, development104 metadata, artifact27 metadata and unrelated environments remain unchanged; the owned candidate, proof/storage fixtures and next-task old record are retained.
+Published Wetlands2.6.0 remains the independently validated prerequisite; library/Core candidates are unpublished and platform adoption remains later.
 
-Next MAIN is C04 selected primary executable bytes and resident-module attestation; this bounded runtime receipt does not close all C04 or Phase3.
-C05/C06/C08 lineage, pointer, quota and lifetime obligations remain in the accepted queue.
+Next MAIN is C05 explicit table merge operand integrity: declared DataFrame merges must receive their actual positional working inputs, preserving column-pin and workflow-output alignment as distinct mechanisms.
+Its public Direct baseline confirms correct CrossJoin pairs A/I,A/J,B/I,B/J versus engine cold/warm A/I,A/J,A/I,A/J; the original Storage is retained for authoritative execution-epoch invalidation.
+Existing collective and selected-result repairs remain completed; remaining C04/C05/C06/C08 lineage, pointer, quota and lifetime obligations stay queued without claiming those whole families or Phase3 complete.
 Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
 

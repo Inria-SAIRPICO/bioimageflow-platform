@@ -117,7 +117,8 @@ The acceptance policy must define those public aliases as read-only canonical ac
 The separately source-proved writable mmap path suffices to establish the borrowed-value contract gap without that filesystem assumption.
 C04 requires admitted executable bytes/root/module membership and either actual dependency closure or honest conflict refusal; it does not promise a sandbox for arbitrary trusted Python or all process-global imports.
 The ready-runtime slice now admits normalized actual installed content before managed Processing identity and lookup, preserves same-content warm reuse independently of generation UUID, and keeps cheap operational generation fences separate from scientific content.
-Selected primary executable bytes and resident-module attestation remain open; this slice does not close the C04 family.
+The finite selected-primary slice now admits selected package Python inventory and inherited constructor/row/batch owners before cache lookup, rejects stale controller and resident worker code, and retains held bytes through canonical worker callbacks and lazy imports.
+Direct actual callback authority remains unchanged, and arbitrary trusted Python state/dependency closure and remaining C04 obligations stay open; the [current checkpoint](platform-test-current.md) holds the committed source and bounded normal-wheel proof.
 
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
