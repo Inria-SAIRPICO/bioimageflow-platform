@@ -136,6 +136,10 @@ This is a bounded cooperating publication fence, with arbitrary ancestor/filesys
 EnvironmentSpec now captures a detached recipe before validation and exposes fresh ordinary projections; explicit snapshot reconstruction preserves semantic equality.
 Complete parsed Pip requirements and finite Conda exact/flexible/version/build/prefix rules preserve declared text and provider translation, with source SDK qualification kept distinct from normal-package certification.
 
+The finite secondary wave now binds example URL/metric/preview effects to admitted identity, separates strict viewer wire from authoring shorthand, and protects held typed viewing metadata from public projection edits.
+Documentation consumes complete TOML and canonical declared package identity; release publication preflights all artifacts, and finite relative/guarded/canonical-worker import guards preserve ordinary scientific callbacks.
+Core source `py.typed` is present, with normal artifact/support-floor closure still reserved for the coherent milestone.
+
 Keep pure typed value decoding, exact task/node/invocation/cache/retry/mode/row correlation, literal dictionary identity and numeric dtype/precision/nonfinite transport.
 Keep normal output-only task scopes, controller-preowned namespaces, exact admitted input references, object-dtype/preallocation refusal, same-FD contained numeric header/size/quota admission and no private resource-tracker workaround.
 Keep pending/accepted/rejected disposition independent of physical drain, actual failed-close grant retention, root/slice/asarray reader ownership and unopened references after temporary Workflow collection.
