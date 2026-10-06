@@ -202,6 +202,7 @@ The campaign library now admits Wetlands2.6 ready-runtime content before managed
 Its configured-backend planning is write-free and reports unavailable ready authority as PENDING_RUNTIME; ready warm hits do not start a scientific pool.
 The campaign library also admits the finite selected primary Python package and inherited constructor/row/batch owners before runtime preparation and cache lookup, and rejects stale controller or resident worker code.
 Canonical worker tasks retain the same admitted source bytes through scientific callbacks, including lazy imports; Direct retains its actual callback authority.
+Direct Processing scientific identity captures both effective row and batch callbacks independently of its selected execution callback map, including actual inherited/runtime evidence alongside source-bound admission.
 Campaign DataFrame merges now receive their actual positional working inputs without implicit parent-row coercion, with one execution-contract epoch change preventing reuse of earlier wrong records; column-pin and published-output alignment remain distinct mechanisms.
 These library changes are committed campaign source with an unpublished normal Core candidate; the Wetlands prerequisite is published, while library/Core release and platform dependency adoption remain later gates.
 Arbitrary trusted Python state and dependency closure, remaining C04 obligations and the campaign milestone remain open; the [current checkpoint](docs/developer/platform-test-current.md) holds source-bound proof and the remaining queue.

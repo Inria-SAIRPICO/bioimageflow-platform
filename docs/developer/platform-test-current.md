@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md) and [PLATFORM_CONTEXT.md](../../PLATFORM_CONTE
 ## Status — October 6, 2026
 
 The campaign is RUNNING; the user authorized continuation through its end.
-Last completed library source: `c79fc158cf9ca387e3d65beef608e9be2020e287` in `.worktrees/campaign-library-source-containment`.
+Last completed library source: `2d18b2645beac6ff1103c3fb50a76b3d6ab523ee` in `.worktrees/campaign-library-source-containment`.
+The [Direct delegate delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/direct-delegate/final-delivery-proof.json) holds the current finite callback contract, public collision/recovery, retained Storage proof and qualifications.
 The [explicit merge delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json) holds this controller-only source, independent values, preserved Storage control, checks and qualifications.
 The [selected-primary delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json) holds the source, corrected normal candidate, commands, durations, original failures, cleanup and qualifications.
 The earlier [ready-runtime delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) remains the completed installed-runtime prerequisite.
@@ -33,7 +34,10 @@ The C05 explicit merge slice now passes actual positional working inputs to the 
 Its public Direct baseline returned wrong engine pairs A/I,A/J,A/I,A/J; the same retained Storage now produces correct A/I,A/J,B/I,B/J under a new key/record, warms that record and preserves the old immutable record.
 Four independent value controls passed, 92 unchanged scoped cases remain passed, and the one obsolete Collect-broadcast fixture recovered with every precision/dtype/weight/order/copy assertion preserved through Processing column pins; statics and strict docs passed.
 Conservative whole merged-input provenance remains; exact per-row join lineage is not claimed, and no Core rebuild or managed runtime was needed for this controller-only increment.
-Next MAIN candidate is Direct batch delegate identity and its effective row-callback closure; a temporary public baseline is authorized before any product correction.
+Direct Processing now includes both effective framework row and batch callbacks in scientific identity while preserving the selected execution map; source-bound Processing adds actual runtime evidence alongside its source admission.
+The public same-batch/different-row-closure collision is repaired: retained Storage returns1/1/9/9 with separate keys/records and warm reuse, confirmed by fresh9; its diagnostic elapsed was uncaptured and was not rerun solely for timing.
+The exact public regression passed after a genuine red result, 60 owner cases and two capture-seam controls passed, and statics/strict docs passed; managed evidence, DataFrame policy and epochv2 remain unchanged.
+Next MAIN is source-bound Direct DataFrame inherited framework callback identity; its temporary public archive baseline is authorized before product correction.
 Existing collective and selected-result repairs remain completed; remaining C04/C05/C06/C08 lineage, pointer, quota and lifetime obligations stay queued without claiming those whole families or Phase3 complete.
 Secondary example URL-basename reuse and documentation preview recapture remain queued behind MAIN.
 Full typing support-environment debt, SDK `py.typed`, normal package cohort and milestone certification remain open.
