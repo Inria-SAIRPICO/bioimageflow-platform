@@ -243,7 +243,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     expect(failed.last_result.errors).toEqual([
       expect.objectContaining({
         detail: FAILURE_SUMMARY,
-        traceback: expect.stringContaining('held_worker.py'),
+        traceback: expect.stringContaining('held.py'),
       }),
     ])
     const partial = await page.request.post(`${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`, {
@@ -261,7 +261,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const errorDetails = page.getByTestId('error-details-body')
     await expect(errorDetails).toContainText(WORKER_ID)
     await expect(errorDetails).toContainText('Remote traceback:')
-    await expect(errorDetails).toContainText('held_worker.py')
+    await expect(errorDetails).toContainText('held.py')
     await expect(errorDetails).toContainText(FAILURE)
     await page.getByRole('button', { name: 'Close', exact: true }).last().click()
     await page.getByTestId('error-history-close').click()
@@ -272,7 +272,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     await expect(failureLog).toHaveCount(1)
     await expect(failureLog.getByTestId('log-node-name')).toHaveText('Controlled worker')
     await expect(failureLog.getByTestId('log-message')).toContainText('Remote traceback:')
-    await expect(failureLog.getByTestId('log-message')).toContainText('held_worker.py')
+    await expect(failureLog.getByTestId('log-message')).toContainText('held.py')
 
     await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
     await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()

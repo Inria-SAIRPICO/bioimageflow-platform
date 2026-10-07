@@ -177,6 +177,32 @@ def test_register_tool_preserves_non_null_path_picker(monkeypatch):
     assert meta.inputs["path"].path_picker == "folder"
 
 
+@pytest.mark.parametrize("flexible", [False, True])
+def test_register_tool_preserves_detached_environment_recipe(flexible: bool) -> None:
+    from bioimageflow_core import EnvironmentSpec, ProcessingTool, RowConsumption
+
+    dependencies = {"pip": ["numpy>=2,<3" if flexible else "numpy==2.2.6"]}
+    recipe = EnvironmentSpec(
+        name="registry-recipe", dependencies=dependencies, allow_flexible_versions=flexible
+    )
+
+    class RecipeTool(ProcessingTool):
+        row_consumption = RowConsumption.MAPPED
+        environment = recipe
+
+    registry = ToolRegistryService()
+    registry._register_tool_from_class(RecipeTool, "RecipeTool", "fixture", "1.0")
+    metadata = registry.get_tool("RecipeTool")
+    assert metadata is not None and metadata.environment is not None
+    assert metadata.environment == {
+        "name": recipe.name,
+        "dependencies": recipe.dependencies,
+        "allow_flexible_versions": flexible,
+    }
+    metadata.environment["dependencies"]["pip"].append("pandas==2.3.3")
+    assert recipe.dependencies == dependencies
+
+
 @pytest.mark.external
 @pytest.mark.common_tools
 def test_inner_join_accepts_upstream_is_true():
@@ -214,6 +240,8 @@ def test_scan_tool_store_picks_latest_version_by_default(tmp_path, monkeypatch):
     # set regardless — which is what we want to assert on.
     for v in versions:
         (pkg_dir / v).mkdir()
+    # Non-selector clutter must not enter loader/error-cleanup admission.
+    (pkg_dir / "not-a-version").mkdir()
 
     reg = ToolRegistryService()
     reg.scan_tool_store(store_path=tmp_path)
@@ -225,19 +253,20 @@ def test_scan_tool_store_picks_latest_version_by_default(tmp_path, monkeypatch):
     # The newest installed version is the workflow's default active version
     # so freshly created nodes execute against the latest available code.
     assert info.active_version == "0.1.10"
+    assert "not-a-version" not in info.load_errors
 
 
 def test_set_active_version_updates_package_active_version(tmp_path):
     """Switching the active version updates ``PackageInfo.active_version``
-    so the GUI can mark which row is current. Lib registry rebinding can
-    soft-fail on test fixtures (no real package on disk) — the field still
-    needs to record the user's choice."""
+    so the GUI can mark which real admitted installation is current."""
     pkg_dir = tmp_path / "fakepkg"
     pkg_dir.mkdir()
     for v in ["0.1.0", "0.2.0"]:
         package_dir = pkg_dir / v / "fakepkg"
         package_dir.mkdir(parents=True)
         (package_dir / "__init__.py").write_text("", encoding="utf-8")
+        from tests.fixtures.package_metadata import write_package_metadata
+        write_package_metadata(package_dir, v)
 
     reg = ToolRegistryService()
     reg.scan_tool_store(store_path=tmp_path)
@@ -392,6 +421,8 @@ def _write_dummy_pkg(
     (utils_dir / "helpers.py").write_text(
         f"def helper_value():\n    return {sibling_helper_value}\n"
     )
+    from tests.fixtures.package_metadata import write_package_metadata
+    write_package_metadata(pkg_dir, version)
 
 
 @pytest.fixture
@@ -578,11 +609,17 @@ def test_reload_failure_rolls_back_to_prior_snapshot(
     reg.register_tool("Unrelated", unrelated)
     assert prior_class is not None
     assert prior_meta is not None
+    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
+
+    prior_module = load_versioned_package(DUMMY_PKG, "1.0.0", tmp_path)
+    assert resolve_tool_class(
+        DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth",
+    ) is prior_class
 
     # Introduce a syntax error in the source.
     _write_dummy_pkg(tmp_path, "1.0.0", syntax_error=True)
 
-    with pytest.raises(Exception):
+    with pytest.raises(SyntaxError):
         reg.reload_package(DUMMY_PKG, "1.0.0")
 
     # Snapshot is unchanged.
@@ -595,9 +632,7 @@ def test_reload_failure_rolls_back_to_prior_snapshot(
     assert after is not None
     assert after.inputs == prior_meta.inputs
     assert reg.get_tool("Unrelated") == unrelated
-    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
-
-    load_versioned_package(DUMMY_PKG, "1.0.0", tmp_path)
+    assert sys.modules[prior_module.__name__] is prior_module
     assert resolve_tool_class(
         DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth",
     ) is prior_class

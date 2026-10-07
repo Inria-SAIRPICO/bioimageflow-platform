@@ -51,6 +51,9 @@ class _FakeWetlandsWrapper:
         self.state = EnvironmentRecipeState.CURRENT
         self.get_calls: list[tuple[str, bool]] = []
         self.provision_callbacks: list[Any] = []
+        self.admit_calls: list[tuple[str, bool]] = []
+        self.recreate_calls: list[str] = []
+        self.shutdown_calls = 0
 
     def inspect_environment(self, env_spec: object) -> EnvironmentRecipeState:
         return self.state
@@ -61,6 +64,7 @@ class _FakeWetlandsWrapper:
         *,
         replace_existing: bool = False,
         on_provision_event: Any = None,
+        on_removal_event: Any = None,
     ) -> _FakeEnvironment:
         env_name = str(getattr(env_spec, "name"))
         self.get_calls.append((env_name, replace_existing))
@@ -78,6 +82,39 @@ class _FakeWetlandsWrapper:
             )
         self._envs[env_name] = self._env
         return self._env
+
+    def admit_runtime(self, env_spec: object, *, provision: bool, replace_stale: bool = False,
+                      admissions: Any = None, on_preparation: Any = None,
+                      on_provision_event: Any = None, on_removal_event: Any = None) -> Any:
+        name = str(getattr(env_spec, "name"))
+        self.admit_calls.append((name, replace_stale))
+        if self.state is EnvironmentRecipeState.STALE and not replace_stale:
+            raise RuntimeError("Stale generation requires replacement")
+        if on_preparation is not None:
+            on_preparation(SimpleNamespace(action="updating" if self.state is EnvironmentRecipeState.STALE else "reusing"))
+        self.state = EnvironmentRecipeState.CURRENT
+        receipt = SimpleNamespace(generation_id=getattr(self, "generation", 0))
+        if admissions is not None:
+            admissions[(name, "recipe")] = receipt
+        return receipt
+
+    def validate_runtime_receipt(self, env_spec: object, receipt: Any) -> Any:
+        if receipt.generation_id != getattr(self, "generation", 0):
+            raise RuntimeError("Generation changed after admission")
+        return receipt
+
+    def recreate(self, env_spec: object, **kwargs: Any) -> _FakeEnvironment:
+        name = str(getattr(env_spec, "name"))
+        self.recreate_calls.append(name)
+        self._env.exit()
+        return self.get_or_create(env_spec, replace_existing=True, **kwargs)
+
+    def is_running(self, env_name: str) -> bool:
+        return env_name in self._envs
+
+    def shutdown_all(self) -> None:
+        self.shutdown_calls += 1
+        self._envs.clear()
 
     def stop(self, env_name: str) -> bool:
         env = self._envs.pop(env_name, None)
@@ -163,6 +200,7 @@ async def test_recreate_uses_public_managed_replacement_path(tmp_path: Path) -> 
     assert await service.recreate("cellpose-env") == "running"
 
     assert wetlands._env.exited is True
+    assert wetlands.recreate_calls == ["cellpose-env"]
     assert wetlands.get_calls == [("cellpose-env", True)]
     assert registry.get_package.return_value.environment_status == "running"
 
@@ -191,7 +229,8 @@ async def test_background_refresh_rebuilds_only_existing_stale_general(
     service.start_standard_environment_refresh()
     await asyncio.wait_for(service._standard_refresh_task, timeout=1)
 
-    assert wetlands.get_calls == [(GENERAL_ENV.name, True)]
+    assert wetlands.admit_calls == [(GENERAL_ENV.name, True)]
+    assert wetlands.get_calls == []
 
 
 @pytest.mark.parametrize("state", [EnvironmentRecipeState.MISSING, EnvironmentRecipeState.CURRENT])
@@ -220,7 +259,7 @@ async def test_background_refresh_failure_releases_automatic_preparation_guard(
     def fail(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("controlled startup preparation failure")
 
-    monkeypatch.setattr(manager, "get_or_create", fail)
+    monkeypatch.setattr(manager, "admit_runtime", fail)
     service.start_standard_environment_refresh()
     await asyncio.wait_for(service._standard_refresh_task, timeout=2)
 
@@ -280,18 +319,14 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
                 second_attempted.set()
             return snapshot
 
-        def get_or_create(self, env_spec: object, *, replace_existing: bool = False,
-                          on_preparation: Any = None, **kwargs: Any) -> _FakeEnvironment:
+        def admit_runtime(self, env_spec: object, **kwargs: Any) -> Any:
+            # Simulate public admission's current-state decision, worker-free.
+            state = self.inspect_environment(env_spec)
             with self.lock:
-                if on_preparation is not None:
-                    on_preparation(SimpleNamespace(action="updating" if replace_existing else "reusing"))
-                if replace_existing:
+                if state is EnvironmentRecipeState.STALE:
                     self.retired_generations.extend(self.submitted_generations)
                     self.generation += 1
-                self.state = EnvironmentRecipeState.CURRENT
-                kwargs.pop("max_workers", None)
-                kwargs.pop("worker_timeout", None)
-                return super().get_or_create(env_spec, replace_existing=replace_existing, **kwargs)
+                return super().admit_runtime(env_spec, **kwargs)
 
         def submit_processing_task(self, env_spec: object, payload: dict, **kwargs: Any) -> object:
             self.submitted_generations.append(self.generation)
@@ -306,19 +341,24 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
         manager, context=ExecutionContext(execution_id="startup-race", workflow_id="wf", draft_revision=1),
         current_node_id=lambda: "worker", on_preparation=lambda *_args: None,
         on_provision_event=lambda *_args: None, on_ready=lambda *_args: None,
+        on_admitted=lambda *_args: None,
         on_failure=lambda *_args: None, on_stopped=lambda *_args: None,
         replacement_authorizer=service.can_replace_processing_environment,
         environment_lock=service.processing_environment_lock,
     )
+    def prepare_and_submit() -> Any:
+        receipt = adapter.admit_runtime(GENERAL_ENV, provision=True, admissions={})
+        return adapter.submit_processing_task(GENERAL_ENV, {"row": 1}, runtime_receipt=receipt)
+
     submission = None
     if first_owner == "startup":
         service.start_standard_environment_refresh()
     else:
-        submission = asyncio.create_task(asyncio.to_thread(adapter.submit_processing_task, GENERAL_ENV, {"row": 1}))
+        submission = asyncio.create_task(asyncio.to_thread(prepare_and_submit))
     try:
         assert await asyncio.to_thread(inspected.wait, 5)
         if first_owner == "startup":
-            submission = asyncio.create_task(asyncio.to_thread(adapter.submit_processing_task, GENERAL_ENV, {"row": 1}))
+            submission = asyncio.create_task(asyncio.to_thread(prepare_and_submit))
         else:
             service.start_standard_environment_refresh()
         assert await asyncio.to_thread(second_attempted.wait, 5)
@@ -405,3 +445,33 @@ def test_concurrent_first_manager_access_constructs_one_pool_owner(monkeypatch: 
     entries = guard.entries
     assert service.manager is returned[0]
     assert guard.entries == entries  # Initialized reads remain lock-free.
+
+async def test_close_never_constructs_unused_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbid_manager() -> None:
+        raise AssertionError("Shutdown must not initialize a manager")
+    monkeypatch.setattr("bioimageflow.env_manager.WetlandsEnvManager", forbid_manager)
+    await ToolEnvironmentService(registry=_registry()).close()
+
+
+async def test_failed_pool_close_preserves_manager_for_retry(tmp_path: Path) -> None:
+    manager = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env"))
+    manager._envs["cellpose-env"] = manager._env
+    original = manager.shutdown_all
+    manager.shutdown_all = MagicMock(side_effect=RuntimeError("physical close failed"))
+    service = ToolEnvironmentService(registry=_registry(), wetlands_manager=manager)
+    with pytest.raises(RuntimeError, match="physical close failed"):
+        await service.close()
+    assert service.manager is manager
+    assert manager._envs["cellpose-env"] is manager._env
+    manager.shutdown_all = original
+    await service.close()
+    assert manager._envs == {}
+
+
+def test_tool_recipe_reconstruction_preserves_flexible_version_policy() -> None:
+    registry = _registry()
+    tool = registry.list_tools.return_value[0]
+    tool.environment["dependencies"] = {"pip": ["demo>=1,<2"]}
+    tool.environment["allow_flexible_versions"] = True
+    spec = ToolEnvironmentService(registry=registry)._environment_spec(tool)
+    assert spec is not None and spec.allow_flexible_versions is True

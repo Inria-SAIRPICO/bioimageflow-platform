@@ -14,7 +14,7 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
-from bioimageflow_server.routers.graph import get_dev_mode as graph_get_dev_mode
+from bioimageflow_server.routers.tools import get_tool_environment_service
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
 )
@@ -352,19 +352,52 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
     assert on_disk["settings_version"] == 3
 
 
-async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> None:
-    path = tmp_path / "settings.json"
-    store = SettingsStore(path=path)
-    config = AppConfig(
-        settings_store=store,
-        workspace_path=tmp_path / "workspace",
-        disable_hot_reload=True,
+async def test_shutdown_drains_execution_then_pools_then_scope_retry(
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    order: list[str] = []
+    execution = SimpleNamespace(
+        close=AsyncMock(side_effect=lambda: order.append("execution")),
+        retry_resource_cleanup=lambda: order.append("scopes"),
     )
-    app = create_app(config)
+    environments = SimpleNamespace(
+        start_standard_environment_refresh=lambda: None,
+        close=AsyncMock(side_effect=lambda: order.append("pools")),
+    )
+    app = create_app(AppConfig(
+        workspace_path=tmp_path / "workspace", disable_hot_reload=True,
+        execution_manager=execution, tool_environment_service=environments,
+    ))
     async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            await client.patch("/api/v1/settings", json={"dev_mode": True})
-        # Dependency override should call into the store for live reads.
-        assert app.dependency_overrides[graph_get_dev_mode]() is True
+        pass
+    assert order == ["execution", "pools", "scopes"]
+
+
+async def test_shutdown_pool_failure_retains_owner_and_continues_settings_flush(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    from types import SimpleNamespace
+
+    order: list[str] = []
+    execution = SimpleNamespace(
+        close=AsyncMock(), retry_resource_cleanup=lambda: order.append("scopes"),
+    )
+    environments = SimpleNamespace(
+        start_standard_environment_refresh=lambda: None,
+        close=AsyncMock(side_effect=RuntimeError("controlled pool close failure")),
+    )
+    store = SettingsStore(tmp_path / "settings.json")
+    store.flush = AsyncMock()  # type: ignore[method-assign]
+    app = create_app(AppConfig(
+        workspace_path=tmp_path / "workspace", disable_hot_reload=True,
+        settings_store=store, execution_manager=execution,
+        tool_environment_service=environments,
+    ))
+    async with app.router.lifespan_context(app):
+        pass
+    assert order == ["scopes"]
+    assert app.dependency_overrides[get_tool_environment_service]() is environments
+    store.flush.assert_awaited_once()
+    assert "Processing environment shutdown remains pending" in caplog.text

@@ -19,7 +19,7 @@ type EnvironmentIdentity = {
 type EnvironmentEvidence = {
   inventory: EnvironmentIdentity[]
   recipe_state: string
-  preparations: Array<{ action: string; name: string; replace_existing: boolean }>
+  preparations: Array<{ action: string; name: string }>
   events: Array<{ operation_id: string; kind: string; message: string }>
   retired_worker_pids: number[]
   retired_workers_alive: number[]
@@ -172,7 +172,7 @@ test('GUI Run replaces one real stale worker generation with visible setup and r
   expect(events.filter(event => event.type === 'environment_status'
     && event.env_name === ENVIRONMENT && event.status === 'updating')).toHaveLength(1)
   await assertExactWorkerOutput(page, name)
-  expect(afterReplacement.preparations.filter(item => item.replace_existing)).toHaveLength(1)
+  expect(afterReplacement.preparations.filter(item => item.action === 'updating')).toHaveLength(1)
   expect(afterReplacement.events.some(event => event.kind === 'step'
     && event.message.includes('Pixi installed'))).toBe(true)
 
@@ -192,7 +192,7 @@ test('GUI Run replaces one real stale worker generation with visible setup and r
   await assertExactWorkerOutput(page, name)
   const reused = await evidence(page)
   expect(generation(reused)).toEqual(replacement)
-  expect(reused.preparations.filter(item => item.replace_existing)).toHaveLength(1)
+  expect(reused.preparations.filter(item => item.action === 'updating')).toHaveLength(1)
   expect(events.filter(event => event.type === 'environment_status'
     && event.env_name === ENVIRONMENT && event.status === 'updating')).toHaveLength(1)
   await testInfo.attach('real-generation-and-worker-evidence', {
@@ -215,7 +215,7 @@ test('GUI reports an actual injected Pixi replacement failure and recovers on Ru
   await page.locator('.dv-tab').filter({ hasText: 'Logger' }).click()
   await expect(page.getByTestId('panel-logger')).toContainText('E1 injected Pixi install failure')
   const failed = await evidence(page)
-  expect(failed.preparations[0]).toMatchObject({ action: 'updating', replace_existing: true })
+  expect(failed.preparations[0]).toMatchObject({ action: 'updating' })
   expect((await page.request.post(`${API}/nodes/${WORKER}/data/query`, {
     data: { workflow_name: name },
   })).status()).toBe(404)

@@ -1,4 +1,4 @@
-"""Worker fixture: importable using only the worker's core dependency."""
+"""Ordinary worker declarations for platform runtime and stale-owner checks."""
 
 import os
 from pathlib import Path
@@ -30,3 +30,18 @@ class WorkerNumbers(ProcessingTool):
             process_id=os.getpid(),
             report=report,
         )
+
+
+class StaleWorkerNumbers(WorkerNumbers):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(
+        name="platform-stale-worker-numbers", dependencies={"python": "3.12"},
+    )
+
+
+class IncompatibleWorkerNumbers(WorkerNumbers):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec(
+        name="platform-incompatible-worker",
+        dependencies={"pip": ["bioimageflow-core==0.0.0"]},
+    )

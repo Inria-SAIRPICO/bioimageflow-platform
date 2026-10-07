@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from watchdog.events import FileMovedEvent
+from tests.fixtures.package_metadata import write_package_metadata
 
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
@@ -940,15 +941,14 @@ async def test_tool_reload_payload_contains_full_outputs(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Task 6: dev_mode cache hashing precondition tests
+# Source capture across tool reloads
 # ---------------------------------------------------------------------------
 
 
-def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
+def test_source_change_observable_in_reloaded_class(tmp_path):
     """When a tool source actually changes, ``inspect.getsource(new_class)``
-    differs byte-for-byte from the old. This is the precondition the
-    bioimageflow.cache module relies on to invalidate the cache hash for
-    the affected tool — Task 6 just locks it down here."""
+    differs byte-for-byte from the old. This verifies source capture
+    after reload, independently of runtime admission and cache identity."""
     import inspect
 
     from bioimageflow.tool_loader import (
@@ -976,6 +976,7 @@ def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
     )
     (pkg_dir / "utils").mkdir()
     (pkg_dir / "utils" / "__init__.py").write_text("")
+    write_package_metadata(pkg_dir, ver)
 
     try:
         mod = load_versioned_package(pkg, ver, tmp_path)
@@ -998,6 +999,7 @@ def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
             "        return self.Outputs(result='v2')\n"
         )
 
+        write_package_metadata(pkg_dir, ver)
         mod = load_versioned_package(pkg, ver, tmp_path)
         new_src = inspect.getsource(mod.GaussianSmooth)
         assert new_src != old_src
@@ -1012,13 +1014,10 @@ def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
         sys.path[:] = [p for p in sys.path if pkg not in p]
 
 
-def test_dev_mode_source_unchanged_for_sibling_helper_edit(tmp_path):
+def test_class_source_unchanged_for_sibling_helper_edit(tmp_path):
     """Editing a sibling helper file leaves the affected tool's source
-    byte-identical, so dev_mode's source_hash doesn't invalidate that
-    tool's cache. The reconciliation contract documented in the plan
-    relies on this — the frontend can optimistically flip status to
-    out_of_date but the backend's authoritative response will say
-    CACHED for the sibling-only edit."""
+    byte-identical. This checks only the class's text, not the complete
+    admitted package identity or whether prior cached results are reusable."""
     import inspect
 
     from bioimageflow.tool_loader import (
@@ -1048,6 +1047,7 @@ def test_dev_mode_source_unchanged_for_sibling_helper_edit(tmp_path):
     helper_dir.mkdir()
     (helper_dir / "__init__.py").write_text("")
     (helper_dir / "helpers.py").write_text("def helper():\n    return 1\n")
+    write_package_metadata(pkg_dir, ver)
 
     try:
         mod = load_versioned_package(pkg, ver, tmp_path)
@@ -1056,11 +1056,12 @@ def test_dev_mode_source_unchanged_for_sibling_helper_edit(tmp_path):
 
         # Edit the sibling helper but leave filters.py untouched.
         (helper_dir / "helpers.py").write_text("def helper():\n    return 999\n")
+        write_package_metadata(pkg_dir, ver)
 
         mod = load_versioned_package(pkg, ver, tmp_path)
         new_src = inspect.getsource(mod.GaussianSmooth)
-        # GaussianSmooth's own source is byte-identical — the cache
-        # signature won't invalidate for it.
+        # Only class text is unchanged; complete admitted package identity
+        # includes the edited sibling and is outside this oracle's scope.
         assert new_src == old_src
     finally:
         try:

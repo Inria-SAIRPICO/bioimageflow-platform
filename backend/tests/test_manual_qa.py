@@ -50,7 +50,7 @@ validated = GraphValidationService(registry).validate_with_compilation(
     graph, storage_path=store.get_storage_path("imported"),
 )
 assert validated.validation.valid, validated.validation.errors
-assert validated.compilation.workflow.compute(dev_mode=True)[sys.argv[2]].tolist() == [2, 3, 4]
+assert validated.compilation.workflow.compute()[sys.argv[2]].tolist() == [2, 3, 4]
 """, str(workflows), "Nested result" if nested else "Incremented number"],
         capture_output=True,
         text=True,
@@ -151,7 +151,7 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
             registry,
             storage_path=store.get_storage_path(workflow_id),
         )
-        result = built.workflow.compute(dev_mode=True)
+        result = built.workflow.compute()
         assert result[output_name].tolist() == [2, 3, 4]
 
     built_failure = build_workflow(
@@ -160,7 +160,7 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
         storage_path=store.get_storage_path("QA/Controlled Failure"),
     )
     with pytest.raises(RuntimeError, match="Intentional manual QA failure"):
-        built_failure.workflow.compute(dev_mode=True)
+        built_failure.workflow.compute()
 
 
 def test_prepare_is_idempotent_for_an_unchanged_root(tmp_path: Path) -> None:

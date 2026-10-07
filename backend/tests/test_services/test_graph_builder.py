@@ -211,7 +211,7 @@ class BoundTool(ProcessingTool):
     payload = {
         "archive_version": 1, "custom_sources": [record],
         "workflow": {
-            "schema_version": 1, "name": "bound", "display_name": "Bound",
+            "schema_version": 2, "name": "bound", "display_name": "Bound",
             "nodes": [node], "edges": [], "interface": {"inputs": [], "outputs": []},
             "config": {"engine": "wetlands", "execution": "sequential"},
         },
@@ -297,8 +297,10 @@ class BoundTool(DataFrameTool):
         directory = store / package / version / package
         directory.mkdir(parents=True)
         (directory / "__init__.py").write_text(source)
+        from tests.fixtures.package_metadata import write_package_metadata
+        write_package_metadata(directory, version)
     portable = {
-        "schema_version": 1, "name": "bound", "display_name": "Bound",
+        "schema_version": 2, "name": "bound", "display_name": "Bound",
         "nodes": [{
             "type": "tool", "name": "bound", "tool_module": package,
             "tool_class": "BoundTool", "tool_package": package,
@@ -367,7 +369,7 @@ class BoundTool(DataFrameTool):
             )
         elif case == "metadata":
             from bioimageflow_server.services.graph_validator import _validation_from_compilation
-            validation = _validation_from_compilation(graph, built, dev_mode=False)
+            validation = _validation_from_compilation(graph, built)
             metadata = validation.node_tools["bound"]
             assert metadata.tool_type == "ProcessingTool"
             assert metadata.outputs["value"]["type"] == "int"

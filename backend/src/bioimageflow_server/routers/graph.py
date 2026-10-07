@@ -50,10 +50,6 @@ def get_execution_manager() -> Any | None:
     return None
 
 
-def get_dev_mode() -> bool:
-    return True
-
-
 def get_workflow_store() -> WorkflowStoreService | None:
     return None
 
@@ -96,7 +92,6 @@ async def validate_graph_endpoint(
     registry: ToolRegistryService = Depends(get_tool_registry),
     storage_path: Path | None = Depends(get_storage_path),
     execution_manager: Any | None = Depends(get_execution_manager),
-    dev_mode: bool = Depends(get_dev_mode),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ValidationResult:
     if isinstance(body, GraphValidationRequest):
@@ -121,7 +116,6 @@ async def validate_graph_endpoint(
                 validation = await validation_service.validate_async(
                     graph,
                     storage_path=context.storage_path,
-                    dev_mode=dev_mode,
                 )
                 await run_graph_work(
                     partial(

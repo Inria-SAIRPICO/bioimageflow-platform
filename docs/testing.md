@@ -25,13 +25,18 @@ cd ../frontend
 bun install --frozen-lockfile
 ```
 
-The current backend lock resolves BioImageFlow and BioImageFlow Core from the sibling source checkout as editable packages; other dependencies remain locked to published versions. A checkout without that sibling source cannot run `uv sync --frozen` until the library fix is published and the platform returns to a registry pin.
-Reuse a checkout's prepared environments while its lockfiles, editable dependency metadata, and installation options remain compatible; resync the affected environment when installation requirements change.
+The backend lock resolves published `bioimageflow[parsl,psij]==0.9.1`, Core 0.5 and Wetlands 2.6.1 from the registry; ordinary tests and CI do not require a sibling source checkout.
+Installing the explicit scheduler dependency groups preserves the packaged capability and does not certify excluded distributed features.
+Explicit source investigations use a separate owned interpreter and record their library revision, as described in [Local Development](developer/local-development.md#use-local-bioimageflow-source); they do not certify published compatibility.
+Reuse a checkout's prepared environments while its lockfiles, dependency metadata and installation options remain compatible; resync the affected environment when installation requirements change.
 Keep dependencies and build/runtime state separate between worktrees, and keep browser runtime roots and certification stores disposable even when dependency installation is reused.
 
 ## Focused tests while editing
 
 Map changed files to their owning service/session, callers, persistence and event consumers, and public library boundary before choosing selectors; `focus related` alone cannot establish that impact map.
+Tools whose executable source is admitted by the library belong in ordinary imported fixture packages such as `backend/platform_test_tools`, separate from pytest test modules; pytest assertion rewriting must not become their admitted source authority.
+Temporary installed-package fixtures need real distribution metadata and a complete RECORD computed from their current files; refresh that authority after intentional source edits.
+Portable-workflow and immutable-record fixtures use the current public graph and result-relation contracts.
 Use the narrowest native selector that exercises the code being changed:
 
 ```bash

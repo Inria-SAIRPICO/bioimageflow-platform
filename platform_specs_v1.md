@@ -40,6 +40,8 @@ Dataset management endpoints (Section 2.4.10) are available in both environments
 - **Framework:** FastAPI (async, OpenAPI docs auto-generated)
 - **WebSocket:** For real-time progress, logs, and node state updates
 - **Process model:** Single server process; BioImageFlow workflow execution runs in a background thread/task (via `asyncio.to_thread` or a dedicated executor) to keep the API responsive.
+- **Dependencies:** Published registry SDK/Core/provider versions are locked in `backend/uv.lock`; the platform requests BioImageFlow's `parsl` and `psij` dependency groups for its packaged target-integration surface.
+- **Development fixtures:** Executable seeded tools are packaged separately from server routes and bundled workflow scripts, retaining ordinary finite primary-source admission when development routes are enabled.
 
 ### 2.2 Architecture: Draft-Backed Full-State Sync
 
@@ -60,6 +62,8 @@ A server restart loses an attached local running workflow, while root drafts and
 | `napari_launcher: NapariLauncher or NapariLauncherPool | None` | Manages the legacy process and UUID-keyed registered-environment processes (lazily created) |
 
 There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation of root edits persists an accepted draft, and Run and Clear load that exact draft by workflow ID and revision before compiling it. Run Selected compiles the complete accepted graph, then derives the requested root node IDs plus their transitive upstream root IDs from its edges. A diagnostic is ignored only when its scoped node path proves that it belongs to a root node outside this selected execution scope; diagnostics owned by a selected or upstream workflow boundary, including descendant paths, remain blocking, as do global or otherwise unattributable diagnostics.
+If selected execution ignores proven-unrelated diagnostics, it then publicly compiles and validates the selected-plus-upstream root projection, preserving configuration, scoped identities, complete nested workflow boundaries, and relevant interface ports and edges; every projection diagnostic remains blocking, and accepted draft authority is rechecked after compilation before execution.
+Clean selected graphs reuse their complete-graph compilation.
 
 **Key design points:**
 - **Backend draft source of truth.** Open workflow state is persisted as a backend draft under the workflow directory. Frontend memory and IndexedDB are fallback/local interaction state, not the authoritative saved draft.
@@ -77,9 +81,11 @@ There is no `last_valid_workflow` cache and no authoritative backend editor sess
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
 
-The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.4.1 or newer in the 0.4.x line resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
+The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.x resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
+Store scanning uses the library's public installation-selector admission to ignore unrelated directories before loading or unloading a version.
+Supported selectors with invalid or incomplete installations remain visible with their original load diagnostic; secondary unload failures do not replace that diagnostic.
 
 **BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
 
@@ -149,6 +155,9 @@ Per-field `OutputFieldSchema`:
 | Key | Type | Notes |
 |-----|------|-------|
 | `type` | `string` | Display name. |
+| `type_spec` | `object` | The library's finite semantic annotation descriptor, independent of the display label (for example `{"kind": "Path"}`). |
+| `required` | `boolean` | `true` when no class-level output default is declared. |
+| `nullable` | `boolean` | `true` when the output annotation admits `None`; independent of `required`. |
 | `default` | `any` | Path-template string for `Path`-typed outputs (e.g. `"{input_image.stem}_mask{ext}"`), or `null`. |
 | `template` | `string \| null` | Present when the output default was declared with `Template(...)`; same pattern as `default` for path-template defaults. |
 | `image_spec` | `object \| null` | Same shape as on inputs. |
@@ -224,18 +233,21 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     }
   },
   "outputs": {
-    "mask": {"type": "ImageFile", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
-    "cell_count": {"type": "int", "default": null, "image_spec": null}
+    "mask": {"type": "ImageFile", "type_spec": {"kind": "Path"}, "default": "{input_image.stem}_mask{ext}", "required": false, "nullable": false, "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "cell_count": {"type": "int", "type_spec": {"kind": "int"}, "default": null, "required": true, "nullable": false, "image_spec": null}
   },
   "environment": {
     "name": "cellpose",
-    "dependencies": {"conda": ["cellpose"], "pip": []},
+    "dependencies": {"conda": ["cellpose==4.0.8"], "pip": []},
+    "allow_flexible_versions": false,
     "path": "/home/user/.bioimageflow/wetlands/environments/cellpose"
   }
 }
 ```
 
 **Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel tool list and Manage Tools dialog. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
+
+Tool environment metadata preserves the declared recipe's name, detached dependency projection and `allow_flexible_versions` flag, so reconstructing a recipe does not turn an explicitly flexible requirement into an exact-only requirement.
 
 **Example tool definition with GUIMeta:**
 ```python
@@ -316,12 +328,15 @@ class CellposeSegmenter(ProcessingTool):
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
-**Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. Before first use, BioImageFlow compares the requested recipe with Wetlands-managed state. A stale BioImageFlow-owned processing environment is closed and replaced lazily through the public managed `replace_existing=True` path; a matching environment is reused, and a missing environment is created. The platform never implements this by deleting directories or editing `pixi.toml`. Existing user-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their lifecycle owners and are not replaced by processing execution. After application startup, an already-existing stale `bioimageflow-general` environment is refreshed in the background, but a missing one is not proactively created. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources), and the labeled Create/recreate button is the explicit user-authorized force-rebuild action. Environment status is shown via button color and label (stopped/creating/updating/running). Environment controls are disabled during execution or another operation on the same environment.
+**Environment lifecycle:** Environments are automatically started by Wetlands when a workflow is executed. Before first use, BioImageFlow compares the requested recipe with Wetlands-managed state. Before managed Processing identity and cache lookup, a run-scoped adapter uses public `admit_runtime` with the engine's operation-owned admission dictionary; an authorized stale BioImageFlow-owned processing recipe is physically retired and replaced, a matching ready environment is reused, and a missing environment is created without starting scientific workers. The platform never implements this by deleting directories or editing `pixi.toml`. Existing user-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their lifecycle owners and are not replaced by processing execution. After application startup, an already-existing stale `bioimageflow-general` environment is refreshed in the background, but a missing one is not proactively created. The Start/Stop buttons allow manual control (e.g., pre-warming an environment, or freeing resources), and the labeled Create/recreate button is the explicit user-authorized force-rebuild action. Environment status is shown via button color and label (stopped/creating/updating/ready/running); ready content does not imply a running worker pool. Environment controls are disabled during execution or another operation on the same environment.
 Every platform-owned Wetlands provisioning path subscribes to its public operation events before waiting for the environment and streams setup stages and sanitized Pixi stdout/stderr lines to the Logger panel. During local workflow execution, those entries retain their execution and node attribution; replacement publishes `updating` and retains “Updating execution environment” for the affected node. A node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins. A tool may constrain `bioimageflow-core` only compatibly with the platform's exact runtime dependency; an explicit divergent requirement is reported as `environment_incompatible` during graph validation and is never silently replaced with another core version.
 Workflow execution passes a run-scoped observer to the engine through the public environment-manager API; the process-wide shared manager keeps its original methods across successive runs.
-The observer prepares the environment before processing submission during ordinary whole-workflow execution as well as stepwise execution; authorization and setup progress cannot depend on a caller explicitly preparing individual steps.
-Automatic Run preparation and background `bioimageflow-general` refresh share a platform service guard across fresh recipe inspection, conditional replacement, and processing submission handoff, so the refresh cannot retire a newly current Run pool using an earlier stale observation.
-This guard is released when submission returns its task handle and does not wait for task completion or change explicit manual lifecycle actions.
+The observer prepares runtime content before the scientific key and cache lookup during whole-workflow and stepwise execution; a cache hit starts no scientific pool.
+Admission reports ready when no pool is running and preserves running for an already-live owned pool, so warm cache-only reuse cannot hide its Stop control.
+Dispatch revalidates and forwards the exact admitted runtime receipt and worker grant, without replacing or reprovisioning a generation already used for cache admission.
+Automatic Run admission and background `bioimageflow-general` refresh share a platform service guard across fresh inspection and conditional replacement; processing submission separately fences the held receipt under that same guard, so a later generation cannot receive a task identified against the earlier generation.
+The guard is released after admission or submission returns and never waits for scientific task completion.
+Manual Create/recreate uses public `recreate` once, forwards separate removal/provision events, refuses protected lifecycle owners, and retains failed physical pool-close ownership for retry.
 Normal development launch profiles explicitly use the installed published core. Separately named `(local core)` profiles set `BIOIMAGEFLOW_CORE_SOURCE` to the sibling source project, expose that same package to the platform process through `PYTHONPATH`, and use a repository-local `BIOIMAGEFLOW_WETLANDS` root. An invalid source is a configuration error, and local-core recipes never share lifecycle state with the normal Wetlands root.
 
 #### 2.4.1b Error Response Format
@@ -590,9 +605,12 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 
 After a successful Clear, the retained live execution-status snapshot for that same workflow reflects the cleared and downstream statuses, including on browser reconnection. The historical `last_result` remains the result of the completed run and is not rewritten by Clear.
 On a subsequent authoritative `GET /workflow-drafts/{id}`, cache-derived node statuses and `cache_corrupt` diagnostics are projected from the current accepted graph and workflow storage, including after backend restart. The response retains accepted non-cache diagnostics, replaces cache diagnostics only for nodes examined by the fresh plan, and derives `valid` from the response errors; a node unavailable to fresh planning retains its accepted cache diagnostic and failed status. The persisted draft validation, graph, revision, writer, timestamp, saved baseline, and historical execution result are not rewritten by this read. An enabled downstream node whose library plan is `pending_upstream` projects `out_of_date` if it retains a latest output, or `unexecuted` if it has none; disabled and other planned statuses retain their ordinary semantics. Compilation occurs outside the workflow mutation lock; the accepted draft, identity generation, and storage path are rechecked before planning and latest-output lookup under the same lock used by Clear's commit, retrying if authority changes.
+Each stable projection attempt reuses one public compilation for definition validation and cache projection, with at most one plan after that authority fence; no compilation or metadata authority is retained across requests.
+A synthesized revision-zero response adopts the complete validation result, including definition diagnostics and resolved tool schemas, while a persisted draft preserves its accepted non-cache diagnostic/schema authority.
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
 The `run` endpoint loads the named accepted root draft; it does not infer graph meaning from an editor session or a previously submitted request. Full Run and Run Selected compile that complete graph. Full Run rejects every validation diagnostic. Run Selected derives the requested root node IDs plus all transitive upstream root IDs from the accepted graph edges and filters out only diagnostics whose scoped node path proves ownership by an unrelated root node. A selected or upstream workflow node owns all of its descendant diagnostic paths for this purpose. An empty target list, any unknown requested root ID, any requested target unresolved in the partial compiled workflow, a missing compiled workflow, and every global or unattributable diagnostic reject the request; mixed valid and invalid target lists never degrade to an untargeted run.
+A diagnostic library workflow is never passed to compute after unrelated errors were ignored: the accepted dependency closure receives a fresh public compilation, every resulting error is refused, and draft authority is rechecked before dispatch.
 
 Normal root-canvas runs address the accepted draft revision:
 
@@ -686,7 +704,6 @@ class Settings(BaseModel):
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
-    dev_mode: bool = True
     enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None
     max_upload_size: int = 2 * 1024**3
@@ -889,7 +906,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
-| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "running" | "failed"}` | Environment state change (asynchronous creation or replacement, manual start/stop) |
+| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "ready" | "running" | "failed"}` | Environment state change; ready content is separate from worker startup |
 | `workflow_tree_changed` | `{action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
@@ -952,7 +969,7 @@ Reloading an inactive package version preserves both the active class bindings a
 
 **Hot-reload during editing:** If the user is editing a parameter field (field has focus) when a `tool_reload` message arrives, the update is buffered until the field loses focus (blur event). This prevents data loss from mid-edit schema changes. If the field being edited was removed in the new schema, a warning toast is shown after blur: "Field '{name}' was removed by the tool update."
 
-**Development mode:** The GUI always runs with `dev_mode=True` (cache invalidation on tool code change). There is no toggle — this is the appropriate default for an interactive GUI where users iterate on tool code.
+**Scientific identity:** Admitted executable source and ready runtime content always participate in cache identity through the library's public contracts; there is no development-mode setting or API argument.
 
 **Tool reloads during execution** affect only future executions. The currently running Workflow uses the tool code that was loaded when execution started. This is the natural behavior of Python object references — the Workflow holds references to the tool classes loaded at build time.
 
@@ -967,9 +984,10 @@ Reloading an inactive package version preserves both the active class bindings a
 4. Open pywebview window pointing to the server URL
 
 **Shutdown sequence:**
-1. If execution is running, send stop signal and wait (with timeout)
-2. Terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`)
-3. Request explicit release of only the application-owned shared-array controller scopes after their worker grants have physically retired.
+1. Close new Run admission under the execution preparation gate, then request cancellation and await the accepted task with a bounded deadline; a timeout retains its task and cleanup owners, and later close calls may retry cleanup without reopening admission.
+2. Stop background processing refresh and call public `shutdown_all` only on the already-created processing manager, retaining failed pools and grants for retry; terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`).
+3. After copying durable projections and result exports, close the supplied execution engine and release only that run's exact result groups; warm external pools may still retain physical grants.
+   Retain every application-owned controller scope and failed cleanup owner, and retry its explicit close after worker grants have physically retired.
    Wait for local mapped readers to drain before deleting owned backing files; if the shutdown deadline expires or cleanup fails, report the exact scope as pending or failed and retain its backing rather than claim successful cleanup.
    Do not force-close live NumPy views, delete another owner’s files or perform global prefix-based shared-memory cleanup.
 4. Save any pending settings changes
@@ -1590,7 +1608,7 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 3. A root canvas debounces validated full-graph `PUT /workflow-drafts/{id}` writes with `expected_revision`; a nested canvas debounces revision-CAS snapshot writes.
 4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
 5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas or flush the active private snapshot and wait for acceptance for an active nested canvas. Every production graph owner is a registered canvas session; state-free menu and editor shell adapters only delegate to that active registered session.
-6. Run submits the workflow ID and accepted draft revision after the canvas freshness barrier. Full Run and Run Selected both compile the complete backend-loaded graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches, without pruning or rebuilding the graph.
+6. Run submits the workflow ID and accepted draft revision after the canvas freshness barrier. Full Run and Run Selected both compile the complete backend-loaded graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches. Only when such diagnostics were ignored, it publicly compiles the selected-plus-upstream execution projection and rechecks accepted draft authority; clean graphs need no second compilation.
 7. During attached local execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas. Durable managed remote editing follows [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
 8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
 

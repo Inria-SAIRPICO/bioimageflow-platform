@@ -13,7 +13,7 @@ from bioimageflow_server.models.graph import ColumnEdge, ToolNodeState
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.fixtures.held_worker import HeldWorkerNumbers
+from platform_test_tools.held import HeldWorkerNumbers
 from tests.graph_factory import graph_state
 from tests.platform_fixtures import SourceNumbers
 
@@ -91,7 +91,7 @@ def test_held_worker_fixture_registers_and_compiles_as_sequential_wetlands(
 
     origin = resolve_worker_tool_origin(HeldWorkerNumbers)
     assert origin.class_name == "HeldWorkerNumbers"
-    assert origin.module == "tests.fixtures.held_worker"
+    assert origin.module == "platform_test_tools.held"
 
 
 def test_held_worker_acknowledges_cooperative_cancellation_without_output(

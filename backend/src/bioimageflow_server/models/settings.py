@@ -72,8 +72,7 @@ class Settings(BaseModel):
     """Application settings from GET/PATCH /settings.
 
     The model rejects unknown fields (``extra="forbid"``) so typos in PATCH
-    bodies surface as 422s rather than being silently dropped. ``dev_mode``
-    is permissive at the model layer; the GUI router rejects ``dev_mode=False``.
+    bodies surface as 422s rather than being silently dropped.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -94,7 +93,6 @@ class Settings(BaseModel):
     default_execution_target_id: str = "local"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
-    dev_mode: bool = True
     enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE

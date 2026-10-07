@@ -93,10 +93,10 @@ def _clear_active_workflow() -> Any:
 
 
 def _seed_cache(storage_path: Path, registry: ToolRegistryService,
-                graph: GraphState, dev_mode: bool) -> None:
+                graph: GraphState) -> None:
     """Populate the cache by executing the workflow through the clean API."""
     workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=storage_path)
-    workflow.compute(dev_mode=dev_mode)
+    workflow.compute()
 
 
 def _chain_graph() -> GraphState:
@@ -121,12 +121,11 @@ def _chain_graph() -> GraphState:
     )
 
 
-@pytest.mark.parametrize("dev_mode", [True, False])
 def test_empty_cache_reports_unexecuted(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, tmp_path: Path,
 ) -> None:
     graph = _chain_graph()
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     assert result.valid is True
     for nid in ("src", "mid"):
         status = result.node_statuses[nid]
@@ -134,30 +133,28 @@ def test_empty_cache_reports_unexecuted(
         assert status.cached is False
 
 
-@pytest.mark.parametrize("dev_mode", [True, False])
 def test_seeded_cache_reports_executed(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, tmp_path: Path,
 ) -> None:
     """After seeding the cache via the engine's own hash, every node
     must be reported as ``executed``/``cached=True`` by the validator."""
     graph = _chain_graph()
-    _seed_cache(tmp_path, registry, graph, dev_mode)
+    _seed_cache(tmp_path, registry, graph)
 
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     for nid in ("src", "mid"):
         status = result.node_statuses[nid]
         assert status.status == "executed", f"{nid}: {status}"
         assert status.cached is True, f"{nid}: {status}"
 
 
-@pytest.mark.parametrize("dev_mode", [True, False])
 def test_constant_change_invalidates_downstream(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, tmp_path: Path,
 ) -> None:
     """Changing a constant on ``src`` must flip both ``src`` and ``mid``
     off ``cached``; an unchanged chain stays fully cached."""
     graph = _chain_graph()
-    _seed_cache(tmp_path, registry, graph, dev_mode)
+    _seed_cache(tmp_path, registry, graph)
 
     # Mutate the upstream node's constant.
     modified = graph_state(
@@ -173,20 +170,19 @@ def test_constant_change_invalidates_downstream(
         config=graph.config,
     )
 
-    result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(modified, registry, storage_path=tmp_path)
     assert result.node_statuses["src"].cached is False
     assert result.node_statuses["mid"].cached is False
     # ``src`` previously had a hash dir on disk → out_of_date.
     assert result.node_statuses["src"].status in {"out_of_date", "unexecuted"}
 
 
-@pytest.mark.parametrize("dev_mode", [True, False])
 def test_unrelated_node_stays_cached(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, tmp_path: Path,
 ) -> None:
     """Changing a downstream node must NOT invalidate its upstream."""
     graph = _chain_graph()
-    _seed_cache(tmp_path, registry, graph, dev_mode)
+    _seed_cache(tmp_path, registry, graph)
 
     modified = graph_state(
         nodes=[
@@ -201,7 +197,7 @@ def test_unrelated_node_stays_cached(
         config=graph.config,
     )
 
-    result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(modified, registry, storage_path=tmp_path)
     assert result.node_statuses["src"].status == "executed"
     assert result.node_statuses["src"].cached is True
     assert result.node_statuses["mid"].cached is False

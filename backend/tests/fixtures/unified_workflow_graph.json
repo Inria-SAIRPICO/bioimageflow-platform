@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "parent",
   "display_name": "Parent",
   "interface": {
@@ -8,7 +8,7 @@
       {
         "id": "output-answer",
         "name": "answer",
-        "schema": {"type": "int", "image_spec": null},
+        "schema": {"type": "int", "type_spec": {"kind": "int"}, "image_spec": null},
         "source": {"node": "child", "column": "output-value"}
       }
     ]
@@ -18,7 +18,7 @@
       "name": "child",
       "type": "workflow",
       "workflow": {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "generate_value",
         "display_name": "Generate Value",
         "interface": {
@@ -27,7 +27,7 @@
               "id": "input-values",
               "name": "values",
               "kind": "field",
-              "schema": {"type": "list", "image_spec": null},
+              "schema": {"type": "list", "type_spec": {"kind": "list", "item": {"kind": "any"}}, "image_spec": null},
               "targets": [
                 {"node": "generate", "port": {"kind": "field", "name": "values"}}
               ]
@@ -37,7 +37,7 @@
             {
               "id": "output-value",
               "name": "value",
-              "schema": {"type": "int", "image_spec": null},
+              "schema": {"type": "int", "type_spec": {"kind": "int"}, "image_spec": null},
               "source": {"node": "generate", "column": "value"}
             }
           ]

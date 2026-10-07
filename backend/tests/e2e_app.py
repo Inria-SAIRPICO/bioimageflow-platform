@@ -24,12 +24,13 @@ from bioimageflow_server.routers.tools import get_tool_environment_service
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.fixtures.held_worker import HeldWorkerNumbers
+from platform_test_tools.held import HeldWorkerNumbers
+from tests.fixtures.package_metadata import write_package_metadata
 from tests.fixtures.stale_environment import (
     ObservedProcessingManager,
     pixi_forwarder,
 )
-from tests.fixtures.stale_worker_numbers import IncompatibleWorkerNumbers, StaleWorkerNumbers
+from platform_test_tools.stale import IncompatibleWorkerNumbers, StaleWorkerNumbers
 
 
 class Generate(DataFrameTool):
@@ -276,3 +277,4 @@ def _write_hot_reload_fixture(fixture_path: Path) -> None:
         "    Outputs = _Outputs\n",
         encoding="utf-8",
     )
+    write_package_metadata(package_dir, package_dir.parent.name)

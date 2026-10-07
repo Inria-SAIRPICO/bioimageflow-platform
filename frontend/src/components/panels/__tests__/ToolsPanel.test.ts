@@ -162,7 +162,6 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     default_execution_target_id: 'local',
     node_data_page_size: 250,
     keyboard_shortcuts: {},
-    dev_mode: true,
     enable_unsafe_webapp_features: false,
     datasets_root: null,
     max_upload_size: 2147483648,

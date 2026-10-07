@@ -107,7 +107,7 @@ def _tool(node_id: str) -> dict[str, Any]:
 
 def _graph(name: str, nodes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": name,
         "display_name": name.title(),
         "nodes": nodes or [],
@@ -501,7 +501,16 @@ def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() ->
     assert graph.nodes[0].type == "workflow"
     assert translated.errors == []
     assert translated.lib_dict["nodes"][0]["type"] == "workflow"
-    assert translated.lib_dict["nodes"][0]["workflow"]["schema_version"] == 2
+    restored_child = translated.lib_dict["nodes"][0]
+    assert translated.lib_dict["schema_version"] == 2
+    assert restored_child["name"] == "child"
+    assert restored_child["bindings"] == library["nodes"][0]["bindings"]
+    assert restored_child["workflow"]["schema_version"] == 2
+    assert restored_child["workflow"]["name"] == "generate_value"
+    assert restored_child["workflow"]["nodes"] == library["nodes"][0]["workflow"]["nodes"]
+    assert translated.lib_dict["interface"] == library["interface"]
+    assert restored_child["workflow"]["interface"] == library["nodes"][0]["workflow"]["interface"]
+    assert translated.lib_dict["edges"] == restored_child["workflow"]["edges"] == []
 
 
 @pytest.mark.parametrize("catalog_custom", [False, True])

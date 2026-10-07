@@ -4602,11 +4602,6 @@ export interface components {
                 [key: string]: string;
             };
             /**
-             * Dev Mode
-             * @default true
-             */
-            dev_mode: boolean;
-            /**
              * Enable Unsafe Webapp Features
              * @default false
              */

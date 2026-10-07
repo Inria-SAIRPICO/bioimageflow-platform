@@ -98,7 +98,6 @@ class NestedWorkflowSnapshotService:
         workflow_store_provider: Callable[[], WorkflowStoreService],
         *,
         fallback_storage_path_provider: Callable[[], Path | None] | None = None,
-        dev_mode_provider: Callable[[], bool] | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self._fallback_storage_path_provider = (
@@ -109,7 +108,6 @@ class NestedWorkflowSnapshotService:
                 / "runtime"
             )
         )
-        self._dev_mode_provider = dev_mode_provider or (lambda: True)
         self._lock = threading.RLock()
 
     @contextmanager
@@ -988,7 +986,6 @@ class NestedWorkflowSnapshotService:
             graph,
             store.tool_registry,
             storage_path=storage_path,
-            dev_mode=self._dev_mode_provider(),
         )
 
     @staticmethod

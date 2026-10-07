@@ -1,14 +1,11 @@
 """Tests for the execution router."""
-# pyright: reportInvalidTypeForm=false
-# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
-# pyright can't evaluate this runtime metadata statically.
 
 import asyncio
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -16,9 +13,6 @@ import pytest
 from tests.graph_factory import graph_document
 from httpx import ASGITransport
 
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
-from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import (
@@ -53,43 +47,7 @@ from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from tests.workflow_move_helpers import patch_workflow as _patch_workflow
 
 
-# ---- Mock tool classes (module-level so from_dict can re-import) -----------
-
-
-class _SrcInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
-
-
-class _SrcOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class SrcTool(ProcessingTool):
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = _SrcInputs
-    Outputs = _SrcOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class _DstInputs(IOModel):
-    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class _DstOutputs(IOModel):
-    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class DstTool(ProcessingTool):
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = _DstInputs
-    Outputs = _DstOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
+from platform_test_tools.graph import DstTool, SrcTool
 
 
 def _make_registry() -> ToolRegistryService:
@@ -1277,9 +1235,8 @@ async def test_clear_resolves_workflow_storage_path(
     workflow_store.get_storage_path.return_value = workflow_storage
     seen: dict[str, Path | None] = {}
 
-    def _fake_prepare(nodes, graph, registry, storage_path, *, dev_mode):
+    def _fake_prepare(nodes, graph, registry, storage_path):
         seen["storage_path"] = storage_path
-        seen["dev_mode"] = dev_mode
         return object()
 
     def _fake_commit(_plan):
@@ -1315,7 +1272,6 @@ async def test_clear_resolves_workflow_storage_path(
     assert workflow_store.get_storage_path.call_count == 2
     workflow_store.get_storage_path.assert_called_with("wf_a")
     assert seen["storage_path"] == workflow_storage
-    assert seen["dev_mode"] is True
 
 
 async def test_clear_cannot_commit_against_same_id_replacement(

@@ -68,17 +68,24 @@ class ToolEnvironmentService:
             self._publish(env_name, "stopped")
             return "stopped"
         self._require_processing_replacement_allowed(env_name)
-        state = await anyio_to_thread.run_sync(self._manager.inspect_environment, spec)
-        status = "updating" if state is EnvironmentRecipeState.STALE else "creating"
-        self._set_status(tools, status)
-        self._publish(env_name, status)
-        await anyio_to_thread.run_sync(
-            lambda: self._manager.get_or_create(
-                spec,
-                replace_existing=state is EnvironmentRecipeState.STALE,
-                on_provision_event=self._log_provision_event,
-            )
-        )
+        def prepare_and_start() -> None:
+            with self.processing_environment_lock:
+                state = self._manager.inspect_environment(spec)
+                status = "updating" if state is EnvironmentRecipeState.STALE else "creating"
+                self._set_status(tools, status)
+                self._publish(env_name, status)
+                self._manager.get_or_create(
+                    spec, replace_existing=state is EnvironmentRecipeState.STALE,
+                    on_provision_event=self._log_provision_event,
+                    on_removal_event=self._log_provision_event,
+                )
+
+        try:
+            await anyio_to_thread.run_sync(prepare_and_start)
+        except Exception:
+            self._set_status(tools, "failed")
+            self._publish(env_name, "failed")
+            raise
         self._set_status(tools, "running")
         self._publish(env_name, "running")
         return "running"
@@ -117,15 +124,22 @@ class ToolEnvironmentService:
 
     async def close(self) -> None:
         task = self._standard_refresh_task
-        self._standard_refresh_task = None
-        if task is None:
-            return
-        if not task.done():
-            task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
+            if task is not None:
+                try:
+                    # A thread-backed public mutation must finish before its
+                    # pool owner can be shut down; cancelling its awaiter is
+                    # not an operation-completion fence.
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    if not task.done():
+                        raise
+                self._standard_refresh_task = None
+        finally:
+            # Shutdown owns only an already-created processing manager.
+            # Its public close fence keeps uncertain pools/grants for retry.
+            if self._wetlands is not None and (task is None or task.done()):
+                await anyio_to_thread.run_sync(self._wetlands.shutdown_all)
 
     async def _refresh_standard_environment(self) -> None:
         env_name = GENERAL_ENV.name
@@ -149,12 +163,13 @@ class ToolEnvironmentService:
             tools = self._tools_for_environment(GENERAL_ENV.name)
             self._set_status(tools, "updating")
             self._publish(GENERAL_ENV.name, "updating")
-            self._manager.get_or_create(
-                GENERAL_ENV, replace_existing=True,
+            self._manager.admit_runtime(
+                GENERAL_ENV, provision=True, replace_stale=True,
                 on_provision_event=self._log_provision_event,
+                on_removal_event=self._log_provision_event,
             )
-            self._set_status(tools, "running")
-            self._publish(GENERAL_ENV.name, "running")
+            self._set_status(tools, "ready")
+            self._publish(GENERAL_ENV.name, "ready")
 
     async def stop(self, env_name: str) -> str:
         tools = self._tools_for_environment(env_name)
@@ -202,7 +217,10 @@ class ToolEnvironmentService:
         dependencies = tool.environment.get("dependencies") or {}
         if not name:
             return None
-        return EnvironmentSpec(name=name, dependencies=dependencies)
+        return EnvironmentSpec(
+            name=name, dependencies=dependencies,
+            allow_flexible_versions=tool.environment.get("allow_flexible_versions", False),
+        )
 
     def can_replace_processing_environment(self, env_spec: Any) -> bool:
         name = getattr(env_spec, "name", None)
@@ -236,15 +254,18 @@ class ToolEnvironmentService:
             publish(env_name, status)
 
     def _stop_wetlands_environment(self, env_name: str) -> None:
-        self._manager.stop(env_name)
+        with self.processing_environment_lock:
+            self._manager.stop(env_name)
+            if self._manager.is_running(env_name):
+                raise RuntimeError(f"Environment {env_name!r} shutdown remains pending")
 
     def _recreate_wetlands_environment(self, spec: EnvironmentSpec) -> None:
-        self._stop_wetlands_environment(spec.name)
-        self._manager.get_or_create(
-            spec,
-            replace_existing=True,
-            on_provision_event=self._log_provision_event,
-        )
+        with self.processing_environment_lock:
+            self._manager.recreate(
+                spec,
+                on_provision_event=self._log_provision_event,
+                on_removal_event=self._log_provision_event,
+            )
 
     @staticmethod
     def _log_provision_event(event: Any) -> None:

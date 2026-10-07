@@ -14,7 +14,7 @@ from bioimageflow_core import IOModel
 
 from bioimageflow_server.models.graph import ColumnEdge, DataFrameEdge, GraphState, ToolNodeState
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.fixtures.worker_numbers import WorkerNumbers
+from platform_test_tools.stale import WorkerNumbers
 from tests.graph_factory import graph_state
 
 

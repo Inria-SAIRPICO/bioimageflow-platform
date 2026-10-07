@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.graph import GraphState
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.models.workflow import WorkflowCreate
 from bioimageflow_server.routers.execution import (
@@ -89,7 +88,7 @@ class _FakeArchiveAdapter:
 
 def _library_graph(*, nodes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "imported",
         "display_name": "Imported",
         "interface": {"inputs": [], "outputs": []},
@@ -1558,7 +1557,6 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
     manager = ExecutionManager(
         NullEventBus(),
         registry,
-        Settings(deployment_mode="desktop"),
     )
     draft_graph = graph_state(name="draft")
     saved_graph = graph_document(name="saved")
@@ -1581,7 +1579,6 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
             tool_registry=registry,
             workflow_store=store,
             execution_manager=manager,
-            settings=manager.settings,
             storage_path=tmp_path / "outputs",
             disable_hot_reload=True,
         )

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow import ToolRegistry as LibToolRegistry
+from bioimageflow.installation import validate_installation_selectors
 from bioimageflow.registry import ToolMetadata as LibToolMetadata
 from bioimageflow.tool_loader import (
     load_versioned_package,
@@ -94,7 +95,16 @@ class ToolRegistryService:
             # class, we load oldest-first and let the newest call win.
             # (Lex sort treats `0.1.10` < `0.1.9`, which is wrong for
             # multi-digit versions.)
-            ver_dirs = [d for d in pkg_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+            ver_dirs = []
+            for directory in pkg_dir.iterdir():
+                if not directory.is_dir() or directory.name.startswith("."):
+                    continue
+                try:
+                    validate_installation_selectors(package_name, directory.name, None)
+                except ValueError:
+                    logger.warning("Ignoring unsupported tool-store directory: %s", directory)
+                    continue
+                ver_dirs.append(directory)
             ver_dirs.sort(key=lambda d: _version_sort_key(d.name))
 
             installed_versions: list[str] = []
@@ -119,7 +129,10 @@ class ToolRegistryService:
                 except Exception as exc:
                     logger.exception("Failed to load %s==%s", package_name, version)
                     load_errors[version] = _format_package_load_error(exc)
-                    unload_versioned_package(package_name, version)
+                    try:
+                        unload_versioned_package(package_name, version)
+                    except Exception:
+                        logger.exception("Failed to unload rejected %s==%s", package_name, version)
                     tools_by_version.setdefault(version, [])
                     continue
 
@@ -226,6 +239,7 @@ class ToolRegistryService:
             environment = {
                 "name": getattr(env_spec, "name", ""),
                 "dependencies": getattr(env_spec, "dependencies", {}),
+                "allow_flexible_versions": env_spec.allow_flexible_versions,
             }
 
         self.register_tool(

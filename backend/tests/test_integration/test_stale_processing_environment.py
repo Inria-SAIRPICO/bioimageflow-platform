@@ -22,7 +22,7 @@ from tests.fixtures.stale_environment import (
     inventory,
     pixi_forwarder,
 )
-from tests.fixtures.stale_worker_numbers import StaleWorkerNumbers
+from platform_test_tools.stale import StaleWorkerNumbers
 
 pytestmark = [pytest.mark.external, pytest.mark.integration, pytest.mark.serial, pytest.mark.slow]
 
@@ -48,8 +48,7 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
     _reset_shared_manager()
     pixi, failure_marker = pixi_forwarder(tmp_path)
     configure_wetlands(root=tmp_path / "wetlands", pixi_executable=pixi)
-    manager = WetlandsEnvManager()
-    observed = ObservedProcessingManager(manager)
+    observed = manager = ObservedProcessingManager(WetlandsEnvManager())
     name = StaleWorkerNumbers.environment.name
     try:
         fresh = run_worker(observed, tmp_path / "fresh-results")
@@ -57,10 +56,9 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
         assert observed.preparations[0] == {
             "name": name, "action": "creating",
             "requested_recipe_hash": _generation(fresh, name)["recipe_hash"],
-            "existing_recipe_hash": None, "replace_existing": False,
+            "existing_recipe_hash": None,
         }
-        assert [item["action"] for item in observed.preparations] == ["creating", "reusing", "reusing"]
-        assert all(item["replace_existing"] is False for item in observed.preparations)
+        assert [item["action"] for item in observed.preparations] == ["creating"]
         # Another lifecycle's owned environment and a user-managed directory
         # remain exactly as supplied while the selected processing one changes.
         unrelated_spec = EnvironmentSpec(name="codeserver", dependencies={"python": "3.12"})
@@ -78,7 +76,6 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
         with pytest.raises(ProvisioningError, match="77") as failed_install:
             run_worker(observed, tmp_path / "failed-results")
         assert not failure_marker.exists()
-        assert observed.preparations[0]["replace_existing"] is True
         assert observed.preparations[0]["action"] == "updating"
         assert any("E1 injected Pixi install failure" in str(event) for event in observed.events)
         assert observed.evidence()["retired_workers_alive"] == []
@@ -102,6 +99,7 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
         before_restart = observed.evidence()
         prior_pid = reused["worker_pids"][0]
         manager.shutdown_all()
+        assert observed.pending_run_contexts == []
         assert get_shared_environment_manager().running_workers(name) == ()
         with pytest.raises(ProcessLookupError):
             os.kill(prior_pid, 0)
@@ -114,9 +112,10 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
         )
         evidence = json.loads(restarted.stdout.splitlines()[-1])
         _assert_worker(evidence)
+        assert evidence["cleanup_pending"] is False
         assert evidence["orchestrator_pid"] != os.getpid()
         assert evidence["worker_pids"][0] != prior_pid
-        assert evidence["preparations"][0]["action"] == "starting"
+        assert evidence["preparations"][0]["action"] == "reusing"
         # Discovery in a new manager must preserve the exact ready identity;
         # the worker process itself is deliberately new.
         assert {key: _generation(evidence, name)[key] for key in ("generation_id", "recipe_hash")} == {

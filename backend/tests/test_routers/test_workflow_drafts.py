@@ -159,7 +159,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
     )
     store = WorkflowStoreService(tmp_path / "workspace/workflows", registry)
     settings = Settings(deployment_mode="desktop")
-    manager = ExecutionManager(NullEventBus(), registry, settings)
+    manager = ExecutionManager(NullEventBus(), registry)
     app = create_app(
         AppConfig(
             tool_registry=registry,
@@ -198,7 +198,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
             storage_path=storage_path,
         )
         assert errors == []
-        node_plan = workflow.plan(dev_mode=True)["source"]
+        node_plan = workflow.plan()["source"]
         dataframe_publish(
             storage_path,
             "source",
@@ -406,6 +406,66 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "/Users/" not in instructions
     for phrase in FORBIDDEN_AGENT_CONTEXT_PHRASES:
         assert phrase not in instructions
+
+
+async def test_synthesized_get_keeps_source_bound_schema_and_definition_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(tmp_path / "workflows", registry)
+    store.create_workflow(WorkflowCreate(name="wf"))
+    graph = graph_state(
+        config={"engine": "direct", "execution": "parallel"},
+        nodes=[
+            {
+                "type": "tool", "id": "bound", "name": "Bound source",
+                "tool_name": "SeedNumbers", "position": [0, 0], "parameters": {},
+                "tool_module": "bioimageflow_dev_tools.tools", "tool_class": "SeedNumbers",
+            },
+            {
+                "type": "tool", "id": "missing", "name": "Missing",
+                "tool_name": "MissingTool", "position": [200, 0], "parameters": {},
+            },
+        ],
+    )
+    store.save_workflow("wf", WorkflowSaveBody(graph=graph))
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    app = create_app(AppConfig(
+        tool_registry=registry, workflow_store=store,
+        execution_manager=_ExecutionManager(), disable_hot_reload=True,
+        storage_path=tmp_path / "outputs",
+    ))
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    original_compile = workflow_draft_service.GraphCompiler.compile
+    compiled_graphs: list[GraphState] = []
+
+    def observed_compile(self, graph, **kwargs):
+        compiled_graphs.append(graph)
+        return original_compile(self, graph, **kwargs)
+
+    monkeypatch.setattr(workflow_draft_service.GraphCompiler, "compile", observed_compile)
+    validations = []
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test",
+    ) as ac:
+        for expected_count in (1, 2):
+            response = await ac.get("/api/v1/workflow-drafts/wf")
+            assert response.status_code == 200
+            body = response.json()
+            validation = body["validation"]
+            assert len(compiled_graphs) == expected_count
+            assert body["draft_revision"] == 0
+            assert validation["valid"] is False
+            assert any(
+                error["type"] == "missing_tool" and error["node"] == "missing"
+                for error in validation["errors"]
+            )
+            assert validation["node_tools"]["bound"]["outputs"]["number"]["type"] == "int"
+            assert set(validation["node_statuses"]) == {"bound", "missing"}
+            validations.append(validation)
+    assert validations[0] == validations[1]
+    assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
 
 
 async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(
@@ -734,9 +794,6 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
     manager = ExecutionManager(
         NullEventBus(),
         registry,
-        Settings(
-            deployment_mode="desktop",
-        ),
     )
     validation_entered = threading.Event()
     release_validation = threading.Event()
@@ -757,7 +814,6 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
             tool_registry=registry,
             workflow_store=store,
             execution_manager=manager,
-            settings=manager.settings,
             storage_path=tmp_path / "outputs",
             disable_hot_reload=True,
         )
@@ -819,9 +875,6 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
     manager = ExecutionManager(
         NullEventBus(),
         registry,
-        Settings(
-            deployment_mode="desktop",
-        ),
     )
     validation_entered = threading.Event()
     release_validation = threading.Event()
@@ -841,7 +894,6 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
             tool_registry=registry,
             workflow_store=store,
             execution_manager=manager,
-            settings=manager.settings,
             storage_path=tmp_path / "outputs",
             disable_hot_reload=True,
         )
@@ -892,9 +944,6 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
     manager = ExecutionManager(
         NullEventBus(),
         registry,
-        Settings(
-            deployment_mode="desktop",
-        ),
     )
     original_reserve_start = manager.reserve_start
     prepared_operation_ids: list[Any] = []
@@ -924,7 +973,6 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
             tool_registry=registry,
             workflow_store=store,
             execution_manager=manager,
-            settings=manager.settings,
             storage_path=tmp_path / "outputs",
             disable_hot_reload=True,
         )
@@ -989,7 +1037,7 @@ async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authoriti
         assert first_body["draft_revision"] == 0
         assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
         assert all(saved.model_dump(mode="json") == raw for saved, raw in captures)
-        assert len(captures) == 3
+        assert len(captures) == 2
 
         changed = other.get_workflow("wf").graph.model_copy(deep=True)
         changed.display_name = "Saved by another owner"
@@ -1001,7 +1049,7 @@ async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authoriti
         assert next_read.json()["graph"] == changed.model_dump(mode="json")
         assert next_read.json()["base_saved_revision"] == saved_now.artifact_hash
         assert next_read.json()["updated_at"] == saved_now.info.last_modified
-        assert len(captures) == 3
+        assert len(captures) == 2
         assert all(saved.model_dump(mode="json") == raw for saved, raw in captures)
 
         accepted_graph = changed.model_copy(deep=True)
@@ -1045,17 +1093,17 @@ async def test_revision_zero_get_observes_other_owner_during_initial_validation(
     app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
     entered = threading.Event()
     release = threading.Event()
-    original_validate = drafts._validate
+    original_compile = workflow_draft_service.GraphCompiler.compile
     captured_graphs: list[dict[str, Any]] = []
 
-    def held_validate(_store, name, graph):
+    def held_compile(self, graph, **kwargs):
         captured_graphs.append(graph.model_dump(mode="json"))
         if len(captured_graphs) == 1:
             entered.set()
             assert release.wait(timeout=5)
-        return original_validate(_store, name, graph)
+        return original_compile(self, graph, **kwargs)
 
-    monkeypatch.setattr(drafts, "_validate", held_validate)
+    monkeypatch.setattr(workflow_draft_service.GraphCompiler, "compile", held_compile)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",

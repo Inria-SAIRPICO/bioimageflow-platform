@@ -1,18 +1,11 @@
 """Tests for :mod:`bioimageflow_server.services.graph_validator`."""
-# pyright: reportInvalidTypeForm=false
-# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
-# pyright can't evaluate this runtime metadata statically.
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 import pytest
 from tests.graph_factory import graph_state
 
-from bioimageflow.dataframe_tool import DataFrameTool
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
-from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
     ColumnEdge,
@@ -26,107 +19,15 @@ from bioimageflow_server.services.graph_validator import (
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
-# ---- Mock tool classes (module-level so from_dict can re-import) -----------
-
-
-class ProcInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
-    diameter: float = 30.0
-
-
-class ProcOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class MockProcessingTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = ProcInputs
-    Outputs = ProcOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class IncompatibleCoreTool(MockProcessingTool):
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(
-        name="test-incompatible-core",
-        dependencies={"pip": ["bioimageflow-core==0.0.0"]},
-    )
-
-
-class CompatInputs(IOModel):
-    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class CompatOutputs(IOModel):
-    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class CompatTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = CompatInputs
-    Outputs = CompatOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class IncompatInputs(IOModel):
-    img: Annotated[Path, ImageSpec(semantics={Semantic.DISPLACEMENT})]
-
-
-class IncompatOutputs(IOModel):
-    out: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class IncompatTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = IncompatInputs
-    Outputs = IncompatOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class IntParamInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
-    n: int = 1
-
-
-class IntParamTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = IntParamInputs
-    Outputs = ProcOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class DFInputs(IOModel):
-    threshold: float = 0.5
-
-
-class MockDataFrameTool(DataFrameTool):
-    Inputs = DFInputs
-
-
-class SourceDFInputs(IOModel):
-    path: str = "/tmp"
-
-
-class MockSourceDataFrameTool(DataFrameTool):
-    """A source-only DataFrameTool that refuses positional upstream args."""
-    accepts_upstream = False
-    Inputs = SourceDFInputs
+from platform_test_tools.graph import (
+    CompatTool,
+    IncompatibleCoreTool,
+    IncompatTool,
+    IntParamTool,
+    MockDataFrameTool,
+    MockProcessingTool,
+    MockSourceDataFrameTool,
+)
 
 
 _TOOL_CLASSES: dict[str, type] = {
@@ -402,7 +303,7 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
     )
 
     workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=tmp_path)
-    plans = workflow.plan(dev_mode=True)
+    plans = workflow.plan()
     sig = plans["n1"].logical_signature
 
     dataframe_publish(
@@ -415,7 +316,7 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
         tool_identity="tests:MockDataFrameTool",
     )
 
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "executed"
     assert result.node_statuses["n1"].cached is True
     refreshed_workflow, _errors, _disabled = build_workflow(
@@ -423,7 +324,7 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
         registry,
         storage_path=tmp_path,
     )
-    refreshed_plan = refreshed_workflow.plan(dev_mode=True)
+    refreshed_plan = refreshed_workflow.plan()
     assert result.node_statuses["n1"].result_key == refreshed_plan["n1"].final_result_key
     assert result.node_statuses["n1"].record_id == refreshed_plan["n1"].selected_record_id
 

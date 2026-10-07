@@ -290,11 +290,9 @@ class WorkflowDraftService:
         self,
         workflow_store_provider: Callable[[], WorkflowStoreService],
         *,
-        dev_mode_provider: Callable[[], bool] | None = None,
         server_boot_id: str | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
-        self._dev_mode_provider = dev_mode_provider or (lambda: True)
         self.server_boot_id = server_boot_id or uuid.uuid4().hex
 
     def get_draft(
@@ -618,13 +616,33 @@ class WorkflowDraftService:
     ) -> WorkflowDraftResponse:
         """Refresh only read-time statuses without changing accepted draft authority.
 
-        Compilation is outside the workflow mutation lock. The final plan and
+        Capture fresh saved definitions without eager validation, then compile
+        once outside the workflow mutation lock. The final validation, plan and
         latest-output reads share Clear's commit lock, after the draft and
-        workflow storage identity have been checked again.
+        workflow storage identity have been checked again. Persisted drafts
+        retain their accepted definition diagnostics and schema metadata.
         """
         validator = GraphValidationService(store.tool_registry)
         while True:
-            authority = self._read_validated_authority_snapshot(store, workflow_id)
+            with store.workflow_mutation(workflow_id):
+                identity_generation = store.workflow_generation(workflow_id)
+                storage_path = store.get_storage_path(workflow_id)
+                existing = self._read_existing_draft_locked(store, workflow_id)
+                accepted = existing is not None
+                if existing is None:
+                    workflow = store.get_workflow(workflow_id)
+                    captured = self._synthesized_draft(
+                        workflow_id,
+                        workflow=workflow,
+                        validation=self._default_validation(workflow.graph),
+                    )
+                else:
+                    captured = existing
+                authority = WorkflowDraftAuthoritySnapshot(
+                    draft=captured,
+                    identity_generation=identity_generation,
+                    storage_path=storage_path,
+                )
             draft = authority.draft
             compilation = GraphCompiler(store.tool_registry).compile(
                 draft.graph,
@@ -651,13 +669,14 @@ class WorkflowDraftService:
                 projected = validator.validation_from_compilation(
                     draft.graph,
                     compilation,
-                    dev_mode=self._dev_mode_provider(),
                     has_retained_latest=lambda node_id: (
                         results.get_latest_record_dir(node_id, storage_path=authority.storage_path)
                         is not None
                     ),
                     planned_node_ids=planned_node_ids,
                 )
+                if not accepted:
+                    return draft.model_copy(update={"validation": projected})
                 retained_errors = [
                     error
                     for error in draft.validation.errors
@@ -895,7 +914,6 @@ class WorkflowDraftService:
             graph,
             store.tool_registry,
             storage_path=store.get_storage_path(workflow_id),
-            dev_mode=self._dev_mode_provider(),
         )
 
     @staticmethod

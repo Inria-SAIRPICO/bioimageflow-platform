@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Annotated, Any
-
 import numpy as np
 import pandas as pd
-from bioimageflow import DataFrameTool
 from bioimageflow.cache import dataframe_publish, dataframe_result_key
 from bioimageflow.storage import Storage
-from bioimageflow_core import IOModel
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import ProcessingTool, RowConsumption
-from bioimageflow_core.types import ImageSpec
 from fastapi import APIRouter, Depends
 from PIL import Image
+
+from bioimageflow_dev_tools.processing import GaussianBlur
+from bioimageflow_dev_tools.tools import (
+    ControlledDirectNumbers,
+    ImageResultFixture,
+    IncrementAgainNumbers,
+    IncrementNumbers,
+    ResultTableFixture,
+    SeedNumbers,
+)
 
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
@@ -35,190 +37,6 @@ def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
 
 def get_result_store() -> ResultStoreService:  # pragma: no cover
     raise RuntimeError("result_store dependency not configured")
-
-
-class SeedNumberInputs(IOModel):
-    pass
-
-
-class SeedNumberOutputs(IOModel):
-    number: int
-    label: str
-
-
-class SeedNumbers(DataFrameTool):
-    """Small deterministic source tool used by hermetic E2E execution tests."""
-
-    display_name = "Seed Numbers"
-    documentation = "Create a deterministic three-row dataframe for development tests."
-    tags = ["source", "e2e"]
-    accepts_upstream = False
-    Inputs = SeedNumberInputs
-    Outputs = SeedNumberOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        import pandas as pd
-
-        return pd.DataFrame(
-            {
-                "number": [1, 2, 3],
-                "label": ["one", "two", "three"],
-            },
-        )
-
-
-class ResultTableFixtureOutputs(IOModel):
-    source_row: int
-    label: str
-    score: int
-
-
-class ResultTableFixture(DataFrameTool):
-    """Larger deterministic source used to exercise Node Data projections."""
-
-    display_name = "Result Table Fixture"
-    documentation = "Create deterministic rows for Node Data browser tests."
-    tags = ["source", "e2e"]
-    accepts_upstream = False
-    Inputs = SeedNumberInputs
-    Outputs = ResultTableFixtureOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        source_rows = list(range(60))
-        return pd.DataFrame(
-            {
-                "source_row": source_rows,
-                "label": [
-                    f"{'keep' if row % 2 == 0 else 'drop'}-{row:02d}"
-                    for row in source_rows
-                ],
-                "score": [(row * 17) % 61 for row in source_rows],
-            },
-        )
-
-
-class ImageResultFixtureOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec()]
-    report: Path
-
-
-class ImageResultFixture(DataFrameTool):
-    """Typed output schema used by the result image and file GUI journey."""
-
-    display_name = "Image Result Fixture"
-    documentation = "Expose deterministic image and file results for development tests."
-    tags = ["image", "result", "e2e"]
-    accepts_upstream = False
-    Inputs = SeedNumberInputs
-    Outputs = ImageResultFixtureOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        import os
-        import tempfile
-
-        output_dir = Path(tempfile.gettempdir()) / f"bioimageflow-e2e-image-result-{os.getpid()}"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        image_path = output_dir / "mask.png"
-        Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8)).save(image_path)
-        report_path = output_dir / "measurements.txt"
-        report_path.write_bytes(b"cell_count=7\nmean_intensity=31.5\n")
-        return pd.DataFrame({
-            "mask": [str(image_path)],
-            "report": [str(report_path)],
-        })
-
-
-class IncrementNumberInputs(IOModel):
-    number: int
-
-
-class IncrementNumberOutputs(IOModel):
-    number_plus_one: int
-
-
-class IncrementNumbers(DataFrameTool):
-    """Deterministic transform tool used by graph-validation E2E tests."""
-
-    display_name = "Increment Numbers"
-    documentation = "Add one to an upstream number column for development tests."
-    tags = ["transform", "e2e"]
-    Inputs = IncrementNumberInputs
-    Outputs = IncrementNumberOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        result = df.copy()
-        result["number_plus_one"] = result["number"] + 1
-        return result
-
-
-class ControlledDirectInputs(IOModel):
-    fail: bool = False
-
-
-class ControlledDirectOutputs(IOModel):
-    number_plus_one: int
-
-
-class ControlledDirectNumbers(DataFrameTool):
-    """Fail on demand inside a real Direct DataFrame transformation."""
-
-    display_name = "Controlled Direct Numbers"
-    documentation = "Increment upstream numbers, or raise a controlled execution error."
-    tags = ["transform", "e2e"]
-    Inputs = ControlledDirectInputs
-    Outputs = ControlledDirectOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        if arguments.fail:
-            raise RuntimeError("Controlled Direct failure")
-        result = df.copy()
-        result["number_plus_one"] = result["number"] + 1
-        return result
-
-
-class IncrementAgainInputs(IOModel):
-    number_plus_one: int
-
-
-class IncrementAgainOutputs(IOModel):
-    number_plus_two: int
-
-
-class IncrementAgainNumbers(DataFrameTool):
-    """Second deterministic transform for recursive E2E execution tests."""
-
-    display_name = "Increment Again"
-    documentation = "Add one to an upstream number_plus_one column for development tests."
-    tags = ["transform", "e2e"]
-    Inputs = IncrementAgainInputs
-    Outputs = IncrementAgainOutputs
-
-    def transform(self, df: Any, arguments: Any) -> Any:
-        result = df.copy()
-        result["number_plus_two"] = result["number_plus_one"] + 1
-        return result
-
-
-class GaussianBlurInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec()]
-    sigma: float = 1.0
-
-
-class GaussianBlurOutputs(IOModel):
-    output_image: Annotated[Path, ImageSpec()]
-
-
-class GaussianBlur(ProcessingTool):
-    """Tiny executable image-processing fixture for E2E graph validation."""
-
-    row_consumption = RowConsumption.MAPPED
-
-    environment = EnvironmentSpec(name="bioimageflow-e2e", dependencies={})
-    Inputs = GaussianBlurInputs
-    Outputs = GaussianBlurOutputs
-
-    def process_row(self, arguments: Any, *, context: Any = None) -> Any:
-        return GaussianBlurOutputs(output_image=Path("output.tif"))
 
 
 _SEED_TOOLS: list[ToolMetadata] = [

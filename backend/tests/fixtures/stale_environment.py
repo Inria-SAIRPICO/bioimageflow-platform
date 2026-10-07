@@ -13,13 +13,14 @@ from typing import Any
 from bioimageflow.env_manager import EnvironmentRecipeState, get_shared_environment_manager
 from bioimageflow_core import EnvironmentSpec
 
-from tests.fixtures.stale_worker_numbers import StaleWorkerNumbers
+from platform_test_tools.stale import StaleWorkerNumbers
 
 
 def old_worker_spec() -> EnvironmentSpec:
     return EnvironmentSpec(
         name=StaleWorkerNumbers.environment.name,
         dependencies={"python": ">=3.12,<3.13"},
+        allow_flexible_versions=True,
     )
 
 
@@ -74,11 +75,26 @@ class ObservedProcessingManager:
         self.preparations: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
         self.retired_worker_pids: list[int] = []
+        self.pending_run_contexts: list[Any] = []
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.manager, name)
 
-    def get_or_create(self, spec: Any, *args: Any, **kwargs: Any) -> Any:
+    def settle_run(self, context: Any, groups: tuple[Any, ...]) -> None:
+        for group in groups:
+            group.release()
+        owner = context.shared_memory_context
+        if owner is not None and owner.close().state != "closed":
+            self.pending_run_contexts.append(context)
+
+    def shutdown_all(self) -> None:
+        self.manager.shutdown_all()
+        self.pending_run_contexts = [
+            context for context in self.pending_run_contexts
+            if context.shared_memory_context.close().state != "closed"
+        ]
+
+    def admit_runtime(self, spec: Any, *args: Any, **kwargs: Any) -> Any:
         preparation_callback = kwargs.pop("on_preparation", None)
         event_callback = kwargs.pop("on_provision_event", None)
 
@@ -87,7 +103,6 @@ class ObservedProcessingManager:
                 "name": value.name, "action": value.action,
                 "requested_recipe_hash": value.requested_recipe_hash,
                 "existing_recipe_hash": value.existing_recipe_hash,
-                "replace_existing": kwargs.get("replace_existing", False),
             })
             if preparation_callback is not None:
                 preparation_callback(value)
@@ -103,7 +118,7 @@ class ObservedProcessingManager:
             if event_callback is not None:
                 event_callback(value)
 
-        return self.manager.get_or_create(
+        return self.manager.admit_runtime(
             spec, *args, **kwargs, on_preparation=preparation, on_provision_event=event,
         )
 

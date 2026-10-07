@@ -25,7 +25,6 @@ from bioimageflow_server.models.execution import (
     ProgressInfo,
 )
 from bioimageflow_server.models.graph import ColumnEdge, DataFrameEdge, GraphState, ToolNodeState
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
@@ -216,28 +215,25 @@ class _FakeWorkflow:
         self.compute_calls = 0
         self.cancel_called = False
         self.targets_received: tuple = ()
-        self.dev_mode_received: bool | None = None
         self.engine_type = "direct"
 
     def create_engine(self, **_kwargs: Any) -> Any:
-        return type("Engine", (), {"environment_manager": None})()
+        return type("Engine", (), {"environment_manager": None, "close": lambda self: None})()
 
-    def validate(self, *, dev_mode: bool = True) -> list:
+    def validate(self) -> list:
         return list(self.validation_errors)
 
-    def plan(self, *, dev_mode: bool = True) -> dict:
+    def plan(self) -> dict:
         return {}
 
     def compute(
         self,
         *targets: Any,
-        dev_mode: bool = False,
         engine: Any = None,
         run_context: Any = None,
     ) -> dict[str, Any]:
         self.compute_calls += 1
         self.targets_received = targets
-        self.dev_mode_received = dev_mode
         for ev in self.events:
             if self.on_progress is not None:
                 self.on_progress(ev)
@@ -256,104 +252,90 @@ class _EnvSpecStub:
 
 class _FakeWetlandsManager:
     def __init__(self) -> None:
-        self._envs: dict[str, object] = {}
+        self._envs: dict[str, Any] = {}
         self.calls: list[str] = []
         self.replace_existing_calls: list[bool] = []
         self.recipe_state = "current"
         self.raise_exc: BaseException | None = None
         self.generation = 0
         self.submitted_payloads: list[dict[str, Any]] = []
+        self.submitted_receipts: list[Any] = []
+        self.submitted_grants: list[Any] = []
+        self.pools: set[str] = set()
+        self.admission_memos: list[Any] = []
 
-    def inspect_environment(self, env_spec: _EnvSpecStub) -> object:
-        return SimpleNamespace(value=self.recipe_state)
-
-    def get_or_create(
-        self,
-        env_spec: _EnvSpecStub,
-        max_workers: int = 1,
-        worker_timeout: float | None = None,
-        *,
-        on_provision_event: Any = None,
-        on_preparation: Any = None,
-        replace_existing: bool = False,
-    ) -> object:
-        if on_preparation is not None:
-            on_preparation(
-                type(
-                    "Preparation",
-                    (),
-                    {
-                        "action": (
-                            "updating"
-                            if replace_existing
-                            else "reusing"
-                            if env_spec.name in self._envs
-                            else "creating"
-                        )
-                    },
-                )()
-            )
+    def admit_runtime(self, env_spec: _EnvSpecStub, *, provision: bool,
+                      admissions: dict | None = None, replace_stale: bool = False,
+                      on_preparation: Any = None, on_provision_event: Any = None,
+                      on_removal_event: Any = None) -> Any:
+        self.admission_memos.append(admissions)
+        key = (env_spec.name, "recipe")
+        if admissions is not None and key in admissions:
+            receipt = admissions[key]
+            if receipt is not None:
+                self.validate_runtime_receipt(env_spec, receipt)
+            return receipt
+        existing = self._envs.get(env_spec.name)
+        if not provision and (existing is None or self.recipe_state == "stale"):
+            return None
+        replace = self.recipe_state == "stale" and replace_stale
         self.calls.append(env_spec.name)
-        self.replace_existing_calls.append(replace_existing)
-        if on_provision_event is not None:
-            on_provision_event(
-                type(
-                    "Event",
-                    (),
-                    {
-                        "kind": type("Kind", (), {"value": "step"})(),
-                        "message": "Resolving pixi.lock",
-                        "stage": "lock_resolution",
-                    },
-                )()
-            )
-            on_provision_event(
-                type(
-                    "Event",
-                    (),
-                    {
-                        "kind": type("Kind", (), {"value": "output"})(),
-                        "message": "Downloaded atlas",
-                        "stage": "conda_install",
-                    },
-                )()
-            )
-        if self.raise_exc is not None:
-            raise self.raise_exc
-        if not replace_existing and env_spec.name in self._envs:
-            if self.recipe_state == "stale":
-                raise EnvironmentReuseError("Stale managed recipe requires replacement")
-            return self._envs[env_spec.name]
-        self.generation += 1
-        value = SimpleNamespace(generation_id=f"generation-{self.generation}")
-        self._envs[env_spec.name] = value
-        self.recipe_state = "current"
-        return value
+        self.replace_existing_calls.append(replace)
+        if self.recipe_state == "stale" and not replace:
+            raise EnvironmentReuseError("Stale managed recipe requires replacement")
+        if on_preparation is not None:
+            on_preparation(SimpleNamespace(action="updating" if replace else "reusing" if existing else "creating"))
+        if existing is None or replace:
+            if on_provision_event is not None:
+                on_provision_event(SimpleNamespace(
+                    kind=SimpleNamespace(value="step"), message="Resolving pixi.lock",
+                    stage="lock_resolution",
+                ))
+                on_provision_event(SimpleNamespace(
+                    kind=SimpleNamespace(value="output"), message="Downloaded atlas",
+                    stage="conda_install",
+                ))
+            if self.raise_exc is not None:
+                raise self.raise_exc
+            self.generation += 1
+            existing = SimpleNamespace(generation_id=f"generation-{self.generation}")
+            self._envs[env_spec.name] = existing
+            self.recipe_state = "current"
+        if admissions is not None:
+            admissions[key] = existing
+        return existing
+
+    def validate_runtime_receipt(self, env_spec: _EnvSpecStub, receipt: Any) -> Any:
+        current = self._envs[env_spec.name]
+        if current.generation_id != receipt.generation_id or self.recipe_state != "current":
+            raise RuntimeError("Runtime generation changed after admission")
+        return current
 
     def is_running(self, env_name: str) -> bool:
-        return env_name in self._envs
+        return env_name in self.pools
 
     def submit_processing_task(
         self, env_spec: _EnvSpecStub, payload: dict[str, Any],
-        max_workers: int = 1, worker_timeout: float | None = None,
+        max_workers: int = 1, worker_timeout: float | None = None, *,
+        runtime_receipt: Any, shared_memory_grant: Any = None,
     ) -> object:
-        assert env_spec.name in self._envs
-        assert self.recipe_state == "current"
+        try:
+            self.validate_runtime_receipt(env_spec, runtime_receipt)
+        except BaseException:
+            if shared_memory_grant is not None:
+                shared_memory_grant.drained()
+            raise
+        self.pools.add(env_spec.name)
         self.submitted_payloads.append(payload)
+        self.submitted_receipts.append(runtime_receipt)
+        self.submitted_grants.append(shared_memory_grant)
         return SimpleNamespace(payload=payload)
 
     def running_environments(self) -> tuple[str, ...]:
-        return tuple(self._envs)
+        return tuple(self.pools)
 
     def shutdown_all(self) -> None:
-        self._envs.clear()
-
-
-def _settings(dev_mode: bool = True) -> Settings:
-    return Settings(
-        deployment_mode="desktop",
-        dev_mode=dev_mode,
-    )
+        self.pools.clear()
 
 
 def _graph_with(nodes: list[tuple[str, bool]] | None = None) -> GraphState:
@@ -500,7 +482,7 @@ def test_validation_projects_workflow_boundary_statuses() -> None:
     )
 
     result = GraphValidationService.validation_from_compilation(
-        _selected_graph(), BuildOutput(workflow, [], set()), dev_mode=True
+        _selected_graph(), BuildOutput(workflow, [], set())
     )
 
     assert result.node_statuses["upstream"].status == "executed"
@@ -510,7 +492,7 @@ def test_validation_projects_workflow_boundary_statuses() -> None:
 
 def test_completed_run_publishes_workflow_boundary_statuses() -> None:
     bus = RecordingEventBus()
-    manager = ExecutionManager(bus, MagicMock(), _settings())
+    manager = ExecutionManager(bus, MagicMock())
     context = _TEST_CONTEXT.model_copy(
         update={"planned_node_ids": ["upstream/internal", "selected/internal"]}
     )
@@ -542,19 +524,29 @@ def _install_fake_builder(
     monkeypatch: pytest.MonkeyPatch,
     workflow: _FakeWorkflow | None,
     errors: list | None = None,
+    *,
+    project_errors: bool = False,
 ) -> MagicMock:
     """Replace request-local compilation with a fake ``BuildOutput``."""
     from bioimageflow_server.services.graph_builder import BuildOutput
     from bioimageflow_server.services.graph_compiler import GraphCompiler
 
-    def _builder(graph, *, storage_path=None, on_progress=None, settings=None):
+    original_root_ids: set[str] | None = None
+
+    def _builder(graph, *, storage_path=None, on_progress=None):
+        nonlocal original_root_ids
+        root_ids = {node.id for node in graph.nodes}
+        if original_root_ids is None:
+            original_root_ids = root_ids
         # Wire the progress callback into the fake workflow so scripted
         # events are delivered through it.
         if workflow is not None:
             workflow.on_progress = on_progress
         return BuildOutput(
             workflow=workflow,
-            errors=errors or [],
+            errors=[error for error in errors or []
+                    if not project_errors or error.node is None
+                    or error.node.split("/", 1)[0] not in original_root_ids - root_ids],
             disabled_node_ids=set(),
         )
 
@@ -588,7 +580,6 @@ def _observed_environment_adapter(
     execution = ExecutionManager(
         bus,
         MagicMock(),
-        _settings(),
         environment_replacement_authorizer=lambda _spec: replacement_allowed,
     )
 
@@ -601,6 +592,7 @@ def _observed_environment_adapter(
         on_preparation=execution._on_environment_preparation,
         on_provision_event=execution._on_environment_event,
         on_ready=execution._on_environment_ready,
+        on_admitted=execution._on_environment_admitted,
         on_failure=execution._on_environment_failure,
         on_stopped=lambda name: execution._publish_environment_status(name, "stopped"),
         replacement_authorizer=execution._environment_replacement_authorizer,
@@ -620,20 +612,14 @@ def test_concurrent_submissions_replace_one_stale_generation_before_handoff() ->
             self.task_generations: list[str] = []
             self.retired_generations: list[str] = []
 
-        def inspect_environment(self, env_spec: _EnvSpecStub) -> object:
-            state = self.recipe_state
+        def admit_runtime(self, env_spec: _EnvSpecStub, **kwargs: Any) -> object:
             if threading.current_thread().name == "e1-first":
                 first_inspected.set()
                 assert release_first.wait(5)
-            else:
-                second_attempted.set()
-            return SimpleNamespace(value=state)
-
-        def get_or_create(self, env_spec: _EnvSpecStub, **kwargs: Any) -> object:
             with self.lock:
-                if kwargs.get("replace_existing"):
+                if self.recipe_state == "stale" and kwargs.get("replace_stale"):
                     self.retired_generations.extend(self.task_generations)
-                return super().get_or_create(env_spec, **kwargs)
+                return super().admit_runtime(env_spec, **kwargs)
 
         def submit_processing_task(self, env_spec: _EnvSpecStub, payload: dict[str, Any], **kwargs: Any) -> object:
             with self.lock:
@@ -666,7 +652,9 @@ def test_concurrent_submissions_replace_one_stale_generation_before_handoff() ->
 
     def submit(row: int) -> None:
         try:
-            adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), {"row": row})
+            spec = _EnvSpecStub("cellpose-env")
+            receipt = adapter.admit_runtime(spec, provision=True, admissions={})
+            adapter.submit_processing_task(spec, {"row": row}, runtime_receipt=receipt)
         except BaseException as error:
             failures.append(error)
 
@@ -694,11 +682,60 @@ def test_concurrent_submissions_replace_one_stale_generation_before_handoff() ->
 # ---- B2: ExecutionManager ---------------------------------------------------
 
 
+def test_cleanup_retains_exact_owners_until_physical_grants_drain() -> None:
+    manager = ExecutionManager(RecordingEventBus(), MagicMock())
+    state = {"drained": False}
+    group = SimpleNamespace(release=MagicMock(side_effect=lambda: SimpleNamespace(
+        state="closed" if state["drained"] else "pending",
+    )))
+    owner = SimpleNamespace(close=MagicMock(side_effect=lambda: SimpleNamespace(
+        state="closed" if state["drained"] else "pending", pending_readers=0,
+        pending_grants=0 if state["drained"] else 1, pending_files=0,
+        pending_leases=0, errors=(),
+    )))
+    engine = SimpleNamespace(close=MagicMock(side_effect=[RuntimeError("physical close failed"), None]))
+    context = SimpleNamespace(result_groups=(group,), shared_memory_context=owner, cleanup_pending=False)
+    manager._settle_run_resources("run-owned", context, engine)
+    pending = manager._pending_resource_cleanup["run-owned"]
+    assert pending.engine is engine and pending.run_context is context and pending.groups == (group,)
+    state["drained"] = True
+    manager.retry_resource_cleanup()
+    assert manager._pending_resource_cleanup == {}
+    assert engine.close.call_count == 2
+    assert group.release.call_count == 2 and owner.close.call_count == 2
+
+
+@pytest.mark.parametrize("primary", [None, RuntimeError("science failed")])
+def test_cleanup_interruption_preserves_primary_and_independent_cleanup(primary: BaseException | None) -> None:
+    manager = ExecutionManager(RecordingEventBus(), MagicMock())
+    interruption = KeyboardInterrupt("cleanup interrupted")
+    engine = SimpleNamespace(close=MagicMock(side_effect=[interruption, None]))
+    group = SimpleNamespace(release=MagicMock(return_value=SimpleNamespace(state="closed")))
+    owner = SimpleNamespace(close=MagicMock(return_value=SimpleNamespace(state="closed")))
+    context = SimpleNamespace(result_groups=(group,), shared_memory_context=owner, cleanup_pending=False)
+    if primary is None:
+        with pytest.raises(KeyboardInterrupt) as raised:
+            manager._settle_run_resources("run-owned", context, engine)
+        assert raised.value is interruption
+    else:
+        with pytest.raises(RuntimeError) as raised:
+            try:
+                raise primary
+            finally:
+                manager._settle_run_resources("run-owned", context, engine, primary=primary)
+        assert raised.value is primary
+    assert manager._pending_resource_cleanup["run-owned"].engine is engine
+    group.release.assert_called_once()
+    owner.close.assert_called_once()
+    manager.retry_resource_cleanup()
+    assert manager._pending_resource_cleanup == {}
+
+
 class TestExecutionManagerLifecycle:
     async def test_cache_clear_updates_matching_live_status_without_rewriting_run_history(
         self,
     ) -> None:
-        em = ExecutionManager(NullEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(NullEventBus(), MagicMock())
         em.context = ExecutionContext(execution_id="run-1", workflow_id="wf", draft_revision=2)
         executed = NodeStatus(node_id="source", status="executed", cached=True)
         em._node_statuses = {"source": executed}
@@ -716,7 +753,7 @@ class TestExecutionManagerLifecycle:
         assert em.get_status().last_result.node_statuses["source"].status == "executed"
 
     async def test_idle_state_initially(self) -> None:
-        em = ExecutionManager(NullEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(NullEventBus(), MagicMock())
         assert em.state == "idle"
         assert em.is_running is False
         assert em.last_result is None
@@ -727,7 +764,7 @@ class TestExecutionManagerLifecycle:
     ) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.state == "running"
         await _drain(em)
@@ -747,7 +784,7 @@ class TestExecutionManagerLifecycle:
             ]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         context = await em.start(
             _graph_with([("n1", True)]),
@@ -774,7 +811,7 @@ class TestExecutionManagerLifecycle:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         context = await em.start(
             _graph_with([("n1", True)]),
@@ -812,33 +849,32 @@ class TestExecutionManagerLifecycle:
                         "env_manager": env_manager,
                     }
                 )
-                return type("Engine", (), {"environment_manager": env_manager})()
+                return type("Engine", (), {"environment_manager": env_manager, "close": lambda self: None})()
 
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
                 manager = engine.environment_manager
-                self.get_or_create_wrappers.append(manager.get_or_create)
+                self.get_or_create_wrappers.append(manager.admit_runtime)
                 self.shutdown_all_wrappers.append(manager.shutdown_all)
                 if self.on_progress is not None:
                     self.on_progress(_ProgressEventStub("n1", "started"))
-                manager.get_or_create(_EnvSpecStub("atlas"))
-                return super().compute(*targets, dev_mode=dev_mode)
+                receipt = manager.admit_runtime(_EnvSpecStub("atlas"), provision=True, admissions={})
+                manager.submit_processing_task(_EnvSpecStub("atlas"), {}, runtime_receipt=receipt)
+                return super().compute(*targets)
 
         bus = RecordingEventBus()
         wf = _WorkflowWithWetlands()
         shared_manager = _FakeWetlandsManager()
-        original_get_or_create = shared_manager.get_or_create.__func__
+        original_admit_runtime = shared_manager.admit_runtime.__func__
         original_shutdown_all = shared_manager.shutdown_all.__func__
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(
             bus,
             MagicMock(),
-            _settings(),
             environment_manager_provider=lambda: shared_manager,
         )
 
@@ -846,8 +882,9 @@ class TestExecutionManagerLifecycle:
             _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
         )
         await _drain(em)
+        first_progress = em.retained_progress()
 
-        second_context = await em.start(
+        await em.start(
             _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
         )
         await _drain(em)
@@ -859,24 +896,26 @@ class TestExecutionManagerLifecycle:
         adapters = [call["env_manager"] for call in wf.create_engine_calls]
         assert all(isinstance(adapter, _ExecutionEnvironmentManager) for adapter in adapters)
         assert adapters[0] is not adapters[1]
-        assert shared_manager.get_or_create.__func__ is original_get_or_create
+        assert shared_manager.admit_runtime.__func__ is original_admit_runtime
         assert shared_manager.shutdown_all.__func__ is original_shutdown_all
         assert shared_manager.calls == ["atlas", "atlas"]
         assert bus.environment_events == [
-            ("atlas", "creating"),
-            ("atlas", "running"),
-            ("atlas", "running"),
-            ("atlas", "running"),
+            ("atlas", "creating"), ("atlas", "ready"), ("atlas", "running"),
+            ("atlas", "running"), ("atlas", "running"),
         ]
         pixi_logs = [
             context
             for event, context in zip(bus.log_events, bus.log_contexts, strict=True)
             if event[1] == "Downloaded atlas"
         ]
-        assert pixi_logs == [first_context, second_context]
+        assert pixi_logs == [first_context]
         assert wf.get_or_create_wrappers[0] is not wf.get_or_create_wrappers[1]
         assert wf.shutdown_all_wrappers[0] is not wf.shutdown_all_wrappers[1]
         assert any(
+            event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
+            for event in first_progress
+        )
+        assert not any(
             event["kind"] == "phase" and "Resolving pixi.lock" in event["payload"]["message"]
             for event in em.retained_progress()
         )
@@ -892,16 +931,15 @@ class TestExecutionManagerLifecycle:
                 self.manager.raise_exc = RuntimeError("solve failed")
 
             def create_engine(self, **kwargs: Any) -> Any:
-                return type("Engine", (), {"environment_manager": kwargs["env_manager"]})()
+                return type("Engine", (), {"environment_manager": kwargs["env_manager"], "close": lambda self: None})()
 
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
-                engine.environment_manager.get_or_create(_EnvSpecStub("cellpose-env"))
+                engine.environment_manager.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True)
                 return {}
 
         bus = RecordingEventBus()
@@ -910,7 +948,6 @@ class TestExecutionManagerLifecycle:
         em = ExecutionManager(
             bus,
             MagicMock(),
-            _settings(),
             environment_manager_provider=lambda: wf.manager,
         )
 
@@ -931,7 +968,7 @@ class TestExecutionManagerLifecycle:
         manager.recipe_state = "stale"
         adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
 
-        replacement = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+        replacement = adapter.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True)
 
         assert replacement is manager._envs["cellpose-env"]
         assert replacement is not old
@@ -939,10 +976,10 @@ class TestExecutionManagerLifecycle:
         assert manager.replace_existing_calls == [True]
         assert bus.environment_events == [
             ("cellpose-env", "updating"),
-            ("cellpose-env", "running"),
+            ("cellpose-env", "ready"),
         ]
 
-        reused = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+        reused = adapter.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True)
 
         assert reused is replacement
         assert manager._envs["unrelated-env"] is unrelated
@@ -957,7 +994,7 @@ class TestExecutionManagerLifecycle:
         adapter = _observed_environment_adapter(manager, bus, replacement_allowed=False)
 
         with pytest.raises(EnvironmentReuseError, match="requires replacement"):
-            adapter.get_or_create(_EnvSpecStub("external-env"))
+            adapter.admit_runtime(_EnvSpecStub("external-env"), provision=True)
 
         assert manager._envs["external-env"] is old
         assert manager.replace_existing_calls == [False]
@@ -973,7 +1010,7 @@ class TestExecutionManagerLifecycle:
         adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
 
         with pytest.raises(RuntimeError, match="provisioning failed"):
-            adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+            adapter.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True)
 
         assert manager._envs["cellpose-env"] is old
         assert manager.generation == 0
@@ -984,7 +1021,7 @@ class TestExecutionManagerLifecycle:
         ]
 
         manager.raise_exc = None
-        replacement = adapter.get_or_create(_EnvSpecStub("cellpose-env"))
+        replacement = adapter.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True)
 
         assert replacement is manager._envs["cellpose-env"]
         assert replacement is not old
@@ -992,47 +1029,71 @@ class TestExecutionManagerLifecycle:
         assert manager.replace_existing_calls == [True, True]
         assert bus.environment_events[-2:] == [
             ("cellpose-env", "updating"),
-            ("cellpose-env", "running"),
+            ("cellpose-env", "ready"),
         ]
 
-    @pytest.mark.parametrize("mapped", [False, True])
-    async def test_processing_submission_prepares_stale_environment_before_dispatch(
-        self, mapped: bool,
-    ) -> None:
+    async def test_processing_submission_uses_receipt_admitted_before_dispatch(self) -> None:
         bus = RecordingEventBus()
         manager = _FakeWetlandsManager()
         manager._envs["cellpose-env"] = SimpleNamespace(generation_id="old")
         manager.recipe_state = "stale"
         adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
+        spec = _EnvSpecStub("cellpose-env")
+        admissions: dict = {}
+        receipt = adapter.admit_runtime(spec, provision=True, admissions=admissions)
+        assert manager.pools == set()  # Key/cache admission has started no workers.
+        assert bus.environment_events[-1] == ("cellpose-env", "ready")
+        assert manager.admission_memos == [admissions]
+        grant = SimpleNamespace(drained=MagicMock())
         payloads = [{"row": 1}, {"row": 2}]
-
-        if mapped:
-            tasks = adapter.map_processing_tasks(_EnvSpecStub("cellpose-env"), payloads)
-        else:
-            tasks = [adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), payload)
-                     for payload in payloads]
-
+        tasks = [adapter.submit_processing_task(
+            spec, payload, runtime_receipt=receipt, shared_memory_grant=grant,
+        ) for payload in payloads]
         assert [task.payload for task in tasks] == payloads
-        assert manager.submitted_payloads == payloads
-        assert manager.replace_existing_calls == [True, False]
+        assert manager.submitted_receipts == [receipt, receipt]
+        assert manager.submitted_grants == [grant, grant]
+        assert manager.replace_existing_calls == [True]
         assert manager.generation == 1
         assert bus.environment_events.count(("cellpose-env", "updating")) == 1
+        bus.environment_events.clear()
+        adapter.admit_runtime(spec, provision=True, admissions={})
+        assert bus.environment_events == [("cellpose-env", "running")]
+        assert manager.submitted_payloads == payloads  # Admission never submits.
+
+    async def test_held_generation_change_refuses_before_any_task(self) -> None:
+        manager = _FakeWetlandsManager()
+        adapter = _observed_environment_adapter(manager, RecordingEventBus(), replacement_allowed=True)
+        spec = _EnvSpecStub("cellpose-env")
+        receipt = adapter.admit_runtime(spec, provision=True, admissions={})
+        manager._envs[spec.name] = SimpleNamespace(generation_id="substituted")
+        grant = SimpleNamespace(drained=MagicMock())
+        with pytest.raises(RuntimeError, match="generation changed"):
+            adapter.submit_processing_task(spec, {}, runtime_receipt=receipt, shared_memory_grant=grant)
+        assert manager.submitted_payloads == []
+        assert manager.replace_existing_calls == [False]
+        grant.drained.assert_called_once()
+
+    async def test_metadata_only_admission_never_prepares_or_emits_status(self) -> None:
+        bus = RecordingEventBus()
+        manager = _FakeWetlandsManager()
+        adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True)
+        assert adapter.admit_runtime(_EnvSpecStub("absent"), provision=False, admissions={}) is None
+        assert manager.calls == [] and manager.pools == set()
+        assert bus.environment_events == []
 
     async def test_failed_processing_preparation_never_submits_payload(self) -> None:
         manager = _FakeWetlandsManager()
         manager.recipe_state = "stale"
         manager.raise_exc = RuntimeError("provisioning failed")
         adapter = _observed_environment_adapter(manager, RecordingEventBus(), replacement_allowed=True)
-
         with pytest.raises(RuntimeError, match="provisioning failed"):
-            adapter.submit_processing_task(_EnvSpecStub("cellpose-env"), {"row": 1})
-
+            adapter.admit_runtime(_EnvSpecStub("cellpose-env"), provision=True, admissions={})
         assert manager.submitted_payloads == []
 
     async def test_start_clears_previous_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
@@ -1052,7 +1113,6 @@ class TestExecutionManagerLifecycle:
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
@@ -1061,7 +1121,7 @@ class TestExecutionManagerLifecycle:
 
         wf = _BlockingWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         with pytest.raises(ExecutionConflictError):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
@@ -1087,7 +1147,7 @@ class TestExecutionManagerLifecycle:
             return build(*args, **kwargs)
 
         builder.side_effect = blocking_build
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         prior_context = ExecutionContext(
             execution_id="prior-execution",
             workflow_id="prior-workflow",
@@ -1158,14 +1218,14 @@ class TestExecutionManagerLifecycle:
     async def test_rapid_double_start_second_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         with pytest.raises(ExecutionConflictError):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
     async def test_idle_mutation_lease_blocks_run_without_reporting_starting(self) -> None:
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         async with em.exclusive_idle_mutation():
             assert em.is_running is True
@@ -1182,7 +1242,7 @@ class TestExecutionManagerLifecycle:
         assert em.is_running is False
 
     async def test_idle_mutation_leases_serialize_without_execution_conflict(self) -> None:
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         first_entered = asyncio.Event()
         release_first = asyncio.Event()
         second_entered = asyncio.Event()
@@ -1211,7 +1271,7 @@ class TestExecutionManagerLifecycle:
         assert em.is_running is False
 
     async def test_idle_mutation_lease_rejects_an_actual_execution(self) -> None:
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         em.state = "running"
 
         with pytest.raises(ExecutionConflictError):
@@ -1224,7 +1284,7 @@ class TestExecutionManagerLifecycle:
         wf = _FakeWorkflow()
         wf.nodes = {node_id: object() for node_id in ["source", "selected"]}
         builder = _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         graph = graph_state(
             nodes=[
                 ToolNodeState(
@@ -1279,7 +1339,7 @@ class TestExecutionManagerProgress:
         bus = RecordingEventBus()
         first = _FakeWorkflow()
         _install_fake_builder(monkeypatch, first)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         first_context = await em.start(
             _graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1
         )
@@ -1311,7 +1371,7 @@ class TestExecutionManagerProgress:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "started")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "running", False, None, None) in bus.node_state_events
@@ -1331,7 +1391,7 @@ class TestExecutionManagerProgress:
             ]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert any(
@@ -1367,7 +1427,7 @@ class TestExecutionManagerProgress:
             ]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
@@ -1384,7 +1444,7 @@ class TestExecutionManagerProgress:
             events=[_ProgressEventStub("n1", "row_complete", row=2, total_rows=5, timestamp=2.0)]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.progress is not None
@@ -1412,7 +1472,7 @@ class TestExecutionManagerProgress:
             ]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "executed", False, None, None) in bus.node_state_events
@@ -1429,7 +1489,7 @@ class TestExecutionManagerProgress:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "cached")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "executed", True, None, None) in bus.node_state_events
@@ -1444,7 +1504,7 @@ class TestExecutionManagerProgress:
             events=[_ProgressEventStub("n1", "failed", message="boom")],
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         n1_failed = [e for e in bus.node_state_events if e[0] == "n1" and e[1] == "failed"]
@@ -1472,7 +1532,7 @@ class TestExecutionManagerProgress:
             ],
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
@@ -1487,7 +1547,7 @@ class TestExecutionManagerProgress:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "cancelled")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert ("n1", "unexecuted", False, None, None) in bus.node_state_events
@@ -1501,7 +1561,7 @@ class TestExecutionManagerProgress:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "future_status")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         with caplog.at_level(logging.WARNING):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
             await _drain(em)
@@ -1514,7 +1574,7 @@ class TestExecutionManagerResult:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
@@ -1529,7 +1589,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow()
         wf.raise_exc = RuntimeError("kaboom")
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert em.last_result is not None
@@ -1553,7 +1613,7 @@ class TestExecutionManagerResult:
             "load(name) to load the existing environment without recipe validation, or choose a different name."
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         await em.start(_graph_with([("cellpose_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
@@ -1575,7 +1635,7 @@ class TestExecutionManagerResult:
             "it is loaded from a non-default path.\nRequested hash: sha256:abc"
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
@@ -1603,7 +1663,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow(events=[_ProgressEventStub("atlas_1", "started")])
         wf.raise_exc = RuntimeError(payload)
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         await em.start(_graph_with([("atlas_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
@@ -1642,7 +1702,7 @@ class TestExecutionManagerResult:
         )
         wf.raise_exc = RuntimeError(payload)
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
 
         await em.start(_graph_with([("chameau2_1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
@@ -1676,7 +1736,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow()
         wf.raise_exc = RuntimeError("kaboom")
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         with caplog.at_level(logging.ERROR):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
             await _drain(em)
@@ -1700,7 +1760,6 @@ class TestExecutionManagerResult:
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
@@ -1711,7 +1770,7 @@ class TestExecutionManagerResult:
         bus = RecordingEventBus()
         wf = _ProbeWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
 
@@ -1730,7 +1789,7 @@ class TestExecutionManagerResult:
         )
         wf.raise_exc = RuntimeError("boom")
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
@@ -1741,7 +1800,7 @@ class TestExecutionManagerResult:
         bus = RecordingEventBus()
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         assert bus.complete_events
@@ -1753,7 +1812,7 @@ class TestExecutionManagerResult:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _install_fake_builder(monkeypatch, None, errors=[MagicMock(detail="bad")])
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         with pytest.raises(WorkflowBuildError):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.state == "idle"
@@ -1774,7 +1833,7 @@ class TestExecutionManagerResult:
             ]
         )
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         prior_status = NodeStatus(
             node_id="previous",
             status="executed",
@@ -1829,8 +1888,9 @@ class TestExecutionManagerResult:
                     node="unrelated",
                 )
             ],
+            project_errors=True,
         )
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         context = await em.start(
             _selected_graph(),
@@ -1848,11 +1908,51 @@ class TestExecutionManagerResult:
 
         assert wf.compute_calls == 1
         assert wf.targets_received == (wf.nodes["selected"],)
-        assert {node.id for node in builder.call_args.args[0].nodes} == {
+        assert builder.call_count == 2
+        assert {node.id for node in builder.call_args_list[0].args[0].nodes} == {
             "upstream",
             "selected",
             "unrelated",
         }
+        projected = builder.call_args_list[1].args[0]
+        assert {node.id for node in projected.nodes} == {"upstream", "selected"}
+        assert projected.nodes == _selected_graph().nodes[:2]
+        assert projected.config == _selected_graph().config
+        assert {edge.id for edge in projected.edges} == {"upstream_to_selected"}
+
+    async def test_selected_projection_rechecks_accepted_draft_before_execution(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
+        builder = _install_fake_builder(
+            monkeypatch,
+            wf,
+            errors=[GraphValidationError(
+                type="missing_tool", detail="Unrelated unavailable tool", node="unrelated",
+            )],
+            project_errors=True,
+        )
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
+        checks = 0
+
+        async def require_current() -> None:
+            nonlocal checks
+            checks += 1
+            if checks == 2:
+                raise RuntimeError("Accepted draft changed during selected compilation")
+
+        with pytest.raises(RuntimeError, match="Accepted draft changed"):
+            await manager.start(
+                _selected_graph(), nodes=["selected"], workflow_id="wf-test",
+                draft_revision=1, ensure_context_current=require_current,
+            )
+
+        assert builder.call_count == checks == 2
+        assert wf.compute_calls == 0
+        assert manager.context is None
+        assert manager._run_task is None
+        assert manager.state == "idle"
 
     @pytest.mark.parametrize("invalid_node", ["selected", "upstream"])
     async def test_selected_run_rejects_invalid_selected_or_upstream_node_absent_from_workflow(
@@ -1866,7 +1966,7 @@ class TestExecutionManagerResult:
             node=invalid_node,
         )
         _install_fake_builder(monkeypatch, wf, errors=[error])
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -1889,7 +1989,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow()
         wf.nodes = {node_id: _compiled_workflow_node() for node_id in ("upstream", "selected")}
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError, match="Failed to build workflow"):
             await em.start(
@@ -1907,7 +2007,7 @@ class TestExecutionManagerResult:
         wf = _FakeWorkflow()
         wf.nodes = {"upstream": _compiled_workflow_node()}
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -1933,7 +2033,7 @@ class TestExecutionManagerResult:
             node=node,
         )
         _install_fake_builder(monkeypatch, wf, errors=[error])
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -1961,8 +2061,9 @@ class TestExecutionManagerResult:
                     node="unrelated/internal",
                 )
             ],
+            project_errors=True,
         )
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         await em.start(
             _selected_graph(),
@@ -1986,7 +2087,7 @@ class TestExecutionManagerResult:
             node=node,
         )
         _install_fake_builder(monkeypatch, wf, errors=[error])
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -2021,7 +2122,7 @@ class TestExecutionManagerResult:
             edge_id=edge.id,
         )
         _install_fake_builder(monkeypatch, wf, errors=[error])
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -2048,7 +2149,7 @@ class TestExecutionManagerResult:
                 )
             ],
         )
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(
@@ -2064,7 +2165,7 @@ class TestExecutionManagerResult:
     async def test_disabled_nodes_seeded_as_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(
             _graph_with([("n1", True), ("n2", False)]), workflow_id="wf-test", draft_revision=1
         )
@@ -2086,7 +2187,7 @@ class TestExecutionManagerResult:
         )
         wf.raise_exc = WorkflowCancelledError("cancelled")
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(
             _graph_with([("n1", True), ("n2", True)]), workflow_id="wf-test", draft_revision=1
         )
@@ -2096,8 +2197,38 @@ class TestExecutionManagerResult:
 
 
 class TestExecutionManagerStop:
+    async def test_close_refuses_queued_execution_reservation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        wf = _FakeWorkflow()
+        _install_fake_builder(monkeypatch, wf)
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
+        closing_started = asyncio.Event()
+        reservation_started = asyncio.Event()
+
+        async def close() -> None:
+            closing_started.set()
+            await manager.close()
+
+        async def start() -> None:
+            reservation_started.set()
+            await manager.start(_graph_with([("n1", True)]), workflow_id="wf", draft_revision=1)
+
+        # Instrument the admission gate directly: both operations must queue
+        # before close sets the terminal fence, with close first in the queue.
+        async with manager._preparation_lock:
+            closing = asyncio.create_task(close())
+            await closing_started.wait()
+            reservation = asyncio.create_task(start())
+            await reservation_started.wait()
+            assert not closing.done() and not reservation.done()
+        with pytest.raises(ExecutionConflictError, match="shutting down"):
+            await reservation
+        await closing
+        assert wf.compute_calls == 0
+        assert manager._run_task is None and manager.context is None
+        await manager.close()  # Cleanup retries do not reopen admission.
+
     async def test_stop_while_idle_is_noop(self) -> None:
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.stop()  # no error
 
     async def test_stop_cancels_running_workflow(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2111,7 +2242,6 @@ class TestExecutionManagerStop:
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
@@ -2126,7 +2256,7 @@ class TestExecutionManagerStop:
 
         wf = _CancellableWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await asyncio.sleep(0.01)
         await em.stop()
@@ -2145,7 +2275,6 @@ class TestExecutionManagerStop:
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
@@ -2159,7 +2288,7 @@ class TestExecutionManagerStop:
         bus = RecordingEventBus()
         wf = _CancellableWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(bus, MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await asyncio.sleep(0.01)
         await em.stop()
@@ -2173,7 +2302,7 @@ class TestExecutionManagerStop:
 
 class TestExecutionManagerStatus:
     async def test_get_status_idle(self) -> None:
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         status = em.get_status()
         assert status.state == "idle"
         assert status.last_result is None
@@ -2184,7 +2313,7 @@ class TestExecutionManagerStatus:
     ) -> None:
         wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         await _drain(em)
         status = em.get_status()
@@ -2204,7 +2333,6 @@ class TestExecutionManagerIsRunning:
             def compute(
                 self,
                 *targets: Any,
-                dev_mode: bool = False,
                 engine: Any = None,
                 run_context: Any = None,
             ) -> dict[str, Any]:
@@ -2213,40 +2341,12 @@ class TestExecutionManagerIsRunning:
 
         wf = _BlockWorkflow()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        em = ExecutionManager(RecordingEventBus(), MagicMock())
         await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
         assert em.is_running is True
         wf.go.set()
         await _drain(em)
         assert em.is_running is False
-
-
-class TestExecutionManagerSettingsProvider:
-    async def test_provider_overrides_snapshot_dev_mode(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        wf = _FakeWorkflow()
-        _install_fake_builder(monkeypatch, wf)
-        # Snapshot says dev_mode=True; live provider returns False.
-        em = ExecutionManager(
-            RecordingEventBus(),
-            MagicMock(),
-            _settings(dev_mode=True),
-            settings_provider=lambda: _settings(dev_mode=False),
-        )
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
-        await _drain(em)
-        assert wf.compute_calls == 1
-        assert wf.dev_mode_received is False
-
-    async def test_no_provider_uses_snapshot(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        wf = _FakeWorkflow()
-        _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings(dev_mode=True))
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test", draft_revision=1)
-        await _drain(em)
-        assert wf.compute_calls == 1
-        assert wf.dev_mode_received is True
 
 
 class TestExecutionManagerStoragePath:
@@ -2258,7 +2358,6 @@ class TestExecutionManagerStoragePath:
         em = ExecutionManager(
             RecordingEventBus(),
             MagicMock(),
-            _settings(),
             storage_path=None,
         )
         await em.start(
@@ -2278,7 +2377,6 @@ class TestExecutionManagerStoragePath:
         em = ExecutionManager(
             RecordingEventBus(),
             MagicMock(),
-            _settings(),
         )
 
         await em.start(
@@ -2295,7 +2393,7 @@ class TestExecutionManagerStoragePath:
 
 class TestExecutionRetryIntent:
     def test_retry_reuses_original_targets(self) -> None:
-        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
         manager.context = ExecutionContext(
             execution_id="failed-run",
             workflow_id="wf-test",
@@ -2314,7 +2412,7 @@ class TestExecutionRetryIntent:
         assert nodes == ["selected"]
 
     def test_retry_rejects_a_different_or_successful_execution(self) -> None:
-        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
         manager.context = ExecutionContext(
             execution_id="successful-run",
             workflow_id="wf-test",
@@ -2331,7 +2429,7 @@ class TestExecutionRetryIntent:
             )
 
     async def test_status_retains_execution_intent_while_idle(self) -> None:
-        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
         manager.context = ExecutionContext(
             execution_id="failed-run",
             workflow_id="wf-test",

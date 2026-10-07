@@ -36,10 +36,9 @@ from bioimageflow_server.models.execution import (
 )
 from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
 from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.environment_logging import environment_log_entry
-from bioimageflow_server.services.graph_validator import GraphValidationService
+from bioimageflow_server.services.graph_validator import GraphValidationOutput, GraphValidationService
 from bioimageflow_server.services.log_context import bind_execution_log_context
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_status import aggregate_workflow_statuses
@@ -201,6 +200,15 @@ class WorkflowBuildError(RuntimeError):
         self.errors = errors
 
 
+@dataclass
+class _RunCleanup:
+    """Exact application-owned cleanup retained independently of outcome."""
+
+    run_context: Any
+    engine: Any | None
+    groups: tuple[Any, ...]
+
+
 class _ExecutionEnvironmentManager:
     """Observe one run's use of a shared Wetlands manager without changing it."""
 
@@ -213,6 +221,7 @@ class _ExecutionEnvironmentManager:
         on_preparation: Callable[[Any, ExecutionContext, str | None, str], None],
         on_provision_event: Callable[[Any, ExecutionContext, str | None, str], None],
         on_ready: Callable[[ExecutionContext, str | None, str], None],
+        on_admitted: Callable[[ExecutionContext, str | None, str, bool], None],
         on_failure: Callable[[str], None],
         on_stopped: Callable[[str], None],
         replacement_authorizer: Callable[[Any], bool] | None,
@@ -224,69 +233,51 @@ class _ExecutionEnvironmentManager:
         self._on_preparation = on_preparation
         self._on_provision_event = on_provision_event
         self._on_ready = on_ready
+        self._on_admitted = on_admitted
         self._on_failure = on_failure
         self._on_stopped = on_stopped
         self._replacement_authorizer = replacement_authorizer
         self._environment_lock = environment_lock if environment_lock is not None else threading.RLock()
 
-    def get_or_create(
-        self,
-        env_spec: Any,
-        max_workers: int = 1,
-        worker_timeout: float | None = None,
-        *,
-        on_provision_event: Callable[[Any], None] | None = None,
-        replace_existing: bool = False,
-        on_preparation: Callable[[Any], None] | None = None,
+    def admit_runtime(
+        self, env_spec: Any, *, provision: bool,
+        admissions: dict[Any, Any] | None = None,
     ) -> Any:
-        with self._environment_lock:
-            return self._get_or_create_locked(
-                env_spec, max_workers=max_workers, worker_timeout=worker_timeout,
-                on_provision_event=on_provision_event, replace_existing=replace_existing,
-                on_preparation=on_preparation,
-            )
-
-    def _get_or_create_locked(
-        self,
-        env_spec: Any,
-        max_workers: int,
-        worker_timeout: float | None,
-        *,
-        on_provision_event: Callable[[Any], None] | None,
-        replace_existing: bool,
-        on_preparation: Callable[[Any], None] | None,
-    ) -> Any:
+        """Prepare ready content before keys; admission never starts a pool."""
         env_name = env_spec.name
         node_id = self._current_node_id()
 
         def preparation_callback(preparation: Any) -> None:
             self._on_preparation(preparation, self._context, node_id, env_name)
-            if on_preparation is not None:
-                on_preparation(preparation)
 
         def provision_callback(event: Any) -> None:
             self._on_provision_event(event, self._context, node_id, env_name)
-            if on_provision_event is not None:
-                on_provision_event(event)
 
         try:
-            if self._replacement_authorizer is not None and self._replacement_authorizer(env_spec):
-                recipe_state = self._manager.inspect_environment(env_spec)
-                if getattr(recipe_state, "value", None) == "stale":
-                    replace_existing = True
-            environment = self._manager.get_or_create(
-                env_spec,
-                max_workers=max_workers,
-                worker_timeout=worker_timeout,
-                on_provision_event=provision_callback,
-                replace_existing=replace_existing,
-                on_preparation=preparation_callback,
-            )
+            with self._environment_lock:
+                receipt = self._manager.admit_runtime(
+                    env_spec, provision=provision, admissions=admissions,
+                    replace_stale=bool(
+                        provision and self._replacement_authorizer is not None
+                        and self._replacement_authorizer(env_spec)
+                    ),
+                    on_preparation=preparation_callback if provision else None,
+                    on_provision_event=provision_callback if provision else None,
+                    on_removal_event=provision_callback if provision else None,
+                )
+                if provision and receipt is not None:
+                    self._on_admitted(
+                        self._context, node_id, env_name, self._manager.is_running(env_name),
+                    )
+                return receipt
         except Exception:
-            self._on_failure(env_name)
+            if provision:
+                self._on_failure(env_name)
             raise
-        self._on_ready(self._context, node_id, env_name)
-        return environment
+
+    def validate_runtime_receipt(self, env_spec: Any, receipt: Any) -> Any:
+        with self._environment_lock:
+            return self._manager.validate_runtime_receipt(env_spec, receipt)
 
     def submit_processing_task(
         self,
@@ -294,31 +285,29 @@ class _ExecutionEnvironmentManager:
         payload: dict[str, Any],
         max_workers: int = 1,
         worker_timeout: float | None = None,
+        *,
+        shared_memory_grant: Any = None,
+        runtime_receipt: Any = None,
     ) -> Any:
-        # Whole-workflow compute dispatches directly; only compute_steps callers
-        # invoke prepare_node. Keep authorization and observation at this common
-        # submission boundary before the shared manager submits any processing.
+        # The engine already used this exact receipt for identity/cache lookup.
+        # Handoff fences it again, but cannot prepare or replace that generation.
         with self._environment_lock:
-            self.get_or_create(
-                env_spec, max_workers=max_workers, worker_timeout=worker_timeout,
-            )
-            return self._manager.submit_processing_task(
-                env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout
-            )
-
-    def map_processing_tasks(
-        self,
-        env_spec: Any,
-        payloads: list[dict[str, Any]],
-        max_workers: int = 1,
-        worker_timeout: float | None = None,
-    ) -> list[Any]:
-        return [
-            self.submit_processing_task(
-                env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout,
-            )
-            for payload in payloads
-        ]
+            if runtime_receipt is None:
+                if shared_memory_grant is not None:
+                    shared_memory_grant.drained()
+                raise RuntimeError("Processing submission requires its admitted runtime receipt")
+            try:
+                # The public manager atomically validates the receipt under
+                # its pool-owner lock; no duplicate ready-content read here.
+                task = self._manager.submit_processing_task(
+                    env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout,
+                    shared_memory_grant=shared_memory_grant, runtime_receipt=runtime_receipt,
+                )
+            except Exception:
+                self._on_failure(env_spec.name)
+                raise
+            self._on_ready(self._context, self._current_node_id(), env_spec.name)
+            return task
 
     def shutdown_all(self) -> None:
         names = self._manager.running_environments()
@@ -392,6 +381,26 @@ def _planned_leaf_nodes(
     return ids, names
 
 
+def _selected_execution_graph(graph: GraphState, scope: set[str]) -> GraphState:
+    """Project an accepted dependency closure without changing nested workflows."""
+
+    inputs = []
+    for port in graph.interface.inputs:
+        targets = [target for target in port.targets if target.node in scope]
+        if targets:
+            inputs.append(port.model_copy(update={"targets": targets}))
+    interface = graph.interface.model_copy(update={
+        "inputs": inputs,
+        "outputs": [port for port in graph.interface.outputs if port.source.node in scope],
+    })
+    return graph.model_copy(update={
+        "nodes": [node for node in graph.nodes if node.id in scope],
+        "edges": [edge for edge in graph.edges
+                  if edge.source_node in scope and edge.target_node in scope],
+        "interface": interface,
+    })
+
+
 def _selected_validation_errors(
     graph: GraphState,
     scope: set[str],
@@ -411,6 +420,32 @@ def _selected_validation_errors(
     return selected_errors
 
 
+def _resolved_workflow_nodes(
+    workflow: Any | None, targets: list[str] | None
+) -> tuple[Any, dict[str, Any]]:
+    """Refuse missing compilation or targets before any execution admission."""
+
+    if workflow is None:
+        raise WorkflowBuildError([
+            GraphValidationError(
+                type="parameter_invalid",
+                detail="Workflow compilation did not produce an executable workflow",
+            )
+        ])
+    node_map = dict(workflow.nodes)
+    if targets is not None:
+        unresolved = sorted(set(targets) - node_map.keys())
+        if unresolved:
+            raise WorkflowBuildError([
+                GraphValidationError(
+                    type="parameter_invalid",
+                    detail=f"Requested execution targets could not be resolved: {unresolved}",
+                    node=unresolved[0] if len(unresolved) == 1 else None,
+                )
+            ])
+    return workflow, node_map
+
+
 # ---- ExecutionManager -------------------------------------------------------
 
 
@@ -421,9 +456,7 @@ class ExecutionManager:
         self,
         event_bus: ExecutionEventBus,
         tool_registry: ToolRegistryService,
-        settings: Settings,
         storage_path: Path | None = None,
-        settings_provider: Callable[[], Settings] | None = None,
         environment_manager_provider: Callable[[], Any | None] | None = None,
         environment_replacement_authorizer: Callable[[Any], bool] | None = None,
         retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
@@ -432,11 +465,6 @@ class ExecutionManager:
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
-        self.settings = settings
-        # When provided, ``settings_provider`` is consulted on each ``start()``
-        # so live SettingsStore PATCHes (e.g. flipping ``dev_mode``) take
-        # effect on the next run without restarting the app.
-        self._settings_provider = settings_provider
         self._environment_manager_provider = environment_manager_provider
         self._environment_replacement_authorizer = environment_replacement_authorizer
         self._processing_environment_lock = processing_environment_lock
@@ -453,6 +481,7 @@ class ExecutionManager:
         self._active_graph: GraphState | None = None
         self._run_task: asyncio.Task | None = None
         self._preparation_lock = asyncio.Lock()
+        self._closing = False
         self._starting = False
         self._pending_context: ExecutionContext | None = None
         self._idle_operation_active = False
@@ -467,6 +496,8 @@ class ExecutionManager:
         self._retained_statuses: dict[str, str] = {}
         self._workflow_run_contexts: dict[str, Any] = {}
         self._retained_result_exports: dict[str, ResultExportSnapshot] = {}
+        self._pending_resource_cleanup: dict[str, _RunCleanup] = {}
+        self._resource_cleanup_lock = threading.RLock()
 
     # ---- Public properties -------------------------------------------------
 
@@ -574,11 +605,15 @@ class ExecutionManager:
     ) -> AsyncIterator[ExecutionContext]:
         """Reserve the engine before any offloaded Run authority preparation."""
 
+        if self._closing:
+            raise ExecutionConflictError("The execution manager is shutting down")
         if self.is_running:
             raise ExecutionConflictError(
                 "An execution is already running; stop it before starting a new one"
             )
         async with self._preparation_lock:
+            if self._closing:
+                raise ExecutionConflictError("The execution manager is shutting down")
             if self.is_running:
                 raise ExecutionConflictError(
                     "An execution is already running; stop it before starting a new one"
@@ -637,7 +672,6 @@ class ExecutionManager:
         storage_path: Path | None,
         ensure_context_current: Callable[[], Awaitable[None]] | None,
     ) -> ExecutionContext:
-        live_settings = self._settings_provider() if self._settings_provider else self.settings
         run_storage_path = storage_path if storage_path is not None else self.storage_path
         build_graph = graph
         planned_node_ids, planned_node_names = _planned_leaf_nodes(build_graph, nodes)
@@ -648,29 +682,32 @@ class ExecutionManager:
             }
         )
         on_progress = self._make_progress_callback(context)
-        try:
-            validation_output = await GraphValidationService(
-                self.tool_registry
-            ).validate_with_compilation_async(
-                build_graph,
-                storage_path=run_storage_path,
-                on_progress=on_progress,
-                dev_mode=bool(live_settings.dev_mode),
-            )
-        except Exception as exc:
+
+        async def validate_for_run(definition: GraphState) -> GraphValidationOutput:
+            try:
+                output = await GraphValidationService(
+                    self.tool_registry
+                ).validate_with_compilation_async(
+                    definition,
+                    storage_path=run_storage_path,
+                    on_progress=on_progress,
+                )
+            except Exception as exc:
+                if ensure_context_current is not None:
+                    await ensure_context_current()
+                raise WorkflowBuildError(
+                    [
+                        GraphValidationError(
+                            type="parameter_invalid",
+                            detail=f"Workflow build failed: {exc}",
+                        )
+                    ]
+                ) from exc
             if ensure_context_current is not None:
                 await ensure_context_current()
-            raise WorkflowBuildError(
-                [
-                    GraphValidationError(
-                        type="parameter_invalid",
-                        detail=f"Workflow build failed: {exc}",
-                    )
-                ]
-            ) from exc
+            return output
 
-        if ensure_context_current is not None:
-            await ensure_context_current()
+        validation_output = await validate_for_run(build_graph)
 
         selected_scope = _selected_root_scope(build_graph, nodes) if nodes is not None else None
         validation_errors = validation_output.validation.errors
@@ -683,29 +720,21 @@ class ExecutionManager:
         if validation_errors:
             raise WorkflowBuildError(validation_errors)
 
-        workflow = validation_output.compilation.workflow
-        if workflow is None:
-            raise WorkflowBuildError(
-                [
-                    GraphValidationError(
-                        type="parameter_invalid",
-                        detail="Workflow compilation did not produce an executable workflow",
-                    )
-                ]
+        workflow, node_map = _resolved_workflow_nodes(
+            validation_output.compilation.workflow, nodes
+        )
+
+        if selected_scope is not None and validation_output.validation.errors:
+            # Diagnostic workflows are public inspection objects, not executable
+            # partial workflows. Compile the accepted dependency closure rather
+            # than carrying unrelated construction failures into compute().
+            execution_graph = _selected_execution_graph(build_graph, selected_scope)
+            execution_output = await validate_for_run(execution_graph)
+            if execution_output.validation.errors:
+                raise WorkflowBuildError(execution_output.validation.errors)
+            workflow, node_map = _resolved_workflow_nodes(
+                execution_output.compilation.workflow, nodes
             )
-        node_map = dict(workflow.nodes)
-        if nodes is not None:
-            unresolved = sorted({node_id for node_id in nodes if node_id not in node_map})
-            if unresolved:
-                raise WorkflowBuildError(
-                    [
-                        GraphValidationError(
-                            type="parameter_invalid",
-                            detail=f"Requested execution targets could not be resolved: {unresolved}",
-                            node=unresolved[0] if len(unresolved) == 1 else None,
-                        )
-                    ]
-                )
 
         self.context = context
         self.state = "running"
@@ -736,7 +765,6 @@ class ExecutionManager:
         if nodes is not None:
             targets = tuple(node_map[nid] for nid in nodes)
 
-        dev_mode = bool(live_settings.dev_mode)
         import bioimageflow
 
         workflow_run_context = bioimageflow.WorkflowExecutionContext(run_id=context.execution_id)
@@ -754,22 +782,35 @@ class ExecutionManager:
 
         def _run_sync() -> Any:
             with bind_execution_log_context(context):
-                engine = self._create_execution_engine(workflow, context)
+                engine = None
+                value = None
+                primary: BaseException | None = None
                 try:
-                    value = workflow.compute(
-                        *targets,
-                        dev_mode=dev_mode,
-                        engine=engine,
-                        run_context=workflow_run_context,
-                    )
+                    engine = self._create_execution_engine(workflow, context)
+                    try:
+                        value = workflow.compute(
+                            *targets,
+                            engine=engine,
+                            run_context=workflow_run_context,
+                        )
+                    except BaseException:
+                        try:
+                            self._materialize_latest_outputs(workflow, run_storage_path, context)
+                        except BaseException:
+                            logger.exception("Output projection failed while preserving execution failure")
+                        raise
+                    else:
+                        self._materialize_latest_outputs(workflow, run_storage_path, context)
+                    self._export_managed_result(context, value)
+                    return None
+                except BaseException as error:
+                    primary = error
+                    raise
                 finally:
-                    self._materialize_latest_outputs(
-                        workflow,
-                        run_storage_path,
-                        context,
+                    self._settle_run_resources(
+                        context.execution_id, workflow_run_context, engine,
+                        primary=primary,
                     )
-                self._export_managed_result(context, value)
-                return value
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
@@ -934,6 +975,102 @@ class ExecutionManager:
 
     async def stop(self) -> None:
         await self._stop_expected(None)
+
+    async def close(self) -> None:
+        """Cancel and await owned execution without cancelling its thread future."""
+        async with self._preparation_lock:
+            self._closing = True
+        await self.stop()
+        task = self._run_task
+        if task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            except TimeoutError:
+                logger.warning("Execution shutdown remains pending; its task owner is retained")
+            except Exception:
+                # The normal completion callback owns the scientific failure.
+                pass
+        await asyncio.to_thread(self.retry_resource_cleanup)
+
+    def _settle_run_resources(
+        self, execution_id: str, run_context: Any, engine: Any | None,
+        *, primary: BaseException | None = None,
+    ) -> None:
+        # Normal SDK provider returns register their exact handles on this
+        # supplied context. Capture them before close instead of rescanning
+        # every returned table cell, including large array-free tables.
+        groups = tuple(run_context.result_groups)
+        with self._resource_cleanup_lock:
+            self._pending_resource_cleanup[execution_id] = _RunCleanup(
+                run_context, engine, groups,
+            )
+            self._retry_run_cleanup(execution_id, primary=primary)
+
+    def _retry_run_cleanup(
+        self, execution_id: str, *, primary: BaseException | None = None,
+    ) -> None:
+        cleanup = self._pending_resource_cleanup[execution_id]
+        pending = False
+        interruptions: list[BaseException] = []
+
+        def retain_interruption(error: BaseException) -> None:
+            if not isinstance(error, Exception) and primary is None:
+                interruptions.append(error)
+
+        if cleanup.engine is not None:
+            try:
+                cleanup.engine.close()
+            except BaseException as error:
+                pending = True
+                logger.exception("Engine close remains pending for %s", execution_id)
+                retain_interruption(error)
+            else:
+                cleanup.engine = None
+        retained_groups = []
+        for group in cleanup.groups:
+            try:
+                status = group.release()
+            except BaseException as error:
+                retained_groups.append(group)
+                logger.exception("Result-group release remains pending for %s", execution_id)
+                retain_interruption(error)
+            else:
+                if status.state != "closed":
+                    retained_groups.append(group)
+        cleanup.groups = tuple(retained_groups)
+        if cleanup.run_context.cleanup_pending:
+            try:
+                cleanup.run_context.retry_cleanup()
+            except BaseException as error:
+                pending = True
+                logger.exception("Run persistence cleanup remains pending for %s", execution_id)
+                retain_interruption(error)
+        owner = cleanup.run_context.shared_memory_context
+        if owner is not None:
+            try:
+                status = owner.close()
+            except BaseException as error:
+                pending = True
+                logger.exception("Controller scope close remains pending for %s", execution_id)
+                retain_interruption(error)
+            else:
+                pending |= status.state != "closed"
+                if status.state != "closed":
+                    logger.info(
+                        "Controller cleanup pending for %s: readers=%s grants=%s files=%s leases=%s errors=%s",
+                        execution_id, status.pending_readers, status.pending_grants,
+                        status.pending_files, status.pending_leases, status.errors,
+                    )
+        if not (pending or cleanup.groups or cleanup.run_context.cleanup_pending):
+            self._pending_resource_cleanup.pop(execution_id)
+        if interruptions:
+            raise interruptions[0]
+
+    def retry_resource_cleanup(self) -> None:
+        """Retry captured owners after physical worker grants/readers drain."""
+        with self._resource_cleanup_lock:
+            for execution_id in tuple(self._pending_resource_cleanup):
+                self._retry_run_cleanup(execution_id)
 
     async def stop_retained(self, context: ExecutionContext) -> None:
         """Stop only when ``context`` is still the manager's current run."""
@@ -1251,6 +1388,7 @@ class ExecutionManager:
                 on_preparation=self._on_environment_preparation,
                 on_provision_event=self._on_environment_event,
                 on_ready=self._on_environment_ready,
+                on_admitted=self._on_environment_admitted,
                 on_failure=self._on_environment_failure,
                 on_stopped=lambda name: self._publish_environment_status(name, "stopped"),
                 replacement_authorizer=self._environment_replacement_authorizer,
@@ -1264,15 +1402,16 @@ class ExecutionManager:
         if context != self.context or self.state != "running":
             return
         action = preparation.action
+        if action == "reusing":
+            return
         status = (
-            "running" if action == "reusing" else "updating" if action == "updating" else "creating"
+            "updating" if action == "updating" else "creating"
         )
         self._publish_environment_status(env_name, status)
         if node_id is not None:
             phase = {
                 "updating": f"Updating execution environment {env_name}",
                 "creating": f"Creating execution environment {env_name}",
-                "starting": f"Starting execution environment {env_name}",
             }.get(action)
             if phase is not None:
                 self._publish_environment_phase(context, node_id, phase)
@@ -1285,6 +1424,12 @@ class ExecutionManager:
         if node_id is not None:
             self._publish_environment_phase(context, node_id, "Executing tool")
         self._publish_environment_status(env_name, "running")
+
+    def _on_environment_admitted(
+        self, context: ExecutionContext, node_id: str | None, env_name: str, running: bool,
+    ) -> None:
+        if context == self.context and self.state == "running":
+            self._publish_environment_status(env_name, "running" if running else "ready")
 
     def _on_environment_failure(self, env_name: str) -> None:
         self._publish_environment_status(env_name, "failed")
@@ -1656,7 +1801,6 @@ class NodeCacheClearPlan:
     storage_path: Path | None
     graph: GraphState
     compilation: Any
-    dev_mode: bool
     registry: ToolRegistryService
 
 
@@ -1665,8 +1809,6 @@ def prepare_node_cache_clear(
     graph: GraphState,
     registry: ToolRegistryService,
     storage_path: Path | None,
-    *,
-    dev_mode: bool = True,
 ) -> NodeCacheClearPlan:
     """Compile and validate an immutable cache-clear request.
 
@@ -1677,7 +1819,6 @@ def prepare_node_cache_clear(
         validation_output = GraphValidationService(registry).validate_with_compilation(
             graph,
             storage_path=storage_path,
-            dev_mode=dev_mode,
         )
     except Exception as exc:
         raise WorkflowBuildError(
@@ -1718,7 +1859,6 @@ def prepare_node_cache_clear(
         storage_path=storage_path,
         graph=graph,
         compilation=validation_output.compilation,
-        dev_mode=dev_mode,
         registry=registry,
     )
 
@@ -1753,7 +1893,6 @@ def commit_node_cache_clear(plan: NodeCacheClearPlan) -> dict[str, NodeStatus]:
     refreshed = GraphValidationService.validation_from_compilation(
         plan.graph,
         plan.compilation,
-        dev_mode=plan.dev_mode,
         has_retained_latest=(
             None
             if results is None
@@ -1784,8 +1923,6 @@ def clear_node_cache(
     graph: GraphState,
     registry: ToolRegistryService,
     storage_path: Path | None,
-    *,
-    dev_mode: bool = True,
 ) -> dict[str, NodeStatus]:
     """Compile, validate, and clear cache for synchronous callers."""
 
@@ -1795,6 +1932,5 @@ def clear_node_cache(
             graph.model_copy(deep=True),
             registry,
             storage_path,
-            dev_mode=dev_mode,
         )
     )

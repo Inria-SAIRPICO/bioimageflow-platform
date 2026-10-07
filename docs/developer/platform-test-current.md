@@ -4,119 +4,141 @@ orphan: true
 
 # Campaign current checkpoint
 
-This is the operational status and resume pointer.
-Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the relevant owning specification/source and linked receipts.
+This is the operational resume pointer, not a campaign diary.
+Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then the relevant specification/source and only the linked receipt needed for the task.
 
-## Status — October 7, 2026
+## Active state — October 7, 2026
 
-The campaign is RUNNING with authorized continuation.
-Latest reviewed library source `1e21831` is merged at exact tree-equivalent main `8f885c98b7424d6b71876c90014a10593a83ac9f`.
-Core 0.5.0, BioImageFlow 0.9.0 and the eight base-tool releases are published and verified from actual PyPI wheel/sdist bytes; coherent platform adoption is now active.
-The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent reviewed release infrastructure and public runtime-admission preparation extension preserve Core/tool callback bytes.
-MAIN, bounded SECONDARY/support waves and Phase 3 are technically accepted within the selected local-library scope.
-The CAMPAIGN remains RUNNING; platform adoption, headless platform validation and final desktop acceptance remain open.
-The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it records the accepted finite milestone and its limits, not whole-campaign completion.
+The FULL campaign is RUNNING under standing continuation, reviewed source-upload/CI and package-publication authorization.
+The coherent registry/public-API adoption from baseline `65bf8d2` is accepted through scoped phase assembly; its task delivery commit and source projection are recorded in the [delivery receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json).
+The bounded BioImageFlow output-class repair is published and adopted from the registry; coherent platform adoption is accepted through reviewed phase assembly and ready for its commit.
+No distributed production review/repair, backward-only compatibility layers, or actual desktop test is authorized in this phase; desktop acceptance remains LAST.
 
-Support closure includes lexical interpreter-neighbor CLI lookup, meaningful affected-test routing, current capability/release CI distinctions and full typing in an exclusively owned declared-development environment.
-Accepted Phase 3 typing covered all 250 product files at the configured Python 3.10 floor; the final mapping correction's run took 10.497 s.
-The subsequent public preparation-admission extension passed its two-file typing scope, focused preparation/recreation/content controls and strict docs; the earlier full-source result is not relabeled as a new full typing run.
-Package-tool coverage is the retained union of 391 passes and one external-resource skip, with 20 original deselections; all six acceptance cases passed.
-Local source coverage is the retained unique union of 1,078 unit passes and 648 integration passes, including eight added CI-policy, four mapping and five planning controls.
-Original failures, phase source revisions and warnings remain linked; the final integration tail retained thirteen metadata warnings.
-Distributed/cluster/launcher folders and the actual top-level distributed planner file remain explicitly excluded.
-Faithful fixture corrections preserve the current grammar, selected-source authority, exact errors, task cancellation/drain and actual effect oracles rather than adding compatibility behavior.
+The [accepted causal architecture review](library-causal-architecture-review.md) and [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) retain the completed MAIN/SECONDARY/support review, exact selectors, source projections, original failures, durations and finite limits.
+The accepted local scope includes 1,078 unit and 648 integration passes, package-tool coverage of 391 passes/one external skip/twenty deselections, full 250-file typing at the configured Python 3.10 floor, and strict docs.
+These retained milestone results do not certify later changed source or the whole campaign.
+Arbitrary trusted Python state/dependency closure, conservative whole merged-input provenance, external filesystem tampering and automatic pressure scheduling remain explicit boundaries.
 
-Metadata-only planning now preserves selected record IDs and exact manifest/frame/address/asset admission without array hydration or controller array-owner/backing allocation.
-Four independent cold/native/shared/portable controls plus the existing Processing planning/invalidation control pass; corruption still reports CORRUPT and subsequent actual computation hydrates the expected readonly values without extra science.
-Admission still reads, hashes and validates stored array assets; this is not a zero-asset-read claim.
-Column-bound Processing planning now normalizes omitted defaults into the same effective constants as computation, preserving existing compute keys and exact selected records; equal explicit values reuse records, while changed values and list/tuple distinctions remain scientific facts.
-Earlier cold DataFrame planning initialized controller scope metadata without managed effects; that prior bounded behavior and the pre-bound no-write test remain qualified in the receipts.
+## Published prerequisites — closed
 
-## Accepted outcomes and evidence
+Wetlands 2.6.1 is published from reviewed merge `077dd5b` after [ordinary CI](https://github.com/arthursw/wetlands/actions/runs/37643902232) passed all 26 jobs, including real Pixi/OS controls.
+Its [single publisher](https://github.com/arthursw/wetlands/actions/runs/37644733708) and [actual PyPI verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/actual-pypi-261-verification.json) admit the exact tested wheel/sdist bytes and source.
+The owned provider release interpreter/cache/worktree were retired after all consumers; [cleanup proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-published-owner-cleanup.json) preserves the exact boundaries.
 
-The [accepted causal review](library-causal-architecture-review.md) preserves original finding families, source coverage and finite dispositions.
-Use source-bound proofs rather than replaying historical commands:
+Reviewed BioImageFlow `1e21831` merged normally as exact-tree main `8f885c98b7424d6b71876c90014a10593a83ac9f`.
+[Ordinary exact-main CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37650927562) passed fourteen jobs with only its expected dispatch-only skip; distributed jobs remain visible separately.
+Core 0.5.0, BioImageFlow 0.9.0 and eight base-tool versions are published; optional Phasor is excluded.
+The [single publisher](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37653777936) completed successfully, and [independent actual PyPI verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/actual-base10-pypi-verification.json) admits ten unyanked versions/twenty archive hashes and all source members against that exact ordinary-CI cohort.
+Do not retag, rebuild, republish or reupload these completed releases.
 
-- [Ready runtime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) and [selected primary](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json): actual ready content and finite selected/inherited Python owners precede scientific keys/cache; v2 proofs retain admitted bytes through lazy callbacks without unloading canonical namespaces. Planning avoids managed provisioning, worker startup and content probes.
-- [Explicit merge](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json), [Direct Processing](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/direct-delegate/final-delivery-proof.json) and [source-backed Direct DataFrame](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/archived-dataframe/final-delivery-proof.json): actual merge operands and supported inherited callback identity preserve separate column-pin alignment, retained dispatch and immutable prior records; execution epoch is `bioimageflow.execution.v2`.
-- [Joined lifetime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/managed-discard/final-delivery-proof.json) and [cold own-winner reuse](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json): successful discard, truthful quota refusal, explicit idle physical drain/retry, live view and unrelated owner preservation, final zero resources; exact admitted own-selected sealed reuse reduced measured managed publication residency from four physical backings to two (50%), without an end-to-end speed claim.
-- [Export replacement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json) and [recipe admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json): captured/exclusive destination ownership and truthful pending cleanup, detached EnvironmentSpec recipes and exact/flexible grammar preserve current supported APIs.
-- [SECONDARY A+B](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json), [native/numerical C+D](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json) and [adapter E](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/adapter-wave-e/final-delivery-proof.json): metadata/tooling identity, staged native publication, unit/axis/harmonic numerical truth, used model provenance, exact tracking association and owned Atlas preparation/reference effects. Learned-model/native transport tests remain honestly fake where stated; actual pinned local Phasor science does not certify model or managed recipes.
+Canonical published Core wheel SHA256 is `bdbe082304ac867da0f570470a795121053995edfbbf1486501bb611fb1efd11`.
+The [same-wheel capability run](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37651983836) passed Linux/Windows Python 3.9/3.12: eight families, zero selected skips, exact 23 installed members, two physically exited children and zero final owners per job, pinned NumPy 1.26.4; unrelated placeholders were intentionally skipped.
+Capability dispatch does not supply ordinary release authority.
+The [published-provider packet](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/published-lock-development-sync-command.json) and [normal admission/dispatch proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/admission-dto-recovery-normal-command.json) retain source typing/docs, ordinary installed API, real WorkerPool and physical cleanup qualifications.
+The earlier automatic publication rejection is resolved by the user's direct “you can publish bioimageflow packages” authorization; no approval remains pending.
 
-Conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling remain accepted boundaries, not unnamed repair promises.
-Previously accepted schema/container/parameter/collective/selected-result/failure-finalization contracts remain preserved.
+## Bounded library repair — published
 
-## Artifact, capability and ownership boundary
+The completed repair used `.worktrees/campaign-library-output-alias`, branch `campaign/library-output-alias`, and reviewed `c8be1ce8f21afc6dc182c889f0e5d75b08fd82fc` based on exact published `8f885c9`; its separate source and normal-wheel interpreters used Python 3.10.8.
+After publication/adoption consumed the final artifacts, its two owned interpreters/cache were physically retired and its clean merged source tree moved to Trash, pruned and local branch deleted; release tags/source/proofs remain preserved.
+The API/release producer owns only `node.py`, `workflow/capture.py`, Direct dispatch/output validation, narrow output/capture tests and the affected library specification; the lifetime producer independently reviews source.
+Integration owns all Git, environments, commands, versions/lock, release, checkpoint and cleanup operations.
+Core, managed wire/protocol and distributed production remain unchanged.
 
-Published and independently PyPI-verified Wetlands 2.6.1 is the provider prerequisite.
-Reviewed BioImageFlow `1e21831` is merged at exact tree-equivalent main `8f885c9`, with published-provider source/normal runtime and ordinary release CI accepted.
-The [single coordinated publisher](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37653777936) completed successfully at that exact commit; [actual PyPI verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/actual-base10-pypi-verification.json) admits all ten unyanked versions, all twenty wheel/sdist hashes and source members against the ordinary-CI artifacts.
-The published Core wheel SHA256 is exactly the canonical same-wheel floor hash below.
-Optional Phasor and distributed feature certification remain excluded; platform dependency/API adoption has not yet passed.
-The retained `.venv-c04-runtime-receipt` still contains the earlier unpublished normal Core `11aee`; new proofs use separate owned interpreters and do not relabel that candidate.
-One normal all-eleven-package `--all-packages --no-sources` cohort was built; only genuinely affected Core, SAIRPICO and orchestrator pairs were refreshed.
-The held milestone cohort's 22 artifacts match 535 Python/typing-marker members at `1c1bc8f`; all 12 earlier artifact contracts remain retained with their source qualifications.
-The final orchestrator and Core refreshes received only their affected installed/capability checks; other package pairs remain unchanged.
-The actual normal wheel/sdist `py.typed` gate has passed.
+The [honest original baseline](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-original-baseline.json) reproduced valid global Outputs row/batch failures while self-Outputs and unrelated same-shape refusal passed: two failures/two passes in 5.12 s; the earlier fixture collection error has zero defect credit.
+The narrow nominal-authority repair separates the exact admitted output class from its frozen schema/default facade; its original four controls now pass in 1.53 s.
+Independent review found an additional Direct default-authority gap: a callback can read a changed default from its original class after capture while frozen metadata remains unchanged.
+The [unchanged-callback default-drift baseline](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-default-drift-original-baseline.json) fails honestly with no expected refusal in 2.12 s before any drift product repair.
+The honest nominal declaration/default refusal now passes before execution; callbacks remain unchanged and supported typed defaults include named structured NumPy values independently of padding bytes.
+Cached old captured records and arbitrary callback globals remain separately qualified.
+The [reviewed source receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-reviewed-source-commit.json) retains 35 source and 35 normal-wheel passes, exact 173 BioImageFlow/23 Core members, full 250-file typing with no diagnostics in 9.104 s, lint/architecture guards, strict docs in 28.30 s and 51 release/artifact controls in 19.16 s; original failures remain qualified.
+BioImageFlow-only 0.9.1 passed [ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37670924775): fourteen successful jobs and its expected dispatch-only skip; excluded distributed CI remains visibly failed separately.
+[PR 5](https://github.com/Inria-SAIRPICO/bioimageflow/pull/5) merged normally as `8fe553dc0f3c1156796f9a449162fd0281d08caf`, with the exact reviewed `c8be1ce` tree.
+The annotated `bioimageflow-v0.9.1` tag selects exact source `c8be1ce`; the [single publisher](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37672261884) dispatched from main `8fe553dc` and completed all three jobs successfully while building the selected tagged source.
+[Actual PyPI verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-actual-pypi-verification.json) and [independent publication peer](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-independent-publication-peer.json) admit both unyanked public archives against the ordinary-CI pair and all 173 source members.
+The wheel SHA256 is `dc25b6cf9f0e3d2233ac23fb012fac05df94d05a0ab10a40423c200b9f1304d3`; sdist SHA256 is `759c4b02081bc8383225753d5fb6eac70738d06df9af6893f997a3e30c79f503`.
+The normal candidate tested above is the same whole wheel; no Core/tool republishing, distributed certification or duplicate publication is implied.
 
-Source-disabled normal Core 0.5 passed all eight public-contract/real-child/lifetime families, zero skips, on macOS Python 3.9 and 3.12 in 4.958 s and 5.706 s.
-All 23 installed Python/marker members matched the held wheel, and the corrected copied driver includes both combined ImageSpec/GUI nullable annotation orders and stable captured metadata hashes.
-Child PIDs, physical exit/grant drain and final zero resources were verified.
-The isolated normal eleven-wheel controller passed Direct and actual WorkerPool cold/warm execution plus metadata-only native-array planning, corruption refusal and subsequent readonly computation in 43.879 s at `0037c1a`; the subsequent orchestrator default correction passed its affected installed compute/plan/value controls in 4.991 s at `a7fbcd7`.
-Earlier snapshots and TEMP fixture setup failures remain preserved.
+## Platform adoption and retained acceptance
 
-All 20 essential actual source/editable WorkerPool cases passed; these are separate from the normal-wheel authority.
-The first manual capability run retained seven successful job groups and two explicit Parsl skips, but its four Core floor jobs stopped on the copied driver's deferred-annotation fixture and its unit/integration jobs exposed faithful fixture recoveries.
-Explicit user approval resolved automatic source-upload/CI review rejection.
-The [final floor-only run](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37612125789) at `1c1bc8f` passed all four Linux/Windows Python 3.9/3.12 jobs: eight families, zero Core skips, two actual children and final zero owners per job; eleven unrelated job definitions were intentionally skipped.
-The preceding driver and Windows buffered-cursor failures remain preserved; the finite fix synchronizes the same admitted descriptor and cleans newly created mappings without masking a primary error.
-All 23 per-job installed parent/child members match each job's own wheel.
-Windows native checkout/wheel Python files in that earlier run use CRLF and are code-equivalent to Git LF, not raw-byte-identical to the macOS/Linux artifact; the subsequent canonical same-wheel run below satisfies the release gate separately.
+The platform manifest/lock selects ordinary `bioimageflow[parsl,psij]==0.9.1`, Core 0.5.0 and Wetlands 2.6.1; editable defaults are removed.
+The [current installed registry receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-lock-installed-admission.json) proves exact published source/marker members, lock wheel hashes, no BioImageFlow/Core editable `direct_url`, and a compatible 93-package Python 3.13 controller.
+The advertised `cluster` extra has no scheduler dependency edges in these published versions; explicit `parsl`/`psij` groups preserve existing packaged capabilities, without testing excluded distributed execution.
+Targeted lock and frozen sync completed in 1.44 s and 9.46 s; existing desktop dependencies were retained without launching a native window.
+Explicit instrumented local development remains opt-in.
 
-The [final library release cleanup](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/final-library-release-env-cache-cleanup.json) physically retired `.venv-phase3-dev` and its exclusively owned package cache after independent actual PyPI verification and the last release consumer in 451.457 s.
-Pre-cleanup accounting measured 451,144,493 and 863,244,523 logical file bytes respectively; this is not a sampled free-space saving.
-The clean library source worktree remains held only for read-only platform adoption references; the platform uses its separate normal registry-installed backend interpreter. The [finished normal proof cleanup](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/finished-normal-owner-cleanup.json) physically retired its interpreter and two manager roots after final public/peer consumers in 13.674 s; its dedicated Pixi cache had never existed, and no shared cache was removed.
-All three finished floor/normal interpreters and six finished manager roots were physically deleted after their final peer/consumer, public environment retirement and resource drain.
-Their six disposable Pixi caches were deleted; file-size accounting and exact boundaries are in the cleanup receipts, without claiming a sampled free-space delta.
-Artifacts, fixtures, scientific records and original receipts are retained.
-Held `.worktrees/campaign-force-library` six files/private interpreter, development104 and artifact27 metadata remain protected; unknown/shared/user owners are untouched.
+Implemented contracts: retired development-mode fields/callers removed; exact detached environment recipes retained; public admission precedes identity/cache; dispatch forwards the same receipt/grant; readiness preserves live-pool status; exact failed owners remain retryable and independent cleanup preserves primary errors.
+Shutdown closes reservation admission before retirement, and selected execution uses a second honest selected/upstream public compilation only after filtering proven unrelated diagnostics, followed by a fresh accepted-draft fence; clean selected runs compile once.
+Tool-store scanning validates installation selectors before loader effects and preserves the original valid-install failure if cleanup also fails.
+All affected v1/v2 specifications, developer docs and `PLATFORM_CONTEXT.md` are updated in the same adoption task.
 
-## Remaining sequence and record policy
+Scientific fixture declarations live in ordinary `backend/platform_test_tools` with a pure package root/Core-only worker leaves, avoiding pytest-rewritten primary source without weakening admission.
+Shared fixture installers write actual METADATA/top-level/RECORD bytes after edits; graph/archive/result-relation and output snapshots use current contracts.
+The complete generated schema preserves all 110 routes and resolves all 104 frontend type-only imports; the rejected 77-route partial app configuration supplies no credit.
+Focused acceptance retains two original fixture recoveries, five settings/recipe cases, 95 affected frontend cases, 109 original execution/environment/lifetime successes plus exact cleanup/receipt/generation/close/readiness controls, and the 78 unchanged graph/cache successes plus exact incompatible/valid recovery.
+These unit/jsdom controls supply no browser, actual-worker or zero-owner certification.
 
-The accepted [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) includes source selector unions, per-layer commands/durations, artifact maps, OS qualifications, original failures and owned cleanup.
-Final milestone strict incremental docs passed at `1c1bc8f` in 5.377 s; the release-infrastructure documentation check passed in 4.691 s, both without warnings.
-Preservation-first reconciliation and reviewed ordinary fast-forward upload are complete; the earlier server-reported automatic PR/status-rule bypass supplied no release authority.
-The later ordinary PR merge and successful exact-main CI below supplied the required authority.
-The [ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37616167829) at `53cf299` failed on excluded distributed owners and one in-scope ImageSpec identity fixture, now faithfully corrected.
-The user chose separate local/distributed CI gates: local `ci.yml` retains exact six audited exclusions and remains the ordinary exact-SHA release authority; visible `distributed.yml` retains the complementary unmarked cases and original runtime jobs without suppression or distributed feature repair.
-The four named Complete gates for StarDist, InstanSeg, Nagini API and LapTrack all passed their exact real-runtime controls with zero selected skips; Nagini proves its pinned API adapter, not learned-model inference.
-The unchanged-source [SAIRPICO gate](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37615638144) passed all eight cases in 22.26 s, with 2,893 deselections and nine warnings; worker reader-shutdown warnings led to a reproduced legal split-frame race and do not establish physical resource closure.
-The [CI-partition/publisher commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/ci-partition-publisher-source-commit.json) binds the reviewed local `b3512ab` paths; its strict incremental docs passed in 4.278 s.
-The [infrastructure commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/release-infrastructure-source-commit.json) links exact paths/source, while dispatch and independent summaries retain runtime qualifications.
-Wetlands 2.6.1 is published from reviewed merge `077dd5b` after [ordinary exact-main CI](https://github.com/arthursw/wetlands/actions/runs/37643902232) passed all 26 jobs, including eighteen OS/Python jobs and four zero-skip, warning-free real Pixi cases per OS.
-The [publisher](https://github.com/arthursw/wetlands/actions/runs/37644733708) uploaded the same normal-tested wheel and sdist; [actual PyPI verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/actual-pypi-261-verification.json) proves their complete bytes, source maps and worker/version 2.6.1 (`064ca382…ee9c07` wheel; `d0e89f5c…083787` sdist).
-Captured reader/connection ownership, bounded retry and persistent detach/same-PID physical exit passed separate normal-installed checks; listener startup reporting was injected there, while the real Pixi/OS authority comes from ordinary CI.
-The [local 665-selector union](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-full-selector-union.json) retains 659 passes and six conditional skips at its source projection; original shutdown, stdlib inventory, launcher PID and Conda authority failures remain in the provider receipts rather than being relabeled as current successes.
-The final kernel chooses complete installed Conda authority before an upstream RECORD, with unique metadata ownership, containment and missing-retained-member refusal; other distributions require raw complete RECORD.
-The [published-provider consumption packet](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/published-lock-development-sync-command.json) binds real resolution and locked sync (6.367 s), 42 affected source passes (8.792 s), full 250-file typing (8.953 s), strict incremental docs (9.101 s) and all 32 installed provider source/marker members equal to the published wheel.
-The [final published-owner cleanup](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-published-owner-cleanup.json) physically retired the last provider release interpreter/cache and moved the clean merged worktree to trash, then pruned it and deleted only its proven merged local branch (463.722 s). All provider consumers are finished; public artifacts, source facts, receipts and protected user resources remain.
-Published BioImageFlow 0.9.0 contains the reviewed `5f1c9b3` public lazy authorized admission observers/stale replacement without eager workers; `1e21831` declares and locks its actual provider minimum. The refreshed BIF-only pair matches current source; the other ten package pairs remain unchanged. The [normal admission/dispatch proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/admission-dto-recovery-normal-command.json) passed in 59.087 s, with actual worker-free stale replacement, held receipt/grant forwarding, Direct and real WorkerPool cold/warm selections, physical worker exit and six owners closed at zero. Its public DTO generation-negative is explicitly qualified; original path/constructor fixture failures remain retained. The affected normal default-selection proof passed in 20.761 s with five zero owners.
-The reviewed publisher now requires the exact tested Core wheel SHA256 during publish preflight before any selected upload; validate mode alone supplies no canonical floor authority.
-The [ordinary PR 4 merge](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/authorized-library-reviewed-merge.json) preserves the reviewed tree and parents without force/admin/status bypass. [Final-main ordinary CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37650927562) at `8f885c9` passed fourteen jobs, with only the expected dispatch-only editable-Core WorkerPool job skipped; distributed coverage remains visible separately and is not certified by this run.
-The [admitted final-main artifact](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/canonical-main-core-candidate-admission.json) has twenty-two artifacts and the exact canonical Core wheel SHA256 `bdbe082304ac867da0f570470a795121053995edfbbf1486501bb611fb1efd11`. The [same-wheel capability run](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37651983836) passed all four Linux/Windows Python 3.9/3.12 jobs: eight families and zero selected skips, exact twenty-three parent/wheel/two-child members and physical final zero owners per job, using pinned NumPy 1.26.4. Nine unrelated job placeholders were intentionally skipped; manual dispatch supplies capability evidence, not ordinary release authority.
-The [base-ten release packet](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/base10-ci-pair-admission.json) admits all selected wheel/sdist pairs and dependency order at `8f885c9`; optional Phasor is excluded. Source upload, CI and package publication are now explicitly authorized. The preserved [automatic approval review rejection](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/base10-publication-auto-review-rejection.json) blocked the creation/push of release tags and PyPI publisher dispatch because the earlier user messages did not directly authorize package publication; that first action created no tags and ran no publisher. The user subsequently answered “you can publish bioimageflow packages”, resolving the stated authorization gap; the same bounded reviewed action was approved on retry, without bypass.
-Publication is complete: the single coordinated workflow built each selected package once, admitted all pairs and the expected canonical Core hash before any upload, published in dependency order and waited for public registry visibility.
-Actual PyPI verification took 11.218 s plus 0.130 s for name/version admission; every selected source member equals the exact-main ordinary-CI artifacts and all raw archive hashes match that cohort.
-The platform dependency manifest and real lock now select registry-installed BioImageFlow 0.9.0, Core 0.5.0 and Wetlands 2.6.1 without editable defaults.
-The [installed registry admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-lock-installed-admission.json) proves 173 BioImageFlow and 23 Core source/marker members equal the actual published wheels, their exact wheel hashes in the lock, no editable `direct_url` and a compatible 84-package Python 3.13 controller.
-The existing exact platform fixture selection reproduced two failures and one conditional skip at the retired `workflow.validate(dev_mode=...)` call; this expected adapter failure is not a library failure or completed runtime acceptance.
-Next: public runtime admission/receipt/grant and cleanup ownership, retired development-mode API removal, exact fixture recovery, then focused and cross-stack app validation.
-Existing scientific/runtime qualifiers remain retained; no new model or distributed certification is inferred. Desktop acceptance remains LAST.
-Manual capability CI cannot unlock publication; ordinary successful exact-SHA local push/PR CI remains the release authority, with distributed coverage and failures visible separately.
-Configured floors/OS coverage and passed actual capability receipts remain separate.
-After the accepted library/provider releases: platform adoption and headless platform validation, with desktop acceptance LAST.
-The [plan's prerequisite exception](platform-test-plan.md#highest-priority-deep-librarycore-review-and-validation--october-4) does not advance those gates.
+The [actual scalar stale-generation control](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-actual-stale-generation-command.json) passed one case/zero skips in 71.84 s pytest/75 s command: actual values/reports/PIDs, install fault/retry, generation replacement/warm/fresh-process reuse, physical prior-worker exit and unrelated-owner preservation.
+It does not certify returned-array lifetime/copy/export ownership; later cleanup-only changes have separate exact controls and source qualifications.
+Its original pre-provision source refusal has zero worker credit.
+All captured workers were independently absent and only its owned disposable runtime was retired in 11.627 s; [cleanup proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-actual-stale-runtime-cleanup.json) retains copied evidence/shared-owner boundaries.
 
-This checkpoint and linked receipts replace restart inventories.
-The [historical progress log](platform-test-progress.md) remains unchanged and is not read or appended for routine continuation.
-Update only current outcome, exact proof pointers, ownership and the active queue; commit task changes without unrelated work.
+## Scoped adoption acceptance and next queue
+
+The [required app command](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-app-original-command.json) FAILED in 27 s before backend execution.
+Retain its successful frontend lint/types/build and 1,357 unit cases in 135 files, with the existing build-size warning; exact unused-variable lint and public demo-origin fixture recovered.
+The [backend completion attempt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-backend-original-command.json) retained lint and 1,877 passes, but had 56 failures/ten external deselections/69 warnings in 176.38 s pytest/185 s command.
+Ten original cause representatives reproduced exactly; all ten plus a new second-compilation authority control have recovered.
+The original template passes with published 0.9.1 in 0.97 s pytest/9.50 s command, preserving its valid callback.
+The affected backend follow-up collected 252 cases: 242 passes, eight conditional common-tools availability skips and two stale-fixture failures in 38.84 s pytest/42.88 s command; no complete backend or app success is claimed.
+The two exact failures reproduced in 0.63 s pytest/4.23 s command, then recovered in 0.71 s pytest/3.85 s command after current-schema golden-graph and pre-edit reload-authority fixture corrections.
+Those finite changes invalidate no shared fixture consumers; retain the 242 unchanged passes and eight conditional skips, with common-tools certification still a separate obligation.
+Logging was recovered separately: seven cases pass in 0.46 s pytest/4.35 s command; backend Ruff also passes.
+Current strict documentation validation passes with Sphinx 9.1.0, zero warnings, 146 links and 108 inventory rows in 7.77 s.
+The critical HEADLESS Chromium follow-up passes 17 cases and fails the grouping workflow case at `workflow-interface.spec.ts:396` with `Invalid primary module` in 109.24 s; the exact same-browser case reproduced in 15.65 s before repair.
+The admitted seeded tool was declared in the server router package, whose primary package also contains hyphen-named bundled script paths; a bounded repair moves executable development declarations into ordinary `bioimageflow_dev_tools`, preserving tool behavior and strict source admission.
+The separate browser hot-reload installer now writes actual fixture METADATA/top-level/RECORD; this startup correction does not certify the later noncritical edit-and-reload journey, whose source edits also need faithful metadata authority.
+The [development-tool package admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-development-tool-package-admission.json) proves the three current wheel members, independent pure/Core-only leaf review and three dev-router passes in 1.27 s pytest/3.87 s command.
+The exact grouping recovery now reaches a different earlier failure: workflow Open remains pending at the five-second title assertion (16.99 s command); a diagnostic exact trace reproduces it in 16.76 s.
+The trace shows the first draft GET succeeds but takes 3.810 s, while another draft GET starts 117 ms later and remains queued at the assertion boundary.
+Source tracing identifies duplicate public compile/plan inside missing-draft synthesis and live projection within each draft GET.
+The [request-local draft optimization](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-projected-draft-optimization.json) is implemented and independently reviewed: public call counts drop from two compiles/two plans to one each per stable GET; eight focused schema/diagnostic/authority/cache/Clear controls pass in 4.75 s pytest/7.67 s command.
+Uninstrumented identical seven-node reads improve from 2.6367/2.8852 s to 1.5712/1.3174 s with equal graph/validation JSON; these two observations per source are a scoped effect, not a whole-platform performance guarantee.
+Synthesized full diagnostics/tool schemas, accepted non-cache authority and the final authority/Clear fence remain preserved; catalog-only node_tools are empty, and the separate source-bound control proves nonempty schemas and missing-tool errors.
+The exact grouping Chromium journey passes in 40.16 s command, including durable undo and simulated persistence failure/retry.
+Startup/Open overlapping reads remain separate callers; no persistent metadata/source cache or blanket frontend response memoization is introduced.
+Eleven other critical cases affected by development-tool identity pass in 79.36 s; the separately affected editable-import journey passes in 14.59 s.
+These thirteen fresh affected successes plus five causally unchanged empty-graph/shell/event successes cover the eighteen critical Chromium cases; no complete broad browser certification is implied.
+The remaining twelve owning draft-router cases pass in 1.77 s pytest/4.95 s command, retaining five already-green owning cases and three separate compile-race controls.
+[Current completion receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-current-completion.json) retains the source projection, original browser failure and scoped results; no monolithic app success is claimed.
+The independent assembly audit found that the old 56-failure inventory was not retained exactly; its stale cache and unnamed 252-case selection could not prove every recovery.
+One final [documented backend completion attempt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-final-backend-command.json) closed that uncertainty: lint and 1,932 cases passed, only three archive-import fixture cases failed, ten external cases were deselected and 141 deprecation warnings were recorded in 192.86 s pytest/201.76 s command, with no skips.
+The same three cases reproduced in 0.35 s pytest/2.97 s command and recovered in 0.45 s pytest/2.80 s command after their single-use portable fixture changed schema1 to schema2; scoped Ruff and diff checks pass.
+Only those three readers use that fixture's import payload; no successful product/browser phase is invalidated.
+Accepted scoped assembly therefore covers 1,935 non-external backend cases, the unchanged seven logging controls, frontend completion and all eighteen critical Chromium cases; common-tools published/external, broad-browser and native acceptance remain separate obligations.
+Neither original failed completion command nor the final failed backend invocation is relabelled as passed.
+
+1. The coherent platform adoption is accepted; preserve its reviewed source/commit and assembled acceptance receipt without a monolithic app/full PASS claim, then continue the next actual lifetime obligation.
+2. Evaluate the public export hydration ownership boundary through the read-only T1/I1 strategy review before a minimal actual returned-array control; do not manufacture a zero-owner claim from scalar tests.
+3. Resume T1/I1 actual returned-array, lifetime/copy/export, public force/readiness obligations, then dependency-ordered M3/M4 common-tools certification and remaining campaign features.
+4. Perform actual desktop M5 acceptance LAST and final full campaign certification/review.
+
+## Ownership, cleanup and record policy
+
+All actors freeze imported modules and executable-package membership for live consumers, including later restarted processes; integration explicitly acknowledges consumer idle before unfreezing source.
+Activate a producer with `followup_task` for each new actionable packet; a message alone does not wake an idle agent.
+Keep one sole Git/env/runtime/dependency owner and disjoint whole-file source ownership; do not duplicate broad tests or restart completed reviews.
+
+The [final library release cleanup](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/final-library-release-env-cache-cleanup.json) physically deleted `.venv-phase3-dev` and its dedicated cache in 451.457 s; 1,314,389,016 logical bytes is inventory accounting, not sampled free-space savings.
+Old `.worktrees/campaign-library-source-containment` readers are finished; its `.venv` and `.venv-b134-core-artifact` are proven protected development104/artifact27 with unchanged metadata and remain held, preventing whole-worktree retirement.
+Its separate `.venv-c04-runtime-receipt` was physically retired after proven exclusive ownership, all consumer releases and no matching live process/open handle; [cleanup proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/retained-c04-candidate-cleanup.json) records 444,623,607 logical bytes/11,871 files and 272.796 s, without a sampled free-space claim or protected-root deletion.
+Preserve dirty `.worktrees/campaign-force-library` six files/private interpreter, development104/artifact27 metadata, all unknown/shared owners, user data and user VSCode/debugpy runtime.
+The [completed output-alias environment/cache retirement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-env-cache-cleanup.json) removed two interpreters and their dedicated cache in 560.807 s; the 1,410,479,131 logical bytes are not a sampled free-space claim.
+Its [merged source retirement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-alias-final-retirement.json) records Trash move, Git pruning and local merged-branch removal, preserving original library main, release tag and artifacts.
+The five exact owned temporary public-read profiler roots were retired after both public services closed, no process/open handles remained and the producer released all consumers; the script and immutable graph/response/profile proofs are retained.
+Keep active platform environments until their final consumers; retire only proven owned completed environments/caches and merged clean worktrees, preserving proof/artifact records.
+Do not reset original library main or merge through force/admin/status bypass.
+
+Update this bounded checkpoint in place at coherent boundaries; detailed evidence stays in its owning receipt.
+The historical `platform-test-progress.md` is neither read nor appended for routine continuation.
+Commit only authorized task files after the applicable validation; temporary proof/working artifacts are not project deliverables.

@@ -79,10 +79,6 @@ def get_workflow_draft_service() -> WorkflowDraftService | None:
     return None
 
 
-def get_dev_mode() -> bool:
-    return True
-
-
 def _draft_revision_conflict_response(
     exc: WorkflowDraftRevisionConflict,
 ) -> JSONResponse:
@@ -126,7 +122,6 @@ async def run_execution(
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
     workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
     registry: ToolRegistryService = Depends(get_tool_registry),
-    dev_mode: bool = Depends(get_dev_mode),
 ) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
@@ -218,7 +213,6 @@ async def run_execution(
                                 graph,
                                 registry,
                                 attempt_context.storage_path,
-                                dev_mode=dev_mode,
                             )
                         )
                         await ensure_context_current()
@@ -313,7 +307,6 @@ async def clear_execution(
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
     workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
-    dev_mode: bool = Depends(get_dev_mode),
 ) -> dict | JSONResponse:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
@@ -348,7 +341,6 @@ async def clear_execution(
                         graph,
                         registry,
                         context.storage_path,
-                        dev_mode=dev_mode,
                     )
                 )
             except WorkflowBuildError:

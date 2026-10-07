@@ -160,11 +160,6 @@ async def patch_settings(
             status_code=422,
             detail="enable_unsafe_webapp_features can only be changed in the settings file",
         )
-    if "dev_mode" in body and body["dev_mode"] is False:
-        raise HTTPException(
-            status_code=422,
-            detail="dev_mode cannot be disabled in GUI mode",
-        )
     try:
         await store.patch(body)
     except SettingsPolicyError as exc:

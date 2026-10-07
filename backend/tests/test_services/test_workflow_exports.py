@@ -14,6 +14,7 @@ from unittest.mock import Mock
 import pytest
 import pandas as pd
 from bioimageflow.cache import _write_canonical_parquet
+from bioimageflow.row_relation import ResultRelation, RowAssociation
 from bioimageflow.storage import (
     RecordManifest,
     Storage,
@@ -127,9 +128,13 @@ def _seed_canonical_results(storage_path: Path) -> tuple[str, str]:
             "digest": digest,
         }
     ]
+    relation = ResultRelation(
+        "dataframe", "source::platform-export", "source",
+        (RowAssociation((), ("row",)),),
+    ).to_dict()
     record_id = make_record_id(
         {
-            "schema": "bioimageflow.cache.record.v1",
+            "schema": "bioimageflow.cache.record.v2",
             "result_key": result_key,
             "dataframe": {
                 "path": "dataframe.parquet",
@@ -139,6 +144,7 @@ def _seed_canonical_results(storage_path: Path) -> tuple[str, str]:
                 "transport_digest": transport_digest,
             },
             "outputs": outputs,
+            "row_relation": relation,
         }
     )
     record_dir = storage.result_dir(result_key) / "records" / record_id
@@ -153,6 +159,7 @@ def _seed_canonical_results(storage_path: Path) -> tuple[str, str]:
         dataframe_transport_digest=transport_digest,
         dataframe_logical_schema=logical_schema,
         outputs=outputs,
+        row_relation=relation,
     )
     (record_dir / "manifest.json").write_text(
         json.dumps(manifest.to_dict(), indent=2, sort_keys=True)

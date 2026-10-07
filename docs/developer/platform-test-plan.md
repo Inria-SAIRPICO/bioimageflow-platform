@@ -432,7 +432,8 @@ Workers receive a fresh bounded packet with current contract, one outcome, causa
 Use narrow task context/forks when appropriate; do not require the full history or inherited campaign transcript.
 Include a short impact map: changed files → owning service/session and callers → storage/event/generated-type/library consumers → exact distinguishing selectors in each affected layer/browser → required completion scope.
 Trace those consumers in code and tests rather than selecting only by file proximity; include negative, recovery, permission, and identity cases when the changed contract can affect them.
-Writable parallel work must use separate worktrees; shared campaign records belong to the orchestrator.
+Writable parallel work uses separate worktrees unless one coherent integration checkout has explicitly disjoint whole-file source owners and a sole Git/environment/runtime owner; shared campaign records belong to the orchestrator.
+Source writers freeze all imported modules and executable-package members for a live consumer, including later restarted processes, and resume only after the runtime owner acknowledges consumer idle and preserves the source projection.
 Commit only each task's validated changes, integrate after review, and retire only clean integrated task worktrees as `AGENTS.md` requires.
 Leave unrelated files and unfinished worktrees intact.
 
@@ -445,6 +446,7 @@ Immutable installed baseline artifacts may run alongside source development, and
 Serialize packaging and source inventories behind tests that generate build or metadata outputs inside source trees.
 Before admitting artifacts, confirm the intended clean source projection and generated-output exclusions; parallelize only independent roots or read-only consumers.
 Assign actionable work to an idle or completed agent with the task/follow-up activation API; an informational message alone does not wake that agent, and no extra acknowledgement loop is needed once ownership is explicit.
+Use that activation API for each new actionable packet even when the agent was last observed running, because completion can race delivery; reserve ordinary messages for information and coordination within an already-active packet.
 Run one `scripts/test check campaign` for consolidated process-only plan, resume, status, evidence or dashboard edits; API/specification or documentation navigation/structure changes and substantial documentation milestones retain their appropriate single strict documentation gate under `docs/testing.md`.
 Do not remove meaningful cases or weaken acceptance to reduce elapsed time.
 

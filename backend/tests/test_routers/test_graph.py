@@ -1,21 +1,15 @@
 """Integration tests for the graph router."""
-# pyright: reportInvalidTypeForm=false
-# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
-# pyright can't evaluate this runtime metadata statically.
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from httpx import ASGITransport
 
-from bioimageflow.dataframe_tool import DataFrameTool
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
-from bioimageflow_core.types import ImageSpec, Semantic
+from platform_test_tools.graph import IntParamTool, MockDataFrameTool, MockProcessingTool
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -36,54 +30,10 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-class _ProcInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
-    diameter: float = 30.0
-
-
-class _ProcOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
-
-
-class MockProcessingTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = _ProcInputs
-    Outputs = _ProcOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
-class _DFInputs(IOModel):
-    threshold: float = 0.5
-
-
-class MockDataFrameTool(DataFrameTool):
-    Inputs = _DFInputs
-
-
-class _IntInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
-    n: int = 1
-
-
-class IntTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = _IntInputs
-    Outputs = _ProcOutputs
-
-    def process_row(self, arguments: Any) -> Any:
-        return {}
-
-
 _TOOL_CLASSES: dict[str, type] = {
     "MockProcessingTool": MockProcessingTool,
     "MockDataFrameTool": MockDataFrameTool,
-    "IntTool": IntTool,
+    "IntParamTool": IntParamTool,
 }
 
 
@@ -269,7 +219,7 @@ async def test_put_parameter_invalid(client: httpx.AsyncClient) -> None:
                 "type": "tool",
                 "id": "n1",
                 "name": "n1",
-                "tool_name": "IntTool",
+                "tool_name": "IntParamTool",
                 "position": [0, 0],
                 "parameters": {"input_image": "/a", "n": "not-an-int"},
             }
@@ -334,7 +284,7 @@ async def test_put_with_no_execution_manager_is_unlocked(
 async def test_parameter_patch_endpoint_is_removed(client: httpx.AsyncClient) -> None:
     resp = await client.patch(
         "/api/v1/graph/nodes/n1/parameters",
-        params={"tool_name": "IntTool"},
+        params={"tool_name": "IntParamTool"},
         json={"parameters": {"n": 5}},
     )
     assert resp.status_code == 404

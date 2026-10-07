@@ -68,7 +68,6 @@ def _validation_from_compilation(
     graph: GraphState,
     compilation: BuildOutput,
     *,
-    dev_mode: bool,
     has_retained_latest: Callable[[str], bool] | None = None,
     planned_node_ids: set[str] | None = None,
 ) -> ValidationResult:
@@ -82,7 +81,7 @@ def _validation_from_compilation(
 
     workflow = compilation.workflow
     if workflow is not None:
-        for library_error in [*workflow.errors, *workflow.validate(dev_mode=dev_mode)]:
+        for library_error in [*workflow.errors, *workflow.validate()]:
             _append_unique_error(
                 errors,
                 seen_errors,
@@ -98,10 +97,13 @@ def _validation_from_compilation(
         for node_id in compilation.disabled_node_ids
     }
 
-    has_cycle = any(error.type == "cycle_detected" for error in errors)
-    if workflow is not None and not has_cycle:
+    planning_blocked = any(
+        error.type in {"cycle_detected", "environment_incompatible"}
+        for error in errors
+    )
+    if workflow is not None and not planning_blocked:
         try:
-            plans = workflow.plan(dev_mode=dev_mode)
+            plans = workflow.plan()
         except CycleInWorkflowError:
             _append_unique_error(
                 errors,
@@ -205,7 +207,6 @@ class GraphValidationService:
         graph: GraphState,
         compilation: BuildOutput,
         *,
-        dev_mode: bool,
         has_retained_latest: Callable[[str], bool] | None = None,
         planned_node_ids: set[str] | None = None,
     ) -> ValidationResult:
@@ -213,7 +214,6 @@ class GraphValidationService:
         return _validation_from_compilation(
             graph,
             compilation,
-            dev_mode=dev_mode,
             has_retained_latest=has_retained_latest,
             planned_node_ids=planned_node_ids,
         )
@@ -223,7 +223,6 @@ class GraphValidationService:
         graph: GraphState,
         *,
         storage_path: Path,
-        dev_mode: bool = True,
         on_progress: Callable[[Any], None] | None = None,
     ) -> GraphValidationOutput:
         compilation = self._compiler.compile(
@@ -234,7 +233,6 @@ class GraphValidationService:
         validation = _validation_from_compilation(
             graph,
             compilation,
-            dev_mode=dev_mode,
         )
         return GraphValidationOutput(
             compilation=compilation,
@@ -246,13 +244,11 @@ class GraphValidationService:
         graph: GraphState,
         *,
         storage_path: Path,
-        dev_mode: bool = True,
         on_progress: Callable[[Any], None] | None = None,
     ) -> ValidationResult:
         return self.validate_with_compilation(
             graph,
             storage_path=storage_path,
-            dev_mode=dev_mode,
             on_progress=on_progress,
         ).validation
 
@@ -261,7 +257,6 @@ class GraphValidationService:
         graph: GraphState,
         *,
         storage_path: Path,
-        dev_mode: bool = True,
         on_progress: Callable[[Any], None] | None = None,
     ) -> GraphValidationOutput:
         """Compile and validate without occupying the application event loop."""
@@ -272,7 +267,6 @@ class GraphValidationService:
                 self.validate_with_compilation,
                 graph,
                 storage_path=storage_path,
-                dev_mode=dev_mode,
                 on_progress=on_progress,
             )
         )
@@ -282,7 +276,6 @@ class GraphValidationService:
         graph: GraphState,
         *,
         storage_path: Path,
-        dev_mode: bool = True,
         on_progress: Callable[[Any], None] | None = None,
     ) -> ValidationResult:
         """Validate without occupying the application event loop."""
@@ -293,7 +286,6 @@ class GraphValidationService:
                 self.validate,
                 graph,
                 storage_path=storage_path,
-                dev_mode=dev_mode,
                 on_progress=on_progress,
             )
         )
@@ -304,11 +296,9 @@ def validate_graph(
     registry: ToolRegistryService,
     *,
     storage_path: Path,
-    dev_mode: bool = True,
 ) -> ValidationResult:
     """Validate one complete graph snapshot in its explicit storage context."""
     return GraphValidationService(registry).validate(
         graph,
         storage_path=storage_path,
-        dev_mode=dev_mode,
     )

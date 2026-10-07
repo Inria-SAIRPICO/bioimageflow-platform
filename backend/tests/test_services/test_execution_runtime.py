@@ -11,7 +11,6 @@ import pytest
 
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 from bioimageflow_server.models.execution import ExecutionContext
-from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.execution_progress import reduce_progress_events
 from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.services.execution_registry import (
@@ -897,7 +896,6 @@ async def test_regular_terminal_sidecar_recovers_failure_and_cancellation(
     manager = ExecutionManager(
         event_bus=NullEventBus(),
         tool_registry=ToolRegistryService(),
-        settings=Settings(deployment_mode="desktop"),
         managed_result_root=tmp_path / "results",
     )
     manager.context = context
@@ -1390,7 +1388,6 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
     manager = ExecutionManager(
         event_bus=NullEventBus(),
         tool_registry=ToolRegistryService(),
-        settings=Settings(deployment_mode="desktop"),
         managed_result_root=tmp_path,
     )
     context = ExecutionContext(

@@ -51,7 +51,6 @@ from bioimageflow_server.routers.editor import (
     router as editor_router,
 )
 from bioimageflow_server.routers.graph import (
-    get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
@@ -59,7 +58,6 @@ from bioimageflow_server.routers.graph import (
     router as graph_router,
 )
 from bioimageflow_server.routers.execution import (
-    get_dev_mode as execution_get_dev_mode,
     get_execution_manager as execution_get_manager,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
@@ -433,19 +431,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 hot_reload.add_watch_root(current_root)
         return cached
 
-    def _live_dev_mode() -> bool:
-        if settings_store is not None:
-            return settings_store.get().dev_mode
-        return resolved_settings.dev_mode
-
     workflow_draft_service = WorkflowDraftService(
         _current_workflow_store,
-        dev_mode_provider=_live_dev_mode,
     )
     nested_workflow_snapshot_service = NestedWorkflowSnapshotService(
         _current_workflow_store,
         fallback_storage_path_provider=_current_stateless_storage_path,
-        dev_mode_provider=_live_dev_mode,
     )
     distributed_tokens: PreparedSubmissionTokenManager | None = None
     distributed_coordinator: ExecutionCoordinator | None = None
@@ -606,8 +597,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
-        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
-
         async def _retain_local_execution(context: Any) -> None:
             if distributed_registrar is not None:
                 await distributed_registrar.register_local(context, execution_manager)
@@ -618,9 +607,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         execution_manager = ExecutionManager(
             event_bus=event_bus,
             tool_registry=registry,
-            settings=resolved_settings,
             storage_path=stateless_storage_path,
-            settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
             processing_environment_lock=getattr(
                 tool_environment_service,
@@ -751,9 +738,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
+            close_execution = getattr(execution_manager, "close", None)
+            if callable(close_execution):
+                try:
+                    await close_execution()
+                except Exception:
+                    _logger.exception("Execution shutdown remains pending")
             close_tool_environments = getattr(tool_environment_service, "close", None)
             if callable(close_tool_environments):
-                await close_tool_environments()
+                try:
+                    await close_tool_environments()
+                except Exception:
+                    _logger.exception("Processing environment shutdown remains pending")
+            retry_resource_cleanup = getattr(execution_manager, "retry_resource_cleanup", None)
+            if callable(retry_resource_cleanup):
+                try:
+                    await asyncio.to_thread(retry_resource_cleanup)
+                except Exception:
+                    _logger.exception("Controller scope shutdown remains pending")
             if distributed_coordinator is not None:
                 await distributed_coordinator.close()
             if distributed_tokens is not None:
@@ -999,7 +1001,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_workflow_draft_service] = lambda: workflow_draft_service
-    app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[get_workflow_source_service] = lambda: workflow_source_service
     app.dependency_overrides[workflows_get_nested_snapshot_service] = lambda: (
@@ -1035,7 +1036,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     app.dependency_overrides[workflow_draft_operations_get_connection_manager] = lambda: ws_manager
 
-    app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[napari_get_result_store] = lambda: result_store

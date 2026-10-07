@@ -7,11 +7,13 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
-from bioimageflow_core.worker_origins import SourceFileOriginV1, load_worker_tool
+from bioimageflow_core.worker_origins import SourceFileOrigin, load_worker_tool
 from bioimageflow.template import resolve_template
+from bioimageflow.worker_origins import resolve_worker_tool_origin
 
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.demo_workflows import (
@@ -149,6 +151,16 @@ def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
     assert tools["parameter_results"].tool_module == "tools.parameter_sweep_results"
 
     tool_path = store.workflow_tools_dir(workflow_id) / "spot_mask_metrics.py"
+    module_name = "parameter_demo_spot_mask_metrics"
+    spec = importlib.util.spec_from_file_location(module_name, tool_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    spec.loader.exec_module(module)
+    origin = resolve_worker_tool_origin(module.SpotMaskMetrics)
+    assert isinstance(origin, SourceFileOrigin)
+    assert origin.path == str(tool_path.resolve())
+    assert origin.source_hash == hashlib.sha256(tool_path.read_bytes()).hexdigest()
     original_import = builtins.__import__
 
     def worker_import(name: str, *args: object, **kwargs: object) -> object:
@@ -158,13 +170,7 @@ def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
 
     with monkeypatch.context() as patch:
         patch.setattr(builtins, "__import__", worker_import)
-        tool = load_worker_tool(
-            SourceFileOriginV1(
-                path=str(tool_path),
-                source_hash=hashlib.sha256(tool_path.read_bytes()).hexdigest(),
-                class_name="SpotMaskMetrics",
-            )
-        )
+        tool = load_worker_tool(origin)
 
     assert type(tool).__name__ == "SpotMaskMetrics"
 

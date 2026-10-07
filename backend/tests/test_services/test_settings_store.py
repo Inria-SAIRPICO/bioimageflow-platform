@@ -223,17 +223,20 @@ class TestLoad:
                     "napari_env_path": "/legacy/napari",
                     "thumbnail_env_path": "/legacy/thumbnail",
                     "future_field": "abc",
+                    "dev_mode": False,
                 }
             )
         )
         store = SettingsStore(path=path)
         result = await store.load()
         assert result.deployment_mode == "desktop"
+        assert "dev_mode" not in result.model_dump()
         # Original file is preserved (until next patch overwrites it).
         on_disk = _read_disk(path)
         assert on_disk["napari_env_path"] == "/legacy/napari"
         assert on_disk["thumbnail_env_path"] == "/legacy/thumbnail"
         assert on_disk["future_field"] == "abc"
+        assert on_disk["dev_mode"] is False
 
     async def test_malformed_json_returns_defaults_without_overwrite(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

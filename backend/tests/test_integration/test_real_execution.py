@@ -122,7 +122,6 @@ def _clear_active_workflow() -> AsyncIterator[None]:
 def _settings() -> Settings:
     return Settings(
         deployment_mode="desktop",
-        dev_mode=False,
     )
 
 
@@ -200,7 +199,6 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     manager = ExecutionManager(
         bus,
         registry,
-        _settings(),
         storage_path=tmp_path,
     )
 
@@ -233,7 +231,6 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
         graph,
         registry,
         storage_path=tmp_path,
-        dev_mode=False,
     )
     assert validation.valid is True
     assert validation.errors == []
@@ -249,12 +246,12 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     store = WorkflowStoreService(root_dir=root, tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False
+        lambda: store
     )
     graph = dataframe_chain()
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
     storage = store.get_storage_path("wf")
-    manager = ExecutionManager(RecordingEventBus(), registry, _settings(), storage_path=storage)
+    manager = ExecutionManager(RecordingEventBus(), registry, storage_path=storage)
     await manager.start(graph, workflow_id="wf", draft_revision=accepted.draft_revision)
     await _drain_manager(manager)
     assert manager.last_result is not None and manager.last_result.success
@@ -268,7 +265,7 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     before = accepted.model_dump(mode="json")
 
     cleared = clear_node_cache(
-        ["source"], edited, registry, storage, dev_mode=False
+        ["source"], edited, registry, storage
     )
     assert cleared["source"].status == "unexecuted"
     assert cleared["offset"].status == "out_of_date"
@@ -277,7 +274,7 @@ async def test_draft_status_after_clear_survives_backend_restart(tmp_path: Path)
     restarted_registry = local_registry()
     restarted_store = WorkflowStoreService(root_dir=root, tool_registry=restarted_registry)
     restarted_drafts = WorkflowDraftService(
-        lambda: restarted_store, dev_mode_provider=lambda: False
+        lambda: restarted_store
     )
     restarted = restarted_drafts.get_draft("wf")
     assert restarted.validation.node_statuses["source"].status == "unexecuted"
@@ -344,14 +341,14 @@ asyncio.run(main())
 
     # Once no downstream latest output remains, pending_upstream means unexecuted.
     clear_node_cache(
-        ["offset"], edited, restarted_registry, storage, dev_mode=False
+        ["offset"], edited, restarted_registry, storage
     )
     without_output = restarted_drafts.get_draft("wf")
     assert without_output.validation.node_statuses["offset"].status == "unexecuted"
 
     # Rerunning the unchanged accepted graph restores current cache status.
     new_manager = ExecutionManager(
-        RecordingEventBus(), restarted_registry, _settings(), storage_path=storage
+        RecordingEventBus(), restarted_registry, storage_path=storage
     )
     await new_manager.start(edited, workflow_id="wf", draft_revision=accepted.draft_revision)
     await _drain_manager(new_manager)
@@ -368,7 +365,7 @@ async def test_draft_status_before_any_run_has_no_false_downstream_staleness(
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False
+        lambda: store
     )
     graph = dataframe_chain()
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -379,13 +376,11 @@ async def test_draft_status_before_any_run_has_no_false_downstream_staleness(
         graph,
         registry,
         store.get_storage_path("wf"),
-        dev_mode=False,
     )
     restarted = WorkflowDraftService(
         lambda: WorkflowStoreService(
             root_dir=tmp_path / "workflows", tool_registry=local_registry()
         ),
-        dev_mode_provider=lambda: False,
     ).get_draft("wf")
     assert restarted.validation.node_statuses["source"].status == "unexecuted"
     assert restarted.validation.node_statuses["offset"].status == "unexecuted"
@@ -399,7 +394,7 @@ async def test_draft_get_retries_when_accepted_revision_changes_during_compile(
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = WorkflowDraftService(
-        lambda: store, dev_mode_provider=lambda: False
+        lambda: store
     )
     graph = dataframe_chain()
     first = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -429,7 +424,7 @@ async def test_draft_get_retries_same_id_recreation_during_compile(
     registry = local_registry()
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
-    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    drafts = WorkflowDraftService(lambda: store)
     drafts.put_draft("wf", graph=dataframe_chain(), expected_revision=0)
     original_generation = store.workflow_generation("wf")
     compile_original = GraphCompiler.compile
@@ -456,7 +451,7 @@ async def test_draft_get_preserves_disabled_status(tmp_path: Path) -> None:
     registry = local_registry()
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
-    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    drafts = WorkflowDraftService(lambda: store)
     graph = dataframe_chain()
     graph.nodes[1].enabled = False
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
@@ -475,7 +470,7 @@ async def test_draft_get_retries_changed_storage_path_during_compile(
     registry = local_registry()
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="wf"))
-    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    drafts = WorkflowDraftService(lambda: store)
     graph = dataframe_chain()
     accepted = drafts.put_draft("wf", graph=graph, expected_revision=0)
     old_storage = store.get_storage_path("wf")
@@ -524,7 +519,6 @@ async def test_execution_manager_run_selected_executes_valid_branch_with_unrelat
     manager = ExecutionManager(
         RecordingEventBus(),
         local_registry(),
-        _settings(),
         storage_path=tmp_path,
         environment_manager_provider=WetlandsEnvManager,
     )
@@ -563,7 +557,6 @@ async def test_execution_manager_recomputes_after_accepted_graph_changes(
     manager = ExecutionManager(
         bus,
         registry,
-        _settings(),
         storage_path=tmp_path,
     )
     original = dataframe_chain()
@@ -592,7 +585,6 @@ async def test_execution_manager_recomputes_after_accepted_graph_changes(
         original,
         registry,
         storage_path=tmp_path,
-        dev_mode=False,
     )
     assert validation.valid is True
 
@@ -623,7 +615,7 @@ def _accepted_workflow(
 ) -> tuple[WorkflowStoreService, int, Path]:
     store = WorkflowStoreService(root_dir=tmp_path / "workflows", tool_registry=registry)
     store.create_workflow(WorkflowCreate(name="test-workflow"))
-    drafts = WorkflowDraftService(lambda: store, dev_mode_provider=lambda: False)
+    drafts = WorkflowDraftService(lambda: store)
     accepted = drafts.put_draft("test-workflow", graph=graph, expected_revision=0)
     return store, accepted.draft_revision, store.get_storage_path("test-workflow")
 

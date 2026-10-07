@@ -64,7 +64,6 @@ class TestSettings:
         assert s.default_execution_target_id == "local"
         assert s.node_data_page_size == 250
         assert s.keyboard_shortcuts == {}
-        assert s.dev_mode is True
         assert s.enable_unsafe_webapp_features is False
 
     def test_unsafe_webapp_features_flag(self):
@@ -205,9 +204,7 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings.model_validate({"deployment_mode": "desktop", "foo": 1})
 
-    def test_dev_mode_false_accepted_at_model_layer(self):
-        # Router rejects this in GUI mode; the model itself stays permissive
-        # so non-GUI callers (CLI, tests, future webapp deployments) can build
-        # Settings(dev_mode=False).
-        s = Settings(deployment_mode="desktop", dev_mode=False)
-        assert s.dev_mode is False
+    @pytest.mark.parametrize("value", [True, False])
+    def test_retired_dev_mode_is_rejected(self, value: bool):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", dev_mode=value)

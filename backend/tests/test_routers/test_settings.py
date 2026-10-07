@@ -235,12 +235,16 @@ class TestPatchSettings:
         response = await settings_client.patch("/api/v1/settings", json={"foo": 1})
         assert response.status_code == 422
 
-    async def test_patch_dev_mode_false_rejected(self, settings_client: httpx.AsyncClient) -> None:
-        response = await settings_client.patch("/api/v1/settings", json={"dev_mode": False})
+    @pytest.mark.parametrize("value", [True, False])
+    async def test_patch_retired_dev_mode_rejected(
+        self, settings_client: httpx.AsyncClient, value: bool
+    ) -> None:
+        before = await settings_client.get("/api/v1/settings")
+        response = await settings_client.patch("/api/v1/settings", json={"dev_mode": value})
         assert response.status_code == 422
-        body = response.json()
-        # ErrorResponse shape from app.py.
-        assert "dev_mode cannot be disabled" in body["detail"]
+        after = await settings_client.get("/api/v1/settings")
+        assert after.json() == before.json()
+        assert "dev_mode" not in after.json()
 
     async def test_patch_workspace_path_retargets_workflow_store(
         self,
@@ -267,10 +271,6 @@ class TestPatchSettings:
         assert workflows.status_code == 200
         assert [workflow["id"] for workflow in workflows.json()] == ["retargeted"]
         assert workflow_file.exists()
-
-    async def test_patch_dev_mode_true_accepted(self, settings_client: httpx.AsyncClient) -> None:
-        response = await settings_client.patch("/api/v1/settings", json={"dev_mode": True})
-        assert response.status_code == 200
 
     async def test_patch_unsafe_webapp_features_rejected(
         self, settings_client: httpx.AsyncClient
@@ -559,13 +559,3 @@ class TestPatchSettings:
         assert all(
             '"password"' not in text for text in [followup.text, response.text, path.read_text()]
         )
-
-
-class TestDevModeAtModelLayer:
-    """The model itself stays permissive — only the router rejects dev_mode=False."""
-
-    def test_settings_dev_mode_false_constructible(self) -> None:
-        from bioimageflow_server.models.settings import Settings
-
-        s = Settings(deployment_mode="desktop", dev_mode=False)
-        assert s.dev_mode is False

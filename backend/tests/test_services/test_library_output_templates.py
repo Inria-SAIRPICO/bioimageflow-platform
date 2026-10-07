@@ -5,30 +5,12 @@ from typing import Any
 
 from bioimageflow import Workflow
 from bioimageflow.engine import DefaultEngine
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
-
-
-class _TemplateOutputs(IOModel):
-    result: Path
-
-
-class _TemplateTool(ProcessingTool):
-
-    row_consumption = RowConsumption.MAPPED
-    environment = EnvironmentSpec(name="test", dependencies={})
-    Inputs = IOModel
-    Outputs = _TemplateOutputs
-
-    def process_row(self, arguments: Any, *, context: Any = None) -> _TemplateOutputs:
-        output_path = Path(arguments.result)
-        output_path.write_text("ok")
-        return _TemplateOutputs(result=output_path)
+from platform_test_tools.graph import TemplateTool
 
 
 def _workflow_dict(template: str) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "template_test",
         "display_name": "Template test",
         "interface": {
@@ -46,8 +28,8 @@ def _workflow_dict(template: str) -> dict[str, Any]:
             {
                 "name": "write",
                 "type": "tool",
-                "tool_module": __name__,
-                "tool_class": "_TemplateTool",
+                "tool_module": TemplateTool.__module__,
+                "tool_class": TemplateTool.__name__,
                 "tool_package": None,
                 "tool_package_version": None,
                 "constants": {},

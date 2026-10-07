@@ -54,7 +54,7 @@ def archive_payload(source: str = SOURCE) -> dict:
         "archive_version": 1,
         "custom_sources": [source_record(source)],
         "workflow": {
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "reference",
             "display_name": "QA Reference Workflow",
             "nodes": [
@@ -95,7 +95,7 @@ def run(
         storage_path=store.get_storage_path(name),
     )
     assert built.errors == []
-    built.workflow.compute(dev_mode=True)
+    built.workflow.compute()
     return (
         ResultStoreService(
             storage_path=store.get_storage_path(name), tool_registry=store.tool_registry
@@ -127,7 +127,7 @@ def test_execution_snapshot_and_other_import_remain_independent(tmp_path: Path):
     OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment").write_text(
         SOURCE.replace("n + 1", "n + 20")
     )
-    captured.workflow.compute(dev_mode=True)
+    captured.workflow.compute()
     assert ResultStoreService(
         storage_path=store.get_storage_path("reference"), tool_registry=store.tool_registry
     ).get_latest_dataframe("increment")["number_plus_one"].tolist() == [2, 3, 4]

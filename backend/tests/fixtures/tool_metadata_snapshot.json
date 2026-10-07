@@ -73,7 +73,12 @@
     "cell_count": {
       "default": null,
       "image_spec": null,
-      "type": "int"
+      "nullable": false,
+      "required": true,
+      "type": "int",
+      "type_spec": {
+        "kind": "int"
+      }
     },
     "mask": {
       "connectable": "not_by_default",
@@ -93,9 +98,14 @@
       },
       "max": null,
       "min": null,
+      "nullable": false,
+      "required": false,
       "step": null,
       "template": "{input_image.stem}_mask{ext}",
-      "type": "ImageFile"
+      "type": "ImageFile",
+      "type_spec": {
+        "kind": "Path"
+      }
     }
   },
   "package": "test-snapshot-tools",
