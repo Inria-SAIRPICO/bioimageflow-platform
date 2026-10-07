@@ -222,7 +222,10 @@ These reviewed library changes are published as Core 0.5.0, BioImageFlow 0.9.0 a
 Actual PyPI wheel/sdist hashes and source bytes match the admitted release cohort, including the canonical Core wheel.
 Wetlands 2.6.1 is also published and verified; platform dependency and API adoption remain the active gate.
 Arbitrary trusted Python state/dependency closure, whole merged-input provenance, external filesystem tampering and automatic pressure scheduling are explicit accepted boundaries; the campaign milestone and named remaining tasks remain open; the [current checkpoint](docs/developer/platform-test-current.md) holds source-bound proof and the remaining queue.
-The backend uv lock currently resolves the sibling BioImageFlow orchestrator and core as editable source packages for local development; the Python debug launch profiles use that backend environment. Explicit `(local core)` profiles also select and import the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
+The backend dependency manifest resolves published BioImageFlow 0.9, Core 0.5 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout.
+The Python debug launch profiles use that backend environment.
+Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
+Source investigations use an explicitly owned environment and do not supply published compatibility evidence.
 
 The platform has an engine-neutral execution model with execution targets, preflight, retained run identities, job snapshots, history, cancellation, and reconnection capabilities.
 Local execution preserves Direct and Wetlands through the existing local path.

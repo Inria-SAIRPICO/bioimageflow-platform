@@ -76,10 +76,9 @@ uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
 ```
 
 `BIOIMAGEFLOW_CORE_SOURCE` is strict: the path must be a `bioimageflow-core` project with a valid version and import package, or startup fails instead of silently using a wheel.
-The legacy `BIOIMAGEFLOW_USE_LOCAL_CORE=1` mode remains supported by BioImageFlow but requires core to be installed editably in the backend environment; the platform profiles no longer depend on it.
 Wetlands 2 stores immutable environment generations under `~/.bioimageflow/wetlands/environments/`. BioImageFlow inspects each requested processing recipe and replaces a stale BioImageFlow-owned environment through Wetlands after closing its pool. Other environment owners, including Napari and adopted or external environments, retain their independent lifecycles.
 
-The platform requires Wetlands 2.4.2 or newer for managed external processes, provisioning subprocess cleanup, and correctly activated Windows Pixi workers.
+The platform requires Wetlands 2.6.1 or newer for complete installed-runtime admission and physically joined worker/connection ownership, in addition to managed external processes and activated Pixi workers.
 Napari and code-server are supervised through `ManagedEnvironment.spawn()`, while thumbnail generation uses a managed `WorkerPool`.
 These environments are provisioned automatically and no longer accept user-configured environment paths.
 
