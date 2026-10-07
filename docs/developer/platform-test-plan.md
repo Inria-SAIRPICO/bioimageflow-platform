@@ -395,6 +395,9 @@ The repeated CI/provider recoveries distinguish product defects from stale fixtu
 Reuse the current ordinary-source/compile helpers and authoritative capability driver instead of creating parallel test infrastructure.
 Check copied driver declarations under their actual floor interpreter before dispatch, then retain the actual normal-artifact OS matrix; local source tests cannot replace Windows same-wheel or real child/lifetime effects.
 Every finite runtime gate must prove its exact selected cases and zero failures/errors/skips, not merely report a green empty selection.
+Before publishing a changed public library boundary, trace one actual cross-stack consumer through preparation, scientific identity/cache, dispatch and owned cleanup using its existing focused controls.
+For changed stdlib metadata or identity authority, run exact valid and refusal controls on the supported floor and declared current interpreter locally, retaining the full remote OS matrix as a separate release gate.
+Real process fixtures capture endpoint startup/hello identity separately from the launcher PID and assert both physical completions; these checks belong to coherent milestone or release preparation, not a repeated broad setup matrix.
 These are reliability and setup-cost lessons, not measured suite-wide speed claims.
 
 After technically gated publication, complete one coherent platform pin/lock/public-API adoption packet and T1/I1 through ready-runtime admission, selected-primary capture, key/Storage identity, actual WorkerPool execution, pinned results and cancellation/physical drain.

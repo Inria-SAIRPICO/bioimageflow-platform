@@ -10,14 +10,15 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 ## Status — October 7, 2026
 
 The campaign is RUNNING with authorized continuation.
-Latest reviewed library source is local `b3512aba8e579486f98655dcea3ada35ff8b2e86` in `.worktrees/campaign-library-source-containment`; remote main remains `53cf29920645b67f28a8bb75b298d03ea584a9f5`.
-The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent reviewed release-validation and CI-partition infrastructure increments change no library/Core/tool callback bytes.
+Latest reviewed library source is local `5f1c9b31ade4c996f39f5c709196ef87ce0b0b3f` in `.worktrees/campaign-library-source-containment`; remote main remains `53cf29920645b67f28a8bb75b298d03ea584a9f5`.
+The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent reviewed release infrastructure and public runtime-admission preparation extension preserve Core/tool callback bytes.
 MAIN, bounded SECONDARY/support waves and Phase 3 are technically accepted within the selected local-library scope.
 The CAMPAIGN remains RUNNING; release, platform adoption and desktop acceptance are subsequent gates.
 The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it records the accepted finite milestone and its limits, not whole-campaign completion.
 
 Support closure includes lexical interpreter-neighbor CLI lookup, meaningful affected-test routing, current capability/release CI distinctions and full typing in an exclusively owned declared-development environment.
-All 250 product files pass Pyright at the configured Python 3.10 floor; the final mapping correction's run took 10.497 s.
+Accepted Phase 3 typing covered all 250 product files at the configured Python 3.10 floor; the final mapping correction's run took 10.497 s.
+The subsequent public preparation-admission extension passed its two-file typing scope, focused preparation/recreation/content controls and strict docs; the earlier full-source result is not relabeled as a new full typing run.
 Package-tool coverage is the retained union of 391 passes and one external-resource skip, with 20 original deselections; all six acceptance cases passed.
 Local source coverage is the retained unique union of 1,078 unit passes and 648 integration passes, including eight added CI-policy, four mapping and five planning controls.
 Original failures, phase source revisions and warnings remain linked; the final integration tail retained thirteen metadata warnings.
@@ -50,7 +51,7 @@ Published Wetlands 2.6.0 remains the current prerequisite; an isolated Wetlands 
 No library/Core/tool candidate is published or adopted by the platform.
 The retained `.venv-c04-runtime-receipt` still contains the earlier unpublished normal Core `11aee`; new proofs use separate owned interpreters and do not relabel that candidate.
 One normal all-eleven-package `--all-packages --no-sources` cohort was built; only genuinely affected Core, SAIRPICO and orchestrator pairs were refreshed.
-The current 22 artifacts match 535 Python/typing-marker members at `1c1bc8f`; all 12 earlier artifact contracts remain retained with their source qualifications.
+The held milestone cohort's 22 artifacts match 535 Python/typing-marker members at `1c1bc8f`; all 12 earlier artifact contracts remain retained with their source qualifications.
 The final orchestrator and Core refreshes received only their affected installed/capability checks; other package pairs remain unchanged.
 The actual normal wheel/sdist `py.typed` gate has passed.
 
@@ -87,15 +88,21 @@ The [CI-partition/publisher commit receipt](/private/tmp/bioimageflow-library-de
 The [infrastructure commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/release-infrastructure-source-commit.json) links exact paths/source, while dispatch and independent summaries retain runtime qualifications.
 The provider patch retains captured worker/controller ownership until the reader finishes, preserves bounded close retry, and allows actual idle persistent detach and same-PID reattachment.
 Its independent retained union is 138 existing lifecycle-owner passes plus eight new controls; full typing passes on the declared Python 3.14 CI environment, while the earlier Python 3.10 external-stub diagnostics remain qualified.
-The clean provider candidate is `cbfd43409dff6166bac4dfe1e5ca170fe2888429`; its [full selector union](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-full-selector-union.json) covers all 665 selected cases with 659 passes and six conditional skips, retaining original failures and source-qualified recoveries.
+The prior clean provider candidate `cbfd43409dff6166bac4dfe1e5ca170fe2888429` has a [full selector union](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-full-selector-union.json) covering all 665 selected cases with 659 passes and six conditional skips, retaining original failures and source-qualified recoveries.
 The skips require Python 3.9, native Windows file IDs or filesystem case-alias capabilities; they do not waive matching remote release gates.
 The actual Pixi release recovery passed in 70.124 s command time (69.74 s pytest), and the final untouched tail passed 249 cases with two skips in 121.225 s (120.79 s pytest).
 The [clean artifact inventory](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/final-candidate-artifact-inventory.json) admits the wheel and sdist after rejecting a first sdist containing six test-generated example members; only the sdist was rebuilt after those owned outputs and test consumers were gone.
 Separate normal installs passed isolated source correspondence, version/CLI/dependency checks and actual persistent detach, same-PID reattachment, physical child exit and terminal-reader/closed-connection checks without warnings or thread exceptions.
 The final [wheel lifecycle command](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/normal-wheel-lifecycle-final-command.json) passed in 1.551 s and the [sdist counterpart](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/normal-sdist-lifecycle-final-command.json) in 1.720 s; listener startup reporting was injected, while transport, reader completion and child exit were real.
 These normal-install controls do not supply Pixi or three-OS certification.
-Direct Wetlands source-upload approval remains pending after automatic review rejected provider egress outside the explicit BioImageFlow upload approval.
-Required exact-source Linux/macOS/Windows CI, Python 3.9 compatibility and three-OS real-Pixi release gates therefore remain unexecuted; no provider tag, publication or platform adoption is implied.
+Explicit user YES resolved the earlier provider source-egress rejection; reviewed source is uploaded through [draft PR 7](https://github.com/arthursw/wetlands/pull/7), without a main push, force, tag or publication.
+The first ordinary `cbfd434` CI retained thirteen successful jobs, including all three actual Pixi gates, but exposed newer-Python missing-RECORD filtering and a Windows launcher/listener PID fixture assumption.
+The current correction `5443da7` captures complete public RECORD authority consistently through installed hashing and editable activation, requires missing retained members to fail, and separately verifies actual listener and launcher completion.
+Its 26 affected controls passed in 1.600 s command time, full declared typing in 4.453 s and strict docs in 3.780 s.
+The [updated artifact inventory](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/provider-reader-shutdown/complete-record-installed-proof/artifact-inventory.json) and separate normal installs retain exact source correspondence, actual complete-RECORD capture and terminal-reader/physical-child checks; finished normal interpreters were reclaimed after the final peer.
+The [corrected ordinary PR CI](https://github.com/arthursw/wetlands/actions/runs/37639255734) is bound to `5443da7`; all eighteen fast-matrix jobs plus typing, docs, package and compatibility are green; the three actual Pixi jobs fail only the documented complex-example recipe before science, with exact local reproduction and public structured diagnostics in progress.
+Required current three-OS Pixi acceptance remains a release gate; no provider tag, publication or platform adoption is implied.
+The separate unpublished library `5f1c9b3` public-admission seam preserves lazy authorized preparation and observation before keys/cache without eager workers; its [focused packet](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/admission-preparation-focus-command.json), exact held-recipe refusal and strict docs passed, with current provider publication/minimum/lock consumption still pending.
 The reviewed publisher now requires the exact tested Core wheel SHA256 during publish preflight before any selected upload; validate mode alone supplies no canonical floor authority.
 Next: provider 2.6.1 technical release acceptance and actual published dependency/lock consumption, one final ordinary local CI, canonical ordinary-CI Core wheel installation on Windows with eventual PyPI hash equality, and dependency-ordered Core/orchestrator/tool publication.
 Manual capability CI cannot unlock publication; ordinary successful exact-SHA local push/PR CI remains the release authority, with distributed coverage and failures visible separately.
