@@ -10,7 +10,8 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 ## Status — October 7, 2026
 
 The campaign is RUNNING with authorized continuation.
-Latest accepted library source is `1c1bc8f2707ad7f384b9133724745442c6536add` in `.worktrees/campaign-library-source-containment`.
+Latest reviewed library source is `53cf29920645b67f28a8bb75b298d03ea584a9f5` in `.worktrees/campaign-library-source-containment` and remote main.
+The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent ten-file release-validation infrastructure increment changes no library/Core/tool product bytes.
 MAIN, bounded SECONDARY/support waves and Phase 3 are technically accepted within the selected local-library scope.
 The CAMPAIGN remains RUNNING; release, platform adoption and desktop acceptance are subsequent gates.
 The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it records the accepted finite milestone and its limits, not whole-campaign completion.
@@ -75,8 +76,12 @@ Held `.worktrees/campaign-force-library` six files/private interpreter, developm
 ## Remaining sequence and record policy
 
 The accepted [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) includes source selector unions, per-layer commands/durations, artifact maps, OS qualifications, original failures and owned cleanup.
-Final strict incremental docs passed at `1c1bc8f` in 5.377 s with no warnings.
-Next: preservation-first upstream reconciliation with the frozen-tree equality check, ordinary exact final-SHA CI and finite changed science/native/model gates, candidate PyPI eligibility and dependency-ordered Core/orchestrator/tool publication.
+Final milestone strict incremental docs passed at `1c1bc8f` in 5.377 s; the release-infrastructure documentation check passed in 4.691 s, both without warnings.
+Preservation-first reconciliation and reviewed ordinary fast-forward upload are complete; the server reported automatic PR/status-rule bypass for the account, so mandatory ordinary CI remains explicitly pending rather than inferred from upload success.
+The [ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37616167829) runs at `53cf299`; four independent named Complete gates for StarDist, InstanSeg, Nagini API and LapTrack are active.
+The unchanged-source [SAIRPICO gate](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37615638144) passed all eight cases in 22.26 s, with 2,893 deselections and nine warnings; worker reader-shutdown warnings remain under finite review and do not establish physical resource closure.
+The [infrastructure commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/release-infrastructure-source-commit.json) links exact paths/source, while dispatch and independent summaries retain runtime qualifications.
+Next: ordinary CI and finite affected-runtime acceptance, canonical ordinary-CI Core wheel installation on Windows with exact eventual PyPI hash equality, candidate eligibility and dependency-ordered Core/orchestrator/tool publication.
 Manual capability CI excludes explicit distributed runtime owners and cannot unlock publication; ordinary successful exact-SHA push/PR CI remains the release authority.
 Configured floors/OS coverage and passed actual capability receipts remain separate.
 After Phase 3 acceptance: library/Core/tool release, platform adoption and headless platform validation, with desktop acceptance LAST.
