@@ -377,6 +377,32 @@ Trigger an exceptional targeted review for a contradictory public dependency con
 Use independent high-reasoning review for unresolved high-impact decisions, retaining the ordinary two-worker and specialist arrangement.
 The campaign is a learning and repair process, not a percentage-filling exercise.
 
+### October 7 library milestone retrospective and adoption priorities
+
+The selected local-library Phase 3 milestone is technically accepted; the [current checkpoint](platform-test-current.md) retains exact source, artifact, OS, runtime, selector and cleanup qualifications.
+Completed finite library obligations are not an unnamed repair backlog or proof of platform adoption.
+The user requires distributed features to remain excluded and local/distributed CI gates to be separate.
+Implement auditable local exclusions and a separate visible distributed workflow that retains its coverage and failures; do not repair distributed production, hide failures or create a campaign-branch exception.
+The earlier ordinary release CI failure remains recorded, and release requires a successful ordinary exact-SHA local CI run after the coherent partition.
+Keep the existing successful ordinary exact-SHA release predicate; a manual capability success does not replace it.
+
+Treat the canonical Core wheel as a held release input, backed by actual floor results and its reviewed SHA256.
+Admit every selected artifact pair and check that digest before the first upload; if a publication build differs, stop rather than assume reproducibility or claim it is the tested artifact.
+Use one publish-workflow build, not routine validate-then-publish duplicate builds; exact-artifact reuse is a separate deliberate fallback if the digest gate cannot pass.
+Infra-only source changes preserve applicable scientific/product-byte proofs, but release eligibility still requires ordinary CI at the final SHA.
+
+The repeated CI/provider recoveries distinguish product defects from stale fixture contracts: pytest-rewritten classes are unsuitable substitutes for ordinary admitted source, uncompiled private execution needs the real public compile/capture preconditions, and fake transports must return actual CompletedProcess objects.
+Reuse the current ordinary-source/compile helpers and authoritative capability driver instead of creating parallel test infrastructure.
+Check copied driver declarations under their actual floor interpreter before dispatch, then retain the actual normal-artifact OS matrix; local source tests cannot replace Windows same-wheel or real child/lifetime effects.
+Every finite runtime gate must prove its exact selected cases and zero failures/errors/skips, not merely report a green empty selection.
+These are reliability and setup-cost lessons, not measured suite-wide speed claims.
+
+After technically gated publication, complete one coherent platform pin/lock/public-API adoption packet and T1/I1 through ready-runtime admission, selected-primary capture, key/Storage identity, actual WorkerPool execution, pinned results and cancellation/physical drain.
+Preserve metadata-only planning and omitted/equal-explicit effective-default semantics at that consumer boundary.
+Reconcile current source against the accepted priority queue, including credential compensation, deployment policy, force-Recreate and physical lifetime, before adding broad M3 coverage; completed repairs stay closed and old titles require current evidence before requeueing.
+M3 then fills missing cross-layer public-effect assertions, rather than duplicating completed library unit families or unrelated optional model matrices.
+M4 completes the required published compatibility and headless real-worker certification, with desktop M5 LAST.
+
 ### October 2 repair-wave decision
 
 Close the bounded first wave A/D1/B/D2/C: executable/resource authority, exact dataset deletion/publication, confined uninstall and the imported-layout fixture correction.

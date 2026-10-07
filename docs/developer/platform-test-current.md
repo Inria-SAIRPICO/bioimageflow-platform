@@ -10,8 +10,8 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 ## Status — October 7, 2026
 
 The campaign is RUNNING with authorized continuation.
-Latest reviewed library source is `53cf29920645b67f28a8bb75b298d03ea584a9f5` in `.worktrees/campaign-library-source-containment` and remote main.
-The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent ten-file release-validation infrastructure increment changes no library/Core/tool product bytes.
+Latest reviewed library source is local `b3512aba8e579486f98655dcea3ada35ff8b2e86` in `.worktrees/campaign-library-source-containment`; remote main remains `53cf29920645b67f28a8bb75b298d03ea584a9f5`.
+The ordinary no-ff upstream merge `4d539376` preserved the exact accepted `1c1bc8f` tree; the subsequent reviewed release-validation and CI-partition infrastructure increments change no library/Core/tool callback bytes.
 MAIN, bounded SECONDARY/support waves and Phase 3 are technically accepted within the selected local-library scope.
 The CAMPAIGN remains RUNNING; release, platform adoption and desktop acceptance are subsequent gates.
 The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it records the accepted finite milestone and its limits, not whole-campaign completion.
@@ -46,7 +46,8 @@ Previously accepted schema/container/parameter/collective/selected-result/failur
 
 ## Artifact, capability and ownership boundary
 
-Published Wetlands 2.6.0 is the prerequisite; no library/Core/tool candidate is published or adopted by the platform.
+Published Wetlands 2.6.0 remains the current prerequisite; an isolated Wetlands 2.6.1 reader-shutdown repair is undergoing its mandatory full release checks before publication and consumption.
+No library/Core/tool candidate is published or adopted by the platform.
 The retained `.venv-c04-runtime-receipt` still contains the earlier unpublished normal Core `11aee`; new proofs use separate owned interpreters and do not relabel that candidate.
 One normal all-eleven-package `--all-packages --no-sources` cohort was built; only genuinely affected Core, SAIRPICO and orchestrator pairs were refreshed.
 The current 22 artifacts match 535 Python/typing-marker members at `1c1bc8f`; all 12 earlier artifact contracts remain retained with their source qualifications.
@@ -78,11 +79,18 @@ Held `.worktrees/campaign-force-library` six files/private interpreter, developm
 The accepted [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) includes source selector unions, per-layer commands/durations, artifact maps, OS qualifications, original failures and owned cleanup.
 Final milestone strict incremental docs passed at `1c1bc8f` in 5.377 s; the release-infrastructure documentation check passed in 4.691 s, both without warnings.
 Preservation-first reconciliation and reviewed ordinary fast-forward upload are complete; the server reported automatic PR/status-rule bypass for the account, so mandatory ordinary CI remains explicitly pending rather than inferred from upload success.
-The [ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37616167829) runs at `53cf299`; four independent named Complete gates for StarDist, InstanSeg, Nagini API and LapTrack are active.
-The unchanged-source [SAIRPICO gate](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37615638144) passed all eight cases in 22.26 s, with 2,893 deselections and nine warnings; worker reader-shutdown warnings remain under finite review and do not establish physical resource closure.
+The [ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37616167829) at `53cf299` failed on excluded distributed owners and one in-scope ImageSpec identity fixture, now faithfully corrected.
+The user chose separate local/distributed CI gates: local `ci.yml` retains exact six audited exclusions and remains the ordinary exact-SHA release authority; visible `distributed.yml` retains the complementary unmarked cases and original runtime jobs without suppression or distributed feature repair.
+The four named Complete gates for StarDist, InstanSeg, Nagini API and LapTrack all passed their exact real-runtime controls with zero selected skips; Nagini proves its pinned API adapter, not learned-model inference.
+The unchanged-source [SAIRPICO gate](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37615638144) passed all eight cases in 22.26 s, with 2,893 deselections and nine warnings; worker reader-shutdown warnings led to a reproduced legal split-frame race and do not establish physical resource closure.
+The [CI-partition/publisher commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/ci-partition-publisher-source-commit.json) binds the reviewed local `b3512ab` paths; its strict incremental docs passed in 4.278 s.
 The [infrastructure commit receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/release-infrastructure-source-commit.json) links exact paths/source, while dispatch and independent summaries retain runtime qualifications.
-Next: ordinary CI and finite affected-runtime acceptance, canonical ordinary-CI Core wheel installation on Windows with exact eventual PyPI hash equality, candidate eligibility and dependency-ordered Core/orchestrator/tool publication.
-Manual capability CI excludes explicit distributed runtime owners and cannot unlock publication; ordinary successful exact-SHA push/PR CI remains the release authority.
+The provider patch retains captured worker/controller ownership until the reader finishes, preserves bounded close retry, and allows actual idle persistent detach and same-PID reattachment.
+Its independent retained union is 138 existing lifecycle-owner passes plus eight new controls; full typing passes on the declared Python 3.14 CI environment, while the earlier Python 3.10 external-stub diagnostics remain qualified.
+Full provider tests, normal artifacts/install, exact-source three-OS CI and real-Pixi release gates remain pending; no provider tag or publication is implied.
+The reviewed publisher now requires the exact tested Core wheel SHA256 during publish preflight before any selected upload; validate mode alone supplies no canonical floor authority.
+Next: provider 2.6.1 technical release acceptance and actual published dependency/lock consumption, one final ordinary local CI, canonical ordinary-CI Core wheel installation on Windows with eventual PyPI hash equality, and dependency-ordered Core/orchestrator/tool publication.
+Manual capability CI cannot unlock publication; ordinary successful exact-SHA local push/PR CI remains the release authority, with distributed coverage and failures visible separately.
 Configured floors/OS coverage and passed actual capability receipts remain separate.
 After Phase 3 acceptance: library/Core/tool release, platform adoption and headless platform validation, with desktop acceptance LAST.
 The [plan's prerequisite exception](platform-test-plan.md#highest-priority-deep-librarycore-review-and-validation--october-4) does not advance those gates.
