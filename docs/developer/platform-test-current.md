@@ -10,14 +10,16 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 ## Status — October 7, 2026
 
 The campaign is RUNNING with authorized continuation.
-Latest accepted library source is `a7fbcd756d5778b726aab4d3f610189551e8eb08` in `.worktrees/campaign-library-source-containment`.
-MAIN and the bounded SECONDARY/support waves are accepted; Phase 3 local-library validation is active.
-The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it is an in-progress proof, not certification.
+Latest accepted library source is `1c1bc8f2707ad7f384b9133724745442c6536add` in `.worktrees/campaign-library-source-containment`.
+MAIN, bounded SECONDARY/support waves and Phase 3 are technically accepted within the selected local-library scope.
+The CAMPAIGN remains RUNNING; release, platform adoption and desktop acceptance are subsequent gates.
+The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it records the accepted finite milestone and its limits, not whole-campaign completion.
 
 Support closure includes lexical interpreter-neighbor CLI lookup, meaningful affected-test routing, current capability/release CI distinctions and full typing in an exclusively owned declared-development environment.
-All 250 product files pass Pyright at the configured Python 3.10 floor; the effective-default correction's run took 10.267 s.
+All 250 product files pass Pyright at the configured Python 3.10 floor; the final mapping correction's run took 10.497 s.
 Package-tool coverage is the retained union of 391 passes and one external-resource skip, with 20 original deselections; all six acceptance cases passed.
-Local unit coverage is the retained union of 1,066 original passes plus eight added CI-policy cases; integration continues only from its retained unexecuted-node manifest.
+Local source coverage is the retained unique union of 1,078 unit passes and 648 integration passes, including eight added CI-policy, four mapping and five planning controls.
+Original failures, phase source revisions and warnings remain linked; the final integration tail retained thirteen metadata warnings.
 Distributed/cluster/launcher folders and the actual top-level distributed planner file remain explicitly excluded.
 Faithful fixture corrections preserve the current grammar, selected-source authority, exact errors, task cancellation/drain and actual effect oracles rather than adding compatibility behavior.
 
@@ -46,11 +48,11 @@ Previously accepted schema/container/parameter/collective/selected-result/failur
 Published Wetlands 2.6.0 is the prerequisite; no library/Core/tool candidate is published or adopted by the platform.
 The retained `.venv-c04-runtime-receipt` still contains the earlier unpublished normal Core `11aee`; new proofs use separate owned interpreters and do not relabel that candidate.
 One normal all-eleven-package `--all-packages --no-sources` cohort was built; only genuinely affected Core, SAIRPICO and orchestrator pairs were refreshed.
-The current 22 artifacts match 535 Python/typing-marker members at `a7fbcd7`; all 12 earlier artifact contracts remain retained with their source qualifications.
-The final orchestrator-only refresh and isolated installed effective-default control passed, without rebuilding the other ten package pairs.
+The current 22 artifacts match 535 Python/typing-marker members at `1c1bc8f`; all 12 earlier artifact contracts remain retained with their source qualifications.
+The final orchestrator and Core refreshes received only their affected installed/capability checks; other package pairs remain unchanged.
 The actual normal wheel/sdist `py.typed` gate has passed.
 
-Source-disabled normal Core 0.5 passed all eight public-contract/real-child/lifetime families, zero skips, on macOS Python 3.9 and 3.12 in 6.115 s and 6.722 s.
+Source-disabled normal Core 0.5 passed all eight public-contract/real-child/lifetime families, zero skips, on macOS Python 3.9 and 3.12 in 4.958 s and 5.706 s.
 All 23 installed Python/marker members matched the held wheel, and the corrected copied driver includes both combined ImageSpec/GUI nullable annotation orders and stable captured metadata hashes.
 Child PIDs, physical exit/grant drain and final zero resources were verified.
 The isolated normal eleven-wheel controller passed Direct and actual WorkerPool cold/warm execution plus metadata-only native-array planning, corruption refusal and subsequent readonly computation in 43.879 s at `0037c1a`; the subsequent orchestrator default correction passed its affected installed compute/plan/value controls in 4.991 s at `a7fbcd7`.
@@ -58,20 +60,23 @@ Earlier snapshots and TEMP fixture setup failures remain preserved.
 
 All 20 essential actual source/editable WorkerPool cases passed; these are separate from the normal-wheel authority.
 The first manual capability run retained seven successful job groups and two explicit Parsl skips, but its four Core floor jobs stopped on the copied driver's deferred-annotation fixture and its unit/integration jobs exposed faithful fixture recoveries.
-After explicit user approval resolved automatic source-upload/CI review rejection, [the corrected floor-only run](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37603956496) at `a3e5951` selected only four Core jobs, with eleven job skips.
-Linux Python 3.9/3.12 passed; both Windows jobs reached actual shared-memory opening and failed with errno 22, so Windows capability remains an explicit required recovery rather than passed certification.
+Explicit user approval resolved automatic source-upload/CI review rejection.
+The [final floor-only run](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37612125789) at `1c1bc8f` passed all four Linux/Windows Python 3.9/3.12 jobs: eight families, zero Core skips, two actual children and final zero owners per job; eleven unrelated job definitions were intentionally skipped.
+The preceding driver and Windows buffered-cursor failures remain preserved; the finite fix synchronizes the same admitted descriptor and cleans newly created mappings without masking a primary error.
+All 23 per-job installed parent/child members match each job's own wheel.
+Windows native checkout/wheel Python files use CRLF and are code-equivalent to Git LF, not raw-byte-identical to the macOS/Linux artifact; canonical published same-wheel Windows installation remains a release gate.
 
-Active owned consumers are `.venv-phase3-dev`, outside-checkout floor/normal interpreters, the package cache and exact milestone manager roots.
-Retire only proven disposable runtime/cache storage after its last consumer; preserve artifacts, fixtures, scientific records and receipts.
-Prior completed manager/Pixi caches and the numerical scratch interpreter/cache were actually reclaimed.
-The finished source-managed roots retired five environments through public Wetlands removal and physically reclaimed 991,540,312 bytes from four exact disposable Pixi caches; normal installed caches remain owned for any affected final consumer.
+Only `.venv-phase3-dev` and its exclusively owned package cache remain active for current release tooling, source integration validation and the explicitly queued affected scientific/native dependency gates.
+All three finished floor/normal interpreters and six finished manager roots were physically deleted after their final peer/consumer, public environment retirement and resource drain.
+Their six disposable Pixi caches were deleted; file-size accounting and exact boundaries are in the cleanup receipts, without claiming a sampled free-space delta.
+Artifacts, fixtures, scientific records and original receipts are retained.
 Held `.worktrees/campaign-force-library` six files/private interpreter, development104 and artifact27 metadata remain protected; unknown/shared/user owners are untouched.
 
 ## Remaining sequence and record policy
 
-Finish the retained integration tail and the bounded Windows shared-memory capability recovery, then validate only the genuinely affected source/artifact/capability paths.
-Final strict incremental docs passed at `0037c1a` in 12.170 s with no warnings; subsequent fixture changes and the effective-default correction do not change the already-correct normative pages.
-Complete proven-owned last-consumer cleanup and the independent final receipt review before Phase 3 acceptance.
+The accepted [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) includes source selector unions, per-layer commands/durations, artifact maps, OS qualifications, original failures and owned cleanup.
+Final strict incremental docs passed at `1c1bc8f` in 5.377 s with no warnings.
+Next: preservation-first upstream reconciliation with the frozen-tree equality check, ordinary exact final-SHA CI and finite changed science/native/model gates, candidate PyPI eligibility and dependency-ordered Core/orchestrator/tool publication.
 Manual capability CI excludes explicit distributed runtime owners and cannot unlock publication; ordinary successful exact-SHA push/PR CI remains the release authority.
 Configured floors/OS coverage and passed actual capability receipts remain separate.
 After Phase 3 acceptance: library/Core/tool release, platform adoption and headless platform validation, with desktop acceptance LAST.
