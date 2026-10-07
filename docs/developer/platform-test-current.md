@@ -7,14 +7,14 @@ orphan: true
 This is the operational status and resume pointer.
 Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the task-relevant owning specification/source and linked receipts.
 
-## Status — October 6, 2026
+## Status — October 7, 2026
 
 The campaign is RUNNING; continuation through its end is authorized.
-Latest accepted library source is `66e8efe0bfef65bd1d2952a66f41df7217d83d2b` in `.worktrees/campaign-library-source-containment`.
-Combined Gate C+D is committed: absent-only native staged-file publication preserves late owners, explicit PATH and primary cleanup diagnostics; TIFF/OME axes, separate size units and harmonic-aware Phasor calibration/lifetime preserve numerical meaning.
-The [native/numerical proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json) links actual child and pinned PhasorPy baselines, current commands, original setup/fixture failures, retained successes and exact recoveries.
-Independent numerical/ownership controls, relevant existing owners, scoped static/type checks and the 16.601 s strict incremental docs check passed.
-Actual local science used PhasorPy0.12/NumPy2.4.2/TIFF2026.6.1 after the original TIFF pin proved unresolvable; this is not Wetlands recipe, whole OS or normal artifact certification.
+Latest accepted library source is `1cb0092dafb40d31f516daf6bc5277f0d92a5754` in `.worktrees/campaign-library-source-containment`.
+Gate E is committed: used model/content provenance and singleton spatial dimensions, early StarDist threshold refusal, pinned numeric Nagini surfaces, exact LapTrack returned association, Atlas preparation/reference ownership and the corrected parameter manifest.
+The [adapter proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/adapter-wave-e/final-delivery-proof.json) links public red/recovery evidence, source-bound commands, retained successes and precise fixture recoveries.
+Independent controls, relevant existing owners, five-path typing/global static checks and the 5.022 s strict incremental docs check passed.
+This wave uses tiny owned arrays/real files and fake learned-model/LapTrack/native transport; it does not claim learned inference, native binaries, model downloads, managed recipes or new normal artifacts.
 
 ## Accepted outcomes and evidence
 
@@ -30,6 +30,7 @@ Completed increments establish bounded contracts rather than universal family cl
 - [Export replacement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json): captured lexical target identity or initial absence, exclusive installation/restoration and late-owner preservation; exact errors report recoverable backups or already committed output with pending superseded-backup cleanup, without promising a complete original after partial deletion.
 - [EnvironmentSpec recipe admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json): one privately captured recipe, detached ordinary projections, explicit equal snapshot reconstruction, complete Pip grammar and finite Conda exact/flexible/version/build/prefix rules preserve declared text and provider translation.
 - [SECONDARY A+B](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json): URL/keyed example identity, held previews, strict viewer wire and detached typed metadata, canonical TOML project identity, release preflight, finite import guards and source `py.typed`.
+- [Native/numerical C+D](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json): absent-only native publication and explicit PATH/cleanup authority; separate OME unit/value and TIFF axis facts; actual local PhasorPy0.12 harmonic calibration/lifetime truth after the original TIFF pin proved unresolvable. The disposable science interpreter/cache were deleted after final consumers.
 
 Conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling remain explicit accepted boundaries, not unnamed repair promises.
 Previously accepted schema/container/parameter/collective/selected-result/failure-finalization contracts remain preserved by the causal review and owning specifications.
@@ -39,7 +40,7 @@ Previously accepted schema/container/parameter/collective/selected-result/failur
 Published Wetlands2.6.0 is the independently validated prerequisite.
 The retained `.venv-c04-runtime-receipt` is the owned candidate; its normal unpublished Core0.5 wheel is the earlier `11aee` artifact.
 At the selected-primary checkpoint all22 source/wheel/candidate Python modules matched; child worker hashes were not independently inventoried, so the hash-bound wheel plus actual behavior proved that finite increment without whole certification.
-Later EnvironmentSpec/viewer/typed-marker/native/numerical source changes were checked through explicit source imports and are not contained in that wheel; coherent normal package/artifact validation remains later.
+Later EnvironmentSpec/viewer/typed-marker/native/numerical/adapter source changes were checked through explicit source imports and are not contained in that wheel; coherent normal package/artifact validation remains later.
 The source `py.typed` control passed; the actual wheel/sdist marker control is authored but intentionally unrun.
 
 The last actual managed boundary physically closed owners, exited recorded scientific workers, stopped HTTP and removed owned environments.
@@ -50,10 +51,9 @@ Do not clean unknown/shared caches or consumer-owned environments.
 
 ## Remaining sequence
 
-Next essential work is Gate E finite model admission, numerical association and output/temporary ownership; Nagini uses Python model inference and is not a native-helper caller.
-Gate C found no demonstrated SAIRPICO caller change; Gate D numerical policies are accepted.
-Existing stronger controls and public discriminators determine each remaining packet before edits, including verification-only dispositions and bounded future affected-test routing support.
-Their read-only policies and public baselines precede product edits; the sole integration owner performs any eventual managed/environment operation.
+Next essential work is bounded support closure: the reproduced lexical interpreter-bin CLI fallback, affected-test routing that prioritizes known source owners/exact test files while preserving broad unknown/config/merge gates, and remaining full typing support debt.
+Gate E's model/association/temporary/output obligations have finite accepted or verification-only dispositions; no additional arbitrary model or filesystem family closure is promised.
+Read-only policies and public baselines precede further product edits; the sole integration owner performs any eventual managed/environment operation.
 No SDK wheel is rebuilt after each small source edit: one coherent source freeze precedes the applicable normal package cohort and support-floor checks.
 Full typing support-environment debt, actual SDK marker/artifact closure and the scoped Phase 3 library milestone remain open.
 Library/Core/tool release, platform adoption, headless platform validation and desktop acceptance LAST follow that milestone.
