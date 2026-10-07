@@ -199,7 +199,7 @@ The observer prepares processing environments at task submission for whole-workf
 The tool environment service supplies the same reentrant preparation guard to Run and its background default-general refresh, coordinating fresh inspection and conditional replacement through task submission without holding the guard for task completion.
 BioImageFlow compares requested processing recipes with Wetlands-managed state before use. Stale platform-owned processing environments are closed and replaced lazily through Wetlands, while an already-existing stale `bioimageflow-general` environment is refreshed in the background after startup. User-managed, external, Napari, adopted, thumbnail, and code-server environments remain under their own lifecycle owners. An explicit tool requirement that cannot use the platform's exact `bioimageflow-core` runtime is a graph validation error.
 The campaign library now admits Wetlands2.6 ready-runtime content before managed Processing keys and cache lookup, with one content admission per augmented recipe and operation and separate generation/recipe/lock fences.
-The reviewed, not-yet-published Wetlands2.6.1 repair captures complete installed authority: a uniquely anchored installed Conda manifest governs transformed Conda packages; other distributions require raw complete RECORD, and missing retained members refuse ready publication.
+Published and PyPI-verified Wetlands2.6.1 captures complete installed authority: a uniquely anchored installed Conda manifest governs transformed Conda packages; other distributions require raw complete RECORD, and missing retained members refuse ready publication.
 The unpublished campaign source also exposes preparation/provision/removal observers and explicit stale replacement through public `admit_runtime`, so an authorized consumer can prepare before identity/cache lookup without starting workers.
 Metadata-only admission performs no writes or worker starts; a held receipt is revalidated and cannot authorize another recipe or stale replacement during dispatch.
 Platform adoption must forward this public admission/receipt/grant boundary and retain its run/application cleanup owners; the current platform adapter has not adopted that source contract.
@@ -359,7 +359,7 @@ Core publication must match the held reviewed wheel hash before any selected pac
 Current ordinary CI exposes distributed failures, including a bridge mismatch as well as fixture failures.
 The user requires distributed features to remain excluded and local/distributed CI gates to be separate.
 The agreed partition must retain successful ordinary exact-SHA local release authority with auditable exclusions; a separate visible distributed workflow must preserve its coverage and failures without distributed production repairs or a release-predicate waiver.
-Published Wetlands 2.6 is the provider prerequisite; library/Core/tool publication and platform adoption remain distinct gates.
+Published and PyPI-verified Wetlands 2.6.1 is the current library provider prerequisite; library/Core/tool publication and platform adoption remain distinct gates.
 
 After release, prioritize coherent platform pins/public APIs and T1/I1 through ready runtime, selected primary, key/Storage, actual worker, pinned result and physical cleanup.
 Reconcile the current source and accepted priority repair queue before M3 coverage expansion; a historical finding title alone does not establish a remaining defect.
