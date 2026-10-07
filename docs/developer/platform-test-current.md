@@ -11,7 +11,8 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 
 The FULL campaign is RUNNING under standing continuation, reviewed source-upload/CI and package-publication authorization.
 The coherent registry/public-API adoption from baseline `65bf8d2` is accepted through scoped phase assembly; its task delivery commit and source projection are recorded in the [delivery receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json).
-The bounded BioImageFlow output-class repair is published and adopted from the registry; coherent platform adoption is accepted through reviewed phase assembly and ready for its commit.
+The bounded BioImageFlow output-class repair is published and adopted from the registry; coherent platform adoption is committed at `1ca0d1fe11e46b89251098cf9f5a4b924629b70e` through reviewed phase assembly.
+The active T1/I1 returned-array control has exposed a public root-workflow export-route defect in BioImageFlow 0.9.1; a fresh bounded library repair begins from exact main `8fe553dc` in `.worktrees/campaign-library-bundle-export`.
 No distributed production review/repair, backward-only compatibility layers, or actual desktop test is authorized in this phase; desktop acceptance remains LAST.
 
 The [accepted causal architecture review](library-causal-architecture-review.md) and [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) retain the completed MAIN/SECONDARY/support review, exact selectors, source projections, original failures, durations and finite limits.
@@ -119,7 +120,11 @@ Accepted scoped assembly therefore covers 1,935 non-external backend cases, the 
 Neither original failed completion command nor the final failed backend invocation is relabelled as passed.
 
 1. The coherent platform adoption is accepted; preserve its reviewed source/commit and assembled acceptance receipt without a monolithic app/full PASS claim, then continue the next actual lifetime obligation.
-2. Evaluate the public export hydration ownership boundary through the read-only T1/I1 strategy review before a minimal actual returned-array control; do not manufacture a zero-owner claim from scalar tests.
+2. Repair the [actual root export refusal](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-array-real-root-export-original-failure.json) through a cheap public Direct reproduction before SDK production changes, then normal release/adoption gates.
+   The actual managed control copied the returned uint16 array and observed its worker PID, but export failed before hydration; it supplies no successful export or final array-lifetime/disposal certification.
+   The engine flattens the synthetic root boundary while return-route traversal appends its name, missing the actual provider outcome; this is not an empty-target or invalid output-schema failure.
+   Earlier empty-interface and missing-parent fixture failures remain setup evidence, and no further managed-worker replay is needed to establish this route cause.
+   After routing recovery, use bounded public controls to evaluate owned materialized-export disposal and the proposed verified bundle-only seam; those changes remain unimplemented and unaccepted.
 3. Resume T1/I1 actual returned-array, lifetime/copy/export, public force/readiness obligations, then dependency-ordered M3/M4 common-tools certification and remaining campaign features.
 4. Perform actual desktop M5 acceptance LAST and final full campaign certification/review.
 
