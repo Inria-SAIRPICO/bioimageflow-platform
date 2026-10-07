@@ -439,6 +439,8 @@ Review one coherent final source/specification/causal/artifact/check packet inde
 Reopen the decision only for a changed invariant, scope, authority, permission boundary or unexplained failure; routine fixture/bootstrap diagnostics stay within the approved packet and retain their original failures.
 Reuse one final source/closure manifest and existing dependency metadata while those inputs remain unchanged, rather than regenerating equivalent proofs at every handoff.
 Immutable installed baseline artifacts may run alongside source development, and explicitly disjoint owned files may be edited in parallel; serialize index ownership and timing-sensitive runtime/cleanup as before.
+Serialize packaging and source inventories behind tests that generate build or metadata outputs inside source trees.
+Before admitting artifacts, confirm the intended clean source projection and generated-output exclusions; parallelize only independent roots or read-only consumers.
 Assign actionable work to an idle or completed agent with the task/follow-up activation API; an informational message alone does not wake that agent, and no extra acknowledgement loop is needed once ownership is explicit.
 Run one `scripts/test check campaign` for consolidated process-only plan, resume, status, evidence or dashboard edits; API/specification or documentation navigation/structure changes and substantial documentation milestones retain their appropriate single strict documentation gate under `docs/testing.md`.
 Do not remove meaningful cases or weaken acceptance to reduce elapsed time.
