@@ -5,65 +5,69 @@ orphan: true
 # Campaign current checkpoint
 
 This is the operational status and resume pointer.
-Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the task-relevant owning specification/source and linked receipts.
+Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the relevant owning specification/source and linked receipts.
 
 ## Status — October 7, 2026
 
-The campaign is RUNNING; continuation through its end is authorized.
-Latest accepted library source is `1cb0092dafb40d31f516daf6bc5277f0d92a5754` in `.worktrees/campaign-library-source-containment`.
-Gate E is committed: used model/content provenance and singleton spatial dimensions, early StarDist threshold refusal, pinned numeric Nagini surfaces, exact LapTrack returned association, Atlas preparation/reference ownership and the corrected parameter manifest.
-The [adapter proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/adapter-wave-e/final-delivery-proof.json) links public red/recovery evidence, source-bound commands, retained successes and precise fixture recoveries.
-Independent controls, relevant existing owners, five-path typing/global static checks and the 5.022 s strict incremental docs check passed.
-This wave uses tiny owned arrays/real files and fake learned-model/LapTrack/native transport; it does not claim learned inference, native binaries, model downloads, managed recipes or new normal artifacts.
+The campaign is RUNNING with authorized continuation.
+Latest accepted library source is `5e495318df5d61c73858a34486f759d01deb9d0b` in `.worktrees/campaign-library-source-containment`.
+MAIN and the bounded SECONDARY/support waves are accepted; Phase 3 local-library validation is active.
+The [current milestone proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/current-delivery-proof.json) links exact source projections, commands, durations, original failures and retained successes; it is an in-progress proof, not certification.
+
+Support closure includes lexical interpreter-neighbor CLI lookup, meaningful affected-test routing, current capability/release CI distinctions and full typing in an exclusively owned declared-development environment.
+All 250 product files pass Pyright at the configured Python 3.10 floor; the final planning increment's run took 10.216 s.
+Package-tool coverage is the retained union of 391 passes and one external-resource skip, with 20 original deselections; all six acceptance cases passed.
+Unit and integration tails continue only from their retained unexecuted-node manifests, with distributed/cluster/launcher folders and the actual top-level distributed planner file explicitly excluded.
+Faithful fixture corrections preserve the current grammar, selected-source authority, exact errors, task cancellation/drain and actual effect oracles rather than adding compatibility behavior.
+
+Metadata-only planning now preserves selected record IDs and exact manifest/frame/address/asset admission without array hydration or controller array-owner/backing allocation.
+Four independent cold/native/shared/portable controls plus the existing Processing planning/invalidation control pass; corruption still reports CORRUPT and subsequent actual computation hydrates the expected readonly values without extra science.
+Admission still reads, hashes and validates stored array assets; this is not a zero-asset-read claim.
+Earlier cold DataFrame planning initialized controller scope metadata without managed effects; that prior bounded behavior and the pre-bound no-write test remain qualified in the receipts.
 
 ## Accepted outcomes and evidence
 
-The [accepted causal review](library-causal-architecture-review.md) preserves the original finding families, source coverage and current finite dispositions.
-Completed increments establish bounded contracts rather than universal family closure; use their source-bound proofs instead of replaying historical commands.
+The [accepted causal review](library-causal-architecture-review.md) preserves original finding families, source coverage and finite dispositions.
+Use source-bound proofs rather than replaying historical commands:
 
-- [Ready runtime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json): managed Processing admits actual installed content before scientific identity/cache lookup; operational recipe/generation fences remain separate, identical content retains warm reuse and planning stays write-free.
-- [Selected primary](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json): finite selected package inventory and inherited constructor/row/batch owners are admitted before runtime preparation/cache lookup; SDK v2 origin proofs reject stale controller/resident code and retain held bytes through canonical callbacks/lazy imports. Editable source is supported; canonical namespaces are not unloaded to disguise stale code.
-- [Explicit merge](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json): declared DataFrame merges receive their actual positional working operands, while column-pin/output alignment stays distinct; the authoritative execution epoch is `bioimageflow.execution.v2`.
-- [Direct Processing](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/direct-delegate/final-delivery-proof.json) and [source-backed Direct DataFrame](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/archived-dataframe/final-delivery-proof.json): supported scientific callback identity is independent of retained dispatch and includes inherited runtime facts alongside source admission; unchanged inputs warm correctly and prior immutable records remain readable.
-- [Joined managed lifetime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/managed-discard/final-delivery-proof.json): two successful records on one retained worker, released groups, truthful preallocation quota refusal, explicit selected idle physical drain, identical allocation retry, preserved live view/independent accepted owner and final zero resources. The initial budget-sizing failure remains qualified; no scientific quota retry or automatic scheduler is implied.
-- [Cold own-winner reuse](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json): both publishers reuse exact emitted sealed references only after canonical own-selected record/frame/manifest/asset/address admission; conflicting winners and mutable inputs hydrate normally. Fresh actual managed results used two physical backings instead of four, a 50% residency saving at the measured publication point, without an end-to-end speed claim. Quota/idle/view/independent-owner invariants and final zero resources remained intact.
-- [Export replacement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json): captured lexical target identity or initial absence, exclusive installation/restoration and late-owner preservation; exact errors report recoverable backups or already committed output with pending superseded-backup cleanup, without promising a complete original after partial deletion.
-- [EnvironmentSpec recipe admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json): one privately captured recipe, detached ordinary projections, explicit equal snapshot reconstruction, complete Pip grammar and finite Conda exact/flexible/version/build/prefix rules preserve declared text and provider translation.
-- [SECONDARY A+B](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json): URL/keyed example identity, held previews, strict viewer wire and detached typed metadata, canonical TOML project identity, release preflight, finite import guards and source `py.typed`.
-- [Native/numerical C+D](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json): absent-only native publication and explicit PATH/cleanup authority; separate OME unit/value and TIFF axis facts; actual local PhasorPy0.12 harmonic calibration/lifetime truth after the original TIFF pin proved unresolvable. The disposable science interpreter/cache were deleted after final consumers.
+- [Ready runtime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/runtime-generation/final-delivery-proof.json) and [selected primary](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/primary-executable/final-delivery-proof.json): actual ready content and finite selected/inherited Python owners precede scientific keys/cache; v2 proofs retain admitted bytes through lazy callbacks without unloading canonical namespaces. Planning avoids managed provisioning, worker startup and content probes.
+- [Explicit merge](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/merge-operands/final-delivery-proof.json), [Direct Processing](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/direct-delegate/final-delivery-proof.json) and [source-backed Direct DataFrame](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/archived-dataframe/final-delivery-proof.json): actual merge operands and supported inherited callback identity preserve separate column-pin alignment, retained dispatch and immutable prior records; execution epoch is `bioimageflow.execution.v2`.
+- [Joined lifetime](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/managed-discard/final-delivery-proof.json) and [cold own-winner reuse](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/cold-shared-binding/final-delivery-proof.json): successful discard, truthful quota refusal, explicit idle physical drain/retry, live view and unrelated owner preservation, final zero resources; exact admitted own-selected sealed reuse reduced measured managed publication residency from four physical backings to two (50%), without an end-to-end speed claim.
+- [Export replacement](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/export-ownership/final-delivery-proof.json) and [recipe admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/environment-recipe-admission/final-delivery-proof.json): captured/exclusive destination ownership and truthful pending cleanup, detached EnvironmentSpec recipes and exact/flexible grammar preserve current supported APIs.
+- [SECONDARY A+B](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/secondary-metadata-support/final-delivery-proof.json), [native/numerical C+D](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/native-numerical/final-delivery-proof.json) and [adapter E](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/adapter-wave-e/final-delivery-proof.json): metadata/tooling identity, staged native publication, unit/axis/harmonic numerical truth, used model provenance, exact tracking association and owned Atlas preparation/reference effects. Learned-model/native transport tests remain honestly fake where stated; actual pinned local Phasor science does not certify model or managed recipes.
 
-Conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling remain explicit accepted boundaries, not unnamed repair promises.
-Previously accepted schema/container/parameter/collective/selected-result/failure-finalization contracts remain preserved by the causal review and owning specifications.
+Conservative whole merged-input provenance, arbitrary trusted Python state/dependency closure, external path/filesystem tampering and automatic quota scheduling remain accepted boundaries, not unnamed repair promises.
+Previously accepted schema/container/parameter/collective/selected-result/failure-finalization contracts remain preserved.
 
-## Current artifact and ownership boundary
+## Artifact, capability and ownership boundary
 
-Published Wetlands2.6.0 is the independently validated prerequisite.
-The retained `.venv-c04-runtime-receipt` is the owned candidate; its normal unpublished Core0.5 wheel is the earlier `11aee` artifact.
-At the selected-primary checkpoint all22 source/wheel/candidate Python modules matched; child worker hashes were not independently inventoried, so the hash-bound wheel plus actual behavior proved that finite increment without whole certification.
-Later EnvironmentSpec/viewer/typed-marker/native/numerical/adapter source changes were checked through explicit source imports and are not contained in that wheel; coherent normal package/artifact validation remains later.
-The source `py.typed` control passed; the actual wheel/sdist marker control is authored but intentionally unrun.
+Published Wetlands 2.6.0 is the prerequisite; no library/Core/tool candidate is published or adopted by the platform.
+The retained `.venv-c04-runtime-receipt` still contains the earlier unpublished normal Core `11aee`; new proofs use separate owned interpreters and do not relabel that candidate.
+One normal all-eleven-package `--all-packages --no-sources` cohort was built; only genuinely affected Core, SAIRPICO and orchestrator pairs were refreshed.
+The corrected 22 artifacts matched 535 Python/typing-marker members and all 12 artifact contracts passed before the final orchestrator-only planning refresh; its fresh inventory/installed check remains next.
+The actual normal wheel/sdist `py.typed` gate has passed.
 
-The last actual managed boundary physically closed owners, exited recorded scientific workers, stopped HTTP and removed owned environments.
-Both proven finished manager roots and their Pixi caches were actually deleted after their final consumer; proof/scientific records, source, candidate and user/shared caches were retained.
-Held `.worktrees/campaign-force-library` work, its six files/private interpreter, development104 and artifact27 metadata remain protected; the numerical wave installed only its exclusively owned disposable science interpreter and package cache.
-The final pinned-science consumer finished; its exclusively owned interpreter and package cache were deleted, while numerical fixtures, resolved metadata and receipts remain available.
-Do not clean unknown/shared caches or consumer-owned environments.
+Source-disabled normal Core 0.5 on Python 3.9.21 and 3.12.9 with NumPy 1.26.4 passed all eight public-contract/real-child/lifetime families, zero skips, in 4.281 s and 8.727 s.
+All 23 Python/marker members matched the held wheel; child PIDs, physical exit/grant drain and final zero resources were verified.
+This is macOS proof; Linux/Windows capability CI remains pending.
+A separate isolated normal eleven-wheel controller passed Direct and actual local WorkerPool cold/warm dispatch in 45.500 s at `dba0677`, with exact keys/records, two scientific calls, public idle retirement and closed owners.
+That result remains prior qualified evidence after the two-path orchestrator planning change; Core floors and unchanged packages remain valid.
 
-## Remaining sequence
+Active owned consumers are `.venv-phase3-dev`, outside-checkout floor/normal interpreters, the package cache and exact milestone manager roots.
+Retire only proven disposable runtime/cache storage after its last consumer; preserve artifacts, fixtures, scientific records and receipts.
+Prior completed manager/Pixi caches and the numerical scratch interpreter/cache were actually reclaimed.
+Held `.worktrees/campaign-force-library` six files/private interpreter, development104 and artifact27 metadata remain protected; unknown/shared/user owners are untouched.
 
-Next essential work is bounded support closure: the reproduced lexical interpreter-bin CLI fallback, affected-test routing that prioritizes known source owners/exact test files while preserving broad unknown/config/merge gates, and remaining full typing support debt.
-Gate E's model/association/temporary/output obligations have finite accepted or verification-only dispositions; no additional arbitrary model or filesystem family closure is promised.
-Read-only policies and public baselines precede further product edits; the sole integration owner performs any eventual managed/environment operation.
-No SDK wheel is rebuilt after each small source edit: one coherent source freeze precedes the applicable normal package cohort and support-floor checks.
-Full typing support-environment debt, actual SDK marker/artifact closure and the scoped Phase 3 library milestone remain open.
-Library/Core/tool release, platform adoption, headless platform validation and desktop acceptance LAST follow that milestone.
-Distributed execution remains excluded from the local-library phase.
-The [plan's prerequisite exception](platform-test-plan.md#highest-priority-deep-librarycore-review-and-validation--october-4) applies only to an independently gated necessary dependency release; it does not advance other gates.
+## Remaining sequence and record policy
 
-## Resume and record policy
+Finish retained source tails and the required stable ImageSpec hash/Optional-annotation floor correction, then refresh only its affected Core pair/floor proof.
+Complete four essential actual source/editable WorkerPool owner slices, final normal inventory/installed planning and dispatch, changed-page strict incremental docs and exact-source manual local capability CI.
+The earlier Core floor and installed-dispatch receipts remain source-qualified evidence; the newly identified Core byte change must receive final affected validation before acceptance.
+Manual capability CI excludes explicit distributed runtime owners and cannot unlock publication; ordinary successful exact-SHA push/PR CI remains the release authority.
+Configured floors/OS coverage and passed actual capability receipts remain separate.
+After Phase 3 acceptance: library/Core/tool release, platform adoption and headless platform validation, with desktop acceptance LAST.
+The [plan's prerequisite exception](platform-test-plan.md#highest-priority-deep-librarycore-review-and-validation--october-4) does not advance those gates.
 
-This checkpoint and linked receipts replace long restart inventories.
-Read the [plan](platform-test-plan.md) only for the active task's scope and technical gate.
-The [historical progress log](platform-test-progress.md) remains unchanged and is neither restart context nor an append target; consult history only for an exact necessary prior fact.
-At coherent task boundaries update current source/outcome, proof pointers, artifact qualifications and the active queue; do not duplicate receipt commands or historical narratives.
-Commit only task changes and preserve held/unrelated work.
+This checkpoint and linked receipts replace restart inventories.
+The [historical progress log](platform-test-progress.md) remains unchanged and is not read or appended for routine continuation.
+Update only current outcome, exact proof pointers, ownership and the active queue; commit task changes without unrelated work.
