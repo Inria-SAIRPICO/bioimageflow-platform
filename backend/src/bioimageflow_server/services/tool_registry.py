@@ -709,8 +709,6 @@ class ToolRegistryService:
         }
         version_path = str(package_root.parent)
         had_version_path = version_path in sys.path
-        for source in package_root.rglob("*.py"):
-            Path(importlib.util.cache_from_source(str(source))).unlink(missing_ok=True)
         importlib.invalidate_caches()
         unload_versioned_package(package, version)
 
