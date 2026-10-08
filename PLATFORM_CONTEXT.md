@@ -122,6 +122,9 @@ Output metadata preserves each field's required and nullable facts from the libr
 Tool-store scanning admits package/version selectors through the library, ignores unsupported directory names, and keeps genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
+Saved-workflow dependency diagnostics resolve that same carried executable identity through the public class loader without compiling, planning or provisioning; an unavailable explicit binding cannot borrow a same-named catalog entry.
+Canvas hydration uses node-addressed metadata from the same accepted graph and root workflow or nested session before reconciling input/template presentation; unavailable metadata cannot erase authored parameters or output templates.
+Pending validation or a global compilation failure may retain the bound node’s prior captured presentation metadata, without borrowing a same-named catalog class or treating that metadata as execution authority.
 Installed bindings retain their package/version and read-only provenance; owned sources retain their editable custom provenance.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain the previous usable registry entries.

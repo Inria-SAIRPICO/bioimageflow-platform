@@ -434,7 +434,7 @@ The optional `graph` field is rejected for `action: "update"`.
 | `POST` | `/workflow-draft-operations/{id}` | Apply 1–10 validated structured operations for agents using `{expected_revision, operations, updated_by?, validate?}`. |
 
 
-**Workflow loading — missing dependencies:** When loading a workflow that references unavailable package versions or tool classes, the server returns `missing_packages` and `missing_tools` arrays. The frontend dialog lists required versions, installed alternatives, affected nodes, and missing tools. When at least one alternative package version is installed, **Use installed versions** calls the workflow rebind endpoint; the current dialog does not install missing packages.
+**Workflow loading — missing dependencies:** When loading a workflow that references unavailable package versions or tool classes, the server returns `missing_packages` and `missing_tools` arrays. Available explicitly bound module/class/package/version identities are resolved through the public class loader independently of catalog discovery; unavailable explicit bindings remain missing even beside a same-named catalog class. The frontend dialog lists required versions, installed alternatives, affected nodes, and missing tools. When at least one alternative package version is installed, **Use installed versions** calls the workflow rebind endpoint; the current dialog does not install missing packages.
 
 **Workflow results storage:** The backend derives every named workflow's BioImageFlow storage root as `<workflow-directory>/results` and passes that absolute path explicitly at runtime. The path is not persisted in graph configuration or workflow metadata. Stateless graph services use the private workspace-local fallback `<workspace>/.bioimageflow/runtime`.
 
@@ -1731,6 +1731,8 @@ Root draft revision-CAS, private nested-snapshot revision-CAS, explicit promotio
 The library workflow is compiled from the accepted graph in memory for validation, execution, and portable export.
 Default serialization preserves accepted root and nested engine/scheduling configuration without loading carried bound packages; compilation derives the root engine from enabled recursive actual capabilities and materializes once without installing missing packages.
 Validation supplies actual bound-node schemas in `node_tools`, retaining installed package/version and read-only provenance separately from editable owned sources.
+The canvas consumes those schemas only for their matching accepted graph and root workflow or nested session; unavailable metadata preserves authored parameters/templates and cannot substitute a same-named catalog class.
+Pending or globally failed compilation can retain that bound node’s prior presentation metadata, while actual execution remains governed by current validation.
 
 Panel layout preferences (which panels are open, sizes) are stored in **user-level settings** (not per-workflow).
 

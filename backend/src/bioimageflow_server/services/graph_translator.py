@@ -205,6 +205,22 @@ def _graph_to_library(
     }
 
 
+def _resolve_carried_tool_class(
+    module: str,
+    class_name: str,
+    package: str | None,
+    version: str | None,
+) -> Any:
+    """Resolve the carried executable identity without catalog discovery."""
+    import importlib
+    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
+
+    if package and version:
+        load_versioned_package(package, version)
+        return resolve_tool_class(package, version, module, class_name)
+    return getattr(importlib.import_module(module), class_name)
+
+
 def graph_requires_wetlands(
     graph: GraphState,
     registry: ToolRegistryService,
@@ -214,8 +230,6 @@ def graph_requires_wetlands(
     Serialization never calls this helper: resolving a carried package can
     execute its trusted initialization, but cannot install or provision it.
     """
-    import importlib
-    from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
     from bioimageflow_core.tool import ProcessingTool
 
     classes: dict[tuple[str, str, str | None, str | None], type | None] = {}
@@ -234,14 +248,10 @@ def graph_requires_wetlands(
                 key = (node.tool_module, node.tool_class, node.tool_package, node.tool_package_version)
                 if key not in classes:
                     try:
-                        if node.tool_package and node.tool_package_version:
-                            load_versioned_package(node.tool_package, node.tool_package_version)
-                            candidate = resolve_tool_class(
-                                node.tool_package, node.tool_package_version,
-                                node.tool_module, node.tool_class,
-                            )
-                        else:
-                            candidate = getattr(importlib.import_module(node.tool_module), node.tool_class)
+                        candidate = _resolve_carried_tool_class(
+                            node.tool_module, node.tool_class,
+                            node.tool_package, node.tool_package_version,
+                        )
                         classes[key] = candidate if isinstance(candidate, type) else None
                     except Exception:
                         # The canonical materializer supplies the scoped error.
@@ -732,17 +742,37 @@ def _detect_missing_packages(
 def _detect_missing_tools(
     workflow_data: dict[str, Any], registry: ToolRegistryService
 ) -> list[MissingTool]:
+    from bioimageflow_core.tool import BaseTool
+
     missing: list[MissingTool] = []
+    bindings: dict[tuple[str, str, str | None, str | None], bool] = {}
     for path, node in _walk_library_nodes(workflow_data):
         if node.get("type") != "tool":
             continue
         if _has_embedded_tool_source(node):
             continue
         tool_name = str(node.get("tool_class") or "")
-        if not tool_name or registry.get_tool(tool_name) is not None:
+        if not tool_name:
             continue
         package = node.get("tool_package")
         version = node.get("tool_package_version")
+        module = node.get("tool_module")
+        if isinstance(module, str) and module:
+            binding = (
+                module, tool_name,
+                package if isinstance(package, str) else None,
+                version if isinstance(version, str) else None,
+            )
+            if binding not in bindings:
+                try:
+                    candidate = _resolve_carried_tool_class(*binding)
+                    bindings[binding] = isinstance(candidate, type) and issubclass(candidate, BaseTool)
+                except Exception:
+                    bindings[binding] = False
+            if bindings[binding]:
+                continue
+        elif registry.get_tool(tool_name) is not None:
+            continue
         if _is_local_tool_reference(node):
             package = None
             version = None

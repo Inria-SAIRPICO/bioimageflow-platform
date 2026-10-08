@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **332 V + 162 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **332 / 500 are verified (66.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **335 V + 159 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **335 / 500 are verified (67.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -139,7 +139,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6`, `fe0cf9d`, `0043397`, `58520b5`; ISSUE-011 resolved |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | V | G | G | V | V | in-progress | `output-templates.spec.ts` Chromium/Firefox at base `163f5b1`; two managed runs and immutable assets/pinned result; R/F limits in inventory |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |

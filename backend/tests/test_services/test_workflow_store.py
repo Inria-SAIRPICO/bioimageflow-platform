@@ -121,6 +121,77 @@ def test_save_and_get_use_the_graph_as_display_authority(tmp_path: Path) -> None
     assert "display_name" not in store._read_raw("demo")["metadata"]
 
 
+def test_get_workflow_respects_explicit_tool_binding_without_catalog_entry(
+    tmp_path: Path,
+) -> None:
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
+    store = _store(tmp_path)
+    assert store.tool_registry.get_tool("TemplateTool") is None
+    drafts = WorkflowDraftService(lambda: store)
+
+    def save_bound_graph(name: str, module: str) -> GraphState:
+        store.create_workflow(WorkflowCreate(name=name))
+        graph = GraphState.model_validate({
+            "schema_version": 2,
+            "name": name,
+            "display_name": name,
+            "nodes": [{
+                "type": "tool", "id": "write", "name": "Write report",
+                "tool_name": "TemplateTool", "tool_module": module,
+                "tool_class": "TemplateTool", "position": [200, 160],
+                "parameters": {},
+                "output_templates": {"result": "report_{row_index}.txt"},
+            }],
+            "edges": [],
+            "interface": {
+                "inputs": [],
+                "outputs": [{
+                    "id": "published-report", "name": "report",
+                    "schema": {"type": "Path"},
+                    "source": {"node": "write", "column": "result"},
+                }],
+            },
+            "config": {"engine": "direct", "execution": "sequential"},
+        })
+        store.save_workflow(name, WorkflowSaveBody(graph=graph))
+        return graph
+
+    # An explicit but unavailable source must keep its scoped dependency error.
+    save_bound_graph("unavailable", "platform_template_missing_module")
+    unavailable = store.get_workflow("unavailable")
+    assert [(item.node_id, item.tool_name) for item in unavailable.missing_tools] == [
+        ("write", "TemplateTool"),
+    ]
+
+    graph = save_bound_graph("available", "platform_test_tools.graph")
+    document = (store.workflow_dir("available") / "workflow.json").read_bytes()
+    projected = drafts.get_draft("available")
+    assert projected.validation.valid
+    assert projected.validation.errors == []
+    assert projected.validation.node_tools["write"].model_dump(mode="json")[
+        "outputs"
+    ]["result"]["type"] == "Path"
+    assert store.tool_registry.get_tool("TemplateTool") is None
+
+    loaded = store.get_workflow("available")
+    assert loaded.graph == projected.graph == graph
+    assert loaded.missing_packages == []
+    assert loaded.missing_tools == []
+    assert (store.workflow_dir("available") / "workflow.json").read_bytes() == document
+
+    # A same-named catalog entry cannot rescue a refused explicit binding.
+    from platform_test_tools.graph import TemplateTool
+
+    store.tool_registry.register_tool(
+        "TemplateTool", ToolRegistryService.metadata_for_class(TemplateTool),
+    )
+    assert store.get_workflow("available").missing_tools == []
+    assert [item.node_id for item in store.get_workflow("unavailable").missing_tools] == [
+        "write",
+    ]
+
+
 def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="demo"))

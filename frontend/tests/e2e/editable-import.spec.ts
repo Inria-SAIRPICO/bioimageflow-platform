@@ -62,6 +62,10 @@ class ${toolName}(DataFrameTool):
     const path = (await openResponse.json()).path
     expect(path).not.toBe(originalPath)
     expect(path).toContain(imported)
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const outputs = page.getByTestId('panel-nodePanel').locator('.output-row')
+    await expect(outputs).toHaveCount(1)
+    await expect(outputs.locator('.output-type')).toHaveText('int')
     const query = async (resultIdentity?: ResultArtifactIdentity) => {
       const data = await page.request.post(`${API}/nodes/increment/data/query`, {
         data: { workflow_name: imported, ...(resultIdentity ? { result_identity: resultIdentity } : {}) },
@@ -124,6 +128,10 @@ class ${toolName}(DataFrameTool):
     await expect(sourceErrors).toContainText(basename(path))
     const invalidDraft = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json()
     expect(invalidDraft.validation.valid).toBe(false)
+    expect(invalidDraft.validation.node_tools ?? {}).toEqual({})
+    await expect(node.locator('.missing-tool-badge')).toHaveCount(0)
+    await expect(outputs).toHaveCount(1)
+    await expect(outputs.locator('.output-type')).toHaveText('int')
     const beforeRefusal = await (await page.request.get(`${API}/execution/status`)).json()
     const refused = await page.request.post(`${API}/execution/run`, {
       data: { workflow_id: imported, draft_revision: invalidDraft.draft_revision },

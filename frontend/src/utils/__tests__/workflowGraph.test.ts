@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ToolMetadata } from '@/api/types'
+import type { ToolMetadata, ToolNodeState } from '@/api/types'
 import { emptyGraph, jsonDocumentsEqual } from '@/sessions/graphDocument'
 import { decodeEndpointHandle } from '../endpointHandles'
 import {
@@ -37,6 +37,81 @@ describe('canonical JSON documents', () => {
 })
 
 describe('graphStateToVueFlow', () => {
+  function boundGraph() {
+    const graph = emptyGraph('root', 'Root')
+    graph.nodes = [{
+      type: 'tool', id: 'write', name: 'Write', tool_name: 'threshold',
+      tool_module: 'owned.report', tool_class: 'Report',
+      position: [0, 0], parameters: {}, enabled: true, collapsed: false,
+      output_templates: { result: 'authored_{row_index}.txt' },
+    }]
+    return graph
+  }
+
+  it('uses node-addressed Path metadata instead of a same-named catalog tool', () => {
+    const graph = boundGraph()
+    const scoped: ToolMetadata = {
+      ...tool,
+      inputs: {}, outputs: { result: { type: 'Path', default: 'default_{row_index}.txt' } },
+    }
+    const rendered = graphStateToVueFlow(graph, () => tool, [{
+      node_id: 'write', tool_name: 'threshold', installed_versions: [],
+    }], node => node.id === 'write' ? scoped : undefined)
+
+    expect(rendered.nodes[0].data.tool).toEqual(scoped)
+    expect(rendered.nodes[0].data.missingTool).toBeNull()
+    expect(rendered.nodes[0].data.output_templates).toEqual({ result: 'authored_{row_index}.txt' })
+    expect(rendered.nodes[0].data.pinnedInputs).toEqual({})
+  })
+
+  it('does not rescue an explicitly unavailable scoped binding from the catalog', () => {
+    const graph = boundGraph()
+    const before = JSON.parse(JSON.stringify(graph))
+    const missing = { node_id: 'write', tool_name: 'threshold', installed_versions: [] }
+    const rendered = graphStateToVueFlow(graph, () => tool, [missing], () => null)
+
+    expect(rendered.nodes[0].data.tool).toBeNull()
+    expect(rendered.nodes[0].data.missingTool).toEqual(missing)
+    expect(rendered.nodes[0].data.output_templates).toEqual({ result: 'authored_{row_index}.txt' })
+    expect(rendered.nodes[0].data.toolModule).toBe('owned.report')
+    expect(rendered.nodes[0].data.toolClass).toBe('Report')
+    expect(graph).toEqual(before)
+  })
+
+  it('retains catalog fallback for an unbound node with no scoped metadata', () => {
+    const graph = boundGraph()
+    const node = graph.nodes[0] as ToolNodeState
+    delete node.tool_module
+    delete node.tool_class
+    node.output_templates = { mask: 'mask_{row_index}.tif' }
+    const rendered = graphStateToVueFlow(graph, () => tool, [], () => undefined)
+
+    expect(rendered.nodes[0].data.tool).toEqual(tool)
+    expect(rendered.nodes[0].data.output_templates).toEqual({ mask: 'mask_{row_index}.tif' })
+    expect(rendered.nodes[0].data.pinnedInputs).toEqual({ image: true })
+  })
+
+  it('preserves carried templates and binding while scoped metadata is unavailable', () => {
+    const graph = emptyGraph('root', 'Root')
+    graph.nodes = [{
+      type: 'tool', id: 'write', name: 'Write', tool_name: 'TemplateReport',
+      tool_module: 'platform_template_test_tools', tool_class: 'TemplateReport',
+      position: [0, 0], parameters: {}, enabled: true, collapsed: false,
+      output_templates: { result: 'authored_{row_index}.txt' },
+    }]
+    const before = JSON.parse(JSON.stringify(graph))
+
+    const rendered = graphStateToVueFlow(graph, () => undefined)
+
+    expect(rendered.nodes[0].data.tool).toBeNull()
+    expect(rendered.nodes[0].data.output_templates).toEqual({
+      result: 'authored_{row_index}.txt',
+    })
+    expect(rendered.nodes[0].data.toolModule).toBe('platform_template_test_tools')
+    expect(rendered.nodes[0].data.toolClass).toBe('TemplateReport')
+    expect(graph).toEqual(before)
+  })
+
   it('renders tool and workflow nodes from their discriminators', () => {
     const child = emptyGraph('child', 'Child')
     child.interface.inputs.push({

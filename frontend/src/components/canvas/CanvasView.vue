@@ -63,7 +63,7 @@ import {
 } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { groupIntoWorkflow } from '@/utils/workflowGrouping'
-import type { GraphState, MissingTool, WorkflowInput, WorkflowOutput, WorkflowInfo } from '@/api/types'
+import type { GraphState, MissingTool, WorkflowInput, WorkflowOutput, WorkflowInfo, ValidationResult, ToolNodeState, NestedWorkflowSnapshotResponse } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
@@ -544,7 +544,9 @@ async function useLatestNestedPersistenceSnapshot(issueId: string): Promise<void
     const accepted = await resolveConflictUsingRemote()
     if (accepted === null || isCanvasUnmounted) return
     nestedWorkflowSessionsStore.updateDraft(sessionId, accepted.graph)
-    await applyGraphState(accepted.graph, [], false, false)
+    await applyGraphState(
+      accepted.graph, [], false, false, nestedMetadataAuthority(accepted, sessionId),
+    )
     if (nestedWorkflowSessionsStore.isDirty(sessionId)) {
       uiStore.markCanvasDirty(canvasId)
     } else {
@@ -826,21 +828,61 @@ function replaceWorkflowOutputs(outputs: WorkflowOutput[]): boolean {
 
 // --- Workflow startup / graph application ---
 
+interface CanvasMetadataAuthority {
+  graph: GraphState
+  validation: ValidationResult
+  owner: { kind: 'root'; workflowId: string } | { kind: 'nested'; sessionId: string }
+}
+
+function rootMetadataAuthority(draft: WorkflowDraftResponse): CanvasMetadataAuthority {
+  return {
+    graph: draft.graph, validation: draft.validation,
+    owner: { kind: 'root', workflowId: draft.workflow_id },
+  }
+}
+
+function nestedMetadataAuthority(
+  snapshot: { graph: GraphState; validation: ValidationResult },
+  sessionId: string,
+): CanvasMetadataAuthority {
+  return { ...snapshot, owner: { kind: 'nested', sessionId } }
+}
+
+function carriedToolBinding(node: ToolNodeState): boolean {
+  return Boolean(node.source_module || (node.tool_module && node.tool_class))
+}
+
+function metadataForInstalledGraph(
+  graph: GraphState,
+  authority?: CanvasMetadataAuthority,
+): ValidationResult['node_tools'] {
+  if (!authority || !graphDocumentsEqual(graph, authority.graph)) return undefined
+  const ownsGraph = isNestedWorkflowEditor
+    ? authority.owner.kind === 'nested'
+      && authority.owner.sessionId === props.nestedWorkflowSessionId
+    : authority.owner.kind === 'root'
+      && authority.owner.workflowId === owningWorkflowId()
+  return ownsGraph ? authority.validation.node_tools ?? {} : undefined
+}
+
 async function applyGraphState(
   graph: GraphState,
   missingTools: MissingTool[] = [],
   dirty = false,
   synchronize = true,
+  authority?: CanvasMetadataAuthority,
 ) {
   if (isCanvasUnmounted) return
   if (!isNestedWorkflowEditor) {
     rootWorkflowInputs.value = deepClone(graph.interface.inputs)
     rootWorkflowOutputs.value = deepClone(graph.interface.outputs)
   }
+  const scopedTools = metadataForInstalledGraph(graph, authority)
   const vueFlowGraph = graphStateToVueFlow(
     graph,
     toolRegistryStore.getToolByName,
     missingTools,
+    node => scopedTools?.[node.id] ?? (carriedToolBinding(node) ? null : undefined),
   )
   attachInterfaceContextToNodes(vueFlowGraph.nodes)
   isApplyingGraphState = true
@@ -926,7 +968,10 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   if (detail?.canvasId !== canvasId || !detail.draft) return
   detail.handled = true
   try {
-    await applyGraphState(detail.draft.graph, workflowStore.missingTools, false)
+    await applyGraphState(
+      detail.draft.graph, workflowStore.missingTools, false, true,
+      rootMetadataAuthority(detail.draft),
+    )
     detail.resolve?.()
   } catch (error) {
     detail.reject?.(error)
@@ -988,6 +1033,8 @@ async function installAuthoritativeRootDraft(
       draft.graph,
       workflowStore.missingTools,
       draft.dirty_against_saved,
+      true,
+      rootMetadataAuthority(draft),
     )
     if (isCanvasUnmounted) return false
     resolveCanvasPersistenceFromDraft(draft)
@@ -1217,6 +1264,12 @@ function reconcilePendingToolState(): void {
   let serializedChanged = false
   let runtimeChanged = false
   const deferredNames = new Set<string>()
+  const displayedGraph = serializeGraph({ nodes: getNodes.value, edges: getEdges.value })
+  const scopedValidation = syncState.value === 'idle'
+    && graphDocumentsEqual(graphSync.currentGraph.value, displayedGraph)
+    ? validationResult.value
+    : undefined
+  const scopedTools = scopedValidation?.node_tools
 
   for (const node of getNodes.value as any[]) {
     const originalName = node.data?.toolName
@@ -1225,9 +1278,15 @@ function reconcilePendingToolState(): void {
 
     const resolvedName = resolveRenamedToolName(originalName)
     const renameChanged = resolvedName !== originalName
-    const freshTool = validationResult.value?.node_tools?.[node.id]
-      ?? (node.data?.sourceModule ? node.data.tool : toolRegistryStore.getToolByName(resolvedName))
-      ?? null
+    const carriedBinding = Boolean(
+      node.data.sourceModule || (node.data.toolModule && node.data.toolClass),
+    )
+    const refusedBinding = scopedValidation?.errors.some(error => (
+      error.node === node.id && (error.type === 'missing_tool' || error.type === 'missing_package')
+    ))
+    const freshTool = carriedBinding
+      ? refusedBinding ? null : scopedTools?.[node.id] ?? node.data.tool ?? null
+      : scopedTools?.[node.id] ?? toolRegistryStore.getToolByName(resolvedName) ?? null
     if (renameChanged && freshTool === null) {
       deferredNames.add(originalName)
       continue
@@ -1578,7 +1637,9 @@ async function updateContextWorkflowFromSource() {
     if (revision === null) throw new Error('The parent workflow draft is unavailable')
     const accepted = await resetWorkflowDraftToSaved(workflowId, revision)
     initializeCanvasPersistenceFromDraft(accepted)
-    await applyGraphState(accepted.graph, [], false, false)
+    await applyGraphState(
+      accepted.graph, [], false, false, rootMetadataAuthority(accepted),
+    )
     clipboardToast?.add({
       severity: 'success',
       summary: 'Workflow updated from source',
@@ -1683,7 +1744,10 @@ async function loadNestedWorkflowSessionDraft() {
   if (!session) return
   const registrationToken = canvasSessionRegistry.get(canvasId)?.registrationToken
   if (registrationToken === undefined) return
-  await applyGraphState(session.draft)
+  const accepted = nestedWorkflowSessionsStore.snapshotForSession(sessionId)
+  await applyGraphState(
+    session.draft, [], false, true, nestedMetadataAuthority(accepted, sessionId),
+  )
   if (
     isCanvasUnmounted
     || nestedWorkflowSessionsStore.sessionById(sessionId) !== session
@@ -1706,14 +1770,18 @@ async function handleReplaceRootGraphEvent(event: CustomEvent<{
   if (!detail?.draft || detail.workflowId !== owningWorkflowId()) return
   initializeCanvasPersistenceFromDraft(detail.draft)
   ownedWorkflowDisplayName.value = detail.draft.graph.display_name
-  await applyGraphState(detail.draft.graph, [], false, false)
+  await applyGraphState(
+    detail.draft.graph, [], false, false, rootMetadataAuthority(detail.draft),
+  )
 }
 
 async function handleNestedSourceEdit(event: Event) {
-  const snapshot = (event as CustomEvent<import('@/api/types').NestedWorkflowSnapshotResponse>).detail
+  const snapshot = (event as CustomEvent<NestedWorkflowSnapshotResponse>).detail
   if (snapshot.session_id !== props.nestedWorkflowSessionId) return
   nestedWorkflowSessionsStore.updateDraft(snapshot.session_id, snapshot.graph)
-  await applyGraphState(snapshot.graph, [], false, false)
+  await applyGraphState(
+    snapshot.graph, [], false, false, nestedMetadataAuthority(snapshot, snapshot.session_id),
+  )
 }
 
 onMounted(async () => {
@@ -1751,6 +1819,8 @@ onMounted(async () => {
       initialGraph.graph,
       initialGraph.missingTools ?? [],
       initialGraph.dirty ?? false,
+      true,
+      initialCanvasParams?.draft ? rootMetadataAuthority(initialCanvasParams.draft) : undefined,
     )
     if (isCanvasUnmounted) return
     hasLoadedGraphState.value = true

@@ -142,8 +142,11 @@ Package tools remain versioned package dependencies.
 Same-named local tools with different content must coexist without registry shadowing.
 Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
 Validation includes `node_tools`, keyed by scoped node identity, so a successfully compiled source-bound or explicitly module/class-bound node's schemas come from its actual class rather than a same-named catalog entry.
+Saved-workflow dependency diagnostics resolve that carried executable identity through the same public class-resolution authority without compiling, planning or provisioning the workflow; a same-named catalog entry cannot rescue an unavailable carried binding.
 Installed bindings retain package/version and read-only package provenance; owned sources retain editable custom provenance.
-This response metadata does not certify preservation of unresolved or pre-validation frontend schemas/templates, whose catalog fallback remains a separate consumer boundary.
+Canvas construction uses the node-addressed metadata captured for the same accepted graph and owning root workflow or nested session; a different graph or session cannot reuse that projection.
+Authored parameters and output templates remain graph facts when metadata is unavailable, and an explicit unavailable bound class cannot borrow a same-named catalog schema.
+Later reconciliation uses settled validation for the displayed graph; pending validation or a global compilation diagnostic without node-specific refusal retains that bound node’s prior captured presentation metadata, which is never execution authority.
 Invalid edits remain visible on disk and invalidate execution; keeping previous catalog metadata must never cause Run to execute old code.
 
 Portable archives are transport artifacts only.

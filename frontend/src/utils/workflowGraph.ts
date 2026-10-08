@@ -79,7 +79,7 @@ function targetHandle(
 
 function toolNodeData(
   node: ToolNodeState,
-  tool: ToolMetadata | undefined,
+  tool: ToolMetadata | null | undefined,
   missingTool: MissingTool | null,
 ) {
   const pinnedInputs: Record<string, boolean> = {}
@@ -103,7 +103,9 @@ function toolNodeData(
     enabled: node.enabled ?? true,
     connectedInputs: {},
     pinnedInputs,
-    output_templates: reconcileOutputTemplates(tool, node.output_templates ?? {}),
+    output_templates: tool
+      ? reconcileOutputTemplates(tool, node.output_templates ?? {})
+      : { ...node.output_templates },
     toolModule: node.tool_module ?? null,
     toolClass: node.tool_class ?? null,
     toolPackage: node.tool_package ?? null,
@@ -136,6 +138,7 @@ export function graphStateToVueFlow(
   graph: GraphState,
   getToolByName: (name: string) => ToolMetadata | undefined,
   missingTools: MissingTool[] = [],
+  getToolForNode?: (node: ToolNodeState) => ToolMetadata | null | undefined,
 ): VueFlowGraph {
   const missingByNode = new Map(missingTools.map(tool => [tool.node_id, tool]))
   const edges = graph.edges.map((edge) => {
@@ -161,12 +164,16 @@ export function graphStateToVueFlow(
     }
   })
   const nodes = graph.nodes.map((node) => {
+    const scopedTool = node.type === 'tool' ? getToolForNode?.(node) : undefined
+    const tool = node.type === 'tool'
+      ? scopedTool === undefined ? getToolByName(node.tool_name) : scopedTool
+      : undefined
     const data = node.type === 'workflow'
       ? workflowNodeData(node)
       : toolNodeData(
           node,
-          getToolByName(node.tool_name),
-          missingByNode.get(node.id) ?? null,
+          tool,
+          scopedTool ? null : missingByNode.get(node.id) ?? null,
         )
     return {
       id: node.id,
