@@ -698,20 +698,122 @@ def test_archive_import_rejects_unknown_graph_fields_without_persisting(tmp_path
 
 
 def test_duplicate_failure_does_not_publish_partial_copy(tmp_path: Path, monkeypatch) -> None:
+    import shutil
+
+    from bioimageflow_server.services.workflow_artifacts import artifact_hash
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="source"))
+    drafts = WorkflowDraftService(lambda: store)
+    for workflow_id in ("source", "occupied", "unrelated"):
+        store.create_workflow(WorkflowCreate(name=workflow_id))
+    records = [_agent_owned_source("root-source", 1), _agent_owned_source("child-source", 20)]
+    sources = OwnedWorkflowSources(store.workflow_dir("source"))
+    sources.publish(sources.stage(records))
+    graph = _agent_recursive_graph()
+    store.save_workflow("source", WorkflowSaveBody(graph=graph))
+    root_source = sources.source_path("root-source")
+    root_source.write_text(root_source.read_text().replace("n + 1", "n + 10"), encoding="utf-8")
+    working_records = sources.collect_for_graph(graph)
+    for workflow_id in ("source", "occupied", "unrelated"):
+        saved = store.read_workflow_document(workflow_id)
+        # Structural authority is sufficient here; this test enters no runtime.
+        drafts.put_draft(
+            workflow_id,
+            graph=saved.graph.model_copy(update={"display_name": f"Pending {workflow_id}"}),
+            expected_revision=0,
+            should_validate=False,
+        )
+        result_dir = store.get_storage_path(workflow_id)
+        result_dir.mkdir()
+        (result_dir / "preserved.bin").write_bytes(f"result:{workflow_id}".encode())
+    foreign = tmp_path / "foreign.bin"
+    foreign.write_bytes(b"unmanaged sentinel")
+
+    def authority(current_store, current_drafts, workflow_id):
+        directory = current_store.workflow_dir(workflow_id)
+        return (
+            current_store.read_workflow_document(workflow_id),
+            current_drafts.get_draft_authority_snapshot(workflow_id),
+            current_store.workflow_generation(workflow_id),
+            {
+                path.relative_to(directory).as_posix(): path.read_bytes()
+                for path in directory.rglob("*") if path.is_file()
+            },
+        )
+
+    retained = {
+        workflow_id: authority(store, drafts, workflow_id)
+        for workflow_id in ("source", "occupied", "unrelated")
+    }
+    foreign_bytes = foreign.read_bytes()
+    with pytest.raises(FileExistsError, match="occupied"):
+        store.patch_workflow("source", WorkflowUpdate(action="duplicate", new_name="occupied"))
+    for workflow_id, before in retained.items():
+        assert authority(store, drafts, workflow_id) == before
+    assert foreign.read_bytes() == foreign_bytes
+    assert not list(store.root_dir.glob(".workflow-copy-*"))
+
     tools = store.workflow_dir("source") / "tools"
-    tools.mkdir(exist_ok=True)
-    (tools / "tool.py").write_text("# editable tool")
+    original_copytree = shutil.copytree
+    staged_copies: list[Path] = []
 
-    def fail_copy(*args, **kwargs):
-        raise OSError("copy failed")
+    def fail_copy(source, destination, *args, **kwargs):
+        # copytree recursively calls the patched symbol: interrupt only the
+        # selected root after the genuine tools copy has fully populated it.
+        result = original_copytree(source, destination, *args, **kwargs)
+        if Path(source) == tools:
+            staging = Path(destination).parent
+            assert staging.name.startswith(".workflow-copy-")
+            staged_sources = OwnedWorkflowSources(staging)
+            assert staged_sources.collect_for_graph(graph) == working_records
+            for record in working_records:
+                assert staged_sources.source_path(record["id"]).read_bytes() == sources.source_path(
+                    record["id"]
+                ).read_bytes()
+            staged_copies.append(staging)
+            raise OSError("copy failed")
+        return result
 
+    generation_before = store.workflow_generation("copy")
     monkeypatch.setattr("bioimageflow_server.services.workflow_store.shutil.copytree", fail_copy)
     with pytest.raises(OSError, match="copy failed"):
         store.patch_workflow("source", WorkflowUpdate(action="duplicate", new_name="copy"))
-    assert not (store.root_dir / "copy").exists()
+    assert len(staged_copies) == 1
+    assert not staged_copies[0].exists()
+    assert not store.workflow_dir("copy").exists()
     assert not list(store.root_dir.glob(".workflow-copy-*"))
+    generation_after_failure = store.workflow_generation("copy")
+    assert generation_after_failure >= generation_before
+    for workflow_id, before in retained.items():
+        assert authority(store, drafts, workflow_id) == before
+    assert foreign.read_bytes() == foreign_bytes
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.workflow_store.shutil.copytree", original_copytree
+    )
+    duplicated = store.patch_workflow("source", WorkflowUpdate(action="duplicate", new_name="copy"))
+    assert duplicated.identity_generation > generation_after_failure
+    reopened = _store(tmp_path)
+    reopened_drafts = WorkflowDraftService(lambda: reopened)
+    copy_document = reopened.read_workflow_document("copy")
+    assert copy_document.graph == graph.model_copy(update={"name": "copy", "display_name": "copy"})
+    assert copy_document.owned_source_ids == ["child-source", "root-source"]
+    copy_sources = OwnedWorkflowSources(reopened.workflow_dir("copy"))
+    assert copy_sources.collect_for_graph(copy_document.graph) == working_records
+    for record in working_records:
+        copied_path = copy_sources.source_path(record["id"])
+        assert copied_path != sources.source_path(record["id"])
+        assert copied_path.is_relative_to(reopened.workflow_dir("copy"))
+        assert copied_path.read_bytes() == sources.source_path(record["id"]).read_bytes()
+    assert copy_document.artifact_hash == artifact_hash(copy_document.graph, working_records)
+    assert reopened.get_workflow("copy").artifact_hash == copy_document.artifact_hash
+    assert not reopened.get_storage_path("copy").exists()
+    assert not (reopened.workflow_dir("copy") / ".bioimageflow" / "draft.json").exists()
+    assert not list(reopened.root_dir.glob(".workflow-copy-*"))
+    for workflow_id, before in retained.items():
+        assert authority(reopened, reopened_drafts, workflow_id) == before
+    assert foreign.read_bytes() == foreign_bytes
 
 
 def test_duplicate_rejects_recreated_source_identity(tmp_path: Path) -> None:

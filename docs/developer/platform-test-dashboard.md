@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **393 V + 101 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **393 / 500 are verified (78.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **400 V + 94 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **400 / 500 are verified (80.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -86,7 +86,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
 | WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
-| WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | `a25ac17` |
+| WF-LIF-005 | Duplicate definition without results | P1 | Workflow API/storage | no | V | V | V | V | V | verified | exact owned-source collision/staged copy failure/retry at a8644e3/8699f931 plus retained Save As/edited ZIP; archive interruption remains untested |
 | WF-LIF-006 | Copy captured agent graph and recursive owned sources | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `e817d77` |
 | WF-LIF-007 | Reject stale duplicate generation | P1 | Workflow API/storage | no | N (this row owns stale-generation refusal; ordinary duplication is WF-LIF-005) | V | N (stale duplication is refused before side effects and has no recovery lifecycle) | G | V | in-progress | current nineteen-case owning-store completion; reconstructed-store stale duplicate persistence remains G |
 | WF-LIF-008 | Durable workflow generation across restart | P1 | Workflow API/storage | no | V | N (generation durability accepts no user input to refuse) | V | V | V | verified | retained17 generation-ledger passes; same-process new-store persistence and injected-write recovery, source equality reconstructed against65bf8d28 |
@@ -115,7 +115,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | G | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | V | G | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
-| WF-SRC-005 | Copy and export capture edited sources | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | actual edited-source ZIP/public import/fresh-store reopen at basee6a802a/source8d4b06f plus retained edited duplicate execution; refusal/rollback gaps remain |
+| WF-SRC-005 | Copy and export capture edited sources | P1 | Workflow API/storage | no | V | V | V | V | V | verified | exact owned-source collision/staged copy failure/retry at a8644e3/8699f931 plus retained Save As/edited ZIP; archive interruption remains untested |
 | WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | V | V | V | V | V | verified | retained scoped-metadata anchor + `8ce0c043` owned-source Chromium/Firefox receipts |
 | WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -130,7 +130,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344`, `2dbdd7f` implementation; focused GUI, result-integrity, and recovery evidence `e58b8f1` |
 | RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | V | V | V | V | V | verified | `2290c67` integrated repair; real worker, three journeys per browser and scoped app completion |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f`; accepted-draft router selectors `71b82da` |
-| RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | V | G | V | G | V | in-progress | retained28-route PASS subset/current exact captured test+router equality; mocked manager/draft route-only S/F/B, original overall FAIL |
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `4208769`, `9698d5b`; Direct manager/API selectors `71b82da` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f` |
