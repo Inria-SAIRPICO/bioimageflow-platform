@@ -1,6 +1,24 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { CAMPAIGN_ANNOTATION } from '../../src/test-utils/campaignScope'
+
+const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
+
+async function currentSettings(page: Page): Promise<Record<string, unknown>> {
+  const response = await page.request.get(`${API}/settings`)
+  expect(response.status()).toBe(200)
+  return await response.json() as Record<string, unknown>
+}
+
+async function settleSettingsTest(operations: (() => Promise<unknown>)[]): Promise<unknown[]> {
+  const failures: unknown[] = []
+  for (const operation of operations) {
+    try { await operation() } catch (error) { failures.push(error) }
+  }
+  return failures
+}
 
 test.describe('Settings Panel', () => {
   test.describe.configure({ mode: 'serial' })
@@ -17,28 +35,80 @@ test.describe('Settings Panel', () => {
 
   test('opens via Edit > Preferences... and shows the settings tabs', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    const before = await currentSettings(page)
+    const failure = 'Controlled first settings load failure'
+    let getCount = 0
     let releaseSettings!: () => void
     const settingsReleased = new Promise<void>((resolve) => {
       releaseSettings = resolve
     })
     await page.route('**/api/v1/settings', async (route) => {
-      if (route.request().method() === 'GET') await settingsReleased
+      if (route.request().method() === 'GET') {
+        getCount++
+        if (getCount === 1) {
+          await settingsReleased
+          await route.fulfill({ status: 503, json: { error: 'settings_unavailable', detail: failure } })
+          return
+        }
+      }
       await route.continue()
     })
-    await page.goto('/')
-    await expect(page.locator('[data-testid="app-menubar"]')).toBeVisible()
-
-    await openSettings(page)
-
-    const dialog = page.locator('[data-testid="settings-panel"]')
-    await expect(dialog).toBeVisible()
-    await expect(dialog.locator('[data-testid="settings-loading"]')).toBeVisible()
-    releaseSettings()
-    await expect(dialog.locator('[data-testid="settings-tabs"]')).toBeVisible()
-    for (const label of ['External Editor', 'Image Viewers', 'Execution', 'Display', 'Storage', 'OMERO']) {
-      await expect(dialog.getByText(label, { exact: true })).toBeVisible()
+    let mainFailed = false
+    let cleanupFailures: unknown[] = []
+    try {
+      await page.goto('/')
+      await expect(page.locator('[data-testid="app-menubar"]')).toBeVisible()
+      await openSettings(page)
+      const dialog = page.locator('[data-testid="settings-panel"]')
+      await expect(dialog).toBeVisible()
+      await expect(dialog.locator('[data-testid="settings-loading"]')).toBeVisible()
+      const rejected = page.waitForResponse(response =>
+        new URL(response.url()).pathname === '/api/v1/settings' && response.request().method() === 'GET',
+      )
+      releaseSettings()
+      expect((await rejected).status()).toBe(503)
+      await expect(dialog.getByTestId('settings-loading')).toHaveCount(0)
+      await expect(page.locator('.p-toast')).toContainText(failure)
+      expect(getCount).toBe(1)
+      expect(await currentSettings(page)).toEqual(before)
+      await dialog.getByTestId('settings-close').click()
+      await expect(dialog).not.toBeVisible()
+      const recovered = page.waitForResponse(response =>
+        new URL(response.url()).pathname === '/api/v1/settings' && response.request().method() === 'GET',
+      )
+      await openSettings(page)
+      const response = await recovered
+      expect(response.status()).toBe(200)
+      expect(await response.json()).toEqual(before)
+      await expect(dialog.getByTestId('settings-loading')).toHaveCount(0)
+      await expect(dialog.getByTestId('settings-tabs')).toBeVisible()
+      for (const label of ['External Editor', 'Image Viewers', 'Execution', 'Display', 'Storage', 'OMERO']) {
+        await expect(dialog.getByText(label, { exact: true })).toBeVisible()
+      }
+      expect(getCount).toBe(2)
+      expect(await currentSettings(page)).toEqual(before)
+      await dialog.getByTestId('settings-close').click()
+      await openSettings(page)
+      await expect(dialog.getByTestId('settings-tabs')).toBeVisible()
+      expect(getCount).toBe(2)
+      expect(await currentSettings(page)).toEqual(before)
+    } catch (error) {
+      mainFailed = true
+      throw error
+    } finally {
+      releaseSettings()
+      cleanupFailures = await settleSettingsTest([
+        () => page.unrouteAll({ behavior: 'wait' }),
+        () => page.goto('about:blank'),
+      ])
+      if (cleanupFailures.length) {
+        await settleSettingsTest([() => testInfo.attach('settings-cleanup-errors', {
+          body: cleanupFailures.map(String).join('\n'), contentType: 'text/plain',
+        })])
+      }
     }
+    if (!mainFailed && cleanupFailures.length) throw cleanupFailures[0]
   })
 
   test('Image Viewers explains Fiji setup and links to the official download', async ({ page }) => {
@@ -238,14 +308,98 @@ test.describe('Settings Panel', () => {
     expect(requests.some(request => request.path.endsWith('/retry') && request.body.expected_revision > 0)).toBe(true)
   })
 
-  test('Display exposes the persisted Node Data page-size preference', async ({ page }) => {
-    await page.goto('/')
-    await openSettings(page)
-    const dialog = page.locator('[data-testid="settings-panel"]')
-
-    await dialog.getByText('Display', { exact: true }).click()
-
-    await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
+  test('Display exposes the persisted Node Data page-size preference', async ({ page }, testInfo) => {
+    const before = await currentSettings(page)
+    expect(before.node_data_page_size).toBe(250)
+    const runtimeRoot = process.env.BIOIMAGEFLOW_E2E_ROOT
+    expect(runtimeRoot, 'Playwright must provide its isolated settings root.').toBeTruthy()
+    const settingsPath = join(runtimeRoot!, 'settings.json')
+    const beforeDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
+    const failure = 'Controlled page-size update refusal'
+    const patches: number[] = []
+    let refuse = false
+    await page.route('**/api/v1/settings', async route => {
+      if (route.request().method() === 'PATCH') {
+        const body = route.request().postDataJSON() as { node_data_page_size: number }
+        patches.push(body.node_data_page_size)
+        expect(Object.keys(body)).toEqual(['node_data_page_size'])
+        if (refuse) {
+          refuse = false
+          await route.fulfill({ status: 422, json: { error: 'validation_error', detail: failure } })
+          return
+        }
+      }
+      await route.continue()
+    })
+    let mainFailed = false
+    let cleanupFailures: unknown[] = []
+    try {
+      await page.goto('/')
+      await openSettings(page)
+      const dialog = page.getByTestId('settings-panel')
+      await dialog.getByText('Display', { exact: true }).click()
+      const selector = dialog.getByTestId('node-data-page-size-setting')
+      await expect(selector).toContainText(String(before.node_data_page_size))
+      async function choose(value: number) {
+        const completed = page.waitForResponse(response =>
+          new URL(response.url()).pathname === '/api/v1/settings' && response.request().method() === 'PATCH',
+        )
+        await selector.click()
+        await page.getByRole('option', { name: String(value), exact: true }).click()
+        return await completed
+      }
+      const accepted = await choose(50)
+      expect(accepted.status()).toBe(200)
+      const saved = await currentSettings(page)
+      expect(saved).toEqual({ ...before, node_data_page_size: 50 })
+      const savedDisk = readFileSync(settingsPath)
+      expect(JSON.parse(savedDisk.toString())).toEqual({ ...beforeDisk, node_data_page_size: 50 })
+      await expect(selector).toContainText('50')
+      refuse = true
+      const refused = await choose(100)
+      expect(refused.status()).toBe(422)
+      expect(await refused.json()).toMatchObject({ error: 'validation_error', detail: failure })
+      await expect(page.locator('.p-toast')).toContainText(failure)
+      await expect(selector).toContainText('50')
+      expect(await currentSettings(page)).toEqual(saved)
+      expect(readFileSync(settingsPath)).toEqual(savedDisk)
+      const retried = await choose(100)
+      expect(retried.status()).toBe(200)
+      expect(await currentSettings(page)).toEqual({ ...before, node_data_page_size: 100 })
+      expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ ...beforeDisk, node_data_page_size: 100 })
+      await expect(selector).toContainText('100')
+      expect(patches).toEqual([50, 100, 100])
+      await dialog.getByTestId('settings-close').click()
+      await openSettings(page)
+      await dialog.getByText('Display', { exact: true }).click()
+      await expect(selector).toContainText('100')
+      await page.reload()
+      await openSettings(page)
+      await dialog.getByText('Display', { exact: true }).click()
+      await expect(selector).toContainText('100')
+      expect(await currentSettings(page)).toEqual({ ...before, node_data_page_size: 100 })
+      expect(patches).toEqual([50, 100, 100])
+    } catch (error) {
+      mainFailed = true
+      throw error
+    } finally {
+      cleanupFailures = await settleSettingsTest([
+        () => page.unrouteAll({ behavior: 'wait' }),
+        () => page.goto('about:blank'),
+        async () => {
+          const restored = await page.request.patch(`${API}/settings`, { data: { node_data_page_size: before.node_data_page_size } })
+          expect(restored.status()).toBe(200)
+          expect(await currentSettings(page)).toEqual(before)
+          expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual(beforeDisk)
+        },
+      ])
+      if (cleanupFailures.length) {
+        await settleSettingsTest([() => testInfo.attach('settings-cleanup-errors', {
+          body: cleanupFailures.map(String).join('\n'), contentType: 'text/plain',
+        })])
+      }
+    }
+    if (!mainFailed && cleanupFailures.length) throw cleanupFailures[0]
   })
 
   test('execution settings show the new-workflow scheduling preference', async ({

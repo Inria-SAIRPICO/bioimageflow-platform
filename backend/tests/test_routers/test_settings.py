@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 from collections.abc import AsyncIterator
@@ -248,29 +249,153 @@ class TestPatchSettings:
 
     async def test_patch_workspace_path_retargets_workflow_store(
         self,
-        settings_client: httpx.AsyncClient,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        workspace_a = tmp_path / "workspace A"
         workspace = tmp_path / "new workspace"
-        workflows_root = workspace / "workflows"
-        store = WorkflowStoreService(
-            root_dir=workflows_root,
+        for root in (workspace_a, workspace):
+            (root / "workflows").mkdir(parents=True)
+        monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(tmp_path / "home"))
+        settings_path = tmp_path / "workspace-settings.json"
+        settings_path.write_text(json.dumps({
+            "settings_version": 3,
+            "deployment_mode": "desktop",
+            "workspace_path": str(workspace_a),
+        }))
+        settings_store = SettingsStore(settings_path)
+        await settings_store.load()
+        app = create_app(AppConfig(
+            settings_store=settings_store,
+            deployment_mode="desktop",
+            enable_dev_router=True,
+            disable_hot_reload=True,
+        ))
+        # Keep the original one-way retarget oracle: B already contains a saved workflow.
+        store_b = WorkflowStoreService(
+            root_dir=workspace / "workflows",
             tool_registry=ToolRegistryService(),
         )
-        store.create_workflow(WorkflowCreate(name="retargeted", display_name="Retargeted"))
-        workflow_file = workflows_root / "retargeted" / "workflow.json"
+        store_b.create_workflow(WorkflowCreate(name="retargeted", display_name="Retargeted"))
+        workflow_file = workspace / "workflows" / "retargeted" / "workflow.json"
 
-        response = await settings_client.patch(
-            "/api/v1/settings",
-            json={"workspace_path": str(workspace)},
-        )
-        assert response.status_code == 200
+        def workflow_bytes(root: Path) -> dict[str, bytes]:
+            directory = root / "workflows" / "retargeted"
+            return {
+                path.relative_to(directory).as_posix(): path.read_bytes()
+                for path in sorted(directory.rglob("*")) if path.is_file()
+            }
 
-        workflows = await settings_client.get("/api/v1/workflows")
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                seeded = await client.post("/api/v1/dev/seed")
+                assert seeded.status_code == 200, seeded.text
+                created = await client.post("/api/v1/workflows", json={
+                    "name": "retargeted", "display_name": "Workspace A saved",
+                })
+                assert created.status_code == 201, created.text
+                graph_a = {
+                    "schema_version": 2, "name": "retargeted",
+                    "display_name": "Workspace A saved",
+                    "nodes": [{
+                        "type": "tool", "id": "seed", "name": "Seed",
+                        "tool_name": "SeedNumbers", "position": [100, 100], "parameters": {},
+                    }],
+                    "edges": [], "interface": {"inputs": [], "outputs": []},
+                    "config": {"engine": "direct", "execution": "sequential"},
+                }
+                saved = await client.put("/api/v1/workflows/retargeted", json={"graph": graph_a})
+                assert saved.status_code == 200, saved.text
+                draft_a_graph = {**graph_a, "display_name": "Workspace A draft"}
+                draft = await client.put("/api/v1/workflow-drafts/retargeted", json={
+                    "graph": draft_a_graph, "expected_revision": 0, "updated_by": "frontend",
+                })
+                assert draft.status_code == 200, draft.text
+                accepted_a = draft.json()
+                run = await client.post("/api/v1/execution/run", json={
+                    "workflow_id": "retargeted", "draft_revision": accepted_a["draft_revision"],
+                })
+                assert run.status_code == 202, run.text
+                execution_id = run.json()["execution_id"]
+                deadline = asyncio.get_running_loop().time() + 15
+                while True:
+                    status = await client.get("/api/v1/execution/status")
+                    assert status.status_code == 200, status.text
+                    finished = status.json()
+                    if finished["state"] == "idle" and finished.get("last_result") is not None:
+                        break
+                    assert asyncio.get_running_loop().time() < deadline, finished
+                    await asyncio.sleep(0.01)
+                assert finished["execution_id"] == execution_id
+                assert finished["last_result"]["success"] is True, finished
+                latest = await client.post("/api/v1/nodes/seed/data/query", json={
+                    "workflow_name": "retargeted",
+                })
+                assert latest.status_code == 200, latest.text
+                data_a = latest.json()
+                assert data_a["rows"] == [
+                    {"number": 1, "label": "one"}, {"number": 2, "label": "two"},
+                    {"number": 3, "label": "three"},
+                ]
+                assert data_a["identity_status"] == "captured"
+                identity_a = data_a["source_identity"]
+                assert identity_a["node_key"] == "seed"
+                assert all(identity_a[key] for key in ("run_id", "result_key", "record_id"))
+                pinned_query = {"workflow_name": "retargeted", "result_identity": identity_a}
+                pinned = await client.post("/api/v1/nodes/seed/data/query", json=pinned_query)
+                assert pinned.status_code == 200, pinned.text
+                assert pinned.json() == data_a
+                saved_a = (await client.get("/api/v1/workflows/retargeted")).json()
+                accepted_a = (await client.get("/api/v1/workflow-drafts/retargeted")).json()
+                bytes_a = workflow_bytes(workspace_a)
+                assert "workflow.json" in bytes_a
+                assert ".bioimageflow/draft.json" in bytes_a
+                assert any(path.startswith("results/") and path.endswith(".parquet") for path in bytes_a)
 
-        assert workflows.status_code == 200
-        assert [workflow["id"] for workflow in workflows.json()] == ["retargeted"]
-        assert workflow_file.exists()
+                response = await client.patch("/api/v1/settings", json={"workspace_path": str(workspace)})
+                assert response.status_code == 200, response.text
+                workflows = await client.get("/api/v1/workflows")
+                assert workflows.status_code == 200
+                assert [item["id"] for item in workflows.json()] == ["retargeted"]
+                assert workflow_file.exists()
+                assert workflows.json()[0]["display_name"] == "Retargeted"
+                b_initial = await client.get("/api/v1/workflow-drafts/retargeted")
+                assert b_initial.status_code == 200, b_initial.text
+                assert b_initial.json()["draft_revision"] == 0
+                assert b_initial.json()["graph"]["display_name"] == "Retargeted"
+                for query, expected_status in (
+                    ({"workflow_name": "retargeted"}, 404), (pinned_query, 409),
+                ):
+                    missing = await client.post("/api/v1/nodes/seed/data/query", json=query)
+                    assert missing.status_code == expected_status, missing.text
+                graph_b = {**graph_a, "display_name": "Workspace B saved"}
+                saved = await client.put("/api/v1/workflows/retargeted", json={"graph": graph_b})
+                assert saved.status_code == 200, saved.text
+                draft_b_graph = {**graph_b, "display_name": "Workspace B draft"}
+                changed = await client.put("/api/v1/workflow-drafts/retargeted", json={
+                    "graph": draft_b_graph, "expected_revision": 0, "updated_by": "frontend",
+                })
+                assert changed.status_code == 200, changed.text
+                accepted_b = changed.json()
+                assert accepted_b["graph"]["display_name"] == "Workspace B draft"
+                assert accepted_b["draft_revision"] == 1
+                bytes_b = workflow_bytes(workspace)
+                assert bytes_a == workflow_bytes(workspace_a)
+
+                response = await client.patch("/api/v1/settings", json={"workspace_path": str(workspace_a)})
+                assert response.status_code == 200, response.text
+                assert (await client.get("/api/v1/workflows/retargeted")).json() == saved_a
+                restored = await client.get("/api/v1/workflow-drafts/retargeted")
+                assert restored.status_code == 200, restored.text
+                assert restored.json() == accepted_a
+                for query in ({"workflow_name": "retargeted"}, pinned_query):
+                    restored_result = await client.post("/api/v1/nodes/seed/data/query", json=query)
+                    assert restored_result.status_code == 200, restored_result.text
+                    assert restored_result.json() == data_a
+                assert workflow_bytes(workspace_a) == bytes_a
+                assert workflow_bytes(workspace) == bytes_b
 
     async def test_patch_unsafe_webapp_features_rejected(
         self, settings_client: httpx.AsyncClient

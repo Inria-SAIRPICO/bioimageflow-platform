@@ -1557,7 +1557,7 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.5 Storage
 
-- **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
+- **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The GUI persists the selected path through `PATCH /settings`; workspace-derived workflow, draft and result stores follow that setting without migrating existing content. Explicitly configured store roots retain their own authority. The separate `PATCH /workspace` endpoint changes its active path override in memory and does not migrate or create directories.
 - **Latest output view:** Shows the effective symbolic-link or portable-pointer publication mode, any warning, and a Retest action.
   Named workflow results remain under `<workflow-directory>/results`, with per-node latest publication distinct from a pinned successful-run bundle ([v2 Section 12](platform_specs_v2.md#12-persistence-drafts-and-lifecycle)); this is not a configurable output-folder control.
 - **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
@@ -1799,7 +1799,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env toggle in Tools Panel / Manage Tools dialog; freeing resources |
 | 7a | `POST` | `/api/v1/tools/environments/{name}/recreate` | Create/recreate action in the Manage Tools dialog |
 | 8 | `GET` | `/api/v1/workspace` | Startup; Settings storage section |
-| 9 | `PATCH` | `/api/v1/workspace` | Desktop workspace path change |
+| 9 | `PATCH` | `/api/v1/workspace` | Explicit in-memory desktop workspace path change |
 | 10 | `GET` | `/api/v1/workflows/tree` | Workflows panel tree |
 | 11 | `POST` | `/api/v1/workflows/folders` | Create folder in Workflows panel |
 | 12 | `PATCH` | `/api/v1/workflows/folders/{path}` | Rename or move folder |
@@ -1829,7 +1829,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 30 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
 | 31 | `GET` | `/api/v1/execution/status` | Explicit execution status inspection and recovery; WebSocket registration sends `status_snapshot` automatically |
 | 32 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
-| 33 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
+| 33 | `PATCH` | `/api/v1/settings` | Live preferences and persisted desktop workspace selection |
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Node Data |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |

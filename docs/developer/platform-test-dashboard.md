@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **321 V + 173 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **321 / 500 are verified (64.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **327 V + 167 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **327 / 500 are verified (65.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -50,8 +50,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-SHL-002 | Empty-workspace chooser without implicit workflow | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `75be9c2` |
 | GUI-SHL-003 | Recovery preference and obsolete identities | P0 | Desktop and webapp GUI/draft API | yes | V | V | V | V | V | verified | `dd20821`, `75be9c2`, `301c19c` |
 | GUI-SHL-004 | Recovered-edge geometry | P0 | Desktop and webapp GUI | yes | V | N (geometry rendering accepts no user input to refuse) | N (geometry rendering has no cancellation or recovery lifecycle) | V | N (geometry is derived within the owning canvas and has no separate boundary) | verified | `dd20821` |
-| GUI-SHL-005 | Preferences opening and desktop availability | P1 | Desktop and webapp GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | G | G | N (page-size selection has no cancellation or recovery lifecycle) | G | N (the global display preference has no scoped identity or ownership boundary) | gap | `fcb4408` inspection |
+| GUI-SHL-005 | Preferences opening and desktop availability | P1 | Desktop and webapp GUI | no | V | G | V | V | G | in-progress | `settings.spec.ts` Chromium/Firefox at base `4ef9068`: controlled load failure, real reopen recovery and cached settings; availability/refusal limits in inventory |
+| GUI-SHL-006 | Persisted Node Data page size | P1 | Desktop and webapp GUI/settings API | no | V | V | N (page-size selection has no separate cancellation lifecycle) | V | N (the global display preference has no scoped identity or ownership boundary) | verified | `settings.spec.ts` Chromium/Firefox at base `4ef9068`, plus real settings API invalid-value refusal; new-table/local override limits in inventory |
 | GUI-SHL-007 | OMERO settings cards and secret handling | P2 | Desktop GUI/settings API; webapp restrictions | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-SHL-008 | Desktop/editor settings and forbidden webapp mutation | P2 | Desktop and webapp settings API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-EDT-014 | Deterministic recursive imported-graph layout persists after first materialization | P1 | Desktop and webapp GUI/import | no | V | N (invalid graph rejection belongs to import/validation, not layout) | N (layout computation has no separate cancellation or recovery lifecycle) | V | V | verified | `imported-graph-layout.spec.ts` Chromium/Firefox; `test_graph_translator.py` recursive and edge-case layout |

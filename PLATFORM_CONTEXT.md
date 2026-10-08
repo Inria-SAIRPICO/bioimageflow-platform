@@ -281,6 +281,7 @@ The platform does not retain attached-Parsl, submitted-local, low-level SSH tran
 The public capability report and structured diagnostics determine UI state, and managed runs do not expose logs.
 Retry recovery is attach-first and may replay only the exact persisted public retry plan after definitive child absence.
 Managed execution registries, retry and cleanup journals, and downloaded result bundles are workspace-scoped; switching workspaces changes listings and new-run storage but does not redirect an already bound active execution's writes.
+Changing the persisted desktop workspace path retargets workspace-derived stores without migrating existing files; an explicitly configured store root retains its own authority.
 After version-1 profiles are dropped, an invalid or disabled default target is durably repaired to Local without disturbing a valid enabled version-2 default.
 
 Each saved workflow owns runtime storage at `<workflow-directory>/results`.
