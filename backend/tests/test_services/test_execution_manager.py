@@ -2197,6 +2197,36 @@ class TestExecutionManagerResult:
 
 
 class TestExecutionManagerStop:
+    async def test_close_refuses_queued_idle_mutation(self) -> None:
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
+        closing_started, mutation_started = asyncio.Event(), asyncio.Event()
+        admitted = False
+
+        async def close() -> None:
+            closing_started.set()
+            await manager.close()
+
+        async def mutate() -> None:
+            nonlocal admitted
+            mutation_started.set()
+            async with manager.exclusive_idle_mutation():
+                admitted = True
+
+        async with manager._preparation_lock:
+            closing = asyncio.create_task(close())
+            await closing_started.wait()
+            mutation = asyncio.create_task(mutate())
+            await mutation_started.wait()
+            assert not closing.done() and not mutation.done()
+        with pytest.raises(ExecutionConflictError, match="shutting down"):
+            await mutation
+        await closing
+        assert not admitted and not manager.is_running
+        await manager.close()
+        with pytest.raises(ExecutionConflictError, match="shutting down"):
+            async with manager.exclusive_idle_mutation():
+                admitted = True
+
     async def test_close_refuses_queued_execution_reservation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)

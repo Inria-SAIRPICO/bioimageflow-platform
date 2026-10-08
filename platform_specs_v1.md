@@ -336,7 +336,12 @@ Admission reports ready when no pool is running and preserves running for an alr
 Dispatch revalidates and forwards the exact admitted runtime receipt and worker grant, without replacing or reprovisioning a generation already used for cache admission.
 Automatic Run admission and background `bioimageflow-general` refresh share a platform service guard across fresh inspection and conditional replacement; processing submission separately fences the held receipt under that same guard, so a later generation cannot receive a task identified against the earlier generation.
 The guard is released after admission or submission returns and never waits for scientific task completion.
-Manual Create/recreate uses public `recreate` once, forwards separate removal/provision events, refuses protected lifecycle owners, and retains failed physical pool-close ownership for retry.
+Manual Start, Stop and Create/recreate require the exact declared environment name; tool and package names are not mutation aliases.
+After acquiring the shared processing preparation guard, every matching tool declaration must reconstruct the same complete `EnvironmentSpec`, including dependencies and flexible-version policy; the current protected owner is checked under that guard, and unknown names or conflicting recipes are refused before manager access, lifecycle logs, status publication or catalog changes.
+All three operations refuse environments owned by another platform lifecycle; Create/recreate uses public `recreate` once, forwards separate removal/provision events, and retains failed physical pool-close ownership for retry.
+Manual lifecycle requests hold the execution manager's exclusive idle admission through the complete service operation and its final status publication; starting or running execution and terminal shutdown refuse admission with HTTP 423.
+Request cancellation, including repeated task cancellation, does not release that admission while offloaded physical work remains active; after completion the original cancellation is preserved, an operation failure remains observable, and later explicit retry can acquire the idle gate.
+Unknown or conflicting declared recipes return HTTP 422, protected lifecycle ownership returns HTTP 403, and unavailable controls return HTTP 503 rather than reporting an operation that did not occur.
 Normal development launch profiles explicitly use the installed published core. Separately named `(local core)` profiles set `BIOIMAGEFLOW_CORE_SOURCE` to the sibling source project, expose that same package to the platform process through `PYTHONPATH`, and use a repository-local `BIOIMAGEFLOW_WETLANDS` root. An invalid source is a configuration error, and local-core recipes never share lifecycle state with the normal Wetlands root.
 
 #### 2.4.1b Error Response Format
@@ -906,7 +911,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
-| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "ready" | "running" | "failed"}` | Environment state change; ready content is separate from worker startup |
+| `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "ready" | "running" | "failed"}` | Environment state change; ready content is separate from worker startup, and canceled manual requests still publish their physical operation's final state |
 | `workflow_tree_changed` | `{action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
@@ -1201,7 +1206,8 @@ Below the TreeTable, the dialog includes an inline footer explicitly labelled **
 | **Start/Stop toggle** | Start or stop the tool's Wetlands environment |
 | **Create / recreate environment** | Labeled action that creates a missing environment or intentionally force-rebuilds the existing managed processing environment from the tool's declared recipe; all controls sharing that environment show the same busy state |
 
-**Important:** Environments are per-tool, not per-package. Each tool row in the TreeTable shows its own env indicator and start/stop toggle, even if multiple tools share the same underlying environment.
+Each tool row shows the indicator and controls for its declared environment; tools sharing one environment share its lifecycle and busy state.
+Manual controls serialize with other idle mutations and block Run until physical completion, including when the initiating request is canceled; an admitted Run or application shutdown refuses the manual operation without changing its environment.
 
 ### 3.5 Node Panel (Right Sidebar)
 

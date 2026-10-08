@@ -1097,13 +1097,17 @@ class ExecutionManager:
 
     @asynccontextmanager
     async def exclusive_idle_mutation(self) -> AsyncIterator[None]:
-        """Lease the idle engine across a complete graph mutation."""
+        """Lease the idle engine across a complete graph or environment mutation."""
 
+        if self._closing:
+            raise ExecutionConflictError("The execution manager is shutting down")
         if self.is_execution_active:
             raise ExecutionConflictError(
                 "An execution is already running; stop it before editing the workflow"
             )
         async with self._preparation_lock:
+            if self._closing:
+                raise ExecutionConflictError("The execution manager is shutting down")
             if self.is_execution_active:
                 raise ExecutionConflictError(
                     "An execution is already running; stop it before editing the workflow"

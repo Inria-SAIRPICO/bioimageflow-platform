@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import anyio
 
+from bioimageflow_server.routers.execution import get_execution_manager
+from bioimageflow_server.services.execution import ExecutionConflictError, ExecutionManager
 from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.tools import (
     PackageImportResponse,
@@ -600,37 +605,81 @@ async def uninstall_package(
 # ---------------------------------------------------------------------------
 
 
+async def _settle_environment_operation(operation: Callable[[], Awaitable[str]]) -> str:
+    """Preserve request cancellation only after the physical operation settles."""
+
+    async def run() -> str:
+        # The child owns the complete service operation, including final status
+        # publication. Request cancellation must not abandon its worker thread.
+        with anyio.CancelScope(shield=True):
+            return await operation()
+
+    task = asyncio.create_task(run(), name="manual-tool-environment-operation")
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError as primary:
+        with anyio.CancelScope(shield=True):
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    # Repeated raw Task.cancel() can interrupt this awaiter
+                    # even inside an AnyIO shield; the child still owns work.
+                    continue
+                except BaseException:
+                    break
+            try:
+                task.result()
+            except BaseException as operation_error:
+                _logger.error(
+                    "Manual environment operation failed after request cancellation",
+                    exc_info=(type(operation_error), operation_error, operation_error.__traceback__),
+                )
+        raise primary
+
+
+async def _environment_operation(
+    env_name: str, action: str, service: Any, execution: ExecutionManager | None,
+) -> dict[str, str]:
+    if service is None or execution is None:
+        raise HTTPException(status_code=503, detail="Tool environment controls are unavailable")
+    try:
+        async with execution.exclusive_idle_mutation():
+            status = await _settle_environment_operation(lambda: getattr(service, action)(env_name))
+    except ExecutionConflictError as exc:
+        raise HTTPException(status_code=423, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"environment": env_name, "status": status}
+
+
 @router.post("/environments/{env_name}/start")
 async def start_environment(
     env_name: str,
     service: Any = Depends(get_tool_environment_service),
+    execution: ExecutionManager | None = Depends(get_execution_manager),
 ) -> dict[str, str]:
-    if service is None:
-        return {"environment": env_name, "status": "creating"}
-    status = await service.start(env_name)
-    return {"environment": env_name, "status": status}
+    return await _environment_operation(env_name, "start", service, execution)
 
 
 @router.post("/environments/{env_name}/stop")
 async def stop_environment(
     env_name: str,
     service: Any = Depends(get_tool_environment_service),
+    execution: ExecutionManager | None = Depends(get_execution_manager),
 ) -> dict[str, str]:
-    if service is None:
-        return {"environment": env_name, "status": "stopped"}
-    status = await service.stop(env_name)
-    return {"environment": env_name, "status": status}
+    return await _environment_operation(env_name, "stop", service, execution)
 
 
 @router.post("/environments/{env_name}/recreate")
 async def recreate_environment(
     env_name: str,
     service: Any = Depends(get_tool_environment_service),
+    execution: ExecutionManager | None = Depends(get_execution_manager),
 ) -> dict[str, str]:
-    if service is None:
-        return {"environment": env_name, "status": "creating"}
-    status = await service.recreate(env_name)
-    return {"environment": env_name, "status": status}
+    return await _environment_operation(env_name, "recreate", service, execution)
 
 
 # ---------------------------------------------------------------------------

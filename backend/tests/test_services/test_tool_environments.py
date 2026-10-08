@@ -140,13 +140,22 @@ def _registry(*, general: bool = False) -> MagicMock:
     return registry
 
 
-async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> None:
+@pytest.mark.parametrize("warm", [False, True])
+async def test_start_and_stop_control_the_shared_environment(tmp_path: Path, warm: bool) -> None:
     wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env"))
-    service = ToolEnvironmentService(registry=_registry(), wetlands_manager=wetlands)
+    if warm:
+        wetlands._envs["cellpose-env"] = wetlands._env
+    connection = MagicMock()
+    service = ToolEnvironmentService(
+        registry=_registry(), wetlands_manager=wetlands, connection_manager=connection,
+    )
 
     assert service.manager is wetlands
     assert await service.start("cellpose-env") == "running"
     assert wetlands.get_calls == [("cellpose-env", False)]
+    assert [call.args for call in connection.publish_environment_status.call_args_list] == [
+        ("cellpose-env", "running" if warm else "ready"), ("cellpose-env", "running"),
+    ]
 
     assert await service.stop("cellpose-env") == "stopped"
     assert wetlands._env.exited is True
@@ -165,15 +174,23 @@ async def test_start_logs_pixi_operation_output(
     assert "Environment cellpose-env: pixi output" in caplog.messages
 
 
-async def test_start_replaces_only_a_stale_managed_recipe(tmp_path: Path) -> None:
+@pytest.mark.parametrize("state", [EnvironmentRecipeState.MISSING, EnvironmentRecipeState.STALE])
+async def test_start_replaces_only_a_stale_managed_recipe(tmp_path: Path, state: EnvironmentRecipeState) -> None:
     wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env"))
-    wetlands.state = EnvironmentRecipeState.STALE
+    wetlands.state = state
     registry = _registry()
-    service = ToolEnvironmentService(registry=registry, wetlands_manager=wetlands)
+    connection = MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=wetlands, connection_manager=connection,
+    )
 
     assert await service.start("cellpose-env") == "running"
 
-    assert wetlands.get_calls == [("cellpose-env", True)]
+    assert wetlands.get_calls == [("cellpose-env", state is EnvironmentRecipeState.STALE)]
+    assert [call.args for call in connection.publish_environment_status.call_args_list] == [
+        ("cellpose-env", "updating" if state is EnvironmentRecipeState.STALE else "creating"),
+        ("cellpose-env", "running"),
+    ]
     assert registry.get_package.return_value.environment_status == "running"
 
 
@@ -217,6 +234,151 @@ async def test_protected_environment_cannot_be_replaced(tmp_path: Path) -> None:
         await service.recreate("cellpose-env")
 
     assert wetlands.get_calls == []
+
+
+@pytest.mark.parametrize("action", ["start", "recreate", "stop"])
+@pytest.mark.parametrize("conflict", ["dependencies", "allow_flexible_versions"])
+async def test_conflicting_environment_recipes_refuse_before_lifecycle_effects(
+    tmp_path: Path, action: str, conflict: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = _registry()
+    first = registry.list_tools.return_value[0]
+    first.environment = {
+        "name": "cellpose-env", "dependencies": {"pip": ["demo==1.0"]},
+        "allow_flexible_versions": False,
+    }
+    second_environment = {
+        **first.environment,
+        "dependencies": {"pip": ["demo==2.0"]} if conflict == "dependencies" else {"pip": ["demo==1.0"]},
+        "allow_flexible_versions": conflict == "allow_flexible_versions",
+    }
+    registry.list_tools.return_value = [
+        first,
+        SimpleNamespace(name="Other", package="other-package", environment=second_environment),
+    ]
+    wetlands = MagicMock(wraps=_FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env")))
+    connection, catalog = MagicMock(), MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=wetlands,
+        connection_manager=connection, catalog=catalog,
+    )
+
+    with caplog.at_level("INFO", logger="bioimageflow.environment"):
+        with pytest.raises(ValueError, match="Conflicting declarations"):
+            await getattr(service, action)("cellpose-env")
+
+    assert wetlands.mock_calls == []
+    connection.publish_environment_status.assert_not_called()
+    catalog.update_environment_status.assert_not_called()
+    registry.get_package.assert_not_called()
+    assert registry.get_package.return_value.environment_status == "stopped"
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize("action", ["start", "recreate", "stop"])
+@pytest.mark.parametrize("alias", ["cellpose", "cellpose-pkg"])
+async def test_tool_and_package_aliases_cannot_mutate_declared_environment(
+    tmp_path: Path, action: str, alias: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    registry = _registry()
+    wetlands = MagicMock(wraps=_FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env")))
+    connection, catalog = MagicMock(), MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=wetlands,
+        connection_manager=connection, catalog=catalog,
+        protected_environment_names=lambda: {"cellpose-env"},
+    )
+
+    with caplog.at_level("INFO", logger="bioimageflow.environment"):
+        with pytest.raises(ValueError, match="declared environment name"):
+            await getattr(service, action)(alias)
+
+    assert wetlands.mock_calls == []
+    connection.publish_environment_status.assert_not_called()
+    catalog.update_environment_status.assert_not_called()
+    registry.get_package.assert_not_called()
+    assert registry.get_package.return_value.environment_status == "stopped"
+    assert caplog.records == []
+
+
+async def test_exact_environment_name_preserves_shared_recipe_despite_tool_alias_collision(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    recipe = {
+        "name": "cellpose-env", "dependencies": {"pip": ["demo>=1,<2"]},
+        "allow_flexible_versions": True,
+    }
+    registry.list_tools.return_value = [
+        SimpleNamespace(name="cellpose-env", package="other-package", environment={"name": "other-env", "dependencies": {}}),
+        SimpleNamespace(name="Cellpose", package="first-package", environment=recipe),
+        SimpleNamespace(name="CellposeBatch", package="second-package", environment={**recipe}),
+    ]
+    packages = {name: SimpleNamespace(environment_status="stopped") for name in (
+        "other-package", "first-package", "second-package",
+    )}
+    registry.get_package.side_effect = packages.get
+    wetlands = MagicMock(wraps=_FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env")))
+    connection = MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=wetlands, connection_manager=connection,
+    )
+
+    assert await service.start("cellpose-env") == "running"
+
+    spec = wetlands.get_or_create.call_args.args[0]
+    assert spec.name == "cellpose-env"
+    assert spec.dependencies == {"pip": ["demo>=1,<2"]}
+    assert spec.allow_flexible_versions is True
+    wetlands.get_or_create.assert_called_once()
+    assert wetlands.inspect_environment.call_args.args[0] == spec
+    assert packages["other-package"].environment_status == "stopped"
+    assert packages["first-package"].environment_status == "running"
+    assert packages["second-package"].environment_status == "running"
+    assert all(call.args[0] == "cellpose-env" for call in connection.publish_environment_status.call_args_list)
+
+
+async def test_queued_manual_operation_rechecks_current_lifecycle_owner_before_effects(
+    tmp_path: Path,
+) -> None:
+    attempted = threading.Event()
+
+    class PreparationGuard:
+        def __init__(self) -> None:
+            self.lock = threading.RLock()
+
+        def __enter__(self) -> None:
+            attempted.set()
+            self.lock.acquire()
+
+        def __exit__(self, *_args: Any) -> None:
+            self.lock.release()
+
+    registry = _registry()
+    wetlands = MagicMock(wraps=_FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env")))
+    protected: set[str] = set()
+    connection, catalog = MagicMock(), MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=wetlands, connection_manager=connection,
+        catalog=catalog, protected_environment_names=lambda: protected,
+    )
+    guard = PreparationGuard()
+    service._processing_environment_lock = guard
+    guard.lock.acquire()
+    task = asyncio.create_task(service.recreate("cellpose-env"))
+    try:
+        arrived = await asyncio.to_thread(attempted.wait, 5)
+        protected.add("cellpose-env")
+    finally:
+        guard.lock.release()
+    with pytest.raises(PermissionError, match="owned by another platform lifecycle"):
+        await asyncio.wait_for(task, 5)
+
+    assert arrived
+    assert wetlands.mock_calls == []
+    connection.publish_environment_status.assert_not_called()
+    catalog.update_environment_status.assert_not_called()
+    registry.get_package.assert_not_called()
 
 
 async def test_background_refresh_rebuilds_only_existing_stale_general(

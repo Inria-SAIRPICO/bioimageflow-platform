@@ -59,58 +59,55 @@ class ToolEnvironmentService:
         return self._manager
 
     async def start(self, env_name: str) -> str:
-        tools = self._tools_for_environment(env_name)
-        if not tools:
-            self._publish(env_name, "creating")
-            return "creating"
-        spec = next((self._environment_spec(tool) for tool in tools), None)
-        if spec is None:
-            self._publish(env_name, "stopped")
-            return "stopped"
-        self._require_processing_replacement_allowed(env_name)
-        def prepare_and_start() -> None:
-            with self.processing_environment_lock:
-                state = self._manager.inspect_environment(spec)
-                status = "updating" if state is EnvironmentRecipeState.STALE else "creating"
-                self._set_status(tools, status)
-                self._publish(env_name, status)
-                self._manager.get_or_create(
-                    spec, replace_existing=state is EnvironmentRecipeState.STALE,
-                    on_provision_event=self._log_provision_event,
-                    on_removal_event=self._log_provision_event,
-                )
-
-        try:
-            await anyio_to_thread.run_sync(prepare_and_start)
-        except Exception:
-            self._set_status(tools, "failed")
-            self._publish(env_name, "failed")
-            raise
-        self._set_status(tools, "running")
-        self._publish(env_name, "running")
-        return "running"
+        return await anyio_to_thread.run_sync(self._mutate_environment, env_name, "start")
 
     async def recreate(self, env_name: str) -> str:
-        tools = self._tools_for_environment(env_name)
-        spec = next((self._environment_spec(tool) for tool in tools), None)
-        if spec is None:
-            self._publish(env_name, "stopped")
-            return "stopped"
-        self._require_processing_replacement_allowed(env_name)
-        self._set_status(tools, "updating")
-        self._publish(env_name, "updating")
-        try:
-            await anyio_to_thread.run_sync(
-                self._recreate_wetlands_environment,
-                spec,
-            )
-        except Exception:
-            self._set_status(tools, "failed")
-            self._publish(env_name, "failed")
-            raise
-        self._set_status(tools, "running")
-        self._publish(env_name, "running")
-        return "running"
+        return await anyio_to_thread.run_sync(self._mutate_environment, env_name, "recreate")
+
+    async def stop(self, env_name: str) -> str:
+        return await anyio_to_thread.run_sync(self._mutate_environment, env_name, "stop")
+
+    def _mutate_environment(self, env_name: str, action: str) -> str:
+        with self.processing_environment_lock:
+            # Read authority only after queued automatic preparation completes.
+            # Policy refusal precedes the operational failure/status boundary.
+            tools, spec = self._resolve_environment(env_name)
+            self._require_processing_replacement_allowed(env_name)
+            try:
+                if action == "stop":
+                    self._manager.stop(env_name)
+                    if self._manager.is_running(env_name):
+                        raise RuntimeError(f"Environment {env_name!r} shutdown remains pending")
+                    status = "stopped"
+                elif action == "recreate":
+                    self._set_status(tools, "updating")
+                    self._publish(env_name, "updating")
+                    self._manager.recreate(
+                        spec, on_provision_event=self._log_provision_event,
+                        on_removal_event=self._log_provision_event,
+                    )
+                    status = "running"
+                else:
+                    state = self._manager.inspect_environment(spec)
+                    if state is EnvironmentRecipeState.CURRENT:
+                        status = "running" if self._manager.is_running(env_name) else "ready"
+                    else:
+                        status = "updating" if state is EnvironmentRecipeState.STALE else "creating"
+                    self._set_status(tools, status)
+                    self._publish(env_name, status)
+                    self._manager.get_or_create(
+                        spec, replace_existing=state is EnvironmentRecipeState.STALE,
+                        on_provision_event=self._log_provision_event,
+                        on_removal_event=self._log_provision_event,
+                    )
+                    status = "running"
+            except Exception:
+                self._set_status(tools, "failed")
+                self._publish(env_name, "failed")
+                raise
+            self._set_status(tools, status)
+            self._publish(env_name, status)
+            return status
 
     def start_standard_environment_refresh(self) -> None:
         """Warm an already-existing stale general processing environment."""
@@ -171,22 +168,21 @@ class ToolEnvironmentService:
             self._set_status(tools, "ready")
             self._publish(GENERAL_ENV.name, "ready")
 
-    async def stop(self, env_name: str) -> str:
-        tools = self._tools_for_environment(env_name)
-        await anyio_to_thread.run_sync(self._stop_wetlands_environment, env_name)
-        self._set_status(tools, "stopped")
-        self._publish(env_name, "stopped")
-        return "stopped"
-
     def _tools_for_environment(self, env_name: str) -> list[Any]:
-        matches = []
-        for tool in self._registry.list_tools():
-            tool_env_name = None
-            if tool.environment:
-                tool_env_name = str(tool.environment.get("name") or "")
-            if env_name in {tool_env_name, tool.name, tool.package}:
-                matches.append(tool)
-        return matches
+        return [
+            tool for tool in self._registry.list_tools()
+            if tool.environment and tool.environment.get("name") == env_name
+        ]
+
+    def _resolve_environment(self, env_name: str) -> tuple[list[Any], EnvironmentSpec]:
+        tools = self._tools_for_environment(env_name)
+        if not tools:
+            raise ValueError(f"Use a declared environment name; unknown environment {env_name!r}")
+        specs = [self._environment_spec(tool) for tool in tools]
+        spec = specs[0]
+        if spec is None or any(candidate != spec for candidate in specs[1:]):
+            raise ValueError(f"Conflicting declarations for environment {env_name!r}")
+        return tools, spec
 
     def location(self, env_name: str) -> str | None:
         """Return the managed location for an environment, including before creation."""
@@ -252,20 +248,6 @@ class ToolEnvironmentService:
         publish = getattr(self._connection_manager, "publish_environment_status", None)
         if callable(publish):
             publish(env_name, status)
-
-    def _stop_wetlands_environment(self, env_name: str) -> None:
-        with self.processing_environment_lock:
-            self._manager.stop(env_name)
-            if self._manager.is_running(env_name):
-                raise RuntimeError(f"Environment {env_name!r} shutdown remains pending")
-
-    def _recreate_wetlands_environment(self, spec: EnvironmentSpec) -> None:
-        with self.processing_environment_lock:
-            self._manager.recreate(
-                spec,
-                on_provision_event=self._log_provision_event,
-                on_removal_event=self._log_provision_event,
-            )
 
     @staticmethod
     def _log_provision_event(event: Any) -> None:

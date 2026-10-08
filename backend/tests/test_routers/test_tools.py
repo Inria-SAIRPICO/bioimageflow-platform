@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+import anyio
 import httpx
 import pytest
 from tests.graph_factory import graph_state
@@ -39,6 +42,10 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.routers.execution import get_execution_manager
+from bioimageflow_server.services.execution import ExecutionConflictError
+from bioimageflow_server.services.tool_environments import ToolEnvironmentService
+from bioimageflow.env_manager import EnvironmentRecipeState
 
 pytestmark = pytest.mark.anyio
 
@@ -924,7 +931,157 @@ async def test_recreate_environment_delegates_to_environment_service():
     assert envs.recreated == ["myenv"]
 
 
-async def test_start_environment_for_tool_without_environment_returns_stopped():
+@pytest.mark.parametrize("action", ["start", "stop", "recreate"])
+async def test_environment_lifecycle_is_refused_during_run_admission(action: str) -> None:
+    service = _FakeToolEnvironmentService()
+    app = create_app(config=AppConfig(
+        tool_registry=ToolRegistryService(), tool_environment_service=service,
+    ))
+    execution = app.dependency_overrides[get_execution_manager]()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with execution.reserve_start("selected-workflow", 1):
+            response = await client.post(f"/api/v1/tools/environments/selected-env/{action}")
+
+    assert response.status_code == 423
+    assert service.started == service.stopped == service.recreated == []
+
+
+async def test_accepted_environment_lifecycle_keeps_run_admission_until_completion() -> None:
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class HeldEnvironmentService(_FakeToolEnvironmentService):
+        async def recreate(self, env_name: str) -> str:
+            entered.set()
+            await release.wait()
+            return await super().recreate(env_name)
+
+    service = HeldEnvironmentService()
+    app = create_app(config=AppConfig(
+        tool_registry=ToolRegistryService(), tool_environment_service=service,
+    ))
+    execution = app.dependency_overrides[get_execution_manager]()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        operation = asyncio.create_task(client.post("/api/v1/tools/environments/selected-env/recreate"))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=2)
+            with pytest.raises(ExecutionConflictError):
+                async with execution.reserve_start("selected-workflow", 1):
+                    pass
+        finally:
+            release.set()
+            response = await asyncio.wait_for(operation, timeout=2)
+
+    assert response.status_code == 200
+    assert execution.is_running is False
+
+
+@pytest.mark.parametrize("cancel_kind,physical_failure", [
+    ("task", False), ("task", True), ("scope", False),
+], ids=["task", "task-failure", "scope"])
+async def test_cancelled_manual_lifecycle_retains_admission_until_physical_completion(
+    cancel_kind: str, physical_failure: bool,
+) -> None:
+    entered, release, completed = threading.Event(), threading.Event(), threading.Event()
+    registry = ToolRegistryService()
+    tool = _make_tool("Selected")
+    tool.environment = {"name": "selected-env", "dependencies": {}}
+    registry.register_tool(tool.name, tool)
+    manager = MagicMock()
+    manager.inspect_environment.return_value = EnvironmentRecipeState.CURRENT
+
+    def recreate(*_args: object, **_kwargs: object) -> None:
+        entered.set()
+        try:
+            assert release.wait(5), "Controlled physical operation was not released"
+            if physical_failure and manager.recreate.call_count == 1:
+                raise RuntimeError("controlled physical failure after cancellation")
+        finally:
+            completed.set()
+
+    manager.recreate.side_effect = recreate
+    connection = MagicMock()
+    service = ToolEnvironmentService(
+        registry=registry, wetlands_manager=manager, connection_manager=connection,
+    )
+    app = create_app(config=AppConfig(tool_registry=registry, tool_environment_service=service))
+    execution = app.dependency_overrides[get_execution_manager]()
+    cancellation = anyio.CancelScope()
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test",
+    ) as client:
+        async def request() -> None:
+            with cancellation:
+                await client.post("/api/v1/tools/environments/selected-env/recreate")
+
+        operation = asyncio.create_task(request())
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            cancellation.cancel() if cancel_kind == "scope" else operation.cancel()
+            # Scheduler barriers deliver cancellation without timing sleeps.
+            await anyio.lowlevel.checkpoint()
+            if cancel_kind == "task":
+                operation.cancel()
+                await anyio.lowlevel.checkpoint()
+            assert not completed.is_set()
+            with pytest.raises(ExecutionConflictError):
+                async with execution.reserve_start("selected-workflow", 1):
+                    pass
+        finally:
+            release.set()
+            try:
+                await asyncio.wait_for(operation, timeout=2)
+            except asyncio.CancelledError:
+                pass
+            assert await asyncio.to_thread(completed.wait, 2)
+
+        assert manager.recreate.call_count == 1
+        if physical_failure:
+            connection.publish_environment_status.assert_any_call("selected-env", "failed")
+        async with execution.reserve_start("selected-workflow", 1):
+            pass
+        retry = await client.post("/api/v1/tools/environments/selected-env/recreate")
+        assert retry.status_code == 200
+        assert manager.recreate.call_count == 2
+    assert execution.is_running is False
+
+
+async def test_environment_lifecycle_is_refused_after_manager_close() -> None:
+    service = _FakeToolEnvironmentService()
+    app = create_app(config=AppConfig(
+        tool_registry=ToolRegistryService(), tool_environment_service=service,
+    ))
+    execution = app.dependency_overrides[get_execution_manager]()
+    await execution.close()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/tools/environments/selected-env/recreate")
+
+    assert response.status_code == 423
+    assert service.recreated == []
+
+
+@pytest.mark.parametrize("error,status", [
+    (ValueError("conflicting recipe"), 422),
+    (PermissionError("protected lifecycle owner"), 403),
+])
+async def test_environment_lifecycle_refusal_preserves_error_and_releases_gate(
+    error: Exception, status: int,
+) -> None:
+    service = _FakeToolEnvironmentService()
+    service.recreate = AsyncMock(side_effect=error)
+    app = create_app(config=AppConfig(
+        tool_registry=ToolRegistryService(), tool_environment_service=service,
+    ))
+    execution = app.dependency_overrides[get_execution_manager]()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/tools/environments/selected-env/recreate")
+    assert response.status_code == status
+    assert str(error) in response.json()["detail"]
+    assert not execution.is_running
+    async with execution.reserve_start("selected-workflow", 1):
+        pass
+
+
+async def test_start_environment_for_tool_without_environment_is_refused():
     registry = ToolRegistryService()
     registry.register_tool("NoEnvTool", _make_tool("NoEnvTool"))
     registry.register_package("pkg", _make_package("pkg"))
@@ -933,8 +1090,7 @@ async def test_start_environment_for_tool_without_environment_returns_stopped():
     async for client in _client(config):
         resp = await client.post("/api/v1/tools/environments/NoEnvTool/start")
 
-    assert resp.status_code == 200
-    assert resp.json() == {"environment": "NoEnvTool", "status": "stopped"}
+    assert resp.status_code == 422
     assert registry.get_package("pkg").environment_status == "stopped"
 
 
