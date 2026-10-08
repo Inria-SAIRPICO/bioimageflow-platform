@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **391 V + 103 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **391 / 500 are verified (78.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **393 V + 101 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **393 / 500 are verified (78.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -115,7 +115,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | G | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | V | G | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
-| WF-SRC-005 | Copy/export captures edited owned sources | P1 | Desktop API/storage | no | G | G | G | G | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
+| WF-SRC-005 | Copy and export capture edited sources | P1 | Workflow API/storage | no | V | G | G | V | V | in-progress | actual edited-source ZIP/public import/fresh-store reopen at basee6a802a/source8d4b06f plus retained edited duplicate execution; refusal/rollback gaps remain |
 | WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | V | V | V | V | V | verified | retained scoped-metadata anchor + `8ce0c043` owned-source Chromium/Firefox receipts |
 | WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |

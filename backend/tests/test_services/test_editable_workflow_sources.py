@@ -5,18 +5,22 @@ from __future__ import annotations
 import hashlib
 import base64
 import json
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
-from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import GraphState, ToolNodeState
 from bioimageflow_server.models.workflow import WorkflowUpdate, WorkflowCreate
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.graph_translator import lib_dict_to_graph_state
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_artifacts import (
     OwnedWorkflowSources,
+    artifact_hash,
     resolve_local_source,
 )
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -146,6 +150,98 @@ def test_duplicate_and_export_include_edits(tmp_path: Path):
     assert "n + 20" in store.archive_adapter.exported["custom_sources"][0]["source"]
     OwnedWorkflowSources(store.workflow_dir("copy")).source_path("increment").write_text(SOURCE)
     assert run(store) == [21, 22, 23]
+
+
+def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bioimageflow import Workflow
+
+    runtime_calls: list[str] = []
+
+    def refuse_runtime(*args: object, **kwargs: object) -> None:
+        runtime_calls.append("runtime")
+        raise AssertionError("Workflow archive round-trip must not enter runtime")
+
+    for method in ("compute", "plan", "create_engine"):
+        monkeypatch.setattr(Workflow, method, refuse_runtime)
+
+    # Only the initial legacy fixture import uses a fake adapter. Every archive
+    # operation below uses a fresh store's genuine default library adapter.
+    seed = imported_store(tmp_path)
+    store = WorkflowStoreService(seed.root_dir, seed.tool_registry)
+    original = store.read_workflow_document("reference")
+    original_bytes = (store.workflow_dir("reference") / "workflow.json").read_bytes()
+    original_generation = store.workflow_generation("reference")
+    origin_sources = OwnedWorkflowSources(store.workflow_dir("reference"))
+    origin_path = origin_sources.source_path("increment")
+    edited_bytes = SOURCE.replace("n + 1", "n + 20").encode("utf-8")
+    origin_path.write_bytes(edited_bytes)
+
+    filename, archive_bytes = store.export_workflow_archive("reference")
+    assert filename == "reference.bioimageflow.zip"
+    with ZipFile(BytesIO(archive_bytes)) as archive:
+        assert archive.namelist() == ["workflow.json"]
+        exported = json.loads(archive.read("workflow.json"))
+    assert set(exported) == {
+        "archive_version", "workflow", "custom_sources", "viewing_requirements"
+    }
+    assert exported["archive_version"] == 2
+    assert len(exported["custom_sources"]) == 1
+    record = exported["custom_sources"][0]
+    assert record["source"].encode("utf-8") == edited_bytes
+    assert record["source_hash"] == hashlib.sha256(edited_bytes).hexdigest()
+    captured_id = record["id"]
+    assert captured_id != "increment"
+    exported_node = exported["workflow"]["nodes"][0]
+    assert exported_node["source_module"] == captured_id
+    assert exported_node["tool_class"] == "QaIncrement"
+    assert exported_node["tool_module"] == record["module"]
+    assert store.read_workflow_document("reference") == original
+    assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
+    assert store.workflow_generation("reference") == original_generation
+    assert origin_path.read_bytes() == edited_bytes
+
+    # The held ZIP, rather than later working-file edits, owns the import.
+    later_bytes = SOURCE.replace("n + 1", "n + 40").encode("utf-8")
+    origin_path.write_bytes(later_bytes)
+    imported = store.import_workflow_archive(
+        archive_bytes, filename="roundtrip.bioimageflow.zip"
+    )
+    assert imported.missing_tools == []
+    assert imported.missing_packages == []
+    reopened = WorkflowStoreService(store.root_dir, store.tool_registry)
+    loaded = reopened.get_workflow("roundtrip")
+    document = reopened.read_workflow_document("roundtrip")
+    assert document.graph == lib_dict_to_graph_state(exported)
+    assert loaded.graph == document.graph
+    assert document.graph.name == original.graph.name
+    assert document.graph.display_name == original.graph.display_name
+    assert document.graph.config == original.graph.config
+    assert document.graph.interface == original.graph.interface
+    assert document.owned_source_ids == [captured_id]
+    node = document.graph.nodes[0]
+    assert isinstance(node, ToolNodeState)
+    assert node.source_module == captured_id
+    assert node.tool_class == exported_node["tool_class"]
+    assert node.tool_module == exported_node["tool_module"]
+    imported_sources = OwnedWorkflowSources(reopened.workflow_dir("roundtrip"))
+    assert imported_sources.collect_for_graph(document.graph) == [record]
+    imported_path = imported_sources.source_path(captured_id, node.tool_module)
+    assert imported_path.is_relative_to(reopened.workflow_dir("roundtrip"))
+    assert imported_path != origin_path
+    assert imported_path.read_bytes() == edited_bytes
+    manifest = json.loads((imported_path.parent / "module.json").read_text())
+    assert manifest == {
+        key: value for key, value in record.items() if key not in {"source", "source_hash"}
+    }
+    assert document.artifact_hash == artifact_hash(document.graph, [record])
+    assert loaded.artifact_hash == document.artifact_hash
+    assert reopened.read_workflow_document("reference") == original
+    assert (reopened.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
+    assert reopened.workflow_generation("reference") == original_generation
+    assert origin_path.read_bytes() == later_bytes
+    assert runtime_calls == []
 
 
 def test_scoped_metadata_comes_from_executed_source(tmp_path: Path):
