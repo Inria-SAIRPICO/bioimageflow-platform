@@ -15,7 +15,8 @@ The bounded BioImageFlow output-class repair is published and adopted from the r
 The T1/I1 returned-array control exposed a root-workflow export-route defect in BioImageFlow 0.9.1.
 The bounded repair is independently verified on PyPI as BioImageFlow 0.9.2.
 The coherent platform bundle-only adoption is committed as `5b3b474990ceaa38827415ebae80f28b1e826399`; its exact export/tamper control, eight mapped local completion cases and actual returned-array export/drain control pass with preserved phase qualifications in the [delivery receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-092-delivery.json).
-The current T1 increment repairs exact environment ownership, queued recipe/owner revalidation, cancellation-safe manual admission and terminal shutdown refusal; its deterministic controls pass, while force-click GUI and actual replacement/failure/retry/isolation remain separate acceptance gates.
+The T1 exact owner/admission repair is committed as `7f73b21628dc1fa7f6dd3761daa8febefb884897`, with its [delivery receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-owner-admission-delivery.json).
+It repairs queued recipe/owner revalidation, cancellation-safe manual admission and terminal shutdown refusal; deterministic controls pass, while force-click GUI and actual replacement/failure/retry/isolation remain separate acceptance gates.
 No distributed production review/repair, backward-only compatibility layers, or actual desktop test is authorized in this phase; desktop acceptance remains LAST.
 
 The [accepted causal architecture review](library-causal-architecture-review.md) and [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) retain the completed MAIN/SECONDARY/support review, exact selectors, source projections, original failures, durations and finite limits.
@@ -75,7 +76,8 @@ The root/nested return-route rule matches the execution graph, `WorkflowExecutio
 [Local release evidence](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-bundle-export-source-delivery.json) assembles 23 source and normal-wheel affected controls, 48 release controls with three intentional nonselected-package artifact skips, quality/typing and strict docs; original failures stay failed.
 The earlier PyPI verifier failed before downloads on JSON marker quote normalization; parsed PEP508 recovery preserves exact archive metadata/hash/source checks.
 All SDK release/adoption read consumers are finished.
-Exact interpreter/cache/test-temp retirement is in progress under the [owned-resource receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-bundle-export-owned-resources-retirement.json); the actual pytest560 runtime was already absent before deletion, with its verified ZIP and physical receipts preserved.
+The two released interpreters and dedicated cache/test-temp roots are physically retired in 651.050 s under the [owned-resource receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-bundle-export-owned-resources-retirement.json); the clean exact-source merged worktree moved to Trash, was pruned and its local merged branch deleted while original library main remained unchanged.
+The actual pytest560 runtime was already absent before deletion, with its verified ZIP and physical receipts preserved.
 Protected old development/artifact interpreters and dirty force/I1/T1 worktrees remain untouched.
 
 ## Platform adoption and retained acceptance
@@ -151,7 +153,8 @@ All 105 accepted cases share the frozen normal-registry source projection in the
 Concurrent low-priority completed-resource deletion is recorded, so these command durations are not latency measurements.
 Unchanged frontend/schema/browser/array phases are retained; no new monolithic app/full, actual force-provider or GUI PASS is claimed.
 
-1. Finish only the in-progress proven-owned SDK retirement; coherent 0.9.2 adoption is committed and array runtime absence/public proof retention are verified.
+1. Keep closed SDK releases and their completed owned-resource retirement closed; retain public archives and proofs, protected interpreters/dirty worktrees, and the active platform environment.
+Actual T1 lifecycle/force-click and I1 imported-viewer guidance source packets are in development against the current APIs, with new executable fixtures isolated from existing admitted package membership.
 2. Finish T1 explicit force-action GUI and physical replacement/failure/retry/isolation proof after the reviewed deterministic owner/admission repair. Exact declared names replace obsolete aliases, and current public recreation remains the essential force capability.
 3. Finish I1 persistent output-specific guidance with accepted canvas/workflow/request binding, output-specific missing/unknown groups, no implicit installation, Run despite absent viewers, readiness failure/retry and both-browser sibling-import isolation.
 4. Assess the separate portable output-schema inference inconsistency against the current public specification and consumer needs; it did not cause the root export-route failure. Preserved dirty I1/T1 worktrees supply exact causal oracles and remain protected; do not import their old implementations wholesale.
