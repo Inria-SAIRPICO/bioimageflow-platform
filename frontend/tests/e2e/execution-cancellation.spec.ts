@@ -2,8 +2,8 @@ import { createServer, type Server, type Socket } from 'node:net'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import type { Locator, Page } from '@playwright/test'
-import type { GraphState } from '../../src/api/types'
+import type { Locator, Page, WebSocket as PlaywrightWebSocket } from '@playwright/test'
+import type { GraphState, NodeDataResponse } from '../../src/api/types'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const SOURCE_ID = 'held_source'
@@ -93,7 +93,7 @@ function uniqueWorkflowName(): string {
 
 function heldGraph(workflowName: string, controlPort: number): GraphState {
   return {
-    schema_version: 1,
+    schema_version: 2,
     name: workflowName,
     display_name: workflowName,
     nodes: [
@@ -174,23 +174,37 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     window.WebSocket = class extends NativeWebSocket {
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols)
-        ;(window as unknown as { campaignExecutionSocket: WebSocket }).campaignExecutionSocket = this
+        if (new URL(url, window.location.href).pathname === '/ws') {
+          ;(window as unknown as { campaignExecutionSocket: WebSocket }).campaignExecutionSocket = this
+        }
       }
     }
   })
   const executionEvents: Record<string, unknown>[] = []
-  page.on('websocket', socket => socket.on('framereceived', frame => {
-    try {
-      const event = JSON.parse(frame.payload.toString()) as Record<string, unknown>
-      executionEvents.push(event)
-    } catch {
-      // Other WebSocket traffic is not part of this execution contract.
-    }
-  }))
+  const transports: Array<{ socket: PlaywrightWebSocket; frames: Record<string, unknown>[] }> = []
+  const observeSocket = (socket: PlaywrightWebSocket) => {
+    if (new URL(socket.url()).pathname !== '/ws') return
+    const transport = { socket, frames: [] as Record<string, unknown>[] }
+    transports.push(transport)
+    socket.on('framereceived', frame => {
+      try {
+        const event = JSON.parse(frame.payload.toString()) as Record<string, unknown>
+        executionEvents.push(event)
+        transport.frames.push(event)
+      } catch {
+        // Other WebSocket traffic is not part of this execution contract.
+      }
+    })
+  }
+  page.on('websocket', observeSocket)
   const control = new WorkerControl()
   const controlPort = await control.listen()
   const workflowName = uniqueWorkflowName()
+  const siblingName = `${workflowName}_sibling`
   let workflowCreated = false
+  let siblingCreated = false
+  let primaryOccurred = false
+  const cleanupErrors: unknown[] = []
 
   try {
     await createAndOpenFixture(page, workflowName, controlPort)
@@ -198,6 +212,44 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const acceptedDraft = await (await page.request.get(
       `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
     )).json()
+    // This sibling has the same declared tools and node IDs, but is never run.
+    const siblingGraph = heldGraph(siblingName, controlPort)
+    siblingGraph.nodes[0]!.name = 'Unexecuted sibling source'
+    siblingGraph.nodes[1]!.name = 'Unexecuted sibling worker'
+    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name: siblingName, display_name: siblingName },
+    })).status()).toBe(201)
+    siblingCreated = true
+    const savedSibling = await page.request.put(`${API_BASE}/api/v1/workflows/${siblingName}`, {
+      data: { graph: siblingGraph },
+    })
+    expect(savedSibling.ok(), await savedSibling.text()).toBeTruthy()
+    const siblingDraft = await (await page.request.get(
+      `${API_BASE}/api/v1/workflow-drafts/${siblingName}`,
+    )).json()
+    const openExistingWorkflow = async (id: string) => {
+      const panel = page.getByTestId('workflows-panel')
+      if (!await panel.isVisible()) {
+        const catalogGroup = page.locator('.dv-groupview').filter({
+          has: page.locator('.tools-panel, .datasets-panel, [data-testid="workflows-panel"]'),
+        })
+        await expect(catalogGroup).toHaveCount(1)
+        await catalogGroup.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+      }
+      await expect(panel).toBeVisible()
+      await panel.getByTestId('workflow-search').fill(id)
+      await panel.getByTestId(`workflow-row-${id}`).dblclick()
+      await expect(page.getByTestId('workflow-title')).toHaveText(id)
+    }
+    const activateCanvas = async (id: string) => {
+      const title = page.getByTestId('canvas-tab').getByText(id, { exact: true })
+      await expect(title).toHaveCount(1)
+      await title.click()
+      await expect(page.getByTestId('workflow-title')).toHaveText(id)
+    }
+    // A new Open is locked during Run; existing canvas tabs remain inspectable.
+    await openExistingWorkflow(siblingName)
+    await activateCanvas(workflowName)
 
     for (const [targets, detail] of [
       [[], 'Run Selected requires at least one requested execution target'],
@@ -258,6 +310,77 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect(page.getByTestId('execution-banner-current-node')).toContainText('Processing row 1/3')
     await expect(page.getByTestId('execution-banner-current-node')).toContainText('Task progress 1/4')
     await expect(page.getByTestId('execution-banner-row-progress')).toHaveCount(0)
+
+    const sourceResponse = await page.request.post(`${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/query`, {
+      data: { workflow_name: workflowName },
+    })
+    expect(sourceResponse.ok(), await sourceResponse.text()).toBeTruthy()
+    const originResult = await sourceResponse.json() as NodeDataResponse
+    expect(originResult.identity_status).toBe('captured')
+    expect(originResult.rows).toEqual([
+      { number: 1, label: 'one' }, { number: 2, label: 'two' }, { number: 3, label: 'three' },
+    ])
+    expect(originResult.source_identity).toMatchObject({
+      run_id: heldStatus.execution_id, node_key: SOURCE_ID,
+      result_key: expect.any(String), record_id: expect.any(String),
+    })
+    if (!originResult.source_identity) throw new Error('Held execution has no captured source result')
+    await activateCanvas(siblingName)
+    const siblingSource = page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]:visible .tool-node`)
+    const siblingWorker = page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]:visible .tool-node`)
+    await expect(siblingSource).toHaveClass(/status-unexecuted/)
+    await expect(siblingWorker).toHaveClass(/status-unexecuted/)
+    const previousTransport = transports.at(-1)
+    if (!previousTransport) throw new Error('No real execution WebSocket was observed')
+    const closed = new Promise<void>(resolve => previousTransport.socket.once('close', resolve))
+    const newSocket = page.waitForEvent('websocket', socket => new URL(socket.url()).pathname === '/ws')
+    await page.evaluate(() => {
+      const socket = (window as unknown as { campaignExecutionSocket: WebSocket }).campaignExecutionSocket
+      if (socket.readyState !== WebSocket.OPEN) throw new Error('Execution socket is not open')
+      socket.close(4001, 'Reconnect execution snapshot control')
+    })
+    await closed
+    const reconnected = await newSocket
+    expect(reconnected).not.toBe(previousTransport.socket)
+    await expect.poll(() => transports.find(transport => transport.socket === reconnected)
+      ?.frames.find(frame => frame.type === 'status_snapshot'), { timeout: 15_000 }).toMatchObject({
+      type: 'status_snapshot', state: 'running', execution_id: heldStatus.execution_id,
+      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      planned_node_ids: [SOURCE_ID, WORKER_ID], planned_node_names: heldStatus.planned_node_names,
+      node_statuses: {
+        [SOURCE_ID]: { status: 'executed' }, [WORKER_ID]: { status: 'running' },
+      },
+      progress: { node_id: WORKER_ID, task_current: 1, task_maximum: 4 },
+    })
+    await expect(page.getByTestId('workflow-title')).toContainText(siblingName)
+    await expect(page.getByTestId('execution-banner-headline')).toHaveText('Executing workflow…')
+    await expect(page.getByTestId('execution-banner-node-count')).toHaveText('1/2 nodes complete')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Running: Held worker')
+    await expect(page.getByTestId('execution-banner-current-node')).toContainText('Task progress 1/4')
+    await expect(siblingSource).toHaveClass(/status-unexecuted/)
+    await expect(siblingWorker).toHaveClass(/status-unexecuted/)
+    for (const nodeId of [SOURCE_ID, WORKER_ID]) {
+      expect((await page.request.post(`${API_BASE}/api/v1/nodes/${nodeId}/data/query`, {
+        data: { workflow_name: siblingName },
+      })).status()).toBe(404)
+    }
+    for (const identity of [undefined, originResult.source_identity]) {
+      const retained = await page.request.post(`${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/query`, {
+        data: { workflow_name: workflowName, ...(identity ? { result_identity: identity } : {}) },
+      })
+      expect(retained.ok(), await retained.text()).toBeTruthy()
+      expect(await retained.json()).toMatchObject({
+        source_identity: originResult.source_identity, rows: originResult.rows,
+      })
+    }
+    for (const [id, draft] of [[workflowName, acceptedDraft], [siblingName, siblingDraft]] as const) {
+      expect(await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${id}`)).json()).toMatchObject({
+        graph: draft.graph, draft_revision: draft.draft_revision,
+      })
+    }
+    await activateCanvas(workflowName)
+    await expect(page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]:visible .tool-node`)).toHaveClass(/status-executed/)
+    await expect(page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]:visible .tool-node`)).toHaveClass(/status-running/)
 
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
@@ -463,18 +586,27 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expectExactTable(page.getByTestId('data-table-panel'), result.columns, result.rows.map(
       (row: Record<string, unknown>) => result.columns.map((column: string) => String(row[column])),
     ))
+  } catch (error) {
+    primaryOccurred = true
+    throw error
   } finally {
+    page.off('websocket', observeSocket)
     control.releaseAll()
     try {
       await expect.poll(async () => (await executionStatus(page)).state, {
         timeout: 60_000,
       }).toBe('idle')
-      if (workflowCreated) {
-        const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
-        expect(deletion.ok()).toBeTruthy()
-      }
-    } finally {
-      await control.close()
+    } catch (error) { cleanupErrors.push(error) }
+    try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
+    for (const id of [workflowCreated ? workflowName : null, siblingCreated ? siblingName : null]) {
+      if (id === null) continue
+      try {
+        const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)
+        expect([200, 204, 404], await deletion.text()).toContain(deletion.status())
+      } catch (error) { cleanupErrors.push(error) }
     }
+    try { await control.close() } catch (error) { cleanupErrors.push(error) }
+    if (primaryOccurred && cleanupErrors.length) console.error('Held reconnect cleanup failed while preserving the primary:', cleanupErrors)
   }
+  if (cleanupErrors.length) throw cleanupErrors[0]
 })
