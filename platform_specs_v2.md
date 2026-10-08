@@ -47,6 +47,8 @@ Runtime translation to the BioImageFlow library happens in memory from the accep
 Canonical platform output is schema version 2 at every recursive depth.
 Schema-version-1 input is accepted only through explicit recursive normalization that adds no viewer declarations; schema-v1 input carrying schema-v2 viewer fields and every unknown field are rejected instead of dropped.
 Portable output schemas use the strict library-owned `ViewerSpec` wire, tool/workflow nodes may carry output-keyed `viewer_additions`, and public workflow outputs may carry a `viewer_addition`.
+Public workflow outputs with an absent or null optional schema inherit the accepted source declaration through the library, including named known ports within dynamic sources and recursively materialized child interfaces.
+A non-null carried schema remains explicit interface authority after source endpoint validation; genuinely unknown dynamic outputs remain unknown.
 
 ## 3. Node Types
 
