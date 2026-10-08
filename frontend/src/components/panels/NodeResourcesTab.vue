@@ -87,6 +87,10 @@ function resetAll(): void {
   emit('change', {})
 }
 
+const hasOverrides = computed(() => Object.values(props.resources).some(value =>
+  typeof value === 'number' || (typeof value === 'string' && value !== ''),
+))
+
 const targetMessage = computed(() => {
   const target = registry.selectedTarget
   if (!target) return 'No execution target selected.'
@@ -110,7 +114,7 @@ const targetMessage = computed(() => {
         icon="pi pi-undo"
         text
         size="small"
-        :disabled="disabled || Object.keys(resources).length === 0"
+        :disabled="disabled || !hasOverrides"
         data-testid="resource-reset-all"
         @click="resetAll"
       />

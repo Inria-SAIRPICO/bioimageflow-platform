@@ -11,14 +11,15 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 
 The FULL campaign continues under standing authorization through END, including technically gated source upload, CI and package publication.
 Commits are progress boundaries; distributed production review/repair is EXCLUDED and native desktop M5 is LAST.
-Integrated HEAD is `33c1e4d`, which records published common-tools compatibility and retained naming evidence.
-The pending stale/cycle task changes only two existing store tests plus their campaign documentation; its source is frozen at `f20d9135` and exact two-case acceptance is complete.
-Current coverage is **412 V + 82 G + 6 U = 500** applicable obligations; primary GUI remains 224/224.
+Integrated HEAD is `89f6508`, which records full retained structural authority after stale duplicate and transitive containment refusal.
+The pending resource-form task adds a no-Run browser journey and repairs Reset availability for canonical inherited resource fields; the separate Detach ownership test is not part of this delivery.
+Current coverage is **415 V + 79 G + 6 U = 500** applicable obligations; primary GUI remains 224/224.
 This is accumulated scoped evidence, not a monolithic app/full/campaign PASS.
 
 The integration owner exclusively controls Git, dependencies, environments, runtime/tests, Context, checkpoints and physical cleanup.
-`platform_admission_lifetime` owns only the frozen two-selector store partition; `campaign_release_peer` owns only new `frontend/tests/e2e/node-resources.spec.ts` (frozen 219 lines/d84df4db), which is excluded from the pending store commit.
-No runtime consumer is active; do not edit imported source until explicit owner-IDLE handoff.
+`platform_admission_lifetime` owns the frozen NodeResourcesTab component/unit partition; `campaign_release_peer` owns the frozen new resource browser (`733b9018`, 234 lines) and the separately assigned existing workflow-interface Detach test partition.
+Both exact resource consumers are complete on component `1d0a5bdf`, unit `1817c31b` and browser `733b9018`; the separate Detach test is frozen at `ea27d351`, awaiting this delivery boundary.
+No runtime consumer is active; imported product source remains frozen until explicit owner-IDLE handoff.
 
 ## Normal dependency floor and closed releases
 
@@ -55,18 +56,24 @@ Retained earlier successful subsets do not relabel their original failed command
 | Genuine edited ZIP | [delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-edited-source-zip-delivery.json): held n+20 source ZIP/import/fresh store versus later independent n+40 origin; zero compute/plan/create_engine entry, initial fake seed only setup. |
 | Copy source-loss/route retry | [delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-duplicate-source-loss-delivery.json): real collision no mutation/staged-copy OSError cleanup/explicit retry; separate unchanged captured route controls use mocked manager/draft and do not certify physical compilation/storage retry. |
 | Published common-tools | [delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-m4-common-workflow-delivery.json): actual index 0.2.2, 8 PASS/1973 deliberate marker deselections/zero skips, 36.86s pytest/43.542s command at e3d0248; 14 declared members/8 sources captured. Discovery/schema/public loading only, not callback/worker/decoder/OMERO/native. |
+| Stale/cycle retained authority | [delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-stale-cycle-authority-delivery.json): exact two PASS at 33c1e4d/f20d9135, full selected/unrelated structural authority through fresh public stores; composed owning20, strict docs and exact retirement accepted; inert files are not scientific records or process restart. |
 
 ## Pending coherent delivery and next commands
 
-[Stale/cycle exact command](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-stale-cycle-authority-exact.json) passes 2 cases (1.49s pytest/5.098s command) at 33c1e4d/frozen f20d9135.
-Stale old-generation refusal and transitive-cycle save refusal preserve complete selected/unrelated saved documents, structural drafts, generations and file bytes through fresh public stores.
-Inert source/result sentinels are preservation evidence, not executed owned-source/immutable scientific records; same-process stores are not packaged restart/OS crash, and other cycle entrypoints are unclaimed.
-[AST retention](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-stale-cycle-authority-original-control-retention.json) isolates exactly these two changed bodies; 16 retained owning cases + separate bound-tool 1 + source-loss 1 + fresh 2 assemble 20 without double counting.
-Scoped Ruff passes 0.171s; strict docs passes 6.377s with zero warnings, 108 rows/412 verified cells/174 local links; independent source and copied-receipt review is GREEN.
-The pending [delivery manifest](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-stale-cycle-authority-delivery.json) owns final doc gates, task hashes and exact runtime retirement; no old failed command is rewritten.
+The original resource Chromium attempt failed before edits because Reset counted canonical null keys as explicit overrides (28.246s command/9s case).
+The exact component baseline reproduced that affordance inconsistency; the owning three controls pass after the component-only fix, including an explicit numeric zero.
+Scoped ESLint, build-mode typing and production build pass; the build retains its existing chunk-size warning.
+The first repaired browser attempt progressed through real edit/reset/refusal/repair but exceeded the whole-case 30s deadline during final readback (46.472s command/31.2s case); it remains FAILED.
+The renewed browser changes only its four-reopen total budget to 60s, leaving individual waits and the 15s cleanup budget unchanged.
+The first Firefox attempt failed because navigation interrupted frontend Save after its saved-file response but before its draft update; the truthful dirty marker is preserved, and the test now waits the actual post-save draft200/clean-title boundary.
+Final exact Firefox passes 33.7s case/47.566809s command, then affected Chromium refresh passes 29.5s/48.670170s at base89f6508/frozen733b9018; zero retries/skips and physical process trees empty.
+Earlier Chromium passes 30.9s/69.150734s on the prior342ccb2b helper; all three failed browser commands and the component RED remain failed, with only their observed partial credit.
+No Run, callback, worker provisioning, allocation or scheduling is part of this resource-form packet.
+GUI-EDT-013 adds only combined S/P/B, joined with the separately retained actual managed template evidence; invalid-template R/F stay G.
+[Resource-form delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-node-resources-delivery.json) owns final ten task hashes, original failures, scoped quality/docs and exact runtime retirement.
 
-1. Finish this store/documentation delivery and commit only its five paths, excluding new node-resources.spec.ts.
-2. After independent resource-form source acceptance, run scoped ESLint/build-mode types, then its exact Chromium selector; Firefox follows actual Chromium PASS. Observe real CPU/memory edit/reset/save/reopen and actual invalid capacity refusal/repair without Run/provisioning.
+1. Commit the reviewed ten-path resource delivery, excluding the separate workflow-interface Detach test; strict docs passes7.096s with zero warnings/108rows415V174links, and all six receipt-listed runtimes are physically retired with processes/handles absent.
+2. Launch the independently reviewed Detach owner-refusal and durable provenance-only journey only after the resource runtime boundary; no new Run or fixture is authorized for it.
 3. Reconcile every remaining applicable cell before new tests; preserve genuine detached-owner/durable, grouping refusal/recovery, invalid template, log history, real thumbnail/image and specialist gaps. Published common-tools gate is already accepted.
 4. Finish the chosen final audited local/backend/frontend/two-browser/external assembly and strict docs on the final frozen baseline, avoiding quick/check/full stacks that repeat subsumed phases; retain explicit distributed exclusions and unchanged completed scientific proofs.
 5. Establish actual supported OMERO tool/integration and authorized reachable account/server separately from mocked credentials/settings; no invented platform dataset API.
@@ -76,7 +83,8 @@ The pending [delivery manifest](/private/tmp/bioimageflow-library-deep-review/ar
 
 Main backend/.venv, frontend/node_modules and campaign UV cache remain protected until final consumers.
 Protected campaign-library-source-containment development interpreter and b134 Core artifact interpreter retain their original metadata; dirty held force/I1/T1 worktrees remain read-only oracle sources.
-All completed release, fixture, browser and certification roots, including the new stale/cycle runtime, are physically retired in their linked delivery manifests.
+Earlier completed release, fixture, browser and certification roots, including the stale/cycle runtime, are physically retired in their linked delivery manifests.
+All six resource-form roots are now physically retired after copied proofs, explicit reader releases and exact ownership/process/handle checks; their immutable artifacts remain retained.
 Immutable receipts, copied original failure artifacts, published archives and durable workspace ZIP remain retained; unknown/shared/user roots and the user's VSCode/debugpy runtime are untouched.
 Only the runtime owner may retire exact receipt-listed roots after reader releases, fresh UID/inode checks and absence of matching processes/open handles; never delete by age/prefix or claim sampled free space.
 Clean merged manual worktrees move to Trash with mv/worktree prune and merged branch deletion; never reset original library main.

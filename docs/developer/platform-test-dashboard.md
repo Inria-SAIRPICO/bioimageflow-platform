@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **412 V + 82 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **412 / 500 are verified (82.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **415 V + 79 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **415 / 500 are verified (83.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -67,7 +67,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `e0aa123`, `30faeb6`, `4ec5dbc` |
 | GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `26551d6` |
 | GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `4ec5dbc` |
-| GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | V | G | G | V | V | in-progress | exact resource Chromium/Firefox at89f6508/733b9018 plus retained actual managed template assets; combined invalid-template R/F and actual allocation remain qualified gaps |
 | GUI-AUT-008 | Manage Tools environment inventory and create/recreate | P1 | Desktop and webapp server processing GUI/API | no | V | V | V | V | V | verified | current T1 actualforce GUI72.764s, public-provider failure/retry/science60.066s, controlled visible Chrome8.872s/Firefox11.406s and deterministic105; physical versus client and original failures qualified in current checkpoint |
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
 | GUI-AUT-002 | Custom-tool create/rename/delete and editor opening | P1 | Desktop GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |

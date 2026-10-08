@@ -39,6 +39,7 @@ When the platform first materializes a portable or Python-authored graph, it rec
 Those generated positions immediately become ordinary canonical `GraphState` content; reopening, validating, executing, importing an already materialized platform document, and ordinary graph mutation do not automatically re-layout them.
 Processing-tool resources are typed portable per-node overrides for CPU, GPU, memory, GPU memory, and maximum concurrency.
 They describe worker requirements rather than guaranteed limits, inherit the tool declaration when absent, and do not affect cache identity.
+Missing or null fields both mean inheritance; Reset all clears explicit overrides and is disabled when there are none, while numeric zero remains an explicit override subject to normal declaration validation.
 `GraphState.config.execution` owns sequential or parallel scheduling; application settings only choose the default for a new workflow.
 Execution target profiles and durable remote-run state never enter `GraphState`.
 

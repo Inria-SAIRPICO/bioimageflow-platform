@@ -121,6 +121,7 @@ Tool metadata describes tool type, inputs, outputs, parameters, packages, versio
 Output metadata preserves each field's required and nullable facts from the library schema.
 Tool-store scanning admits package/version selectors through the library, ignores unsupported directory names, and keeps genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
+Missing or null resource fields inherit the declaration; the resource form enables Reset all only for explicit overrides, including numeric zero subject to normal validation.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
 Saved-workflow dependency diagnostics resolve that same carried executable identity through the public class loader without compiling, planning or provisioning; an unavailable explicit binding cannot borrow a same-named catalog entry.
 Canvas hydration uses node-addressed metadata from the same accepted graph and root workflow or nested session before reconciling input/template presentation; unavailable metadata cannot erase authored parameters or output templates.

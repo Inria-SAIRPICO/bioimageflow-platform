@@ -1313,6 +1313,8 @@ Actual available capacity, allocation, and enforcement belong to the execution b
 Requirements do not affect cache identity, and sequential/parallel scheduling remains workflow configuration ([v2 Sections 2 and 8](platform_specs_v2.md#2-canonical-graph-document)).
 
 **Storage:** Resource overrides are stored in `NodeState.resources` — a dedicated dict separate from `parameters` to avoid namespace pollution. Keys are `cpu`, `gpu`, `gpu_memory`, `memory`, `max_concurrent`. The backend uses these to construct a `ResourceSpec` for the engine. If `resources` is empty, the tool's declared `ResourceSpec` is used as-is.
+Missing or null resource fields inherit the declaration; **Reset all** clears explicit overrides and is disabled when none are present, including a canonical object whose fields are all null.
+A numeric zero remains an explicit override and is subject to the declaration's normal validation.
 
 **GPU badge:** Nodes requiring GPU (either from tool declaration or user override) show a small GPU badge (GPU icon) on the node header in the canvas.
 

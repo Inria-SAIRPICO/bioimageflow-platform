@@ -13,6 +13,22 @@ const tool = {
 } as ToolMetadata
 
 describe('NodeResourcesTab', () => {
+  it('disables Reset for canonical inherited resources and retains an explicit zero override', async () => {
+    const inherited = { cpu: null, gpu: null, memory: null, gpu_memory: null, max_concurrent: null }
+    const wrapper = mount(NodeResourcesTab, {
+      props: { resources: inherited, tool },
+      global: { plugins: [createPinia(), PrimeVue] },
+    })
+
+    expect((wrapper.get('[data-testid="resource-reset-all"]').element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.setProps({ resources: { ...inherited, gpu: 0 } })
+    expect((wrapper.get('[data-testid="resource-reset-all"]').element as HTMLButtonElement).disabled).toBe(false)
+    await wrapper.get('[data-testid="resource-reset-all"]').trigger('click')
+    expect(wrapper.emitted('change')).toEqual([[{}]])
+    await wrapper.setProps({ resources: inherited })
+    expect((wrapper.get('[data-testid="resource-reset-all"]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('shows declared, override, and effective resources and emits reset', async () => {
     const wrapper = mount(NodeResourcesTab, {
       props: { resources: { cpu: 4 }, tool },
