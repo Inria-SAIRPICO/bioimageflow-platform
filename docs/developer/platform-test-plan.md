@@ -23,7 +23,7 @@ Reuse stable existing worker/artifact drivers and content-bound recipe dependenc
 
 The current checkpoint overrides every completed-phase “Next MAIN”, publication pause and older baseline below.
 The October 4 specification/suite/causal review and selected milestone, technically gated dependency releases, coherent normal-registry adoption, credential compensation and configured deployment policy are closed in their exact receipts; do not restart them from historical instructions.
-Finish source-bound I1/T1 acceptance and delivery, then repair the confirmed portable output-schema omission, correct faithful hot-reload fixture edit metadata, reconcile remaining risky M3 public effects and execute M4 published/local/external certification before native desktop M5 LAST.
+I1/T1, portable output-schema inference and faithful hot-reload fixture metadata are accepted and delivered; reconcile the completed owned-source refusal/recovery evidence, finish dataset deletion/upload recovery and remaining risky M3 public effects, then execute M4 published/local/external certification before native desktop M5 LAST.
 An observed public contradiction gets one distinguishing cheap control and a bounded owned repair; it does not trigger another whole-codebase sweep or automatic dependency release.
 Combine the major SDK/platform adoption and I1/T1 retrospective with the M2→M3 transition, with the next ordinary lookback before M4/final certification.
 Operational checkpoints retain current source, accepted scoped receipt pointers, next commands and protected/active owners; detailed resolved chronology stays only in receipts and historical documents that ordinary continuation does not load.

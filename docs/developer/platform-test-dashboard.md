@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **285 V + 209 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **285 / 500 are verified (57.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **292 V + 202 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **292 / 500 are verified (58.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -72,7 +72,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
 | GUI-AUT-002 | Custom-tool create/rename/delete and editor opening | P1 | Desktop GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-003 | Package versions, install/uninstall, and errors | P1 | Desktop GUI/API; restricted webapp | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| GUI-AUT-004 | Editable-source watcher and invalid-edit recovery | P1 | Desktop GUI/WebSocket | no | V | G | G | V | V | in-progress | `353b425` |
+| GUI-AUT-004 | Editable-source watcher and invalid-edit recovery | P1 | Desktop GUI/WebSocket | no | V | V | V | V | V | verified | `8ce0c043` + owned-source Chromium/Firefox receipts; installed failure transport excluded |
 | GUI-AUT-005 | Embedded editor startup, progress, and stable iframe | P2 | Desktop GUI/external editor | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-006 | Node-addressed source opening | P1 | Desktop GUI/API | no | G | G | G | N (opening or focusing a source is ephemeral; source persistence belongs to WF-SRC rows) | G | gap | `fcb4408` inspection |
 | GUI-AUT-007 | Trusted Python preview/apply/cancel | P1 | Desktop GUI/API; denied in webapp | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -116,7 +116,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-005 | Copy/export captures edited owned sources | P1 | Desktop API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | V | V | V | V | V | verified | retained scoped-metadata anchor + `8ce0c043` owned-source Chromium/Firefox receipts |
 | WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-009 | Portable export versus results-bundle distinction | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
