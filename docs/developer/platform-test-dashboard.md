@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **292 V + 202 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **292 / 500 are verified (58.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **306 V + 188 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **306 / 500 are verified (61.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -148,9 +148,9 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-001 | Table filtering, sorting, paging, and CSV identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `d1072ce`, `168b487` |
 | RT-RES-002 | Merge compatible selections and stack unrelated data | P0 | Desktop and webapp GUI/API | yes | V | V | N (projection selection is synchronous and has no cancellation or recovery lifecycle) | V | V | verified | `c050207`, `7d9de88` |
 | RT-RES-003 | Column labels, filters, widths, and ordering | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `c050207`, `125ee3d` |
-| RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-RES-004 | Dataset upload partial success and path limits | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `ac1d6c9` scoped dataset Chromium/Firefox receipts + retained backend boundaries |
+| RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `ac1d6c9` scoped dataset Chromium/Firefox receipts + retained backend boundaries |
+| RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `ac1d6c9` scoped dataset Chromium/Firefox receipts + retained backend boundaries |
 | RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `7ab16e6`, `af1951b`, `bfb6197`; exact viewer GUI recheck `9c4a435` |
 | RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
