@@ -7,12 +7,14 @@ orphan: true
 This is the operational resume pointer, not a campaign diary.
 Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then the relevant specification/source and only the linked receipt needed for the task.
 
-## Active state — October 7, 2026
+## Active state — October 8, 2026
 
 The FULL campaign is RUNNING under standing continuation, reviewed source-upload/CI and package-publication authorization.
 The coherent registry/public-API adoption from baseline `65bf8d2` is accepted through scoped phase assembly; its task delivery commit and source projection are recorded in the [delivery receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json).
 The bounded BioImageFlow output-class repair is published and adopted from the registry; coherent platform adoption is committed at `1ca0d1fe11e46b89251098cf9f5a4b924629b70e` through reviewed phase assembly.
-The active T1/I1 returned-array control has exposed a public root-workflow export-route defect in BioImageFlow 0.9.1; a fresh bounded library repair begins from exact main `8fe553dc` in `.worktrees/campaign-library-bundle-export`.
+The T1/I1 returned-array control exposed a root-workflow export-route defect in BioImageFlow 0.9.1.
+The bounded repair is independently verified on PyPI as BioImageFlow 0.9.2.
+The coherent platform bundle-only adoption passes its exact export/tamper control, eight mapped local completion cases and one actual returned-array export/drain control; task delivery and preserved phase qualifications belong to the current adoption receipt.
 No distributed production review/repair, backward-only compatibility layers, or actual desktop test is authorized in this phase; desktop acceptance remains LAST.
 
 The [accepted causal architecture review](library-causal-architecture-review.md) and [Phase 3 delivery proof](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/final-delivery-proof.json) retain the completed MAIN/SECONDARY/support review, exact selectors, source projections, original failures, durations and finite limits.
@@ -60,9 +62,23 @@ The annotated `bioimageflow-v0.9.1` tag selects exact source `c8be1ce`; the [sin
 The wheel SHA256 is `dc25b6cf9f0e3d2233ac23fb012fac05df94d05a0ab10a40423c200b9f1304d3`; sdist SHA256 is `759c4b02081bc8383225753d5fb6eac70738d06df9af6893f997a3e30c79f503`.
 The normal candidate tested above is the same whole wheel; no Core/tool republishing, distributed certification or duplicate publication is implied.
 
+## Bundle export and hydration ownership — published
+
+Reviewed source `7c32994881cf9ca54f2b0d30a83cb24acf522586` merged normally through [PR #6](https://github.com/Inria-SAIRPICO/bioimageflow/pull/6) as exact-tree `d7bc53dcf1f75e2be9bfed9a2c09839e0d508255`.
+[Ordinary exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37704485026) passed fourteen jobs with one expected dispatch-only skip; the separate distributed run remains failed and excluded.
+The [single publisher](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/37705018938), [actual public archive verification](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-bundle-export-actual-pypi-verification.json) and independent publication peer admit both unyanked 0.9.2 archives against the tested candidate, ordinary CI and all 173 exact source members.
+The wheel SHA256 is `cddd654a29ee9cdf18a4fbe0eb82d228f1da2bce8dfbdb45699ac2cec7f1c9fa`; sdist SHA256 is `d1bb1dc32877e841675ae35bce8509420abe47daffb980b8c3c3f7e0e422fc59`.
+Core 0.5 and tool versions remain unchanged; do not republish these closed releases.
+
+The root/nested return-route rule matches the execution graph, `WorkflowExecutionContext.export_result_bundle` returns a verified installed Path without array hydration, and materialized export retains exact SDK-created root ownership through group disposal, mapped-reader drainage and cleanup retry without revoking a live same-root sibling or borrowed owner.
+[Local release evidence](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-bundle-export-source-delivery.json) assembles 23 source and normal-wheel affected controls, 48 release controls with three intentional nonselected-package artifact skips, quality/typing and strict docs; original failures stay failed.
+The earlier PyPI verifier failed before downloads on JSON marker quote normalization; parsed PEP508 recovery preserves exact archive metadata/hash/source checks.
+Owned SDK interpreters/cache/source tree remain held until their final integration consumer; current platform scientific fixture and real array driver are separate from those release proofs.
+
 ## Platform adoption and retained acceptance
 
-The platform manifest/lock selects ordinary `bioimageflow[parsl,psij]==0.9.1`, Core 0.5.0 and Wetlands 2.6.1; editable defaults are removed.
+The current platform manifest/lock selects ordinary `bioimageflow[parsl,psij]==0.9.2`, Core 0.5.0 and Wetlands 2.6.1; editable defaults are removed.
+[Normal 0.9.2 installed admission](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-092-lock-installed-admission.json) verifies all 173 BioImageFlow/23 Core source members, exact public lock hashes, no editable direct URL and a compatible 93-package controller; its public export adoption and actual array acceptance now pass in the focused scope described below.
 The [current installed registry receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-lock-installed-admission.json) proves exact published source/marker members, lock wheel hashes, no BioImageFlow/Core editable `direct_url`, and a compatible 93-package Python 3.13 controller.
 The advertised `cluster` extra has no scheduler dependency edges in these published versions; explicit `parsl`/`psij` groups preserve existing packaged capabilities, without testing excluded distributed execution.
 Targeted lock and frozen sync completed in 1.44 s and 9.46 s; existing desktop dependencies were retained without launching a native window.
@@ -119,14 +135,17 @@ Only those three readers use that fixture's import payload; no successful produc
 Accepted scoped assembly therefore covers 1,935 non-external backend cases, the unchanged seven logging controls, frontend completion and all eighteen critical Chromium cases; common-tools published/external, broad-browser and native acceptance remain separate obligations.
 Neither original failed completion command nor the final failed backend invocation is relabelled as passed.
 
-1. The coherent platform adoption is accepted; preserve its reviewed source/commit and assembled acceptance receipt without a monolithic app/full PASS claim, then continue the next actual lifetime obligation.
-2. Repair the [actual root export refusal](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-array-real-root-export-original-failure.json) through a cheap public Direct reproduction before SDK production changes, then normal release/adoption gates.
-   The actual managed control copied the returned uint16 array and observed its worker PID, but export failed before hydration; it supplies no successful export or final array-lifetime/disposal certification.
-   The engine flattens the synthetic root boundary while return-route traversal appends its name, missing the actual provider outcome; this is not an empty-target or invalid output-schema failure.
-   Earlier empty-interface and missing-parent fixture failures remain setup evidence, and no further managed-worker replay is needed to establish this route cause.
-   After routing recovery, use bounded public controls to evaluate owned materialized-export disposal and the proposed verified bundle-only seam; those changes remain unimplemented and unaccepted.
-3. Resume T1/I1 actual returned-array, lifetime/copy/export, public force/readiness obligations, then dependency-ordered M3/M4 common-tools certification and remaining campaign features.
-4. Perform actual desktop M5 acceptance LAST and final full campaign certification/review.
+The 0.9.2 bundle-only export adoption adds one exact fake export/tamper pass (0.14 s pytest/4.763 s command), eight mapped local completion passes (1.86 s pytest/4.137 s command), backend lint and strict documentation (3.448 s, zero warnings, 152 links/108 rows).
+The [actual array control](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-bundle-export-actual-array.json) passes one external case, zero skips in 26.33 s pytest/28.738 s command.
+Its [child receipt](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-bundle-export-actual-array-child.json) records the real worker, copied uint16 pixels, one bundle-only call/zero materialized calls, available digest-verified archive before cleanup, truthful pending grant before selected retirement, all-zero physical resource status afterwards, durable ZIP pixels and unrelated-owner preservation.
+Captured controller/worker PIDs are independently absent and the exact verified synthetic archive is retained; original root export failures remain failed, with no successful hydration evidence inferred from them.
+This is reviewed scoped app-phase assembly with prior unchanged frontend/schema/browser and other backend cases retained, rather than a new monolithic app/full PASS.
+
+1. Commit the coherent 0.9.2 adoption and retire only its completed proven-owned SDK and array runtime resources after all consumers, preserving public artifacts and proofs.
+2. Finish T1 actual resolved-environment ownership and manual lifecycle admission/cancellation before its explicit force-action GUI and physical replacement proof. Existing public recreation is implemented; obsolete aliases may be rejected instead of preserving ambiguous compatibility.
+3. Finish I1 persistent output-specific guidance with accepted canvas/workflow/request binding, output-specific missing/unknown groups, no implicit installation, Run despite absent viewers, readiness failure/retry and both-browser sibling-import isolation.
+4. Assess the separate portable output-schema inference inconsistency against the current public specification and consumer needs; it did not cause the root export-route failure. Preserved dirty I1/T1 worktrees supply exact causal oracles and remain protected; do not import their old implementations wholesale.
+5. Continue dependency-ordered M3/M4 common-tools and remaining campaign certification, then execute actual desktop M5 LAST and final full campaign review/certification.
 
 ## Ownership, cleanup and record policy
 

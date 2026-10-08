@@ -113,7 +113,7 @@ uv run uvicorn bioimageflow_server.app:create_app --factory \
 
 ## Use local BioImageFlow source
 
-The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.1`, Core 0.5 and Wetlands 2.6.1 from the registry.
+The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.2`, Core 0.5 and Wetlands 2.6.1 from the registry.
 A sibling library checkout is optional and is not required by ordinary development or CI.
 Sync and validate the normal published environment with:
 

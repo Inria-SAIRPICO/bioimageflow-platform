@@ -848,13 +848,13 @@ class ExecutionManager:
         destination = self._managed_result_destination(context.execution_id)
         run_context = self._workflow_run_contexts[context.execution_id]
         try:
-            run_context.export_result(value, destination=destination)
+            bundle = run_context.export_result_bundle(value, destination=destination)
             from bioimageflow_server.services.execution_runtime import (
                 _archive_bundle,
                 _archive_digest,
             )
 
-            archive = _archive_bundle(destination)
+            archive = _archive_bundle(bundle)
         except Exception as exc:
             code = getattr(exc, "code", "workflow-result-export-error")
             self._retained_result_exports[context.execution_id] = ResultExportSnapshot(

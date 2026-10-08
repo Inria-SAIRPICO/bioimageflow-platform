@@ -1397,10 +1397,14 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
     )
 
     class _Context:
-        def export_result(self, value: Any, *, destination: Path) -> None:
+        def export_result_bundle(self, value: Any, *, destination: Path) -> Path:
             assert value == {"answer": 42}
             destination.mkdir(parents=True)
             (destination / "result.json").write_text("{}")
+            return destination
+
+        def export_result(self, *_args: Any, **_kwargs: Any) -> None:
+            raise AssertionError("Managed download must not materialize a return")
 
     manager._workflow_run_contexts[context.execution_id] = _Context()
 

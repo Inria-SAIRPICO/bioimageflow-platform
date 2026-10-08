@@ -986,7 +986,7 @@ Reloading an inactive package version preserves both the active class bindings a
 **Shutdown sequence:**
 1. Close new Run admission under the execution preparation gate, then request cancellation and await the accepted task with a bounded deadline; a timeout retains its task and cleanup owners, and later close calls may retry cleanup without reopening admission.
 2. Stop background processing refresh and call public `shutdown_all` only on the already-created processing manager, retaining failed pools and grants for retry; terminate every running Napari viewer through the per-environment launcher pool (`NapariLauncher.shutdown_all`).
-3. After copying durable projections and result exports, close the supplied execution engine and release only that run's exact result groups; warm external pools may still retain physical grants.
+3. After copying durable projections and installing result bundles through public `WorkflowExecutionContext.export_result_bundle`, archive the verified bundle without hydrating an unused return, then close the supplied execution engine and release only that run's exact result groups; warm external pools may still retain physical grants.
    Retain every application-owned controller scope and failed cleanup owner, and retry its explicit close after worker grants have physically retired.
    Wait for local mapped readers to drain before deleting owned backing files; if the shutdown deadline expires or cleanup fails, report the exact scope as pending or failed and retain its backing rather than claim successful cleanup.
    Do not force-close live NumPy views, delete another owner’s files or perform global prefix-based shared-memory cleanup.
