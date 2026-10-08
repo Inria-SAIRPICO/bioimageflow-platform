@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from bioimageflow_server.models.tools import (
     ToolMetadata,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.ws.handler import ConnectionManager
 from tests.graph_factory import graph_document
@@ -239,6 +241,106 @@ async def test_semantic_failure_preserves_revision(tmp_path: Path) -> None:
     assert response.json()["code"] == "missing_edge"
     assert current.json()["draft_revision"] == 0
     assert current.json()["graph"]["nodes"] == []
+
+
+async def test_nested_deletion_batch_preserves_full_authority_on_failure_and_retries(
+    tmp_path: Path,
+) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+    child = graph_document(
+        name="child",
+        interface={"inputs": [
+            {"id": port_id, "name": port_id, "kind": "field", "targets": []}
+            for port_id in ("input-edge", "input-bound", "input-keep")
+        ], "outputs": []},
+    )
+    graph = graph_document(
+        name="wf",
+        nodes=[
+            {"type": "tool", "id": node_id, "name": node_id,
+             "tool_name": "InterfaceTool", "position": [0, 0], "parameters": {}}
+            for node_id in ("source", "unrelated")
+        ] + [{
+            "type": "workflow", "id": "child", "name": "Child", "position": [100, 0],
+            "workflow": child,
+            "bindings": {
+                "input-bound": {"__type__": "int", "value": 7},
+                "input-keep": {"__type__": "int", "value": 9},
+            },
+        }],
+        edges=[
+            {"type": "column", "id": "removed-edge", "source_node": "source",
+             "source_output": "mask", "target_node": "child", "target_input": "input-edge"},
+            {"type": "column", "id": "retained-edge", "source_node": "source",
+             "source_output": "mask", "target_node": "unrelated", "target_input": "image"},
+        ],
+    )
+    delete_bound = {
+        "type": "delete_workflow_input", "input_id": "input-bound",
+        "scope": {"workflow_path": ["child"]},
+    }
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client)
+        saved = (await client.get("/api/v1/workflows/wf")).json()
+        saved_path = Path(saved["info"]["path"])
+        # These are structural/control-plane operations, with real endpoint
+        # metadata checks; executable scientific validation is not claimed.
+        setup = await client.put("/api/v1/workflow-drafts/wf", json={
+            "graph": graph, "expected_revision": 0, "validate": False,
+        })
+        assert setup.status_code == 200, setup.text
+        accepted = setup.json()
+        store = WorkflowStoreService(saved_path.parent.parent, ToolRegistryService())
+        draft_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        saved_bytes = saved_path.read_bytes()
+        draft_bytes = draft_path.read_bytes()
+        published.clear()
+        failed = await client.post("/api/v1/workflow-draft-operations/wf", json={
+            "expected_revision": accepted["draft_revision"], "validate": False,
+            "operations": [delete_bound, {"type": "delete_edge", "edge_id": "missing"}],
+        })
+        assert failed.status_code == 422, failed.text
+        assert failed.json()["operation_index"] == 1
+        assert failed.json()["code"] == "missing_edge"
+        after_failure = (await client.get("/api/v1/workflow-drafts/wf")).json()
+        assert after_failure["graph"] == accepted["graph"]
+        assert after_failure["draft_revision"] == accepted["draft_revision"]
+        assert saved_path.read_bytes() == saved_bytes
+        assert draft_path.read_bytes() == draft_bytes
+        assert published == []
+
+        succeeded = await client.post("/api/v1/workflow-draft-operations/wf", json={
+            "expected_revision": accepted["draft_revision"], "validate": False,
+            "operations": [delete_bound, {
+                "type": "delete_workflow_input", "input_id": "input-edge",
+                "scope": {"workflow_path": ["child"]},
+            }],
+        })
+        assert succeeded.status_code == 200, succeeded.text
+        updated = succeeded.json()
+        expected_graph = deepcopy(accepted["graph"])
+        expected_child = expected_graph["nodes"][2]
+        expected_child["workflow"]["interface"]["inputs"] = [
+            port for port in expected_child["workflow"]["interface"]["inputs"]
+            if port["id"] == "input-keep"
+        ]
+        del expected_child["bindings"]["input-bound"]
+        expected_graph["edges"] = [expected_graph["edges"][1]]
+        assert updated["graph"] == expected_graph
+        assert updated["draft_revision"] == accepted["draft_revision"] + 1
+        assert len(published) == 1
+        reloaded = (await client.get("/api/v1/workflow-drafts/wf")).json()
+        assert reloaded["graph"] == expected_graph
+        assert reloaded["draft_revision"] == updated["draft_revision"]
+        reopened = WorkflowDraftService(lambda: store).get_draft_authority_snapshot("wf")
+        assert reopened.graph.model_dump(mode="json", by_alias=True) == expected_graph
+        assert reopened.draft_revision == updated["draft_revision"]
+        assert saved_path.read_bytes() == saved_bytes
+        assert draft_path.read_bytes() != draft_bytes
 
 
 async def test_stale_revision_and_execution_lock_are_machine_readable(

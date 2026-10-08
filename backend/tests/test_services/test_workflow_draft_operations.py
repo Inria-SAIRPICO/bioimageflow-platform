@@ -171,7 +171,9 @@ def test_deleting_nested_input_prunes_parent_edge_and_binding_atomically() -> No
                         "name": "Value",
                         "kind": "field",
                         "targets": [],
-                    }
+                    },
+                    {"id": "input-bound", "name": "Bound", "kind": "field", "targets": []},
+                    {"id": "input-keep", "name": "Keep", "kind": "field", "targets": []},
                 ],
                 "outputs": [],
             },
@@ -187,9 +189,13 @@ def test_deleting_nested_input_prunes_parent_edge_and_binding_atomically() -> No
                     "id": "child",
                     "name": "Child",
                     "workflow": child.model_dump(mode="json", by_alias=True),
-                    "bindings": {},
+                    "bindings": {
+                        "input-bound": {"__type__": "int", "value": 7},
+                        "input-keep": {"__type__": "int", "value": 9},
+                    },
                     "position": [0, 0],
                 },
+                _tool("unrelated"),
             ],
             "edges": [
                 {
@@ -199,11 +205,16 @@ def test_deleting_nested_input_prunes_parent_edge_and_binding_atomically() -> No
                     "source_output": "value",
                     "target_node": "child",
                     "target_input": "input-value",
-                }
+                },
+                {
+                    "type": "column", "id": "keep-edge", "source_node": "source",
+                    "source_output": "value", "target_node": "unrelated", "target_input": "value",
+                },
             ],
         }
     )
 
+    before = root.model_dump(mode="json", by_alias=True)
     result = apply_workflow_draft_operations(
         root,
         [
@@ -211,12 +222,22 @@ def test_deleting_nested_input_prunes_parent_edge_and_binding_atomically() -> No
                 type="delete_workflow_input",
                 scope=WorkflowDraftOperationScope(workflow_path=["child"]),
                 input_id="input-value",
-            )
+            ),
+            DeleteWorkflowInputOperation(
+                type="delete_workflow_input",
+                scope=WorkflowDraftOperationScope(workflow_path=["child"]),
+                input_id="input-bound",
+            ),
         ],
     )
 
-    assert result.nodes[1].workflow.interface.inputs == []  # type: ignore[union-attr]
-    assert result.edges == []
+    actual = result.model_dump(mode="json", by_alias=True)
+    assert [port["id"] for port in actual["nodes"][1]["workflow"]["interface"]["inputs"]] == ["input-keep"]
+    assert actual["nodes"][1]["bindings"] == {"input-keep": {"__type__": "int", "value": 9}}
+    assert actual["edges"] == [before["edges"][1]]
+    assert actual["nodes"][0] == before["nodes"][0]
+    assert actual["nodes"][2] == before["nodes"][2]
+    assert root.model_dump(mode="json", by_alias=True) == before
 
 
 def test_detach_source_changes_only_provenance() -> None:

@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **338 V + 156 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **338 / 500 are verified (67.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **377 V + 117 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **377 / 500 are verified (75.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -108,18 +108,18 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-010 | Stale parent refuses nested apply | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `f920c9b`, `6025ee6` |
 | WF-REC-011 | Destructive nested interface apply is confirmed and recoverable | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `cf794fb`, `6025ee6` |
 | WF-REC-012 | Nested execution and scoped durable results | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f`; exact nested-instance GUI recheck `9c4a435` |
-| WF-REC-013 | Semantic operation-batch atomicity | P1 | Draft operation API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-REC-013 | Semantic operation-batch atomicity | P1 | Draft operation API | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | G | N (cycle insertion is refused atomically before a recovery lifecycle begins) | G | G | gap | `fcb4408` inspection |
 | WF-SRC-011 | Import viewing readiness and setup guidance without blocking execution | P1 | Desktop GUI/import/API | no | V | V | V | N (readiness is recalculated on saved Open; workflow archive persistence is WF-SRC-008) | V | verified | October 8 source-bound I1 receipts; Chromium/Firefox six exact and ten affected browser passes |
 | WF-SRC-001 | Explicit identity-bound source update preview/apply | P1 | Desktop API/storage | no | V | V | V | V | V | verified | `d02dea9` |
 | WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | G | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
-| WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-SRC-005 | Copy/export captures edited owned sources | P1 | Desktop API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
+| WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | V | G | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
+| WF-SRC-005 | Copy/export captures edited owned sources | P1 | Desktop API/storage | no | G | G | G | G | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | V | V | V | V | V | verified | retained scoped-metadata anchor + `8ce0c043` owned-source Chromium/Firefox receipts |
-| WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-SRC-009 | Portable export versus results-bundle distinction | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-009 | Portable export versus results-bundle distinction | P1 | Desktop and webapp GUI/API | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-010 | Trusted Python materialization and fresh helpers | P1 | Desktop API; denied in webapp | no | V | V | V | V | V | verified | October8 fresh immutable manifests, exact captured sources, factory-free Apply and poisoned-authoring reopen/Run; public/service/browser evidence |
 
 ## Runtime and integration obligations
@@ -138,10 +138,10 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-007 | Progress and completion keep one context | P1 | API/WebSocket/GUI | yes | V | V | V | V | V | verified | `2c1ff72`, `f09a8a7` |
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6`, `fe0cf9d`, `0043397`, `58520b5`; ISSUE-011 resolved |
-| RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | V | G | G | V | V | in-progress | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
 | RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | V | G | G | V | V | in-progress | `output-templates.spec.ts` Chromium/Firefox at base `163f5b1`; two managed runs and immutable assets/pinned result; R/F limits in inventory |
 | RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
-| RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | V | V | V | V | V | verified | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-RES-012 | Result-scoped napari chooser and exclusive output favorite | P1 | Desktop GUI/API; restricted webapp | no | V | V | V | V | V | verified | `884be6e`; seven intercepted-client GUI scenarios in Chromium/Firefox, captured-action unit regressions, and separate real CAS favorite storage; no native launch credit |
@@ -157,10 +157,10 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | U | U | U | unassessed | `fcb4408` inspection pending |
 | RT-XCT-007 | Logger selection and filtered-log copying | P1 | Desktop and webapp GUI | no | V | N (an empty selection is a valid empty-result state, not invalid input) | N (copy has no durable cancellation or recovery lifecycle) | N (selection and clipboard content have no platform reload contract) | V | verified | `4a5b870`; exact Logger selectors in Chromium and Firefox at `cd81d42` |
-| RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | V | V | G | G | V | in-progress | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
+| RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | V | V | G | G | V | in-progress | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
 | RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | N (session-only Error History and Logger have no reload-retention contract; durable run diagnostics belong to execution history) | V | verified | `4676ffb`; specialist contract review |
-| RT-XCT-004 | Structured HTTP errors and expected-error logging | P1 | REST API/logging | no | G | G | N (request error translation is synchronous and has no cancellation or recovery lifecycle) | N (request-scoped; no persisted user state) | G | gap | `fcb4408` inspection |
+| RT-XCT-004 | Structured HTTP errors and expected-error logging | P1 | REST API/logging | no | V | V | N (request error translation is synchronous and has no cancellation or recovery lifecycle) | N (request-scoped; no persisted user state) | V | verified | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
 | RT-XCT-005 | MCP typed operations and stable interface IDs | P2 | MCP/API/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | RT-XCT-006 | Desktop startup identity, window, and shutdown | P2 | Native desktop/manual | no | G | G | G | N (startup shell has no portable saved state) | G | gap | `fcb4408` inspection |
 
