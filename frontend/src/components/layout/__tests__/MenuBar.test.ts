@@ -144,6 +144,16 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 
 let pinia: ReturnType<typeof createPinia>
 let mountedWrappers: ReturnType<typeof mount>[] = []
+const viewingApplyCleanups: (() => void)[] = []
+
+function acceptViewingCanvasApplications(): void {
+  const listener = (event: Event) => {
+    const detail = (event as CustomEvent<{ workflowName: string; workflowDisplayName: string; graph: GraphState }>).detail
+    registerActiveRootWorkflow({ name: detail.workflowName, displayName: detail.workflowDisplayName, graph: detail.graph })
+  }
+  window.addEventListener('bioimageflow:apply-graph', listener)
+  viewingApplyCleanups.push(() => window.removeEventListener('bioimageflow:apply-graph', listener))
+}
 
 function mountMenuBar() {
   const wrapper = mount(MenuBar, {
@@ -260,6 +270,7 @@ describe('MenuBar', () => {
   })
 
   afterEach(() => {
+    for (const cleanup of viewingApplyCleanups.splice(0)) cleanup()
     for (const wrapper of mountedWrappers) wrapper.unmount()
     mountedWrappers = []
     delete window.pywebview
@@ -1596,8 +1607,9 @@ describe('MenuBar', () => {
       expect(vm.importRenameDialogVisible).toBe(true)
     })
 
-    it('reports imported viewing requirements without blocking import and stages setup groups', async () => {
+    it.each([true, false])('reports viewing requirements only for an accepted import canvas: %s', async accepted => {
       useSettingsStore().settings = { deployment_mode: 'desktop' } as any
+      if (accepted) acceptViewingCanvasApplications()
       const info = {
         id: 'imported', name: 'imported', display_name: 'Imported',
         path: '/tmp/imported/workflow.json', results_path: '/tmp/imported/results',
@@ -1644,6 +1656,12 @@ describe('MenuBar', () => {
       await flushPromises()
 
       expect(useWorkflowStore().current?.name).toBe('imported')
+      if (!accepted) {
+        expect(apiMocks.post).not.toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
+        expect(useSettingsPanel().napariCreatePrefills.value).toEqual([])
+        expect(wrapper.find('[data-testid="viewing-guidance"]').exists()).toBe(false)
+        return
+      }
       expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
         severity: 'warn', summary: 'Viewing requirements',
@@ -1651,10 +1669,12 @@ describe('MenuBar', () => {
       }))
       expect(useSettingsPanel().napariCreatePrefills.value).toEqual([group])
       expect(useNapariStore().viewingWorkflowId).toBe('imported')
+      expect(wrapper.get('[data-testid="viewing-guidance"]').text()).toContain('1 output needs viewer setup')
     })
 
     it('passively evaluates viewing requirements when a saved workflow opens', async () => {
       useSettingsStore().settings = { deployment_mode: 'desktop' } as any
+      acceptViewingCanvasApplications()
       const info = {
         id: 'saved', name: 'saved', display_name: 'Saved',
         path: '/tmp/saved/workflow.json', results_path: '/tmp/saved/results',

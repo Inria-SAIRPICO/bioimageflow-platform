@@ -172,6 +172,12 @@ def create_app() -> FastAPI:
         registry._register_tool_from_class(
             tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
         )
+    lifecycle_fixture = os.environ.get("BIOIMAGEFLOW_T1_LIFECYCLE_FIXTURE") == "1"
+    if lifecycle_fixture:
+        from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected, LifecycleSibling
+
+        for tool_class in (LifecycleSelected, LifecycleSibling, LifecycleOther):
+            registry._register_tool_from_class(tool_class, tool_class.__name__, "lifecycle-proof", "1.0.0")
     app = create_platform_app(
         AppConfig(
             tool_registry=registry,
@@ -253,6 +259,8 @@ def create_app() -> FastAPI:
         failure_marker.write_text("E1 injected install fault", encoding="utf-8")
         return {"fault": "E1 injected Pixi install failure (exit 77)"}
 
+    if lifecycle_fixture:
+        _install_lifecycle_fixture(app, root)
     return app
 
 
@@ -278,3 +286,93 @@ def _write_hot_reload_fixture(fixture_path: Path) -> None:
         encoding="utf-8",
     )
     write_package_metadata(package_dir, package_dir.parent.name)
+
+
+def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
+    """Opt-in observation of one actual force click, without changing SDK outcomes."""
+    import hashlib
+    import importlib.metadata
+    import threading
+
+    import anyio.to_thread
+
+    from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected
+
+    assert not os.environ.get("BIOIMAGEFLOW_CORE_SOURCE")
+    assert os.environ.get("BIOIMAGEFLOW_USE_LOCAL_CORE", "").lower() not in {"1", "true", "yes"}
+    for name in ("bioimageflow", "bioimageflow-core", "wetlands"):
+        assert importlib.metadata.distribution(name).read_text("direct_url.json") is None
+    service = app.dependency_overrides[get_tool_environment_service]()
+    delegate = service.manager
+    public = get_shared_environment_manager()
+    gate = threading.Event()
+    gate.set()
+    calls: list[str] = []
+    retired: list[int] = []
+    external = public.environments_root / "t1-external" / "pixi.toml"
+
+    class ObservedManualManager:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(delegate, name)
+
+        def recreate(self, spec: Any, **kwargs: Any) -> Any:
+            calls.append(spec.name)
+            if not gate.wait(60):
+                raise TimeoutError("The force-click observer was not released")
+            return delegate.recreate(spec, **kwargs)
+
+    service._wetlands = ObservedManualManager()
+
+    def evidence() -> dict[str, Any]:
+        inventory = [{
+            "name": item.name, "generation_id": item.generation_id,
+            "recipe_hash": item.recipe_hash, "state": item.state.value,
+            "path": str(item.path),
+            "worker_pids": [worker.process_id for worker in public.running_workers(item.name)],
+        } for item in public.managed_environments()]
+        alive = []
+        for pid in retired:
+            try:
+                os.kill(pid, 0)
+                alive.append(pid)
+            except ProcessLookupError:
+                pass
+        return {
+            "inventory": inventory, "recreate_calls": list(calls),
+            "retired_worker_pids": retired, "retired_workers_alive": alive,
+            "unmanaged_sha256": hashlib.sha256(external.read_bytes()).hexdigest() if external.exists() else None,
+        }
+
+    @app.post("/api/v1/dev/e2e/tool-lifecycle/prepare")
+    async def prepare() -> dict[str, Any]:
+        external.parent.mkdir(parents=True, exist_ok=True)
+        external.write_bytes(b"T1 independently owned unmanaged browser fixture\n")
+        await service.start(LifecycleOther.environment.name)
+        await service.start(LifecycleSelected.environment.name)
+        return evidence()
+
+    @app.post("/api/v1/dev/e2e/tool-lifecycle/arm")
+    def arm() -> dict[str, Any]:
+        retired[:] = [worker.process_id for worker in public.running_workers(LifecycleSelected.environment.name)]
+        assert len(retired) == 1
+        calls.clear()
+        gate.clear()
+        return evidence()
+
+    @app.get("/api/v1/dev/e2e/tool-lifecycle/evidence")
+    def inspect() -> dict[str, Any]:
+        return evidence()
+
+    @app.get("/api/v1/dev/e2e/tool-lifecycle/release")
+    async def release() -> dict[str, bool]:
+        gate.set()
+        return {"released": True}
+
+    @app.post("/api/v1/dev/e2e/tool-lifecycle/close")
+    async def close() -> dict[str, Any]:
+        gate.set()
+        await service.close()
+        value = evidence()
+        assert all(not item["worker_pids"] for item in value["inventory"])
+        await anyio.to_thread.run_sync(public.close)
+        return value

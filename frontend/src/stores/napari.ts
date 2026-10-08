@@ -24,6 +24,10 @@ export interface EnvironmentRequestState {
 
 const terminalOperations = new Set(['completed', 'failed', 'cancelled'])
 
+export class SupersededViewingReadinessError extends Error {
+  constructor() { super('Viewing requirements request was superseded') }
+}
+
 export const useNapariStore = defineStore('napari', () => {
   const requestPending = ref(false) // legacy aggregate compatibility
   const launchPhase = ref<LaunchPhase>('opening')
@@ -43,7 +47,6 @@ export const useNapariStore = defineStore('napari', () => {
   const viewingReadinessError = ref<string | null>(null)
   const operationWatchPromises = new Map<string, Promise<NapariEnvironmentOperation>>()
   let viewingReadinessRequest = 0
-  let viewingManifestSourceRequest = 0
 
   const phase = computed<LaunchPhase | null>(() => requestPending.value ? launchPhase.value : null)
 
@@ -258,25 +261,34 @@ export const useNapariStore = defineStore('napari', () => {
     preferences.value = await napariApi.getViewerPreferences()
   }
 
-  async function evaluateManifest(
-    manifest: ViewingRequirementsManifestInput,
+  function invalidateViewingReadiness(): void {
+    viewingReadinessRequest += 1
+    viewingManifest.value = null
+    viewingWorkflowId.value = null
+    viewingReadiness.value = null
+    viewingReadinessError.value = null
+    viewingReadinessPending.value = false
+  }
+
+  async function viewingCheck(
     workflowId: string | null,
+    loadManifest: () => Promise<ViewingRequirementsManifestInput>,
   ): Promise<NapariViewingReadinessResponse> {
-    const request = ++viewingReadinessRequest
-    viewingManifest.value = manifest
+    invalidateViewingReadiness()
+    const request = viewingReadinessRequest
     viewingWorkflowId.value = workflowId
     viewingReadinessPending.value = true
     try {
+      const manifest = JSON.parse(JSON.stringify(await loadManifest())) as ViewingRequirementsManifestInput
+      if (request !== viewingReadinessRequest) throw new SupersededViewingReadinessError()
+      viewingManifest.value = manifest
       const response = await napariApi.getNapariViewingReadiness(manifest)
-      if (request === viewingReadinessRequest) {
-        viewingReadiness.value = response
-        viewingReadinessError.value = null
-      }
+      if (request !== viewingReadinessRequest) throw new SupersededViewingReadinessError()
+      viewingReadiness.value = response
       return response
     } catch (error) {
-      if (request === viewingReadinessRequest) {
-        viewingReadinessError.value = error instanceof Error ? error.message : String(error)
-      }
+      if (request !== viewingReadinessRequest) throw new SupersededViewingReadinessError()
+      viewingReadinessError.value = error instanceof Error ? error.message : String(error)
       throw error
     } finally {
       if (request === viewingReadinessRequest) viewingReadinessPending.value = false
@@ -287,27 +299,12 @@ export const useNapariStore = defineStore('napari', () => {
     manifest: ViewingRequirementsManifestInput,
     workflowId: string | null = null,
   ): Promise<NapariViewingReadinessResponse> {
-    viewingManifestSourceRequest += 1
-    return evaluateManifest(manifest, workflowId)
+    const captured = JSON.parse(JSON.stringify(manifest)) as ViewingRequirementsManifestInput
+    return viewingCheck(workflowId, () => Promise.resolve(captured))
   }
 
-  async function evaluateWorkflowReadiness(workflowId: string): Promise<NapariViewingReadinessResponse> {
-    const request = ++viewingManifestSourceRequest
-    viewingReadinessPending.value = true
-    try {
-      const manifest = await napariApi.getWorkflowViewingRequirements(workflowId)
-      if (request !== viewingManifestSourceRequest) {
-        throw new Error('Viewing requirements request was superseded by a newer workflow')
-      }
-      return await evaluateManifest(manifest, workflowId)
-    } catch (error) {
-      if (request === viewingManifestSourceRequest) {
-        viewingReadinessError.value = error instanceof Error ? error.message : String(error)
-      }
-      throw error
-    } finally {
-      if (request === viewingManifestSourceRequest) viewingReadinessPending.value = false
-    }
+  function evaluateWorkflowReadiness(workflowId: string): Promise<NapariViewingReadinessResponse> {
+    return viewingCheck(workflowId, () => napariApi.getWorkflowViewingRequirements(workflowId))
   }
 
   async function refreshViewingReadiness(): Promise<NapariViewingReadinessResponse | null> {
@@ -363,7 +360,7 @@ export const useNapariStore = defineStore('napari', () => {
     createManagedEnvironment, copyManagedEnvironment, retryManagedEnvironment,
     cancelManagedOperation, deleteManagedEnvironment,
     fetchRegistry, resolve, fetchPreferences, evaluateViewingReadiness, evaluateWorkflowReadiness,
-    refreshViewingReadiness, toggleFavorite,
+    refreshViewingReadiness, invalidateViewingReadiness, toggleFavorite,
     pollOperation, watchOperation,
   }
 })

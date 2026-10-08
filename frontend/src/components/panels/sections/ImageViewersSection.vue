@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -7,6 +7,7 @@ import ProgressBar from 'primevue/progressbar'
 import Select from 'primevue/select'
 import Textarea from 'primevue/textarea'
 import type { Settings } from '@/stores/settings'
+import type { NapariViewingRequirementGroup } from '@/api/types'
 import { selectFolder } from '@/utils/nativeDialogs'
 import { useNapariStore } from '@/stores/napari'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
@@ -27,6 +28,10 @@ const renameDraft = ref('')
 const removalTarget = ref<{ id: string; name: string; managed: boolean; adopted: boolean } | null>(null)
 const removalOpen = ref(false)
 const setupGroupId = ref('')
+const capturedSetupGroup = shallowRef<NapariViewingRequirementGroup | null>(null)
+const setupGroupVersion = ref(0)
+const createSubmitting = ref(false)
+let creationTransfer = 0
 const selectedRecommendations = ref<string[]>([])
 const sourceConfirmed = ref(false)
 const editingRuleId = ref<string | null>(null)
@@ -49,7 +54,11 @@ const extensionPreview = computed(() => {
   if (rule.mode !== 'extension' || !value) return value
   return `*.${value.replace(/^\.+/, '')}`
 })
-const selectedSetupGroup = computed(() => settingsPanel.napariCreatePrefills.value.find(group => group.id === setupGroupId.value) ?? null)
+const selectedSetupGroup = computed(() => capturedSetupGroup.value)
+const creationRecipeReady = computed(() => (
+  (!selectedSetupGroup.value?.managed_create_prefill.napari_version_constraint || create.preset === 'advanced')
+  && (create.preset !== 'advanced' || Boolean(create.napari.trim()))
+))
 const setupGroupOptions = computed(() => settingsPanel.napariCreatePrefills.value.map((group, index) => ({
   label: `Set ${index + 1} — ${group.members?.length ?? 0} output${group.members?.length === 1 ? '' : 's'}`,
   value: group.id,
@@ -63,17 +72,50 @@ const catchAllWarning = computed(() => {
   return 'A catch-all * rule wins before every later rule. A global default is usually clearer.'
 })
 
-watch(settingsPanel.napariCreatePrefills, groups => {
-  if (groups.length === 0) return
-  if (!groups.some(group => group.id === setupGroupId.value)) setupGroupId.value = groups[0]!.id
-}, { immediate: true })
+function creationSnapshot(): string {
+  return JSON.stringify([create, selectedRecommendations.value, sourceConfirmed.value])
+}
+const untouchedCreationSnapshot = ref(creationSnapshot())
 
-watch(selectedSetupGroup, group => {
-  if (!group) return
+function transferSetupGroup(group: NapariViewingRequirementGroup, version: number): void {
+  creationTransfer += 1
+  capturedSetupGroup.value = JSON.parse(JSON.stringify(group)) as NapariViewingRequirementGroup
+  setupGroupId.value = group.id
+  setupGroupVersion.value = version
   create.packages = (group.managed_create_prefill.requested_packages ?? []).join('\n')
+  if (group.managed_create_prefill.napari_version_constraint) {
+    create.preset = 'advanced'
+    create.napari = ''
+  }
   selectedRecommendations.value = []
   sourceConfirmed.value = false
-  if (!create.name.trim()) create.name = `Viewer environment ${settingsPanel.napariCreatePrefills.value.indexOf(group) + 1}`
+  if (!create.name.trim()) create.name = `Viewer environment ${Math.max(0, settingsPanel.napariCreatePrefills.value.findIndex(item => item.id === group.id)) + 1}`
+  untouchedCreationSnapshot.value = creationSnapshot()
+}
+
+function selectSetupGroup(id: string): void {
+  const group = settingsPanel.napariCreatePrefills.value.find(item => item.id === id)
+  if (group) transferSetupGroup(group, settingsPanel.napariCreatePrefillVersion.value)
+}
+
+watch(settingsPanel.napariCreatePrefills, groups => {
+  if (createSubmitting.value || creationSnapshot() !== untouchedCreationSnapshot.value) return
+  const group = groups.find(item => item.id === setupGroupId.value) ?? groups[0]
+  if (group) transferSetupGroup(group, settingsPanel.napariCreatePrefillVersion.value)
+  else {
+    creationTransfer += 1
+    capturedSetupGroup.value = null
+    setupGroupId.value = ''
+    create.packages = ''
+    selectedRecommendations.value = []
+    sourceConfirmed.value = false
+    untouchedCreationSnapshot.value = creationSnapshot()
+  }
+}, { immediate: true })
+watch(settingsPanel.napariCreateTransfer, transfer => {
+  if (!transfer) return
+  transferSetupGroup(transfer.group, transfer.version)
+  settingsPanel.napariCreateTransfer.value = null
 }, { immediate: true })
 
 function detail(exc: any): string {
@@ -105,15 +147,26 @@ function packageList(): string[] {
 }
 
 async function createManaged() {
+  if (createSubmitting.value) return
+  if (!creationRecipeReady.value) return
   if (selectedSetupGroup.value?.managed_create_prefill.requires_source_confirmation && !sourceConfirmed.value) return
-  await run(async () => {
+  const submittedGroup = setupGroupId.value
+  const submittedVersion = setupGroupVersion.value
+  const submittedTransfer = creationTransfer
+  createSubmitting.value = true
+  error.value = null
+  try {
     const recipe = create.preset === 'advanced'
       ? { preset: create.preset, python: create.python, napari: create.napari, qt: create.qt, requested_packages: packageList() }
       : { preset: create.preset, requested_packages: packageList() }
     const operation = await napari.createManagedEnvironment({ name: create.name, recipe })
-    if (setupGroupId.value) settingsPanel.consumeNapariCreatePrefill(setupGroupId.value)
-    void napari.watchOperation(operation.environment_id, operation.id).catch(exc => { error.value = detail(exc) })
-  })
+    if (submittedGroup) settingsPanel.consumeNapariCreatePrefill(submittedGroup, submittedVersion)
+    void napari.watchOperation(operation.environment_id, operation.id).catch(exc => {
+      if (submittedTransfer === creationTransfer) error.value = detail(exc)
+    })
+  } catch (exc) {
+    if (submittedTransfer === creationTransfer) error.value = detail(exc)
+  } finally { createSubmitting.value = false }
 }
 
 function openRename(id: string, name: string) {
@@ -396,9 +449,14 @@ onMounted(() => {
       <p class="help-text">Create a separate installation with napari, Qt, and any requested plugin packages. Existing environments are left in place.</p>
       <div v-if="setupGroupOptions.length" class="field">
         <label for="napari-requirement-set">Workflow package requirements</label>
-        <Select id="napari-requirement-set" v-model="setupGroupId" aria-label="Workflow package requirements" :options="setupGroupOptions" option-label="label" option-value="value" />
+        <Select id="napari-requirement-set" v-model="setupGroupId" aria-label="Workflow package requirements" :options="setupGroupOptions" option-label="label" option-value="value" @update:model-value="selectSetupGroup" />
       </div>
       <p v-if="selectedSetupGroup" class="help-text">Prefilled from portable workflow requirements. Package availability on PyPI is not yet verified.</p>
+      <p v-if="selectedSetupGroup?.managed_create_prefill.napari_version_constraint" class="help-text">
+        Required napari constraint: {{ selectedSetupGroup.managed_create_prefill.napari_version_constraint }}.
+        Choose Advanced and an exact compatible napari version explicitly, or attach an externally managed installation.
+        Compatibility is checked against the installed inventory after setup.
+      </p>
       <div class="field">
         <label for="managed-environment-name">Name</label>
         <InputText id="managed-environment-name" v-model="create.name" aria-label="Managed environment name" placeholder="My napari" />
@@ -415,7 +473,7 @@ onMounted(() => {
         </div>
         <div class="field">
           <label for="managed-napari-version">napari version</label>
-          <InputText id="managed-napari-version" v-model="create.napari" aria-label="napari version" />
+          <InputText id="managed-napari-version" v-model="create.napari" aria-label="napari version" placeholder="An exact version, for example 0.6.6" />
         </div>
         <div class="field">
           <label for="managed-qt-distribution">Qt distribution</label>
@@ -437,7 +495,7 @@ onMounted(() => {
         <input v-model="sourceConfirmed" type="checkbox">
         I confirmed these workflow-declared requirements are available from PyPI. Unknown or private packages must be installed manually in an external environment.
       </label>
-      <Button label="Create environment" :disabled="!create.name.trim() || (Boolean(selectedSetupGroup?.managed_create_prefill.requires_source_confirmation) && !sourceConfirmed)" @click="createManaged()" />
+      <Button label="Create environment" :disabled="createSubmitting || !create.name.trim() || !creationRecipeReady || (Boolean(selectedSetupGroup?.managed_create_prefill.requires_source_confirmation) && !sourceConfirmed)" @click="createManaged()" />
     </section>
 
     <section class="form">

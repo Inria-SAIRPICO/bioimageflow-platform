@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -27,7 +28,7 @@ import {
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
-import { useNapariStore } from '@/stores/napari'
+import { useNapariStore, SupersededViewingReadinessError } from '@/stores/napari'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { api } from '@/api/client'
 import {
@@ -45,7 +46,8 @@ import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
-import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
+import ViewingRequirementsGuidance from '@/components/workflow/ViewingRequirementsGuidance.vue'
+import type { GraphState, MissingTool, NapariViewingRequirementGroup, ViewingRequirementsManifestInput, WorkflowInfo } from '@/api/types'
 import { emptyGraph } from '@/sessions/graphDocument'
 import { loadRootWorkflowForOpen } from '@/services/startupWorkflow'
 import {
@@ -276,9 +278,110 @@ function showDraftConflictWarning(action: 'saving' | 'running' | 'exporting' = '
   })
 }
 
+interface ViewingGuidanceOwner {
+  readonly intent: number
+  readonly workflowName: string
+  readonly canvasId: CanvasId
+  readonly registrationToken: number
+  readonly identityGeneration: number
+  readonly serverIdentityGeneration: number | null
+}
+const settingsPanel = useSettingsPanel()
+const viewingOwner = shallowRef<ViewingGuidanceOwner | null>(null)
+const viewingDismissed = ref(false)
+let viewingIntent = 0
+let viewingDisposed = false
+
+function viewingIntentCurrent(intent: number): boolean {
+  return !viewingDisposed && intent === viewingIntent
+}
+
+function viewingOwnerCurrent(owner: ViewingGuidanceOwner): boolean {
+  // Registration count also observes replacement/removal of an active session.
+  void canvasSessionRegistry.sessionCount.value
+  const session = canvasSessionRegistry.get(owner.canvasId)
+  return viewingIntentCurrent(owner.intent)
+    && canvasSessionRegistry.activeCanvasId.value === owner.canvasId
+    && session?.registrationToken === owner.registrationToken
+    && session.descriptor.kind === 'root'
+    && session.descriptor.workflowId === owner.workflowName
+    && uiStore.activeWorkflowId === owner.workflowName
+    && workflowStore.isWorkflowIdentityCurrent(owner.workflowName, owner.identityGeneration)
+    && workflowStore.workflowServerIdentityGeneration(owner.workflowName) === owner.serverIdentityGeneration
+}
+
+function beginViewingIntent(): number {
+  const previous = viewingOwner.value
+  viewingOwner.value = null
+  if (previous) settingsPanel.clearNapariCreate(previous)
+  napariStore.invalidateViewingReadiness()
+  viewingDismissed.value = false
+  return ++viewingIntent
+}
+
+const acceptedViewingOwner = computed(() => {
+  const owner = viewingOwner.value
+  return owner && viewingOwnerCurrent(owner) ? owner : null
+})
+watch(acceptedViewingOwner, owner => {
+  if (!owner && viewingOwner.value) beginViewingIntent()
+}, { flush: 'sync' })
+const viewingReport = computed(() => (
+  acceptedViewingOwner.value && napariStore.viewingWorkflowId === acceptedViewingOwner.value.workflowName
+    ? napariStore.viewingReadiness : null
+))
+const viewingError = computed(() => (
+  acceptedViewingOwner.value && napariStore.viewingWorkflowId === acceptedViewingOwner.value.workflowName
+    ? napariStore.viewingReadinessError : null
+))
+watch(viewingReport, report => {
+  const owner = acceptedViewingOwner.value
+  if (!owner) return
+  const uncovered = new Set((report?.outputs ?? []).filter(output => output.status !== 'covered' && output.group_id).map(output => output.group_id))
+  settingsPanel.prepareNapariCreate((report?.groups ?? []).filter(group => uncovered.has(group.id)), owner)
+}, { flush: 'sync' })
+
+async function evaluateViewingGuidance(owner: ViewingGuidanceOwner, manifest?: ViewingRequirementsManifestInput | null): Promise<void> {
+  if (!viewingOwnerCurrent(owner) || manifest === null) return
+  try {
+    const report = manifest
+      ? await napariStore.evaluateViewingReadiness(manifest, owner.workflowName)
+      : await napariStore.evaluateWorkflowReadiness(owner.workflowName)
+    if (!viewingOwnerCurrent(owner)) return
+    if (report.summary.outputs_needing_setup > 0 || report.summary.unknown_outputs > 0) {
+      toast?.add({ severity: 'warn', summary: 'Viewing requirements', detail: `${report.summary.message} Workflow execution is unaffected.`, life: 8000 })
+    }
+  } catch (error: unknown) {
+    if (error instanceof SupersededViewingReadinessError || !viewingOwnerCurrent(owner)) return
+    toast?.add({ severity: 'warn', summary: 'Viewing requirements not checked', detail: `The workflow remains available. ${error instanceof Error ? error.message : String(error)}`, life: 8000 })
+  }
+}
+
+async function checkAcceptedViewingGuidance(loaded: RootWorkflowPresentation, intent: number, manifest?: ViewingRequirementsManifestInput | null): Promise<void> {
+  if (!settingsStore.isDesktop || !viewingIntentCurrent(intent)) return
+  await nextTick()
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  const session = canvasId ? canvasSessionRegistry.get(canvasId) : null
+  if (!canvasId || !session || session.descriptor.kind !== 'root' || session.descriptor.workflowId !== loaded.workflowName) return
+  const owner = Object.freeze({
+    intent, canvasId, registrationToken: session.registrationToken, workflowName: loaded.workflowName,
+    identityGeneration: loaded.identityGeneration, serverIdentityGeneration: loaded.serverIdentityGeneration,
+  })
+  if (!viewingOwnerCurrent(owner)) return
+  viewingOwner.value = owner
+  await evaluateViewingGuidance(owner, manifest)
+}
+
 function refreshSavedWorkflowViewingRequirements(workflowName: string): void {
-  if (!settingsStore.isDesktop) return
-  void napariStore.evaluateWorkflowReadiness(workflowName).catch(() => undefined)
+  const owner = acceptedViewingOwner.value
+  if (!settingsStore.isDesktop || owner?.workflowName !== workflowName) return
+  void evaluateViewingGuidance(owner)
+}
+
+function openGuidanceGroup(group: NapariViewingRequirementGroup): void {
+  if (!acceptedViewingOwner.value) return
+  const current = viewingReport.value?.groups?.find(item => item.id === group.id)
+  if (current) settingsPanel.selectNapariCreateGroup(current)
 }
 
 function hasMissingImportDependencies(): boolean {
@@ -384,17 +487,18 @@ async function openWorkflow(): Promise<void> {
 
 async function onOpenWorkflow(name: string): Promise<void> {
   if (executionStore.isMutationLocked) return
+  const intent = beginViewingIntent()
   window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', {
     detail: { workflowName: name },
   }))
   try {
     const loaded = await loadRootWorkflowForOpen(name)
-    if (executionStore.isMutationLocked) return
+    if (executionStore.isMutationLocked || !viewingIntentCurrent(intent)) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)
-    refreshSavedWorkflowViewingRequirements(name)
+    await checkAcceptedViewingGuidance(loaded, intent)
   } catch (err: unknown) {
-    showError('Open workflow failed', err)
+    if (viewingIntentCurrent(intent)) showError('Open workflow failed', err)
   }
 }
 
@@ -561,12 +665,13 @@ async function buildWorkflowFromPythonSource(): Promise<void> {
   }
 }
 
-async function openImportedWorkflow(name: string): Promise<void> {
+async function openImportedWorkflow(name: string, intent: number): Promise<RootWorkflowPresentation | null> {
   const loaded = await loadRootWorkflowPresentation(name)
+  if (!viewingIntentCurrent(intent)) return null
   applyGraph(loaded.graph, loaded.dirty, loaded)
   if (hasMissingImportDependencies()) {
     dependencyDialogVisible.value = true
-    return
+    return loaded
   }
   toast?.add({
     severity: 'success',
@@ -574,42 +679,15 @@ async function openImportedWorkflow(name: string): Promise<void> {
     detail: loaded.workflowDisplayName,
     life: 2500,
   })
+  return loaded
 }
 
-async function finishImport(file: File, nameOverride?: string): Promise<void> {
+async function finishImport(file: File, intent: number, nameOverride?: string): Promise<void> {
   const response = await workflowStore.importWorkflow(file, { nameOverride })
-  await openImportedWorkflow(workflowId(response.info))
-  if (settingsStore.isDesktop && response.viewing_requirements) {
-    try {
-      const readiness = await napariStore.evaluateViewingReadiness(
-        response.viewing_requirements,
-        workflowId(response.info),
-      )
-      const uncoveredGroupIds = new Set(
-        (readiness.outputs ?? [])
-          .filter(output => output.status === 'not_covered' && output.group_id)
-          .map(output => output.group_id!),
-      )
-      const uncoveredGroups = (readiness.groups ?? []).filter(group => uncoveredGroupIds.has(group.id))
-      useSettingsPanel().prepareNapariCreate(uncoveredGroups)
-      if (readiness.summary.outputs_needing_setup > 0 || readiness.summary.unknown_outputs > 0) {
-        toast?.add({
-          severity: 'warn',
-          summary: 'Viewing requirements',
-          detail: `${readiness.summary.message} Open Preferences → Image Viewers to add or create a napari environment. Workflow execution is unaffected.`,
-          life: 8000,
-        })
-      }
-    } catch (error: unknown) {
-      toast?.add({
-        severity: 'warn',
-        summary: 'Viewing requirements not checked',
-        detail: `The workflow was imported successfully. ${error instanceof Error ? error.message : String(error)}`,
-        life: 8000,
-      })
-    }
-  }
-  pendingImportFile.value = null
+  if (!viewingIntentCurrent(intent)) return
+  const loaded = await openImportedWorkflow(workflowId(response.info), intent)
+  if (loaded) await checkAcceptedViewingGuidance(loaded, intent, response.viewing_requirements ?? null)
+  if (viewingIntentCurrent(intent)) pendingImportFile.value = null
 }
 
 async function onImportFileSelected(event: Event): Promise<void> {
@@ -618,10 +696,12 @@ async function onImportFileSelected(event: Event): Promise<void> {
   input.value = ''
   if (executionStore.isMutationLocked) return
   if (!file) return
+  const intent = beginViewingIntent()
   pendingImportFile.value = file
   try {
-    await finishImport(file)
+    await finishImport(file, intent)
   } catch (err: unknown) {
+    if (!viewingIntentCurrent(intent)) return
     if (err instanceof WorkflowConflictError && err.suggestedName) {
       importRenameName.value = err.suggestedName
       importRenameDialogVisible.value = true
@@ -637,10 +717,12 @@ async function confirmImportRename(): Promise<void> {
   const file = pendingImportFile.value
   const nameOverride = importRenameName.value.trim()
   if (!file || !nameOverride) return
+  const intent = beginViewingIntent()
   try {
-    await finishImport(file, nameOverride)
-    importRenameDialogVisible.value = false
+    await finishImport(file, intent, nameOverride)
+    if (viewingIntentCurrent(intent)) importRenameDialogVisible.value = false
   } catch (err: unknown) {
+    if (!viewingIntentCurrent(intent)) return
     if (err instanceof WorkflowConflictError && err.suggestedName) {
       importRenameName.value = err.suggestedName
       toast?.add({
@@ -1019,6 +1101,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  beginViewingIntent()
+  viewingDisposed = true
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('bioimageflow:workflow-command', onWorkflowPanelCommand)
 })
@@ -1231,6 +1315,16 @@ defineExpose({
       </div>
     </template>
   </Menubar>
+  <ViewingRequirementsGuidance
+    v-if="acceptedViewingOwner && !viewingDismissed && (napariStore.viewingReadinessPending || viewingError || (viewingReport && viewingReport.summary.outputs_needing_setup > 0))"
+    :workflow-name="acceptedViewingOwner.workflowName"
+    :report="viewingReport"
+    :error="viewingError"
+    :pending="napariStore.viewingReadinessPending"
+    @dismiss="viewingDismissed = true"
+    @create="openGuidanceGroup"
+    @manage="settingsPanel.open('viewers')"
+  />
   <ErrorHistoryPanel
     :visible="historyPanelOpen"
     @update:visible="historyPanelOpen = $event"

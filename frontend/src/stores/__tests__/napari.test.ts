@@ -6,7 +6,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
-import { useNapariStore, type NapariOpenPayload } from '@/stores/napari'
+import { useNapariStore, SupersededViewingReadinessError, type NapariOpenPayload } from '@/stores/napari'
 
 const payload: NapariOpenPayload = {
   paths: ['/tmp/image.tif'],
@@ -18,6 +18,42 @@ const payload: NapariOpenPayload = {
 }
 
 describe('napari store', () => {
+  it.each(['success', 'failure'])('refuses a superseded readiness %s without changing the newer owner', async outcome => {
+    let resolveOld!: (value: unknown) => void
+    let rejectOld!: (error: Error) => void
+    const oldResponse = new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject })
+    const manifest = { schema: 'bioimageflow.viewing_requirements.v1' as const, complete: true, outputs: {} }
+    const report = { summary: { message: 'Second owner' }, outputs: [], groups: [] }
+    vi.mocked(api.post).mockReturnValueOnce(oldResponse as any).mockResolvedValueOnce({ data: report })
+    const store = useNapariStore()
+    const old = store.evaluateViewingReadiness(manifest, 'first').catch(error => error)
+    manifest.complete = false
+    await Promise.resolve()
+    expect(vi.mocked(api.post).mock.calls[0]![1]).toMatchObject({ complete: true })
+    await store.evaluateViewingReadiness(manifest, 'second')
+    if (outcome === 'success') resolveOld({ data: { summary: { message: 'Obsolete' } } })
+    else rejectOld(new Error('Obsolete error'))
+    expect(await old).toBeInstanceOf(SupersededViewingReadinessError)
+    expect(store.viewingWorkflowId).toBe('second')
+    expect(store.viewingReadiness?.summary.message).toBe('Second owner')
+    expect(store.viewingReadinessError).toBeNull()
+    expect(store.viewingReadinessPending).toBe(false)
+  })
+
+  it('invalidates an outstanding saved manifest before sending any readiness POST', async () => {
+    let resolveManifest!: (value: unknown) => void
+    vi.mocked(api.get).mockReturnValueOnce(new Promise(resolve => { resolveManifest = resolve }) as any)
+    const store = useNapariStore()
+    const pending = store.evaluateWorkflowReadiness('removed').catch(error => error)
+    store.invalidateViewingReadiness()
+    resolveManifest({ data: { schema: 'bioimageflow.viewing_requirements.v1', complete: true, outputs: {} } })
+    expect(await pending).toBeInstanceOf(SupersededViewingReadinessError)
+    expect(api.post).not.toHaveBeenCalled()
+    expect(store.viewingManifest).toBeNull()
+    expect(store.viewingWorkflowId).toBeNull()
+    expect(store.viewingReadinessPending).toBe(false)
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.mocked(api.post).mockReset()

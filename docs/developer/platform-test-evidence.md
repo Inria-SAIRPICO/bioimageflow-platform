@@ -6,7 +6,7 @@ orphan: true
 
 Started 2026-09-30; current executed results are recorded below, separately from historical coverage.
 Documentation validation for preparing this campaign does not establish any product readiness outcome.
-The [checkpoint](platform-test-progress.md) owns baseline and queue; the [plan](platform-test-plan.md) owns acceptance and evidence rules.
+The [checkpoint](platform-test-current.md) owns baseline and queue; the [plan](platform-test-plan.md) owns acceptance and evidence rules.
 
 The [previous active evidence](archive/platform-test-evidence-before-2026-09-30.md) preserves the September increments and their red/interrupted lanes, exact revisions, and limitations.
 The older [Tier 1A–1B evidence archive](archive/platform-test-evidence-through-tier-1b.md) retains preceding runs and release history.

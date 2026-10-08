@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import Select from 'primevue/select'
@@ -12,6 +12,18 @@ import { api } from '@/api/client'
 import ImageViewersSection from '../ImageViewersSection.vue'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import { useNapariStore } from '@/stores/napari'
+import type { NapariViewingRequirementGroup } from '@/api/types'
+
+enableAutoUnmount(afterEach)
+
+function viewingGroup(packages: string): NapariViewingRequirementGroup {
+  return {
+    id: `sha256:${'a'.repeat(64)}`, members: ['node/image'], required_packages: [],
+    recommended_packages: [], napari_version: null,
+    managed_create_prefill: { requested_packages: [packages], recommended_packages: [],
+      napari_version_constraint: null, package_source: 'unverified', requires_source_confirmation: false },
+  }
+}
 
 const environment = {
   id: 'env-a', registration_order: 0, name: 'Tracking', ownership: 'managed', kind: 'conda',
@@ -23,6 +35,121 @@ const environment = {
 }
 
 describe('ImageViewersSection', () => {
+  it('requires an explicit exact napari version instead of reusing a prior recipe for a constrained set', async () => {
+    const settings = useSettingsPanel()
+    const store = useNapariStore()
+    const creation = vi.spyOn(store, 'createManagedEnvironment').mockResolvedValue({ environment_id: 'env-a', id: 'op' } as any)
+    vi.spyOn(store, 'watchOperation').mockResolvedValue({} as any)
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    const recipe = wrapper.findAllComponents(Select).find(item => item.attributes('id') === 'managed-environment-recipe')!
+    await recipe.vm.$emit('update:modelValue', 'advanced')
+    await flushPromises()
+    await wrapper.get('input[aria-label="napari version"]').setValue('0.9.1')
+    const group = viewingGroup('legacy-reader>=1')
+    group.napari_version = '>=0.6,<0.7'
+    group.managed_create_prefill.napari_version_constraint = '>=0.6,<0.7'
+    settings.prepareNapariCreate([group], {})
+    settings.selectNapariCreateGroup(group)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Required napari constraint: >=0.6,<0.7')
+    const version = wrapper.get('input[aria-label="napari version"]')
+    expect((version.element as HTMLInputElement).value).toBe('')
+    const button = wrapper.findAll('button').find(item => item.text() === 'Create environment')!
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(creation).not.toHaveBeenCalled()
+    await recipe.vm.$emit('update:modelValue', 'default')
+    await flushPromises()
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    expect(creation).not.toHaveBeenCalled()
+    await recipe.vm.$emit('update:modelValue', 'advanced')
+    await flushPromises()
+    await wrapper.get('input[aria-label="napari version"]').setValue('0.6.6')
+    await button.trigger('click')
+    await flushPromises()
+    expect(creation).toHaveBeenCalledWith(expect.objectContaining({ recipe: expect.objectContaining({ preset: 'advanced', napari: '0.6.6', requested_packages: ['legacy-reader>=1'] }) }))
+  })
+
+  it('discards a superseded queued setup transfer before the form mounts', async () => {
+    const settings = useSettingsPanel()
+    settings.prepareNapariCreate([viewingGroup('first-reader>=1')], {})
+    settings.selectNapariCreateGroup(settings.napariCreatePrefills.value[0]!)
+    settings.prepareNapariCreate([viewingGroup('second-reader>=2')], {})
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+    expect((wrapper.get('textarea[aria-label="Required Python distributions"]').element as HTMLTextAreaElement).value).toBe('second-reader>=2')
+    expect(settings.napariCreateTransfer.value).toBeNull()
+  })
+
+  it('preserves an edited form through readiness refresh and transfers only an explicitly selected set', async () => {
+    const settings = useSettingsPanel()
+    settings.prepareNapariCreate([viewingGroup('first-reader>=1')], {})
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+    const packages = wrapper.get('textarea[aria-label="Required Python distributions"]')
+    await packages.setValue('user-edited-reader>=3')
+    settings.prepareNapariCreate([viewingGroup('second-reader>=2')], {})
+    await flushPromises()
+    expect((packages.element as HTMLTextAreaElement).value).toBe('user-edited-reader>=3')
+    settings.selectNapariCreateGroup(settings.napariCreatePrefills.value[0]!)
+    await flushPromises()
+    expect((packages.element as HTMLTextAreaElement).value).toBe('second-reader>=2')
+    expect((packages.element as HTMLTextAreaElement).value).not.toContain('first-reader')
+  })
+
+  it('keeps an in-flight creation bound to its captured group and preserves a newer same-ID prefill', async () => {
+    const settings = useSettingsPanel()
+    settings.prepareNapariCreate([viewingGroup('first-reader>=1')], {})
+    const store = useNapariStore()
+    let resolveCreation!: (value: any) => void
+    const creation = vi.spyOn(store, 'createManagedEnvironment').mockReturnValue(new Promise(resolve => { resolveCreation = resolve }))
+    vi.spyOn(store, 'watchOperation').mockResolvedValue({} as any)
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+    const button = wrapper.findAll('button').find(item => item.text() === 'Create environment')!
+    await button.trigger('click')
+    settings.prepareNapariCreate([viewingGroup('second-reader>=2')], {})
+    await flushPromises()
+    expect((wrapper.get('textarea[aria-label="Required Python distributions"]').element as HTMLTextAreaElement).value).toBe('first-reader>=1')
+    expect(creation).toHaveBeenCalledWith(expect.objectContaining({ recipe: expect.objectContaining({ requested_packages: ['first-reader>=1'] }) }))
+    resolveCreation({ environment_id: 'env-a', id: 'op' })
+    await flushPromises()
+    expect(settings.napariCreatePrefills.value[0]!.managed_create_prefill.requested_packages).toEqual(['second-reader>=2'])
+  })
+
+  it('does not publish an older creation failure into an explicitly transferred form', async () => {
+    const settings = useSettingsPanel()
+    settings.prepareNapariCreate([viewingGroup('first-reader>=1')], {})
+    let rejectCreation!: (error: Error) => void
+    vi.spyOn(useNapariStore(), 'createManagedEnvironment').mockReturnValue(new Promise((_resolve, reject) => { rejectCreation = reject }))
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find(item => item.text() === 'Create environment')!.trigger('click')
+    settings.prepareNapariCreate([viewingGroup('second-reader>=2')], {})
+    settings.selectNapariCreateGroup(settings.napariCreatePrefills.value[0]!)
+    await flushPromises()
+    rejectCreation(new Error('Obsolete creation failed'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Obsolete creation failed')
+    expect((wrapper.get('textarea[aria-label="Required Python distributions"]').element as HTMLTextAreaElement).value).toBe('second-reader>=2')
+    expect(settings.napariCreatePrefills.value[0]!.managed_create_prefill.requested_packages).toEqual(['second-reader>=2'])
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     useSettingsPanel().prepareNapariCreate([])

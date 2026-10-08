@@ -19,6 +19,16 @@ The user explicitly authorizes continued execution until the END of the whole ca
 After the accepted library milestone, continue technically gated publication, platform API/pin adoption and T1/I1, complete M3/M4, and execute desktop M5 last; standing release authorization remains valid and does not waive technical gates.
 Reuse stable existing worker/artifact drivers and content-bound recipe dependencies, group causally overlapping repairs, retain unchanged successful phases, and request a new design decision only for a genuinely unbounded ambiguity.
 
+## Current priority after accepted library and adoption gates — October 8
+
+The current checkpoint overrides every completed-phase “Next MAIN”, publication pause and older baseline below.
+The October 4 specification/suite/causal review and selected milestone, technically gated dependency releases, coherent normal-registry adoption, credential compensation and configured deployment policy are closed in their exact receipts; do not restart them from historical instructions.
+Finish source-bound I1/T1 acceptance and delivery, then repair the confirmed portable output-schema omission, correct faithful hot-reload fixture edit metadata, reconcile remaining risky M3 public effects and execute M4 published/local/external certification before native desktop M5 LAST.
+An observed public contradiction gets one distinguishing cheap control and a bounded owned repair; it does not trigger another whole-codebase sweep or automatic dependency release.
+Combine the major SDK/platform adoption and I1/T1 retrospective with the M2→M3 transition, with the next ordinary lookback before M4/final certification.
+Operational checkpoints retain current source, accepted scoped receipt pointers, next commands and protected/active owners; detailed resolved chronology stays only in receipts and historical documents that ordinary continuation does not load.
+Before an expensive real fixture, check actual public context/graph/source/API and middleware prerequisites; a held mutation request's test-release signal must not need that same mutation admission.
+
 ## Highest priority: deep library/Core review and validation — October 4
 
 The user's October 4 priority overrides every older “next task”, release, platform-integration and systematic platform-testing instruction below.

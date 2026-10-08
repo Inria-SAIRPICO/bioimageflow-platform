@@ -434,7 +434,10 @@ Preference changes are atomic local UI state and do not acquire a graph executio
 
 ## 7. Workflow import and setup guidance
 
-After import, run the passive viewing-requirements check and show a non-blocking summary when setup may be needed; keep normalized requirement groups available to prefill the environment-creation form.
+After an import or explicit saved Open has been accepted into its root canvas, run the passive viewing-requirements check and show persistent, non-blocking guidance while checking, when setup may be needed, or when the check fails.
+Bind the check, report, error, toast, and requirement-group prefills to the latest presentation intent, workflow local and server identity generations, exact canvas registration, and currently active owning root; a refused or superseded presentation must not publish these effects.
+Superseding a request or removing its owning presentation invalidates both successful and failed late responses before they can replace another workflow's guidance or form.
+The guidance names the workflow, states that execution is unaffected, and offers expandable output identities, grouped requirements, candidate failures, unknown metadata, explicit setup actions, and dismissal to configure later.
 Run the same check on workflow open, requirement changes, and relevant environment inventory changes, without reopening a modal repeatedly.
 Preserve inactive and unknown outputs in the backend report, but do not render a per-output report in Image Viewers Settings.
 Imported workflows with no declarations continue to work through automatic readers and local format rules.
@@ -456,6 +459,10 @@ Group identical requirement sets for convenience.
 Do not assume all missing packages can be installed together: solving a combined environment is an optional explicit choice, with per-output alternatives available if it fails.
 If the required set for a single output is itself unsatisfiable, report its conflicting constraints and point to the declaration; splitting that set cannot repair it.
 The creation preview identifies requested distributions, constraints, source, and new environment name before installation starts.
+An explicit setup action transfers a captured copy of exactly one requirement set into the creation form; passive report refreshes preserve edited or submitting forms.
+A set with a napari version constraint displays that constraint, selects the advanced recipe, and clears a prior or default napari version until the user explicitly chooses a compatible exact version or uses an external installation.
+The form does not solve version constraints or claim coverage before installed inventory evaluation.
+Creation captures that set and its prefill generation before submission; completion cannot consume a newer same-ID set, and errors from an older transferred form cannot overwrite the current form.
 Import and passive checks never download/install packages or execute workflow-provided installation instructions.
 Unknown or private packages require manual installation in an external environment in the first release; do not guess URLs from reader IDs, add archive-provided package sources, or copy credentials into a workflow.
 
