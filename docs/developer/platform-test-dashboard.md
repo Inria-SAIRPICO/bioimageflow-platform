@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **327 V + 167 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **327 / 500 are verified (65.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **332 V + 162 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **332 / 500 are verified (66.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -94,7 +94,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `0b3ee1e` |
 | WF-LIF-011 | Revisioned draft writes, dirtiness, and validation | P0 | Draft API/storage and GUI | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |
-| WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | V | V | V | V | V | verified | `agent-draft-sync.spec.ts` exact Chromium/Firefox at base `41685fe`: clean live update plus visible dirty-edit CAS/Keep/copy isolation; durable-read limits in inventory |
 | WF-LIF-014 | Browser fallback and accepted-draft recovery | P0 | Desktop and webapp GUI/storage | yes | V | V | V | V | V | verified | `dd20821`, `301c19c` |
 | WF-REC-001 | Stable field/output publication and rename | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `af58e4e`, `bcedaec`, `14582d0` |
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `bcedaec` |

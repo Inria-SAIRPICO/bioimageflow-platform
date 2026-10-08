@@ -225,43 +225,108 @@ test.describe('agent draft sync', () => {
 })
 
 for (const keepCanvasFirst of [false, true]) {
-  test(`saves the agent snapshot as a copy (keep canvas first: ${keepCanvasFirst})`, async ({ page }) => {
+  test(`saves the agent snapshot as a copy (keep canvas first: ${keepCanvasFirst})`, async ({ page }, testInfo) => {
     const name = uniqueName('agent_copy')
-    await createServerWorkflow(page, name, emptyGraph(name))
+    let copyName: string | null = null
+    let releaseWrite: (() => void) | undefined
+    let mainFailed = false
+    const cleanupErrors: unknown[] = []
     try {
+      const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
+      expect(seed.ok(), await seed.text()).toBeTruthy()
+      const graph = emptyGraph(name)
+      graph.config.execution = 'sequential'
+      graph.nodes = [
+        { type: 'tool', id: 'seed', name: 'Seed Numbers', tool_name: 'SeedNumbers', position: [180, 180], parameters: {} },
+        { type: 'tool', id: 'increment', name: 'Increment Numbers', tool_name: 'IncrementNumbers', position: [520, 180], parameters: { number: 1 } },
+      ]
+      graph.edges = [{ type: 'dataframe', id: 'seed-increment', source_node: 'seed', target_node: 'increment', target_position: 0 }]
+      await createServerWorkflow(page, name, graph)
+      const savedResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)
+      expect(savedResponse.ok()).toBeTruthy()
+      const saved = await savedResponse.json()
+      const savedBytes = readFileSync(saved.info.path)
+      await installDraftWebSocketProbe(page)
       await page.goto('/')
       await expect(page.locator('#bioimageflow-app')).toBeVisible()
       await rememberLastOpenedWorkflow(page, name)
       await page.reload()
       await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+      await expect.poll(() => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0)).toBeGreaterThan(0)
+      await page.locator('.vue-flow__node[data-id="increment"]').click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      const numberInput = page.getByTestId('panel-nodePanel').locator('.param-row')
+        .filter({ hasText: 'Number column to increment' }).locator('input.p-inputnumber-input')
+      await expect(numberInput).toBeVisible()
+      await expect(numberInput).toHaveValue('1')
 
-      async function agentChange(label: string) {
-        await page.evaluate(async () => {
-          const { useUIStore } = await import('/src/stores/ui.ts')
-          const { canvasSessionRegistry } = await import('/src/sessions/canvasSessionRegistry.ts')
-          const id = canvasSessionRegistry.activeCanvasId.value
-          if (id === null) throw new Error('No active canvas')
-          useUIStore().markCanvasDirty(id)
-        })
-        const latest = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
-        const response = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${name}`, {
+      async function agentChange(label: string, localNumber: number) {
+        const path = `/api/v1/workflow-drafts/${name}`
+        let entered!: () => void
+        const started = new Promise<void>(resolveStarted => { entered = resolveStarted })
+        const held = new Promise<void>(resolveHeld => { releaseWrite = resolveHeld })
+        let intercepted = false
+        let outgoing: Record<string, any> | null = null
+        const handler = async (route: import('@playwright/test').Route) => {
+          if (route.request().method() === 'PUT' && !intercepted) {
+            intercepted = true
+            outgoing = route.request().postDataJSON()
+            entered()
+            await held
+          }
+          await route.continue()
+        }
+        await page.route(`**${path}`, handler)
+        const staleWrite = page.waitForResponse(response => (
+          new URL(response.url()).pathname === path && response.request().method() === 'PUT'
+        ))
+        // Real visible mutation, held before backend admission. The independent
+        // agent API request remains free to publish its revision and WebSocket event.
+        await numberInput.fill(String(localNumber))
+        await numberInput.press('Tab')
+        await started
+        expect(outgoing).not.toBeNull()
+        expect(outgoing!.updated_by).toBe('frontend')
+        expect(outgoing!.graph.nodes.find((node: Record<string, any>) => node.id === 'increment').parameters.number).toBe(localNumber)
+        await expect(numberInput).toHaveValue(String(localNumber))
+        const latestResponse = await page.request.get(`${API_BASE}${path}`)
+        expect(latestResponse.ok()).toBeTruthy()
+        const latest = await latestResponse.json()
+        expect(latest.validation).toMatchObject({ valid: true, errors: [] })
+        const response = await page.request.put(`${API_BASE}${path}`, {
           data: {
             graph: { ...latest.graph, display_name: label },
             expected_revision: latest.draft_revision,
             updated_by: 'agent',
           },
         })
-        expect(response.ok()).toBeTruthy()
+        expect(response.ok(), await response.text()).toBeTruthy()
+        const accepted = await response.json()
+        expect(accepted.validation).toMatchObject({ valid: true, errors: [] })
         await expect(page.locator('.workflow-draft-conflict')).toBeVisible()
-        return response.json()
+        releaseWrite!()
+        releaseWrite = undefined
+        expect((await staleWrite).status()).toBe(409)
+        await page.unroute(`**${path}`, handler)
+        await expect(numberInput).toHaveValue(String(localNumber))
+        return accepted
       }
 
       if (keepCanvasFirst) {
-        await agentChange('Earlier agent change')
+        await agentChange('Earlier agent change', 10)
+        const kept = page.waitForResponse(response => (
+          response.request().method() === 'PUT'
+          && new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+        ))
         await page.getByRole('button', { name: 'Keep my canvas', exact: true }).click()
+        const keptResponse = await kept
+        expect(keptResponse.ok(), await keptResponse.text()).toBeTruthy()
+        const keptDraft = await keptResponse.json()
+        expect(keptDraft.graph.nodes.find((node: Record<string, any>) => node.id === 'increment').parameters.number).toBe(10)
         await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
       }
-      const agent = await agentChange('Latest agent change')
+      const localNumber = keepCanvasFirst ? 20 : 10
+      const agent = await agentChange('Latest agent change', localNumber)
       const copied = page.waitForResponse(response => (
         response.request().method() === 'PATCH'
         && response.url().endsWith(`/api/v1/workflows/${name}`)
@@ -270,17 +335,43 @@ for (const keepCanvasFirst of [false, true]) {
       const response = await copied
       expect(response.ok()).toBeTruthy()
       const info = await response.json()
+      copyName = info.id
       await expect(page.locator('.workflow-draft-conflict__success')).toContainText(info.id)
       const copy = await (await page.request.get(`${API_BASE}/api/v1/workflows/${info.id}`)).json()
       expect(copy.graph).toEqual({ ...agent.graph, name: info.id, display_name: info.id })
       const original = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
       expect(original.draft_revision).toBe(agent.draft_revision)
       expect(original.graph).toEqual(agent.graph)
+      await expect(numberInput).toHaveValue(String(localNumber))
+      expect(agent.graph.nodes.find((node: Record<string, any>) => node.id === 'increment').parameters.number)
+        .toBe(keepCanvasFirst ? 10 : 1)
+      expect(copy.info.id).not.toBe(name)
+      const originalSaved = await (await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()
+      expect(originalSaved.graph).toEqual(saved.graph)
+      expect(readFileSync(saved.info.path)).toEqual(savedBytes)
       await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+    } catch (error) {
+      mainFailed = true
+      throw error
     } finally {
-      await deleteWorkflowIfExists(page, `${name}_agent_2`)
-      await deleteWorkflowIfExists(page, name)
+      releaseWrite?.()
+      async function cleanup(operation: () => Promise<unknown>) {
+        try { await operation() } catch (error) { cleanupErrors.push(error) }
+      }
+      await cleanup(() => page.unrouteAll({ behavior: 'wait' }))
+      await cleanup(() => page.goto('about:blank'))
+      for (const owned of [copyName, name]) {
+        if (owned === null) continue
+        await cleanup(async () => {
+          const removed = await page.request.delete(`${API_BASE}/api/v1/workflows/${owned}`)
+          expect([200, 404]).toContain(removed.status())
+        })
+      }
+      if (cleanupErrors.length) await cleanup(() => testInfo.attach('agent-copy-cleanup-errors', {
+        body: cleanupErrors.map(String).join('\n'), contentType: 'text/plain',
+      }))
     }
+    if (!mainFailed && cleanupErrors.length) throw cleanupErrors[0]
   })
 }
 
