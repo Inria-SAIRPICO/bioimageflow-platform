@@ -1,7 +1,8 @@
 import { test, expect, type Response } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import type { NodeDataResponse, ResultArtifactIdentity } from '../../src/api/types'
+import type { NodeDataResponse, ResultArtifactIdentity, NestedWorkflowSnapshotResponse, WorkflowFile } from '../../src/api/types'
+import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
 
@@ -47,6 +48,15 @@ class ${toolName}(DataFrameTool):
       file: { name: 'reference.bioimageflow.zip', mimeType: 'application/zip', buffer: await exported.body() },
     } })
     expect(response.ok(), await response.text()).toBeTruthy()
+    const catalogResponse = await page.request.get(`${API}/tools/${toolName}/source`)
+    expect(catalogResponse.ok(), await catalogResponse.text()).toBeTruthy()
+    expect(await catalogResponse.json()).toMatchObject({ path: originalPath, source_kind: 'custom' })
+    const originalBytes = readFileSync(originalPath)
+    const importedFile = await (await page.request.get(`${API}/workflows/${imported}`)).json() as WorkflowFile
+    const importedNode = importedFile.graph.nodes.find(candidate => candidate.id === 'increment')
+    expect(importedNode).toMatchObject({ tool_name: toolName, source_module: expect.any(String) })
+    if (importedNode?.type !== 'tool' || !importedNode.source_module) throw new Error('Imported node has no owned source binding')
+    const importedDocument = readFileSync(importedFile.info.path)
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
@@ -55,13 +65,33 @@ class ${toolName}(DataFrameTool):
     const node = page.locator('.vue-flow__node[data-id="increment"]')
     await expect(node).toBeVisible()
     await node.click()
+    const rootDraft = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
     const opened = page.waitForResponse(response => response.url().endsWith('/editor/open-node'))
     await page.getByTestId('open-tool-script').click()
     const openResponse = await opened
     expect(openResponse.ok(), await openResponse.text()).toBeTruthy()
-    const path = (await openResponse.json()).path
+    expect(openResponse.request().postDataJSON()).toEqual({
+      workflow_id: imported, identity_generation: importedFile.info.identity_generation,
+      node_id: 'increment', expected_revision: rootDraft.draft_revision, session_id: null,
+    })
+    const openedRoot = await openResponse.json()
+    expect(openedRoot).toMatchObject({
+      opened: true, method: 'external', snapshot: null,
+      project_path: dirname(dirname(dirname(importedFile.info.path))),
+    })
+    const path = openedRoot.path
     expect(path).not.toBe(originalPath)
     expect(path).toContain(imported)
+    expect(readFileSync(path)).toEqual(originalBytes)
+    const importedSourceRoot = join(dirname(importedFile.info.results_path), 'tools', importedNode.source_module)
+    const importedManifest = JSON.parse(readFileSync(join(importedSourceRoot, 'module.json'), 'utf8'))
+    expect(path).toBe(join(importedSourceRoot, importedManifest.filename))
+    expect(readFileSync(originalPath)).toEqual(originalBytes)
+    expect((await (await page.request.get(`${API}/tools/${toolName}/source`)).json()).path).toBe(originalPath)
+    const afterRootOpen = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    expect(afterRootOpen.graph).toEqual(rootDraft.graph)
+    expect(afterRootOpen.draft_revision).toBe(rootDraft.draft_revision)
+    expect(readFileSync(importedFile.info.path)).toEqual(importedDocument)
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     const outputs = page.getByTestId('panel-nodePanel').locator('.output-row')
     await expect(outputs).toHaveCount(1)
@@ -197,7 +227,73 @@ class ${toolName}(DataFrameTool):
       const draft = await (await page.request.get(`${API}/workflow-drafts/${parent}`)).json()
       return draft.graph.nodes[0]?.workflow?.nodes[0]?.source_module
     }).toBe(sourceId)
-    writeFileSync(embeddedPath, readFileSync(embeddedPath, 'utf8').replace('n + 20', 'n + 40'))
+    const parentDraft = await (await page.request.get(`${API}/workflow-drafts/${parent}`)).json() as WorkflowDraftResponse
+    const parentSaved = await (await page.request.get(`${API}/workflows/${parent}`)).json() as WorkflowFile
+    const parentDocument = readFileSync(parentInfo.path)
+    const embeddedNode = parentDraft.graph.nodes[0]
+    if (embeddedNode?.type !== 'workflow') throw new Error('Accepted parent has no embedded workflow')
+    const embeddedBytes = readFileSync(embeddedPath)
+    const importedBytes = readFileSync(path)
+    const nestedOpening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
+      && new URL(candidate.url()).pathname === '/api/v1/nested-workflow-snapshots/open')
+    await page.locator(`.vue-flow__node[data-id="${embeddedNode.id}"]:visible`).dblclick()
+    const nestedResponse = await nestedOpening
+    expect(nestedResponse.status(), await nestedResponse.text()).toBe(201)
+    const nested = await nestedResponse.json() as NestedWorkflowSnapshotResponse
+    expect(nested.owner).toMatchObject({
+      kind: 'root', workflow_id: parent, canvas_id: `workflow:${parent}`,
+      identity_generation: parentInfo.identity_generation,
+    })
+    expect(nested.parent_node_id).toBe(embeddedNode.id)
+    expect(nested.graph).toEqual(embeddedNode.workflow)
+    await expect(page.locator('.nested-workflow-editor:visible')).toHaveCount(1)
+    await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const openPrivateSource = async (expectedRevision: number) => {
+      const opening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
+        && new URL(candidate.url()).pathname === '/api/v1/editor/open-node')
+      await page.getByTestId('open-tool-script').click()
+      const accepted = await opening
+      expect(accepted.ok(), await accepted.text()).toBeTruthy()
+      expect(accepted.request().postDataJSON()).toEqual({
+        workflow_id: parent, identity_generation: parentInfo.identity_generation,
+        node_id: 'increment', session_id: nested.session_id, expected_revision: expectedRevision,
+      })
+      const body = await accepted.json() as {
+        opened: boolean; method: string; path: string; project_path: string; snapshot: NestedWorkflowSnapshotResponse;
+      }
+      expect(body).toMatchObject({
+        opened: true, method: 'external',
+        project_path: dirname(dirname(dirname(parentInfo.path))),
+      })
+      expect(body.snapshot.session_id).toBe(nested.session_id)
+      return body
+    }
+    const privateSource = await openPrivateSource(nested.snapshot_revision)
+    expect(privateSource.snapshot.snapshot_revision).toBe(nested.snapshot_revision + 1)
+    const privateNode = privateSource.snapshot.graph.nodes.find(candidate => candidate.id === 'increment')
+    if (privateNode?.type !== 'tool' || !privateNode.source_module) throw new Error('No private source binding')
+    expect(privateNode.source_module).toMatch(new RegExp(`^edit_${nested.session_id.replaceAll('-', '')}_`))
+    expect(privateNode.source_module).not.toBe(sourceId)
+    expect(new Set([originalPath, path, embeddedPath, privateSource.path]).size).toBe(4)
+    expect(readFileSync(privateSource.path)).toEqual(embeddedBytes)
+    const privateManifestRoot = join(dirname(parentInfo.results_path), 'tools', privateNode.source_module)
+    const privateManifest = JSON.parse(readFileSync(join(privateManifestRoot, 'module.json'), 'utf8'))
+    expect(privateSource.path).toBe(join(privateManifestRoot, privateManifest.filename))
+    await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
+    const repeated = await openPrivateSource(privateSource.snapshot.snapshot_revision)
+    expect(repeated.path).toBe(privateSource.path)
+    expect(repeated.snapshot).toEqual(privateSource.snapshot)
+    writeFileSync(privateSource.path, readFileSync(privateSource.path, 'utf8').replace('n + 20', 'n + 40'))
+    expect(readFileSync(privateSource.path, 'utf8')).toContain('n + 40')
+    expect(readFileSync(embeddedPath)).toEqual(embeddedBytes)
+    expect(readFileSync(path)).toEqual(importedBytes)
+    expect(readFileSync(originalPath)).toEqual(originalBytes)
+    const afterPrivateOpen = await (await page.request.get(`${API}/workflow-drafts/${parent}`)).json() as WorkflowDraftResponse
+    expect(afterPrivateOpen.graph).toEqual(parentDraft.graph)
+    expect(afterPrivateOpen.draft_revision).toBe(parentDraft.draft_revision)
+    expect((await (await page.request.get(`${API}/workflows/${parent}`)).json()).graph).toEqual(parentSaved.graph)
+    expect(readFileSync(parentInfo.path)).toEqual(parentDocument)
     expect(readFileSync(path, 'utf8')).toContain('n + 20')
   } catch (error) {
     primaryOccurred = true

@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **335 V + 159 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **335 / 500 are verified (67.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **338 V + 156 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **338 / 500 are verified (67.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -74,7 +74,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-AUT-003 | Package versions, install/uninstall, and errors | P1 | Desktop GUI/API; restricted webapp | no | V | V | V | V | V | verified | `package-management.spec.ts` Chromium/Firefox at base `c99d76c`; local ZIP/exact non-active removal scope, public recorded-bytecode regression and nine reload neighbors; network and native limits in inventory |
 | GUI-AUT-004 | Editable-source watcher and invalid-edit recovery | P1 | Desktop GUI/WebSocket | no | V | V | V | V | V | verified | `8ce0c043` + owned-source Chromium/Firefox receipts; installed failure transport excluded |
 | GUI-AUT-005 | Embedded editor startup, progress, and stable iframe | P2 | Desktop GUI/external editor | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| GUI-AUT-006 | Node-addressed source opening | P1 | Desktop GUI/API | no | G | G | G | N (opening or focusing a source is ephemeral; source persistence belongs to WF-SRC rows) | G | gap | `fcb4408` inspection |
+| GUI-AUT-006 | Node-addressed source opening | P1 | Desktop GUI/API | no | V | V | G | N (opening or focusing a source is ephemeral; source persistence belongs to WF-SRC rows) | V | in-progress | `2bcf6ee` + `fa73b8c` exact Chromium/Firefox, retained scoped refusals; native and visible failure/retry excluded |
 | GUI-AUT-007 | Trusted Python preview/apply/cancel | P1 | Desktop GUI/API; denied in webapp | no | V | V | V | V | V | verified | October8 source-preserving Apply/root-title repair; `python-authoring.spec.ts` Chromium/Firefox and eight owning service cases, receipt-qualified |
 
 ## Workflow obligations
