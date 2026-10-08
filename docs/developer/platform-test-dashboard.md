@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **400 V + 94 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **400 / 500 are verified (80.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **409 V + 85 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **409 / 500 are verified (81.8%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -82,7 +82,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | WF-LIF-015 | Confirmed workflow-format migration and backups | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344` implementation; focused browser/backend evidence `2ce96a0` |
-| WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | G | G | N (canonical document validation is synchronous; invalid documents are owned by R) | G | G | gap | `fcb4408` inspection |
+| WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | V | G | N (canonical document validation is synchronous; invalid documents are owned by R) | V | V | in-progress | current assembled owning20/canonical saved-document disk-read authority; full refused-write consequences remainG |
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
 | WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
@@ -112,13 +112,13 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | G | N (cycle insertion is refused atomically before a recovery lifecycle begins) | G | V | in-progress | current owning-store scoped transitive containment; full refusal bytes and reopened authority remain G |
 | WF-SRC-011 | Import viewing readiness and setup guidance without blocking execution | P1 | Desktop GUI/import/API | no | V | V | V | N (readiness is recalculated on saved Open; workflow archive persistence is WF-SRC-008) | V | verified | October 8 source-bound I1 receipts; Chromium/Firefox six exact and ten affected browser passes |
 | WF-SRC-001 | Explicit identity-bound source update preview/apply | P1 | Desktop API/storage | no | V | V | V | V | V | verified | `d02dea9` |
-| WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | G | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
+| WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | V | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | in-progress | fresh structural recursive-operation owning10: provenance-only removal; durable/UI/owner detach remainG |
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | V | G | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-005 | Copy and export capture edited sources | P1 | Workflow API/storage | no | V | V | V | V | V | verified | exact owned-source collision/staged copy failure/retry at a8644e3/8699f931 plus retained Save As/edited ZIP; archive interruption remains untested |
 | WF-SRC-006 | Source-bound metadata and invalid edits | P1 | Desktop API/runtime | no | V | V | V | V | V | verified | retained scoped-metadata anchor + `8ce0c043` owned-source Chromium/Firefox receipts |
 | WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
-| WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | actual I1 empty-ZIP naming collision/rename/reopen plus exact recovered router naming controls; source/helper qualification in inventory |
 | WF-SRC-009 | Portable export versus results-bundle distinction | P1 | Desktop and webapp GUI/API | no | V | V | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-010 | Trusted Python materialization and fresh helpers | P1 | Desktop API; denied in webapp | no | V | V | V | V | V | verified | October8 fresh immutable manifests, exact captured sources, factory-free Apply and poisoned-authoring reopen/Run; public/service/browser evidence |
 
