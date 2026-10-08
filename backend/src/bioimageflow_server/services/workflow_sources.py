@@ -515,11 +515,7 @@ def _materialize_python_manifest(
         workflow = Workflow.from_python(root / "workflow.py", storage_path=storage_path)
         exported = workflow.to_dict(include_custom_tools=True)
     graph = lib_dict_to_graph_state(exported)
-    sources = (
-        exported.get("custom_sources", [])
-        if set(exported) == {"archive_version", "workflow", "custom_sources"}
-        else []
-    )
+    sources = exported.get("custom_sources", [])
     if not isinstance(sources, list):
         raise ValueError("Python workflow produced malformed custom source records")
     return graph, sources

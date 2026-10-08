@@ -290,8 +290,11 @@ It must export `build_workflow`, which is invoked exactly once and must return a
 
 Python is an authoring input, never a persisted execution model.
 The build operation materializes the returned workflow into the same canonical `GraphState`, validates it, stages its documented runtime-source bundle, and saves only after preview and confirmation.
+Preview retains every runtime-source record from the strictly validated library archive, including envelopes carrying viewing metadata; Apply stages those captured bytes without reimporting the authoring entry.
 
 The GUI exposes **Build from Python source** in trusted desktop mode.
+It first saves the current canvas to establish preview authority; cancelling the build preserves that post-save graph without applying the materialized replacement.
+An accepted replacement updates the owning root canvas and its visible title from the materialized graph while preserving the addressed workspace workflow identity.
 The request never accepts an arbitrary path or module string.
 The backend resolves only the addressed workflow's allowed authoring source, rejects path or symlink escapes, and disables the operation in ordinary webapp mode.
 

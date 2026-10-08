@@ -1705,6 +1705,7 @@ async function handleReplaceRootGraphEvent(event: CustomEvent<{
   const detail = event.detail
   if (!detail?.draft || detail.workflowId !== owningWorkflowId()) return
   initializeCanvasPersistenceFromDraft(detail.draft)
+  ownedWorkflowDisplayName.value = detail.draft.graph.display_name
   await applyGraphState(detail.draft.graph, [], false, false)
 }
 

@@ -165,6 +165,8 @@ Validation returns source-specific node metadata without registering imported cl
 
 Trusted `workflow.py` files are authoring inputs only.
 Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.
+Python preview retains runtime-source records from the strictly validated library archive independently of its viewing metadata, and Apply stages those captured records with the graph without rerunning the factory.
+Accepting the materialized root graph also updates that canvas's presentation label from the accepted graph without changing its workspace workflow ID.
 
 ### Managed datasets
 

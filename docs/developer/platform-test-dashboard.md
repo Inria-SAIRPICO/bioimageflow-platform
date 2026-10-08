@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **306 V + 188 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **306 / 500 are verified (61.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **316 V + 178 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **316 / 500 are verified (63.2%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -75,7 +75,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-AUT-004 | Editable-source watcher and invalid-edit recovery | P1 | Desktop GUI/WebSocket | no | V | V | V | V | V | verified | `8ce0c043` + owned-source Chromium/Firefox receipts; installed failure transport excluded |
 | GUI-AUT-005 | Embedded editor startup, progress, and stable iframe | P2 | Desktop GUI/external editor | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | GUI-AUT-006 | Node-addressed source opening | P1 | Desktop GUI/API | no | G | G | G | N (opening or focusing a source is ephemeral; source persistence belongs to WF-SRC rows) | G | gap | `fcb4408` inspection |
-| GUI-AUT-007 | Trusted Python preview/apply/cancel | P1 | Desktop GUI/API; denied in webapp | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| GUI-AUT-007 | Trusted Python preview/apply/cancel | P1 | Desktop GUI/API; denied in webapp | no | V | V | V | V | V | verified | October8 source-preserving Apply/root-title repair; `python-authoring.spec.ts` Chromium/Firefox and eight owning service cases, receipt-qualified |
 
 ## Workflow obligations
 
@@ -120,7 +120,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-SRC-007 | Imported and embedded source independence | P1 | Desktop GUI/API/runtime | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-008 | Import collision rename and naming contract | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
 | WF-SRC-009 | Portable export versus results-bundle distinction | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
-| WF-SRC-010 | Trusted Python materialization and fresh helpers | P1 | Desktop API; denied in webapp | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-SRC-010 | Trusted Python materialization and fresh helpers | P1 | Desktop API; denied in webapp | no | V | V | V | V | V | verified | October8 fresh immutable manifests, exact captured sources, factory-free Apply and poisoned-authoring reopen/Run; public/service/browser evidence |
 
 ## Runtime and integration obligations
 
