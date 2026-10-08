@@ -34,7 +34,7 @@ IDs must be unique across the inventories and dashboard.
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
 
-- Overall: **377 V + 117 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **377 / 500 are verified (75.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **382 V + 112 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **382 / 500 are verified (76.4%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -90,7 +90,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-006 | Copy captured agent graph and recursive owned sources | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `e817d77` |
 | WF-LIF-007 | Reject stale duplicate generation | P1 | Workflow API/storage | no | N (this row owns stale-generation refusal; ordinary duplication is WF-LIF-005) | G | N (stale duplication is refused before side effects and has no recovery lifecycle) | G | G | gap | `fcb4408` inspection |
 | WF-LIF-008 | Durable workflow generation across restart | P1 | Workflow API/storage | no | G | N (generation durability accepts no user input to refuse) | G | G | G | gap | `fcb4408` inspection |
-| WF-LIF-009 | Move results and rewrite provenance safely | P1 | Workflow API/storage | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| WF-LIF-009 | Move results and rewrite provenance safely | P1 | Desktop browser and workflow API/storage | no | V | V | V | V | V | verified | `workflow-crud.spec.ts` Chromium/Firefox at base `ba46c5d`, frozen `80299af`; visible affected-owner refusal/retry and durable moved results/provenance, with API fixture preparation and native/physical-fault limits in inventory |
 | WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `0b3ee1e` |
 | WF-LIF-011 | Revisioned draft writes, dirtiness, and validation | P0 | Draft API/storage and GUI | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |

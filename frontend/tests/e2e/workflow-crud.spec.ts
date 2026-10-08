@@ -1,5 +1,25 @@
 import { test, expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Page, Request } from '@playwright/test'
+import { createHash } from 'node:crypto'
+import { lstatSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import type { GraphState, NodeDataResponse, WorkflowFile } from '../../src/api/types'
+
+function fileSnapshot(root: string): Record<string, string> {
+  const files: Record<string, string> = {}
+  const visit = (directory: string, prefix: string) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name)
+      const key = `${prefix}${name}`
+      const stat = lstatSync(path)
+      if (stat.isSymbolicLink()) files[key] = `link:${readlinkSync(path)}`
+      else if (stat.isDirectory()) visit(path, `${key}/`)
+      else files[key] = createHash('sha256').update(readFileSync(path)).digest('hex')
+    }
+  }
+  visit(root, '')
+  return files
+}
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -66,10 +86,25 @@ async function openWorkflowFromDialog(page: Page, name: string, displayName: str
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
 }
 
+async function showWorkflowsPanel(page: Page) {
+  const panel = page.getByTestId('workflows-panel')
+  if (!await panel.isVisible()) {
+    // Dockview mounts only the active content. The real catalog group contains
+    // Tools, Datasets or Workflows; the empty canvas uses a different group.
+    const catalogGroup = page.locator('.dv-groupview').filter({
+      has: page.locator('.tools-panel, .datasets-panel, [data-testid="workflows-panel"]'),
+    })
+    await expect(catalogGroup).toHaveCount(1)
+    await catalogGroup.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+  }
+  await expect(panel).toBeVisible()
+  return panel
+}
+
 async function openWorkflowFromPanel(page: Page, name: string, displayName: string) {
-  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-  await page.getByTestId('workflow-search').fill(displayName)
-  const row = page.getByTestId(`workflow-row-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`)
+  const panel = await showWorkflowsPanel(page)
+  await panel.getByTestId('workflow-search').fill(displayName)
+  const row = panel.getByTestId(`workflow-row-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`)
   await expect(row).toBeVisible()
   await row.dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
@@ -246,6 +281,17 @@ test.describe('workflow CRUD dialogs', () => {
     const copyDisplayName = `${baseDisplayName} Copy`
     const base = deriveWorkflowId(baseDisplayName)
     const copy = deriveWorkflowId(copyDisplayName)
+    const folder = `${base}_folder`
+    const renamedFolder = `${folder}_renamed`
+    const unrelated = `${base}_unrelated`
+    const folderPatches: string[] = []
+    const observeFolderPatch = (request: Request) => {
+      if (request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/v1/workflows/folders/${folder}`) {
+        folderPatches.push(request.postData() ?? '')
+      }
+    }
+    let primaryOccurred = false
+    const cleanupErrors: unknown[] = []
     try {
       await deleteWorkflowIfExists(page, base)
       await deleteWorkflowIfExists(page, copy)
@@ -298,13 +344,18 @@ test.describe('workflow CRUD dialogs', () => {
         data: { workflow_name: base },
       })
       expect(baseResult.ok(), await baseResult.text()).toBeTruthy()
-      expect(await baseResult.json()).toMatchObject({
+      const capturedResult = await baseResult.json() as NodeDataResponse
+      expect(capturedResult).toMatchObject({
         rows: [
           { number: 1, label: 'one' },
           { number: 2, label: 'two' },
           { number: 3, label: 'three' },
         ],
         total_rows: 3,
+      })
+      expect(capturedResult.source_identity).toMatchObject({
+        run_id: expect.any(String), node_key: nodeId,
+        result_key: expect.any(String), record_id: expect.any(String),
       })
 
       await chooseWorkflowItem(page, 'Save As')
@@ -370,13 +421,170 @@ test.describe('workflow CRUD dialogs', () => {
       expect((await acceptedDraft(page, copy)).graph).toEqual(copyAfterRename.graph)
       expect((await savedWorkflow(page, copy)).graph).toEqual(copyAfterRename.graph)
       expect((await savedWorkflow(page, base)).graph).toEqual(baseBeforeCopy.graph)
-    } finally {
-      if (!page.isClosed()) {
-        await page.goto('about:blank')
-        await deleteWorkflowIfExists(page, copy)
-        await deleteWorkflowIfExists(page, base)
+
+      // Public API setup places these already-tested graphs in one owned folder.
+      // Only the following visible folder Rename is GUI move evidence.
+      await page.goto('about:blank')
+      const createdFolder = await page.request.post(`${API_BASE}/api/v1/workflows/folders`, { data: { path: folder } })
+      expect(createdFolder.status(), await createdFolder.text()).toBe(201)
+      await createWorkflow(page, unrelated, 'Unrelated move sentinel')
+      const unrelatedBefore = await savedWorkflow(page, unrelated) as WorkflowFile
+      const sentinel = join(dirname(unrelatedBefore.info.path), 'unmanaged.txt')
+      writeFileSync(sentinel, 'keep this unrelated file\n')
+      const unrelatedFiles = fileSnapshot(dirname(unrelatedBefore.info.path))
+      const parentGraph: GraphState = structuredClone(copyAfterRename.graph)
+      parentGraph.nodes.push({
+        type: 'workflow', id: 'moved-child', name: 'Moved child', position: [450, 180],
+        enabled: true, collapsed: false,
+        workflow: structuredClone(baseBeforeCopy.graph), bindings: {},
+        source: { kind: 'workspace', workflow_id: base, artifact_hash: baseBeforeCopy.artifact_hash },
+      })
+      const installedParent = await page.request.put(`${API_BASE}/api/v1/workflows/${copy}`, { data: { graph: parentGraph } })
+      expect(installedParent.ok(), await installedParent.text()).toBeTruthy()
+      const currentParentDraft = await acceptedDraft(page, copy)
+      const resetParent = await page.request.post(`${API_BASE}/api/v1/workflow-drafts/${copy}/reset-to-saved`, {
+        data: { expected_revision: currentParentDraft.draft_revision, updated_by: 'frontend' },
+      })
+      expect(resetParent.ok(), await resetParent.text()).toBeTruthy()
+      for (const id of [base, copy]) {
+        const moved = await page.request.patch(`${API_BASE}/api/v1/workflows/${id}`, {
+          data: { action: 'update', folder },
+        })
+        expect(moved.ok(), await moved.text()).toBeTruthy()
+        expect(await moved.json()).toMatchObject({ id: `${folder}/${id}`, identity_generation: expect.any(Number) })
       }
+      const oldBase = `${folder}/${base}`
+      const oldCopy = `${folder}/${copy}`
+      const newBase = `${renamedFolder}/${base}`
+      const newCopy = `${renamedFolder}/${copy}`
+      await page.goto('/')
+      await openWorkflowFromPanel(page, oldBase, baseDisplayName)
+      await openWorkflowFromPanel(page, oldCopy, copyDisplayName)
+      const nestedOpening = page.waitForResponse(response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === '/api/v1/nested-workflow-snapshots/open')
+      await page.locator('.vue-flow__node[data-id="moved-child"]:visible').dblclick()
+      const nestedResponse = await nestedOpening
+      expect(nestedResponse.status(), await nestedResponse.text()).toBe(201)
+      const nested = await nestedResponse.json()
+      const beforeBase = await savedWorkflow(page, oldBase) as WorkflowFile
+      const beforeCopy = await savedWorkflow(page, oldCopy) as WorkflowFile
+      expect(nested.owner).toMatchObject({ kind: 'root', workflow_id: oldCopy, identity_generation: beforeCopy.info.identity_generation })
+      expect(nested.graph).toEqual(baseBeforeCopy.graph)
+      const beforeBaseDraft = await acceptedDraft(page, oldBase)
+      const beforeCopyDraft = await acceptedDraft(page, oldCopy)
+      const baseFiles = fileSnapshot(dirname(beforeBase.info.path))
+      const copyFiles = fileSnapshot(dirname(beforeCopy.info.path))
+      const resultFiles = fileSnapshot(beforeBase.info.results_path)
+      expect(Object.keys(resultFiles).length).toBeGreaterThan(0)
+      const queryPinned = async (id: string) => {
+        for (const identity of [undefined, capturedResult.source_identity]) {
+          const response = await page.request.post(`${API_BASE}/api/v1/nodes/${nodeId}/data/query`, {
+            data: { workflow_name: id, ...(identity ? { result_identity: identity } : {}) },
+          })
+          expect(response.ok(), await response.text()).toBeTruthy()
+          expect(await response.json()).toMatchObject({ source_identity: capturedResult.source_identity, rows: capturedResult.rows })
+        }
+      }
+      await queryPinned(oldBase)
+      page.on('request', observeFolderPatch)
+      const workflowsPanel = await showWorkflowsPanel(page)
+      await workflowsPanel.getByTestId('workflow-search').fill('')
+      await workflowsPanel.getByTestId(`workflow-folder-${folder}`).click()
+      await workflowsPanel.getByTestId('workflow-rename-selected-btn').click()
+      const folderDialog = page.getByTestId('workflow-folder-dialog')
+      await expect(folderDialog).toBeVisible()
+      await page.getByTestId('workflow-folder-name-input').fill(renamedFolder)
+      await page.getByTestId('workflow-folder-dialog-submit').click()
+      await expect(page.getByTestId('workflow-action-error')).toContainText('Close the affected workflow and nested-workflow tabs')
+      expect(folderPatches).toEqual([])
+      expect(await savedWorkflow(page, oldBase)).toEqual(beforeBase)
+      expect(await savedWorkflow(page, oldCopy)).toEqual(beforeCopy)
+      expect((await acceptedDraft(page, oldBase)).graph).toEqual(beforeBaseDraft.graph)
+      expect((await acceptedDraft(page, oldCopy)).graph).toEqual(beforeCopyDraft.graph)
+      expect(fileSnapshot(dirname(beforeBase.info.path))).toEqual(baseFiles)
+      expect(fileSnapshot(dirname(beforeCopy.info.path))).toEqual(copyFiles)
+      const retainedNested = await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${nested.session_id}`)
+      expect(retainedNested.ok(), await retainedNested.text()).toBeTruthy()
+      expect(await retainedNested.json()).toMatchObject({ session_id: nested.session_id, snapshot_revision: nested.snapshot_revision, graph: nested.graph })
+      await queryPinned(oldBase)
+      await page.getByTestId('workflow-folder-dialog-cancel').click()
+      const nestedTab = page.locator('.dv-tab').filter({ hasText: 'Moved child' })
+      const nestedDeletion = page.waitForResponse(response => response.request().method() === 'DELETE'
+        && new URL(response.url()).pathname === `/api/v1/nested-workflow-snapshots/${nested.session_id}`)
+      await nestedTab.locator('.dv-default-tab-action').click()
+      expect((await nestedDeletion).status()).toBe(204)
+      await expect(nestedTab).toHaveCount(0)
+      expect((await page.request.get(`${API_BASE}/api/v1/nested-workflow-snapshots/${nested.session_id}`)).status()).toBe(404)
+      for (const label of [copyDisplayName, baseDisplayName]) {
+        const tab = page.getByTestId('canvas-tab').filter({ has: page.locator('.canvas-tab__title', { hasText: label }) })
+        await expect(tab).toHaveCount(1)
+        await tab.getByTestId('canvas-tab-close').click()
+        await expect(tab).toHaveCount(0)
+      }
+      await showWorkflowsPanel(page)
+      await workflowsPanel.getByTestId(`workflow-folder-${folder}`).click()
+      await workflowsPanel.getByTestId('workflow-rename-selected-btn').click()
+      await page.getByTestId('workflow-folder-name-input').fill(renamedFolder)
+      const folderMoved = page.waitForResponse(response => response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname === `/api/v1/workflows/folders/${folder}`)
+      await page.getByTestId('workflow-folder-dialog-submit').click()
+      const movedResponse = await folderMoved
+      expect(movedResponse.status(), await movedResponse.text()).toBe(200)
+      expect(await movedResponse.json()).toMatchObject({ path: renamedFolder })
+      expect(folderPatches.map(body => JSON.parse(body))).toEqual([{ new_path: renamedFolder }])
+      await expect(folderDialog).not.toBeVisible()
+      await expect(page.getByTestId('workflow-action-error')).toHaveCount(0)
+      const afterBase = await savedWorkflow(page, newBase) as WorkflowFile
+      const afterCopy = await savedWorkflow(page, newCopy) as WorkflowFile
+      expect(afterBase.info).toMatchObject({ id: newBase, identity_generation: expect.any(Number) })
+      expect(afterCopy.info).toMatchObject({ id: newCopy, identity_generation: expect.any(Number) })
+      expect(afterBase.graph).toEqual(beforeBase.graph)
+      expect(afterBase.artifact_hash).toBe(beforeBase.artifact_hash)
+      const rewrittenParent = structuredClone(beforeCopy.graph)
+      const child = rewrittenParent.nodes.find(node => node.id === 'moved-child')
+      if (child?.type !== 'workflow' || !child.source) throw new Error('Missing accepted workspace provenance')
+      child.source.workflow_id = newBase
+      expect(afterCopy.graph).toEqual(rewrittenParent)
+      expect(afterCopy.artifact_hash).toBe(beforeCopy.artifact_hash)
+      expect(await acceptedDraft(page, newBase)).toMatchObject({ workflow_id: newBase, graph: beforeBaseDraft.graph, draft_revision: beforeBaseDraft.draft_revision })
+      expect(await acceptedDraft(page, newCopy)).toMatchObject({ workflow_id: newCopy, graph: rewrittenParent, draft_revision: beforeCopyDraft.draft_revision })
+      expect(fileSnapshot(afterBase.info.results_path)).toEqual(resultFiles)
+      await queryPinned(newBase)
+      expect(await savedWorkflow(page, unrelated)).toEqual(unrelatedBefore)
+      expect(fileSnapshot(dirname(unrelatedBefore.info.path))).toEqual(unrelatedFiles)
+      for (const id of [oldBase, oldCopy]) {
+        expect((await page.request.get(`${API_BASE}/api/v1/workflows/${id}`)).status()).toBe(404)
+      }
+      await page.reload()
+      await openWorkflowFromPanel(page, newBase, baseDisplayName)
+      await queryPinned(newBase)
+      await openWorkflowFromPanel(page, newCopy, copyDisplayName)
+      expect((await acceptedDraft(page, newCopy)).graph).toEqual(rewrittenParent)
+      expect(fileSnapshot(afterBase.info.results_path)).toEqual(resultFiles)
+      expect(fileSnapshot(dirname(unrelatedBefore.info.path))).toEqual(unrelatedFiles)
+    } catch (error) {
+      primaryOccurred = true
+      throw error
+    } finally {
+      page.off('request', observeFolderPatch)
+      if (!page.isClosed()) {
+        await page.goto('about:blank').catch(error => cleanupErrors.push(error))
+        for (const id of [copy, base, `${folder}/${copy}`, `${folder}/${base}`, `${renamedFolder}/${copy}`, `${renamedFolder}/${base}`, unrelated]) {
+          try {
+            const response = await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)
+            expect([200, 204, 404], await response.text()).toContain(response.status())
+          } catch (error) { cleanupErrors.push(error) }
+        }
+        for (const id of [folder, renamedFolder]) {
+          try {
+            const response = await page.request.delete(`${API_BASE}/api/v1/workflows/folders/${id}`, { data: { policy: 'empty' } })
+            expect([200, 204, 404], await response.text()).toContain(response.status())
+          } catch (error) { cleanupErrors.push(error) }
+        }
+      }
+      if (primaryOccurred && cleanupErrors.length) console.error('Save As/folder move cleanup failures', cleanupErrors)
     }
+    if (cleanupErrors.length) throw cleanupErrors[0]
   })
 
   test('delete workflow uses confirmation dialog and clears server file', async ({ page }) => {
