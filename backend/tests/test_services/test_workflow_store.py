@@ -531,6 +531,8 @@ def test_move_rewrites_saved_workspace_provenance_without_changing_hash(
 def test_direct_and_transitive_source_containment_cycles_are_rejected(
     tmp_path: Path,
 ) -> None:
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
     store = _store(tmp_path)
     for name in ("a", "b"):
         store.create_workflow(WorkflowCreate(name=name))
@@ -578,10 +580,58 @@ def test_direct_and_transitive_source_containment_cycles_are_rejected(
         }
     )
 
+    store.create_workflow(WorkflowCreate(name="unrelated"))
+    drafts = WorkflowDraftService(lambda: store)
+    for workflow_id in ("a", "b", "unrelated"):
+        saved = store.read_workflow_document(workflow_id)
+        # These persisted snapshots establish structural authority only.
+        drafts.put_draft(
+            workflow_id,
+            graph=saved.graph.model_copy(update={"display_name": f"Pending {workflow_id}"}),
+            expected_revision=0,
+            should_validate=False,
+        )
+        tools = store.workflow_dir(workflow_id) / "tools"
+        tools.mkdir(exist_ok=True)
+        (tools / "retained.py").write_bytes(f"# retained source: {workflow_id}\n".encode())
+        results = store.get_storage_path(workflow_id)
+        results.mkdir()
+        (results / "retained.bin").write_bytes(f"result: {workflow_id}".encode())
+    foreign = tmp_path / "foreign-cycle.bin"
+    foreign.write_bytes(b"unmanaged cycle sentinel")
+
+    def authority(current_store, current_drafts, workflow_id):
+        directory = current_store.workflow_dir(workflow_id)
+        return (
+            current_store.read_workflow_document(workflow_id),
+            current_drafts.get_draft_authority_snapshot(workflow_id),
+            current_store.workflow_generation(workflow_id),
+            {
+                path.relative_to(directory).as_posix(): path.read_bytes()
+                for path in directory.rglob("*") if path.is_file()
+            },
+        )
+
+    retained = {
+        workflow_id: authority(store, drafts, workflow_id)
+        for workflow_id in ("a", "b", "unrelated")
+    }
+    foreign_bytes = foreign.read_bytes()
+
     with pytest.raises(
         ValueError, match="a -> b-instance -> a-instance -> source:a"
     ):
         store.save_workflow("a", WorkflowSaveBody(graph=a_with_b))
+    for workflow_id, before in retained.items():
+        assert authority(store, drafts, workflow_id) == before
+    assert foreign.read_bytes() == foreign_bytes
+    reopened = _store(tmp_path)
+    reopened_drafts = WorkflowDraftService(lambda: reopened)
+    for workflow_id, before in retained.items():
+        assert authority(reopened, reopened_drafts, workflow_id) == before
+    assert reopened.get_workflow("a").graph == a.graph
+    assert reopened.get_workflow("b").graph == b_with_a
+    assert foreign.read_bytes() == foreign_bytes
 
 
 class _ArchiveAdapter:
@@ -817,18 +867,76 @@ def test_duplicate_failure_does_not_publish_partial_copy(tmp_path: Path, monkeyp
 
 
 def test_duplicate_rejects_recreated_source_identity(tmp_path: Path) -> None:
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
     from bioimageflow_server.services.workflow_store import WorkflowIdentityGenerationConflictError
 
     store = _store(tmp_path)
     original = store.create_workflow(WorkflowCreate(name="source"))
     store.delete_workflow("source")
-    store.create_workflow(WorkflowCreate(name="source"))
+    recreated = store.create_workflow(WorkflowCreate(name="source"))
+    assert recreated.identity_generation > original.identity_generation
+    store.create_workflow(WorkflowCreate(name="unrelated"))
+    drafts = WorkflowDraftService(lambda: store)
+    for workflow_id in ("source", "unrelated"):
+        graph = _graph(f"{workflow_id}-definition", f"Saved {workflow_id}")
+        store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
+        # The refusal concerns generation and structural persisted authority.
+        drafts.put_draft(
+            workflow_id,
+            graph=graph.model_copy(update={"display_name": f"Pending {workflow_id}"}),
+            expected_revision=0,
+            should_validate=False,
+        )
+        tools = store.workflow_dir(workflow_id) / "tools"
+        tools.mkdir(exist_ok=True)
+        (tools / "retained.py").write_bytes(f"# retained source: {workflow_id}\n".encode())
+        results = store.get_storage_path(workflow_id)
+        results.mkdir()
+        (results / "retained.bin").write_bytes(f"result: {workflow_id}".encode())
+    foreign = tmp_path / "foreign-generation.bin"
+    foreign.write_bytes(b"unmanaged generation sentinel")
+
+    def authority(current_store, current_drafts, workflow_id):
+        directory = current_store.workflow_dir(workflow_id)
+        return (
+            current_store.read_workflow_document(workflow_id),
+            current_drafts.get_draft_authority_snapshot(workflow_id),
+            current_store.workflow_generation(workflow_id),
+            {
+                path.relative_to(directory).as_posix(): path.read_bytes()
+                for path in directory.rglob("*") if path.is_file()
+            },
+        )
+
+    retained = {
+        workflow_id: authority(store, drafts, workflow_id)
+        for workflow_id in ("source", "unrelated")
+    }
+    foreign_bytes = foreign.read_bytes()
+    # Address the recreated authority through a fresh public store, while the
+    # duplicate request deliberately retains its deleted incarnation's token.
+    store = _store(tmp_path)
+    reopened_drafts = WorkflowDraftService(lambda: store)
+    for workflow_id, before in retained.items():
+        assert authority(store, reopened_drafts, workflow_id) == before
     with pytest.raises(WorkflowIdentityGenerationConflictError):
         store.patch_workflow("source", WorkflowUpdate(
             action="duplicate", new_name="copy", graph=_graph("snapshot"),
             expected_identity_generation=original.identity_generation,
         ))
     assert not (store.root_dir / "copy").exists()
+    assert not list(store.root_dir.glob(".workflow-copy-*"))
+    for workflow_id, before in retained.items():
+        assert authority(store, reopened_drafts, workflow_id) == before
+    assert foreign.read_bytes() == foreign_bytes
+    reopened = _store(tmp_path)
+    final_drafts = WorkflowDraftService(lambda: reopened)
+    for workflow_id, before in retained.items():
+        assert authority(reopened, final_drafts, workflow_id) == before
+    assert reopened.get_workflow("source").info.identity_generation == recreated.identity_generation
+    assert not reopened.workflow_dir("copy").exists()
+    assert not list(reopened.root_dir.glob(".workflow-copy-*"))
+    assert foreign.read_bytes() == foreign_bytes
 
 
 def test_update_rejects_duplicate_only_graph() -> None:
