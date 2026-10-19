@@ -1329,6 +1329,11 @@ class ExecutionManager:
                 if diagnostic is not None:
                     message = message or diagnostic.message
                     tb = tb or diagnostic.traceback
+                if message:
+                    summary = _summarize_failure_message(message)
+                    if summary != message and (not tb or message not in tb):
+                        tb = f"{message}\n\n{tb}" if tb else message
+                    message = summary
                 self._node_statuses[node_id] = NodeStatus(
                     node_id=node_id,
                     status="failed",
