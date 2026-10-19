@@ -12,9 +12,11 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 The FULL campaign continues under standing authorization through END, including technically gated source upload, CI and package publication.
 Commits are progress boundaries; distributed production review/repair is EXCLUDED and native desktop M5 is LAST.
 Detach is delivered at `10b17b9`, after the isolated stale frontend campaign-manifest correction `db26035` and the ten-path resource delivery `9be353a`.
-The pushed CI repair source is `b7b47132` on `campaign/platform-ci-repair`; local startup, structural and scope commits continue through `d832f1e`, with other campaign implementations held in separate task partitions.
+The pushed CI repair source is `d6b0506` on PR #20; clean CI-only follow-up `efea356` is committed but not pushed because noninteractive GitHub access without native Keychain access is not yet available.
+Local reviewed tasks continue through `8d33578`, including short explicit failure details `a47b2d6`, metadata-only default Napari setup `b2a7852`, and template refusal `d91bbba`; unrelated implementations remain separate held partitions.
 The separate reviewed Detach owner fence and durable provenance journey are now validated in both browsers on `9be353a` plus their named frozen diff; the scoped local frontend assembly passes and its exact source projection is retained below.
-Current coverage is **418 V + 76 G + 6 U = 500** applicable obligations; primary GUI remains 224/224.
+Current coverage is **438 V + 56 G + 5 U = 499** applicable obligations; primary GUI remains 224/224.
+This reconciliation promotes 20 exact executed obligations and removes the session-only GUI Logger persistence dimension from applicability; it does not certify durable log replay or unsupported operating systems.
 This is accumulated scoped evidence, not a monolithic app/full/campaign PASS.
 
 The integration owner controls Git, releases, main platform dependencies/runtime/tests, Context, checkpoints, live OMERO account operations and physical cleanup.
@@ -30,12 +32,17 @@ Accumulated historical `V` claims do not replace the final audited local backend
 
 ## Current CI and local acceptance
 
-[PR #20](https://github.com/Inria-SAIRPICO/bioimageflow-platform/pull/20) contains only the reviewed committed baseline and CI repairs through `b7b47132`.
+[PR #20](https://github.com/Inria-SAIRPICO/bioimageflow-platform/pull/20) contains the reviewed clean CI source through `d6b0506`, transferred without unrelated local task ancestry.
 The original run `39275889440` remains FAILED, with its backend/Firefox/Chromium logs and browser artifacts retained under the LOCAL untracked evidence directory `frontend/test-results/campaign-evidence-final-20261019/ci-run-39275889440/`.
 The repaired [run 39280900873](https://github.com/Inria-SAIRPICO/bioimageflow-platform/actions/runs/39280900873) is terminal FAILED after queue delays overlapping the official [Actions incident](https://www.githubstatus.com/incidents/8tzbpcnl75jp), which started at 15:49:25 UTC.
 Backend quality, Firefox smoke, Frontend quality and Documentation pass; Chromium reports 94 passed, one failed stale-processing Worker-row case, one flaky logger-selection case and 38 not run, with one outside-test error.
-The exact stale-worker failure is reproduced locally and needs a node-scoped preparation SDK correction; the logger cause remains under focused investigation.
+That stale-worker failure is repaired on normal published SDK 0.9.4; the unchanged original exact case passes, and logger exact plus five repetitions pass without a speculative product patch or an original-cause claim.
 All six Full milestone jobs are explicitly skipped by expected PR routing; neither these skips nor successful PR jobs supply scheduled/full certification.
+The subsequent [run 39296724574](https://github.com/Inria-SAIRPICO/bioimageflow-platform/actions/runs/39296724574) is terminal FAILED at `d6b0506`: Backend, Firefox smoke, Frontend quality and Documentation pass; Chromium reports 52 passed, one failed and 81 not run.
+Its exact `execution-failure-rerun.spec.ts:179` failure is reproduced locally in 48.255280s: the explicitly scoped node error contained its full diagnostic instead of the existing short-summary contract.
+The event-time repair preserves complete separate diagnostics and the original raw retained observations; six focused controls and 100 owning manager tests pass, and the unchanged Chromium case passes in 29.050449s.
+LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/ci-explicit-failure-summary-source-admission.json` records exact source hashes and the two-file clean derivative `efea356`; its ordinary push is held, with no claim of new remote CI success.
+The failed SSH push found no usable key, the existing SSH agent has no identities, and the GitHub CLI authentication metadata identifies native keyring storage with no existing environment token; do not retry that credential path until the user supplies noninteractive access outside chat.
 Preserve the failed run and its unchanged successful phases; do not repeatedly dispatch or push unrelated work.
 The exact repaired editor/nested cases pass, and the trace-proven Napari explicit-Open response barrier passes once (13.292601s) and five repetitions (52.458588s); the original CI Unset flake cause remains unproven, and initial failure tracing is now case-scoped.
 The unchanged original stale-processing Chromium case passes on normal published SDK 0.9.4 and the frozen scoped-preparation adapter (79.412620s); no speculative row-locator correction was needed.
@@ -43,6 +50,9 @@ Nine focused adapter controls and the exact same-ID replacement router control p
 The final audited local frontend unit selection passes 1355 cases in 135 files with 43 explicit distributed exclusions (19.154722s), followed by lint (6.114237s), type checking (3.103012s) and build (3.451238s), retaining the existing chunk warning.
 LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/final-local-frontend-assembly.json` freezes all 351 frontend source files and exact commands; this is a local audited assembly, not unfiltered frontend, browser or full-campaign certification.
 The original stdio-MCP Chromium journey now passes (16.531099s) after the canonical persistence resource distinguishes local semantic origin and draft-only pending work from external unsaved presentation and recovery-only writes; earlier failed attempts remain FAILED.
+Napari default setup now passes 91 owning backend cases and 12 component cases, exact four recovery controls, scoped lint/types and strict docs; local `b2a7852` and LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/napari-setup-needed-delivery.json` retain the frozen source and durations, with Qt/native acceptance still open.
+The invalid-template Save/refusal/visible-repair journey passes Chromium 32.363754s and Firefox 35.887263s without any accepted Run; local `d91bbba` and LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/output-template-refusal-delivery.json` retain its scope.
+The real output-projection filesystem family passes 7 cases in 1.56s at local `8d33578`, plus Ruff; LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/output-views-real-filesystem-delivery.json` limits identity/ownership/refusal evidence to the actual host, without Windows or worker inference.
 
 The current local backend/external assembly collects 1998 cases, selects 1891 and explicitly excludes 107: three parallel-scheduling, one Parsl, 25 managed-remote and 78 distributed-engine identities.
 Its complete invocation remains FAILED (866.289066s): 1884 passed, seven manual-QA cases refused the owner's repository-overlapping pytest temporary root, with 131 dependency deprecation warnings.
@@ -139,7 +149,8 @@ Both new exact runtime roots are physically retired after copied available pass-
 The current Detach receipt records strict documentation status, including the original campaign-link failure and the corrected result; no failed command is relabeled.
 
 1. Reconcile remaining applicable cells against exact current oracles; keep existing historical qualifications and do not promote gaps merely from source review or a broad green subset.
-2. Preserve the terminal failed CI run and its unchanged successful phases, resolve each actual failure by its exact selector, then execute the ordinary scheduled/full workflow on the validated meaningful branch milestone; PR smoke alone does not certify that scope.
+2. Preserve terminal failed CI runs and unchanged successful phases; publish the already validated two-file `efea356` repair only after noninteractive GitHub authentication is available without native Keychain access, then resolve actual new failures before the ordinary scheduled/full milestone.
+   Do not retry authentication through the personal Keychain, and do not treat PR smoke as scheduled/full certification.
 3. Complete the user-required basic first-party OMERO Download/Upload package in this order: reviewed source and normal candidate wheel/sdist checks; actual owned worker with an isolated memory-only credential provider and authorized-server download/upload proof using those exact artifacts, plus ordinary exact-SHA CI; publication only after all those gates pass; PyPI verification and normal platform adoption; then a real headless saved-card→active-canvas→Save/reload binding journey.
    Independent exact-SHA CI may run alongside owned worker/live proof after reviewed source/artifacts are committed.
    Preserve full image dimensions and independently verify cleanup of only the exact server objects created by this test.
