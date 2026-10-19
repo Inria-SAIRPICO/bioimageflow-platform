@@ -85,13 +85,17 @@ class _FakeWetlandsWrapper:
 
     def admit_runtime(self, env_spec: object, *, provision: bool, replace_stale: bool = False,
                       admissions: Any = None, on_preparation: Any = None,
-                      on_provision_event: Any = None, on_removal_event: Any = None) -> Any:
+                      on_provision_event: Any = None, on_removal_event: Any = None,
+                      scoped_node_path: str | None = None) -> Any:
         name = str(getattr(env_spec, "name"))
         self.admit_calls.append((name, replace_stale))
         if self.state is EnvironmentRecipeState.STALE and not replace_stale:
             raise RuntimeError("Stale generation requires replacement")
         if on_preparation is not None:
-            on_preparation(SimpleNamespace(action="updating" if self.state is EnvironmentRecipeState.STALE else "reusing"))
+            on_preparation(SimpleNamespace(
+                action="updating" if self.state is EnvironmentRecipeState.STALE else "reusing",
+                scoped_node_path=scoped_node_path,
+            ))
         self.state = EnvironmentRecipeState.CURRENT
         receipt = SimpleNamespace(generation_id=getattr(self, "generation", 0))
         if admissions is not None:
@@ -501,7 +505,7 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
     service._processing_environment_lock = guard
     adapter = _ExecutionEnvironmentManager(
         manager, context=ExecutionContext(execution_id="startup-race", workflow_id="wf", draft_revision=1),
-        current_node_id=lambda: "worker", on_preparation=lambda *_args: None,
+        on_preparation=lambda *_args: None,
         on_provision_event=lambda *_args: None, on_ready=lambda *_args: None,
         on_admitted=lambda *_args: None,
         on_failure=lambda *_args: None, on_stopped=lambda *_args: None,
@@ -509,8 +513,10 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
         environment_lock=service.processing_environment_lock,
     )
     def prepare_and_submit() -> Any:
-        receipt = adapter.admit_runtime(GENERAL_ENV, provision=True, admissions={})
-        return adapter.submit_processing_task(GENERAL_ENV, {"row": 1}, runtime_receipt=receipt)
+        receipt = adapter.admit_runtime(GENERAL_ENV, provision=True, admissions={}, scoped_node_path="worker")
+        return adapter.submit_processing_task(
+            GENERAL_ENV, {"row": 1}, runtime_receipt=receipt, scoped_node_path="worker",
+        )
 
     submission = None
     if first_owner == "startup":

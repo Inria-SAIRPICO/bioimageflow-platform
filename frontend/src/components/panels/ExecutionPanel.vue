@@ -480,7 +480,7 @@ function closeRetryDialog(): void {
             <span :style="{ paddingLeft: `${indent(job) * 1.1}rem` }" class="job-name">
               {{ job.display_name ?? job.scoped_node_path }}
             </span>
-            <span class="job-state"><Tag :value="job.state" :severity="stateSeverity(job.state)" /><small v-if="job.state === 'running' && job.message">{{ job.message }}</small></span>
+            <span class="job-state"><Tag :value="job.state" :severity="stateSeverity(job.state)" /><small v-if="(job.state === 'waiting' || job.state === 'running') && job.message">{{ job.message }}</small></span>
             <span>
               <ProgressBar v-if="progressValue(job) !== null" :value="progressValue(job)!" class="job-progress" />
               <span v-else>—</span>
@@ -500,7 +500,7 @@ function closeRetryDialog(): void {
             </div>
           </header>
           <p v-if="selectedJob.route_reason"><strong>Route:</strong> {{ selectedJob.route_reason }}</p>
-          <p v-if="selectedJob.state === 'running' && selectedJob.message"><strong>Current step:</strong> {{ selectedJob.message }}</p>
+          <p v-if="(selectedJob.state === 'waiting' || selectedJob.state === 'running') && selectedJob.message"><strong>Current step:</strong> {{ selectedJob.message }}</p>
           <p v-if="selectedJob.diagnostic" class="diagnostic-message">
             <strong>{{ selectedJob.diagnostic.exception_type ?? selectedJob.diagnostic.category ?? 'Failure' }}:</strong>
             {{ selectedJob.diagnostic.message }}

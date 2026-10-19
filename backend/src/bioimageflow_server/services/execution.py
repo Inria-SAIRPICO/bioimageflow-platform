@@ -217,19 +217,17 @@ class _ExecutionEnvironmentManager:
         manager: Any,
         *,
         context: ExecutionContext,
-        current_node_id: Callable[[], str | None],
         on_preparation: Callable[[Any, ExecutionContext, str | None, str], None],
         on_provision_event: Callable[[Any, ExecutionContext, str | None, str], None],
         on_ready: Callable[[ExecutionContext, str | None, str], None],
         on_admitted: Callable[[ExecutionContext, str | None, str, bool], None],
-        on_failure: Callable[[str], None],
-        on_stopped: Callable[[str], None],
+        on_failure: Callable[[ExecutionContext, str], None],
+        on_stopped: Callable[[ExecutionContext, str], None],
         replacement_authorizer: Callable[[Any], bool] | None,
         environment_lock: Any | None = None,
     ) -> None:
         self._manager = manager
         self._context = context
-        self._current_node_id = current_node_id
         self._on_preparation = on_preparation
         self._on_provision_event = on_provision_event
         self._on_ready = on_ready
@@ -242,21 +240,27 @@ class _ExecutionEnvironmentManager:
     def admit_runtime(
         self, env_spec: Any, *, provision: bool,
         admissions: dict[Any, Any] | None = None,
+        scoped_node_path: str | None = None,
     ) -> Any:
         """Prepare ready content before keys; admission never starts a pool."""
         env_name = env_spec.name
-        node_id = self._current_node_id()
 
         def preparation_callback(preparation: Any) -> None:
-            self._on_preparation(preparation, self._context, node_id, env_name)
+            if preparation.scoped_node_path != scoped_node_path:
+                logger.warning("Dropping environment preparation with mismatched node scope")
+                return
+            self._on_preparation(
+                preparation, self._context, preparation.scoped_node_path, env_name,
+            )
 
         def provision_callback(event: Any) -> None:
-            self._on_provision_event(event, self._context, node_id, env_name)
+            self._on_provision_event(event, self._context, scoped_node_path, env_name)
 
         try:
             with self._environment_lock:
                 receipt = self._manager.admit_runtime(
                     env_spec, provision=provision, admissions=admissions,
+                    scoped_node_path=scoped_node_path,
                     replace_stale=bool(
                         provision and self._replacement_authorizer is not None
                         and self._replacement_authorizer(env_spec)
@@ -267,12 +271,12 @@ class _ExecutionEnvironmentManager:
                 )
                 if provision and receipt is not None:
                     self._on_admitted(
-                        self._context, node_id, env_name, self._manager.is_running(env_name),
+                        self._context, scoped_node_path, env_name, self._manager.is_running(env_name),
                     )
                 return receipt
         except Exception:
             if provision:
-                self._on_failure(env_name)
+                self._on_failure(self._context, env_name)
             raise
 
     def validate_runtime_receipt(self, env_spec: Any, receipt: Any) -> Any:
@@ -288,6 +292,7 @@ class _ExecutionEnvironmentManager:
         *,
         shared_memory_grant: Any = None,
         runtime_receipt: Any = None,
+        scoped_node_path: str | None = None,
     ) -> Any:
         # The engine already used this exact receipt for identity/cache lookup.
         # Handoff fences it again, but cannot prepare or replace that generation.
@@ -302,11 +307,12 @@ class _ExecutionEnvironmentManager:
                 task = self._manager.submit_processing_task(
                     env_spec, payload, max_workers=max_workers, worker_timeout=worker_timeout,
                     shared_memory_grant=shared_memory_grant, runtime_receipt=runtime_receipt,
+                    scoped_node_path=scoped_node_path,
                 )
             except Exception:
-                self._on_failure(env_spec.name)
+                self._on_failure(self._context, env_spec.name)
                 raise
-            self._on_ready(self._context, self._current_node_id(), env_spec.name)
+            self._on_ready(self._context, scoped_node_path, env_spec.name)
             return task
 
     def shutdown_all(self) -> None:
@@ -316,7 +322,7 @@ class _ExecutionEnvironmentManager:
         finally:
             for name in names:
                 if not self._manager.is_running(name):
-                    self._on_stopped(name)
+                    self._on_stopped(self._context, name)
 
 
 def _selected_root_scope(graph: GraphState, nodes: list[str]) -> set[str]:
@@ -485,10 +491,6 @@ class ExecutionManager:
         self._starting = False
         self._pending_context: ExecutionContext | None = None
         self._idle_operation_active = False
-        # Track the last node_id that emitted a "started" event, used to
-        # mark the "currently running" node as unexecuted on cancel if
-        # no explicit "cancelled" progress event was received.
-        self._current_node_id: str | None = None
         self._retained_progress_events: list[dict[str, Any]] = []
         self._retained_progress_sequence = 0
         self._retained_progress_lock = threading.Lock()
@@ -741,7 +743,6 @@ class ExecutionManager:
         self.progress = None
         self.last_result = None
         self._node_statuses = {}
-        self._current_node_id = None
         with self._retained_progress_lock:
             self._retained_progress_events = []
             self._retained_progress_sequence = 0
@@ -1150,11 +1151,18 @@ class ExecutionManager:
                 )
                 return
 
+            diagnostic = getattr(event, "diagnostic", None)
+            if diagnostic is not None and diagnostic.scoped_node_path != node_id:
+                logger.warning("Dropping progress diagnostic with mismatched node scope")
+                return
+
             from bioimageflow_server.services.execution_progress import (
                 progress_event_from_attached,
             )
 
             with self._retained_progress_lock:
+                if self.state != "running" or self.context != context:
+                    return
                 converted = progress_event_from_attached(
                     event,
                     self._retained_progress_sequence + 1,
@@ -1167,7 +1175,6 @@ class ExecutionManager:
             record_id = getattr(event, "record_id", None)
 
             if status == "started":
-                self._current_node_id = node_id
                 self._node_statuses[node_id] = NodeStatus(
                     node_id=node_id,
                     status="running",
@@ -1319,6 +1326,9 @@ class ExecutionManager:
             if status == "failed":
                 message = getattr(event, "message", None)
                 tb = getattr(event, "traceback", None)
+                if diagnostic is not None:
+                    message = message or diagnostic.message
+                    tb = tb or diagnostic.traceback
                 self._node_statuses[node_id] = NodeStatus(
                     node_id=node_id,
                     status="failed",
@@ -1338,10 +1348,9 @@ class ExecutionManager:
                     record_id,
                     context=context,
                 )
-                # Wetlands can announce terminal task failure before the
-                # worker exception payload is available. Keep the immediate
-                # failed state, but let ``_on_run_done`` publish the single
-                # enriched error log instead of emitting a generic duplicate.
+                # Only this public event's explicit scope owns node details.
+                # A later generic workflow exception cannot enrich an
+                # arbitrary last-started or singleton failed node.
                 if message or tb:
                     self.event_bus.publish_log(
                         "ERROR",
@@ -1388,13 +1397,12 @@ class ExecutionManager:
             env_manager=_ExecutionEnvironmentManager(
                 shared_manager,
                 context=context,
-                current_node_id=lambda: self._current_node_id,
                 on_preparation=self._on_environment_preparation,
                 on_provision_event=self._on_environment_event,
                 on_ready=self._on_environment_ready,
                 on_admitted=self._on_environment_admitted,
                 on_failure=self._on_environment_failure,
-                on_stopped=lambda name: self._publish_environment_status(name, "stopped"),
+                on_stopped=self._on_environment_stopped,
                 replacement_authorizer=self._environment_replacement_authorizer,
                 environment_lock=self._processing_environment_lock,
             ),
@@ -1435,8 +1443,13 @@ class ExecutionManager:
         if context == self.context and self.state == "running":
             self._publish_environment_status(env_name, "running" if running else "ready")
 
-    def _on_environment_failure(self, env_name: str) -> None:
-        self._publish_environment_status(env_name, "failed")
+    def _on_environment_failure(self, context: ExecutionContext, env_name: str) -> None:
+        if context == self.context and self.state == "running":
+            self._publish_environment_status(env_name, "failed")
+
+    def _on_environment_stopped(self, context: ExecutionContext, env_name: str) -> None:
+        if context == self.context:
+            self._publish_environment_status(env_name, "stopped")
 
     def _on_environment_event(
         self, event: Any, context: ExecutionContext, node_id: str | None, env_name: str | None
@@ -1463,6 +1476,8 @@ class ExecutionManager:
         self, context: ExecutionContext, node_id: str, message: str
     ) -> None:
         with self._retained_progress_lock:
+            if context != self.context or self.state != "running":
+                return
             self._retained_progress_sequence += 1
             self._retained_progress_events.append(
                 {
@@ -1484,6 +1499,10 @@ class ExecutionManager:
         except asyncio.CancelledError:  # pragma: no cover — defensive
             exc = None
 
+        if self.context != context:
+            logger.warning("Dropping completion outside its execution %s", context.execution_id)
+            return
+
         success: bool
         errors: list[dict[str, Any]] = []
 
@@ -1503,18 +1522,6 @@ class ExecutionManager:
                     }
                 )
                 logger.info("Workflow execution cancelled: %s", exc)
-                # If a currently-running node never got a terminal event,
-                # mark it as unexecuted.
-                if (
-                    self._current_node_id is not None
-                    and self._node_statuses.get(self._current_node_id) is not None
-                    and self._node_statuses[self._current_node_id].status == "running"
-                ):
-                    self._node_statuses[self._current_node_id] = NodeStatus(
-                        node_id=self._current_node_id,
-                        status="unexecuted",
-                        cached=False,
-                    )
             else:
                 success = False
                 local_tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -1531,58 +1538,50 @@ class ExecutionManager:
                     exc,
                     exc_info=(type(exc), exc, exc.__traceback__),
                 )
-                # Attribute the failure to the currently-running node if
-                # no explicit "failed" event was seen.
-                target_id = self._current_node_id
-                if target_id is None:
-                    target_id = _single_failed_node_without_error(self._node_statuses)
-                should_publish_error_log = True
-                if target_id is not None and target_id in self._node_statuses:
-                    current = self._node_statuses[target_id]
-                    if current.status == "running":
-                        self._node_statuses[target_id] = NodeStatus(
-                            node_id=target_id,
-                            status="failed",
-                            cached=False,
-                            error=detail,
-                            traceback=tb,
-                        )
-                        self.event_bus.publish_node_state(
-                            target_id,
-                            "failed",
-                            False,
-                            detail,
-                            tb,
-                            context=context,
-                        )
-                    elif current.status == "failed" and not current.error:
-                        self._node_statuses[target_id] = NodeStatus(
-                            node_id=target_id,
-                            status="failed",
-                            cached=False,
-                            error=detail,
-                            traceback=tb,
-                        )
-                        self.event_bus.publish_node_state(
-                            target_id,
-                            "failed",
-                            False,
-                            detail,
-                            tb,
-                            context=context,
-                        )
-                    elif current.status == "failed":
-                        should_publish_error_log = False
-                if should_publish_error_log:
+                # Keep unscoped exceptions at run scope. Deduplicate only an
+                # identical primary detail already reported by an explicitly
+                # failed node event; never use it to infer a node association.
+                already_reported = any(
+                    status.status == "failed" and status.error == detail
+                    for status in self._node_statuses.values()
+                )
+                if not already_reported:
                     self.event_bus.publish_log(
                         "ERROR",
-                        _format_node_failure_message(target_id, detail, tb)
-                        if target_id is not None
-                        else _format_workflow_failure_message(detail, tb),
-                        target_id,
+                        _format_workflow_failure_message(detail, tb),
+                        None,
                         time.time(),
                         context=context,
                     )
+
+        if not success:
+            # The run is logically terminal even when a provider omitted its
+            # final node event. Retire every still-running presentation without
+            # guessing which node caused the unscoped failure/cancellation.
+            for node_id, status in tuple(self._node_statuses.items()):
+                if status.status != "running":
+                    continue
+                with self._retained_progress_lock:
+                    previous = next((
+                        event["payload"] for event in reversed(self._retained_progress_events)
+                        if event["kind"] == "public" and event["payload"]["node_name"] == node_id
+                    ), None)
+                    if previous is not None:
+                        # Logical run settlement is an attached-service fact,
+                        # not a scientific progress or physical-drain claim.
+                        # Keep every last observed counter/result field intact.
+                        self._retained_progress_sequence += 1
+                        self._retained_progress_events.append({
+                            "sequence": self._retained_progress_sequence,
+                            "kind": "public",
+                            "payload": {**previous, "status": "cancelled", "timestamp": time.time()},
+                        })
+                settled = status.model_copy(update={"status": "unexecuted", "cached": False})
+                self._node_statuses[node_id] = settled
+                self.event_bus.publish_node_state(
+                    node_id, settled.status, settled.cached, settled.error, settled.traceback,
+                    settled.result_key, settled.record_id, context=context,
+                )
 
         if self._active_graph is not None:
             aggregates = aggregate_workflow_statuses(
@@ -1676,17 +1675,6 @@ def _format_workflow_failure_message(message: str, tb: str | None) -> str:
     if tb:
         return f"Workflow execution failed: {message}\n{tb}"
     return f"Workflow execution failed: {message}"
-
-
-def _single_failed_node_without_error(
-    node_statuses: dict[str, NodeStatus],
-) -> str | None:
-    failed = [
-        node_id
-        for node_id, status in node_statuses.items()
-        if status.status == "failed" and not status.error
-    ]
-    return failed[0] if len(failed) == 1 else None
 
 
 def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str, str]:

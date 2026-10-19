@@ -216,6 +216,9 @@ The stateless graph endpoint validates the same canonical graph shape but does n
 
 Execution compiles the accepted recursive graph to one flat plan.
 Attached progress callbacks are fenced to the active running execution context; a delayed event from an earlier run cannot change a later run's status or emitted progress.
+Worker preparation and provision logs carry the public SDK call's explicit executable `scoped_node_path` with immutable run context, never a scope inferred from environment names, shared receipts or the last started node.
+A waiting job can display setup before scientific start without a fabricated start timestamp or numeric progress.
+Explicit public failure diagnostics own node details; unscoped exceptions remain run-level, and unsuccessful completion settles known running node and retained job presentations while preserving recorded progress and explicit terminal or disabled states, without claiming physical worker termination.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
 The attached run retains the fixed scoped executable leaf-node plan and its display names across start response, status snapshots, and completion, including selected-run dependencies and cached nodes while excluding disabled nodes and aggregate workflow boundaries. The execution banner counts unique completed or cached planned nodes, never nodes on the currently visible canvas, so nested workflows, tab changes, and Run Selected cannot alter its denominator. Row events preserve their zero-based row index and total separately from `row_progress` task current/maximum, and the browser labels each measurement according to its event kind. The banner presents one progress bar with completed-node and current-work text, reaches 100% on success, and leaves partial progress visible for failures and cancellations.

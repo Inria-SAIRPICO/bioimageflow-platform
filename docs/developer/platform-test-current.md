@@ -21,6 +21,7 @@ The integration owner controls Git, releases, main platform dependencies/runtime
 The isolated OMERO package reviewer has an explicit lease only for its worktree environment, checks, lock generation and artifacts; it cannot publish, mutate Git or use the live account.
 The reviewed Detach source partition is frozen at browser `ea27d351`, CanvasView `2dab7d3a`, session store `9db3f9e4` and unit `c35f2fe0`; its exact Firefox and Chromium consumers are complete with no retries or skips.
 Main imported-source mutations require the runtime owner's explicit IDLE handoff; isolated package source mutations require the package check consumer's separate IDLE handoff.
+Dispatch every actionable agent assignment with `followup_task`, which also activates a completed agent; use `send_message` only for information, so queued instructions cannot silently wait on a completed agent.
 
 The canonical `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption` receipt tree is absent in the restored October 19 host state.
 The unavailable historical path references below preserve their original labels and source-qualified claimed results, including original failures, but cannot currently be inspected or treated as new current certification.
@@ -37,6 +38,11 @@ The exact stale-worker failure is reproduced locally and needs a node-scoped pre
 All six Full milestone jobs are explicitly skipped by expected PR routing; neither these skips nor successful PR jobs supply scheduled/full certification.
 Preserve the failed run and its unchanged successful phases; do not repeatedly dispatch or push unrelated work.
 The exact repaired editor/nested cases pass, and the trace-proven Napari explicit-Open response barrier passes once (13.292601s) and five repetitions (52.458588s); the original CI Unset flake cause remains unproven, and initial failure tracing is now case-scoped.
+The unchanged original stale-processing Chromium case passes on normal published SDK 0.9.4 and the frozen scoped-preparation adapter (79.412620s); no speculative row-locator correction was needed.
+Nine focused adapter controls and the exact same-ID replacement router control pass; the three owning backend files retain an original 172-pass/one-fixture-failure command and its exact one-case recovery, giving 173 unique owning successes without relabeling the failed command.
+The final audited local frontend unit selection passes 1355 cases in 135 files with 43 explicit distributed exclusions (19.154722s), followed by lint (6.114237s), type checking (3.103012s) and build (3.451238s), retaining the existing chunk warning.
+LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/final-local-frontend-assembly.json` freezes all 351 frontend source files and exact commands; this is a local audited assembly, not unfiltered frontend, browser or full-campaign certification.
+The original stdio-MCP Chromium journey now passes (16.531099s) after the canonical persistence resource distinguishes local semantic origin and draft-only pending work from external unsaved presentation and recovery-only writes; earlier failed attempts remain FAILED.
 
 The current local backend/external assembly collects 1998 cases, selects 1891 and explicitly excludes 107: three parallel-scheduling, one Parsl, 25 managed-remote and 78 distributed-engine identities.
 Its complete invocation remains FAILED (866.289066s): 1884 passed, seven manual-QA cases refused the owner's repository-overlapping pytest temporary root, with 131 dependency deprecation warnings.
@@ -59,17 +65,27 @@ The production credential implementation is unchanged; these tests establish its
 Native cross-executable credential integration remains unverified and is not an END prerequisite under this user constraint; do not resume it at M5 without a separately scoped disposable-keychain plan or explicit user request.
 Native dialogs, viewers and editors still belong to M5 LAST.
 
-The exact candidate OMERO wheel is `e9b5f7305dbfb08b66de068a3ca86c464b9cbe575a2421046742a08f5ada7d3a`, loaded by normal published BioImageFlow 0.9.3/Core 0.5.0/Wetlands 2.6.1 and an actual Python 3.12.15 managed worker.
+The earlier candidate OMERO wheel is `e9b5f7305dbfb08b66de068a3ca86c464b9cbe575a2421046742a08f5ada7d3a`, loaded by normal published BioImageFlow 0.9.3/Core 0.5.0/Wetlands 2.6.1 and an actual Python 3.12.15 managed worker.
 RAM-provider connection-only authentication passes in 5.023767s; the first full attempt remains FAILED in 5.033737s because its test DatasetWrapper lacked a DatasetI model, before the first Dataset.save.
 The fixture-only corrected full command remains FAILED in 43.317501s at its annotation assertion, after seven real Workflow calls exercised upload/download and cache/refresh record selection.
-Only the first image's local and independent remote pixel comparisons are observed before that failure; complete pixel, annotation, sentinel and lifetime acceptance remain open.
+Only the first image's local and independent remote pixel comparisons are observed before that failure.
+The detached public SDK control proves MapAnnotation values are tuples, and the exact oracle-only correction then passes the complete roundtrip in 74.438089s.
+After ordinary CI exposed missing release metadata and a README title guard, the two-file correction rebuilt final wheel `034a9f9f8336e32f1dd3b43f441dd5e641121bfde6547b83cc24234c3c2f896d`; all five Python members are unchanged, and a fresh owned installation of that exact archive passes the complete RAM-provider roundtrip in 38.260697s.
+Both successful full runs verify complete uint16 TCZYX and RGBA pixels, exact annotations, cache/refresh records, retained prior results and sentinel preservation.
 Cleanup independently verifies all nine exact ledger-owned dataset/image/annotation IDs absent; driver and worker processes and runtime handles are retired.
-Both memory brokers have stopped with their private socket and directory removed, and neither used the personal Keychain.
+Every memory broker has stopped with its private socket and directory removed, and none used the personal Keychain.
+The seven complete live run roots, including failures, have independent verified copies under `omero-candidate/live-proof-copies/` before any runtime retirement.
+OMERO source is merged through [PR #8](https://github.com/Inria-SAIRPICO/bioimageflow/pull/8), with successful ordinary exact-source CI `39292881399` at `8c5d18e`.
+Its normal [release run 39294070663](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/39294070663) validates and builds successfully but remains FAILED at PyPI HTTP 400: the publishing identity cannot create the new project.
+Both project and 0.1.0 PyPI JSON endpoints return 404 after that attempt; no partial registry upload or published adoption is claimed, and no retry is authorized until publisher configuration changes.
 LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/omero-candidate/` preserves source snapshots, failed commands, broker closure and physical-release receipts; no failed command is upgraded to a pass.
 
 ## Normal dependency floor and closed releases
 
-Normal noneditable dependencies are `bioimageflow[parsl,psij]==0.9.3`, Core 0.5.0 and Wetlands 2.6.1; registry admission (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-093-lock-installed-admission.json`) retains 173 BIF/23 Core members and 93-package consistency.
+Normal noneditable dependencies are `bioimageflow[parsl,psij]==0.9.4`, Core 0.5.0 and Wetlands 2.6.1.
+SDK source `02b523a` passes ordinary CI `39292994519`, merges through [PR #9](https://github.com/Inria-SAIRPICO/bioimageflow/pull/9), and publishes through successful release `39294322808`.
+The immutable public wheel SHA256 `09343ad2bfff38f1dd3d0f9ff28fec77c047b58e5add5c7ec50ca68602e9636f` exactly matches the actual WorkerPool-tested candidate; normal platform lock/sync and all 173 installed SDK members are verified in LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/platform-sdk-094-installed-admission.json`.
+The prior registry admission (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-093-lock-installed-admission.json`) retains its original 0.9.3 projection of 173 BIF/23 Core members and 93-package consistency.
 Independent 0.9.3 publication (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-schema-independent-publication-peer.json`) owns exact source `81dbccef`, ordinary CI, publisher/tag and both immutable public archives; earlier SDK/Core/Wetlands releases remain CLOSED.
 The canonical Core wheel/same-wheel Linux and Windows floor is retained by public cohort verification (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/actual-base10-pypi-verification.json`) and its linked floor receipts; no editable or local-source workaround is authorized.
 Known-source optional-output inference preserves explicit carried-schema authority and genuinely dynamic unknowns.
@@ -128,10 +144,10 @@ The current Detach receipt records strict documentation status, including the or
    Independent exact-SHA CI may run alongside owned worker/live proof after reviewed source/artifacts are committed.
    Preserve full image dimensions and independently verify cleanup of only the exact server objects created by this test.
    The old reference is `/Users/amasson/Travail/bioimageit/PyFlow/Tools/Omero`; it is a reference path, not an executable platform dependency.
-   The writer checkout is `.worktrees/campaign-omero-tools`, branch `campaign/omero-tools`, based on current upstream `3b23c357`; original library main `8ba6ef65` remains untouched.
-   The three owning frontend files pass 81 unit cases, including connection capture and exact bound-node insertion, after a faithful currentGraph mock correction; package static/artifact/docs checks and owned candidate-worker provisioning pass, while complete live-server acceptance, exact-SHA CI and publication remain open.
+   Source is merged from `.worktrees/campaign-omero-tools`, based on `3b23c357`; original library main `8ba6ef65` remains untouched, and merged task trees can retire after proof copies and reader release.
+   Static/artifact/docs, owned worker, exact final-archive RAM live proof and ordinary exact-SHA CI pass; normal publication is blocked on the evidenced new-project publisher configuration, so the published-package Settings journey remains held.
    Credentials must remain outside graphs, artifacts and logs; fake-provider Settings tests do not supply a live result, and memory-provider live tests do not supply native Keychain acceptance.
-4. Finish the actual stdio-MCP case and final audited frontend/local two-browser/external/documentation assembly on its frozen source, reusing unchanged valid phases and avoiding quick/check/full stacks.
+4. Preserve the passing actual stdio-MCP case and local frontend assembly; finish remaining audited two-browser/external/documentation acceptance on frozen source, reusing unchanged valid phases and avoiding quick/check/full stacks.
    Update normal package discovery, Preferences guidance and Context with OMERO adoption; do not advertise an unpublished package as available.
 5. Execute native desktop dialogs/viewers/editor/window/process M5 LAST, then final source/coverage/cleanup review.
    No headless/mock result supplies native acceptance.

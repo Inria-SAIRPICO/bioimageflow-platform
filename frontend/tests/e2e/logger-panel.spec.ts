@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+const selectionTest = test.extend({ trace: 'retain-on-failure' })
+
 test.describe('logger panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/v1/execution/status', async (route) => {
@@ -77,7 +79,7 @@ test.describe('logger panel', () => {
     expect(after).toBe(before)
   })
 
-  test('selects text across log rows and copies it with the keyboard', async ({ page, context, browserName }) => {
+  selectionTest('selects text across log rows and copies it with the keyboard', async ({ page, context, browserName }, testInfo) => {
     if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/')
     await page.locator('.dv-tab').filter({ hasText: 'Logger' }).click()
@@ -91,26 +93,94 @@ test.describe('logger panel', () => {
 
     const messages = page.getByTestId('log-message')
     await expect(messages).toHaveCount(2)
-    await expect(async () => {
-      const first = await messages.nth(0).boundingBox()
-      const second = await messages.nth(1).boundingBox()
-      expect(first && second).toBeTruthy()
-      await page.mouse.move(first!.x + 2, first!.y + first!.height / 2)
-      await page.mouse.down()
-      await page.mouse.move(second!.x + second!.width - 2, second!.y + second!.height / 2, { steps: 8 })
-      await page.mouse.up()
-      const selection = await page.evaluate(() => window.getSelection()?.toString() ?? '')
-      expect(selection).toContain('first selection marker')
-      expect(selection).toContain('second selection marker')
-    }).toPass()
-    const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '')
-    await page.evaluate(() => document.addEventListener('copy', () => {
-      document.body.dataset.nativeCopy = 'seen'
-    }, { once: true }))
-    await page.keyboard.press('ControlOrMeta+C')
-    await expect(page.locator('body')).toHaveAttribute('data-native-copy', 'seen')
-    if (browserName === 'chromium') {
-      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected)
+    let firstFailedDrag: unknown
+    try {
+      await expect(async () => {
+        const first = await messages.nth(0).boundingBox()
+        const second = await messages.nth(1).boundingBox()
+        expect(first && second).toBeTruthy()
+        await page.mouse.move(first!.x + 2, first!.y + first!.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(second!.x + second!.width - 2, second!.y + second!.height / 2, { steps: 8 })
+        await page.mouse.up()
+        const observed = await page.evaluate(({ first, second, capture }) => {
+          const selection = window.getSelection()
+          const text = selection?.toString() ?? ''
+          const markers = ['first selection marker', 'second selection marker']
+          if (!capture || markers.every(marker => text.includes(marker))) return { text }
+          const rect = (element: Element) => element.getBoundingClientRect().toJSON()
+          const attributes = (element: Element | null) => {
+            if (!element) return null
+            const testId = element.getAttribute('data-testid')
+            return {
+              tag: element.tagName,
+              testId: testId && ['log-message', 'log-entry', 'log-list', 'panel-logger'].includes(testId)
+                ? testId : testId ? 'other' : null,
+              role: element.getAttribute('role'),
+            }
+          }
+          const textFacts = (value: string) => ({
+            markers: markers.filter(marker => value.includes(marker)), length: value.length,
+          })
+          const point = (x: number, y: number) => ({
+            x, y, hit: attributes(document.elementFromPoint(x, y)),
+            message: attributes(document.elementFromPoint(x, y)?.closest('[data-testid="log-message"]') ?? null),
+          })
+          const anchor = (node: Node | null | undefined, offset: number | undefined) => ({
+            element: attributes(node instanceof Element ? node : node?.parentElement ?? null),
+            text: textFacts(node?.textContent ?? ''), offset,
+          })
+          const elements = [...document.querySelectorAll('[data-testid="log-message"]')]
+          const clippingAncestors = []
+          for (let element = elements[0]?.parentElement; element; element = element.parentElement) {
+            const style = getComputedStyle(element)
+            if (!/(auto|scroll|hidden|clip)/.test(`${style.overflowX} ${style.overflowY}`)) continue
+            clippingAncestors.push({
+              ...attributes(element), rect: rect(element),
+              overflowX: style.overflowX, overflowY: style.overflowY,
+              clientLeft: element.clientLeft, clientTop: element.clientTop,
+              clientWidth: element.clientWidth, clientHeight: element.clientHeight,
+              scrollLeft: element.scrollLeft, scrollTop: element.scrollTop,
+              scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight,
+            })
+          }
+          const headline = document.querySelector('[data-testid="execution-banner-headline"]')
+          return { text, diagnostics: {
+            measured: { first, second }, current: elements.map(rect), clippingAncestors,
+            start: point(first.x + 2, first.y + first.height / 2),
+            end: point(second.x + second.width - 2, second.y + second.height / 2),
+            viewport: { width: window.innerWidth, height: window.innerHeight, scrollX: window.scrollX, scrollY: window.scrollY },
+            selection: {
+              text: textFacts(text), anchor: anchor(selection?.anchorNode, selection?.anchorOffset),
+              focus: anchor(selection?.focusNode, selection?.focusOffset), rangeCount: selection?.rangeCount,
+            },
+            banner: headline && {
+              rect: rect(headline), state: ['Execution complete', 'Executing workflow…', 'Execution failed']
+                .find(label => headline.textContent?.includes(label)) ?? 'other',
+            },
+            layout: [...document.querySelectorAll('.dv-view.visible')].map(element => ({
+              rect: rect(element), active: !!element.querySelector('.dv-active-group'),
+            })),
+          } }
+        }, { first: first!, second: second!, capture: firstFailedDrag === undefined })
+        if (observed.diagnostics) firstFailedDrag = observed.diagnostics
+        const selection = observed.text
+        expect(selection).toContain('first selection marker')
+        expect(selection).toContain('second selection marker')
+      }).toPass()
+      const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '')
+      await page.evaluate(() => document.addEventListener('copy', () => {
+        document.body.dataset.nativeCopy = 'seen'
+      }, { once: true }))
+      await page.keyboard.press('ControlOrMeta+C')
+      await expect(page.locator('body')).toHaveAttribute('data-native-copy', 'seen')
+      if (browserName === 'chromium') {
+        expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(selected)
+      }
+    } finally {
+      if (firstFailedDrag !== undefined) await testInfo.attach('first-failed-native-drag', {
+        body: JSON.stringify(firstFailedDrag, null, 2), contentType: 'application/json',
+      })
     }
   })
 

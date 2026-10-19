@@ -30,7 +30,8 @@ Automated checks must not read or write the user's personal/native Keychain or d
 Use injected test credential providers for unit/UI checks and a private RAM-only broker for live managed-worker checks, with `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` inherited before worker creation so unbootstrapped workers fail closed.
 Production credential code remains unchanged; label this as test-provider credential-contract and actual-server evidence, with native cross-executable integration explicitly unverified.
 That native integration is not an END prerequisite and must not resume automatically at M5; it requires a separately scoped disposable-keychain plan or explicit user request.
-The current RAM authentication passes, but complete roundtrip acceptance remains open after a retained annotation-assertion failure and verified cleanup of all nine exact owned objects.
+Complete RAM-provider roundtrip acceptance passes on the final metadata-repaired candidate archive, with full pixel/annotation/cache/sentinel checks and all nine exact owned objects verified absent; original fixture failures remain FAILED.
+Ordinary OMERO CI passes, but first publication is blocked by the evidenced PyPI project-creation identity error; do not retry until publisher configuration changes, and do not advertise registry availability.
 Verify PyPI, adopt the normal published package, then complete a headless saved-card→active-canvas→Save/reload binding journey, preserving full image dimensions and independently verifying cleanup of only owned server objects.
 Current local backend certification is an assembled 1891-case success projection with 107 explicit exclusions; its original repository-root fixture failures remain FAILED, and the checkpoint records the exact recovery rather than a monolithic PASS.
 The October 4 specification/suite/causal review and selected milestone, technically gated dependency releases, coherent normal-registry adoption, credential compensation and configured deployment policy are closed in their exact receipts; do not restart them from historical instructions.
@@ -38,6 +39,8 @@ I1/T1, portable output-schema inference and faithful hot-reload fixture metadata
 An observed public contradiction gets one distinguishing cheap control and a bounded owned repair; it does not trigger another whole-codebase sweep or automatic dependency release.
 Combine the major SDK/platform adoption and I1/T1 retrospective with the M2→M3 transition, with the next ordinary lookback before M4/final certification.
 Operational checkpoints retain current source, accepted scoped receipt pointers, next commands and protected/active owners; detailed resolved chronology stays only in receipts and historical documents that ordinary continuation does not load.
+Use `followup_task` for every actionable agent assignment and reserve `send_message` for information, so completed agents are explicitly reactivated.
+For a new distribution, run the repository's existing release-metadata and README-title guards before its final archive build and source CI; do not add another packaging test framework.
 Before an expensive real fixture, check actual public context/graph/source/API and middleware prerequisites; a held mutation request's test-release signal must not need that same mutation admission.
 
 ## Highest priority: deep library/Core review and validation — October 4
