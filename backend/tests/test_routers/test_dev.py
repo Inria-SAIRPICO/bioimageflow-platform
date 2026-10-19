@@ -8,7 +8,9 @@ from pathlib import Path
 import httpx
 import pytest
 from httpx import ASGITransport
+from bioimageflow.validation import serialize_input_schema
 
+from bioimageflow_dev_tools.tools import IncrementAgainNumbers, IncrementNumbers
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -77,7 +79,9 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert increment_tool["accepts_upstream"] is True
     assert increment_tool["inputs"]["number"]["type"] == "int"
     assert increment_tool["inputs"]["number"]["required"] is True
-    assert increment_tool["inputs"]["number"]["connectable"] == "by_default"
+    assert increment_tool["inputs"]["number"]["connectable"] == (
+        serialize_input_schema(IncrementNumbers)["number"]["connectable"]
+    ) == "never"
     assert (
         increment_tool["inputs"]["number"]["description"]
         == "Number column to increment"
@@ -91,6 +95,9 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     assert controlled_direct["inputs"]["fail"]["connectable"] == "never"
     increment_again = next(t for t in tools if t["name"] == "IncrementAgainNumbers")
     assert increment_again["inputs"]["number_plus_one"]["type"] == "int"
+    assert increment_again["inputs"]["number_plus_one"]["connectable"] == (
+        serialize_input_schema(IncrementAgainNumbers)["number_plus_one"]["connectable"]
+    ) == "never"
     assert increment_again["outputs"] == {
         "number_plus_two": {"type": "int", "default": None, "image_spec": None, "viewer": None},
     }

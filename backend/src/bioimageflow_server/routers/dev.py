@@ -87,7 +87,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
             "number": InputFieldSchema(
                 type="int",
                 required=True,
-                connectable="by_default",
+                connectable="never",
                 description="Number column to increment",
             ),
         },
@@ -146,7 +146,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
             "number_plus_one": InputFieldSchema(
                 type="int",
                 required=True,
-                connectable="by_default",
+                connectable="never",
                 description="Incremented number column to increment again",
             ),
         },
