@@ -672,7 +672,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             and napari_environment_service.store.deployment_mode == "desktop"
         ):
             await napari_environment_service.recover_pending_environment_forget()
-            await napari_environment_service.adopt_managed_singleton()
+            await napari_environment_service.initialize_registry()
             await napari_environment_service.reconcile_managed_operations()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()

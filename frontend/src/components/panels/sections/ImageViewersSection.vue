@@ -298,6 +298,13 @@ function isPlatformManaged(environment: typeof napari.environments[number]): boo
   return environment.managed?.recipe.source === 'managed'
 }
 
+function isUninstalledDeclaration(environment: typeof napari.environments[number]): boolean {
+  return isPlatformManaged(environment) && environment.state === 'setup_needed'
+    && environment.managed?.installation_generation == null
+    && environment.root === `managed-pending:${environment.managed?.wetlands_name}`
+    && !environment.interpreter
+}
+
 function ownershipLabel(environment: typeof napari.environments[number]): string {
   if (isPlatformManaged(environment)) return 'Managed by BioImageFlow'
   return environment.ownership === 'external' ? 'External' : 'Adopted installation'
@@ -381,7 +388,7 @@ onMounted(() => {
       >
         <div class="heading">
           <strong>{{ environment.name }}</strong>
-          <span>napari {{ environment.inventory?.napari_version ?? 'unknown' }} · {{ stateLabel(lifecycle[environment.id] ?? environment.state) }}</span>
+          <span>napari {{ environment.inventory?.napari_version ?? 'unknown' }} · {{ stateLabel(environment.state === 'setup_needed' ? environment.state : lifecycle[environment.id] ?? environment.state) }}</span>
         </div>
         <p v-if="environment.state === 'missing'" class="environment-warning" role="status">
           The saved Python executable is missing.
@@ -389,7 +396,8 @@ onMounted(() => {
           <template v-else-if="!isPlatformManaged(environment)">You can forget this legacy registration and add an existing installation, or create a new environment.</template>
           <template v-else>Create a new managed environment if this installation is gone.</template>
         </p>
-        <details>
+        <p v-if="environment.state === 'setup_needed'" class="help-text">Set up this environment to install napari. No viewer packages have been installed yet.</p>
+        <details :open="environment.state === 'setup_needed'">
           <summary>Details</summary>
           <dl>
             <dt>Path</dt><dd><code>{{ environment.root }}</code></dd>
@@ -411,13 +419,13 @@ onMounted(() => {
             <li v-for="pkg in environment.inventory.distributions" :key="pkg.name">{{ pkg.name }} {{ pkg.version }}</li>
           </ul>
           <div class="actions">
-            <Button label="Refresh" size="small" @click="refresh(environment.id)" />
+            <Button label="Refresh" size="small" :disabled="environment.state === 'setup_needed'" @click="refresh(environment.id)" />
             <Button label="Launch empty viewer" size="small" :disabled="!canLaunch(environment)" @click="launch(environment.id)" />
             <Button label="Rename" size="small" @click="openRename(environment.id, environment.name)" />
             <Button v-if="environment.ownership === 'external' && environment.state === 'missing'" label="Locate environment" size="small" @click="locate(environment.id)" />
-            <Button v-if="!isPlatformManaged(environment)" label="Forget" severity="secondary" size="small" @click="askForget(environment)" />
-            <Button v-if="isPlatformManaged(environment) && ['failed', 'cancelled', 'setup_needed'].includes(environment.state)" label="Retry" size="small" @click="retry(environment.id)" />
-            <Button v-if="isPlatformManaged(environment)" label="Delete managed installation" severity="danger" size="small" @click="askDeleteManaged(environment)" />
+            <Button v-if="!isPlatformManaged(environment) || isUninstalledDeclaration(environment)" label="Forget" severity="secondary" size="small" @click="askForget(environment)" />
+            <Button v-if="isPlatformManaged(environment) && ['failed', 'cancelled', 'setup_needed'].includes(environment.state)" :label="environment.state === 'setup_needed' ? 'Setup' : 'Retry'" size="small" @click="retry(environment.id)" />
+            <Button v-if="isPlatformManaged(environment) && !isUninstalledDeclaration(environment)" label="Delete managed installation" severity="danger" size="small" @click="askDeleteManaged(environment)" />
           </div>
         </details>
       </article>

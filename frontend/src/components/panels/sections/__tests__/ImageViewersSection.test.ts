@@ -164,6 +164,60 @@ describe('ImageViewersSection', () => {
     vi.mocked(api.delete).mockReset()
   })
 
+  it('offers explicit Setup for an uninstalled default and retries that same entry after failure', async () => {
+    const declaration = {
+      ...environment, name: 'Default napari', state: 'setup_needed',
+      root: 'managed-pending:napari-env-a', interpreter: '', interpreter_identity: '', inventory: null,
+      managed: { ...environment.managed, installation_generation: null,
+        recipe: { ...environment.managed.recipe, requested_packages: [] } },
+    }
+    vi.mocked(api.get).mockImplementation((url: string) => Promise.resolve({ data: url === '/api/v1/napari/status'
+      ? { environment_id: declaration.id, status: 'stopped', running: false }
+      : { revision: 1, environments: [declaration], default_environment_id: declaration.id, filename_rules: [], operations: [] },
+    }))
+    const napari = useNapariStore()
+    const watcher = vi.spyOn(napari, 'watchOperation').mockResolvedValue({} as any)
+    const wrapper = mount(ImageViewersSection, {
+      props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 1 } as any },
+      global: { plugins: [PrimeVue] },
+    })
+    await flushPromises()
+    const card = wrapper.get(`[data-testid="napari-environment-card-${declaration.id}"]`)
+    expect(card.get('details').attributes('open')).toBeDefined()
+    const button = (label: string) => card.findAll('button').find(item => item.text() === label)
+    expect(button('Setup')).toBeDefined()
+    expect(button('Retry')).toBeUndefined()
+    expect(button('Forget')).toBeDefined()
+    expect(button('Delete managed installation')).toBeUndefined()
+    expect(button('Refresh')!.attributes('disabled')).toBeDefined()
+    expect(button('Launch empty viewer')!.attributes('disabled')).toBeDefined()
+    expect(api.post).not.toHaveBeenCalled()
+    const operation = { id: 'setup-op', environment_id: declaration.id, kind: 'retry', state: 'resolving',
+      progress: 5, message: 'Resolving managed environment recipe', error: null }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { revision: 2,
+      environment: { ...declaration, state: 'creating' }, operation } })
+    await button('Setup')!.trigger('click')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledExactlyOnceWith(`/api/v1/napari/environments/${declaration.id}/retry`, { expected_revision: 1 })
+    expect(watcher).toHaveBeenCalledWith(declaration.id, operation.id)
+    expect(wrapper.text()).toContain('Resolving managed environment recipe')
+    napari.applySnapshot({ revision: 3, environments: [{ ...declaration, state: 'failed' }],
+      default_environment_id: declaration.id, filename_rules: [], operations: [{ ...operation, state: 'failed',
+        message: 'Controlled setup failure', error: { code: 'napari_provision_failed', detail: 'Controlled setup failure' } }],
+    } as any)
+    await flushPromises()
+    expect(button('Setup')).toBeUndefined()
+    expect(button('Retry')).toBeDefined()
+    expect(wrapper.text()).toContain('Controlled setup failure')
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { revision: 4,
+      environment: { ...declaration, state: 'creating' }, operation: { ...operation, id: 'retry-op' } } })
+    await button('Retry')!.trigger('click')
+    await flushPromises()
+    expect(api.post).toHaveBeenLastCalledWith(`/api/v1/napari/environments/${declaration.id}/retry`, { expected_revision: 3 })
+    expect(napari.environments.map(item => item.id)).toEqual([declaration.id])
+    expect(napari.defaultEnvironmentId).toBe(declaration.id)
+  })
+
   it('shows immutable details as installed packages and operation progress', async () => {
     const wrapper = mount(ImageViewersSection, {
       props: { modelValue: { deployment_mode: 'desktop', napari_registry_revision: 4 } as any },

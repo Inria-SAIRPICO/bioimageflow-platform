@@ -314,7 +314,7 @@ async def test_lifespan_reconciles_and_closes_managed_napari_operations(
     store = SettingsStore(tmp_path / "settings.json")
     await store.load()
     service = NapariEnvironmentService(store)
-    service.adopt_managed_singleton = AsyncMock()  # type: ignore[method-assign]
+    service.initialize_registry = AsyncMock()  # type: ignore[method-assign]
     service.reconcile_managed_operations = AsyncMock()  # type: ignore[method-assign]
     service.close = AsyncMock()  # type: ignore[method-assign]
     app = create_app(
@@ -328,7 +328,7 @@ async def test_lifespan_reconciles_and_closes_managed_napari_operations(
     )
 
     async with app.router.lifespan_context(app):
-        service.adopt_managed_singleton.assert_awaited_once()
+        service.initialize_registry.assert_awaited_once()
         service.reconcile_managed_operations.assert_awaited_once()
         service.close.assert_not_awaited()
 

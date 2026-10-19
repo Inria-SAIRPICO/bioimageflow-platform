@@ -112,7 +112,8 @@ Deletion is available only for a platform-owned installation, reports affected d
 Use the public environment manager removal operation and never recursively delete a user-provided path.
 Deletion proves the recorded Wetlands name, public managed project path, and generation identity before removal; the nested `.pixi/envs/default` interpreter path is not substituted for that owned project path.
 Forgetting an entry clears every output favorite, filename rule, and global-default reference to it atomically, with a summary of those changes.
-Platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
+Installed platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
+A setup-needed managed declaration with no installed generation and no active operation can be forgotten as metadata only, using the same reference cleanup; no environment manager is acquired and no installed-environment files are removed or changed.
 
 ## 3. Portable output requirements
 
@@ -516,8 +517,12 @@ Preserve the current managed napari installation as one registered entry named â
 Migration inspects and adopts the actual installation without recreating it or discarding user-installed plugins.
 If it does not exist, register a setup-needed default recipe; first use presents setup and installation progress.
 Changing settings alone must not provision it.
-**Known implementation gap:** Startup currently adopts an existing singleton but skips a missing installation without registering the required setup-needed default recipe.
-Explicit managed creation is available from Settings and the output chooser; that path does not by itself close the default-recipe requirement, which needs an owned repair or an approved product decision.
+Desktop initialization atomically registers that default only when the Napari registry has revision zero, no entries, no default, no operation history and no legacy-adoption suppression.
+The declaration uses the same canonical default recipe as explicit managed creation and does not acquire an environment manager, probe, install or launch anything.
+Terminal-only operation history likewise needs no runtime reconciliation; nonterminal operations retain their existing recovery path.
+The default card exposes explicit **Setup** through the existing retry operation, retaining the declaration UUID across failed attempts.
+Until installation, **Refresh** is disabled and the probe API returns a typed setup-required conflict without probing.
+Forgetting the never-installed declaration increments the registry revision, preventing automatic recreation on the next startup.
 Legacy outputs with no viewer annotations retain normal opening behavior once a healthy default is available.
 
 Delivery advanced in three independently verifiable increments:
@@ -526,7 +531,7 @@ Delivery advanced in three independently verifiable increments:
 2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
 3. Managed environment creation with requirement-group prefills, plus the retained recipe-based copy API.
 
-The implementation for all three increments is delivered, subject to the missing-default-recipe gap above.
+The implementation for all three increments, including the metadata-only setup-needed default, is delivered.
 Feature acceptance additionally requires the native desktop checks in Section 10; those remain uncertified.
 The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
 Phase C replaced the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.

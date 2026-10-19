@@ -776,6 +776,8 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 
 The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
 They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
+Desktop startup with a pristine Napari registry and no existing installation registers a metadata-only setup-needed default recipe without acquiring an environment manager or probing.
+Its card offers explicit Setup with the same UUID through retry, disables Refresh before installation, and permits metadata-only Forget while it has no installed generation or active operation; the incremented registry revision prevents bootstrap from recreating it.
 Webapp mode rejects all of these local operations.
 The desktop-only passive viewing-readiness route accepts the manifest returned by workflow import directly and uses the same package-only candidate evaluator as retained-artifact resolution.
 It does not reread a workflow, probe or mutate environments, launch a viewer, or execute archive content; its response retains structural output identities, unknown reasons, candidates, effective environments, normalized requirement groups, honest managed-setup prefill, and covered/not-covered/unknown summary counts.

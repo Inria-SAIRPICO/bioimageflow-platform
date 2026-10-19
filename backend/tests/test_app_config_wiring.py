@@ -243,6 +243,49 @@ def test_create_app_configures_bioimageflow_wetlands_path(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("mode", ["desktop", "webapp"])
+async def test_lifespan_initializes_only_desktop_napari_metadata_without_runtime_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    from bioimageflow_server.services.napari_environments import NapariEnvironmentService
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    def forbidden(*_args: object) -> object:
+        raise AssertionError("startup must not provision or probe a viewer")
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.tool_environments.ToolEnvironmentService.start_standard_environment_refresh",
+        lambda _self: None,
+    )
+    store = SettingsStore(tmp_path / "settings.json", deployment_mode=mode)  # type: ignore[arg-type]
+    await store.load()
+    await store.patch({"tool_store_path": str(tmp_path / "tools")})
+    service = NapariEnvironmentService(
+        store, managed_singleton_roots=[tmp_path / "absent-legacy"],
+        probe_runner=forbidden, environment_manager_provider=forbidden,
+    )
+    catalog = SimpleNamespace(refresh=AsyncMock(), list_packages=lambda: [])
+    app = create_app(AppConfig(
+        settings_store=store, settings=store.get(), deployment_mode=mode,
+        napari_environment_service=service, tool_registry=ToolRegistryService(),
+        package_catalog=catalog,  # type: ignore[arg-type]
+        workflow_root=tmp_path / "workflows", workspace_path=tmp_path / "workspace",
+        workspaces_root=tmp_path / "users",
+        storage_path=tmp_path / "runtime", disable_hot_reload=True,
+    ))
+    async with app.router.lifespan_context(app):
+        snapshot = service.snapshot()
+        if mode == "desktop":
+            assert len(snapshot.environments) == 1
+            assert snapshot.environments[0].state == "setup_needed"
+            assert snapshot.default_environment_id == snapshot.environments[0].id
+            assert snapshot.operations == []
+        else:
+            assert snapshot.environments == []
+            assert snapshot.revision == 0
+    catalog.refresh.assert_awaited_once()
+
+
 async def test_lifespan_refreshes_catalog_on_startup(empty_tool_store: Path):
     class _RecordingCatalog:
         def __init__(self) -> None:

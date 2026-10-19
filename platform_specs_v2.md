@@ -487,6 +487,7 @@ Fiji is also a platform-owned desktop integration, but the Fiji application rema
 Named napari environment registrations, managed recipes and operations, inventories, defaults, filename rules, and output favorites are likewise platform-owned local integration state.
 They never enter recursive `GraphState`, artifact hashes, workflow archives, retained result snapshots, or processing dependency resolution.
 Managed creation, copy, retry, cancellation, and deletion therefore do not acquire a workflow graph mutation lock; their own environment UUID and registry revision contracts prevent them from targeting a replaced local installation.
+A pristine desktop Napari registry receives a metadata-only setup-needed default without runtime access; explicit Setup/retry retains its UUID, while Forget of that never-installed declaration prevents automatic recreation through the registry revision.
 
 ## 15. Keyboard And Context Actions
 

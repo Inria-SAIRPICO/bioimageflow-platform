@@ -107,6 +107,7 @@ def _http_error(exc: NapariEnvironmentError) -> HTTPException:
         "napari_registry_revision_conflict",
         "napari_environment_mutation_active",
         "napari_operation_not_live",
+        "napari_environment_setup_required",
     }:
         status_code = 409
     else:
