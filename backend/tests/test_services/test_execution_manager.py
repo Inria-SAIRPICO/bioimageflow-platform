@@ -784,6 +784,58 @@ def test_progress_diagnostic_cannot_retarget_a_different_scoped_node() -> None:
     assert bus.log_events == []
 
 
+@pytest.mark.parametrize("source", ["event", "diagnostic"])
+@pytest.mark.parametrize("details", ["absent", "independent", "contains-message"])
+def test_explicit_failed_progress_summarizes_state_without_losing_diagnostics(
+    source: str, details: str,
+) -> None:
+    from bioimageflow import NodeFailureDiagnostic
+
+    message = (
+        "Environment 'worker' cannot be reused: its recipe changed.\n"
+        "Existing recipe: original\nRequested recipe: replacement"
+    )
+    summary = "Environment 'worker' cannot be reused: its recipe changed."
+    provider_tb = {
+        "absent": None,
+        "independent": "Provider traceback:\nworker.py:42",
+        "contains-message": f"Provider traceback:\nworker.py:42\n{message}",
+    }[details]
+    expected_details = (
+        provider_tb if details == "contains-message"
+        else f"{message}\n\n{provider_tb}" if provider_tb else message
+    )
+    diagnostic = NodeFailureDiagnostic(
+        scoped_node_path="nested/worker", category="execution", exception_type="EnvironmentReuseError",
+        message=message, traceback=provider_tb,
+    ) if source == "diagnostic" else None
+    event = _ProgressEventStub(
+        "nested/worker", "failed", message=message if source == "event" else None,
+        traceback=provider_tb if source == "event" else None, diagnostic=diagnostic,
+    )
+    bus = RecordingEventBus()
+    execution = ExecutionManager(bus, MagicMock())
+    execution.context = _TEST_CONTEXT
+    execution.state = "running"
+
+    execution._make_progress_callback(_TEST_CONTEXT)(event)
+
+    status = execution._node_statuses["nested/worker"]
+    assert status.error == summary
+    assert status.traceback == expected_details
+    assert bus.node_state_events == [("nested/worker", "failed", False, summary, expected_details)]
+    error_logs = [item for item in bus.log_events if item[0] == "ERROR"]
+    assert len(error_logs) == 1
+    assert error_logs[0][2] == "nested/worker"
+    assert error_logs[0][1] == f"Node nested/worker failed: {summary}\n{expected_details}"
+    retained = execution.retained_progress()
+    if source == "diagnostic":
+        assert retained[0]["payload"]["message"] == message
+        assert retained[0]["payload"]["traceback"] == provider_tb
+    else:
+        assert retained[0]["payload"]["message"] == message
+
+
 # ---- B2: ExecutionManager ---------------------------------------------------
 
 
