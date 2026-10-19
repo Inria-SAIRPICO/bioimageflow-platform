@@ -369,7 +369,6 @@ class TestPatch:
         assert on_disk["new_workflow_execution"] == "parallel"
         assert store.get().new_workflow_execution == "parallel"
 
-    @pytest.mark.campaign_excluded(reason="parsl")
     async def test_patch_old_execution_engine_is_rejected(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)

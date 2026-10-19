@@ -6,15 +6,7 @@
       "root": "backend",
       "excluded": [
         {
-          "nodeid": "tests/test_models/test_settings.py::TestSettings::test_execution_engine_parallel_is_valid",
-          "reason": "parallel-scheduling"
-        },
-        {
-          "nodeid": "tests/test_models/test_settings.py::TestSettings::test_legacy_execution_engine_parsl_migrates_to_parallel",
-          "reason": "parsl"
-        },
-        {
-          "nodeid": "tests/test_models/test_settings.py::TestSettings::test_new_workflow_execution_synchronizes_compatibility_field",
+          "nodeid": "tests/test_models/test_settings.py::TestSettings::test_new_workflow_execution_parallel_is_valid",
           "reason": "parallel-scheduling"
         },
         {
@@ -146,10 +138,6 @@
           "reason": "distributed-engine"
         },
         {
-          "nodeid": "tests/test_routers/test_settings.py::TestPatchSettings::test_patch_legacy_execution_engine_parsl_migrates_to_parallel",
-          "reason": "parsl"
-        },
-        {
           "nodeid": "tests/test_services/test_distributed_execution_integration.py::test_profile_resolver_loads_exact_digest_and_cluster_identity",
           "reason": "distributed-engine"
         },
@@ -263,6 +251,10 @@
         },
         {
           "nodeid": "tests/test_services/test_execution_runtime.py::test_reducer_accepts_public_bioimageflow_diagnostic_value",
+          "reason": "distributed-engine"
+        },
+        {
+          "nodeid": "tests/test_services/test_execution_runtime.py::test_reducer_retains_environment_phase_without_numeric_progress",
           "reason": "distributed-engine"
         },
         {
@@ -436,10 +428,6 @@
         {
           "nodeid": "tests/test_services/test_settings_store.py::TestPatch::test_patch_updates_state_and_disk",
           "reason": "parallel-scheduling"
-        },
-        {
-          "nodeid": "tests/test_services/test_settings_store.py::TestPatch::test_patch_legacy_execution_engine_parsl_migrates_to_parallel",
-          "reason": "parsl"
         },
         {
           "nodeid": "tests/test_ws/test_handler.py::test_execution_snapshot_websocket_redacts_durable_reconnect_data",

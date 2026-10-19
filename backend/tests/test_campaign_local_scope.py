@@ -49,7 +49,7 @@ def _write_manifest(path: Path, entries: list[dict[str, str]]) -> None:
 def test_checked_in_backend_manifest_is_exact_and_reasoned() -> None:
     exclusions = load_backend_exclusions(MANIFEST_PATH)
 
-    assert len(exclusions) == 110
+    assert len(exclusions) == 107
     assert set(exclusions.values()) == ALLOWED_EXCLUSION_REASONS
 
 
