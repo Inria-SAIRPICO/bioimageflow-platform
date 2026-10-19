@@ -74,7 +74,7 @@ The reviewed manifest-only correction is `db26035`; the corrected complete `scri
 This local frontend assembly combines that audited selection with unchanged lint, type checking and build phases; it is not an unfiltered `check frontend` PASS.
 Corrected frontend lint (8.849764s), build-mode type checking (1.276590s) and production build (5.834501s) pass; the build retains its existing chunk-size warning.
 Three earlier Bun invocations emitted help without validation despite exit zero and are explicitly INVALID in their receipts.
-[Current Detach delivery](../../frontend/test-results/campaign-evidence-final-20261019/detach-delivery.json) retains exact command logs, named source/dependency hashes and the limited pass artifacts separately from unavailable historical receipts.
+Current Detach delivery (LOCAL untracked receipt: `frontend/test-results/campaign-evidence-final-20261019/detach-delivery.json`) retains exact command logs, named source/dependency hashes and the limited pass artifacts separately from unavailable historical receipts.
 Only WF-SRC-002 R/P/B close from this packet, adding three verified obligations; no unrelated gap changes.
 Both new exact runtime roots are physically retired after copied available pass-status artifacts, explicit consumer release, fresh UID/inode equality and empty exact process/open-handle checks.
 
