@@ -28,6 +28,14 @@ class ${toolName}(DataFrameTool):
   let primaryOccurred = false
   let cleanupFailed = false
   let cleanupFailure: unknown
+  const nestedWrites: Response[] = []
+  const observeNestedWrite = (response: Response) => {
+    if (response.request().method() === 'PUT'
+      && new URL(response.url()).pathname.startsWith('/api/v1/nested-workflow-snapshots/')) {
+      nestedWrites.push(response)
+    }
+  }
+  page.on('response', observeNestedWrite)
   try {
     expect((await page.request.patch(`${API}/settings`, { data: { external_editor: 'true' } })).ok()).toBeTruthy()
     expect((await page.request.post(`${API}/workflows`, { data: { name: original } })).ok()).toBeTruthy()
@@ -249,15 +257,39 @@ class ${toolName}(DataFrameTool):
     await expect(page.locator('.nested-workflow-editor:visible')).toHaveCount(1)
     await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
-    const openPrivateSource = async (expectedRevision: number) => {
-      const opening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
-        && new URL(candidate.url()).pathname === '/api/v1/editor/open-node')
+    const openPrivateSource = async (baseline: NestedWorkflowSnapshotResponse) => {
+      let writesBeforeOpen: Response[] = []
+      const invoked = page.waitForRequest(candidate => {
+        if (candidate.method() !== 'POST'
+          || new URL(candidate.url()).pathname !== '/api/v1/editor/open-node') return false
+        // Editor Open flushes any queued nested persistence before taking its
+        // CAS revision. Retain only writes accepted before this exact request.
+        writesBeforeOpen = nestedWrites.filter(response => new URL(response.url()).pathname
+          === `/api/v1/nested-workflow-snapshots/${nested.session_id}`)
+        return true
+      })
+      const opening = page.waitForResponse(async candidate => candidate.request() === await invoked)
       await page.getByTestId('open-tool-script').click()
       const accepted = await opening
       expect(accepted.ok(), await accepted.text()).toBeTruthy()
+      let before = baseline
+      for (const write of writesBeforeOpen) {
+        expect(write.ok(), await write.text()).toBeTruthy()
+        const snapshot = await write.json() as NestedWorkflowSnapshotResponse
+        if (snapshot.snapshot_revision <= before.snapshot_revision) continue
+        expect(write.request().postDataJSON()).toEqual({
+          expected_revision: before.snapshot_revision, graph: before.graph,
+        })
+        expect(snapshot.session_id).toBe(before.session_id)
+        expect(snapshot.owner).toEqual(before.owner)
+        expect(snapshot.parent_node_id).toBe(before.parent_node_id)
+        expect(snapshot.snapshot_revision).toBe(before.snapshot_revision + 1)
+        expect(snapshot.graph).toEqual(before.graph)
+        before = snapshot
+      }
       expect(accepted.request().postDataJSON()).toEqual({
         workflow_id: parent, identity_generation: parentInfo.identity_generation,
-        node_id: 'increment', session_id: nested.session_id, expected_revision: expectedRevision,
+        node_id: 'increment', session_id: nested.session_id, expected_revision: before.snapshot_revision,
       })
       const body = await accepted.json() as {
         opened: boolean; method: string; path: string; project_path: string; snapshot: NestedWorkflowSnapshotResponse;
@@ -267,10 +299,10 @@ class ${toolName}(DataFrameTool):
         project_path: dirname(dirname(dirname(parentInfo.path))),
       })
       expect(body.snapshot.session_id).toBe(nested.session_id)
-      return body
+      return { ...body, before }
     }
-    const privateSource = await openPrivateSource(nested.snapshot_revision)
-    expect(privateSource.snapshot.snapshot_revision).toBe(nested.snapshot_revision + 1)
+    const privateSource = await openPrivateSource(nested)
+    expect(privateSource.snapshot.snapshot_revision).toBe(privateSource.before.snapshot_revision + 1)
     const privateNode = privateSource.snapshot.graph.nodes.find(candidate => candidate.id === 'increment')
     if (privateNode?.type !== 'tool' || !privateNode.source_module) throw new Error('No private source binding')
     expect(privateNode.source_module).toMatch(new RegExp(`^edit_${nested.session_id.replaceAll('-', '')}_`))
@@ -281,9 +313,10 @@ class ${toolName}(DataFrameTool):
     const privateManifest = JSON.parse(readFileSync(join(privateManifestRoot, 'module.json'), 'utf8'))
     expect(privateSource.path).toBe(join(privateManifestRoot, privateManifest.filename))
     await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
-    const repeated = await openPrivateSource(privateSource.snapshot.snapshot_revision)
+    const repeated = await openPrivateSource(privateSource.snapshot)
     expect(repeated.path).toBe(privateSource.path)
-    expect(repeated.snapshot).toEqual(privateSource.snapshot)
+    expect(repeated.snapshot).toEqual(repeated.before)
+    expect(repeated.snapshot.graph).toEqual(privateSource.snapshot.graph)
     writeFileSync(privateSource.path, readFileSync(privateSource.path, 'utf8').replace('n + 20', 'n + 40'))
     expect(readFileSync(privateSource.path, 'utf8')).toContain('n + 40')
     expect(readFileSync(embeddedPath)).toEqual(embeddedBytes)
@@ -299,6 +332,7 @@ class ${toolName}(DataFrameTool):
     primaryOccurred = true
     throw error
   } finally {
+    page.off('response', observeNestedWrite)
     const cleanups = [
       async () => { await page.goto('about:blank') },
       async () => { expect((await page.request.patch(`${API}/settings`, { data: { external_editor: oldEditor } })).ok()).toBeTruthy() },

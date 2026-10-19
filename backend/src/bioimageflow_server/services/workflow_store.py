@@ -23,7 +23,7 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
+from bioimageflow_server.models.graph import GraphState, ToolNodeState, WorkflowNodeState
 from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedWorkflowSnapshotResponse,
 )
@@ -58,6 +58,7 @@ from bioimageflow_server.services.filesystem_durability import (
 from bioimageflow_server.services.graph_translator import (
     _detect_missing_packages,
     _detect_missing_tools,
+    _is_local_tool_reference,
     graph_state_to_lib_dict,
     lib_dict_to_graph_state,
     rebind_lib_dict_versions,
@@ -2713,8 +2714,11 @@ class WorkflowStoreService:
         self.ensure_workflow_format_current(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
         self.tool_registry.watch_owned_sources(self._workflow_dir(name), document.graph)
+        diagnostic_graph, _sources = capture_working_graph(
+            document.graph, self._workflow_dir(name), self.tool_registry,
+        )
         translation = graph_state_to_lib_dict(
-            document.graph,
+            diagnostic_graph,
             self.tool_registry,
         )
         return WorkflowFile(
@@ -2983,7 +2987,8 @@ class WorkflowStoreService:
         rebound = rebind_lib_dict_versions(translation.lib_dict, self.tool_registry)
         graph = lib_dict_to_graph_state(rebound)
         # The library grammar has no GUI state. Preserve the accepted graph's
-        # presentation recursively while replacing only dependency identities.
+        # presentation and local bindings recursively while replacing only
+        # installed-package dependency identities.
         def preserve_presentation(
             rebound_graph: GraphState, accepted_graph: GraphState
         ) -> GraphState:
@@ -3003,6 +3008,17 @@ class WorkflowStoreService:
                     updates["workflow"] = preserve_presentation(
                         node.workflow, accepted.workflow
                     )
+                elif isinstance(accepted, ToolNodeState) and _is_local_tool_reference(
+                    accepted.model_dump(mode="json"),
+                    self.tool_registry.get_tool(accepted.tool_name),
+                ):
+                    updates.update({
+                        key: getattr(accepted, key)
+                        for key in (
+                            "tool_module", "tool_class", "tool_package",
+                            "tool_package_version", "source_module",
+                        )
+                    })
                 nodes.append(node.model_copy(update=updates))
             return rebound_graph.model_copy(update={"nodes": nodes})
 

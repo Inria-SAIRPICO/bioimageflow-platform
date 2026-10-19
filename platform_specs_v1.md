@@ -1729,6 +1729,8 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 
 A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`models/workflow.py`](backend/src/bioimageflow_server/models/workflow.py), containing `platform_document_version`, `graph`, `metadata`, `authoring_source`, `owned_source_ids`, and `artifact_hash`.
 Its `graph` is the sole recursive editable definition, including layout and node presentation state; there is no separate persisted `workflow` payload or `gui` graph.
+Saved-workflow dependency inspection captures workflow-local source bindings from their exact owned files without changing the saved graph or compiling the workflow.
+An explicit flat `tools.<module>` binding resolves the contained workflow-relative module before catalog lookup; missing files retain the typed source-missing refusal, while syntax-invalid bytes remain available for editing and are rejected by validation.
 Root draft revision-CAS, private nested-snapshot revision-CAS, explicit promotion/apply, identity generations, source ownership, and workflow-owned runtime results follow [v2 Sections 2, 7, and 12](platform_specs_v2.md#2-canonical-graph-document).
 Detaching saved-workflow provenance follows the exact editor-owner fence in [v2 Section 10](platform_specs_v2.md#10-saved-source-provenance): an open editor at or below the target prevents mutation, and successful Detach preserves the embedded graph and bindings.
 The library workflow is compiled from the accepted graph in memory for validation, execution, and portable export.

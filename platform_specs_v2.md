@@ -144,6 +144,10 @@ Same-named local tools with different content must coexist without registry shad
 Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
 Validation includes `node_tools`, keyed by scoped node identity, so a successfully compiled source-bound or explicitly module/class-bound node's schemas come from its actual class rather than a same-named catalog entry.
 Saved-workflow dependency diagnostics resolve that carried executable identity through the same public class-resolution authority without compiling, planning or provisioning the workflow; a same-named catalog entry cannot rescue an unavailable carried binding.
+Workflow-local presence diagnostics first capture the same owned source bytes used by compilation and export, without modifying the saved graph.
+An explicit flat `tools.<module>` binding resolves its contained workflow-relative file before any catalog decision; another package or module binding cannot borrow a same-named local class.
+Missing explicitly bound local files retain the typed source-missing refusal, while present syntax-invalid source bytes remain available to Open for repair and are rejected by validation.
+The class-definition scan for genuinely unbound local nodes ignores unrelated syntax-invalid files and still refuses ambiguous class definitions.
 Installed bindings retain package/version and read-only package provenance; owned sources retain editable custom provenance.
 Canvas construction uses the node-addressed metadata captured for the same accepted graph and owning root workflow or nested session; a different graph or session cannot reuse that projection.
 Authored parameters and output templates remain graph facts when metadata is unavailable, and an explicit unavailable bound class cannot borrow a same-named catalog schema.
