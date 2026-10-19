@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import sys
+import textwrap
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "test"
@@ -101,3 +103,74 @@ def test_backend_coverage_database_is_transient() -> None:
 
     assert 'export COVERAGE_FILE="$backend_dir/.pytest_cache/.coverage"' in runner
     assert 'rm -f -- "$COVERAGE_FILE"' in runner
+
+
+def test_runner_children_fail_closed_without_importing_native_keyring(tmp_path: Path) -> None:
+    native_trap = tmp_path / "native_keyring_trap.py"
+    native_trap.write_text(
+        "from pathlib import Path\n"
+        "Path(__file__).with_suffix('.accessed').write_text('unexpected backend import')\n"
+        "raise AssertionError('Native keyring backend must never be imported')\n",
+    )
+    child = tmp_path / "keyring_child.py"
+    child.write_text(textwrap.dedent("""\
+        import sys
+        import keyring
+        from keyring.backend import KeyringBackend
+        from keyring.backends.fail import Keyring
+        from keyring.errors import NoKeyringError
+
+        assert sys.argv[1:] == ['run', '--frozen', 'pytest', 'runner-keyring-control']
+        assert isinstance(keyring.get_keyring(), Keyring)
+        try:
+            keyring.get_password('owned-test-service', 'owned-test-user')
+        except NoKeyringError:
+            pass
+        else:
+            raise AssertionError('Default credential access must fail closed')
+
+        class MemoryCredentials(KeyringBackend):
+            priority = 1
+
+            def __init__(self):
+                self.values = {}
+
+            def get_password(self, service, username):
+                return self.values.get((service, username))
+
+            def set_password(self, service, username, password):
+                self.values[(service, username)] = password
+
+            def delete_password(self, service, username):
+                del self.values[(service, username)]
+
+        keyring.set_keyring(MemoryCredentials())
+        keyring.set_password('owned-test-service', 'owned-test-user', 'test-provider-value')
+        assert keyring.get_password('owned-test-service', 'owned-test-user') == 'test-provider-value'
+        keyring.delete_password('owned-test-service', 'owned-test-user')
+        assert keyring.get_password('owned-test-service', 'owned-test-user') is None
+        print('fail-closed default and explicit memory provider verified')
+    """))
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        '#!/bin/sh\nexec "$BIOIMAGEFLOW_RUNNER_TEST_PYTHON" "$BIOIMAGEFLOW_RUNNER_TEST_CHILD" "$@"\n',
+    )
+    fake_uv.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment.get("PATH", "")
+    environment["PYTHONPATH"] = str(tmp_path) + os.pathsep + environment.get("PYTHONPATH", "")
+    environment["PYTHON_KEYRING_BACKEND"] = "native_keyring_trap.Keyring"
+    environment["BIOIMAGEFLOW_RUNNER_TEST_PYTHON"] = sys.executable
+    environment["BIOIMAGEFLOW_RUNNER_TEST_CHILD"] = str(child)
+    environment.pop("BIOIMAGEFLOW_TEST_DRY_RUN", None)
+
+    result = subprocess.run(
+        [str(SCRIPT), "focus", "backend", "runner-keyring-control"],
+        capture_output=True, env=environment, text=True, timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "fail-closed default and explicit memory provider verified" in result.stdout
+    assert not native_trap.with_suffix(".accessed").exists()

@@ -31,6 +31,10 @@ Explicit source investigations use a separate owned interpreter and record their
 Reuse a checkout's prepared environments while its lockfiles, dependency metadata and installation options remain compatible; resync the affected environment when installation requirements change.
 Keep dependencies and build/runtime state separate between worktrees, and keep browser runtime roots and certification stores disposable even when dependency installation is reused.
 
+Every `scripts/test` lane forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` before launching subprocesses, overriding an inherited native backend so automated checks cannot discover or prompt for the personal Keychain.
+Credential-dependent tests inject memory providers explicitly; owned live integration can install a process-local RAM provider while replacement workers fail closed.
+This test guard does not change production credential behavior, and native credential integration remains outside automated acceptance.
+
 ## Focused tests while editing
 
 Map changed files to their owning service/session, callers, persistence and event consumers, and public library boundary before choosing selectors; `focus related` alone cannot establish that impact map.

@@ -29,7 +29,7 @@ Review source and normal candidate wheel/sdist first; use those exact artifacts 
 Ordinary exact-SHA CI may run alongside that owned proof after reviewed source/artifacts are committed; every gate must pass before publication.
 Automated checks must not read or write the user's personal/native Keychain or depend on its unlocked/access state.
 Use injected test credential providers for unit/UI checks and a private RAM-only broker for live managed-worker checks, with `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` inherited before worker creation so unbootstrapped workers fail closed.
-The current ignored campaign command helper enforces this backend, but raw `scripts/test` in a clean checkout does not yet supply that guard; make this narrow reproducibility improvement before unguarded automation, without altering production credential behavior.
+The tracked `scripts/test` entry point forces this backend before every lane and child process, including in a clean checkout; explicit in-process memory/RAM test providers remain supported, and production credential behavior is unchanged.
 Production credential code remains unchanged; label this as test-provider credential-contract and actual-server evidence, with native cross-executable integration explicitly unverified.
 That native integration is not an END prerequisite and must not resume automatically at M5; it requires a separately scoped disposable-keychain plan or explicit user request.
 Complete RAM-provider roundtrip acceptance passes on the final metadata-repaired candidate archive, with full pixel/annotation/cache/sentinel checks and all nine exact owned objects verified absent; original fixture failures remain FAILED.
