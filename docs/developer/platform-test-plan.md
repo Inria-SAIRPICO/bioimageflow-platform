@@ -22,10 +22,15 @@ Reuse stable existing worker/artifact drivers and content-bound recipe dependenc
 ## Current priority after accepted library and adoption gates — October 19
 
 The current checkpoint overrides every completed-phase “Next MAIN”, publication pause and older baseline below.
-The reviewed CI repairs are on PR #20 at `b7b47132`; its current PR jobs have started after queue delays during the official Actions processing incident, with exact pending status and qualifications owned by the checkpoint.
+The reviewed CI repairs are on PR #20 at `b7b47132`; its latest run is terminal FAILED with backend/Firefox/frontend/docs passes and exact Chromium stale-worker/logger failures, whose retained results and focused repair status are owned by the checkpoint.
 M4 now explicitly includes the user-required basic first-party OMERO Download/Upload tools, reviewed against the old PyFlow reference.
-Review source and normal candidate wheel/sdist first; use those exact artifacts for owned worker/keyring and actual authorized-server roundtrip proof.
+Review source and normal candidate wheel/sdist first; use those exact artifacts for owned worker execution with an isolated memory-only credential provider and actual authorized-server roundtrip proof.
 Ordinary exact-SHA CI may run alongside that owned proof after reviewed source/artifacts are committed; every gate must pass before publication.
+Automated checks must not read or write the user's personal/native Keychain or depend on its unlocked/access state.
+Use injected test credential providers for unit/UI checks and a private RAM-only broker for live managed-worker checks, with `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` inherited before worker creation so unbootstrapped workers fail closed.
+Production credential code remains unchanged; label this as test-provider credential-contract and actual-server evidence, with native cross-executable integration explicitly unverified.
+That native integration is not an END prerequisite and must not resume automatically at M5; it requires a separately scoped disposable-keychain plan or explicit user request.
+The current RAM authentication passes, but complete roundtrip acceptance remains open after a retained annotation-assertion failure and verified cleanup of all nine exact owned objects.
 Verify PyPI, adopt the normal published package, then complete a headless saved-card→active-canvas→Save/reload binding journey, preserving full image dimensions and independently verifying cleanup of only owned server objects.
 Current local backend certification is an assembled 1891-case success projection with 107 explicit exclusions; its original repository-root fixture failures remain FAILED, and the checkpoint records the exact recovery rather than a monolithic PASS.
 The October 4 specification/suite/causal review and selected milestone, technically gated dependency releases, coherent normal-registry adoption, credential compensation and configured deployment policy are closed in their exact receipts; do not restart them from historical instructions.

@@ -12,7 +12,7 @@ Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.
 The FULL campaign continues under standing authorization through END, including technically gated source upload, CI and package publication.
 Commits are progress boundaries; distributed production review/repair is EXCLUDED and native desktop M5 is LAST.
 Detach is delivered at `10b17b9`, after the isolated stale frontend campaign-manifest correction `db26035` and the ten-path resource delivery `9be353a`.
-The current reviewed CI repair branch is `campaign/platform-ci-repair` at `b7b47132`; pending campaign implementations remain separate local task partitions.
+The pushed CI repair source is `b7b47132` on `campaign/platform-ci-repair`; local startup, structural and scope commits continue through `d832f1e`, with other campaign implementations held in separate task partitions.
 The separate reviewed Detach owner fence and durable provenance journey are now validated in both browsers on `9be353a` plus their named frozen diff; the scoped local frontend assembly passes and its exact source projection is retained below.
 Current coverage is **418 V + 76 G + 6 U = 500** applicable obligations; primary GUI remains 224/224.
 This is accumulated scoped evidence, not a monolithic app/full/campaign PASS.
@@ -31,10 +31,11 @@ Accumulated historical `V` claims do not replace the final audited local backend
 
 [PR #20](https://github.com/Inria-SAIRPICO/bioimageflow-platform/pull/20) contains only the reviewed committed baseline and CI repairs through `b7b47132`.
 The original run `39275889440` remains FAILED, with its backend/Firefox/Chromium logs and browser artifacts retained under the LOCAL untracked evidence directory `frontend/test-results/campaign-evidence-final-20261019/ci-run-39275889440/`.
-The repaired [run 39280900873](https://github.com/Inria-SAIRPICO/bioimageflow-platform/actions/runs/39280900873) has started its selected jobs after queue delays overlapping the official [Actions incident](https://www.githubstatus.com/incidents/8tzbpcnl75jp), which started at 15:49:25 UTC.
-The October 19 16:15:00 UTC observation records Select CI jobs, Documentation and Frontend quality as successful; Backend quality, Firefox smoke and Chromium remain in progress, with Required CI queued.
+The repaired [run 39280900873](https://github.com/Inria-SAIRPICO/bioimageflow-platform/actions/runs/39280900873) is terminal FAILED after queue delays overlapping the official [Actions incident](https://www.githubstatus.com/incidents/8tzbpcnl75jp), which started at 15:49:25 UTC.
+Backend quality, Firefox smoke, Frontend quality and Documentation pass; Chromium reports 94 passed, one failed stale-processing Worker-row case, one flaky logger-selection case and 38 not run, with one outside-test error.
+The exact stale-worker failure is reproduced locally and needs a node-scoped preparation SDK correction; the logger cause remains under focused investigation.
 All six Full milestone jobs are explicitly skipped by expected PR routing; neither these skips nor successful PR jobs supply scheduled/full certification.
-Preserve the healthy run rather than repeatedly dispatching or pushing unrelated work.
+Preserve the failed run and its unchanged successful phases; do not repeatedly dispatch or push unrelated work.
 The exact repaired editor/nested cases pass, and the trace-proven Napari explicit-Open response barrier passes once (13.292601s) and five repetitions (52.458588s); the original CI Unset flake cause remains unproven, and initial failure tracing is now case-scoped.
 
 The current local backend/external assembly collects 1998 cases, selects 1891 and explicitly excludes 107: three parallel-scheduling, one Parsl, 25 managed-remote and 78 distributed-engine identities.
@@ -48,6 +49,23 @@ The slow stale-generation fixture passed in 178.04s; native sampling and state u
 The real TIFF thumbnail journey passes Chromium (91.237517s) and Firefox (58.461479s) on its exact frozen source and explicitly warm owned reader environment, with decoded 8×8 pixel ordering, exact source bytes, captured/latest/pinned identity and reload, contradictory catalog schema, and one Files Run per case.
 LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/thumbnail-two-browser-delivery.json` retains observations and traces; neither case exhausted the bounded UI retries, and the earlier cold partial failures remain FAILED.
 These proofs do not create a processing-worker, general scientific or native desktop claim.
+
+## Credential-independent automated testing
+
+The user requires automated checks to avoid reading or writing the personal/native Keychain and to avoid depending on its unlocked or access state.
+Unit and headless Settings tests use explicitly injected test credential providers; actual authorized-server tests use a private memory-only socket broker and a process-local read-only credential client in the owned managed worker.
+Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` before creating that worker so any unbootstrapped or replacement process refuses credentials without native discovery or prompts.
+The production credential implementation is unchanged; these tests establish its client contract through a test provider, not native Keychain integration.
+Native cross-executable credential integration remains unverified and is not an END prerequisite under this user constraint; do not resume it at M5 without a separately scoped disposable-keychain plan or explicit user request.
+Native dialogs, viewers and editors still belong to M5 LAST.
+
+The exact candidate OMERO wheel is `e9b5f7305dbfb08b66de068a3ca86c464b9cbe575a2421046742a08f5ada7d3a`, loaded by normal published BioImageFlow 0.9.3/Core 0.5.0/Wetlands 2.6.1 and an actual Python 3.12.15 managed worker.
+RAM-provider connection-only authentication passes in 5.023767s; the first full attempt remains FAILED in 5.033737s because its test DatasetWrapper lacked a DatasetI model, before the first Dataset.save.
+The fixture-only corrected full command remains FAILED in 43.317501s at its annotation assertion, after seven real Workflow calls exercised upload/download and cache/refresh record selection.
+Only the first image's local and independent remote pixel comparisons are observed before that failure; complete pixel, annotation, sentinel and lifetime acceptance remain open.
+Cleanup independently verifies all nine exact ledger-owned dataset/image/annotation IDs absent; driver and worker processes and runtime handles are retired.
+Both memory brokers have stopped with their private socket and directory removed, and neither used the personal Keychain.
+LOCAL untracked `frontend/test-results/campaign-evidence-final-20261019/omero-candidate/` preserves source snapshots, failed commands, broker closure and physical-release receipts; no failed command is upgraded to a pass.
 
 ## Normal dependency floor and closed releases
 
@@ -105,14 +123,14 @@ Both new exact runtime roots are physically retired after copied available pass-
 The current Detach receipt records strict documentation status, including the original campaign-link failure and the corrected result; no failed command is relabeled.
 
 1. Reconcile remaining applicable cells against exact current oracles; keep existing historical qualifications and do not promote gaps merely from source review or a broad green subset.
-2. Preserve the active reviewed CI run through the Actions incident, diagnose any actual failure by its exact selector, then execute the ordinary scheduled/full workflow on the validated meaningful branch milestone; PR smoke alone does not certify that scope.
-3. Complete the user-required basic first-party OMERO Download/Upload package in this order: reviewed source and normal candidate wheel/sdist checks; actual owned worker/keyring and authorized-server download/upload proof using those exact artifacts, plus ordinary exact-SHA CI; publication only after all those gates pass; PyPI verification and normal platform adoption; then a real headless saved-card→active-canvas→Save/reload binding journey.
+2. Preserve the terminal failed CI run and its unchanged successful phases, resolve each actual failure by its exact selector, then execute the ordinary scheduled/full workflow on the validated meaningful branch milestone; PR smoke alone does not certify that scope.
+3. Complete the user-required basic first-party OMERO Download/Upload package in this order: reviewed source and normal candidate wheel/sdist checks; actual owned worker with an isolated memory-only credential provider and authorized-server download/upload proof using those exact artifacts, plus ordinary exact-SHA CI; publication only after all those gates pass; PyPI verification and normal platform adoption; then a real headless saved-card→active-canvas→Save/reload binding journey.
    Independent exact-SHA CI may run alongside owned worker/live proof after reviewed source/artifacts are committed.
    Preserve full image dimensions and independently verify cleanup of only the exact server objects created by this test.
    The old reference is `/Users/amasson/Travail/bioimageit/PyFlow/Tools/Omero`; it is a reference path, not an executable platform dependency.
    The writer checkout is `.worktrees/campaign-omero-tools`, branch `campaign/omero-tools`, based on current upstream `3b23c357`; original library main `8ba6ef65` remains untouched.
-   The three owning frontend files pass 81 unit cases, including connection capture and exact bound-node insertion, after a faithful currentGraph mock correction; package review/checks are active, and artifact, worker, live-server and publication gates are not yet accepted.
-   Credentials must remain outside graphs, artifacts and logs; mock settings or credentials do not supply the live result.
+   The three owning frontend files pass 81 unit cases, including connection capture and exact bound-node insertion, after a faithful currentGraph mock correction; package static/artifact/docs checks and owned candidate-worker provisioning pass, while complete live-server acceptance, exact-SHA CI and publication remain open.
+   Credentials must remain outside graphs, artifacts and logs; fake-provider Settings tests do not supply a live result, and memory-provider live tests do not supply native Keychain acceptance.
 4. Finish the actual stdio-MCP case and final audited frontend/local two-browser/external/documentation assembly on its frozen source, reusing unchanged valid phases and avoiding quick/check/full stacks.
    Update normal package discovery, Preferences guidance and Context with OMERO adoption; do not advertise an unpublished package as available.
 5. Execute native desktop dialogs/viewers/editor/window/process M5 LAST, then final source/coverage/cleanup review.
