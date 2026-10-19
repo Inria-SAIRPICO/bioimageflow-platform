@@ -315,7 +315,8 @@ const {
   queueGraph: queueCanvasPersistence,
   initializeFromDraft: initializeCanvasPersistenceFromDraft,
   resolveFromDraft: resolveCanvasPersistenceFromDraft,
-  isPending: isCanvasPersistencePending,
+  hasLocalSemanticChanges: hasLocalCanvasSemanticChanges,
+  isDraftPersistencePending: isCanvasDraftPersistencePending,
   dispose: disposeCanvasPersistence,
 } = canvasPersistence
 const rootPersistenceState = canvasPersistence.persistenceState
@@ -400,7 +401,7 @@ let hotReloadToast: ReturnType<typeof useToast> | null = null
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
-  uiStore.canvasHasUnsavedChanges(canvasId) || isCanvasPersistencePending.value
+  hasLocalCanvasSemanticChanges.value || isCanvasDraftPersistencePending.value
 ))
 
 const isPendingFrontendDraftEcho = computed(() => (
@@ -1037,7 +1038,7 @@ async function installAuthoritativeRootDraft(
       rootMetadataAuthority(draft),
     )
     if (isCanvasUnmounted) return false
-    resolveCanvasPersistenceFromDraft(draft)
+    resolveCanvasPersistenceFromDraft(draft, 'external')
     workflowDraftStore.acknowledgeAcceptedDraft(draft)
     return true
   } finally {
@@ -1094,7 +1095,7 @@ async function keepCurrentCanvasDraft(): Promise<void> {
     if (isCanvasUnmounted) return
     const hasNewerLocalEdit = rootEditEpoch !== editEpoch
     const latestGraph = hasNewerLocalEdit ? currentSerializedGraph() : null
-    resolveCanvasPersistenceFromDraft(response)
+    resolveCanvasPersistenceFromDraft(response, 'local')
     if (latestGraph !== null) {
       queueCanvasPersistence(latestGraph)
       uiStore.markCanvasDirty(canvasId)
@@ -1420,27 +1421,42 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   if (workflowDraftStore.workflowId !== workflowName) return
 
   const editEpoch = rootEditEpoch
+  let attemptedRevision = remoteRevision
+  const canContinue = () => (
+    !isCanvasUnmounted
+    && hasLoadedGraphState.value
+    && rootEditEpoch === editEpoch
+    && isActiveCanvasTab.value
+    && lifecycleOperation.value === null
+    && !isResolvingRemoteDraftConflict.value
+    && !isInstallingAuthoritativeDraft.value
+    && currentWorkflowName() === workflowName
+    && workflowDraftStore.workflowId === workflowName
+    && !hasLocalRemoteDraftConflict.value
+  )
   isAutoApplyingRemoteDraft = true
   try {
-    const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
-    const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
-    if (
-      isCanvasUnmounted
-      || rootEditEpoch !== editEpoch
-      || !isActiveCanvasTab.value
-      || lifecycleOperation.value !== null
-      || hasLocalRemoteDraftConflict.value
-      || isResolvingRemoteDraftConflict.value
-      || isInstallingAuthoritativeDraft.value
-      || currentWorkflowName() !== workflowName
-      || workflowDraftStore.workflowId !== workflowName
-      || currentRemoteRevision === null
-      || draft.draft_revision < currentRemoteRevision
-      || draft.draft_revision < remoteRevision
-    ) return
-    await installAuthoritativeRootDraft(draft)
-  } catch (err) {
-    console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
+    while (canContinue()) {
+      try {
+        const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
+        if (!canContinue()) return
+        const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
+        if (currentRemoteRevision === null) return
+        if (
+          draft.draft_revision >= currentRemoteRevision
+          && draft.draft_revision >= attemptedRevision
+        ) {
+          await installAuthoritativeRootDraft(draft)
+        }
+      } catch (err) {
+        console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
+      }
+      const nextRevision = workflowDraftStore.remoteAvailableRevision
+      // Watchers can run while fetch/install is busy. Drain that newer notice
+      // once; an unchanged pending revision or failure never retries itself.
+      if (nextRevision === null || nextRevision <= attemptedRevision || !canContinue()) return
+      attemptedRevision = nextRevision
+    }
   } finally {
     isAutoApplyingRemoteDraft = false
   }

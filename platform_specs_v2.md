@@ -324,6 +324,10 @@ When an older `.bioimageflow/dependencies/<source-id>/source.json` record exists
 HTTP 404 remains reserved for an absent workflow on this read path.
 
 Root drafts use revision compare-and-swap, a saved-artifact baseline, validation, dirty state, and writer metadata.
+The canonical root persistence resource distinguishes locally authored semantic changes and pending draft writes from saved-artifact dirty presentation and recovery-only persistence.
+Accepted external graphs can remain unsaved while receiving newer revisions, including notices received during an earlier fetch or install, when no local semantic edit or draft write intervenes.
+Same-graph validation preserves origin; Keep my canvas retains local ownership, while explicit external resolution and clean accepted Save clear it.
+A remounted dirty frontend draft remains conservatively protected because writer metadata cannot recover its earlier semantic origin.
 Nested snapshots use their own revision compare-and-swap and ownership chain.
 Save and Run operate on exact accepted snapshots.
 Remote draft changes are resolved explicitly before destructive or execution operations.

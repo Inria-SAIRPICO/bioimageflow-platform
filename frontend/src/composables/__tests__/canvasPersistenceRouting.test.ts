@@ -180,6 +180,157 @@ describe('canvas persistence routing', () => {
     expect(persistence.persistenceIssue.value).toBeNull()
   })
 
+  it.each(['frontend', 'agent'] as const)(
+    'admits a dirty %s draft without manufacturing a local draft write',
+    async (writer) => {
+      const accepted = { ...draft('workflow-a', 4), updated_by: writer }
+      const io = transports({ 'workflow-a': 4 })
+      const descriptor = root('workflow:a', 'workflow-a')
+      const persistence = useCanvasPersistence({
+        descriptor, getWorkflowId: () => 'workflow-a', transports: io,
+      })
+      persistence.initializeFromDraft(accepted)
+      const sync = useGraphSync({ descriptor, getWorkflowId: () => 'workflow-a' })
+
+      expect(persistence.currentGraph.value).toEqual(accepted.graph)
+      expect(persistence.acceptedDraftRevision.value).toBe(4)
+      expect(persistence.hasLocalSemanticChanges.value).toBe(writer === 'frontend')
+      expect(persistence.isDraftPersistencePending.value).toBe(false)
+      expect(persistence.isPending.value).toBe(false)
+      expect(sync.isPending.value).toBe(false)
+      await persistence.flush()
+      expect(io.fetchDraft).not.toHaveBeenCalled()
+      expect(io.putDraft).not.toHaveBeenCalled()
+      expect(io.writeRecovery).not.toHaveBeenCalled()
+    },
+  )
+
+  it('writes frontend validation of an unchanged agent graph without a semantic graph delta', async () => {
+    useWorkflowDraftStore().trackWorkflow('workflow-a')
+    const accepted = { ...draft('workflow-a', 4), updated_by: 'agent' as const }
+    const io = transports({ 'workflow-a': 4 })
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor, getWorkflowId: () => 'workflow-a', transports: io,
+    })
+    persistence.initializeFromDraft(accepted)
+    const sync = useGraphSync({ descriptor, getWorkflowId: () => 'workflow-a' })
+
+    sync.revalidateGraphState(accepted.graph)
+    expect(sync.isPending.value).toBe(true)
+    expect(persistence.isDraftPersistencePending.value).toBe(true)
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    await sync.flushNow()
+    expect(io.putDraft).toHaveBeenCalledExactlyOnceWith('workflow-a', {
+      graph: accepted.graph, expected_revision: 4, updated_by: 'frontend', validate: true,
+    })
+    expect(persistence.currentGraph.value).toEqual(accepted.graph)
+    expect(persistence.acceptedDraftRevision.value).toBe(5)
+    expect(useWorkflowDraftStore().lastWriter).toBe('frontend')
+    expect(sync.isPending.value).toBe(false)
+    expect(persistence.isPending.value).toBe(false)
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    expect(io.writeRecovery).not.toHaveBeenCalled()
+    // A remount has only the durable writer facts. Treat a dirty frontend
+    // response conservatively; do not invent the earlier agent provenance.
+    const remounted = useCanvasPersistence({
+      descriptor: root('workflow:remounted', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a', transports: io,
+    })
+    remounted.initializeFromDraft({ ...accepted, draft_revision: 5, updated_by: 'frontend' })
+    expect(remounted.hasLocalSemanticChanges.value).toBe(true)
+  })
+
+  it('retains an accepted local graph after its frontend draft and recovery writes settle', async () => {
+    useWorkflowDraftStore().trackWorkflow('workflow-a')
+    const accepted = { ...draft('workflow-a', 4), updated_by: 'agent' as const }
+    const io = transports({ 'workflow-a': 4 })
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor, getWorkflowId: () => 'workflow-a', transports: io,
+    })
+    persistence.initializeFromDraft(accepted)
+    const edited = graph('local-edit')
+
+    persistence.queueGraph(edited)
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+    await persistence.flush()
+    expect(io.putDraft).toHaveBeenCalledExactlyOnceWith('workflow-a', {
+      graph: edited, expected_revision: 4, updated_by: 'frontend', validate: true,
+    })
+    expect(io.writeRecovery).toHaveBeenCalledOnce()
+    expect(persistence.currentGraph.value).toEqual(edited)
+    expect(persistence.acceptedDraftRevision.value).toBe(5)
+    expect(useWorkflowDraftStore().lastWriter).toBe('frontend')
+    expect(persistence.isPending.value).toBe(false)
+    expect(persistence.isDraftPersistencePending.value).toBe(false)
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+  })
+
+  it('separates accepted agent recovery persistence from pending local draft writes', async () => {
+    const accepted = { ...draft('workflow-a', 4), updated_by: 'agent' as const }
+    const io = transports({ 'workflow-a': 4 })
+    const recoveryWrite = deferred<void>()
+    io.writeRecovery.mockReturnValueOnce(recoveryWrite.promise)
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor, getWorkflowId: () => 'workflow-a', transports: io,
+    })
+    persistence.initializeFromDraft(accepted)
+    const sync = useGraphSync({ descriptor, getWorkflowId: () => 'workflow-a' })
+    persistence.resolveFromDraft({ ...accepted, draft_revision: 5 }, 'external')
+    expect(persistence.isPending.value).toBe(true)
+    expect(persistence.isDraftPersistencePending.value).toBe(false)
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    expect(sync.isPending.value).toBe(false)
+    const flushing = persistence.flush()
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      expect(io.writeRecovery).toHaveBeenCalledOnce()
+      expect(io.putDraft).not.toHaveBeenCalled()
+      expect(persistence.isPending.value).toBe(true)
+    } finally {
+      recoveryWrite.resolve()
+      await flushing
+    }
+    expect(persistence.isPending.value).toBe(false)
+  })
+
+  it('clears local semantic origin after clean acceptance or explicit dirty remote resolution', async () => {
+    const io = transports({ 'workflow-a': 4 })
+    io.putDraft.mockImplementationOnce(async (workflowId, body) => ({
+      ...draft(workflowId, body.expected_revision + 1),
+      graph: body.graph, dirty_against_saved: false,
+    }))
+    const persistence = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a', transports: io,
+    })
+    persistence.initializeFromDraft({ ...draft('workflow-a', 4), updated_by: 'agent' })
+    persistence.queueGraph(graph('local-clean-acceptance'))
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+    await persistence.flush()
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    persistence.queueGraph(graph('local-dirty-acceptance'))
+    await persistence.flush()
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+    // Explicit resolution accepts this remote graph even when its actual
+    // writer was another frontend. A later flush must not admit it a second time.
+    persistence.resolveFromDraft({ ...draft('workflow-a', 7), updated_by: 'frontend' }, 'external')
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    expect(persistence.isDraftPersistencePending.value).toBe(false)
+    expect(persistence.isPending.value).toBe(true)
+    await persistence.flush()
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    persistence.resolveFromDraft(draft('workflow-a', 8), 'local')
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+    await persistence.flush()
+    expect(persistence.hasLocalSemanticChanges.value).toBe(true)
+    persistence.resolveFromDraft({ ...draft('workflow-a', 9), dirty_against_saved: false }, 'local')
+    expect(persistence.hasLocalSemanticChanges.value).toBe(false)
+    await persistence.flush()
+  })
+
   it('keeps a readable draft failure until retry succeeds or the exact issue is dismissed', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const firstFailure = new Error('offline')
@@ -906,7 +1057,7 @@ describe('canvas persistence routing', () => {
 
     const resolved = draft('workflow-a', 3, 'resolved')
     io.fetchDraft.mockResolvedValue(resolved)
-    fixed.resolveFromDraft(resolved)
+    fixed.resolveFromDraft(resolved, 'external')
 
     expect(fixed.hasConflict.value).toBe(false)
     fixed.queueGraph(graph('after-resolution'))

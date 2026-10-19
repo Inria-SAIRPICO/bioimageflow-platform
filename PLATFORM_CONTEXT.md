@@ -69,6 +69,8 @@ Do not conflate the following states:
    The envelope contains the canonical graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source identifiers.
 2. An open root canvas edits a durable workflow draft under that workflow directory.
    Draft writes use expected-revision compare-and-swap, record their writer, validate the accepted graph, and track whether the draft differs from the saved artifact.
+   The canonical root persistence resource separately tracks local semantic changes and pending draft writes; an accepted external graph may remain dirty against the saved artifact and continue receiving newer revisions while only recovery persistence is pending.
+   Same-graph validation preserves that origin, Keep my canvas preserves local ownership, and explicit external resolution or clean accepted Save clears it; a remounted dirty frontend draft remains conservatively protected because its earlier semantic origin cannot be recovered from writer metadata.
    Revision-zero synthesis captures one saved graph/hash/metadata snapshot per existing mutation-lock phase; captures expire as current saved authority at lock release and later phases and requests recheck current saved/draft authority, generation and storage.
    Each projected GET attempt reuses one public compilation outside the mutation lock and at most one plan under the final authority/Clear fence, without retaining compilation or metadata across requests.
    Synthesized responses adopt complete definition diagnostics and resolved schemas; persisted accepted drafts retain their non-cache diagnostic/schema authority, and execution authority helpers remain strictly validated.
