@@ -69,6 +69,11 @@ Focused browser runs use Chromium unless one or more Playwright `--project` opti
 Explicit project options are honored exactly, so `--project=firefox` does not also launch Chromium.
 Focused runs use a fresh temporary runtime root, automatically selected local ports unless the caller explicitly sets the corresponding `BIOIMAGEFLOW_E2E_*` variables, and `--max-failures=1` unless the caller supplies another limit.
 
+The noncritical `thumbnail-real.spec.ts` journey prepares its own 8×8 TIFF and installs the published common-tools version from `scripts/ci/test_versions.env` without dependencies into that isolated runtime's tool store.
+It needs no manually prepared input or package installation and runs in the ordinary complete Chromium and Firefox collections, including CI; cold package and thumbnail-reader provisioning require network access.
+The test restores the original E2E Files catalog before Run and checks that the explicitly bound result retains Path semantics despite the catalog's contradictory string declaration.
+An optional `BIOIMAGEFLOW_THUMBNAIL_TIFF` can supply an already prepared matching TIFF inside the same runtime for an owned recovery attempt; it is validated and never overwritten.
+
 For a failing browser test, first reproduce its exact selector and project.
 After a change, run it once, then use `--repeat-each=5` only when validating a timing or race fix.
 Do not start a complete browser lane while the focused test still fails.
