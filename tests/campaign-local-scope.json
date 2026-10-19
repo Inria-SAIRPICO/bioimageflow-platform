@@ -493,8 +493,7 @@
         { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > decodes structured errors returned through the result download blob channel", "reason": "distributed-engine" },
         { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > normalizes FastAPI nested structured errors for safe uncertain-run recovery", "reason": "distributed-engine" },
         { "nodeid": "tests/unit/api/executions.test.ts::distributed execution API adapter > flattens public ClusterDiagnostic identities from operation details", "reason": "distributed-engine" },
-        { "nodeid": "tests/unit/components/SettingsSections.test.ts::ExecutionSection > exposes managed-cluster controls without legacy factories", "reason": "managed-remote" },
-        { "nodeid": "tests/unit/components/SettingsSections.test.ts::ExecutionSection > maps current parallel scheduling setting to parallel wording", "reason": "parallel-scheduling" }
+        { "nodeid": "tests/unit/components/SettingsSections.test.ts::ExecutionSection > exposes managed-cluster controls without legacy factories", "reason": "managed-remote" }
       ]
     },
     "browser": {
