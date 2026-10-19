@@ -1165,6 +1165,10 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
 **Panel layout (top to bottom):**
 
 1. **Search bar** (with margins): Fuzzy search filtering by name, tags, categories, and keywords. This is not simple substring matching — it uses fuzzy matching so that partial or approximate terms still surface relevant results.
+Search uses the current catalog name, display name, tags, categories and documentation words, with CamelCase/acronym identifier boundaries split before case normalization.
+Every query token must match, and results retain the catalog order.
+Exact partial matches are accepted directly; an otherwise unmatched token of 4–64 characters may match a whole indexed word with one insertion, deletion, substitution or adjacent transposition.
+Short tokens and tokens longer than 64 characters retain exact partial matching only; the computed search index updates with catalog metadata and adds no separate persistent search authority.
 
 2. **Tool list:** A flat, scrollable list of tools. Each row contains:
 

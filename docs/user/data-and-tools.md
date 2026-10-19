@@ -6,6 +6,8 @@ Each installed package can provide several tools and one or more versions.
 ## Find a tool
 
 1. Enter a name or technique in **Search tools...**.
+   Search covers tool names, tags, categories and documentation keywords; every word you enter must match.
+   Partial terms work directly, and ordinary words of 4–64 characters also tolerate one missing, extra, changed or swapped letter.
 2. Expand a matching category.
 3. Click a tool row to show its information at the bottom of the panel; click the row again to hide it.
 4. Double-click the row to add the tool at the default canvas position, or drag it to a chosen position.

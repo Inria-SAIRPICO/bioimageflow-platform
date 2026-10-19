@@ -170,6 +170,8 @@ Newly created tools use the same tool-opening route: return the managed workspac
 The Nodes panel opens the selected tool script through the node-addressed editor route after the canvas persistence barrier and deployment checks.
 Tool catalog rows and newly created tools use the separate catalog tool-opening route; catalog names never override an explicitly bound node source.
 In the main tool catalog, single-click toggles the bottom documentation panel and double-click creates a node through the active-canvas command facade; catalog secondary actions remain isolated from both row gestures.
+Catalog search derives a reactive index from names, display names, tags, categories and documentation words, splitting identifier word boundaries before normalization.
+It preserves all-token exact partial matching and stable catalog order, and permits one conservative whole-word edit for otherwise unmatched tokens of 4–64 characters without new wire metadata or stored search state.
 The Manage Tools inventory is independent of the catalog search query, and its tool information and actions expose each declared managed environment's location and explicit create/recreate operation.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 

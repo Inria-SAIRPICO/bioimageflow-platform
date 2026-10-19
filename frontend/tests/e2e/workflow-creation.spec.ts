@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { APIResponse, Page } from '@playwright/test'
+import type { ToolMetadata } from '../../src/api/types'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -264,19 +265,154 @@ test.describe('workflow creation', () => {
     await expect(dialog).not.toBeVisible()
   })
 
-  test('search filters tool list to empty on nonsense query', async ({ page }) => {
-    // Activate Tools panel
-    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+  test('search matches real catalog metadata and reveals the selected tool row', async ({ page, request }, testInfo) => {
+    const name = `catalog_reveal_${testInfo.project.name}_${Date.now()}`
+    const executionPosts: string[] = []
+    page.on('request', outgoing => {
+      if (outgoing.method() === 'POST' && new URL(outgoing.url()).pathname === '/api/v1/execution/run') {
+        executionPosts.push(outgoing.url())
+      }
+    })
+    let created = false
+    let primaryFailed = false
+    const cleanupErrors: unknown[] = []
+    try {
+      await page.setViewportSize({ width: 1280, height: 600 })
+      expect((await request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
+      const catalogResponse = await request.get(`${API_BASE}/api/v1/tools`)
+      expect(catalogResponse.ok()).toBeTruthy()
+      const catalog = await catalogResponse.json() as ToolMetadata[]
+      const seed = catalog.find(tool => tool.name === 'SeedNumbers')
+      expect(seed).toBeDefined()
+      expect(seed!.tags).toContain('source')
+      expect(seed!.categories).toContain('Utilities')
+      expect((await request.post(`${API_BASE}/api/v1/workflows`, {
+        data: { name, display_name: name },
+      })).status()).toBe(201)
+      created = true
+      const saved = await request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+        data: { graph: {
+          schema_version: 2, name, display_name: name,
+          nodes: [
+            { type: 'tool', id: 'source', name: 'Catalog source', tool_name: 'SeedNumbers', parameters: {}, position: [100, 100] },
+            { type: 'tool', id: 'other', name: 'Other tool', tool_name: 'IncrementNumbers', parameters: {}, position: [450, 100] },
+            {
+              type: 'workflow', id: 'nested', name: 'Nested graph', position: [250, 330], bindings: {},
+              workflow: {
+                schema_version: 2, name: 'nested', display_name: 'Nested graph', nodes: [], edges: [],
+                interface: { inputs: [], outputs: [] }, config: { engine: 'direct', execution: 'sequential' },
+              },
+            },
+          ],
+          edges: [], interface: { inputs: [], outputs: [] }, config: { engine: 'direct', execution: 'sequential' },
+        } },
+      })
+      expect(saved.ok(), await saved.text()).toBeTruthy()
+      const before = await (await request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()
+      await page.reload()
+      await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+      await page.getByTestId('workflow-search').fill(name)
+      const opened = page.waitForResponse(response =>
+        new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+        && response.request().method() === 'GET' && response.status() === 200,
+      )
+      await page.getByTestId(`workflow-row-${name}`).dblclick()
+      await opened
+      await expect(page.getByTestId('workflow-title')).toContainText(name)
+      await expect(page.locator('.vue-flow__node')).toHaveCount(3)
+      await page.locator('.dv-tab').filter({ hasText: /^Tools$/ }).click()
 
-    const searchInput = page.locator('[data-testid="tool-search"]')
-    await expect(searchInput).toBeVisible()
-    await searchInput.fill('nonexistent_tool_xyz_99999')
+      const search = page.getByTestId('tool-search')
+      const list = page.getByTestId('tool-list')
+      const row = page.getByTestId('tool-item-SeedNumbers')
+      await search.fill('Seed Numbrs')
+      await expect(row).toBeVisible()
+      await expect(row.locator('.tool-list-name')).toHaveText(seed!.display_name)
+      for (const query of ['source', 'Utilities']) {
+        await search.fill(query)
+        await expect(row).toBeVisible()
+      }
+      await search.fill('nonexistent_tool_xyz_99999')
+      await expect(list.locator('.tool-list-item')).toHaveCount(0)
+      await search.fill('')
+      await expect(list.locator('.tool-list-item')).not.toHaveCount(0)
 
-    // TreeTable body should have no meaningful data rows.
-    // PrimeVue TreeTable may render an empty-state row, so check
-    // that no row contains tool-specific content.
-    const toolNameCells = page.locator('.p-treetable-tbody .tool-name-cell')
-    await expect(toolNameCells).toHaveCount(0)
+      // Real wheel input arranges an offscreen row before canvas selection.
+      await list.hover()
+      await page.mouse.wheel(0, -10000)
+      await expect.poll(() => list.evaluate(element => element.scrollTop)).toBe(0)
+      await expect.poll(async () => {
+        const [item, viewport] = await Promise.all([row.boundingBox(), list.boundingBox()])
+        return item !== null && viewport !== null
+          && (item.y + item.height <= viewport.y || item.y >= viewport.y + viewport.height)
+      }).toBe(true)
+      const source = page.locator('.vue-flow__node[data-id="source"]')
+      const other = page.locator('.vue-flow__node[data-id="other"]')
+      const nested = page.locator('.vue-flow__node[data-id="nested"]')
+      const assertRevealed = async () => {
+        await expect(row).toHaveAttribute('aria-current', 'true')
+        await expect(list.locator('.tool-list-item--selected')).toHaveCount(1)
+        await expect.poll(async () => {
+          const [item, viewport] = await Promise.all([row.boundingBox(), list.boundingBox()])
+          return item !== null && viewport !== null && item.y >= viewport.y - 1
+            && item.y + item.height <= viewport.y + viewport.height + 1
+            && item.x >= viewport.x - 1 && item.x + item.width <= viewport.x + viewport.width + 1
+        }).toBe(true)
+      }
+      const clearSelection = async () => {
+        await page.locator('.vue-flow__pane').click({ position: { x: 10, y: 10 } })
+        await expect(list.locator('.tool-list-item--selected')).toHaveCount(0)
+      }
+      await source.click()
+      await assertRevealed()
+      await clearSelection()
+
+      const category = page.getByTestId('category-toggle-Utilities')
+      await category.click()
+      await expect(category).toHaveAttribute('aria-expanded', 'false')
+      await search.fill('Increment Numbers')
+      await expect(row).toHaveCount(0)
+      await source.click()
+      await expect(search).toHaveValue('')
+      await expect(category).toHaveAttribute('aria-expanded', 'true')
+      await assertRevealed()
+      await clearSelection()
+      await search.fill('Seed Numbrs')
+      await source.click()
+      await expect(search).toHaveValue('Seed Numbrs')
+      await assertRevealed()
+
+      await other.click({ modifiers: ['Shift'] })
+      await expect(source).toHaveClass(/selected/)
+      await expect(other).toHaveClass(/selected/)
+      await expect(list.locator('.tool-list-item--selected')).toHaveCount(0)
+      await clearSelection()
+      await source.click()
+      await assertRevealed()
+      await nested.click()
+      await expect(nested).toHaveClass(/selected/)
+      await expect(list.locator('.tool-list-item--selected')).toHaveCount(0)
+      await expect(page.locator('.vue-flow__node')).toHaveCount(3)
+      expect((await (await request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()).graph).toEqual(before.graph)
+      expect(executionPosts).toEqual([])
+    } catch (error) {
+      primaryFailed = true
+      throw error
+    } finally {
+      try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
+      if (created) {
+        try {
+          const deleted = await request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+          if (!deleted.ok()) cleanupErrors.push(new Error(`Owned workflow cleanup refused ${deleted.status()}`))
+        } catch (error) { cleanupErrors.push(error) }
+      }
+      if (primaryFailed && cleanupErrors.length) {
+        await testInfo.attach('catalog-reveal-cleanup-errors', {
+          body: cleanupErrors.map(String).join('\n'), contentType: 'text/plain',
+        }).catch(() => undefined)
+      }
+    }
+    if (cleanupErrors.length) throw cleanupErrors[0]
   })
 
   test('Manage Tools ignores the panel search and exposes environment management', async ({ page }) => {

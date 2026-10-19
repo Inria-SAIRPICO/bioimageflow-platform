@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -44,8 +44,50 @@ function apiErrorMessage(error: unknown): string {
     ?? (error instanceof Error ? error.message : String(error))
 }
 
+function searchWords(value: string): string[] {
+  return value
+    .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2')
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+    .toLowerCase()
+    .match(/[\p{L}\p{N}]+/gu) ?? []
+}
+
+function withinOneEdit(query: string, word: string): boolean {
+  if (Math.abs(query.length - word.length) > 1) return false
+  let left = 0
+  let right = 0
+  let edited = false
+  while (left < query.length && right < word.length) {
+    if (query[left] === word[right]) {
+      left++
+      right++
+      continue
+    }
+    if (edited) return false
+    edited = true
+    if (query.length > word.length) left++
+    else if (word.length > query.length) right++
+    else if (query[left] === word[right + 1] && query[left + 1] === word[right]) {
+      left += 2
+      right += 2
+    } else {
+      left++
+      right++
+    }
+  }
+  return query.length - left + word.length - right <= (edited ? 0 : 1)
+}
+
 export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
+  const searchIndex = computed(() => tools.value.map((tool) => {
+    const fields = [tool.name, tool.display_name, ...tool.tags, ...tool.categories, tool.documentation]
+    return {
+      tool,
+      haystack: fields.join(' ').toLowerCase(),
+      words: [...new Set(fields.flatMap(searchWords))],
+    }
+  }))
   const toolReloadRevisions = ref<Record<string, number>>({})
   function applyToolSourceChanged(payload: { tool_names: string[] }): void {
     const revisions = { ...toolReloadRevisions.value }
@@ -147,17 +189,12 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
   function searchTools(query: string): ToolMetadata[] {
     if (!query) return tools.value
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
-    return tools.value.filter((t) => {
-      const haystack = [
-        t.name,
-        t.display_name,
-        ...t.tags,
-        ...t.categories,
-      ]
-        .join(' ')
-        .toLowerCase()
-      return tokens.every((token) => haystack.includes(token))
-    })
+    return searchIndex.value
+      .filter(({ haystack, words }) => tokens.every(token =>
+        haystack.includes(token)
+        || (token.length >= 4 && token.length <= 64 && words.some(word => withinOneEdit(token, word))),
+      ))
+      .map(entry => entry.tool)
   }
 
   function getEnvStatusForTool(toolName: string): string {
