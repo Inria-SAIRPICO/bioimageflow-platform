@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
+import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
+
+const favoriteTest = test.extend({ trace: 'retain-on-failure' })
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const environmentA = '68ff94c5-b649-4dc5-9d98-605e82736e3b'
@@ -17,7 +20,18 @@ async function openNodeData(page: Page, workflowName: string): Promise<void> {
   await page.getByTestId('workflow-search').fill(workflowName)
   await page.getByTestId(`workflow-row-${workflowName}`).click()
   await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(workflowName)
-  await page.getByRole('button', { name: 'Open workflow', exact: true }).click()
+  // Pair this explicit Open's draft request with its response; an earlier
+  // startup read of the same workflow is not the acceptance boundary.
+  const openedRequest = page.waitForRequest(request => request.method() === 'GET'
+    && new URL(request.url()).pathname === `/api/v1/workflow-drafts/${workflowName}`)
+  const [opened] = await Promise.all([
+    page.waitForResponse(async response => response.request() === await openedRequest),
+    page.getByRole('button', { name: 'Open workflow', exact: true }).click(),
+  ])
+  expect(opened.ok(), await opened.text()).toBeTruthy()
+  const accepted = await opened.json() as WorkflowDraftResponse
+  expect(accepted.graph.display_name).toBe(workflowName)
+  expect(accepted.graph.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'seed' })]))
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   const seed = page.locator('.vue-flow__node[data-id="seed"]')
   await expect(seed).toBeVisible()
@@ -195,38 +209,46 @@ test('napari captured result launches primary, one-shot and replacement exactly 
   expect(state.favoriteBodies).toEqual([])
 })
 
-test('napari exclusive structural favorite replaces, survives reload across rows and unsets', async ({ page }) => {
-  const state = await fixture(page)
-  await openNodeData(page, state.workflowName)
-  await page.getByTestId('choose-napari-42-mask').click()
-  const menu = picker(page)
-  await menu.getByRole('button', { name: 'Set Microscopy as favorite for this output' }).click()
-  await expect(menu.locator('button[aria-pressed="true"]')).toHaveCount(1)
-  await menu.getByRole('button', { name: 'Set Tracking as favorite for this output' }).click()
-  await expect(menu.getByTestId(`napari-environment-${environmentB}`).getByRole('button', { name: 'Unset favorite for this output' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(menu.locator('button[aria-pressed="true"]')).toHaveCount(1)
-  expect(state.openBodies).toEqual([])
-  await page.reload()
-  await openNodeData(page, state.workflowName)
+favoriteTest('napari exclusive structural favorite replaces, survives reload across rows and unsets', async ({ page }) => {
+  const state = await test.step('Create captured-output fixture', () => fixture(page))
+  await test.step('Replace the exclusive favorite on row 42', async () => {
+    await openNodeData(page, state.workflowName)
+    await page.getByTestId('choose-napari-42-mask').click()
+    const menu = picker(page)
+    await menu.getByRole('button', { name: 'Set Microscopy as favorite for this output' }).click()
+    await expect(menu.locator('button[aria-pressed="true"]')).toHaveCount(1)
+    await menu.getByRole('button', { name: 'Set Tracking as favorite for this output' }).click()
+    await expect(menu.getByTestId(`napari-environment-${environmentB}`).getByRole('button', { name: 'Unset favorite for this output' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(menu.locator('button[aria-pressed="true"]')).toHaveCount(1)
+    expect(state.openBodies).toEqual([])
+  })
   const next = page.getByTestId('open-napari-43-mask')
-  await expect(next).toHaveAttribute('aria-label', 'Open in Tracking')
-  await next.click()
-  await expect.poll(() => state.openBodies.length).toBe(1)
-  expect(state.openBodies[0]).toEqual(expectedOpen(state.workflowName, environmentB, 43))
-  await page.getByTestId('choose-napari-43-mask').click()
-  await picker(page).getByRole('button', { name: 'Unset favorite for this output' }).click()
-  await expect(picker(page).locator('button[aria-pressed="true"]')).toHaveCount(0)
-  await expect(next).toHaveAttribute('aria-label', 'Open in Microscopy')
-  expect(state.openBodies).toHaveLength(1)
-  expect(state.favoriteBodies.map(body => [body.environment_id, body.expected_revision])).toEqual([
-    [environmentA, 0], [environmentB, 1], [environmentB, 2],
-  ])
-  for (const body of state.favoriteBodies) {
-    expect(body.key).toEqual({ kind: 'persistent', workspace_id: '300e69e0-ef55-4d22-928c-38bf9bf30aae',
-      workflow_id: state.workflowName, identity_generation: expect.any(Number), node_path: ['seed'], output_key: 'mask' })
-    expect(body).not.toHaveProperty('row')
-    expect(body).not.toHaveProperty('result_identity')
-  }
+  await test.step('Reload and launch row 43 using the retained favorite', async () => {
+    await page.reload()
+    await openNodeData(page, state.workflowName)
+    await expect(next).toHaveAttribute('aria-label', 'Open in Tracking')
+    await next.click()
+    await expect.poll(() => state.openBodies.length).toBe(1)
+    expect(state.openBodies[0]).toEqual(expectedOpen(state.workflowName, environmentB, 43))
+  })
+  await test.step('Wait for the picker to load and unset the favorite', async () => {
+    await page.getByTestId('choose-napari-43-mask').click()
+    await expect(picker(page)).toBeVisible()
+    await expect(picker(page)).not.toContainText('Checking environments')
+    await picker(page).getByRole('button', { name: 'Unset favorite for this output' }).click()
+    await expect(picker(page).locator('button[aria-pressed="true"]')).toHaveCount(0)
+    await expect(next).toHaveAttribute('aria-label', 'Open in Microscopy')
+    expect(state.openBodies).toHaveLength(1)
+    expect(state.favoriteBodies.map(body => [body.environment_id, body.expected_revision])).toEqual([
+      [environmentA, 0], [environmentB, 1], [environmentB, 2],
+    ])
+    for (const body of state.favoriteBodies) {
+      expect(body.key).toEqual({ kind: 'persistent', workspace_id: '300e69e0-ef55-4d22-928c-38bf9bf30aae',
+        workflow_id: state.workflowName, identity_generation: expect.any(Number), node_path: ['seed'], output_key: 'mask' })
+      expect(body).not.toHaveProperty('row')
+      expect(body).not.toHaveProperty('result_identity')
+    }
+  })
 })
 
 test('napari inactive visible dock keeps scroll gestures and refreshes only on reveal', async ({ page }) => {
