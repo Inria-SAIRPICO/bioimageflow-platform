@@ -102,6 +102,23 @@ class _ConnectionManager:
     def __init__(self) -> None:
         self.workflow_tree_events: list[dict[str, str | int | None]] = []
         self.active_workflow_events: list[dict[str, str]] = []
+        self.workflow_draft_events: list[dict[str, str | int | bool]] = []
+
+    def publish_workflow_draft_changed(
+        self,
+        workflow_id: str,
+        draft_revision: int,
+        updated_by: str,
+        updated_at: str,
+        dirty_against_saved: bool,
+    ) -> None:
+        self.workflow_draft_events.append({
+            "workflow_id": workflow_id,
+            "draft_revision": draft_revision,
+            "updated_by": updated_by,
+            "updated_at": updated_at,
+            "dirty_against_saved": dirty_against_saved,
+        })
 
     def publish_workflow_tree_changed(
         self,
@@ -952,30 +969,143 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
 async def test_delete_rejects_stale_expected_identity_generation_without_event(
     tmp_path: Path,
 ) -> None:
+    from datetime import datetime
+    from uuid import UUID
+
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
     connection_manager = _ConnectionManager()
     async for client in _client(tmp_path, connection_manager=connection_manager):
         create = await client.post("/api/v1/workflows", json={"name": "wf"})
         assert create.status_code == 201
-        generation = create.json()["identity_generation"]
+        original_generation = create.json()["identity_generation"]
+        removed = await client.delete(
+            "/api/v1/workflows/wf",
+            params={"expected_identity_generation": original_generation},
+        )
+        assert removed.status_code == 200
+        recreated = await client.post("/api/v1/workflows", json={"name": "wf"})
+        assert recreated.status_code == 201
+        generation = recreated.json()["identity_generation"]
+        assert generation > original_generation
+        assert (await client.post("/api/v1/workflows", json={"name": "unrelated"})).status_code == 201
+        private_ids = {}
+        for workflow_id in ("wf", "unrelated"):
+            graph = graph_document(name=f"{workflow_id}-definition", display_name=f"Saved {workflow_id}")
+            saved = await client.put(f"/api/v1/workflows/{workflow_id}", json={"graph": graph})
+            assert saved.status_code == 200
+            pending = {**graph, "display_name": f"Pending {workflow_id}"}
+            draft = await client.put(
+                f"/api/v1/workflow-drafts/{workflow_id}",
+                json={"graph": pending, "expected_revision": 0, "validate": False},
+            )
+            assert draft.status_code == 200
+            private = await client.post(
+                "/api/v1/nested-workflow-snapshots/open",
+                json={
+                    "owner": {"kind": "root", "canvas_id": f"canvas:{workflow_id}", "workflow_id": workflow_id},
+                    "parent_node_id": "child",
+                    "graph": graph_document(name=f"{workflow_id}-private"),
+                },
+            )
+            assert private.status_code == 201
+            private_ids[workflow_id] = private.json()["session_id"]
+            # These files are retention sentinels, not scientific/source records.
+            directory = tmp_path / "workflows" / workflow_id
+            (directory / "tools").mkdir(exist_ok=True)
+            (directory / "tools/retained.txt").write_bytes(f"source sentinel: {workflow_id}".encode())
+            (directory / "results").mkdir(exist_ok=True)
+            (directory / "results/retained.bin").write_bytes(f"result sentinel: {workflow_id}".encode())
+        (tmp_path / "unmanaged.bin").write_bytes(b"unmanaged sentinel")
+
+        async def authority(current_client):
+            captured = {}
+            for workflow_id in ("wf", "unrelated"):
+                saved = await current_client.get(f"/api/v1/workflows/{workflow_id}")
+                draft = await current_client.get(f"/api/v1/workflow-drafts/{workflow_id}")
+                private = await current_client.get(
+                    f"/api/v1/nested-workflow-snapshots/{private_ids[workflow_id]}",
+                )
+                assert saved.status_code == draft.status_code == private.status_code == 200
+                captured[workflow_id] = (saved.json(), draft.json(), private.json())
+            return captured
+
+        def files():
+            return {
+                path.relative_to(tmp_path).as_posix(): path.read_bytes()
+                for path in tmp_path.rglob("*") if path.is_file()
+            }
+
+        retained = await authority(client)
+        retained_files = files()
+        agent_state_path = ".bioimageflow/agent-state.json"
+        retained_agent_state = json.loads(retained_files[agent_state_path])
+
+        def assert_public_read_effects(*, new_server_owner: bool = False):
+            observed_files = files()
+            assert observed_files.keys() == retained_files.keys()
+            for path, content in retained_files.items():
+                if path != agent_state_path:
+                    assert observed_files[path] == content, path
+            observed_state = json.loads(observed_files[agent_state_path])
+            assert datetime.fromisoformat(observed_state["generated_at"]) >= datetime.fromisoformat(
+                retained_agent_state["generated_at"],
+            )
+            boot_id = observed_state["server_boot_id"]
+            assert UUID(hex=boot_id).hex == boot_id
+            if new_server_owner:
+                assert boot_id != retained_agent_state["server_boot_id"]
+            else:
+                assert boot_id == retained_agent_state["server_boot_id"]
+            # Public draft GET republishes agent context for the final observed
+            # workflow. Only its generation time and a new app's boot ID vary.
+            assert observed_state == {
+                **retained_agent_state,
+                "generated_at": observed_state["generated_at"],
+                "server_boot_id": boot_id,
+            }
+            assert observed_state["active_workflow_id"] == "unrelated"
+            assert observed_state["current_draft_revision"] == retained["unrelated"][1]["draft_revision"]
+
+        retained_events = list(connection_manager.workflow_tree_events)
+        retained_active_events = list(connection_manager.active_workflow_events)
+        retained_draft_events = [
+            {key: draft[key] for key in (
+                "workflow_id", "draft_revision", "updated_by", "updated_at", "dirty_against_saved",
+            )}
+            for _saved, draft, _private in retained.values()
+        ]
+        assert connection_manager.workflow_draft_events == retained_draft_events
 
         stale = await client.delete(
             "/api/v1/workflows/wf",
-            params={"expected_identity_generation": generation - 1},
+            params={"expected_identity_generation": original_generation},
         )
         assert stale.status_code == 409
         assert stale.json() == {
             "error": "workflow_identity_generation_conflict",
-            "detail": f"Workflow 'wf' generation is {generation}, not expected {generation - 1}",
+            "detail": f"Workflow 'wf' generation is {generation}, not expected {original_generation}",
             "field": None,
         }
-        assert (await client.get("/api/v1/workflows/wf")).status_code == 200
-        assert connection_manager.workflow_tree_events == [
-            {
-                "action": "workflow_created",
-                "workflow_id": "wf",
-                "identity_generation": generation,
-            }
-        ]
+        # Check the refusal's complete byte authority before public draft GET
+        # deliberately republishes request-specific agent context.
+        assert files() == retained_files
+        assert connection_manager.workflow_tree_events == retained_events
+        assert connection_manager.active_workflow_events == retained_active_events
+        assert connection_manager.workflow_draft_events == retained_draft_events
+        assert await authority(client) == retained
+        assert_public_read_effects()
+
+        # Fresh public service owners reconstruct the retained durable authority.
+        reopened = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+        reopened_drafts = WorkflowDraftService(lambda: reopened)
+        for workflow_id, (saved, draft, _private) in retained.items():
+            assert reopened.read_workflow_document(workflow_id).model_dump(mode="json")["graph"] == saved["graph"]
+            assert reopened.workflow_generation(workflow_id) == saved["info"]["identity_generation"]
+            assert reopened_drafts.get_draft_authority_snapshot(workflow_id).model_dump(mode="json") == draft
+        async for fresh_client in _client(tmp_path):
+            assert await authority(fresh_client) == retained
+        assert_public_read_effects(new_server_owner=True)
 
         deleted = await client.delete(
             "/api/v1/workflows/wf",
@@ -983,6 +1113,30 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
         )
         assert deleted.status_code == 200
         assert deleted.json()["identity_generation"] > generation
+        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
+        assert (await client.get("/api/v1/workflow-drafts/wf")).status_code == 404
+        assert (await client.get(
+            f"/api/v1/nested-workflow-snapshots/{private_ids['wf']}",
+        )).status_code == 404
+        assert connection_manager.workflow_tree_events == [
+            *retained_events,
+            {"action": "workflow_deleted", "workflow_id": "wf", "identity_generation": deleted.json()["identity_generation"]},
+        ]
+        assert connection_manager.workflow_draft_events == retained_draft_events
+        unrelated = await client.get("/api/v1/workflows/unrelated")
+        assert unrelated.json() == retained["unrelated"][0]
+        unrelated_draft = await client.get("/api/v1/workflow-drafts/unrelated")
+        assert unrelated_draft.json() == retained["unrelated"][1]
+        unrelated_private = await client.get(
+            f"/api/v1/nested-workflow-snapshots/{private_ids['unrelated']}",
+        )
+        assert unrelated_private.json() == retained["unrelated"][2]
+        remaining_files = files()
+        assert all(
+            content == remaining_files.get(path)
+            for path, content in retained_files.items()
+            if path.startswith("workflows/unrelated/") or path == "unmanaged.bin"
+        )
 
 
 async def test_delete_removes_workflow_local_results(

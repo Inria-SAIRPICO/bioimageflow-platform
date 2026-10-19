@@ -20,6 +20,26 @@ function toolNodeWithOutputs(id: string, outputs: Record<string, unknown>) {
 }
 
 describe('groupIntoWorkflow', () => {
+  it.each([
+    { selected: [], message: 'Cannot group an empty selection' },
+    { selected: ['missing'], message: 'The selected nodes are not on this canvas' },
+  ])('refuses invalid selection $selected without changing canvas inputs', ({ selected, message }) => {
+    const nodes = [toolNode('before', 0), toolNode('after', 100)]
+    const edges = [{
+      id: 'retained', source: 'before', target: 'after', type: 'dataframe',
+      sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+      targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+    }]
+    const selectedNodeIds = new Set(selected)
+    const before = structuredClone({ nodes, edges, selected: [...selectedNodeIds] })
+
+    expect(() => groupIntoWorkflow({
+      nodes, edges, selectedNodeIds, workflowNodeId: 'group', workflowNodeName: 'Grouped',
+    })).toThrow(message)
+
+    expect({ nodes, edges, selected: [...selectedNodeIds] }).toEqual(before)
+  })
+
   it('publishes exposed output schemas without an absent viewer declaration', () => {
     const nodes = [
       toolNodeWithOutputs('blur', {
