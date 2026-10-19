@@ -35,6 +35,7 @@ from bioimageflow_server.services.result_store import (
     DATAFRAME_RESULT_IDENTITY_ATTR,
     ResultDataNotReadyError,
     ResultStoreService,
+    dataframe_column_viewers,
 )
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
@@ -117,16 +118,11 @@ def _node_data_response(
     tool_name: str | None,
     storage_path: Path | None,
 ) -> NodeDataResponse:
-    identity = dataframe.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
     dataframe = dataframe.copy()
     dataframe.columns = [str(column) for column in dataframe.columns]
-    column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
     try:
-        retained_viewers = (
-            result_store.result_viewers(identity, storage_path=storage_path)
-            if isinstance(identity, ResultArtifactIdentity)
-            else {}
-        )
+        column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
+        retained_viewers = dataframe_column_viewers(dataframe)
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     column_viewers = {

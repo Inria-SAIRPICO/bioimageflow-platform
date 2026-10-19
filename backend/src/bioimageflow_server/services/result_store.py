@@ -3,27 +3,125 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Annotated, cast
 
 import pandas as pd
 import pyarrow as pa
 from bioimageflow.cache import cache_load
 from bioimageflow.storage import (
     CacheCorruptionError,
+    RunNodeResult,
     Storage,
     validate_relative_posix_path,
 )
+from bioimageflow.validation import serialize_output_schema
+from bioimageflow_core import DECLARATION_CONTRACT_VERSION, IOModel, ImageSpec, ViewerSpec
+from bioimageflow_core.type_descriptors import decode_annotation
 
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 DATAFRAME_RECORD_DIR_ATTR = "bioimageflow_record_dir"
 DATAFRAME_RESULT_IDENTITY_ATTR = "bioimageflow_result_identity"
+DATAFRAME_RESULT_METADATA_ATTR = "bioimageflow_result_metadata"
 
 
 class ResultDataNotReadyError(Exception):
     """Raised when a node cache file exists but is not yet readable."""
+
+
+@dataclass(frozen=True)
+class ResultColumnMetadata:
+    """Request-local presentation facts from one admitted producer snapshot."""
+
+    identity: ResultArtifactIdentity
+    types: dict[str, str]
+    viewers: dict[str, ViewerSpec]
+
+
+def dataframe_result_metadata(dataframe: pd.DataFrame) -> ResultColumnMetadata | None:
+    metadata = dataframe.attrs.get(DATAFRAME_RESULT_METADATA_ATTR)
+    if metadata is None:
+        return None
+    if not isinstance(metadata, ResultColumnMetadata) or metadata.identity != dataframe.attrs.get(
+        DATAFRAME_RESULT_IDENTITY_ATTR,
+    ):
+        raise ResultDataNotReadyError("Captured result metadata identity does not match")
+    return metadata
+
+
+def dataframe_column_viewers(dataframe: pd.DataFrame) -> dict[str, ViewerSpec]:
+    """Project carried viewer facts without storage or current-catalog access."""
+
+    metadata = dataframe_result_metadata(dataframe)
+    return dict(metadata.viewers) if metadata is not None else {}
+
+
+def _retained_output_types(retained: RunNodeResult) -> dict[str, str]:
+    """Use public finite annotation decoding and canonical GUI serialization."""
+
+    try:
+        provenance = retained.provenance
+        if provenance is None or "tool" not in provenance:
+            return {}
+        tool = provenance["tool"]
+        if not isinstance(tool, Mapping):
+            raise ValueError("Producer tool metadata is not a mapping")
+        if "executable" not in tool:
+            return {}
+        executable = tool["executable"]
+        if not isinstance(executable, Mapping):
+            raise ValueError("Producer executable metadata is not a mapping")
+        if "declaration" not in executable:
+            return {}
+        if executable.get("declaration_contract") != DECLARATION_CONTRACT_VERSION:
+            raise ValueError("Producer declaration contract is unavailable")
+        declaration = executable["declaration"]
+        if not isinstance(declaration, Mapping):
+            raise ValueError("Producer declaration is not a mapping")
+        outputs = declaration["outputs"]
+        if outputs is None:
+            return {}
+        if not isinstance(outputs, Mapping):
+            raise ValueError("Producer output declaration is not a mapping")
+        names, fields = outputs.get("field_names"), outputs.get("fields")
+        if (
+            type(outputs.get("passthrough")) is not bool
+            or not isinstance(names, list)
+            or any(not isinstance(name, str) or not name for name in names)
+            or len(set(names)) != len(names)
+            or not isinstance(fields, Mapping)
+            or set(fields) != set(names)
+        ):
+            raise ValueError("Producer output fields are unavailable")
+        annotations = {}
+        for name in names:
+            field = fields[name]
+            if not isinstance(field, Mapping):
+                raise ValueError("Producer output field is not a mapping")
+            annotation = decode_annotation(field.get("type_spec"))
+            image = field["image_spec"]
+            if image is not None:
+                if not isinstance(image, Mapping) or set(image) != {
+                    "semantics", "layouts", "dtypes", "formats",
+                } or any(
+                    not isinstance(values, list) or any(not isinstance(value, str) for value in values)
+                    for values in image.values()
+                ):
+                    raise ValueError("Producer image metadata is unavailable")
+                annotation = Annotated[annotation, ImageSpec(**image)]
+            annotations[name] = annotation
+        # The holder contains annotations only: no defaults, callbacks, source
+        # imports or IOModel instances are admitted to table presentation.
+        outputs_model = type("RetainedOutputs", (IOModel,), {"__annotations__": annotations})
+        holder = type("RetainedOutputSchema", (), {"Outputs": outputs_model})
+        schema = serialize_output_schema(holder)
+        return {name: schema[name]["type"] for name in names}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ResultDataNotReadyError("Captured output declaration is unavailable") from exc
 
 
 class ResultStoreService:
@@ -141,7 +239,12 @@ class ResultStoreService:
     ) -> pd.DataFrame:
         """Load one exact record without consulting current/latest pointers."""
 
-        self.read_run_node_result(identity, storage_path=storage_path)
+        retained = self.read_run_node_result(identity, storage_path=storage_path)
+        metadata = ResultColumnMetadata(
+            identity=identity,
+            types=_retained_output_types(retained),
+            viewers={item.output: item.viewer for item in retained.viewers},
+        )
         try:
             dataframe = Storage(self._root(storage_path)).load_record_dataframe(
                 identity.result_key, identity.record_id
@@ -151,6 +254,7 @@ class ResultStoreService:
                 f"Output data for node '{identity.node_key}' is not ready"
             ) from exc
         dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+        dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = metadata
         return dataframe
 
     def result_viewer(
@@ -238,9 +342,18 @@ class ResultStoreService:
     def get_column_types(
         self, df: pd.DataFrame, tool_name: str | None = None
     ) -> dict[str, str]:
-        declared = self._declared_output_types(tool_name)
+        metadata = dataframe_result_metadata(df)
+        if isinstance(df.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR), ResultArtifactIdentity):
+            # Missing/dynamic producer facts remain unknown. Current catalog
+            # metadata cannot supply authority for a retained modern result.
+            declared = metadata.types if metadata is not None else {}
+        else:
+            declared = self._declared_output_types(tool_name)
         return {
-            str(column): declared.get(str(column), self._infer_series_type(cast(pd.Series, df[column])))
+            str(column): (
+                declared[str(column)] if str(column) in declared
+                else self._infer_series_type(cast(pd.Series, df[column]))
+            )
             for column in df.columns
         }
 

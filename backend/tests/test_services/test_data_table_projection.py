@@ -10,6 +10,11 @@ from bioimageflow_server.models.data_table import (
 )
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.data_table_projection import DataTableProjectionService
+from bioimageflow_server.services.result_store import (
+    DATAFRAME_RESULT_IDENTITY_ATTR,
+    DATAFRAME_RESULT_METADATA_ATTR,
+    ResultColumnMetadata,
+)
 
 
 class FakeResultStore:
@@ -31,7 +36,7 @@ class FakeResultStore:
         return {str(column): "int" for column in dataframe.columns}
 
     def result_viewers(self, identity, storage_path=None):
-        return {}
+        raise AssertionError("Table projection must reuse loaded viewer metadata")
 
 
 def source(node_id: str, role: str = "anchor", label: str | None = None) -> DataTableSource:
@@ -134,11 +139,13 @@ def test_merged_columns_use_retained_viewer_snapshot() -> None:
             return identity
 
         def load_result_dataframe(self, captured, storage_path=None):
-            return self.frames[captured.node_key]
-
-        def result_viewers(self, captured, storage_path=None):
             assert captured == identity
-            return {"measurements": retained_viewer}
+            dataframe = self.frames[captured.node_key]
+            dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = captured
+            dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = ResultColumnMetadata(
+                identity=captured, types={}, viewers={"measurements": retained_viewer},
+            )
+            return dataframe
 
     store = RetainedStore({"a": pd.DataFrame({"measurements": ["table.custom"]}, index=["r0"])})
     result = DataTableProjectionService(store).query(

@@ -573,6 +573,10 @@ All validation transports use complete graph payloads. The server does not infer
 ```
 
 For a modern retained result, Node Data and CSV first validate the latest link schema and relative target, require its resolved view to be the canonical directory for the captured run and node, then validate the result key, record, and manifest through the library's exact-record path; a damaged selected record or provenance returns HTTP 409 and never falls back to a stale raw file or companion CSV. A latest view with absent `result.json` remains eligible for the legacy unpinned reader, so that deliberate compatibility path does not provide modern provenance guarantees. Pagination and viewer metadata use the captured identity, and a later integrity failure is also reported as unavailable rather than serving rows from another selection.
+Individual and merged modern tables derive column types and viewer declarations from the same request-local producer snapshot already admitted for that exact retained record, without an additional storage read.
+Concrete carried output declarations remain authoritative for empty and all-null columns and never borrow a same-named current catalog schema; missing or dynamic declarations and columns not declared by a passthrough model use DataFrame type inference without catalog substitution.
+A malformed present output descriptor or mismatched carried metadata identity returns HTTP 409.
+Legacy unpinned tables retain their existing current-tool declaration and DataFrame inference behavior without modern producer-provenance guarantees.
 
 #### 2.4.4b Node Output Schema Resolution
 

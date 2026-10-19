@@ -24,6 +24,7 @@ from bioimageflow_server.routers import nodes as nodes_router
 from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.result_store import DATAFRAME_RESULT_IDENTITY_ATTR
+from bioimageflow_server.services.result_store import DATAFRAME_RESULT_METADATA_ATTR, ResultColumnMetadata
 from bioimageflow_server.services.result_store import ResultStoreService
 
 pytestmark = pytest.mark.anyio
@@ -136,7 +137,10 @@ async def test_pagination_reuses_captured_result_after_latest_changes() -> None:
             "reader_id": "retained.reader",
         }
     })
-    store.result_viewers.return_value = {"x": retained_viewer}
+    for dataframe in (initial, retained):
+        dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = ResultColumnMetadata(
+            identity=identity, types={"x": "int"}, viewers={"x": retained_viewer},
+        )
     async with await _client(store) as client:
         first = await client.get("/api/v1/nodes/n1/data", params={"page_size": 1})
         second = await client.post(
@@ -152,7 +156,7 @@ async def test_pagination_reuses_captured_result_after_latest_changes() -> None:
     assert first.json()["column_viewers"]["x"]["napari"]["reader_id"] == "retained.reader"
     assert second.json()["rows"] == [{"x": 2}]
     store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
-    assert store.result_viewers.call_count == 2
+    store.result_viewers.assert_not_called()
 
 
 async def test_legacy_node_data_marks_viewer_metadata_unknown() -> None:
@@ -263,8 +267,6 @@ async def test_get_node_data_returns_409_when_cache_not_ready() -> None:
 
 
 async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt() -> None:
-    from bioimageflow_server.services.result_store import ResultDataNotReadyError
-
     identity = ResultArtifactIdentity(
         run_id="run_0123456789abcdef0123456789abcdef",
         node_key="n1",
@@ -273,14 +275,18 @@ async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt
     )
     dataframe = pd.DataFrame({"x": [2]})
     dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = ResultColumnMetadata(
+        identity=identity.model_copy(update={"record_id": "rec_other"}), types={"x": "int"}, viewers={},
+    )
     store = MagicMock()
     store.get_latest_dataframe.return_value = dataframe
     store.get_column_types.return_value = {"x": "int"}
-    store.result_viewers.side_effect = ResultDataNotReadyError("Viewer metadata is not ready")
     async with await _client(store) as client:
         response = await client.post("/api/v1/nodes/n1/data/query", json={})
 
     assert response.status_code == 409
+    assert "metadata identity does not match" in response.json()["detail"]
+    store.result_viewers.assert_not_called()
 
 
 async def test_get_node_data_forwards_tool_name() -> None:
