@@ -311,6 +311,8 @@ WebSocket events carry logs, execution progress, status, and workspace changes t
 Execution-attributed BioImageFlow and Wetlands logs carry the immutable execution context used by progress and terminal events, while non-execution tool, environment, thumbnail, and platform logs remain contextless and global.
 
 The MCP server in `backend/src/bioimageflow_server/agent_mcp.py` is a separate control surface for agents operating the active user workspace.
+Workspace agent setup creates its optional read-only platform source reference as a depth-one clone, including for a local development checkout by using Git's regular transport rather than its local object-copy optimization.
+The reference remains separate from running application code, and clone failure remains nonfatal.
 The material under `docs/agents/` documents that workflow-operation contract; it is not the development architecture guide.
 Platform development agents may edit repository source normally, but should not use direct saved-workflow JSON edits as a substitute for MCP when a task is about operating an active workflow.
 
