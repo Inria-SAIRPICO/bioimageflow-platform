@@ -492,22 +492,93 @@ async def test_run_final_recheck_rejects_changed_revision_zero_graph(
 
 async def test_run_cannot_accept_same_id_replacement(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from bioimageflow_server.models.nested_workflow_snapshot import NestedSnapshotOwner
+    from bioimageflow_server.models.workflow import WorkflowSaveBody
+    from bioimageflow_server.services.nested_workflow_snapshot import NestedWorkflowSnapshotService
+
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    original_generation = workflow_store.workflow_generation("wf")
+    persisted_drafts = WorkflowDraftService(lambda: workflow_store)
+    snapshots = NestedWorkflowSnapshotService(lambda: workflow_store)
+    private_ids = {}
+
+    def seed_retained_authority(workflow_id: str, label: str) -> None:
+        graph = GraphState.model_validate(graph_document(
+            name=f"{workflow_id}-definition", display_name=label,
+        ))
+        workflow_store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
+        persisted_drafts.put_draft(
+            workflow_id,
+            graph=graph.model_copy(update={"display_name": f"Pending {label}"}),
+            expected_revision=0,
+            should_validate=False,
+        )
+        private = snapshots.open_snapshot(
+            NestedSnapshotOwner(
+                kind="root", canvas_id=f"canvas:{workflow_id}", workflow_id=workflow_id,
+            ),
+            "child",
+            GraphState.model_validate(graph_document(name=f"{workflow_id}-private")),
+        )
+        private_ids[workflow_id] = private.session_id
+        # Inert sentinels establish file retention, not scientific/source records.
+        tools = workflow_store.workflow_dir(workflow_id) / "tools"
+        tools.mkdir(exist_ok=True)
+        (tools / "retained.txt").write_bytes(f"source sentinel: {workflow_id}".encode())
+        results = workflow_store.get_storage_path(workflow_id)
+        results.mkdir(exist_ok=True)
+        (results / "retained.bin").write_bytes(f"result sentinel: {workflow_id}".encode())
+
+    def authority(current_store, current_drafts, current_snapshots):
+        return {
+            workflow_id: (
+                current_store.read_workflow_document(workflow_id).model_dump(mode="json"),
+                current_store.get_workflow(workflow_id).model_dump(mode="json"),
+                current_drafts.get_draft_authority_snapshot(workflow_id).model_dump(mode="json"),
+                current_store.workflow_generation(workflow_id),
+                current_snapshots.get_snapshot(private_ids[workflow_id]).model_dump(mode="json"),
+            )
+            for workflow_id in ("wf", "unrelated")
+        }
+
+    def files():
+        return {
+            path.relative_to(tmp_path).as_posix(): path.read_bytes()
+            for path in tmp_path.rglob("*") if path.is_file()
+        }
+
+    workflow_store.create_workflow(WorkflowCreate(name="unrelated"))
+    seed_retained_authority("unrelated", "Unrelated")
+    (tmp_path / "unmanaged.bin").write_bytes(b"unmanaged sentinel")
     accepted = _accepted_draft(revision=7)
     draft_service = MagicMock(spec=WorkflowDraftService)
     draft_service.get_draft_authority_async = AsyncMock(
-        return_value=_authority(accepted, workflow_store.get_storage_path("wf"))
+        return_value=_authority(
+            accepted, workflow_store.get_storage_path("wf"),
+            identity_generation=original_generation,
+        )
     )
     em = _FakeExecutionManager(running=False)
+    retained_status = em.get_status().model_dump(mode="json")
+    retained = {}
+    retained_files = {}
+    storage_reads = MagicMock(wraps=workflow_store.get_storage_path)
 
     async def replace_before_accepting(*_args: Any, **kwargs: Any) -> ExecutionContext:
+        nonlocal retained, retained_files
         workflow_store.delete_workflow("wf")
         workflow_store.create_workflow(WorkflowCreate(name="wf", display_name="Replacement"))
+        seed_retained_authority("wf", "Replacement")
+        assert workflow_store.workflow_generation("wf") > original_generation
+        retained = authority(workflow_store, persisted_drafts, snapshots)
+        retained_files = files()
+        monkeypatch.setattr(workflow_store, "get_storage_path", storage_reads)
         await kwargs["ensure_context_current"]()
         pytest.fail("A replaced workflow identity must not be accepted")
 
@@ -529,8 +600,25 @@ async def test_run_cannot_accept_same_id_replacement(
         )
 
     assert response.status_code == 404
-    assert workflow_store.get_workflow("wf").info.display_name == "Replacement"
+    assert retained and retained_files
+    assert files() == retained_files
+    storage_reads.assert_not_called()
     draft_service.get_draft_authority_snapshot.assert_not_called()
+    draft_service.get_draft_authority_async.assert_awaited_once_with("wf")
+    assert em.start.await_count == 1
+    assert em.get_status().model_dump(mode="json") == retained_status
+    em.stop.assert_not_called()
+    assert authority(workflow_store, persisted_drafts, snapshots) == retained
+
+    reopened = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=ToolRegistryService(),
+    )
+    reopened_drafts = WorkflowDraftService(lambda: reopened)
+    reopened_snapshots = NestedWorkflowSnapshotService(lambda: reopened)
+    assert authority(reopened, reopened_drafts, reopened_snapshots) == retained
+    assert reopened.get_workflow("wf").info.display_name == "Replacement"
+    assert files() == retained_files
 
 
 async def test_run_storage_retry_retains_one_pending_execution_identity(
