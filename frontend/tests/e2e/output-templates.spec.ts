@@ -1,8 +1,8 @@
-import { expect, test, type Page, type Response } from '@playwright/test'
+import { expect, test, type Page, type Request, type Response } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import type { GraphState, NodeDataResponse, ResultArtifactIdentity, WorkflowFile, WorkflowInfo } from '../../src/api/types'
+import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import type { ExecutionPresentationPage, ExecutionStatus, GraphState, NodeDataResponse, ResultArtifactIdentity, WorkflowFile, WorkflowInfo } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
@@ -234,4 +234,194 @@ test('output template edits persist and publish distinct files without replacing
     }
   }
   if (cleanupFailed) throw cleanupFailure
+})
+
+test('invalid output templates remain saveable, refuse execution and recover through a visible repair', async ({ page }) => {
+  const name = `invalid_template_${test.info().project.name}_${Date.now()}`
+  const label = `Invalid template ${name}`
+  const graph: GraphState = {
+    schema_version: 2, name, display_name: label,
+    nodes: [{
+      type: 'tool', id: 'write', name: 'Write report', tool_name: 'TemplateReport',
+      tool_module: MODULE, tool_class: 'TemplateReport',
+      position: [200, 160], parameters: {}, output_templates: { result: 'initial_{row_index}.txt' },
+    }],
+    edges: [],
+    interface: {
+      inputs: [],
+      outputs: [{ id: 'published-report', name: 'report', schema: { type: 'Path' }, source: { node: 'write', column: 'result' } }],
+    },
+    config: { engine: 'wetlands', execution: 'sequential' },
+  }
+  const error = {
+    type: 'parameter_invalid', node: 'write', field: 'result',
+    detail: expect.stringContaining("Template references undefined input field 'missing'"),
+  }
+  let info: WorkflowInfo | null = null
+  let primaryOccurred = false
+  let cleanupFailed = false
+  let cleanupFailure: unknown
+  try {
+    const created = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+    expect(created.status(), await created.text()).toBe(201)
+    info = await created.json() as WorkflowInfo
+    const ownedInfo = info
+    const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
+    expect(installed.status(), await installed.text()).toBe(200)
+    expect((await draft(page, name)).validation).toMatchObject({ valid: true, errors: [] })
+    await open(page, name, label)
+    await page.locator('.vue-flow__node[data-id="write"]').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const panel = page.getByTestId('panel-nodePanel')
+    await expect(panel.locator('.tool-name')).toHaveText('TemplateReport')
+    const input = panel.locator('.output-row').filter({ hasText: 'result' }).getByTestId('output-template')
+    const errors = panel.getByTestId('node-validation-errors')
+
+    const save = async () => {
+      let savedResponseSeen = false
+      const response = page.waitForResponse(candidate => {
+        const matches = candidate.request().method() === 'PUT'
+          && new URL(candidate.url()).pathname === `/api/v1/workflows/${name}`
+        if (matches) savedResponseSeen = true
+        return matches
+      })
+      const cleanDraft = page.waitForResponse(candidate => savedResponseSeen
+        && candidate.request().method() === 'PUT'
+        && new URL(candidate.url()).pathname === `/api/v1/workflow-drafts/${name}`
+        && candidate.status() === 200)
+      await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+      const accepted = await response
+      expect(accepted.status(), await accepted.text()).toBe(200)
+      expect((await (await cleanDraft).json() as WorkflowDraftResponse).dirty_against_saved).toBe(false)
+      await expect(page.getByTestId('workflow-title')).toHaveText(label)
+    }
+    const executionAuthority = async () => {
+      const status = await page.request.get(`${API}/execution/status`)
+      const history = await page.request.get(`${API}/executions`, { params: { workflow_id: name } })
+      expect(status.ok(), await status.text()).toBeTruthy()
+      expect(history.ok(), await history.text()).toBeTruthy()
+      return {
+        status: await status.json() as ExecutionStatus,
+        history: await history.json() as ExecutionPresentationPage,
+      }
+    }
+    const resultFiles = () => {
+      const files: Record<string, string> = {}
+      const walk = (directory: string) => {
+        if (!existsSync(directory)) return
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          const path = join(directory, entry.name)
+          if (entry.isDirectory()) walk(path)
+          else files[relative(ownedInfo.results_path, path)] = entry.isSymbolicLink()
+            ? `symlink:${readlinkSync(path)}` : readFileSync(path).toString('base64')
+        }
+      }
+      walk(ownedInfo.results_path)
+      return files
+    }
+
+    await test.step('Save an invalid template with its field-addressed diagnostic', async () => {
+      await input.fill('{missing.stem}.txt')
+      await expect.poll(async () => (await draft(page, name)).validation.errors)
+        .toEqual(expect.arrayContaining([expect.objectContaining(error)]))
+      await expect(errors.locator('strong')).toHaveText('result:')
+      await expect(errors).toContainText("Template references undefined input field 'missing'")
+      await save()
+    })
+    const retainedDraft = await draft(page, name)
+    const retainedSaved = await saved(page, name)
+    expect(retainedDraft.validation).toMatchObject({ valid: false, errors: [error] })
+    expect(retainedDraft.graph).toEqual(retainedSaved.graph)
+    expect(retainedSaved.graph.nodes[0]).toMatchObject({ output_templates: { result: '{missing.stem}.txt' } })
+    const retainedDocument = readFileSync(ownedInfo.path)
+    const retainedExecution = await executionAuthority()
+    expect(retainedExecution.history).toMatchObject({ items: [], total: 0 })
+    const retainedFiles = resultFiles()
+    expect(retainedFiles).toEqual({})
+
+    await test.step('GUI validation and the revision-addressed API both refuse execution', async () => {
+      // The GUI rejects its accepted invalid validation before sending Run.
+      const guiRuns: string[] = []
+      const observe = (request: Request) => {
+        if (request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/v1/execution/run') guiRuns.push(request.url())
+      }
+      page.on('request', observe)
+      try {
+        await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
+        await page.getByTestId('run-workflow-button').click()
+        await expect(page.locator('.p-toast')).toContainText('Validation errors')
+        await expect(page.locator('.p-toast')).toContainText('write.result')
+        expect(guiRuns).toEqual([])
+      } finally {
+        page.off('request', observe)
+      }
+      const refused = await page.request.post(`${API}/execution/run`, {
+        data: { workflow_id: name, draft_revision: retainedDraft.draft_revision },
+      })
+      expect(refused.status(), await refused.text()).toBe(422)
+      expect(await refused.json()).toMatchObject({ error: 'validation_error', errors: [error] })
+      expect(await draft(page, name)).toEqual(retainedDraft)
+      expect(await saved(page, name)).toEqual(retainedSaved)
+      expect(readFileSync(ownedInfo.path)).toEqual(retainedDocument)
+      expect(await executionAuthority()).toEqual(retainedExecution)
+      expect(resultFiles()).toEqual(retainedFiles)
+    })
+
+    await test.step('Repair the template visibly and reopen its valid saved authority', async () => {
+      await input.fill('repaired_{row_index}.txt')
+      await expect.poll(async () => (await draft(page, name)).validation)
+        .toMatchObject({ valid: true, errors: [] })
+      await expect(errors).toHaveCount(0)
+      await save()
+      const repaired = await saved(page, name)
+      const expected = structuredClone(retainedSaved.graph)
+      const node = expected.nodes[0]!
+      if (node.type !== 'tool') throw new Error('Expected the retained processing node')
+      node.output_templates = { result: 'repaired_{row_index}.txt' }
+      expect(repaired.graph).toEqual(expected)
+      await open(page, name, label)
+      const reopened = await draft(page, name)
+      expect(reopened.graph).toEqual(repaired.graph)
+      expect(reopened.validation).toMatchObject({ valid: true, errors: [] })
+      await page.locator('.vue-flow__node[data-id="write"]').click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      await expect(input).toHaveValue('repaired_{row_index}.txt')
+      await expect(errors).toHaveCount(0)
+      expect(await executionAuthority()).toEqual(retainedExecution)
+      expect(resultFiles()).toEqual(retainedFiles)
+    })
+  } catch (error) {
+    primaryOccurred = true
+    throw error
+  } finally {
+    try {
+      await page.goto('about:blank')
+      const status = await page.request.get(`${API}/execution/status`)
+      expect(status.ok(), await status.text()).toBeTruthy()
+      const current = await status.json() as ExecutionStatus
+      if (current.workflow_id === name && current.state !== 'idle') {
+        const stopped = await page.request.post(`${API}/execution/stop`)
+        expect(stopped.ok(), await stopped.text()).toBeTruthy()
+        await expect.poll(async () => (await executionAuthorityForCleanup()).state).toBe('idle')
+      }
+      if (info) {
+        const removed = await page.request.delete(`${API}/workflows/${name}`, {
+          params: { expected_identity_generation: info.identity_generation },
+        })
+        expect([200, 404], await removed.text()).toContain(removed.status())
+      }
+    } catch (error) {
+      if (primaryOccurred) console.error('Invalid-template cleanup failed while preserving the primary:', error)
+      else { cleanupFailed = true; cleanupFailure = error }
+    }
+  }
+  if (cleanupFailed) throw cleanupFailure
+
+  async function executionAuthorityForCleanup(): Promise<ExecutionStatus> {
+    const response = await page.request.get(`${API}/execution/status`)
+    expect(response.ok(), await response.text()).toBeTruthy()
+    return await response.json() as ExecutionStatus
+  }
 })
