@@ -33,8 +33,9 @@ IDs must be unique across the inventories and dashboard.
 
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
+The canonical temporary receipt tree is unavailable on October 19, 2026; the [current checkpoint](platform-test-current.md) distinguishes historical claimed results from newly retained current proof and the remaining final certification gates.
 
-- Overall: **415 V + 79 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **415 / 500 are verified (83.0%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **418 V + 76 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **418 / 500 are verified (83.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
 
@@ -112,7 +113,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-014 | Containment-cycle rejection | P1 | Workflow API/storage | no | N (this row owns cycle refusal; successful embedding is covered by WF-REC-005 and WF-REC-006) | V | N (cycle insertion is refused atomically before a recovery lifecycle begins) | V | V | verified | exact f20d9135 transitive-cycle refusal/full retained authority/fresh public reconstruction; entrypoint matrix unclaimed |
 | WF-SRC-011 | Import viewing readiness and setup guidance without blocking execution | P1 | Desktop GUI/import/API | no | V | V | V | N (readiness is recalculated on saved Open; workflow archive persistence is WF-SRC-008) | V | verified | October 8 source-bound I1 receipts; Chromium/Firefox six exact and ten affected browser passes |
 | WF-SRC-001 | Explicit identity-bound source update preview/apply | P1 | Desktop API/storage | no | V | V | V | V | V | verified | `d02dea9` |
-| WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | V | G | N (atomic synchronous operation; no recovery lifecycle) | G | G | in-progress | fresh structural recursive-operation owning10: provenance-only removal; durable/UI/owner detach remainG |
+| WF-SRC-002 | Detach changes provenance only | P1 | Desktop GUI/API | no | V | V | N (atomic synchronous operation; no recovery lifecycle) | V | V | verified | exact Chromium/Firefox at base `9be353a`, frozen `ea27d351`; owner unit5; new source-qualified Detach receipt linked in inventory; no Run/science claim |
 | WF-SRC-003 | Owned-source import materializes editable files | P1 | Desktop API/storage | no | V | V | V | V | V | verified | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-004 | Captured code and independent imports remain stable | P1 | Desktop runtime/storage | no | V | G | G | V | V | in-progress | c6c130d scoped retained/current source; atomic12 fresh, original overall backend FAIL |
 | WF-SRC-005 | Copy and export capture edited sources | P1 | Workflow API/storage | no | V | V | V | V | V | verified | exact owned-source collision/staged copy failure/retry at a8644e3/8699f931 plus retained Save As/edited ZIP; archive interruption remains untested |

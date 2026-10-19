@@ -1662,6 +1662,17 @@ function detachContextWorkflowSource() {
   if (!menu?.hasWorkspaceSource || isLocked.value) return
   const node = getNodes.value.find((candidate: any) => candidate.id === menu.nodeId)
   if (!node?.data || node.data.source?.kind !== 'workspace') return
+  if (nestedWorkflowSessionsStore.hasOpenEditorForNode({
+    kind: 'root', canvas_id: canvasId, workflow_id: owningWorkflowId(),
+  }, menu.nodeId)) {
+    clipboardToast?.add({
+      severity: 'warn',
+      summary: 'Close nested editor first',
+      detail: 'Apply or discard the nested editor and close it before detaching this workflow from its source.',
+      life: 5000,
+    })
+    return
+  }
   node.data.source = null
   emitGraphChanged()
 }

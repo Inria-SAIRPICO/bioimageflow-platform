@@ -58,6 +58,8 @@ Canvas mutations must preserve interface referential integrity in the same graph
 
 An embedded graph is the workflow node's execution authority.
 Its optional saved-workflow source is provenance only: changing, moving, or deleting the saved source must not silently mutate the embedded copy.
+Detaching that provenance refuses while an editor at or below the target is open, using its exact canvas/workflow or private-session owner and node identity rather than a source name or global node ID.
+After that editor closes, Detach changes only provenance and preserves the embedded graph, bindings and independent source workflow.
 
 ### Three persistence contexts
 

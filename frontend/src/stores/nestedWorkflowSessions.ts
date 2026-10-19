@@ -108,6 +108,12 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
     return sessions.value.find((session) => session.id === id)
   }
 
+  function hasOpenEditorForNode(owner: NestedSnapshotOwner, parentNodeId: string): boolean {
+    // Descendant editors keep their enclosing session open until descendant-first close.
+    return sessions.value.some(session => session.parentNodeId === parentNodeId
+      && sameOwner(session.owner, owner))
+  }
+
   async function openDurableSession(
     options: OpenDurableNestedWorkflowSessionOptions,
   ): Promise<NestedWorkflowSession> {
@@ -243,6 +249,7 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
     sessions,
     dirtySessionIds,
     sessionById,
+    hasOpenEditorForNode,
     openDurableSession,
     openDurableSessionResult,
     markSaved,

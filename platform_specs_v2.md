@@ -281,6 +281,8 @@ Apply requires the immutable token and exact destructive-effect confirmation, re
 A conflict changes nothing.
 
 An open editor at or below the replacement target blocks update or detach until it is applied or discarded.
+Detach checks the exact invoking canvas owner and target node before changing provenance or queuing a draft write; an unrelated editor with the same node ID does not block it.
+The refusal keeps the parent graph and private snapshot unchanged and explains that the editor must be applied or discarded and closed first.
 Workspace moves update provenance IDs atomically without changing embedded content or artifact hashes.
 
 The artifact hash is a deterministic digest of canonical recursive graph content and referenced owned sources.

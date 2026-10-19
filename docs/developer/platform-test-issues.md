@@ -72,15 +72,15 @@ Retained artifacts are under `/private/tmp/bioimageflow-n1-artifacts/n1-races-st
 
 Status: RESOLVED in the integrated staged-publication repair; current non-external backend assembly covers the real streaming/spooled concurrent-list controls.
 DatasetStore keeps upload bytes unpublished until completion and coordinates physical/catalog publication across store owners; the real HTTP spooled-upload oracle remains distinct from tiny in-memory upload scheduling.
-The accepted source-bound [registry delivery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json) assembles 1,935 cases after exact unrelated fixture recoveries; it does not relabel the original failed commands or certify every external upload/GUI effect.
+The accepted source-bound registry delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json`) assembles 1,935 cases after exact unrelated fixture recoveries; it does not relabel the original failed commands or certify every external upload/GUI effect.
 Original failures remain in `/private/tmp/bioimageflow-dataset-publication-red.log` and `/private/tmp/bioimageflow-dataset-publication-http-red.log`.
 GUI delete-confirmation and per-file upload/retry inventory gaps are separate M3 obligations in the [current checkpoint](platform-test-current.md).
 
 ## ISSUE-024 — Explicit force-Recreate reuses the selected ready generation
 
 Status: RESOLVED by published public replacement plus exact owner/admission/cancellation controls and actual T1 acceptance.
-The [real provider recovery](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-actual-force-exact-recovery.json) proves ordinary create/Start reuse, explicit same-recipe force/new generation/old PID exit, actual installer77 failure/explicit retry/final worker output and unrelated managed/unmanaged preservation on the normal published stack.
-The [real force GUI](/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-force-chromium-exact-recovery.json) separately proves exact clicked target, shared busy/status/Logger and actual replacement; controlled client Chromium/Firefox checks own visible failure/retry/reopen only.
+The real provider recovery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-actual-force-exact-recovery.json`) proves ordinary create/Start reuse, explicit same-recipe force/new generation/old PID exit, actual installer77 failure/explicit retry/final worker output and unrelated managed/unmanaged preservation on the normal published stack.
+The real force GUI (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-force-chromium-exact-recovery.json`) separately proves exact clicked target, shared busy/status/Logger and actual replacement; controlled client Chromium/Firefox checks own visible failure/retry/reopen only.
 The current checkpoint retains physical verification, deterministic105 exact owner/gate cases and original failed context/observer/text-oracle qualifications; no private provider surgery, nonce or stale-only narrowing was used.
 Original Wetlands2.4.2 T1 failures remain in `/private/tmp/bioimageflow-t1-red-artifacts`; they are historical defect evidence, not the current next plan.
 

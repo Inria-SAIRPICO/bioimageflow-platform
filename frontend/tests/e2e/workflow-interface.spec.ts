@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
-import type { Page, Response } from '@playwright/test'
-import type { GraphState } from '../../src/api/types'
+import type { Page, Request, Response } from '@playwright/test'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import type { GraphState, NestedWorkflowSnapshotResponse, WorkflowFile } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
@@ -786,121 +788,295 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('keeps nested edits private until save and discards later private changes', async ({ page }) => {
-    const name = workflowName('nested_private')
-    const displayName = `Nested private ${name}`
-    const initial = nestedInterfaceGraph(name, displayName)
-    const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })
-    expect(validation.ok(), await validation.text()).toBeTruthy()
-    expect(await validation.json()).toMatchObject({
-      valid: true,
-      errors: [],
-    })
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
-    const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
-    expect(setup.ok(), await setup.text()).toBeTruthy()
+    let primaryOccurred = false
+    const cleanupErrors: unknown[] = []
+    const detachWrites: Array<{ request: Request; response?: Response }> = []
+    let stopDetachObservation: (() => void) | undefined
+    const ownedName = workflowName('nested_private')
+    try {
+      const name = ownedName
+      const displayName = `Nested private ${name}`
+      const sourceName = `${name}_source`
+      const unrelatedName = `${name}_unrelated`
+      const initial = nestedInterfaceGraph(name, displayName)
+      const sourceGraph = structuredClone(childNode(initial).workflow)
+      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+        data: { name: sourceName, display_name: `Source ${name}` },
+      })).status()).toBe(201)
+      const sourceSetup = await page.request.put(`${API_BASE}/api/v1/workflows/${sourceName}`, {
+        data: { graph: sourceGraph },
+      })
+      expect(sourceSetup.ok(), await sourceSetup.text()).toBeTruthy()
+      const readSaved = async (id: string): Promise<WorkflowFile> => {
+        const response = await page.request.get(`${API_BASE}/api/v1/workflows/${id}`)
+        expect(response.ok(), await response.text()).toBeTruthy()
+        return await response.json() as WorkflowFile
+      }
+      const saveParent = async () => {
+        let savedResponseSeen = false
+        const savedResponse = page.waitForResponse(response => {
+          const matches = response.request().method() === 'PUT'
+            && new URL(response.url()).pathname === `/api/v1/workflows/${name}`
+          if (matches) savedResponseSeen = true
+          return matches
+        })
+        const cleanResponse = page.waitForResponse(response => savedResponseSeen
+          && response.request().method() === 'PUT'
+          && new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+          && response.status() === 200)
+        await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+        const saved = await savedResponse
+        expect(saved.status(), await saved.text()).toBe(200)
+        const cleanDraft = await (await cleanResponse).json() as WorkflowDraftResponse
+        expect(cleanDraft.dirty_against_saved).toBe(false)
+        await expect(page.getByTestId('workflow-title')).toHaveText(cleanDraft.graph.display_name)
+      }
+      const sourceBefore = await readSaved(sourceName)
+      childNode(initial).source = {
+        kind: 'workspace', workflow_id: sourceName, artifact_hash: sourceBefore.artifact_hash,
+      }
+      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+        data: { name: unrelatedName, display_name: `Unrelated ${name}` },
+      })).status()).toBe(201)
+      const unrelatedBefore = await readSaved(unrelatedName)
+      const sourceBytes = readFileSync(sourceBefore.info.path)
+      const unrelatedBytes = readFileSync(unrelatedBefore.info.path)
+      const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })
+      expect(validation.ok(), await validation.text()).toBeTruthy()
+      expect(await validation.json()).toMatchObject({
+        valid: true,
+        errors: [],
+      })
+      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+        data: { name, display_name: displayName },
+      })).status()).toBe(201)
+      const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
+      expect(setup.ok(), await setup.text()).toBeTruthy()
 
-    await page.goto('/')
-    await openWorkflow(page, name, displayName)
-    await expect(page.locator('.vue-flow__node[data-id="seed"]')).toBeVisible()
-    await expect(page.locator('.vue-flow__node[data-id="child"]')).toBeVisible()
-    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
-    expect(childNode(await draftGraph(page, name)).workflow.interface.inputs[0]).toMatchObject({
-      id: 'child-table-input', name: 'Source table',
-    })
+      await page.goto('/')
+      await openWorkflow(page, name, displayName)
+      await expect(page.locator('.vue-flow__node[data-id="seed"]')).toBeVisible()
+      await expect(page.locator('.vue-flow__node[data-id="child"]')).toBeVisible()
+      await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+      expect(childNode(await draftGraph(page, name)).workflow.interface.inputs[0]).toMatchObject({
+        id: 'child-table-input', name: 'Source table',
+      })
 
-    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
-    await expect(page.locator('.nested-workflow-editor')).toBeVisible()
-    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
-    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
-    const privateInputName = page.getByTestId('dataframe-input-name-0')
-    await expect(privateInputName).toHaveValue('Source table')
-    const privateSnapshotAccepted = page.waitForResponse(response => (
-      responseCarriesNestedInputName(response, 'Applied source table')
-    ))
-    await privateInputName.fill('Applied source table')
-    const acceptedPrivate = await (await privateSnapshotAccepted).json() as {
-      session_id: string
-      snapshot_revision: number
-      graph: GraphState
+      const parentBeforeRefusal = await draftState(page, name)
+      const savedBeforeRefusal = await readSaved(name)
+      const parentBytesBeforeRefusal = readFileSync(savedBeforeRefusal.info.path)
+      const parentDraftPath = join(dirname(savedBeforeRefusal.info.path), '.bioimageflow', 'draft.json')
+      const parentDraftBytesBeforeRefusal = existsSync(parentDraftPath) ? readFileSync(parentDraftPath) : null
+      const opened = page.waitForResponse(response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === '/api/v1/nested-workflow-snapshots/open'
+        && response.status() === 201)
+      await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+      const privateBeforeRefusal = await (await opened).json() as NestedWorkflowSnapshotResponse
+      expect(privateBeforeRefusal.owner).toMatchObject({ kind: 'root', workflow_id: name })
+      expect(privateBeforeRefusal.parent_node_id).toBe('child')
+      expect(privateBeforeRefusal.graph).toEqual(childNode(parentBeforeRefusal.graph).workflow)
+      await expect(page.locator('.nested-workflow-editor')).toBeVisible()
+      const rootTab = page.getByTestId('canvas-tab').getByText(displayName, { exact: true })
+      await expect(rootTab).toHaveCount(1)
+      await rootTab.click()
+      await expect(page.getByTestId('workflow-title')).toHaveText(displayName)
+      const refusal = page.getByRole('alert').filter({
+        hasText: /(?:close|apply|discard).*nested.*editor|nested.*editor.*(?:close|apply|discard)/i,
+      })
+      // Capture only attempted Detach writes; unrelated metadata refreshes retain
+      // the non-null source and cannot masquerade as this destructive action.
+      const observeDetachRequest = (request: Request) => {
+        if (request.method() !== 'PUT'
+          || new URL(request.url()).pathname !== `/api/v1/workflow-drafts/${name}`) return
+        const payload = request.postDataJSON() as { graph?: GraphState }
+        const target = payload.graph?.nodes.find(candidate => candidate.id === 'child')
+        if (target?.type === 'workflow' && target.source === null) {
+          detachWrites.push({ request })
+        }
+      }
+      const observeDetachResponse = (response: Response) => {
+        const captured = detachWrites.find(entry => entry.request === response.request())
+        if (captured) captured.response = response
+      }
+      page.on('request', observeDetachRequest)
+      page.on('response', observeDetachResponse)
+      stopDetachObservation = () => {
+        page.off('request', observeDetachRequest)
+        page.off('response', observeDetachResponse)
+      }
+      const detach = async () => {
+        await page.locator('.vue-flow__node[data-id="child"]:visible').click({ button: 'right' })
+        await page.locator('.node-context-menu').getByText('Detach from source', { exact: true }).click()
+      }
+      await detach()
+      // A genuine policy refusal or a completed attempted write is an observable
+      // terminal boundary. An immediate GET alone could miss debounced mutation.
+      await expect.poll(async () => {
+        if (detachWrites.some(entry => entry.response)) return 'write'
+        return await refusal.isVisible() ? 'refusal' : 'pending'
+      }).not.toBe('pending')
+      const parentAfterRefusal = await draftState(page, name)
+      const snapshotResponse = await page.request.get(
+        `${API_BASE}/api/v1/nested-workflow-snapshots/${privateBeforeRefusal.session_id}`,
+      )
+      expect(snapshotResponse.ok(), await snapshotResponse.text()).toBeTruthy()
+      const privateAfterRefusal = await snapshotResponse.json() as NestedWorkflowSnapshotResponse
+      await test.info().attach('detach-open-editor-observation', {
+        body: Buffer.from(JSON.stringify({
+          privateBeforeRefusal, privateAfterRefusal, parentBeforeRefusal, parentAfterRefusal,
+          attemptedWrites: detachWrites.map(entry => ({
+            body: entry.request.postDataJSON(), status: entry.response?.status(),
+          })),
+        })), contentType: 'application/json',
+      })
+      await expect(refusal).toBeVisible()
+      expect(detachWrites).toHaveLength(0)
+      expect(parentAfterRefusal).toEqual(parentBeforeRefusal)
+      expect(await readSaved(name)).toEqual(savedBeforeRefusal)
+      expect(readFileSync(savedBeforeRefusal.info.path)).toEqual(parentBytesBeforeRefusal)
+      expect(existsSync(parentDraftPath) ? readFileSync(parentDraftPath) : null).toEqual(parentDraftBytesBeforeRefusal)
+      expect(privateAfterRefusal).toEqual(privateBeforeRefusal)
+      stopDetachObservation()
+      stopDetachObservation = undefined
+      await page.locator('.dv-tab').filter({ hasText: /^Stable child$/ }).click()
+      await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      const privateInputName = page.getByTestId('dataframe-input-name-0')
+      await expect(privateInputName).toHaveValue('Source table')
+      const privateSnapshotAccepted = page.waitForResponse(response => (
+        responseCarriesNestedInputName(response, 'Applied source table')
+      ))
+      await privateInputName.fill('Applied source table')
+      const acceptedPrivate = await (await privateSnapshotAccepted).json() as {
+        session_id: string
+        snapshot_revision: number
+        graph: GraphState
+      }
+      await expect(privateInputName).toHaveValue('Applied source table')
+      expectStableParentRoutes(await draftGraph(page, name))
+
+      await privateInputName.fill('Number value')
+      await expect(page.getByTestId('interface-name-error')).toContainText(
+        "Workflow interface name 'Number value' is already used.",
+      )
+      await privateInputName.fill('   ')
+      await expect(page.getByTestId('interface-name-error')).toContainText(
+        'Workflow interface name cannot be empty.',
+      )
+      const refusedPrivateResponse = await page.request.get(
+        `${API_BASE}/api/v1/nested-workflow-snapshots/${acceptedPrivate.session_id}`,
+      )
+      expect(refusedPrivateResponse.ok(), await refusedPrivateResponse.text()).toBeTruthy()
+      const refusedPrivate = await refusedPrivateResponse.json() as {
+        snapshot_revision: number
+        graph: GraphState
+      }
+      expect(refusedPrivate.snapshot_revision).toBe(acceptedPrivate.snapshot_revision)
+      expect(refusedPrivate.graph).toEqual(acceptedPrivate.graph)
+      expectStableParentRoutes(await draftGraph(page, name))
+      await privateInputName.fill('Applied source table')
+      await expect(page.getByTestId('interface-name-error')).toHaveCount(0)
+
+      // The nested snapshot autosaves privately; the owning draft is unchanged until Save applies it.
+      await expect.poll(async () => childNode(await draftGraph(page, name)).workflow.interface.inputs[0]?.name)
+        .toBe('Source table')
+      expectStableParentRoutes(await draftGraph(page, name))
+
+      const parentApplied = page.waitForResponse(response => (
+        response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+        && response.request().method() === 'PUT'
+        && response.status() === 200
+      ))
+      await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+      await parentApplied
+      await expect.poll(async () => childNode(await draftGraph(page, name)).workflow.interface.inputs[0]?.name)
+        .toBe('Applied source table')
+      expectStableParentRoutes(await draftGraph(page, name))
+
+      await page.locator('.dv-tab').filter({ hasText: displayName }).click()
+      await saveParent()
+      await page.reload()
+      await openWorkflow(page, name, displayName)
+      const reloaded = await draftGraph(page, name)
+      expect(childNode(reloaded).workflow.interface.inputs[0]).toMatchObject({
+        id: 'child-table-input', name: 'Applied source table',
+      })
+      expectStableParentRoutes(reloaded)
+
+      await page.locator('.vue-flow__node[data-id="child"]').dblclick()
+      await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
+      await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+      const discardedInputName = page.getByTestId('dataframe-input-name-0')
+      await expect(discardedInputName).toHaveValue('Applied source table')
+      const discardedSnapshotAccepted = page.waitForResponse(response => (
+        responseCarriesNestedInputName(response, 'Discarded private name')
+      ))
+      await discardedInputName.fill('Discarded private name')
+      await discardedSnapshotAccepted
+      await expect(discardedInputName).toHaveValue('Discarded private name')
+
+      page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
+        await dialog.accept()
+      })
+      const nestedTab = page.locator('.dv-tab').filter({ hasText: 'Stable child' })
+      await nestedTab.locator('.dv-default-tab-action').click()
+      await expect(page.locator('.nested-workflow-editor')).toHaveCount(0)
+      const afterDiscard = await draftGraph(page, name)
+      expect(childNode(afterDiscard).workflow.interface.inputs[0]).toMatchObject({
+        id: 'child-table-input', name: 'Applied source table',
+      })
+      expectStableParentRoutes(afterDiscard)
+
+      // Only after the exact private editor is gone may provenance be removed.
+      await rootTab.click()
+      await expect(page.getByTestId('workflow-title')).toHaveText(displayName)
+      const beforeDetach = await draftState(page, name)
+      const expectedDetached = structuredClone(beforeDetach.graph)
+      expect(childNode(expectedDetached).source).toEqual(childNode(initial).source)
+      childNode(expectedDetached).source = null
+      const detached = await waitForAcceptedGraph(page, name, detach)
+      expect(detached.graph).toEqual(expectedDetached)
+      expect(detached.draft_revision).toBe(beforeDetach.draft_revision + 1)
+      expectStableParentRoutes(detached.graph)
+      await saveParent()
+      const detachedSaved = await readSaved(name)
+      expect(detachedSaved.graph).toEqual(expectedDetached)
+      await page.reload()
+      await openWorkflow(page, name, displayName)
+      expect(await draftGraph(page, name)).toEqual(detachedSaved.graph)
+      expect((await readSaved(name)).graph).toEqual(detachedSaved.graph)
+      expect(await readSaved(sourceName)).toEqual(sourceBefore)
+      expect(await readSaved(unrelatedName)).toEqual(unrelatedBefore)
+      expect(readFileSync(sourceBefore.info.path)).toEqual(sourceBytes)
+      expect(readFileSync(unrelatedBefore.info.path)).toEqual(unrelatedBytes)
+    } catch (error) {
+      primaryOccurred = true
+      throw error
+    } finally {
+      stopDetachObservation?.()
+      try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
+      for (const id of [ownedName, `${ownedName}_source`, `${ownedName}_unrelated`]) {
+        let lastDetail = ''
+        try {
+          await expect.poll(async () => {
+            const response = await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)
+            lastDetail = await response.text()
+            if ([200, 204, 404].includes(response.status())) return true
+            if (response.status() !== 423) throw new Error(`Cleanup ${id}: ${response.status()} ${lastDetail}`)
+            return false
+          }, { timeout: 15_000, message: `Settle only owned workflow ${id}` }).toBe(true)
+        } catch (error) { cleanupErrors.push(new Error(`${String(error)}; last response: ${lastDetail}`)) }
+      }
+      if (cleanupErrors.length) {
+        await test.info().attach('nested-detach-cleanup-errors', {
+          body: Buffer.from(cleanupErrors.map(String).join('\n')), contentType: 'text/plain',
+        }).catch(() => undefined)
+      }
     }
-    await expect(privateInputName).toHaveValue('Applied source table')
-    expectStableParentRoutes(await draftGraph(page, name))
-
-    await privateInputName.fill('Number value')
-    await expect(page.getByTestId('interface-name-error')).toContainText(
-      "Workflow interface name 'Number value' is already used.",
-    )
-    await privateInputName.fill('   ')
-    await expect(page.getByTestId('interface-name-error')).toContainText(
-      'Workflow interface name cannot be empty.',
-    )
-    const refusedPrivateResponse = await page.request.get(
-      `${API_BASE}/api/v1/nested-workflow-snapshots/${acceptedPrivate.session_id}`,
-    )
-    expect(refusedPrivateResponse.ok(), await refusedPrivateResponse.text()).toBeTruthy()
-    const refusedPrivate = await refusedPrivateResponse.json() as {
-      snapshot_revision: number
-      graph: GraphState
-    }
-    expect(refusedPrivate.snapshot_revision).toBe(acceptedPrivate.snapshot_revision)
-    expect(refusedPrivate.graph).toEqual(acceptedPrivate.graph)
-    expectStableParentRoutes(await draftGraph(page, name))
-    await privateInputName.fill('Applied source table')
-    await expect(page.getByTestId('interface-name-error')).toHaveCount(0)
-
-    // The nested snapshot autosaves privately; the owning draft is unchanged until Save applies it.
-    await expect.poll(async () => childNode(await draftGraph(page, name)).workflow.interface.inputs[0]?.name)
-      .toBe('Source table')
-    expectStableParentRoutes(await draftGraph(page, name))
-
-    const parentApplied = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
-      && response.request().method() === 'PUT'
-      && response.status() === 200
-    ))
-    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
-    await parentApplied
-    await expect.poll(async () => childNode(await draftGraph(page, name)).workflow.interface.inputs[0]?.name)
-      .toBe('Applied source table')
-    expectStableParentRoutes(await draftGraph(page, name))
-
-    await page.locator('.dv-tab').filter({ hasText: displayName }).click()
-    await saveWorkflow(page, name)
-    await page.reload()
-    await openWorkflow(page, name, displayName)
-    const reloaded = await draftGraph(page, name)
-    expect(childNode(reloaded).workflow.interface.inputs[0]).toMatchObject({
-      id: 'child-table-input', name: 'Applied source table',
-    })
-    expectStableParentRoutes(reloaded)
-
-    await page.locator('.vue-flow__node[data-id="child"]').dblclick()
-    await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
-    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
-    const discardedInputName = page.getByTestId('dataframe-input-name-0')
-    await expect(discardedInputName).toHaveValue('Applied source table')
-    const discardedSnapshotAccepted = page.waitForResponse(response => (
-      responseCarriesNestedInputName(response, 'Discarded private name')
-    ))
-    await discardedInputName.fill('Discarded private name')
-    await discardedSnapshotAccepted
-    await expect(discardedInputName).toHaveValue('Discarded private name')
-
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toContain("Discard unsaved changes to nested-workflow 'Stable child'?")
-      await dialog.accept()
-    })
-    const nestedTab = page.locator('.dv-tab').filter({ hasText: 'Stable child' })
-    await nestedTab.locator('.dv-default-tab-action').click()
-    await expect(page.locator('.nested-workflow-editor')).toHaveCount(0)
-    const afterDiscard = await draftGraph(page, name)
-    expect(childNode(afterDiscard).workflow.interface.inputs[0]).toMatchObject({
-      id: 'child-table-input', name: 'Applied source table',
-    })
-    expectStableParentRoutes(afterDiscard)
+    if (!primaryOccurred && cleanupErrors.length) throw cleanupErrors[0]
   })
 
   test('retries a failed private interface rename without changing stable parent routes', async ({ page }) => {
