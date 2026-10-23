@@ -1,5 +1,5 @@
 import { test, expect, type Response } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { NodeDataResponse, ResultArtifactIdentity, NestedWorkflowSnapshotResponse, WorkflowFile } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
@@ -85,15 +85,15 @@ class ${toolName}(DataFrameTool):
     const openedRoot = await openResponse.json()
     expect(openedRoot).toMatchObject({
       opened: true, method: 'external', snapshot: null,
-      project_path: dirname(dirname(dirname(importedFile.info.path))),
     })
+    expect(realpathSync(openedRoot.project_path)).toBe(realpathSync(dirname(dirname(dirname(importedFile.info.path)))))
     const path = openedRoot.path
-    expect(path).not.toBe(originalPath)
+    expect(realpathSync(path)).not.toBe(realpathSync(originalPath))
     expect(path).toContain(imported)
     expect(readFileSync(path)).toEqual(originalBytes)
     const importedSourceRoot = join(dirname(importedFile.info.results_path), 'tools', importedNode.source_module)
     const importedManifest = JSON.parse(readFileSync(join(importedSourceRoot, 'module.json'), 'utf8'))
-    expect(path).toBe(join(importedSourceRoot, importedManifest.filename))
+    expect(realpathSync(path)).toBe(realpathSync(join(importedSourceRoot, importedManifest.filename)))
     expect(readFileSync(originalPath)).toEqual(originalBytes)
     expect((await (await page.request.get(`${API}/tools/${toolName}/source`)).json()).path).toBe(originalPath)
     const afterRootOpen = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
@@ -229,7 +229,7 @@ class ${toolName}(DataFrameTool):
     const sourceRoot = join(dirname(parentInfo.results_path), 'tools', sourceId)
     const manifest = JSON.parse(readFileSync(join(sourceRoot, 'module.json'), 'utf8'))
     const embeddedPath = join(sourceRoot, manifest.filename)
-    expect(embeddedPath).not.toBe(path)
+    expect(realpathSync(embeddedPath)).not.toBe(realpathSync(path))
     expect(readFileSync(embeddedPath, 'utf8')).toContain('n + 20')
     await expect.poll(async () => {
       const draft = await (await page.request.get(`${API}/workflow-drafts/${parent}`)).json()
@@ -296,8 +296,8 @@ class ${toolName}(DataFrameTool):
       }
       expect(body).toMatchObject({
         opened: true, method: 'external',
-        project_path: dirname(dirname(dirname(parentInfo.path))),
       })
+      expect(realpathSync(body.project_path)).toBe(realpathSync(dirname(dirname(dirname(parentInfo.path)))))
       expect(body.snapshot.session_id).toBe(nested.session_id)
       return { ...body, before }
     }
@@ -307,11 +307,11 @@ class ${toolName}(DataFrameTool):
     if (privateNode?.type !== 'tool' || !privateNode.source_module) throw new Error('No private source binding')
     expect(privateNode.source_module).toMatch(new RegExp(`^edit_${nested.session_id.replaceAll('-', '')}_`))
     expect(privateNode.source_module).not.toBe(sourceId)
-    expect(new Set([originalPath, path, embeddedPath, privateSource.path]).size).toBe(4)
+    expect(new Set([originalPath, path, embeddedPath, privateSource.path].map(path => realpathSync(path))).size).toBe(4)
     expect(readFileSync(privateSource.path)).toEqual(embeddedBytes)
     const privateManifestRoot = join(dirname(parentInfo.results_path), 'tools', privateNode.source_module)
     const privateManifest = JSON.parse(readFileSync(join(privateManifestRoot, 'module.json'), 'utf8'))
-    expect(privateSource.path).toBe(join(privateManifestRoot, privateManifest.filename))
+    expect(realpathSync(privateSource.path)).toBe(realpathSync(join(privateManifestRoot, privateManifest.filename)))
     await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
     const repeated = await openPrivateSource(privateSource.snapshot)
     expect(repeated.path).toBe(privateSource.path)

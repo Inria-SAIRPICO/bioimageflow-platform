@@ -139,7 +139,9 @@ Preparation only adds fresh, unreferenced files, so it does not take an executio
 Workflow-local sources are ordinary editable files in destination-owned `tools/<source-id>/` directories.
 Each directory contains a `module.json` identity/layout manifest, with no executable source text, and the original Python files and package assets.
 Source identifiers bind nodes to working directories and remain stable across source saves; they are not mutable content hashes.
-Package tools remain versioned package dependencies.
+Package tools remain versioned package dependencies selected from the exact canonical tool-store root.
+Installed files belong to an immutable admitted generation, so ordinary file changes do not trigger automatic reload; editable workflow sources retain fresh operation-local capture.
+Controlled refresh, uninstall and actual store-root changes use the generation retirement contract in [v1 Section 2.3](platform_specs_v1.md#23-tool-discovery-and-the-tool-store), including atomic refusal while admitted operations own affected code.
 Same-named local tools with different content must coexist without registry shadowing.
 Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
 Validation includes `node_tools`, keyed by scoped node identity, so a successfully compiled source-bound or explicitly module/class-bound node's schemas come from its actual class rather than a same-named catalog entry.
@@ -229,7 +231,9 @@ The capture is not reused as current saved authority across released locks or re
 Each stable projected GET attempt uses one public compilation for definition validation and live cache projection, with at most one plan under the final authority/Clear fence; the compilation is request-local.
 A synthesized response adopts the full compiled validation, including definition errors and tool schemas; persisted accepted drafts retain their non-cache diagnostic/schema authority, and execution authority readers remain strictly validated.
 While execution is idle, a failed status in that accepted validation with an owned `cache_corrupt` diagnostic overrides a matching retained execution badge, including an aggregate workflow node with a corrupt descendant. Semantic edits, active execution states, and ordinary terminal execution badges retain their existing precedence; the exception ends when Clear removes the diagnostic.
-Each compilation captures current source bytes before loading the library workflow, without waiting for filesystem notifications.
+Each compilation captures current editable and workflow-owned source bytes before loading the library workflow, without waiting for filesystem notifications.
+Installed package and inherited installed-owner facts are reused from the held admitted generation rather than rescanned on every compilation or plan.
+This reuse does not retain compiled workflows across requests or bypass per-invocation declarations, parameters, inputs, runtime readiness, result-record integrity, or the saved/draft and Clear fences.
 Source-bound nodes select the worker-capable engine without consulting a same-named global catalog class.
 The captured library payload assigns content-derived source-module identities, including helper and asset contents, to isolate Python imports between source versions.
 An execution retains its captured code while later source saves affect subsequent runs.

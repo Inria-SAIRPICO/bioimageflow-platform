@@ -84,8 +84,20 @@ The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/
 The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.x resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
-Store scanning and hot-reload path resolution use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
+Store scanning and explicit package lifecycle operations use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
 Supported selectors with invalid or incomplete installations remain visible with their original load diagnostic; secondary unload failures do not replace that diagnostic.
+
+Installed code is held as an immutable admitted generation selected by canonical tool-store root, package name and version.
+Its first admission captures installation metadata, selected controller dependency compatibility, source content and installed inherited implementation owners; subsequent loads and plans reuse those facts without repeating distribution inventories, installation-record walks or installed-source checks.
+Editable and workflow-local sources retain fresh capture for each operation, while parameters, bindings, runtime readiness and selected immutable result records retain their normal checks.
+Generation counters and store paths govern selection and lifetime, not scientific cache identity.
+The normal platform dependency manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this lifecycle integration.
+
+Installed file edits do not trigger hot reload or change the admitted generation.
+A controlled refresh or uninstall must retire the exact selected generation before replacement or removal, and a real store-root change preflights all affected published selections together, including packages loaded only through carried workflow bindings.
+If an admitted operation still owns any affected generation, the operation refuses before changing files or registry state; it does not cancel the execution.
+A retired class cannot authorize a new operation, and a failed replacement does not restore retired code.
+Selecting the same global store again leaves its generations intact; changing installed controller dependencies requires a process restart.
 
 **BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
 
@@ -128,10 +140,16 @@ It resolves and returns workspace-relative workflow IDs, including folder segmen
 **Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
 Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
 A configuration-level root symlink is supported; package/version symlinks, non-directory entries, traversal and unsafe selectors return HTTP 400 `bad_request`, while a safe absent selection returns 404.
-Admission precedes hot-reload suppression and registry changes; the captured root, package ancestor and selected directory identities are checked again at physical removal and before any failed-trash fallback.
-Fallback must not remove a missing or substituted target; successful removal forgets only the exact selected package/version and refreshes its catalog projection.
+Path admission precedes generation retirement, hot-reload suppression and registry changes; the captured root, package ancestor and selected directory identities are checked again at physical removal and before any failed-trash fallback.
+Supported version selectors are derived from the selected stored directories rather than successful metadata imports, and all affected loaded generations are preflighted atomically before retirement.
+An active-operation refusal leaves the directory and registry unchanged; safe legacy directory names unsupported by the loader remain removable without importing them.
+After retirement, selected package/version namespaces remain reserved through offloaded physical removal and registry update; a concurrent carried workflow read cannot re-admit the still-present directory.
+The reservation releases after removal or failure, and any recovery re-admission occurs only after release.
+Fallback must not remove a missing or substituted target; successful removal forgets only the exact selected package/version and explicitly publishes removals or the remaining active version's metadata without relying on watcher events.
+A failed physical removal can re-admit only the unchanged owned selection and restores its prior active-version choice only after that re-admission succeeds.
+It never restores retired class objects or imports a substituted or partially removed target, and recovery preserves the original removal error.
 Other versions/packages and managed worker environments remain independent.
-These checks serialize the service's cooperating operations and refuse observed ownership changes; they do not promise an atomic filesystem transaction against arbitrary external writers, rollback after physical removal, or cancellation-safe physical worker retirement.
+These checks serialize the service's cooperating operations and refuse observed ownership changes; they do not promise an atomic filesystem transaction against arbitrary external writers, rollback after physical removal, or cancellation-safe settlement of offloaded physical removal.
 
 **Tool metadata response (from `GET /tools`):**
 
@@ -328,7 +346,11 @@ class CellposeSegmenter(ProcessingTool):
 ]
 ```
 
-**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --target <dir>` to populate the tool store. This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
+**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --no-deps --target <dir>` to populate the tool store.
+The platform supplies compatible controller dependencies; ProcessingTool worker dependencies remain in their declared execution environments.
+The selected package is explicitly indexed before installation reports success, and a load failure returns HTTP 400 with its original detail; an unrelated pending editable-source failure does not fail a successful selected installation.
+Re-indexing an already admitted unchanged version reuses its generation rather than retiring code held by a running operation.
+This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
@@ -818,7 +840,7 @@ A configured external editor retains the project selection: a workflow-local cus
 Newly created tools also use `/editor/open-tool`, with their tool name and workflow identity.
 The embedded response returns the managed workspace URL without waiting for the opener extension; the panel loads the workbench first and then requests file focus, allowing the extension to activate without a circular startup wait.
 
-Embedded code-server instead uses the generated project `<workspace>/.bioimageflow/BioImageFlow.code-workspace`. This multi-root workspace contains the active BioImageFlow workspace as `Workspace` and the installed tool store as `Installed Tool Packages`; the workspace is first, is the integrated-terminal working directory, and the tool-store tree is marked read-only through VS Code workspace settings. Both custom and package tool opens retain this project and focus only the selected source, so switching tool kinds must not reload the workbench or terminate its terminals. Package sources installed through a tool-store symlink retain their lexical installed path when one can be identified so they remain navigable under the package root. `EditorOpenResponse.project_path` identifies the generated `.code-workspace` file for these embedded opens.
+Embedded code-server instead uses the generated project `<workspace>/.bioimageflow/BioImageFlow.code-workspace`. This multi-root workspace contains the active BioImageFlow workspace as `Workspace` and the installed tool store as `Installed Tool Packages`; the workspace is first, is the integrated-terminal working directory, and the tool-store tree is marked read-only through VS Code workspace settings. Both custom and package tool opens retain this project and focus only the selected source, so switching tool kinds must not reload the workbench or terminate its terminals. For an otherwise admitted installation, source navigation preserves a lexical tool-store symlink path when one can be identified so the file remains navigable under the package root. `EditorOpenResponse.project_path` identifies the generated `.code-workspace` file for these embedded opens.
 
 Plain status probes remain side-effect free. `GET /editor/status?launch=true&workspace=true` lazily creates or refreshes the generated file atomically and returns a code-server URL with the encoded `workspace` query parameter. Generation failure returns an embedded-editor diagnostic without replacing an existing valid file. Changing the active BioImageFlow workspace changes the generated project and may reload the workbench; selecting another tool within the same active workspace does not.
 
@@ -921,7 +943,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
-| `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
+| `tool_reload` | `{tool_name, tool_metadata}` | An editable tool reloaded or a controlled package operation updated its registry metadata. Includes the full updated tool schema. |
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
@@ -948,7 +970,7 @@ All client-to-server messages include an optional `message_id: str` field. When 
 
 **Reconnection strategy:** On WebSocket disconnect, the frontend uses exponential backoff (1s, 2s, 4s, 8s, max 30s) to reconnect. On reconnection, the frontend:
 1. Receives a contextual `status_snapshot` from the backend immediately after WebSocket registration. The frontend projects the retained execution state only onto the matching canvas and accepted draft revision.
-2. Fetches `GET /tools` to detect tool registry changes (e.g., if the tool store was modified during the disconnection or a server restart).
+2. Fetches `GET /tools` to detect registry changes from controlled package operations, editable-source reloads or a server restart.
 3. Re-sends `subscribe_logs` with the previous filter (the subscription is server-side state tied to the WebSocket connection and is lost on disconnect). The frontend stores the last subscription filter locally.
 
 This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection. Log messages missed during disconnection are lost (logs are ephemeral; persistent logs are written to disk by the backend).
@@ -965,7 +987,9 @@ The server generates thumbnails on demand for image files referenced in output D
 
 ### 2.7 Tool Hot-Reload
 
-The backend watches tool source directories for file changes (via `watchdog`). On change:
+The backend watches editable custom and workflow-owned source directories for file changes (via `watchdog`, supplemented by limited content polling).
+Installed package source files are read-only selections and their filesystem events do not authorize reload.
+For an editable custom tool change:
 
 1. Backend re-scans the changed tool module and updates the tool registry
 2. Backend sends `tool_reload` WebSocket message with the full updated tool metadata (same format as `GET /tools` response)
@@ -976,24 +1000,30 @@ The backend watches tool source directories for file changes (via `watchdog`). O
    - A temporary dismissable "tool updated" badge appears on affected nodes (small refresh icon, click to dismiss)
    - Executed nodes transition to "Out-of-date" (cache invalidated by code change)
 
-Changes are applied automatically — no manual reload action required from the user.
+Editable-source changes are applied automatically — no manual reload action required from the user.
 Imported custom tools are unpacked as editable workspace files, and node source links open those exact files.
 Run captures saved source bytes before compilation, independently of watcher timing; invalid edits block execution instead of using previous code.
 Workflow-owned source changes emit `tool_source_changed` with affected tool names for canvas revalidation, without overwriting global catalog metadata.
 Workflow-local source changes are detected through native file events and a periodic content check of registered editable tool directories, without scanning workflow results or datasets.
 Reload reads current source bytes even for same-size saves with unchanged timestamps, and reload operations are serialized.
-Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving the previous usable tools and unrelated registry entries.
+Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving previous presentation metadata for repair and unrelated registry entries, without authorizing stale code for execution.
 Implementation-only edits emit `tool_reload` even when the metadata is unchanged, and canvases retain this notification through field-focus deferral and execution locks.
-Reloading an inactive package version preserves both the active class bindings and their displayed metadata.
-Installed-package reload preserves declared RECORD members, including pip-generated bytecode, and obtains fresh executable bytes through the public library loader rather than deleting installed cache files.
+An explicit installed-package refresh uses the generation lifecycle in Section 2.3, preserves an unaffected active version's class bindings and displayed metadata, and admits replacement bytes through the public library loader.
+It preserves declared RECORD members, including pip-generated bytecode, rather than deleting installed cache files.
+A failed replacement is reported as unavailable instead of restoring the retired class or module.
 
 **Hot-reload during editing:** If the user is editing a parameter field (field has focus) when a `tool_reload` message arrives, the update is buffered until the field loses focus (blur event). This prevents data loss from mid-edit schema changes. If the field being edited was removed in the new schema, a warning toast is shown after blur: "Field '{name}' was removed by the tool update."
 
 **Scientific identity:** Admitted executable source and ready runtime content always participate in cache identity through the library's public contracts; there is no development-mode setting or API argument.
 
-**Tool reloads during execution** affect only future executions. The currently running Workflow uses the tool code that was loaded when execution started. This is the natural behavior of Python object references — the Workflow holds references to the tool classes loaded at build time.
+**Tool reloads during execution:** Editable-source saves affect future compilations while an admitted execution retains its captured source.
+Installed-generation retirement is refused while an admitted operation owns that generation; Python class references alone are not execution admission.
+After retirement, a retained class reference cannot start a new operation and must be resolved through a freshly compiled workflow.
 
-**Hot-reload during package installation:** The file watcher is suppressed while a package is being installed (files are written sequentially during installation, which would trigger spurious reload events). Once installation completes, a single batch `tool_reload` event is emitted for all tools in the installed package.
+**Registry events during package installation:** The installer suppresses editable-source broadcasts while its operation is in progress and explicitly indexes the selected published package before returning.
+It emits the selected tool metadata differences directly, without relying on installed-file or private staging events, then processes unrelated pending editable changes separately.
+Uninstall likewise publishes selected removals or fallback-version metadata explicitly.
+Refreshing package-index availability metadata does not authorize reloading installed code.
 
 ### 2.8 Startup and Shutdown
 

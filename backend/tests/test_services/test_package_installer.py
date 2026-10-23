@@ -40,7 +40,9 @@ def _ensure_installed_success_factory(calls: list[tuple[str, str, str, Path]]):
         version: str,
         pypi_name: str,
         store_path: Path,
+        *, install_dependencies: bool,
     ) -> None:
+        assert install_dependencies is False
         calls.append((pkg_name, version, pypi_name, store_path))
         target = store_path / pkg_name / version
         pkg_dir = target / pkg_name
@@ -56,7 +58,9 @@ def _ensure_installed_failure_factory(message: str):
         version: str,
         pypi_name: str,
         store_path: Path,
+        *, install_dependencies: bool,
     ) -> None:
+        assert install_dependencies is False
         raise RuntimeError(message)
 
     return _fake
@@ -130,7 +134,7 @@ async def test_install_delegates_to_wetlands_ensure_installed(
     await installer.install("bioimageflow_core", "0.1.1")
 
     assert calls == [("bioimageflow_core", "0.1.1", "bioimageflow-core", tool_store)]
-    registry.scan_tool_store.assert_called_once_with(tool_store)
+    registry.index_package.assert_called_once()
 
 
 async def test_install_creates_expected_target_tree(
@@ -194,7 +198,7 @@ async def test_install_common_tools_delegates_selected_version_to_package_index(
             tool_store,
         )
     ]
-    registry.scan_tool_store.assert_called_once_with(tool_store)
+    registry.index_package.assert_called_once()
 
 
 async def test_install_common_tools_resolves_latest_from_package_index(
@@ -340,7 +344,7 @@ async def test_install_from_url_normalizes_github_url_and_moves_package(
     assert result.version == "1.2.3"
     assert calls == ["git+https://github.com/example/demo-tools.git"]
     assert (tool_store / "demo_tools" / "1.2.3" / "demo_tools" / "__init__.py").exists()
-    registry.scan_tool_store.assert_called_once_with(tool_store)
+    registry.index_package.assert_called_once()
 
 
 async def test_install_from_url_accepts_gitlab_url(
@@ -471,6 +475,7 @@ async def test_source_install_uses_orchestrator_python_and_argv(
             "-m",
             "pip",
             "install",
+            "--no-deps",
             "--target",
             str(target),
             "git+https://example.test/tools.git",
@@ -576,7 +581,8 @@ async def test_uninstall_rechecks_ancestor_and_target_at_worker_entry(
     assert (selected / "replacement").read_bytes() == b"replacement"
     original = old / "sentinel" if changed == "version" else selected / "sentinel"
     assert original.read_bytes() == b"original"
-    registry.forget_package.assert_not_called()
+    registry.forget_package.assert_called_once_with("foo", "1.0")
+    registry.index_package.assert_not_called()
     assert hot_reload.calls == [("suppress", None), ("resume", False)]
 
 
@@ -644,7 +650,7 @@ async def test_uninstall_trash_failure_rechecks_before_fallback(
         assert (old / "sentinel").read_bytes() == b"original"
         if outcome == "replacement":
             assert (selected / "sentinel").read_bytes() == b"replacement"
-        registry.forget_package.assert_not_called()
+        registry.forget_package.assert_called_once_with("foo", "1.0")
 
 
 async def test_uninstall_removal_failure_can_retry_same_owned_target(
@@ -665,14 +671,14 @@ async def test_uninstall_removal_failure_can_retry_same_owned_target(
     with pytest.raises(OSError, match="removal denied"):
         await installer_with_hot_reload.uninstall("foo", "1.0")
     assert (selected / "sentinel").read_bytes() == b"original"
-    registry.forget_package.assert_not_called()
+    registry.forget_package.assert_called_once_with("foo", "1.0")
     assert hot_reload.calls == [("suppress", None), ("resume", False)]
     monkeypatch.setattr(installer_module, "send2trash", trash)
     monkeypatch.setattr(installer_module.shutil, "rmtree", remove)
     await installer_with_hot_reload.uninstall("foo", "1.0")
     assert not selected.exists()
-    registry.forget_package.assert_called_once_with("foo", "1.0")
-    assert hot_reload.calls[-2:] == [("suppress", None), ("resume", True)]
+    assert registry.forget_package.call_count == 2
+    assert hot_reload.calls[-2:] == [("suppress", None), ("uninstall:foo@1.0", None)]
 
 
 async def test_uninstall_configured_root_link_preserves_exact_stored_version(
@@ -710,7 +716,7 @@ async def test_uninstall_removes_single_version(
     assert not (pkg_root / "0.1.0").exists()
     assert (pkg_root / "0.1.1").exists()
     registry.forget_package.assert_called_once_with("bioimageflow_core", "0.1.0")
-    registry.scan_tool_store.assert_called_once_with(tool_store)
+    registry.scan_tool_store.assert_not_called()
 
 
 async def test_uninstall_all_versions_removes_package_dir(
@@ -754,6 +760,9 @@ class _FakeHotReload:
 
     async def resume_after_install(self, package: str, version: str) -> None:
         self.calls.append((f"install:{package}@{version}", None))
+
+    async def resume_after_uninstall(self, package: str, versions: list[str]) -> None:
+        self.calls.append((f"uninstall:{package}@{','.join(versions)}", None))
 
 
 @pytest.fixture
@@ -825,7 +834,7 @@ async def test_uninstall_success_suppresses_then_resumes_with_batch(
 
     await installer_with_hot_reload.uninstall("foo", "1.0")
 
-    assert hot_reload.calls == [("suppress", None), ("resume", True)]
+    assert hot_reload.calls == [("suppress", None), ("uninstall:foo@1.0", None)]
 
 
 async def test_uninstall_missing_target_does_not_suppress(
@@ -870,7 +879,7 @@ async def test_install_calls_scan_tool_store_when_hot_reload_none(
 
     await installer.install("foo", "1.0")
 
-    registry.scan_tool_store.assert_called_once()
+    registry.index_package.assert_called_once()
 
 
 async def test_uninstall_skips_scan_tool_store_when_hot_reload_wired(
@@ -886,7 +895,7 @@ async def test_uninstall_skips_scan_tool_store_when_hot_reload_wired(
     registry.scan_tool_store.assert_not_called()
 
 
-async def test_uninstall_calls_scan_tool_store_when_hot_reload_none(
+async def test_uninstall_updates_registry_without_full_scan(
     installer: PypiPackageInstaller,
     tool_store: Path,
     registry: MagicMock,
@@ -896,7 +905,8 @@ async def test_uninstall_calls_scan_tool_store_when_hot_reload_none(
 
     await installer.uninstall("foo", "1.0")
 
-    registry.scan_tool_store.assert_called_once()
+    registry.scan_tool_store.assert_not_called()
+    registry.forget_package.assert_called_once_with("foo", "1.0")
 
 
 async def test_install_suppresses_before_ensure_installed_runs(
@@ -936,7 +946,7 @@ async def test_concurrent_installs_are_serialized(
     max_active = 0
     calls: list[str] = []
 
-    def _slow_ensure(pkg_name, version, pypi_name, store_path) -> None:
+    def _slow_ensure(pkg_name, version, pypi_name, store_path, **kwargs) -> None:
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)
@@ -954,3 +964,221 @@ async def test_concurrent_installs_are_serialized(
 
     assert sorted(calls) == ["bar", "foo"]
     assert max_active == 1
+
+
+async def test_selected_install_index_failure_is_invalid_with_original_detail(
+    installer, registry, monkeypatch,
+):
+    monkeypatch.setattr(installer_module, "ensure_installed", _ensure_installed_success_factory([]))
+    registry.index_package.side_effect = ImportError("host dependency conflict: expected core 0.5")
+    with pytest.raises(PackageInvalidError, match="host dependency conflict: expected core 0.5"):
+        await installer.install("foo", "1.0")
+
+
+async def test_retirement_refusal_precedes_suppression_and_physical_removal(
+    installer_with_hot_reload, tool_store, registry, hot_reload, monkeypatch,
+):
+    selected = tool_store / "foo" / "1.0"
+    selected.mkdir(parents=True)
+    (selected / "sentinel").write_text("unchanged")
+    retirement = MagicMock(side_effect=RuntimeError("active admitted operations still own this generation"))
+    monkeypatch.setattr(installer_module, "versioned_package_mutation", retirement)
+    removal = MagicMock()
+    monkeypatch.setattr(installer_module, "_remove_tree", removal)
+    with pytest.raises(PackageInvalidError, match="active admitted operations"):
+        await installer_with_hot_reload.uninstall("foo", "1.0")
+    retirement.assert_called_once_with([("foo", "1.0")], tool_store)
+    assert (selected / "sentinel").read_text() == "unchanged"
+    removal.assert_not_called()
+    registry.forget_package.assert_not_called()
+    assert hot_reload.calls == []
+
+
+async def test_whole_package_retirement_preflights_all_supported_versions(
+    installer, tool_store, monkeypatch,
+):
+    for version in ["1.0", "2.0", "legacy-build+label"]:
+        (tool_store / "foo" / version).mkdir(parents=True)
+    retirement = MagicMock()
+    monkeypatch.setattr(installer_module, "versioned_package_mutation", retirement)
+    await installer.uninstall("foo")
+    pairs, root = retirement.call_args.args
+    assert set(pairs) == {("foo", "1.0"), ("foo", "2.0")}
+    assert root == tool_store
+    assert not (tool_store / "foo").exists()
+
+
+def _write_retained_package(tool_store: Path, package: str, version: str) -> Path:
+    from tests.fixtures.package_metadata import write_package_metadata
+
+    source = tool_store / package / version / package
+    source.mkdir(parents=True)
+    (source / "__init__.py").write_text(
+        "from bioimageflow_core import ProcessingTool, EnvironmentSpec, IOModel, RowConsumption\n"
+        "class Retained(ProcessingTool):\n"
+        "    environment = EnvironmentSpec(name='declared', dependencies={'pip': []})\n"
+        "    row_consumption = RowConsumption.MAPPED\n"
+        "    class Outputs(IOModel):\n"
+        "        result: str\n"
+        "    def process_row(self, arguments):\n"
+        "        raise AssertionError('Uninstall must not run scientific callbacks')\n"
+    )
+    write_package_metadata(source, version)
+    return source
+
+
+async def test_real_admitted_operation_blocks_uninstall_until_release(tool_store, pypi):
+    from bioimageflow.cache.identity import deterministic_serialize
+    from bioimageflow.worker_origins import ExecutableMetadata, capture_tool_executable
+    from bioimageflow.tool_loader import unload_versioned_package
+
+    package, version = "platform_active_uninstall", "1.0"
+    source = _write_retained_package(tool_store, package, version)
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    installer = PypiPackageInstaller(tool_store, registry, pypi)
+    klass = registry.get_tool_class("Retained")
+    operation = ExecutableMetadata()
+    try:
+        capture_tool_executable(klass(), managed=True, canonicalize=deterministic_serialize, metadata=operation)
+        with pytest.raises(PackageInvalidError, match="active admitted operations"):
+            await installer.uninstall(package, version)
+        assert source.is_dir()
+        assert registry.get_tool_class("Retained") is klass
+        operation.clear()
+        await installer.uninstall(package, version)
+        assert not source.exists()
+        assert registry.get_tool_class("Retained") is None
+        with pytest.raises(RuntimeError, match="retired.*recompile"):
+            capture_tool_executable(klass(), managed=True, canonicalize=deterministic_serialize, metadata=operation)
+    finally:
+        operation.clear()
+        unload_versioned_package(package, version, tool_store)
+
+
+async def test_carried_workflow_get_cannot_readmit_during_physical_uninstall(tool_store, pypi, tmp_path, monkeypatch):
+    import asyncio
+    import threading
+
+    import httpx
+    from bioimageflow.tool_loader import load_versioned_package, unload_versioned_package
+    from bioimageflow_server.app import create_app
+    from bioimageflow_server.models.tools import AppConfig
+    from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+    from tests.graph_factory import graph_state
+
+    package, version = "platform_reserved_uninstall", "1.0"
+    source = _write_retained_package(tool_store, package, version)
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    workflows = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
+    workflows.create_workflow(WorkflowCreate(name="Carried"))
+    workflows.save_workflow("Carried", WorkflowSaveBody(graph=graph_state(nodes=[{
+        "type": "tool", "id": "subject", "name": "Subject", "tool_name": "Retained",
+        "position": [0, 0], "parameters": {}, "tool_module": package,
+        "tool_class": "Retained", "tool_package": package, "tool_package_version": version,
+    }])))
+    installer = PypiPackageInstaller(tool_store, registry, pypi)
+    app = create_app(AppConfig(
+        tool_registry=registry, workflow_store=workflows,
+        workflow_root=workflows.root_dir, workspace_path=workflows.workspace_dir,
+        package_installer=installer, disable_hot_reload=True,
+    ))
+    entered, release = threading.Event(), threading.Event()
+    remove = installer_module._remove_tree
+
+    def paused_remove(selection):
+        entered.set()
+        if not release.wait(timeout=5):
+            raise AssertionError("Test did not release physical package removal")
+        remove(selection)
+
+    monkeypatch.setattr(installer_module, "_remove_tree", paused_remove)
+    task = None
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            initial = await client.get("/api/v1/workflows/Carried")
+            assert initial.status_code == 200 and initial.json()["missing_tools"] == []
+            task = asyncio.create_task(installer.uninstall(package, version))
+            assert await asyncio.to_thread(entered.wait, 3)
+            # The directory still exists, but retirement reserves its namespace
+            # until removal and registry publication have physically settled.
+            assert source.is_dir()
+            during = await client.get("/api/v1/workflows/Carried")
+            assert during.status_code == 200
+            assert [tool["tool_name"] for tool in during.json()["missing_tools"]] == ["Retained"]
+            with pytest.raises(RuntimeError, match="package mutation is in progress"):
+                load_versioned_package(package, version, tool_store)
+            release.set()
+            await task
+            assert not source.exists()
+            assert registry.get_tool_class("Retained") is None
+    finally:
+        release.set()
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        unload_versioned_package(package, version, tool_store)
+
+
+async def test_failed_physical_uninstall_readmits_after_reservation_release(tool_store, pypi, monkeypatch):
+    from bioimageflow.tool_loader import unload_versioned_package
+
+    package, version = "platform_failed_uninstall", "1.0"
+    source = _write_retained_package(tool_store, package, version)
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    previous_class = registry.get_tool_class("Retained")
+    installer = PypiPackageInstaller(tool_store, registry, pypi)
+
+    def fail_remove(selection):
+        raise OSError("original physical removal failure")
+
+    monkeypatch.setattr(installer_module, "_remove_tree", fail_remove)
+    try:
+        with pytest.raises(OSError, match="original physical removal failure"):
+            await installer.uninstall(package, version)
+        assert source.is_dir()
+        # Recovery needs a new generation, which admission would refuse while
+        # the physical mutation namespace was still reserved.
+        replacement = registry.get_tool_class("Retained")
+        assert replacement is not None and replacement is not previous_class
+        assert registry.get_package(package).load_errors == {}
+    finally:
+        unload_versioned_package(package, version, tool_store)
+
+
+@pytest.mark.parametrize("partially_removed", [False, True])
+async def test_failed_uninstall_preserves_active_version_only_for_unchanged_selection(
+    partially_removed, tool_store, pypi, monkeypatch,
+):
+    import shutil
+    from bioimageflow.tool_loader import unload_versioned_packages
+
+    package = "platform_active_recovery"
+    source = _write_retained_package(tool_store, package, "1.0")
+    _write_retained_package(tool_store, package, "2.0")
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    registry.set_active_version(package, "1.0")
+    previous_class = registry.get_tool_class("Retained")
+    installer = PypiPackageInstaller(tool_store, registry, pypi)
+
+    def fail_remove(selection):
+        if partially_removed:
+            shutil.rmtree(selection.target)
+        raise OSError("original physical removal failure")
+
+    monkeypatch.setattr(installer_module, "_remove_tree", fail_remove)
+    try:
+        with pytest.raises(OSError, match="original physical removal failure"):
+            await installer.uninstall(package, "1.0")
+        expected = "2.0" if partially_removed else "1.0"
+        assert source.exists() == (not partially_removed)
+        assert registry.get_package(package).active_version == expected
+        assert registry.get_tool("Retained").package_version == expected
+        replacement = registry.get_tool_class("Retained")
+        assert replacement is not previous_class
+        assert replacement._bif_package_version == expected
+    finally:
+        unload_versioned_packages([(package, "1.0"), (package, "2.0")], tool_store)

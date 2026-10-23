@@ -428,7 +428,7 @@ def _write_dummy_pkg(
 
 
 @pytest.fixture
-def _cleanup_dummy_modules() -> None:
+def _cleanup_dummy_modules(tmp_path) -> None:
     """Strip dummy tool packages out of sys.modules / sys.path between tests.
 
     Reload tests rebuild the same scoped modules many times across separate
@@ -437,6 +437,8 @@ def _cleanup_dummy_modules() -> None:
     leak references back into subsequent tests.
     """
     yield
+    from bioimageflow.tool_loader import unload_versioned_packages
+    unload_versioned_packages([(DUMMY_PKG, version) for version in ("1.0.0", "2.0.0")], tmp_path)
     to_remove = [k for k in sys.modules if DUMMY_PKG in k]
     for k in to_remove:
         del sys.modules[k]
@@ -532,7 +534,7 @@ def test_reload_package_uses_unload_then_load_primitives(
         raising=False,
     )
     monkeypatch.setattr(
-        "bioimageflow_server.services.tool_registry.load_versioned_package",
+        "bioimageflow.registry.load_versioned_package",
         _spy_load,
         raising=False,
     )
@@ -635,7 +637,7 @@ def test_active_version_preserved_when_reloading_active(
     assert cls._bif_package_version == "1.0.0"
 
 
-def test_reload_failure_rolls_back_to_prior_snapshot(
+def test_failed_installed_refresh_does_not_resurrect_retired_classes(
     tmp_path, _cleanup_dummy_modules
 ):
     _write_dummy_pkg(tmp_path, "1.0.0")
@@ -662,20 +664,17 @@ def test_reload_failure_rolls_back_to_prior_snapshot(
     with pytest.raises(SyntaxError):
         reg.reload_package(DUMMY_PKG, "1.0.0")
 
-    # Snapshot is unchanged.
-    snap = reg.snapshot(DUMMY_PKG, "1.0.0")
-    assert "GaussianSmooth" in snap
-    # Lib registry binding still resolves to the prior class.
-    assert reg._lib_registry.get_class("GaussianSmooth") is prior_class
-    # Service-level metadata is preserved (not zeroed out).
-    after = reg.get_tool("GaussianSmooth")
-    assert after is not None
-    assert after.inputs == prior_meta.inputs
+    assert reg.snapshot(DUMMY_PKG, "1.0.0") == {}
+    assert reg._lib_registry.get_class("GaussianSmooth") is None
+    assert reg.get_tool_class("GaussianSmooth") is None
+    assert reg.get_tool("GaussianSmooth") is None
     assert reg.get_tool("Unrelated") == unrelated
-    assert sys.modules[prior_module.__name__] is prior_module
-    assert resolve_tool_class(
-        DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth",
-    ) is prior_class
+    assert prior_module.__name__ not in sys.modules
+    assert "SyntaxError" in reg.get_package(DUMMY_PKG).load_errors["1.0.0"]
+    with pytest.raises(ImportError, match="no admitted generation"):
+        resolve_tool_class(
+            DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth", store_path=tmp_path,
+        )
 
 
 def test_resolve_package_for_path_inside_store(tmp_path):
@@ -779,7 +778,7 @@ def test_scan_tool_store_refreshes_existing_entries(
 
     # Need to unload first since load_versioned_package caches by sys.modules.
     from bioimageflow.tool_loader import unload_versioned_package
-    unload_versioned_package(DUMMY_PKG, "1.0.0")
+    unload_versioned_package(DUMMY_PKG, "1.0.0", tmp_path)
 
     _write_dummy_pkg(tmp_path, "1.0.0", extra_field="truncate")
     reg.scan_tool_store(store_path=tmp_path)
@@ -825,3 +824,77 @@ def test_scan_tool_store_registers_common_tools():
         f"common-tools registration regression: {missing} not registered. "
         f"Likely cause: package __init__.py uses absolute imports."
     )
+
+
+def test_active_generation_refuses_reload_and_store_switch_without_mutation(tmp_path, _cleanup_dummy_modules):
+    from bioimageflow.cache.identity import deterministic_serialize
+    from bioimageflow.worker_origins import ExecutableMetadata, capture_tool_executable
+
+    _write_dummy_pkg(tmp_path, "1.0.0")
+    registry = _scan(tmp_path)
+    klass = registry.get_tool_class("GaussianSmooth")
+    metadata = registry.get_tool("GaussianSmooth")
+    operation = ExecutableMetadata()
+    try:
+        capture_tool_executable(klass(), managed=True, canonicalize=deterministic_serialize, metadata=operation)
+        with pytest.raises(RuntimeError, match="active admitted operations"):
+            registry.reload_package(DUMMY_PKG, "1.0.0")
+        with pytest.raises(RuntimeError, match="active admitted operations"):
+            registry.scan_tool_store(tmp_path / "different-store")
+        assert registry.tool_store_path() == tmp_path
+        assert registry.get_tool("GaussianSmooth") is metadata
+        assert registry.get_tool_class("GaussianSmooth") is klass
+        # Re-selecting the SAME global store does not retire active code.
+        registry.scan_tool_store(tmp_path)
+        assert registry.get_tool_class("GaussianSmooth") is klass
+    finally:
+        operation.clear()
+    registry.scan_tool_store(tmp_path / "different-store")
+    assert registry.tool_store_path() == tmp_path / "different-store"
+    assert registry.get_tool_class("GaussianSmooth") is None
+    with pytest.raises(RuntimeError, match="retired.*recompile"):
+        capture_tool_executable(klass(), managed=True, canonicalize=deterministic_serialize, metadata=operation)
+    operation.clear()
+
+
+def test_failed_foreign_store_scan_preserves_resident_generation(tmp_path, _cleanup_dummy_modules):
+    import shutil
+    from bioimageflow.tool_loader import load_versioned_package
+
+    _write_dummy_pkg(tmp_path, "1.0.0")
+    original = _scan(tmp_path)
+    klass = original.get_tool_class("GaussianSmooth")
+    foreign = tmp_path / "foreign-store"
+    shutil.copytree(tmp_path / DUMMY_PKG, foreign / DUMMY_PKG)
+    rejected = _scan(foreign)
+    assert "store root" in rejected.get_package(DUMMY_PKG).load_errors["1.0.0"]
+    assert rejected.get_tool_class("GaussianSmooth") is None
+    assert load_versioned_package(DUMMY_PKG, "1.0.0", tmp_path).GaussianSmooth is klass
+    assert original.get_tool_class("GaussianSmooth") is klass
+
+
+def test_forget_package_removes_all_scoped_inactive_classes(tmp_path, _cleanup_dummy_modules):
+    _write_dummy_pkg(tmp_path, "1.0.0")
+    _write_dummy_pkg(tmp_path, "2.0.0", extra_field="truncate")
+    registry = _scan(tmp_path)
+    registry.forget_package(DUMMY_PKG, "1.0.0")
+    assert registry._lib_registry.get_class("GaussianSmooth", package=DUMMY_PKG, version="1.0.0") is None
+    assert registry._lib_registry.get_class("GaussianSmooth", package=DUMMY_PKG, version="2.0.0") is not None
+    registry.forget_package(DUMMY_PKG)
+    assert registry._lib_registry.get_class("GaussianSmooth", package=DUMMY_PKG, version="2.0.0") is None
+
+
+def test_root_switch_retires_carried_only_generation(tmp_path, _cleanup_dummy_modules):
+    from bioimageflow_server.services.graph_translator import _resolve_carried_tool_class
+    from bioimageflow.tool_loader import resolve_tool_class
+
+    registry = _scan(tmp_path)
+    _write_dummy_pkg(tmp_path, "1.0.0")
+    klass = _resolve_carried_tool_class(
+        f"{DUMMY_PKG}.filters", "GaussianSmooth", DUMMY_PKG, "1.0.0",
+        store_path=registry.tool_store_path(),
+    )
+    assert klass is not None and registry.get_package(DUMMY_PKG) is None
+    registry.scan_tool_store(tmp_path / "different-store")
+    with pytest.raises(ImportError, match="no admitted generation"):
+        resolve_tool_class(DUMMY_PKG, "1.0.0", f"{DUMMY_PKG}.filters", "GaussianSmooth", store_path=tmp_path)
