@@ -686,6 +686,22 @@ def test_resolve_package_for_path_inside_store(tmp_path):
     assert pair == (DUMMY_PKG, "1.0.0")
 
 
+@pytest.mark.parametrize("package,version", [
+    (DUMMY_PKG, ".0.2.1-install-e5je_4p4"),
+    (DUMMY_PKG, "not-a-version"),
+    (".unrelated", "1.0.0"),
+])
+def test_resolve_package_for_path_ignores_unpublished_directories(tmp_path, package, version):
+    reg = ToolRegistryService()
+    reg._store_path = tmp_path
+    target = tmp_path / package / version / package / "filters.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("# staged source\n")
+    assert reg.resolve_package_for_path(target) is None
+    target.unlink()
+    assert reg.resolve_package_for_path(target) is None
+
+
 def test_resolve_package_for_path_nested_subdir(tmp_path):
     reg = ToolRegistryService()
     reg._store_path = tmp_path  # type: ignore[attr-defined]

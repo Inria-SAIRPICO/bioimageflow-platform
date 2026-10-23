@@ -123,7 +123,7 @@ Complete upstream DataFrames connect positionally, and the library rejects colum
 Tool annotation introspection resolves postponed and inherited annotations while preserving GUI and image metadata, so registry schemas and execution validation describe the same declared types.
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
 Output metadata preserves each field's required and nullable facts from the library schema.
-Tool-store scanning admits package/version selectors through the library, ignores unsupported directory names, and keeps genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
+Tool-store scanning and hot-reload path resolution admit package/version selectors through the library, ignore unsupported directory names including private installer staging, and keep genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 Missing or null resource fields inherit the declaration; the resource form enables Reset all only for explicit overrides, including numeric zero subject to normal validation.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
@@ -146,6 +146,7 @@ A carried module/class/package/version binding takes precedence over a same-name
 Explicit package references remain package requirements even when the catalog has a same-named custom tool, while module/class-only references are local references without an invented package requirement.
 The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
+Custom-tool usage reports traverse saved recursive graphs, distinguish tool and workflow nodes, and return each affected workspace-relative workflow ID once.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
 An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
 There is no opened-bundle execution mode or persisted JSON source-text fallback.

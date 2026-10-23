@@ -30,7 +30,7 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
-from bioimageflow_server.models.graph import ToolNodeState
+from bioimageflow_server.models.graph import ToolNodeState, WorkflowNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
@@ -537,40 +537,53 @@ async def test_rename_tool_target_conflict(workflow_root: Path):
     assert resp.status_code == 409
 
 
-async def test_tool_usage_reports_saved_workflows(workflow_root: Path):
+@pytest.mark.parametrize("nested", [False, True])
+async def test_tool_usage_reports_saved_workflows(workflow_root: Path, nested: bool):
     registry = ToolRegistryService()
     registry.register_tool("MyTool", _make_tool("MyTool"))
     store = WorkflowStoreService(workflow_root, registry)
-    store.create_workflow(WorkflowCreate(name="uses_tool"))
+    workflow_id = "folder/uses_tool"
+    store.create_workflow(WorkflowCreate(name=workflow_id))
+    tool = ToolNodeState(
+        type="tool", id="n1", name="n1", tool_name="MyTool", position=(0, 0),
+        parameters={},
+    )
+    child = WorkflowNodeState(
+        type="workflow", id="child", name="MyTool", position=(320, 0),
+        bindings={},
+        workflow=graph_state(nodes=[tool] if nested else []),
+    )
+    outer = WorkflowNodeState(
+        type="workflow", id="outer", name="outer", position=(640, 0),
+        bindings={},
+        workflow=graph_state(nodes=[child]),
+    )
     store.save_workflow(
-        "uses_tool",
+        workflow_id,
         WorkflowSaveBody(
             graph=graph_state(
-                nodes=[
-                    ToolNodeState(type="tool",
-                        id="n1",
-                        name="n1",
-                        tool_name="MyTool",
-                        position=(0, 0),
-                        parameters={},
-                    )
-                ],
+                nodes=[outer] if nested else [outer, tool],
                 edges=[],
             )
         ),
     )
     store.create_workflow(WorkflowCreate(name="other"))
+    store.save_workflow(
+        "other", WorkflowSaveBody(graph=graph_state(nodes=[
+            child.model_copy(update={"workflow": graph_state()}),
+        ])),
+    )
     config = AppConfig(
         tool_registry=registry,
         workflow_root=workflow_root,
         workflow_store=store,
     )
     async for client in _client(config):
-        resp = await client.get("/api/v1/tools/MyTool/usage", params={"workflow_name": "uses_tool"})
+        resp = await client.get("/api/v1/tools/MyTool/usage", params={"workflow_name": workflow_id})
     assert resp.status_code == 200
     assert resp.json() == {
         "tool_name": "MyTool",
-        "affected_workflows": ["uses_tool"],
+        "affected_workflows": [workflow_id],
         "in_open_workflow": None,
     }
 

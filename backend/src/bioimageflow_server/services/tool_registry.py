@@ -664,6 +664,12 @@ class ToolRegistryService:
         # source path.
         if len(parts) < 3:
             return None
+        try:
+            validate_installation_selectors(parts[0], parts[1], None)
+        except ValueError:
+            # Owned installer staging and unrelated directories are not
+            # published package versions, even after their files disappear.
+            return None
         return parts[0], parts[1]
 
     def reload_package(self, package: str, version: str) -> dict[str, ToolMetadata]:

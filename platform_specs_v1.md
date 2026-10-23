@@ -84,7 +84,7 @@ The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/
 The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.x resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
-Store scanning uses the library's public installation-selector admission to ignore unrelated directories before loading or unloading a version.
+Store scanning and hot-reload path resolution use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
 Supported selectors with invalid or incomplete installations remain visible with their original load diagnostic; secondary unload failures do not replace that diagnostic.
 
 **BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
@@ -113,6 +113,7 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 |--------|----------|-------------|
 | `GET` | `/tools` | List all discovered tools with metadata |
 | `GET` | `/tools/{tool_name}/source` | Get the tool's source directory path |
+| `GET` | `/tools/{tool_name}/usage` | Return affected saved workflow IDs, including references in recursively embedded workflows |
 | `GET` | `/tools/packages` | List all packages (installed and known). Returns installed versions, available versions, tools per version, and environment status. This is the single source of truth for the Tools Panel — no need to cross-reference with `GET /tools`. |
 | `POST` | `/tools/packages/refresh` | Refresh the known and installed package catalog from its configured package-index sources. |
 | `POST` | `/tools/packages/{package_name}/install` | Install a package version into the tool store (body: `{version?: str}`) |
@@ -120,6 +121,9 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `POST` | `/tools/environments/{env_name}/start` | Start a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/stop` | Stop a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/recreate` | Create or replace a tool's managed Wetlands environment |
+
+Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
+It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
 
 **Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
 Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
