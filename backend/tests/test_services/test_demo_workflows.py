@@ -15,6 +15,7 @@ from bioimageflow_core.worker_origins import SourceFileOrigin, load_worker_tool
 from bioimageflow.template import resolve_template
 from bioimageflow.worker_origins import resolve_worker_tool_origin
 
+from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.demo_workflows import (
     DemoWorkflowConflictError,
@@ -36,7 +37,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 5
+    assert service.bundle_version == 6
     assert {path.name for path in service.resource_root.iterdir()} == {
         "manifest.json",
         "fish-analysis",
@@ -48,12 +49,22 @@ def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
         for node in graph["nodes"]:
             if node["type"] == "workflow":
                 assert_schema_v2(node["workflow"])
+            elif node.get("tool_package"):
+                assert node["tool_package_version"] == {
+                    "bioimageflow_common_tools": "0.2.2",
+                    "bioimageflow_io_tools": "0.2.2",
+                    "bioimageflow_segmentation_tools": "0.3.2",
+                    "bioimageflow_spot_tools": "0.2.2",
+                }[node["tool_package"]]
 
     for template in service.templates:
         payload = json.loads(
             (service.resource_root / template.directory / "workflow.json").read_text()
         )
         assert_schema_v2(payload["graph"])
+        assert payload["artifact_hash"] == artifact_hash(
+            GraphState.model_validate(payload["graph"]), [],
+        )
 
 
 def test_bundled_graphs_flow_left_to_right_without_overlapping_nodes(tmp_path: Path) -> None:

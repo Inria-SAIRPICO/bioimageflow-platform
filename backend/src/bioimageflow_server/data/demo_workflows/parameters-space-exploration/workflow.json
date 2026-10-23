@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:d47a957f95e596d1fa6e6b5a692e8e2a10df1312140ab200de2ca8069325905e",
+  "artifact_hash": "sha256:c3c9e4ebc72e4dc62668e497eaf36a932e70e8c07b26c0aebc33fabf54c88b33",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -225,7 +225,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -252,7 +252,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -272,7 +272,7 @@
         "tool_module": "bioimageflow_common_tools.merge",
         "tool_name": "CrossJoin",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -294,7 +294,7 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -316,7 +316,7 @@
         "tool_module": "bioimageflow_spot_tools.atlas",
         "tool_name": "AtlasSpotDetection",
         "tool_package": "bioimageflow_spot_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -356,7 +356,7 @@
         "tool_module": "bioimageflow_common_tools.mosaic",
         "tool_name": "Mosaic",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -384,7 +384,7 @@
   "metadata": {
     "bundled_template": {
       "id": "parameters-space-exploration",
-      "version": 5
+      "version": 6
     },
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },

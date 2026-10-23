@@ -438,7 +438,8 @@ Inspect obvious repeated reads/hashes/copies and unnecessary dispatch on changed
 ### Remaining repository areas
 
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
-- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
+- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 6 with deterministic workflow artifacts pinned to published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2.
+  The exporter retains these explicit release pins independently of the example source checkout’s package versions.
 - Fish Analysis gives its marker branches distinct internal node IDs and runs in parallel using the locked published BioImageFlow runtime, whose worker-thread scope propagation preserves nested result identities and Node Data views. Its summary groups mapped overlap rows by their immediate parent image row index.
 - `bioimageflow/` may be a local library checkout or link used to inspect the library source and specification; the installed dependency remains the runtime authority selected by the lockfile.
 - `external/wetlands-src` is an optional source-browsing link and must not become a package or runtime dependency.

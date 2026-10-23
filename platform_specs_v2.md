@@ -400,7 +400,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 ### Bundled demo workflows
 
-The application loads demo bundle version 5 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+The application loads demo bundle version 6 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+All packaged-tool bindings pin published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2; the maintainer exporter retains those release pins independently of source-checkout package versions.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
 The bundled Fish Analysis marker branches use distinct internal node IDs and parallel execution with the locked published BioImageFlow runtime, whose parallel branch workers retain scoped names and result views. The final tool groups mapped overlap rows by their immediate parent image row index, yielding one row per input image and a weighted Global average row.
