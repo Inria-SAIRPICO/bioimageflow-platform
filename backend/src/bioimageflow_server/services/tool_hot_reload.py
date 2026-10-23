@@ -1,6 +1,6 @@
 """Tool source hot-reload watcher.
 
-Watches the tool store directory for ``*.py`` edits, debounces them by
+Watches editable tool sources for ``*.py`` edits, debounces them by
 ``(package, version)``, calls
 :meth:`ToolRegistryService.reload_package`, diffs the pre/post snapshot
 for that package, and broadcasts ``tool_reload`` / ``tool_removed`` to
@@ -9,10 +9,9 @@ connected GUIs via the :class:`ConnectionManager`.
 Reload failures broadcast ``system_error`` so the System Errors panel
 can surface them, but do not crash the underlying watchdog observer.
 
-The package installer wraps install/uninstall with
-:meth:`suppress` / :meth:`resume` so disk writes during install do not
-trigger spurious reloads — the post-install ``resume(emit_batch=True)``
-performs the load + index in one consolidated batch.
+The package installer explicitly indexes installed generations and publishes
+install/removal diffs. Installed files are immutable during an admitted
+selection; their filesystem events do not authorize reload.
 """
 
 from __future__ import annotations
@@ -222,10 +221,8 @@ class ToolHotReloadService:
     def resume(self, emit_batch: bool = True) -> None:
         """Clear the suppression flag.
 
-        With ``emit_batch=True``, every accumulated ``(pkg, ver)`` pair —
-        plus every package known to the registry that we have a
-        pre-suppress snapshot for — is reloaded once and the diff is
-        broadcast. With ``emit_batch=False``, accumulated events are
+        With ``emit_batch=True``, every accumulated editable-source pair is
+        reloaded once and its diff is broadcast. With ``emit_batch=False``, accumulated events are
         dropped silently (used on installer error paths).
         """
         with self._lock:
@@ -237,20 +234,6 @@ class ToolHotReloadService:
 
         if not emit_batch:
             return
-
-        # Include any package the registry knows about that wasn't
-        # already in `pending` — covers fresh installs where watchdog
-        # may not have fired by the time `resume` is called. We compare
-        # the post-install snapshot against the pre-suppress snapshot
-        # (empty for a brand-new package) to surface the new tools.
-        packages = getattr(self._registry, "_packages", {})
-        for pkg_name, info in list(packages.items()):
-            if pkg_name == "__custom__":
-                continue
-            versions = getattr(info, "installed_versions", []) or []
-            for ver in versions:
-                pending.add((pkg_name, ver))
-                pre.setdefault((pkg_name, ver), {})
 
         if self._loop is None:
             # No event loop available — happens in tests that exercise
@@ -277,14 +260,37 @@ class ToolHotReloadService:
             self._pending.clear()
             self._pre_suppress_snapshots.clear()
 
-        pending.add(pair)
-        pre.setdefault(pair, {})
-        await asyncio.gather(
-            *(
+        # Only the selected index failure determines installation success.
+        # Pending editable-source failures retain their ordinary error reporting.
+        try:
+            await self._do_reload(pair, pre.get(pair, {}), strict=True, index=True)
+        finally:
+            await asyncio.gather(*(
                 self._do_reload(candidate, pre.get(candidate, {}))
-                for candidate in pending
-            )
-        )
+                for candidate in pending if candidate != pair
+            ))
+
+    async def resume_after_uninstall(self, package: str, versions: list[str]) -> None:
+        """Publish explicit removals, even when the filesystem watcher is quiet."""
+        with self._lock:
+            self._suppressed.clear()
+            pending = self._pending.copy()
+            pre = self._pre_suppress_snapshots.copy()
+            self._pending.clear()
+            self._pre_suppress_snapshots.clear()
+        names = {
+            name for version in versions for name in pre.get((package, version), {})
+        }
+        for name in sorted(names):
+            current = self._registry.get_tool(name)
+            if current is None:
+                await self._cm.broadcast_tool_removed(name)
+            else:
+                await self._cm.broadcast_tool_reload(name, current.model_dump())
+        await asyncio.gather(*(
+            self._do_reload(candidate, pre.get(candidate, {}))
+            for candidate in pending if candidate[0] == "__custom__"
+        ))
 
     # -- watchdog callback (worker thread) -------------------------------
 
@@ -347,7 +353,9 @@ class ToolHotReloadService:
             return
 
         pair = self._registry.resolve_package_for_path(path)
-        if pair is None:
+        if pair is None or pair[0] != "__custom__":
+            # Installed generations change only through explicit lifecycle
+            # operations. Mutable source watching belongs to custom tools.
             return
         if pair[0] == "__custom__":
             try:
@@ -398,20 +406,24 @@ class ToolHotReloadService:
 
     async def _do_reload(
         self, pair: tuple[str, str], prior: dict[str, Any], *, notify_unchanged: bool = False,
+        strict: bool = False, index: bool = False,
     ) -> None:
         async with self._reload_lock:
             if self._stopped:
                 return
-            await self._reload_and_broadcast(pair, prior, notify_unchanged=notify_unchanged)
+            await self._reload_and_broadcast(
+                pair, prior, notify_unchanged=notify_unchanged, strict=strict, index=index,
+            )
 
     async def _reload_and_broadcast(
         self, pair: tuple[str, str], prior: dict[str, Any], *, notify_unchanged: bool,
+        strict: bool = False, index: bool = False,
     ) -> None:
         """Run reload + diff + broadcast for a single ``(pkg, ver)`` pair."""
         pkg, ver = pair
         try:
             current = await asyncio.get_running_loop().run_in_executor(
-                None, self._registry.reload_package, pkg, ver
+                None, self._registry.index_package if index else self._registry.reload_package, pkg, ver
             )
         except FileNotFoundError as exc:
             logger.info(
@@ -431,6 +443,8 @@ class ToolHotReloadService:
                 )
             for name in prior:
                 await self._cm.broadcast_tool_removed(name)
+            if strict:
+                raise
             return
         except Exception as exc:
             logger.warning(
@@ -444,6 +458,8 @@ class ToolHotReloadService:
                 "tool_reload_failed",
                 str(exc),
             )
+            if strict:
+                raise
             return
 
         # Diff prior vs. current and emit one event per change.

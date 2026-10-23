@@ -111,9 +111,27 @@ uv run uvicorn bioimageflow_server.app:create_app --factory \
   --log-config src/bioimageflow_server/logging.yaml
 ```
 
+## Installed tools and editable sources
+
+Installed tool packages are read-only selections while the backend process holds their admitted generations.
+Editing a Python file in the tool store does not trigger automatic reload, and repeated workflow opens reuse the admitted package metadata and executable identity.
+Use workflow-owned or custom editable tool sources for ordinary tool development; their current bytes are captured for compilation even if a watcher event was missed.
+A malformed editable save stays available for repair and cannot make Run execute the previous code.
+
+A controlled package refresh or uninstall retires the selected installed generation before admitting replacement code or removing files.
+An active admitted operation blocks retirement and leaves files and registry state unchanged; finish that operation before retrying.
+During physical uninstall, a concurrent workflow open reports the selected tool as unavailable rather than re-admitting code from the directory being removed.
+Changing installed controller dependencies requires a backend restart.
+The Tools Panel's package-index Refresh updates release availability, not installed executable code.
+Tool-store installation uses `--no-deps`: declarations and DataFrame tools import compatible dependencies already supplied by the controller environment, while ProcessingTool recipes provision worker dependencies separately during execution preparation.
+
+The generation lifecycle changes are being validated with unreleased BioImageFlow 0.9.5/Core 0.5.1 candidates in isolated environments.
+The normal manifest and lock still select the published packages described below; candidate validation must not modify the ordinary backend environment.
+The [workflow loading guide](workflow-loading.md) describes the benchmark and the remaining per-operation checks.
+
 ## Use local BioImageFlow source
 
-The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.3`, Core 0.5 and Wetlands 2.6.1 from the registry.
+The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.4`, Core 0.5 and Wetlands 2.6.1 from the registry.
 A sibling library checkout is optional and is not required by ordinary development or CI.
 Sync and validate the normal published environment with:
 
@@ -151,18 +169,9 @@ BioImageFlow validates that the configured directory exists, declares the `bioim
 An invalid explicit source fails clearly and never falls back to the published wheel.
 On the next processing use, an existing BioImageFlow-owned Wetlands environment whose stored recipe no longer matches is replaced through Wetlands after its pool is closed. The platform also refreshes an already-existing stale `bioimageflow-general` environment in the background after startup. It does not rewrite external, adopted, Napari, thumbnail, or code-server environments.
 
-## Use an editable tool package
+## Develop a tool package
 
-Create a versioned tool-store directory and link the package source into it:
-
-```bash
-mkdir -p ~/.bioimageflow/tool_packages/bioimageflow_common_tools/0.1.6
-
-ln -sfn \
-  /path/to/bioimageflow-common-tools/bioimageflow_common_tools \
-  ~/.bioimageflow/tool_packages/bioimageflow_common_tools/0.1.6/bioimageflow_common_tools
-```
-
-Restart the backend after creating or changing the link.
-
-For normal use, install versioned packages through **Manage tools** rather than linking source directories.
+Use the package repository's isolated editable environment and native tests while changing package code.
+For platform integration, install a complete versioned artifact through the package installer and use the controlled uninstall/install or restart boundary when replacing that selection.
+A bare source-directory link in the tool store is not a complete installation: it lacks the providing distribution metadata and RECORD required at admission.
+Use custom or workflow-owned tool sources when edits must appear immediately in an open platform workflow.

@@ -46,11 +46,15 @@ test.describe('app shell', () => {
     await page.goto('/')
     const dock = page.locator('.dockview-theme-light')
     await expect(dock).toBeVisible()
+    // Datasets remains in the sidebar group while Tools is closed and reopened.
+    const sidebarGroup = page.locator('.dv-groupview').filter({
+      has: page.locator('.dv-tab').filter({ hasText: /^Datasets$/ }),
+    })
+    await expect(sidebarGroup).toHaveCount(1)
     const toolsTab = page.locator('.dv-tab').filter({ hasText: /^Tools$/ })
-    const workflowsTab = page.locator('.dv-tab').filter({ hasText: /^Workflows$/ })
+    const workflowsTab = sidebarGroup.locator('.dv-tab').filter({ hasText: /^Workflows$/ })
     await toolsTab.click()
-    const toolsGroup = page.locator('.dv-groupview').filter({ has: toolsTab })
-    const before = await toolsGroup.boundingBox()
+    const before = await sidebarGroup.boundingBox()
     expect(before).not.toBeNull()
     const sashes = dock.locator('.dv-sash.dv-enabled')
     const sashIndex = await sashes.evaluateAll((elements, edge) => elements.findIndex(element => {
@@ -66,10 +70,12 @@ test.describe('app shell', () => {
     await page.mouse.down()
     await page.mouse.move(sash!.x + sash!.width / 2 + 80, before!.y + before!.height / 2, { steps: 8 })
     await page.mouse.up()
-    await expect.poll(async () => (await toolsGroup.boundingBox())!.width).toBeGreaterThan(before!.width + 50)
+    await expect.poll(async () => (await sidebarGroup.boundingBox())!.width).toBeGreaterThan(before!.width + 50)
 
-    const tabTitles = toolsGroup.locator('.dv-tabs-container > .dv-tab .dv-default-tab-content')
+    const tabTitles = sidebarGroup.locator('.dv-tabs-container > .dv-tab .dv-default-tab-content')
     const initialOrder = await tabTitles.allTextContents()
+    expect(initialOrder).toContain('Tools')
+    expect(initialOrder).toContain('Workflows')
     expect(initialOrder.indexOf('Tools')).toBeLessThan(initialOrder.indexOf('Workflows'))
     await expect(toolsTab).toHaveAttribute('draggable', 'true')
     const target = await workflowsTab.boundingBox()

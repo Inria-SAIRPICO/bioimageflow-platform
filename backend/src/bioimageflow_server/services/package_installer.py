@@ -2,8 +2,8 @@
 
 :class:`PackageInstallerService` is the abstract DI contract. The real
 implementation, :class:`PypiPackageInstaller`, delegates to
-:func:`bioimageflow.tool_loader.ensure_installed`. The registry is re-scanned
-on success.
+:func:`bioimageflow.tool_loader.ensure_installed`. Selected generations are
+indexed explicitly after install and retired before removal.
 """
 
 from __future__ import annotations
@@ -15,8 +15,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from email.parser import Parser
+from functools import partial
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse, urlunparse
 from typing import TYPE_CHECKING
@@ -25,7 +27,8 @@ import anyio
 import anyio.to_thread as anyio_to_thread
 from send2trash import send2trash
 
-from bioimageflow.tool_loader import ensure_installed
+from bioimageflow.installation import validate_installation_selectors
+from bioimageflow.tool_loader import ensure_installed, versioned_package_mutation
 
 if TYPE_CHECKING:
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
@@ -205,11 +208,11 @@ class PypiPackageInstaller(PackageInstallerService):
             try:
                 try:
                     await anyio_to_thread.run_sync(
-                        ensure_installed,
-                        package_name,
-                        version,
-                        _pypi_name(package_name),
-                        self._tool_store,
+                        partial(
+                            ensure_installed, package_name, version,
+                            _pypi_name(package_name), self._tool_store,
+                            install_dependencies=False,
+                        ),
                     )
                 except PackageNotFoundError:
                     raise
@@ -232,12 +235,22 @@ class PypiPackageInstaller(PackageInstallerService):
                     self._hot_reload.resume(emit_batch=False)
                 raise
 
+            await self._index_installed(package_name, version)
+
+    async def _index_installed(self, package_name: str, version: str) -> None:
+        try:
             if self._hot_reload is not None:
                 await self._hot_reload.resume_after_install(package_name, version)
             else:
                 await anyio_to_thread.run_sync(
-                    self._registry.scan_tool_store, self._tool_store
+                    self._registry.index_package, package_name, version, self._tool_store,
                 )
+        except Exception as exc:
+            if self._hot_reload is not None:
+                self._hot_reload.resume(emit_batch=False)
+            raise PackageInvalidError(
+                f"Installed {package_name}=={version} could not load: {exc}"
+            ) from exc
 
     async def install_from_url(self, url: str) -> PackageInstallResult:
         source = _normalize_repository_source(url)
@@ -291,38 +304,70 @@ class PypiPackageInstaller(PackageInstallerService):
             finally:
                 await anyio_to_thread.run_sync(shutil.rmtree, staging_parent, True)
 
-            if self._hot_reload is not None:
-                await self._hot_reload.resume_after_install(
-                    result.package,
-                    result.version,
-                )
-            else:
-                await anyio_to_thread.run_sync(
-                    self._registry.scan_tool_store, self._tool_store
-                )
+            await self._index_installed(result.package, result.version)
             return result
 
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
         async with self._operation_lock:
             selection = _select_uninstall_target(self._tool_store, package_name, version)
 
-            if self._hot_reload is not None:
-                self._hot_reload.suppress()
-
+            versions = [version] if version is not None else [
+                child.name for child in selection.target.iterdir()
+                if child.is_dir() and not child.is_symlink()
+            ]
+            # Safe legacy directory names remain removable even if the SDK
+            # cannot interpret them as Python package/version selectors.
+            selectors = []
+            for selected_version in versions:
+                try:
+                    validate_installation_selectors(package_name, selected_version, None)
+                except ValueError:
+                    continue
+                selectors.append((package_name, selected_version))
+            previous_package = self._registry.get_package(package_name)
+            previous_active = (
+                previous_package.active_version
+                if previous_package is not None and isinstance(previous_package.active_version, str)
+                else None
+            )
+            entered = False
             try:
-                await anyio_to_thread.run_sync(_remove_tree, selection)
-                self._registry.forget_package(package_name, version)
+                with ExitStack() as mutation:
+                    try:
+                        # Retirement and namespace reservation are one atomic
+                        # entry. Concurrent workflow reads cannot re-admit the
+                        # package while offloaded removal is still pending.
+                        mutation.enter_context(versioned_package_mutation(selectors, selection.root))
+                    except Exception as exc:
+                        raise PackageInvalidError(str(exc)) from exc
+                    entered = True
+                    if self._hot_reload is not None:
+                        self._hot_reload.suppress()
+                    await anyio_to_thread.run_sync(_remove_tree, selection)
+                    self._registry.forget_package(package_name, version)
             except Exception:
-                if self._hot_reload is not None:
-                    self._hot_reload.resume(emit_batch=False)
+                if entered:
+                    # Recovery runs after releasing the namespace reservation.
+                    # It may re-admit only the unchanged owned selection and
+                    # must preserve the original removal error.
+                    try:
+                        self._registry.forget_package(package_name, version)
+                        _recheck_uninstall_selection(selection)
+                        for _, selected_version in selectors:
+                            self._registry.index_package(package_name, selected_version, selection.root)
+                        current_package = self._registry.get_package(package_name)
+                        if (
+                            previous_active is not None and current_package is not None
+                            and current_package.active_version != previous_active
+                        ):
+                            self._registry.set_active_version(package_name, previous_active)
+                    except Exception:
+                        logger.exception("Could not re-index package after failed removal")
+                    if self._hot_reload is not None:
+                        self._hot_reload.resume(emit_batch=False)
                 raise
-
             if self._hot_reload is not None:
-                self._hot_reload.resume(emit_batch=True)
-            else:
-                await anyio_to_thread.run_sync(
-                    self._registry.scan_tool_store, self._tool_store
-                )
+                await self._hot_reload.resume_after_uninstall(package_name, versions)
 
 
 def _normalize_repository_source(url: str) -> str:
@@ -383,6 +428,7 @@ def _pip_install_source(source: str, target: Path) -> None:
                 "-m",
                 "pip",
                 "install",
+                "--no-deps",
                 "--target",
                 str(target),
                 source,

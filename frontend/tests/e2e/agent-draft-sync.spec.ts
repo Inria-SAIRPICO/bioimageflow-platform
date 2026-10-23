@@ -483,18 +483,42 @@ test('copies an agent graph with recursively owned unsaved sources without alias
       },
     }
 
+    await installDraftWebSocketProbe(page)
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await rememberLastOpenedWorkflow(page, name)
-    await page.reload()
+    // Use the real named Open intent rather than racing startup with a direct
+    // preference-store write. Later assertions still exercise copy restoration.
+    await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId(`workflow-row-${name}`).dblclick()
     await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
-    await page.evaluate(async () => {
-      const { useUIStore } = await import('/src/stores/ui.ts')
-      const { canvasSessionRegistry } = await import('/src/sessions/canvasSessionRegistry.ts')
-      const id = canvasSessionRegistry.activeCanvasId.value
-      if (id === null) throw new Error('No active canvas')
-      useUIStore().markCanvasDirty(id)
-    })
+    await expect.poll(() => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0)).toBeGreaterThan(0)
+    const ownedNode = page.locator('.vue-flow__node[data-id="owned_numbers"]')
+    await expect(ownedNode).toBeVisible()
+    const nodeBox = await ownedNode.boundingBox()
+    expect(nodeBox).not.toBeNull()
+    const localWrite = page.waitForResponse(response => (
+      new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+      && response.request().method() === 'PUT'
+      && response.request().postDataJSON().updated_by === 'frontend'
+      && JSON.stringify(response.request().postDataJSON().graph.nodes[0].position)
+        !== JSON.stringify(savedRoot.graph.nodes[0].position)
+    ))
+    // A real graph edit establishes local semantic ownership. Setting only a
+    // presentation dirty flag can be cleared by the initial same-graph response.
+    const dragStart = {
+      x: nodeBox!.x + nodeBox!.width / 2,
+      y: nodeBox!.y + Math.min(24, nodeBox!.height / 2),
+    }
+    await page.mouse.move(dragStart.x, dragStart.y)
+    await page.mouse.down()
+    await page.mouse.move(dragStart.x + 60, dragStart.y + 40, { steps: 8 })
+    await page.mouse.up()
+    const localResponse = await localWrite
+    expect(localResponse.ok(), await localResponse.text()).toBeTruthy()
+    const localDraft = await localResponse.json()
+    expect(localDraft).toMatchObject({ updated_by: 'frontend', dirty_against_saved: true })
+    expect(localDraft.graph.nodes[0].position).not.toEqual(savedRoot.graph.nodes[0].position)
 
     const originalDocumentPath = join(dirname(savedRoot.info.results_path), 'workflow.json')
     const originalDocumentBytes = readFileSync(originalDocumentPath)
@@ -527,6 +551,8 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     const agent = await agentResponse.json()
     expect(agent.validation).toMatchObject({ valid: true, errors: [] })
     await expect(page.locator('.workflow-draft-conflict')).toBeVisible()
+    await expect(page.locator('.vue-flow__node')).toHaveCount(1)
+    await expect(page.locator('.vue-flow__node[data-id="embedded_child"]')).toHaveCount(0)
 
     const copied = page.waitForResponse(response => (
       response.request().method() === 'PATCH'

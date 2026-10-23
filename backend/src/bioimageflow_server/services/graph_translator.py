@@ -5,6 +5,7 @@ from __future__ import annotations
 import heapq
 from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from bioimageflow import deserialize_constant, serialize_constant
@@ -210,14 +211,15 @@ def _resolve_carried_tool_class(
     class_name: str,
     package: str | None,
     version: str | None,
+    *, store_path: Path | None = None,
 ) -> Any:
     """Resolve the carried executable identity without catalog discovery."""
     import importlib
     from bioimageflow.tool_loader import load_versioned_package, resolve_tool_class
 
     if package and version:
-        load_versioned_package(package, version)
-        return resolve_tool_class(package, version, module, class_name)
+        load_versioned_package(package, version, store_path)
+        return resolve_tool_class(package, version, module, class_name, store_path=store_path)
     return getattr(importlib.import_module(module), class_name)
 
 
@@ -251,6 +253,7 @@ def graph_requires_wetlands(
                         candidate = _resolve_carried_tool_class(
                             node.tool_module, node.tool_class,
                             node.tool_package, node.tool_package_version,
+                            store_path=registry.tool_store_path(),
                         )
                         classes[key] = candidate if isinstance(candidate, type) else None
                     except Exception:
@@ -765,7 +768,7 @@ def _detect_missing_tools(
             )
             if binding not in bindings:
                 try:
-                    candidate = _resolve_carried_tool_class(*binding)
+                    candidate = _resolve_carried_tool_class(*binding, store_path=registry.tool_store_path())
                     bindings[binding] = isinstance(candidate, type) and issubclass(candidate, BaseTool)
                 except Exception:
                     bindings[binding] = False

@@ -81,6 +81,7 @@ def _build_workflow(
         engine=root_engine,
         execution=translation.lib_dict["config"]["execution"],
         auto_install=False,
+        tool_store_path=registry.tool_store_path(),
     )
     assert isinstance(result, tuple)
     workflow, lib_errors = result
