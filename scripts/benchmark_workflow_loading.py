@@ -146,7 +146,10 @@ def worker(config: dict[str, Any], *, count_only: bool = False) -> dict[str, Any
         os.environ.pop("BIOIMAGEFLOW_CORE_SOURCE", None)
         os.environ.pop("BIOIMAGEFLOW_USE_LOCAL_CORE", None)
         sys.dont_write_bytecode = True
-        sys.path.insert(0, str(ROOT / "backend" / "src"))
+        platform_root = Path(config.get("platform_root", ROOT)).resolve()
+        if not (platform_root / "backend/src/bioimageflow_server/__init__.py").is_file():
+            raise ValueError(f"Not a platform source checkout: {platform_root}")
+        sys.path.insert(0, str(platform_root / "backend" / "src"))
         import_started = time.perf_counter()
         from bioimageflow_server.models.graph import GraphState
         from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
@@ -251,6 +254,13 @@ def worker(config: dict[str, Any], *, count_only: bool = False) -> dict[str, Any
                 )
             },
             "python": sys.version, "draft_origin": draft_origin, "case": case,
+            "platform_root": str(platform_root),
+            "platform_revision": subprocess.check_output(
+                ["git", "-C", str(platform_root), "rev-parse", "HEAD"], text=True).strip(),
+            "platform_services_sha256": {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted((platform_root / "backend/src/bioimageflow_server/services").glob("*.py"))
+            },
             "imports_seconds": imports_seconds, "discovery_seconds": discovery_seconds,
             "process_start_to_first_projection_seconds": first_projection_seconds,
             "samples": [] if count_only else samples, "operation_counts": counts,
@@ -307,6 +317,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-python")
     parser.add_argument("--baseline-pythonpath")
     parser.add_argument("--candidate-pythonpath")
+    parser.add_argument("--baseline-platform-root", type=Path, default=ROOT)
+    parser.add_argument("--candidate-platform-root", type=Path, default=ROOT)
     parser.add_argument("--case", choices=("missing-runtime", "empty-cache", "populated-cache"), default="missing-runtime")
     parser.add_argument("--baseline-results", type=Path)
     parser.add_argument("--candidate-results", type=Path)
@@ -344,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
             python, pythonpath, results = variants[name]
             config = {
                 "workflow_dir": str(args.workflow_dir.resolve()), "tool_store": str(args.tool_store.resolve()),
+                "platform_root": str((args.baseline_platform_root if name == "baseline" else args.candidate_platform_root).resolve()),
                 "results": str(results.resolve()) if results else None, "case": args.case,
                 "warm_operations": warm, "max_fixture_bytes": args.max_fixture_bytes,
             }

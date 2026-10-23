@@ -78,6 +78,8 @@ def test_driver_separates_fresh_warm_and_profile_counts_without_source_writes(tm
     assert result["order"] == ["baseline", "candidate", "candidate", "baseline"]
     for name in ("baseline", "candidate"):
         assert len(result["workers"][name]) == 2
+        assert result["workers"][name][0]["platform_root"] == str(SCRIPT.parents[1])
+        assert "graph_builder.py" in result["workers"][name][0]["platform_services_sha256"]
         summary = result["summary"][name]
         assert summary["cold"]["projected_draft_seconds"]["samples"] == 2
         assert summary["warm"]["projected_draft_seconds"]["samples"] == 3
