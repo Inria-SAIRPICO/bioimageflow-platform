@@ -125,7 +125,7 @@ Tool metadata describes tool type, inputs, outputs, parameters, packages, versio
 Output metadata preserves each field's required and nullable facts from the library schema.
 Tool-store scanning and explicit package lifecycle operations admit package/version selectors through the library, ignore unsupported directory names including private installer staging, and keep genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
 Installed tools use an admitted generation selected by the exact canonical store root, package and version; installation metadata, selected controller dependency compatibility, source content and installed inherited owners are captured once and reused while that selection remains immutable.
-The workflow-loading lifecycle changes target unreleased BioImageFlow 0.9.5/Core 0.5.1 candidates under isolated validation; they do not change the normal published dependency lock.
+The normal dependency manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this workflow-loading lifecycle.
 See [Workflow Loading Performance](docs/developer/workflow-loading.md) for the admission lifetime, fixture isolation and cold/warm measurement protocol.
 Repeated workflow compilation and planning reuse those installed facts rather than walking host distributions, RECORD files or installed sources again.
 Editable and workflow-owned sources retain fresh capture for each operation, independently of watcher delivery; invocation declarations, parameters, inputs, runtime readiness and selected result-record integrity remain current checks.
@@ -286,7 +286,7 @@ Actual PyPI wheel/sdist hashes and source bytes match the admitted release cohor
 Wetlands 2.6.1 is also published and verified; platform dependency/API adoption, actual returned-array export/lifetime, T1 deterministic/real-provider/force-GUI and scoped client recovery/reopen, and I1 two-browser imported-viewer guidance are accepted with the distinct evidence limits in the current checkpoint.
 Published common-tools 0.2.2 discovery/schema certification passes on normal BioImageFlow 0.9.3, Core 0.5.0 and Wetlands 2.6.1 (eight selected cases); actual worker/science, supported OMERO, native desktop and final audited campaign certification remain separate gates.
 Arbitrary trusted Python state/dependency closure, whole merged-input provenance, external filesystem tampering and automatic pressure scheduling are explicit accepted boundaries; the campaign milestone and named remaining tasks remain open; the [current checkpoint](docs/developer/platform-test-current.md) holds source-bound proof and the remaining queue.
-The backend dependency manifest resolves published `bioimageflow[parsl,psij]==0.9.4`, Core 0.5 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout.
+The backend dependency manifest resolves published `bioimageflow[parsl,psij]==0.9.5`, Core 0.5.1 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout.
 The explicit scheduler groups replace a dependency-free `cluster` selection; installed package availability does not certify excluded distributed features.
 The Python debug launch profiles use that backend environment.
 Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
@@ -427,7 +427,7 @@ For an API change, trace the backend model and service, router, generated type, 
 The selected local-library Phase 3 milestone is technically accepted, with source selectors, normal artifact/cohort checks, actual WorkerPool results and Core OS/Python floor receipts qualified separately in the checkpoint.
 Its finite MAIN and SECONDARY obligations are complete within that scope; arbitrary trusted Python/dependency closure, external filesystem tampering, conservative merged-input provenance and automatic quota scheduling remain explicit limitations.
 These accepted library contracts do not prove platform T1/I1, published tool compatibility or desktop acceptance.
-The backend's actual lock selects normal published `bioimageflow[parsl,psij]==0.9.4`, Core 0.5.0 and Wetlands 2.6.1; the coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
+The backend's actual lock selects normal published `bioimageflow[parsl,psij]==0.9.5`, Core 0.5.1 and Wetlands 2.6.1; the coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
 The subsequent 0.9.2 pin and bundle-only export adoption has its own exact export/tamper, mapped local completion and actual returned-array acceptance, with causally unchanged frontend/schema/browser phases retained; prior failed invocations remain failed and no monolithic app/full success is inferred.
 The v1 application-owned scope release contract requires physical reader/grant drain and truthful pending/error reporting at that adoption boundary.
 

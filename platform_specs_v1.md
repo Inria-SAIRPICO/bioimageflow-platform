@@ -91,7 +91,7 @@ Installed code is held as an immutable admitted generation selected by canonical
 Its first admission captures installation metadata, selected controller dependency compatibility, source content and installed inherited implementation owners; subsequent loads and plans reuse those facts without repeating distribution inventories, installation-record walks or installed-source checks.
 Editable and workflow-local sources retain fresh capture for each operation, while parameters, bindings, runtime readiness and selected immutable result records retain their normal checks.
 Generation counters and store paths govern selection and lifetime, not scientific cache identity.
-This lifecycle integration targets unreleased BioImageFlow 0.9.5/Core 0.5.1 candidates under isolated validation; the normal platform dependency lock remains on the published cohort.
+The normal platform dependency manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this lifecycle integration.
 
 Installed file edits do not trigger hot reload or change the admitted generation.
 A controlled refresh or uninstall must retire the exact selected generation before replacement or removal, and a real store-root change preflights all affected published selections together, including packages loaded only through carried workflow bindings.

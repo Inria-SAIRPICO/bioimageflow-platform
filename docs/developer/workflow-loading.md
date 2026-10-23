@@ -1,8 +1,7 @@
 # Workflow loading performance
 
-The BioImageFlow 0.9.5 and Core 0.5.1 candidates reuse admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.
-These candidates are being validated in isolated interpreters; the normal platform lock remains on the published dependency cohort until release and adoption.
-The [optimization plan](workflow-loading-optimization-plan.md) defines the accepted scope and release gates.
+Published BioImageFlow 0.9.5 and Core 0.5.1 reuse admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.
+The normal platform manifest and lock select these releases from the package registry.
 
 ## Admission lifetime
 

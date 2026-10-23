@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow"
-version = "0.9.4"
+version = "0.9.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bioimageflow-core" },
@@ -68,9 +68,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/26/3274c7e16fe601373b3319a308f7949b3130b567cff9eb8935de21846a50/bioimageflow-0.9.4.tar.gz", hash = "sha256:f479bb651919ca0f49574ac1a334bafe23b145f286c77397d5b72cd0124dabca", size = 435830, upload-time = "2026-10-19T17:28:32.008Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/59/9c40e90760d592c95e43ea7c9f586d1da0f9c14a8b3bc42b9fb2ac8fcdd3/bioimageflow-0.9.5.tar.gz", hash = "sha256:ec8543237b57c1dbdc7e718f1e526678f415b359f1a718a23f827b955fbe6d4e", size = 438844, upload-time = "2026-10-23T20:45:34.086Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/46/7fa8b153ec09e3d2fcf0a4dc844b42adf67c2c7f6e4bab2a4367fdae2a3f/bioimageflow-0.9.4-py3-none-any.whl", hash = "sha256:09343ad2bfff38f1dd3d0f9ff28fec77c047b58e5add5c7ec50ca68602e9636f", size = 547819, upload-time = "2026-10-19T17:28:33.615Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/7c/bdebad1a179994a21bdb2b40b054601c20f067471995e68ee3cfc7c42cb8/bioimageflow-0.9.5-py3-none-any.whl", hash = "sha256:a2fb15afac1c4ce821d74f6abe773031ae707ce4bfa536f72cffdc03c61e0aac", size = 550906, upload-time = "2026-10-23T20:45:35.345Z" },
 ]
 
 [package.optional-dependencies]
@@ -83,15 +83,15 @@ psij = [
 
 [[package]]
 name = "bioimageflow-core"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/54/aa/155cd466c563f47892baf9f6cef703d223e68bebd5ec750bd06f4debbf7e/bioimageflow_core-0.5.0.tar.gz", hash = "sha256:d84c0aedfafb7126f09b7c8f43a8e37c4dcb898608d21a62f3072506b5c6d634", size = 68292, upload-time = "2026-10-07T16:40:20.467Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/ae/6b347627613a7cc51d94c8d8aec22e9e1fcf16962730453dfdb454bfd1e2/bioimageflow_core-0.5.1.tar.gz", hash = "sha256:efd7f4319f5fff2404f8276ff3c1a9f11d94056536cda5df2b6e712077eb683d", size = 70551, upload-time = "2026-10-23T20:42:28.017Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/5d/8963dc53065d5abc444d47624f32c773292000d7836f28662544e88786b3/bioimageflow_core-0.5.0-py3-none-any.whl", hash = "sha256:bdbe082304ac867da0f570470a795121053995edfbbf1486501bb611fb1efd11", size = 80530, upload-time = "2026-10-07T16:40:21.565Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/27/98cd42e9084dac08299b8ddeec4762911204630632a6c5000e7c0f0ff1a8/bioimageflow_core-0.5.1-py3-none-any.whl", hash = "sha256:d7fb35d0c0acefaabf25461cca0178d8e47f0981e961ab2d2581f229aad42cc5", size = 82643, upload-time = "2026-10-23T20:42:29.021Z" },
 ]
 
 [[package]]
@@ -137,8 +137,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioimageflow", extras = ["parsl", "psij"], specifier = "==0.9.4" },
-    { name = "bioimageflow-core", specifier = ">=0.5.0,<0.6" },
+    { name = "bioimageflow", extras = ["parsl", "psij"], specifier = "==0.9.5" },
+    { name = "bioimageflow-core", specifier = ">=0.5.1,<0.6" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.0" },
