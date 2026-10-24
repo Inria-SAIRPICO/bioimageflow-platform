@@ -2,6 +2,26 @@
 
 Published BioImageFlow 0.9.5 and Core 0.5.1 reuse admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.
 The normal platform manifest and lock select these releases from the package registry.
+These workflow measurements do not establish total application startup time: the HTTP fixture used an offline package index, an isolated Wetlands root and disabled source watchers, and navigation began after backend readiness.
+Real startup also includes catalog discovery, network refresh, existing managed-environment metadata, debugger overhead and browser initialization.
+
+Startup catalog reads resolve all tool environment paths from one fresh inventory per request, with filesystem enrichment off the event loop.
+Workflow folder discovery stops at workflow.json boundaries instead of walking saved results and tool sources, and reuses discovered paths only within the current operation.
+Neither change introduces a persistent response cache or changes scientific cache identity.
+
+A follow-up on 24 October 2026 compared the prior platform implementation at `5f3c335` with these catalog changes using the actual local workspace: five workflows, 48 tools and ten managed environment targets.
+Both implementations ran in the same normal Python 3.13 process with SDK 0.9.5/Core 0.5.1, alternating order over five unprofiled samples per operation; separate profiles counted filesystem work.
+All tree, tool metadata and format-status responses were identical, and no scientific callback ran.
+
+| Startup catalog operation | Prior median | Updated median |
+| --- | ---: | ---: |
+| Workflow tree | 381 ms | 13 ms |
+| Tool metadata with environment paths | 686 ms | 21 ms |
+| Format status | 149 ms | 12 ms |
+
+The tree profile reduced directory enumerations from 1,699 to three; the format-status profile reduced them from 1,133 to three.
+Tool metadata used one managed-environment inventory rather than 33, freshly for each request.
+These are backend catalog measurements without the VS Code debugger, not a promise that complete application startup takes the same time.
 
 ## Admission lifetime
 

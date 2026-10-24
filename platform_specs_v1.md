@@ -197,6 +197,9 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `row_consumption` | `"mapped" \| "collective" \| null` | Required metadata describing column-edge row semantics. Processing tools use `mapped` when rows are independent and `collective` when one batch operation may combine aligned rows. DataFrame tools use `null`. |
 | `environment.path` | `string` | Platform-resolved absolute managed environment location, added to a declared environment for local display and management. It is not portable tool-definition state. |
 
+`GET /tools` resolves declared environment names against one fresh public managed-environment inventory per request, including expected paths for environments not yet created.
+This filesystem work runs off the server event loop, does not provision or start workers, does not mutate registry metadata, and retains no inventory across requests.
+
 **The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
 ```json
@@ -1441,6 +1444,8 @@ Displays real-time logs streamed via WebSocket.
 Concurrent startup consumers share a workflow-tree HTTP request only while it is pending under the same catalog authority and structural generation.
 Successful metadata/catalog writes and deliberate post-mutation, workspace, migration or reconnect refreshes invalidate that pending authority; a completed response is never a persistent catalog cache.
 Tree and flat-list endpoints retain separate response contracts, bounded stale retries and request-owned loading/error state, so an older response or finalizer cannot undo accepted metadata or clear a newer refresh.
+Backend catalog and format discovery use a fresh folder walk that stops at each workflow.json boundary before inspecting workflow-owned results, sources or private state.
+One operation may reuse its own discovered paths for format checks and tree assembly; the next operation sees current filesystem content without a persistent catalog cache.
 
 The application has a persistent **Workflows** panel, analogous to the Tools
 panel. The workflow menu may expose the same commands, but the panel is the

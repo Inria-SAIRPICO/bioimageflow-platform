@@ -89,6 +89,7 @@ Closing or replacing dirty state must use the appropriate confirmation and confl
 Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
 Older saved workflows, root drafts, and nested snapshots are discovered by a write-free format scan.
+Catalog and format discovery walk workspace folders freshly and stop at workflow.json boundaries, without traversing workflow-owned results or sources; one catalog operation reuses its own path snapshot.
 They remain byte-for-byte unchanged and unavailable until the user confirms the content-derived plan; current unrelated workflows remain usable.
 Confirmation first synchronizes exact backups under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, then replaces all planned authorities through one forward-recoverable journal whose already-confirmed work is completed after restart.
 
@@ -186,6 +187,7 @@ In the main tool catalog, single-click toggles the bottom documentation panel an
 Catalog search derives a reactive index from names, display names, tags, categories and documentation words, splitting identifier word boundaries before normalization.
 It preserves all-token exact partial matching and stable catalog order, and permits one conservative whole-word edit for otherwise unmatched tokens of 4–64 characters without new wire metadata or stored search state.
 The Manage Tools inventory is independent of the catalog search query, and its tool information and actions expose each declared managed environment's location and explicit create/recreate operation.
+Tool metadata resolves all declared environment locations from one fresh public inventory per request, off the event loop, without provisioning or retaining that inventory between requests.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 
 Trusted `workflow.py` files are authoring inputs only.

@@ -1712,16 +1712,57 @@ class WorkflowStoreService:
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
 
-    def list_workflows(self) -> list[WorkflowInfo]:
+    def _workflow_catalog_paths(self) -> tuple[list[Path], list[Path]]:
+        """Fresh saved paths and folders, without entering workflow-owned trees."""
         if not self.root_dir.exists():
-            return []
+            return [], []
+        workflows: list[Path] = []
+        folders: list[Path] = []
+        pending = [self.root_dir]
+        while pending:
+            directory = pending.pop()
+            marker = directory / "workflow.json"
+            has_marker = marker.exists()
+            if has_marker:
+                workflows.append(marker)
+                if directory != self.root_dir:
+                    continue
+            if directory != self.root_dir:
+                folders.append(directory)
+            try:
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        if entry.name.startswith("."):
+                            continue
+                        path = directory / entry.name
+                        if entry.is_symlink():
+                            # Recursive Path.glob did not follow directory
+                            # links, but the tree displayed opaque folder links
+                            # unless their resolved owner was a workflow.
+                            if entry.is_dir() and not self._is_inside_workflow_dir(path):
+                                folders.append(path)
+                            elif entry.name == "workflow.json" and not has_marker:
+                                workflows.append(path)
+                        elif entry.is_dir(follow_symlinks=False):
+                            pending.append(path)
+            except OSError:
+                # Match recursive glob's handling of disappearing or unreadable
+                # catalog branches; present siblings remain discoverable.
+                continue
+        return sorted(workflows), sorted(folders)
+
+    def list_workflows(self) -> list[WorkflowInfo]:
+        paths, _folders = self._workflow_catalog_paths()
+        return self._list_workflows(paths)
+
+    def _list_workflows(self, paths: list[Path]) -> list[WorkflowInfo]:
         workflows: list[WorkflowInfo] = []
-        _plan_id, _targets, pending_ids, _scan_errors = self._plan_schema_v2_workflows()
+        _plan_id, _targets, pending_ids, _scan_errors = self._plan_schema_v2_workflows(
+            workflow_paths=paths
+        )
         names = {
             path.parent.relative_to(self.root_dir).as_posix()
-            for path in self.root_dir.glob("**/workflow.json")
-            if not path.name.startswith(".")
-            and not self._is_inside_workflow_dir(path.parent.parent)
+            for path in paths
         }
         for name in sorted(names):
             if name.startswith(".") or name in pending_ids:
@@ -1742,10 +1783,8 @@ class WorkflowStoreService:
         if not self.root_dir.exists():
             return []
         notices: list[WorkflowFormatNotice] = []
-        paths = sorted(self.root_dir.glob("**/workflow.json"))
+        paths, _folders = self._workflow_catalog_paths()
         for path in paths:
-            if self._is_inside_workflow_dir(path.parent.parent):
-                continue
             workflow_id = path.parent.relative_to(self.root_dir).as_posix()
             try:
                 with self.workflow_mutation(workflow_id):
@@ -1760,6 +1799,8 @@ class WorkflowStoreService:
 
     def _plan_schema_v2_workflows(
         self,
+        *,
+        workflow_paths: list[Path] | None = None,
     ) -> tuple[
         str | None,
         list[dict[str, Any]],
@@ -1784,11 +1825,10 @@ class WorkflowStoreService:
         if not self.root_dir.exists():
             return None, [], set(), []
 
-        paths = [
-            path
-            for path in sorted(self.root_dir.glob("**/workflow.json"))
-            if not self._is_inside_workflow_dir(path.parent.parent)
-        ]
+        paths = (
+            self._workflow_catalog_paths()[0]
+            if workflow_paths is None else workflow_paths
+        )
         raw_documents: dict[str, dict[str, Any]] = {}
         documents: dict[str, WorkflowDocument] = {}
         tool_metadata: dict[str, dict[str, dict[str, Any]]] = {}
@@ -2271,7 +2311,10 @@ class WorkflowStoreService:
         """Preview pending migrations and report invalid workflow files."""
 
         notices = list(self._workflow_format_notices)
-        plan_id, _targets, pending_ids, scan_errors = self._plan_schema_v2_workflows()
+        paths, _folders = self._workflow_catalog_paths()
+        plan_id, _targets, pending_ids, scan_errors = self._plan_schema_v2_workflows(
+            workflow_paths=paths
+        )
         notices.extend(scan_errors)
         notices.extend(
             WorkflowFormatNotice(
@@ -2282,14 +2325,11 @@ class WorkflowStoreService:
             )
             for workflow_id in sorted(pending_ids)
         )
-        if self.root_dir.exists():
-            for path in sorted(self.root_dir.glob("**/workflow.json")):
-                if self._is_inside_workflow_dir(path.parent.parent):
-                    continue
-                workflow_id = path.parent.relative_to(self.root_dir).as_posix()
-                issue = workflow_format_error(path, workflow_id)
-                if issue is not None and workflow_id not in pending_ids:
-                    notices.append(issue)
+        for path in paths:
+            workflow_id = path.parent.relative_to(self.root_dir).as_posix()
+            issue = workflow_format_error(path, workflow_id)
+            if issue is not None and workflow_id not in pending_ids:
+                notices.append(issue)
         return WorkflowFormatStatus(notices=notices, pending_plan_id=plan_id)
 
     def ensure_workflow_format_current(self, name: str) -> None:
@@ -2316,19 +2356,15 @@ class WorkflowStoreService:
             folders[path] = folder
             return folder
 
-        for workflow in self.list_workflows():
+        paths, catalog_folders = self._workflow_catalog_paths()
+        for workflow in self._list_workflows(paths):
             folder = ensure_folder(workflow.folder)
             folder.workflows.append(workflow)
             folder.workflows.sort(key=lambda item: item.display_name.lower())
 
-        if self.root_dir.exists():
-            for path in self.root_dir.glob("**"):
-                if not path.is_dir() or path == self.root_dir:
-                    continue
-                if self._is_inside_workflow_dir(path):
-                    continue
-                rel = path.relative_to(self.root_dir).as_posix()
-                ensure_folder(rel)
+        for path in catalog_folders:
+            rel = path.relative_to(self.root_dir).as_posix()
+            ensure_folder(rel)
         return root
 
     def _folder_path(self, path: str) -> Path:

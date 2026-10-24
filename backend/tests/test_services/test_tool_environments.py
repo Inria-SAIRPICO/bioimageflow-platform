@@ -212,6 +212,41 @@ async def test_location_reports_existing_and_expected_managed_paths(tmp_path: Pa
     assert service.location("new-env") == str((env_path.parent / "new-env").resolve())
 
 
+async def test_locations_uses_one_fresh_inventory_and_exact_environment_names(tmp_path: Path) -> None:
+    env_path = tmp_path / "environments" / "cellpose-env"
+    managed = MagicMock(wraps=_FakeWetlandsManager(env_path))
+    managed.environments_root = env_path.parent
+    wetlands = _FakeWetlandsWrapper(managed)
+    service = ToolEnvironmentService(
+        registry=_registry(), wetlands_manager=wetlands, managed_environment_manager=managed,
+    )
+
+    assert service.locations(["cellpose-env", "new-env", "CELLPOSE-ENV", "cellpose-env"]) == {
+        "cellpose-env": str(env_path.resolve()),
+        "new-env": str((env_path.parent / "new-env").resolve()),
+        "CELLPOSE-ENV": str((env_path.parent / "CELLPOSE-ENV").resolve()),
+    }
+    assert managed.managed_environments.call_count == 1
+    relocated = tmp_path / "current-environment"
+    managed.managed_environments.return_value = (SimpleNamespace(name="cellpose-env", path=relocated),)
+    assert service.location("cellpose-env") == str(relocated.resolve())
+    assert managed.managed_environments.call_count == 2
+    assert wetlands.get_calls == []
+    assert wetlands.admit_calls == []
+
+
+async def test_empty_locations_does_not_construct_environment_manager() -> None:
+    class LazyService(ToolEnvironmentService):
+        @property
+        def manager(self) -> Any:
+            pytest.fail("An empty catalog must not construct an environment manager")
+
+    service = LazyService(registry=_registry())
+    assert service.locations([]) == {}
+    assert service._managed_environments is None
+    assert service._wetlands is None
+
+
 async def test_recreate_uses_public_managed_replacement_path(tmp_path: Path) -> None:
     wetlands = _FakeWetlandsWrapper(_FakeWetlandsManager(tmp_path / "cellpose-env"))
     wetlands._envs["cellpose-env"] = wetlands._env
