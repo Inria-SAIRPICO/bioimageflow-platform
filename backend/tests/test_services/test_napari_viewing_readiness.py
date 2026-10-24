@@ -229,9 +229,47 @@ def test_no_declaration_is_covered_but_unknown_and_stale_are_not() -> None:
         "covered_outputs": 1,
         "not_covered_outputs": 0,
         "unknown_outputs": 2,
-        "outputs_needing_setup": 2,
-        "message": "2 outputs need viewer setup",
+        "outputs_needing_setup": 1,
+        "message": "1 output needs viewer setup; viewing requirements are unknown for 1 output",
     }
+
+
+def test_unknown_tool_metadata_counts_nodes_without_requesting_viewer_setup() -> None:
+    environments = _PassiveEnvironments([])
+    manifest = ViewingRequirementsManifest(
+        complete=False,
+        outputs={
+            f"node-{index}::tool-output/*": ViewingRequirementEntry(
+                status="unknown", reason="Tool declaration is unavailable",
+            )
+            for index in range(4)
+        },
+    )
+
+    response = _resolver(environments).viewing_readiness(manifest)
+
+    assert response.summary.outputs_needing_setup == 0
+    assert response.summary.unknown_outputs == 4
+    assert response.summary.message == "Viewing requirements are unknown for 4 nodes"
+    assert response.groups == []
+    assert all(output.reason == "manifest_unknown" for output in response.outputs)
+    assert environments.install_calls == 0
+    assert environments.launch_calls == 0
+
+
+def test_unknown_metadata_summary_distinguishes_nodes_and_specific_outputs() -> None:
+    manifest = ViewingRequirementsManifest(
+        complete=False,
+        outputs={
+            identity: ViewingRequirementEntry(status="unknown", reason="Metadata unavailable")
+            for identity in ("node::tool-output/*", "other::tool-output/image")
+        },
+    )
+
+    response = _resolver(_PassiveEnvironments([])).viewing_readiness(manifest)
+
+    assert response.summary.outputs_needing_setup == 0
+    assert response.summary.message == "Viewing requirements are unknown for 1 node and 1 output"
 
 
 def test_reader_only_and_recommended_only_are_covered_with_stale_inventory() -> None:

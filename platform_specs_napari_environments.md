@@ -200,6 +200,8 @@ Export also carries a derived, versioned viewing-requirement manifest keyed by s
 This manifest is an export snapshot, not a second editable requirement store.
 After dependencies load, compare it with authoritative tool/graph metadata and report unresolved or changed declarations before declaring coverage.
 Missing or unresolvable tool metadata must produce “requirements unknown,” not an empty list and a green report.
+Saved-workflow inspection uses the same request-local compiler, workflow-owned source bundle and selected package store as normal loading, without cache planning, runtime provisioning or scientific execution.
+Construction errors remain explicit unknown diagnostics even when validation-only construction returns an empty diagnostic workflow.
 
 This required a coordinated library schema/API change: the strict graph/archive models rejected unsupported extra fields before that change.
 Do not hide the feature in unknown graph keys, environment labels, package execution requirements, or a platform-only archive that the library cannot preserve.
@@ -448,6 +450,9 @@ Two required packages installed in different environments do not satisfy one out
 Conversely, two incompatible package sets used by different outputs are acceptable when separate environments cover them.
 Reader IDs, manifest discovery, enabled flags, and actual plugin loading do not participate in this passive check; any resulting failure is reported when napari handles the selected open request.
 Summaries should say “2 outputs need viewer setup,” rather than claiming that the workflow cannot run.
+That setup count includes only uncovered known requirement groups, including groups whose installed inventory cannot yet be verified; unknown manifest/tool metadata is counted and described separately.
+An unknown node wildcard identifies an unresolved node, not a known single output.
+Unknown-only guidance preserves its tool/source diagnostics and repair advice without Manage/attach or Create environment actions; those actions require a known viewer requirement group.
 
 For each uncovered requirement set, offer:
 

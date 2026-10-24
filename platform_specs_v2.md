@@ -473,6 +473,8 @@ OpenAPI is the sole normative frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
 Workflow-draft routes and response models are also generated; the remaining handwritten draft response/conflict shapes in `frontend/src/api/workflowDrafts.ts` are transitional debt to remove, not an additional contract authority.
 `POST /api/v1/napari/viewing-readiness` accepts a `ViewingRequirementsManifest` directly, including the exact manifest returned after import, and returns the backend-authoritative desktop-only passive compatibility report without rereading workflow state.
+Unknown manifest metadata remains a separate diagnostic category and does not contribute to outputs_needing_setup; unknown inventory for a known requirement group still requires viewer verification.
+Saved viewing inspection derives the manifest through the normal source-aware graph compiler and preserves actual construction diagnostics instead of treating an empty failed construction as complete metadata.
 The report preserves every structural output identity and declaration or unknown reason, shares registered-inventory candidate evaluation with retained-artifact resolution, and returns independent normalized requirement groups with managed-create prefill rather than unioning incompatible output needs.
 `POST /api/v1/editor/open-node` identifies the workflow ID and identity generation, the accepted revision, the node ID, and an optional nested session UUID.
 It resolves the addressed node's actual source and rejects stale or missing identities instead of falling back to the global registry for bound local sources.

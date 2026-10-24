@@ -41,6 +41,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowUpdate,
     WorkspaceWorkflowMetadata,
     ViewingRequirementsManifest,
+    ViewingRequirementEntry,
     validate_workflow_id,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
@@ -2780,18 +2781,47 @@ class WorkflowStoreService:
     def viewing_requirements(self, name: str) -> ViewingRequirementsManifest:
         """Inspect recursive viewing readiness without installing packages."""
 
-        from bioimageflow import Workflow
+        from bioimageflow_server.services.graph_compiler import GraphCompiler
 
         document = WorkflowDocument.model_validate(self._read_raw(name))
-        library = graph_state_to_lib_dict(document.graph, self.tool_registry).lib_dict
-        workflow, _errors = Workflow.from_dict(
-            library,
+        compiled = GraphCompiler(self.tool_registry).compile(
+            document.graph,
             storage_path=self.get_storage_path(name),
-            validate_only=True,
-            partial=True,
-            auto_install=False,
         )
-        return ViewingRequirementsManifest.model_validate(workflow.viewing_requirements().to_dict())
+
+        def inspection_reason(scope: str) -> str | None:
+            details = list(dict.fromkeys(
+                f"{error.node}: {error.detail}" if error.node else error.detail
+                for error in compiled.errors
+                if error.node is None or error.node == scope
+                or error.node.startswith(scope + "/")
+                or scope.startswith(error.node + "/")
+            ))
+            return "Tool metadata could not be inspected: " + "; ".join(details) if details else None
+
+        # Validation-only construction can return an empty diagnostic workflow
+        # with errors when source loading fails before any node materializes.
+        if compiled.workflow is None or (compiled.errors and not compiled.workflow.nodes):
+            outputs = {
+                f"{node.id}::tool-output/*": ViewingRequirementEntry(
+                    status="unknown",
+                    reason=inspection_reason(node.id) or "Workflow tool metadata could not be loaded.",
+                )
+                for node in document.graph.nodes
+            }
+            if not outputs:
+                raise RuntimeError(inspection_reason("") or "Workflow metadata inspection failed")
+            return ViewingRequirementsManifest(complete=False, outputs=outputs)
+
+        manifest = ViewingRequirementsManifest.model_validate(
+            compiled.workflow.viewing_requirements().to_dict()
+        )
+        for identity, entry in manifest.outputs.items():
+            if entry.status == "unknown":
+                reason = inspection_reason(identity.split("::", 1)[0])
+                if reason:
+                    entry.reason = reason
+        return manifest
 
     @_identity_locked
     def save_workflow(self, name: str, data: WorkflowSaveBody) -> WorkflowInfo:

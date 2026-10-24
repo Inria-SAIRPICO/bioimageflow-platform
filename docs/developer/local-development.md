@@ -125,12 +125,12 @@ Changing installed controller dependencies requires a backend restart.
 The Tools Panel's package-index Refresh updates release availability, not installed executable code.
 Tool-store installation uses `--no-deps`: declarations and DataFrame tools import compatible dependencies already supplied by the controller environment, while ProcessingTool recipes provision worker dependencies separately during execution preparation.
 
-The normal manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this generation lifecycle.
+The normal manifest and lock select published BioImageFlow 0.9.6/Core 0.5.1 with this generation lifecycle.
 The [workflow loading guide](workflow-loading.md) describes the benchmark and the remaining per-operation checks.
 
 ## Use local BioImageFlow source
 
-The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.5`, Core 0.5.1 and Wetlands 2.6.1 from the registry.
+The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1 from the registry.
 A sibling library checkout is optional and is not required by ordinary development or CI.
 Sync and validate the normal published environment with:
 

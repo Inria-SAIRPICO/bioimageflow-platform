@@ -412,9 +412,21 @@ class NapariResolverService:
         covered = sum(output.status == "covered" for output in outputs)
         not_covered = sum(output.status == "not_covered" for output in outputs)
         unknown = sum(output.status == "unknown" for output in outputs)
-        needs_setup = not_covered + unknown
+        needs_setup = sum(output.status != "covered" and output.group_id is not None for output in outputs)
         noun = "output" if needs_setup == 1 else "outputs"
         verb = "needs" if needs_setup == 1 else "need"
+        message = f"{needs_setup} {noun} {verb} viewer setup"
+        unknown_metadata = [output for output in outputs if output.status == "unknown" and output.group_id is None]
+        if unknown_metadata:
+            nodes = sum(output.output_identity.endswith("::tool-output/*") for output in unknown_metadata)
+            fields = len(unknown_metadata) - nodes
+            quantities = []
+            if nodes:
+                quantities.append(f"{nodes} {'node' if nodes == 1 else 'nodes'}")
+            if fields:
+                quantities.append(f"{fields} {'output' if fields == 1 else 'outputs'}")
+            unknown_message = f"Viewing requirements are unknown for {' and '.join(quantities)}"
+            message = f"{message}; {unknown_message[0].lower()}{unknown_message[1:]}" if needs_setup else unknown_message
         return NapariViewingReadinessResponse(
             manifest_schema=manifest.schema_,
             manifest_complete=manifest.complete,
@@ -424,7 +436,7 @@ class NapariResolverService:
                 not_covered_outputs=not_covered,
                 unknown_outputs=unknown,
                 outputs_needing_setup=needs_setup,
-                message=f"{needs_setup} {noun} {verb} viewer setup",
+                message=message,
             ),
             outputs=outputs,
             groups=list(groups_by_id.values()),

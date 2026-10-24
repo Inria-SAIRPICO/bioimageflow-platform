@@ -27,9 +27,9 @@ const unknown = computed(() => (props.report?.outputs ?? []).filter(output => ou
       <button type="button" aria-label="Dismiss viewing guidance" @click="$emit('dismiss')">Continue configuring later</button>
     </div>
     <details v-if="report && (groups.length || unknown.length)">
-      <summary>Viewer setup details</summary>
+      <summary>{{ groups.length ? 'Viewer setup details' : 'Tool/source details' }}</summary>
       <div class="guidance-details">
-        <p v-if="!report.manifest_complete">The viewing snapshot is incomplete. Unknown metadata needs manual review.</p>
+        <p v-if="!report.manifest_complete">The viewing snapshot is incomplete. Review the tool/source diagnostics for unavailable metadata.</p>
         <article v-for="(group, index) in groups" :key="group.id">
           <strong>Requirement set {{ index + 1 }}</strong>
           <p>Outputs: {{ (group.members ?? []).join(', ') }}</p>
@@ -50,8 +50,11 @@ const unknown = computed(() => (props.report?.outputs ?? []).filter(output => ou
           <strong>{{ output.output_identity }} — Unknown viewing requirements</strong>
           <p>{{ output.manifest_reason || output.effective_reason }}</p>
         </article>
-        <p>Refresh or repair registered environments, or attach an existing installation. Unknown or private packages may need manual setup in an external environment; verify their source before installation.</p>
-        <button type="button" @click="$emit('manage')">Manage/attach environments</button>
+        <p v-if="unknown.length">Check the tool/source diagnostics for missing tools or unavailable output metadata before choosing a viewer environment.</p>
+        <template v-if="groups.length">
+          <p>Refresh or repair registered environments, or attach an existing installation. Unknown or private packages may need manual setup in an external environment; verify their source before installation.</p>
+          <button type="button" @click="$emit('manage')">Manage/attach environments</button>
+        </template>
       </div>
     </details>
   </section>

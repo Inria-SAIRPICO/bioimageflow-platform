@@ -17,7 +17,7 @@ test.afterEach(async ({ page }) => {
   }
 })
 
-async function archiveFixture(page: Page, reader = 'unavailable-reader') {
+async function archiveFixture(page: Page, reader = 'unavailable-reader', unknownOnly = false) {
   const name = `viewing_import_${test.info().project.name}_${Date.now()}`
   expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
   expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
@@ -49,13 +49,14 @@ for node in document['workflow']['nodes']:
 manifest = document['viewing_requirements']
 identity = next(identity for identity in manifest['outputs'] if identity.endswith('/label'))
 manifest['complete'] = False
-manifest['outputs'][identity] = {'status': 'unknown', 'viewer': None, 'reason': 'Exporter could not resolve viewer metadata for this output.'}
+for key in manifest['outputs'] if sys.argv[1] == '1' else [identity]:
+    manifest['outputs'][key] = {'status': 'unknown', 'viewer': None, 'reason': 'Exporter could not resolve viewer metadata for this output.'}
 files['workflow.json'] = json.dumps(document).encode()
 result = io.BytesIO()
 with zipfile.ZipFile(result, 'w') as archive:
     for name, content in files.items(): archive.writestr(name, content)
 sys.stdout.buffer.write(result.getvalue())
-`], { input: await exported.body() })
+`, unknownOnly ? '1' : '0'], { input: await exported.body() })
   expect((await page.request.delete(`${API}/workflows/${name}`)).ok()).toBeTruthy()
   return { name, buffer, reader }
 }
@@ -137,13 +138,13 @@ test('import viewing guidance groups actual missing and unknown requirements whi
   const response = await readiness
   expect(response.ok(), await response.text()).toBeTruthy()
   const report = await response.json() as NapariViewingReadinessResponse
-  expect(report.summary).toMatchObject({ not_covered_outputs: 2, unknown_outputs: 1, covered_outputs: 1, outputs_needing_setup: 3 })
+  expect(report.summary).toMatchObject({ not_covered_outputs: 2, unknown_outputs: 1, covered_outputs: 1, outputs_needing_setup: 2 })
   expect(report.groups).toHaveLength(1)
   expect(report.groups[0]!.members).toEqual(['first::tool-output/number', 'second::tool-output/number'])
   expect(imported.viewing_requirements?.complete).toBe(false)
   const guidance = page.getByTestId('viewing-guidance')
   await expect(guidance).toContainText(archive.name)
-  await expect(guidance).toContainText('3 outputs need viewer setup')
+  await expect(guidance).toContainText('2 outputs need viewer setup; viewing requirements are unknown for 1 output')
   await expect(guidance).toContainText('Workflow execution is unaffected.')
   await guidance.getByText('Viewer setup details', { exact: true }).click()
   await expect(guidance).toContainText('first::tool-output/number, second::tool-output/number')
@@ -157,6 +158,27 @@ test('import viewing guidance groups actual missing and unknown requirements whi
   await page.getByTestId('settings-close').click()
   await guidance.getByRole('button', { name: 'Dismiss viewing guidance', exact: true }).click()
   await expect(guidance).toHaveCount(0)
+  await runImported(page, archive.name, imported)
+  expect(mutations).toEqual([])
+})
+
+test('import with only unknown metadata shows source diagnostics without viewer setup actions', async ({ page }) => {
+  const archive = await archiveFixture(page, 'unavailable-reader', true)
+  const mutations = observeViewerMutations(page)
+  const readiness = page.waitForResponse(response => response.url().endsWith('/napari/viewing-readiness'))
+  await page.goto('/')
+  const imported = await importInGui(page, archive)
+  const report = await (await readiness).json() as NapariViewingReadinessResponse
+  expect(report.summary).toMatchObject({ outputs_needing_setup: 0, unknown_outputs: 4 })
+  expect(report.groups).toEqual([])
+  const guidance = page.getByTestId('viewing-guidance')
+  await expect(guidance).toContainText('Viewing requirements are unknown for 4 outputs')
+  await expect(guidance).toContainText('Workflow execution is unaffected.')
+  await guidance.getByText('Tool/source details', { exact: true }).click()
+  await expect(guidance).toContainText('Exporter could not resolve viewer metadata for this output.')
+  await expect(guidance).toContainText('Check the tool/source diagnostics')
+  await expect(guidance.getByRole('button', { name: 'Manage/attach environments' })).toHaveCount(0)
+  await expect(guidance.getByRole('button', { name: 'Create environment for this set' })).toHaveCount(0)
   await runImported(page, archive.name, imported)
   expect(mutations).toEqual([])
 })

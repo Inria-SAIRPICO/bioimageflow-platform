@@ -1,6 +1,6 @@
 # Workflow loading performance
 
-Published BioImageFlow 0.9.5 and Core 0.5.1 reuse admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.
+Published BioImageFlow 0.9.6 and Core 0.5.1 reuse admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.
 The normal platform manifest and lock select these releases from the package registry.
 These workflow measurements do not establish total application startup time: the HTTP fixture used an offline package index, an isolated Wetlands root and disabled source watchers, and navigation began after backend readiness.
 Real startup also includes catalog discovery, network refresh, existing managed-environment metadata, debugger overhead and browser initialization.
