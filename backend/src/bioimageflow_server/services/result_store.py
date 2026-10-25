@@ -32,6 +32,16 @@ DATAFRAME_RESULT_METADATA_ATTR = "bioimageflow_result_metadata"
 class ResultDataNotReadyError(Exception):
     """Raised when a node cache file exists but is not yet readable."""
 
+    retryable = True
+    code = "result_pending"
+
+
+class ResultDataUnavailableError(ResultDataNotReadyError):
+    """A rejected result cannot become readable by waiting for publication."""
+
+    retryable = False
+    code = "result_unavailable"
+
 
 @dataclass(frozen=True)
 class ResultColumnMetadata:
@@ -49,7 +59,7 @@ def dataframe_result_metadata(dataframe: pd.DataFrame) -> ResultColumnMetadata |
     if not isinstance(metadata, ResultColumnMetadata) or metadata.identity != dataframe.attrs.get(
         DATAFRAME_RESULT_IDENTITY_ATTR,
     ):
-        raise ResultDataNotReadyError("Captured result metadata identity does not match")
+        raise ResultDataUnavailableError("Captured result metadata identity does not match")
     return metadata
 
 
@@ -121,7 +131,7 @@ def _retained_output_types(retained: RunNodeResult) -> dict[str, str]:
         schema = serialize_output_schema(holder)
         return {name: schema[name]["type"] for name in names}
     except (KeyError, TypeError, ValueError) as exc:
-        raise ResultDataNotReadyError("Captured output declaration is unavailable") from exc
+        raise ResultDataUnavailableError("Captured output declaration is unavailable") from exc
 
 
 class ResultStoreService:
@@ -166,33 +176,40 @@ class ResultStoreService:
             # record-link path, but cannot be used for exact viewer opening.
             return None
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ResultDataNotReadyError(
+            raise ResultDataUnavailableError(
                 f"Output metadata for node '{node_id}' is not ready"
             ) from exc
         run_id = payload.get("run_id") if isinstance(payload, dict) else None
         node_key = payload.get("node_key") if isinstance(payload, dict) else None
         if not isinstance(run_id, str) or node_key != node_id:
-            raise ResultDataNotReadyError(f"Output metadata for node '{node_id}' is not ready")
+            raise ResultDataUnavailableError(f"Output metadata for node '{node_id}' is not ready")
         try:
             safe_run_id = validate_relative_posix_path(run_id)
             validate_relative_posix_path(node_key)
         except ValueError as exc:
-            raise ResultDataNotReadyError(
+            raise ResultDataUnavailableError(
                 f"Output metadata for node '{node_id}' is not ready"
             ) from exc
         if "/" in safe_run_id:
-            raise ResultDataNotReadyError(f"Output metadata for node '{node_id}' is not ready")
+            raise ResultDataUnavailableError(f"Output metadata for node '{node_id}' is not ready")
         try:
             expected_view = storage.run_node_dir(safe_run_id, node_key).resolve()
         except (ValueError, OSError, RuntimeError) as exc:
-            raise ResultDataNotReadyError(
+            raise ResultDataUnavailableError(
                 f"Output metadata for node '{node_id}' is not ready"
             ) from exc
         if node_view != expected_view:
-            raise ResultDataNotReadyError(f"Output metadata for node '{node_id}' is not ready")
+            raise ResultDataUnavailableError(f"Output metadata for node '{node_id}' is not ready")
         try:
             retained = storage.read_run_node_result(safe_run_id, node_key)
-        except (CacheCorruptionError, FileNotFoundError, OSError) as exc:
+        except CacheCorruptionError as exc:
+            raise ResultDataUnavailableError(
+                f"Saved output for node '{node_id}' cannot be read: {exc} "
+                "It may use an unsupported cache format or have failed validation. "
+                "Re-run this node and its required upstream nodes to regenerate the output. "
+                "Existing result files have been kept."
+            ) from exc
+        except (FileNotFoundError, OSError) as exc:
             raise ResultDataNotReadyError(
                 f"Output data for node '{node_id}' is not ready"
             ) from exc
@@ -215,20 +232,24 @@ class ResultStoreService:
             safe_run_id = validate_relative_posix_path(identity.run_id)
             validate_relative_posix_path(identity.node_key)
         except ValueError as exc:
-            raise ResultDataNotReadyError("Captured result identity is invalid") from exc
+            raise ResultDataUnavailableError("Captured result identity is invalid") from exc
         if "/" in safe_run_id:
-            raise ResultDataNotReadyError("Captured result identity is invalid")
+            raise ResultDataUnavailableError("Captured result identity is invalid")
         try:
             retained = Storage(self._root(storage_path)).read_run_node_result(
                 identity.run_id, identity.node_key
             )
-        except (CacheCorruptionError, FileNotFoundError, OSError) as exc:
+        except CacheCorruptionError as exc:
+            raise ResultDataUnavailableError(
+                f"Saved result cannot be read: {exc} Re-run the affected node to regenerate its output."
+            ) from exc
+        except (FileNotFoundError, OSError) as exc:
             raise ResultDataNotReadyError("Captured result is not ready") from exc
         if (
             retained.result_key != identity.result_key
             or retained.record_id != identity.record_id
         ):
-            raise ResultDataNotReadyError("Captured result identity no longer matches")
+            raise ResultDataUnavailableError("Captured result identity no longer matches")
         return retained
 
     def load_result_dataframe(
@@ -249,7 +270,12 @@ class ResultStoreService:
             dataframe = Storage(self._root(storage_path)).load_record_dataframe(
                 identity.result_key, identity.record_id
             )
-        except (CacheCorruptionError, FileNotFoundError, OSError, pa.ArrowInvalid) as exc:
+        except (CacheCorruptionError, pa.ArrowInvalid) as exc:
+            raise ResultDataUnavailableError(
+                f"Saved output for node '{identity.node_key}' failed validation: {exc} "
+                "Re-run the affected node to regenerate its output."
+            ) from exc
+        except (FileNotFoundError, OSError) as exc:
             raise ResultDataNotReadyError(
                 f"Output data for node '{identity.node_key}' is not ready"
             ) from exc
@@ -312,7 +338,11 @@ class ResultStoreService:
             return None
         try:
             df = cache_load(data_path)
-        except (OSError, pd.errors.EmptyDataError, pa.ArrowInvalid) as exc:
+        except pa.ArrowInvalid as exc:
+            raise ResultDataUnavailableError(
+                f"Saved output for node '{node_id}' is unreadable: {exc}"
+            ) from exc
+        except (OSError, pd.errors.EmptyDataError) as exc:
             raise ResultDataNotReadyError(
                 f"Output data for node '{node_id}' is not ready"
             ) from exc
@@ -384,7 +414,7 @@ class ResultStoreService:
         try:
             payload = json.loads(result_path.read_text())
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ResultDataNotReadyError(
+            raise ResultDataUnavailableError(
                 f"Output metadata for node '{node_id}' is not ready"
             ) from exc
         canonical = payload.get("canonical")
@@ -415,7 +445,7 @@ class ResultStoreService:
         try:
             payload = json.loads(link_path.read_text())
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise ResultDataNotReadyError(
+            raise ResultDataUnavailableError(
                 f"Output link '{link_path}' is not ready"
             ) from exc
         if (
@@ -423,21 +453,21 @@ class ResultStoreService:
             or payload.get("schema") != "bioimageflow.link.v1"
             or payload.get("kind") != "directory"
         ):
-            raise ResultDataNotReadyError(f"Output link '{link_path}' is not ready")
+            raise ResultDataUnavailableError(f"Output link '{link_path}' is not ready")
         target = payload.get("target")
         if not isinstance(target, str) or not target:
-            raise ResultDataNotReadyError(f"Output link '{link_path}' is not ready")
+            raise ResultDataUnavailableError(f"Output link '{link_path}' is not ready")
         return self._resolve_relative(link_path.parent, target, root)
 
     @staticmethod
     def _resolve_relative(base: Path, target: str, root: Path) -> Path:
         try:
             if Path(target).is_absolute():
-                raise ResultDataNotReadyError("Output link target must be relative")
+                raise ResultDataUnavailableError("Output link target must be relative")
             target_path = (base / target).resolve()
             target_path.relative_to(root.resolve())
         except (ValueError, OSError, RuntimeError) as exc:
-            raise ResultDataNotReadyError("Output link target is not ready") from exc
+            raise ResultDataUnavailableError("Output link target is not ready") from exc
         return target_path
 
     @staticmethod

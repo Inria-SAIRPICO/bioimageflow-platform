@@ -177,6 +177,12 @@ function errorStatus(exc: unknown): number | null {
   return null
 }
 
+function isRetryableResultConflict(exc: unknown): boolean {
+  if (errorStatus(exc) !== 409) return false
+  const response = (exc as { response?: { data?: { error?: unknown } } }).response
+  return response?.data?.error === 'result_pending'
+}
+
 function isCanceled(exc: unknown): boolean {
   const maybeCanceled = exc as { name?: string; code?: string }
   return maybeCanceled.name === 'CanceledError' || maybeCanceled.code === 'ERR_CANCELED'
@@ -289,7 +295,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
       }
     } catch (exc: unknown) {
       if (!isCanceled(exc) && !context.released && context.projectionRequestId === requestId) {
-        if (errorStatus(exc) === 409 && retryAttempt < NOT_READY_RETRY_DELAYS_MS.length) {
+        if (isRetryableResultConflict(exc) && retryAttempt < NOT_READY_RETRY_DELAYS_MS.length) {
           retryScheduled = true
           const timer = setTimeout(() => {
             if (context.projectionRetryTimer === timer) context.projectionRetryTimer = null
@@ -513,7 +519,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     } catch (exc: unknown) {
       if (!isCanceled(exc) && isCurrentRequest(context, nodeId, requestId)) {
         const message = errorMessage(exc)
-        if (errorStatus(exc) === 409) {
+        if (isRetryableResultConflict(exc)) {
           delete context.state.nodeDataCache[nodeId]
           scheduleNotReadyRetry(
             context,

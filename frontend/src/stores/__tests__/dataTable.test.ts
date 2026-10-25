@@ -98,7 +98,7 @@ describe('dataTable store canvas ownership', () => {
     expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe('/a.csv')
 
     mockedPost.mockRejectedValueOnce({
-      response: { status: 409, data: { detail: 'B is preparing' } },
+      response: { status: 409, data: { error: 'result_pending', detail: 'B is preparing' } },
     })
     await store.fetchCanvasNodeData(canvasB, 'shared', {
       page: 8,
@@ -157,7 +157,7 @@ describe('dataTable store canvas ownership', () => {
         attemptsA += 1
         if (attemptsA === 1) {
           return Promise.reject({
-            response: { status: 409, data: { detail: 'A is preparing' } },
+            response: { status: 409, data: { error: 'result_pending', detail: 'A is preparing' } },
           }) as any
         }
         return Promise.resolve({ data: response('/retried-a.csv', 0) }) as any
@@ -401,7 +401,7 @@ describe('dataTable store canvas ownership', () => {
     canvasSessionRegistry.activate(canvasA)
     const store = useDataTableStore()
     mockedPost
-      .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Preparing data' } } })
+      .mockRejectedValueOnce({ response: { status: 409, data: { error: 'result_pending', detail: 'Preparing data' } } })
       .mockResolvedValueOnce({ data: {
         mode: 'merged',
         sources: [],
@@ -423,6 +423,34 @@ describe('dataTable store canvas ownership', () => {
     expect(mockedPost).toHaveBeenCalledTimes(2)
     expect(store.projection?.mode).toBe('merged')
     expect(store.projectionLoading).toBe(false)
+  })
+
+  it('shows permanent consolidated conflicts immediately without polling', async () => {
+    vi.useFakeTimers()
+    const [canvas] = registerCanvases()
+    canvasSessionRegistry.activate(canvas)
+    mockedPost.mockRejectedValue({ response: { status: 409, data: { error: 'result_unavailable', detail: 'Unsupported saved result; re-run this node' } } })
+    const store = useDataTableStore()
+    await store.fetchProjection({
+      workflow_id: 'a', sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
+    })
+    expect(store.projectionLoading).toBe(false)
+    expect(store.projectionError).toBe('Unsupported saved result; re-run this node')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows permanent individual conflicts immediately without polling', async () => {
+    vi.useFakeTimers()
+    const [canvas] = registerCanvases()
+    mockedPost.mockRejectedValue({ response: { status: 409, data: { detail: 'Captured result identity no longer matches' } } })
+    const store = useDataTableStore()
+    await store.fetchCanvasNodeData(canvas, 'node', { workflowName: 'a' })
+    expect(store.isCanvasPending(canvas, 'node')).toBe(false)
+    expect(store.isCanvasLoading(canvas, 'node')).toBe(false)
+    expect(store.getCanvasError(canvas, 'node')).toBe('Captured result identity no longer matches')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 
   it('downloads merged CSV with the current source and sort contract', async () => {

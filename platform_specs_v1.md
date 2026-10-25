@@ -1388,6 +1388,9 @@ A collapsible section at the bottom of the Node Panel that shows the tool's docu
 ### 3.6 Node Data (Bottom Panel, Tab 1)
 
 The "No output data for node" message is an informational empty state, styled blue in individual and consolidated tables.
+HTTP 409 result conflicts use the existing ErrorResponse envelope with error=result_pending for transient publication and error=result_unavailable for rejected identity, metadata, format or record validation.
+Individual and consolidated tables use bounded retries only for result_pending; permanent and unclassified conflicts stop loading and show their diagnostic immediately, without automatic polling.
+Unsupported saved cache formats retain their files and explain that compatible output must be regenerated; opening a table never rewrites or discards those results.
 
 Displays the output DataFrames of selected nodes in a tabular view.
 

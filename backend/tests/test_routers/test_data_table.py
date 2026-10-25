@@ -60,6 +60,20 @@ async def test_query_returns_merged_contract() -> None:
     assert body["unfiltered_total_rows"] == 1
 
 
+@pytest.mark.parametrize("retryable", [False, True])
+async def test_result_conflict_only_requests_retry_for_pending_publication(retryable: bool) -> None:
+    from bioimageflow_server.services.result_store import ResultDataNotReadyError, ResultDataUnavailableError
+
+    store = configured_store({})
+    error = ResultDataNotReadyError if retryable else ResultDataUnavailableError
+    store.capture_latest_result_identity.side_effect = error("Saved output validation failed")
+    async with await client_for(store) as client:
+        response = await client.post("/api/v1/data-table/query", json=payload())
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Saved output validation failed"
+    assert response.json()["error"] == ("result_pending" if retryable else "result_unavailable")
+
+
 async def test_query_defaults_to_250_rows() -> None:
     store = configured_store({
         "a": pd.DataFrame({"x": range(300)}, index=[f"r{i}" for i in range(300)]),

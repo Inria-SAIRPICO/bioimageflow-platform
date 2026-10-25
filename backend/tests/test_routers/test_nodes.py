@@ -264,6 +264,7 @@ async def test_get_node_data_returns_409_when_cache_not_ready() -> None:
 
     assert resp.status_code == 409
     assert "not ready" in resp.json()["detail"]
+    assert resp.json()["error"] == "result_pending"
 
 
 async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt() -> None:
@@ -286,6 +287,7 @@ async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt
 
     assert response.status_code == 409
     assert "metadata identity does not match" in response.json()["detail"]
+    assert response.json()["error"] == "result_unavailable"
     store.result_viewers.assert_not_called()
 
 

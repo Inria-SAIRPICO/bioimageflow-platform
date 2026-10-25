@@ -73,10 +73,21 @@ class ${toolName}(DataFrameTool):
     const node = page.locator('.vue-flow__node[data-id="increment"]')
     await expect(node).toBeVisible()
     await node.click()
-    const rootDraft = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    // The command flushes pending canvas edits before dispatch. Capture that
+    // accepted revision, rather than racing the flush with a pre-click GET.
+    let captureDraft!: (draft: WorkflowDraftResponse) => void
+    const draftAtDispatch = new Promise<WorkflowDraftResponse>(resolve => { captureDraft = resolve })
+    await page.route('**/api/v1/editor/open-node', async route => {
+      const response = await page.request.get(`${API}/workflow-drafts/${imported}`)
+      expect(response.ok(), await response.text()).toBeTruthy()
+      captureDraft(await response.json())
+      await route.continue()
+    })
     const opened = page.waitForResponse(response => response.url().endsWith('/editor/open-node'))
     await page.getByTestId('open-tool-script').click()
     const openResponse = await opened
+    const rootDraft = await draftAtDispatch
+    await page.unroute('**/api/v1/editor/open-node')
     expect(openResponse.ok(), await openResponse.text()).toBeTruthy()
     expect(openResponse.request().postDataJSON()).toEqual({
       workflow_id: imported, identity_generation: importedFile.info.identity_generation,

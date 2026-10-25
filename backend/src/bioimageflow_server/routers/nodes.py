@@ -97,7 +97,9 @@ def _get_node_dataframe(
             )
         )
     except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail={"error": exc.code, "detail": str(exc)},
+        ) from exc
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
     identity = df.attrs.get(DATAFRAME_RESULT_IDENTITY_ATTR)
@@ -124,7 +126,9 @@ def _node_data_response(
         column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
         retained_viewers = dataframe_column_viewers(dataframe)
     except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail={"error": exc.code, "detail": str(exc)},
+        ) from exc
     column_viewers = {
         column: ViewerSpec.from_library(retained_viewers.get(column))
         for column in dataframe.columns
@@ -497,12 +501,16 @@ async def download_node_csv(
             node_id, storage_path=storage_path
         )
     except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail={"error": exc.code, "detail": str(exc)},
+        ) from exc
     if not columns and not isinstance(modern_identity, ResultArtifactIdentity):
         try:
             csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
         except ResultDataNotReadyError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=409, detail={"error": exc.code, "detail": str(exc)},
+            ) from exc
         if csv_path is not None:
             return FileResponse(
                 path=csv_path,

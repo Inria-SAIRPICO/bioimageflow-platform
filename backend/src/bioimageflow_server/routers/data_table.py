@@ -52,7 +52,9 @@ async def query_data_table(
             filters=request.filters,
         )
     except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail={"error": exc.code, "detail": str(exc)},
+        ) from exc
     except DataTableProjectionInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -73,7 +75,9 @@ async def download_data_table_csv(
             filters=request.filters,
         )
     except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail={"error": exc.code, "detail": str(exc)},
+        ) from exc
     except DataTableProjectionInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if isinstance(projection, DataTableStackedResponse):
