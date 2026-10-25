@@ -6706,7 +6706,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GraphState"];
+                "application/json": components["schemas"]["GraphState"] | components["schemas"]["GraphValidationRequest"];
             };
         };
         responses: {

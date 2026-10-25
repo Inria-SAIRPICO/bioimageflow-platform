@@ -1269,6 +1269,9 @@ Displays details and parameters for the currently selected node(s).
 
 **Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. Node Data shows the outputs of all selected nodes.
 
+**Dynamic outputs source context:** Requests from a saved root or nested canvas carry the root workflow name alongside the graph so local tools resolve from their owning directory; downstream refreshes keep that same captured context.
+A failed build, including a missing compiled workflow, returns an unresolved schema without an HTTP 500; an absent named workflow remains a 404.
+
 **Dynamic outputs refresh:** When an input field changes on a node whose tool has `dynamic_outputs === true`, a debounced (200ms) call to `POST /graph/nodes/{node_id}/output_schema` refreshes the node's resolved output pins. The refresh also propagates downstream along positional edges to any visited node with `dynamic_outputs === true`.
 
 **Single-node layout (top to bottom):**
@@ -1515,7 +1518,8 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format. Export saves/promotes
   a dirty draft first so the archive matches the current editable graph.
-  After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for pending checks, unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
+  After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
+  Pending-only checks remain silent so a covered result never flashes a temporary banner.
   Saved inspection uses the normal graph compiler and source/store authority, without planning, provisioning or execution; unresolved metadata preserves its loading diagnostics.
   The summary separates unknown tool/output metadata from known viewer requirements needing setup, and Manage/attach environments is available only when a known viewer requirement group needs attention.
   Readiness requests and all report, error, toast, and setup-prefill effects belong to the latest presentation intent, exact canvas registration, active owning workflow, and its local and durable server identity generations; superseded or refused presentations cannot overwrite the accepted workflow's guidance.

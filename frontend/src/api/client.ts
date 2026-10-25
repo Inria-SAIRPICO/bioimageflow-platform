@@ -25,10 +25,11 @@ api.interceptors.response.use(
 export async function fetchNodeOutputSchema(
   nodeId: string,
   graph: GraphState,
+  workflowName?: string | null,
 ): Promise<NodeOutputSchemaResponse> {
   const { data } = await api.post<NodeOutputSchemaResponse>(
     `/api/v1/graph/nodes/${nodeId}/output_schema`,
-    graph,
+    workflowName ? { graph, workflow_name: workflowName } : graph,
   )
   return data
 }

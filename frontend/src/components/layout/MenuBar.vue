@@ -1316,7 +1316,7 @@ defineExpose({
     </template>
   </Menubar>
   <ViewingRequirementsGuidance
-    v-if="acceptedViewingOwner && !viewingDismissed && (napariStore.viewingReadinessPending || viewingError || (viewingReport && (viewingReport.summary.outputs_needing_setup > 0 || viewingReport.summary.unknown_outputs > 0)))"
+    v-if="acceptedViewingOwner && !viewingDismissed && (viewingError || (viewingReport && (viewingReport.summary.outputs_needing_setup > 0 || viewingReport.summary.unknown_outputs > 0)))"
     :workflow-name="acceptedViewingOwner.workflowName"
     :report="viewingReport"
     :error="viewingError"

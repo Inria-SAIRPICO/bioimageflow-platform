@@ -110,6 +110,8 @@ There is no second editable child-graph language and no separately persisted lib
 
 Validation must cover the whole recursive graph, including unique identities, endpoint compatibility, tool availability, interfaces, local-source ownership, containment cycles, bindings, and the selected execution context.
 Errors should retain scoped node paths so a failure inside an embedded workflow remains attributable to its actual internal node.
+Dynamic output-schema inspection carries its originating root workflow identity, including for nested canvases, and resolves owned sources in that workflow’s directory.
+Unavailable compilation returns an unresolved schema rather than dereferencing a missing workflow; named inspection rechecks workflow identity and storage before publishing its result.
 An incompatible runtime recipe retains its node-attributed validation error without attempting cache planning for that refused graph.
 
 Frontend graph and workflow-draft routes/response types are generated from backend OpenAPI into `frontend/src/api/types.ts`.
@@ -497,6 +499,7 @@ Workflow import and explicit saved Open present persistent output-specific missi
 Saved-workflow viewing inspection uses the normal request-local graph compiler, workflow-owned source capture and selected tool store; it never plans or executes a workflow to obtain viewer declarations.
 Construction and missing-source diagnostics remain unknown metadata, including an empty diagnostic workflow returned with validation errors, and are never counted as evidence of missing viewer packages.
 Unknown metadata remains visible with tool/source diagnostics; environment setup actions are offered only for known viewer requirement groups.
+Pending-only viewing checks stay silent; successful covered reports never mount a transient guidance banner, while completed warnings and failures remain dismissible.
 Guidance, readiness errors and setup suggestions belong to the accepted registered root canvas, its registration token, local/server workflow identity and current request intent; switching, closing or replacing that owner invalidates delayed responses and queued transfers.
 Settings receives a copied requirement set through an explicit action; automatic prefills update only an untouched, idle creation form, and older setup completions cannot consume a newer owner's groups.
 A constrained napari set displays its original version range and requires an explicit exact release in the advanced recipe; the default preset is not assumed compatible, and installed inventory remains the compatibility authority.

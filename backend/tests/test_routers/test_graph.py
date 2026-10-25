@@ -585,3 +585,52 @@ async def test_malformed_graph_output_schema_is_unresolved(client: httpx.AsyncCl
     data = resp.json()
     assert data["resolved"] is False
     assert data["columns"] == {}
+
+
+@pytest.mark.parametrize("named", [False, True])
+@pytest.mark.parametrize("source_present", [False, True])
+async def test_output_schema_uses_owned_sources_or_returns_unresolved(
+    tmp_path: Path, named: bool, source_present: bool,
+) -> None:
+    from bioimageflow_server.models.workflow import WorkflowCreate
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+    registry = _test_registry()
+    store = WorkflowStoreService(tmp_path / "workflows", registry)
+    store.create_workflow(WorkflowCreate(name="owned"))
+    tools = store.workflow_dir("owned") / "tools"
+    tools.mkdir(exist_ok=True)
+    (tools / "local_numbers.py").write_text('''from bioimageflow import DataFrameTool
+from bioimageflow_core import IOModel
+class LocalNumbers(DataFrameTool):
+    accepts_upstream = False
+    class Outputs(IOModel):
+        number: int
+    def transform(self, df, arguments):
+        raise AssertionError("Schema inspection must not execute")
+''')
+    if not source_present:
+        (tools / "local_numbers.py").unlink()
+    graph = _complete_graph({"nodes": [{
+        "type": "tool", "id": "local", "name": "Local", "tool_name": "LocalNumbers",
+        "tool_module": "tools.local_numbers", "tool_class": "LocalNumbers",
+        "position": [0, 0], "parameters": {},
+    }], "edges": []})
+    body = {"graph": graph, "workflow_name": "owned"} if named else graph
+    config = AppConfig(tool_registry=registry, workflow_store=store, storage_path=tmp_path / "generic")
+    async with httpx.AsyncClient(transport=ASGITransport(app=create_app(config)), base_url="http://test") as c:
+        response = await c.post("/api/v1/graph/nodes/local/output_schema", json=body)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["resolved"] is (named and source_present)
+    if named and source_present:
+        assert result["columns"]["number"]["type"] == "int"
+    else:
+        assert result["columns"] == {}
+
+
+async def test_output_schema_missing_workflow_returns_404(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/v1/graph/nodes/src/output_schema", json={
+        "graph": graph_document(), "workflow_name": "nonexistent",
+    })
+    assert response.status_code == 404

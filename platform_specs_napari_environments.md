@@ -437,7 +437,8 @@ Preference changes are atomic local UI state and do not acquire a graph executio
 
 ## 7. Workflow import and setup guidance
 
-After an import or explicit saved Open has been accepted into its root canvas, run the passive viewing-requirements check and show persistent, non-blocking guidance while checking, when setup may be needed, or when the check fails.
+After an import or explicit saved Open has been accepted into its root canvas, run the passive viewing-requirements check and show persistent, non-blocking guidance when setup may be needed or when the check fails.
+A pending check alone does not mount a banner; a covered report completes silently, while completed unknown/setup/error guidance remains visible until dismissal or a change of owning presentation.
 Bind the check, report, error, toast, and requirement-group prefills to the latest presentation intent, workflow local and server identity generations, exact canvas registration, and currently active owning root; a refused or superseded presentation must not publish these effects.
 Superseding a request or removing its owning presentation invalidates both successful and failed late responses before they can replace another workflow's guidance or form.
 The guidance names the workflow, states that execution is unaffected, and offers expandable output identities, grouped requirements, candidate failures, unknown metadata, explicit setup actions, and dismissal to configure later.

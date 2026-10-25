@@ -213,6 +213,9 @@ Errors use scoped paths such as `segment_and_measure/cellpose_segmenter`.
 Full Run rejects every diagnostic from complete-graph compilation. Run Selected derives its requested root nodes and transitive upstream root nodes from the accepted graph edges and ignores only diagnostics whose scoped node path proves ownership by an unrelated root node. Descendant diagnostics within a selected or upstream workflow boundary, global or unattributable diagnostics, unknown or unresolved requested targets, and a missing compiled workflow remain blocking.
 
 The stateless graph endpoint validates the same canonical graph shape but does not retain editor state.
+Dynamic output-schema requests accept either a bare GraphState or the existing graph/workflow_name request envelope.
+Saved root and nested canvases send their originating root workflow name with the serialized graph, and downstream refreshes retain that captured owner independently of active-tab changes.
+The backend resolves workflow-owned sources in that named storage context and rechecks its identity and storage after compilation; missing workflows return 404, while failed materialization or an unavailable target returns resolved: false with empty columns, including when the builder returns no workflow.
 
 ## 9. Execution And Status
 

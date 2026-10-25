@@ -1672,7 +1672,7 @@ describe('MenuBar', () => {
       expect(wrapper.get('[data-testid="viewing-guidance"]').text()).toContain('1 output needs viewer setup')
     })
 
-    it('passively evaluates viewing requirements when a saved workflow opens', async () => {
+    it.each(['covered', 'unknown', 'error'])('keeps pending viewing checks silent and retains a completed %s report', async outcome => {
       useSettingsStore().settings = { deployment_mode: 'desktop' } as any
       acceptViewingCanvasApplications()
       const info = {
@@ -1685,23 +1685,41 @@ describe('MenuBar', () => {
         if (url === '/api/v1/workflows/saved/viewing-readiness') return Promise.resolve({ data: manifest })
         return Promise.resolve({ data: { info, graph: makeGraph(), missing_packages: [], missing_tools: [] } })
       })
-      apiMocks.post.mockResolvedValue({
-        data: {
-          manifest_schema: manifest.schema, manifest_complete: true,
-          summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No declared requirements' },
-          outputs: [], groups: [],
-        },
-      })
-      mountMenuBar()
+      const readiness = deferred<any>()
+      apiMocks.post.mockReturnValue(readiness.promise)
+      const wrapper = mountMenuBar()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
         detail: { action: 'open', name: 'saved' },
       }))
       await flushPromises()
+      expect(useNapariStore().viewingReadinessPending).toBe(true)
+      expect(wrapper.find('[data-testid="viewing-guidance"]').exists()).toBe(false)
+      const report = {
+        data: {
+          manifest_schema: manifest.schema, manifest_complete: true,
+          summary: { total_outputs: 0, covered_outputs: 0, not_covered_outputs: 0, unknown_outputs: 0, outputs_needing_setup: 0, message: 'No declared requirements' },
+          outputs: [], groups: [],
+        },
+      }
+      if (outcome === 'unknown') {
+        report.data.summary.unknown_outputs = 1
+        report.data.summary.message = 'Viewing requirements are unknown for 1 node'
+      }
+      if (outcome === 'error') readiness.reject(new Error('Cannot inspect tool metadata'))
+      else readiness.resolve(report)
+      await flushPromises()
 
       expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/saved/viewing-readiness')
       expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/napari/viewing-readiness', manifest)
       expect(useWorkflowStore().current?.name).toBe('saved')
+      expect(wrapper.find('[data-testid="viewing-guidance"]').exists()).toBe(outcome !== 'covered')
+      if (outcome !== 'covered') {
+        await flushPromises()
+        expect(wrapper.get('[data-testid="viewing-guidance"]').text()).toContain(
+          outcome === 'error' ? 'Cannot inspect tool metadata' : report.data.summary.message,
+        )
+      }
     })
 
 
