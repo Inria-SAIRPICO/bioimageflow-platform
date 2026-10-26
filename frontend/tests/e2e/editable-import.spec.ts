@@ -348,8 +348,20 @@ class ${toolName}(DataFrameTool):
       async () => { await page.goto('about:blank') },
       async () => { expect((await page.request.patch(`${API}/settings`, { data: { external_editor: oldEditor } })).ok()).toBeTruthy() },
       ...[imported, original, parent].map(name => async () => {
-        const response = await page.request.delete(`${API}/workflows/${name}`)
-        expect([200, 204, 404]).toContain(response.status())
+        let status = 0
+        let detail = ''
+        // A final source-validation write can retain an idle mutation lease
+        // after the page closes. Retry only that explicit lock response;
+        // unrelated failures must still fail cleanup immediately.
+        await expect.poll(async () => {
+          const response = await page.request.delete(`${API}/workflows/${name}`)
+          status = response.status()
+          detail = await response.text()
+          if (status !== 423) return true
+          const conflict = await response.json()
+          return conflict.detail !== 'Workflow editing is locked while execution is in progress'
+        }, { timeout: 10_000, intervals: [100, 250, 500] }).toBe(true)
+        expect([200, 204, 404], detail).toContain(status)
       }),
     ]
     for (const cleanup of cleanups) {

@@ -88,9 +88,11 @@ const thumbnailActivated = ref(false)
 const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
 
-// A real pending job stays pending through cold setup. Polling backs off
-// and is canceled when this cell leaves; terminal failures stop immediately.
-const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
+// The initial bounded wait exposes installation progress. Subsequent requests
+// wait on the shared render and return as soon as it completes, without a
+// growing browser delay hiding an already-finished thumbnail.
+const RETRY_DELAY_MS = 250
+const THUMBNAIL_LONG_WAIT_SECONDS = 20
 const THUMBNAIL_REQUEST_SIZE = 256
 const THUMBNAIL_RENDER_SIZE = 96
 const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
@@ -198,7 +200,8 @@ async function fetchThumbnail() {
   thumbnailPending.value = true
   fetchFailed.value = false
   try {
-    const response = await thumbnails.request(baseUrl.value,
+    const url = retryAttempt > 0 ? `${baseUrl.value}&wait=${THUMBNAIL_LONG_WAIT_SECONDS}` : baseUrl.value
+    const response = await thumbnails.request(url,
       JSON.stringify([props.value, props.resultIdentity]), controller.signal)
     if (abort !== controller) return
     const status = response.status
@@ -207,13 +210,12 @@ async function fetchThumbnail() {
       revokeBlob()
       fetchFailed.value = false
       thumbnailPending.value = true
-      const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)]!
       retryAttempt += 1
       clearTimer()
       retryTimer = setTimeout(() => {
         retryTimer = null
         void fetchThumbnail()
-      }, delay)
+      }, RETRY_DELAY_MS)
       return
     }
 

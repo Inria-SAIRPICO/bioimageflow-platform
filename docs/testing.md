@@ -72,6 +72,7 @@ Focused runs use a fresh temporary runtime root, automatically selected local po
 The noncritical `thumbnail-real.spec.ts` journey prepares its own 8×8 TIFF and installs the published common-tools version from `scripts/ci/test_versions.env` without dependencies into that isolated runtime's tool store.
 It needs no manually prepared input or package installation and runs in the ordinary complete Chromium and Firefox collections, including CI; cold package and thumbnail-reader provisioning require network access.
 The test restores the original E2E Files catalog before Run and checks that the explicitly bound result retains Path semantics despite the catalog's contradictory string declaration.
+After the cold TIFF journey, the same isolated managed-reader test checks automatic RGB PNG/JPEG, middle-plane OME-TIFF and directory-backed OME-Zarr previews without thumbnail API warming.
 An optional `BIOIMAGEFLOW_THUMBNAIL_TIFF` can supply an already prepared matching TIFF inside the same runtime for an owned recovery attempt; it is validated and never overwritten.
 
 For a failing browser test, first reproduce its exact selector and project.

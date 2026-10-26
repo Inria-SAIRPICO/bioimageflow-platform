@@ -144,23 +144,31 @@ class ResultStoreService:
     def get_latest_dataframe(
         self, node_id: str, storage_path: Path | None = None
     ) -> pd.DataFrame | None:
-        identity = self.capture_latest_result_identity(
+        retained = self._capture_latest_result(
             node_id, storage_path=storage_path
         )
-        if identity is not None:
-            return self.load_result_dataframe(identity, storage_path=storage_path)
+        if retained is not None:
+            # The capture already verified the exact run-node relation. Reuse
+            # it in this read rather than admitting that same relation again.
+            return self._load_retained_dataframe(retained, storage_path=storage_path)
         record_dir = self.get_latest_record_dir(node_id, storage_path=storage_path)
         if record_dir is None:
             return None
         dataframe = self.get_dataframe_from_record(record_dir, node_id=node_id)
-        if dataframe is not None and identity is not None:
-            dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
         return dataframe
 
     def capture_latest_result_identity(
         self, node_id: str, storage_path: Path | None = None
     ) -> ResultArtifactIdentity | None:
         """Capture latest once, then validate its exact retained identity."""
+
+        retained = self._capture_latest_result(node_id, storage_path=storage_path)
+        return self._result_identity(retained) if retained is not None else None
+
+    def _capture_latest_result(
+        self, node_id: str, *, storage_path: Path | None = None
+    ) -> RunNodeResult | None:
+        """Admit one latest relation for reuse within the current operation."""
 
         root = self._root(storage_path)
         latest_link = self._latest_node_link(root, node_id)
@@ -213,6 +221,10 @@ class ResultStoreService:
             raise ResultDataNotReadyError(
                 f"Output data for node '{node_id}' is not ready"
             ) from exc
+        return retained
+
+    @staticmethod
+    def _result_identity(retained: RunNodeResult) -> ResultArtifactIdentity:
         return ResultArtifactIdentity(
             run_id=retained.run_id,
             node_key=retained.node_key,
@@ -261,6 +273,12 @@ class ResultStoreService:
         """Load one exact record without consulting current/latest pointers."""
 
         retained = self.read_run_node_result(identity, storage_path=storage_path)
+        return self._load_retained_dataframe(retained, storage_path=storage_path)
+
+    def _load_retained_dataframe(
+        self, retained: RunNodeResult, *, storage_path: Path | None = None
+    ) -> pd.DataFrame:
+        identity = self._result_identity(retained)
         metadata = ResultColumnMetadata(
             identity=identity,
             types=_retained_output_types(retained),

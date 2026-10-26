@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
+from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from starlette.responses import FileResponse
@@ -681,24 +682,30 @@ async def get_node_thumbnail(
     row: Annotated[int, Query(ge=0)] = 0,
     size: Annotated[int, Query(ge=16, le=1024)] = 128,
     workflow_name: str | None = None,
+    wait: Annotated[float, Query(ge=0, le=20)] = _THUMBNAIL_WAIT_TIMEOUT_SECONDS,
 ) -> Response:
-    storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    df = _get_node_dataframe(node_id, result_store, storage_path)
-    value = _get_dataframe_cell(df, row, col)
-    image_path = _dataframe_image_path(value, df, result_store, storage_path)
+    def resolve_image() -> Path:
+        storage_path = _workflow_storage_path(workflow_name, workflow_store)
+        df = _get_node_dataframe(node_id, result_store, storage_path)
+        value = _get_dataframe_cell(df, row, col)
+        return _dataframe_image_path(value, df, result_store, storage_path)
+
+    # Admission reads Parquet and validates retained assets. It must not block
+    # other thumbnail waits or unrelated requests on the server event loop.
+    image_path = await to_thread.run_sync(resolve_image)
     png = await thumbnail_manager.get_or_queue(
-        image_path, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
+        image_path, size, wait_timeout=wait
     )
 
     # Tell the frontend whether the body is the rendered thumbnail or a
     # placeholder still warming up — placeholders must not be cached or
     # a stale "pending" image sticks until the user hard-reloads.
     is_placeholder = png == thumbnail_manager.placeholder_png(size)
-    status = thumbnail_manager.status(image_path, size) if is_placeholder else "ready"
+    status = await to_thread.run_sync(thumbnail_manager.status, image_path, size) if is_placeholder else "ready"
     if is_placeholder and status == "ready":
         # Rendering can publish between the bounded wait and this status read.
         # Never label the earlier placeholder as a finished image.
-        cached = thumbnail_manager.get_cached(image_path, size)
+        cached = await to_thread.run_sync(thumbnail_manager.get_cached, image_path, size)
         if cached is not None:
             png = cached
         else:

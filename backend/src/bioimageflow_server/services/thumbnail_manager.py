@@ -29,6 +29,7 @@ _logger = logging.getLogger(__name__)
 
 _MAX_FAILURES = 256
 _WORKERS = 2
+_RENDER_VERSION = "bioio-preview-2"
 
 
 @dataclass
@@ -93,10 +94,9 @@ class ThumbnailManager:
     def cache_path(self, file_path: str | Path, size: int) -> Path:
         """Return the on-disk cache path for ``file_path`` at ``size``.
 
-        Key matches the ``platform_specs_v1`` recipe — SHA-256 of
-        ``file_path + mtime + size`` — so the cache invalidates when the
-        source changes. ``size`` is included so 128 px and 256 px don't
-        clobber each other.
+        Include renderer version and source metadata. Directory-backed images
+        (e.g. OME-Zarr) include descendant names, timestamps and lengths so an
+        edited chunk invalidates its preview without hashing its pixel payload.
         """
         path = Path(file_path)
         try:
@@ -108,13 +108,23 @@ class ThumbnailManager:
             mtime = f"{stat.st_mtime_ns}:{stat.st_size}"
         except (FileNotFoundError, OSError):
             mtime = ""
-        digest = hashlib.sha256(
-            f"{absolute}|{mtime}|{size}".encode("utf-8")
-        ).hexdigest()
-        return self.cache_dir / f"{digest}.png"
+        digest = hashlib.sha256(f"{_RENDER_VERSION}|{absolute}|{mtime}|{size}".encode("utf-8"))
+        if path.is_dir():
+            for member in sorted(path.rglob("*")):
+                try:
+                    stat = member.stat()
+                    facts = (member.relative_to(path).as_posix(), stat.st_mtime_ns, stat.st_size)
+                except OSError:
+                    # A store can be replaced while it is inspected. Such a
+                    # snapshot must not alias a previously readable cache key.
+                    facts = (member.relative_to(path).as_posix(), "unavailable")
+                digest.update(repr(facts).encode("utf-8"))
+        return self.cache_dir / f"{digest.hexdigest()}.png"
 
     def get_cached(self, file_path: str | Path, size: int) -> bytes | None:
-        path = self.cache_path(file_path, size)
+        return self._read_cached(self.cache_path(file_path, size))
+
+    def _read_cached(self, path: Path) -> bytes | None:
         if path.is_file():
             try:
                 return path.read_bytes()
@@ -164,21 +174,26 @@ class ThumbnailManager:
             ``wait_timeout`` seconds; join the job without canceling it on
             timeout, then return cached bytes or a status placeholder.
         """
-        cached = self.get_cached(file_path, size)
+        # A directory store may contain many chunks. Keep its metadata walk
+        # and cache I/O off the event loop, and reuse that fingerprint when
+        # reserving a shared job rather than walking the store twice.
+        path = Path(file_path)
+        key = await asyncio.to_thread(self.cache_path, path, size)
+        cached = await asyncio.to_thread(self._read_cached, key)
         if cached is not None:
             return cached
 
-        path = Path(file_path)
-        if not path.is_file():
+        if not _is_image_source(path):
             return self.placeholder_png(size)
 
-        job = self._schedule_generation(path, size)
+        job = self._schedule_generation(path, size, key=key)
         if job is not None and job.task is not None and wait_timeout > 0:
             try:
                 await asyncio.wait_for(asyncio.shield(job.task), wait_timeout)
             except TimeoutError:
                 pass
-        return self.get_cached(path, size) or self.placeholder_png(size)
+        cached = await asyncio.to_thread(self.get_cached, path, size)
+        return cached or self.placeholder_png(size)
 
     def status(self, file_path: str | Path, size: int) -> str:
         """Report actual work state; a placeholder alone cannot establish failure."""
@@ -188,13 +203,12 @@ class ThumbnailManager:
         key = self.cache_path(path, size)
         if key in self._failures or self.environment_state == "failed":
             return "failed"
-        if self._closed or not path.is_file():
+        if self._closed or not _is_image_source(path):
             return "unavailable"
         return "pending"
 
-    def _schedule_generation(self, path: Path, size: int) -> _Generation | None:
-        key = self.cache_path(path, size)
-        if self._closed or not path.is_file() or key.is_file() or key in self._failures:
+    def _schedule_generation(self, path: Path, size: int, *, key: Path) -> _Generation | None:
+        if self._closed or not _is_image_source(path) or key.is_file() or key in self._failures:
             return None
         existing = self._pending_generations.get(key)
         if existing is not None:
@@ -207,7 +221,9 @@ class ThumbnailManager:
 
     async def queue_generate(self, file_path: str | Path, size: int) -> None:
         """Join the shared startup/submission without owning its cancellation."""
-        job = self._schedule_generation(Path(file_path), size)
+        path = Path(file_path)
+        key = await asyncio.to_thread(self.cache_path, path, size)
+        job = self._schedule_generation(path, size, key=key)
         if job is not None:
             await asyncio.shield(job.started)
 
@@ -245,7 +261,11 @@ class ThumbnailManager:
             await job.execution
             if not key.is_file():
                 raise RuntimeError("Renderer completed without publishing a thumbnail")
-            if key != self.cache_path(source, size):
+            current_key = (
+                await asyncio.to_thread(self.cache_path, source, size)
+                if source.is_dir() else self.cache_path(source, size)
+            )
+            if key != current_key:
                 # An external file changed while rendering; never publish that
                 # image under its previous fingerprint.
                 key.unlink(missing_ok=True)
@@ -364,6 +384,12 @@ class ThumbnailManager:
 # ---------------------------------------------------------------------------
 # Placeholder generation
 # ---------------------------------------------------------------------------
+
+
+def _is_image_source(path: Path) -> bool:
+    # Let BioIO's installed plugins decide whether a concrete file or directory
+    # store is readable. In particular, OME-Zarr must reach its reader.
+    return path.is_file() or path.is_dir()
 
 
 def _build_placeholder_png(size: int) -> bytes:

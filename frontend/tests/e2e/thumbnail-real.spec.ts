@@ -1,8 +1,8 @@
 import { expect, test, type Page, type Response } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { GraphState, NodeDataResponse, PackageInfo, ResultArtifactIdentity, ToolMetadata, WorkflowFile } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
@@ -97,6 +97,7 @@ assert image.dtype == expected.dtype
   const sourceBytes = readFileSync(source)
   const sourceHash = createHash('sha256').update(sourceBytes).digest('hex')
   const name = `real_thumbnail_${testInfo.project.name}_${Date.now()}`
+  const formatsName = `${name}_formats`
   const label = `Real TIFF ${name}`
   const graph: GraphState = {
     schema_version: 2, name, display_name: label,
@@ -123,6 +124,7 @@ assert image.dtype == expected.dtype
   let cleanupFailed = false
   let cleanupFailure: unknown
   let created = false
+  let formatsCreated = false
   let catalogMayHaveChanged = false
   const firstRequestAt = Date.now()
   const restoreCatalog = async () => {
@@ -278,6 +280,114 @@ if code:
       package_version: version, contradictory_catalog: originalFiles,
       case_started_at: firstRequestAt, responses: headers,
     }, null, 2)) })
+
+    // Exercise the same managed BioIO path with RGB samples, a time/Z stack,
+    // and a directory-backed store. No thumbnail API warming or UI reopening
+    // is permitted between the new result and automatic image rendering.
+    const formatRoot = mkdtempSync(resolve(root, 'thumbnail-formats-'))
+    execFileSync(resolve('../backend/.venv/bin/python'), ['-c', `
+import json
+import sys
+from pathlib import Path
+import numpy as np
+import tifffile
+from PIL import Image
+root = Path(sys.argv[1])
+for extension in ("png", "jpg"):
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(root / f"color.{extension}")
+plane = np.arange(64, dtype=np.uint16).reshape(8, 8)
+stack = np.full((3, 1, 5, 8, 8), 60000, dtype=np.uint16)
+stack[1, 0, 2] = plane
+tifffile.imwrite(root / "stack.ome.tif", stack, metadata={"axes": "TCZYX"})
+store = root / "image.ome.zarr"
+array = store / "0"
+array.mkdir(parents=True)
+(store / ".zgroup").write_text(json.dumps({"zarr_format": 2}))
+(store / ".zattrs").write_text(json.dumps({"multiscales": [{
+    "version": "0.4", "name": "preview", "axes": [
+        {"name": "t", "type": "time", "unit": "second"},
+        {"name": "c", "type": "channel"},
+        {"name": "z", "type": "space", "unit": "micrometer"},
+        {"name": "y", "type": "space", "unit": "micrometer"},
+        {"name": "x", "type": "space", "unit": "micrometer"}],
+    "datasets": [{"path": "0", "coordinateTransformations": [{"type": "scale", "scale": [1, 1, 1, 1, 1]}]}]
+}]}))
+(array / ".zarray").write_text(json.dumps({"zarr_format": 2, "shape": list(stack.shape),
+    "chunks": [1, 1, 1, 8, 8], "dtype": "<u2", "compressor": None,
+    "fill_value": 0, "order": "C", "filters": None}))
+for t in range(3):
+    for z in range(5):
+        (array / f"{t}.0.{z}.0.0").write_bytes(stack[t, 0, z].astype("<u2").tobytes())
+`, formatRoot], { encoding: 'utf8', timeout: 30_000 })
+    const formatSources = ['color.png', 'color.jpg', 'stack.ome.tif', 'image.ome.zarr'].map(file => resolve(formatRoot, file))
+    const formatsLabel = `BioIO formats ${formatsName}`
+    const formatsGraph = structuredClone(graph)
+    formatsGraph.name = formatsName
+    formatsGraph.display_name = formatsLabel
+    const formatCreation = await page.request.post(`${API}/workflows`, { data: { name: formatsName, display_name: formatsLabel } })
+    expect(formatCreation.status(), await formatCreation.text()).toBe(201)
+    formatsCreated = true
+    const filesNode = formatsGraph.nodes[0]
+    if (filesNode?.type !== 'tool') throw new Error('The Files fixture lost its tool node')
+    // Published Files deliberately accepts only individual files. A normal
+    // owned declaration supplies the directory-store row for reader coverage.
+    const className = `ThumbnailPaths${Date.now()}`
+    const createdTool = await page.request.post(`${API}/tools`, {
+      params: { workflow_name: formatsName }, data: { name: className, tool_type: 'DataFrameTool' },
+    })
+    expect(createdTool.ok(), await createdTool.text()).toBeTruthy()
+    const toolPath = (await createdTool.json()).path as string
+    writeFileSync(toolPath, `from pathlib import Path
+from bioimageflow import DataFrameTool
+from bioimageflow_core import IOModel
+class ${className}(DataFrameTool):
+    accepts_upstream = False
+    class Inputs(IOModel):
+        files: list[Path] = []
+    class Outputs(IOModel):
+        path: Path
+    def transform(self, df, arguments):
+        import pandas as pd
+        return pd.DataFrame({"path": [str(Path(path).resolve()) for path in arguments.files]})
+`)
+    filesNode.tool_name = className
+    filesNode.tool_module = `tools.${basename(toolPath, '.py')}`
+    filesNode.tool_class = className
+    delete filesNode.tool_package
+    delete filesNode.tool_package_version
+    filesNode.parameters = { files: formatSources }
+    const updated = await page.request.put(`${API}/workflows/${formatsName}`, { data: { graph: formatsGraph } })
+    expect(updated.ok(), await updated.text()).toBeTruthy()
+    await openData(page, formatsName, formatsLabel)
+    const formatRun = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/execution/run', { timeout: 30_000 })
+    await page.getByTestId('run-workflow-button').click()
+    expect((await formatRun).status()).toBe(202)
+    const previews = table.getByTestId('image-thumbnail')
+    await expect(previews).toHaveCount(4, { timeout: 30_000 })
+    for (let index = 0; index < formatSources.length; index += 1) {
+      const preview = previews.nth(index)
+      await preview.scrollIntoViewIfNeeded()
+      await expect(preview).toHaveAttribute('src', /^blob:/, { timeout: 30_000 })
+      const pixels = await preview.evaluate(async element => {
+        const image = element as HTMLImageElement
+        await image.decode()
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')!
+        context.drawImage(image, 0, 0)
+        return { width: image.naturalWidth, height: image.naturalHeight,
+          rgba: Array.from(context.getImageData(0, 0, canvas.width, canvas.height).data) }
+      })
+      expect(pixels).toMatchObject({ width: 8, height: 8 })
+      if (index < 2) {
+        expect(pixels.rgba.slice(0, 4)).toEqual([255, 0, 0, 255])
+      } else {
+        expect(pixels.rgba.slice(0, 4)).toEqual([0, 0, 0, 255])
+        expect(pixels.rgba.slice(-4)).toEqual([255, 255, 255, 255])
+      }
+    }
   } catch (error) {
     primaryOccurred = true
     throw error
@@ -286,6 +396,11 @@ if code:
     const cleanupErrors: unknown[] = []
     const cleanupActions = [
       async () => { await page.goto('about:blank') },
+      async () => {
+        if (!formatsCreated) return
+        const removed = await page.request.delete(`${API}/workflows/${formatsName}`)
+        expect([200, 204, 404], await removed.text()).toContain(removed.status())
+      },
       async () => {
         if (!created) return
         const removed = await page.request.delete(`${API}/workflows/${name}`)

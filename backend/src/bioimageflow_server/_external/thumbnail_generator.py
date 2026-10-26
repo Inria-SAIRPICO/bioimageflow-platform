@@ -3,9 +3,9 @@
 # provides bioio, Pillow, NumPy, and the bioio readers.
 """Thumbnail generator helper (subprocess-side).
 
-Pattern lifted from Galaxy's ``galaxy/thumbnail_generator.py``: a
-single-process pool dispatches per-image renders so the Wetlands worker
-can return its IPC response immediately and accept the next request.
+BioIO owns reader selection and dimension handling for every supported format.
+Workers retain its imports between images; only the selected preview plane is
+computed, rather than eagerly materializing a complete time series or Z stack.
 """
 
 from __future__ import annotations
@@ -51,15 +51,20 @@ def create_thumbnail(
             image = BioImage(str(image_path_with_extension), reader=TiffReader)
         else:
             image = BioImage(str(image_path_with_extension))
-        data = image.get_image_data("TCZYX")
+        # Slice the lazy array BEFORE computing. BioIO's get_image_data eagerly
+        # reads the whole image even when given T/Z selectors. The dask API
+        # lets readers that support selective I/O skip unused planes instead.
+        # Preserve the established middle-T/middle-Z preview and all channels.
+        data = image.get_image_dask_data(
+            "YXCS", T=image.dims.T // 2, Z=image.dims.Z // 2,
+        ).compute()
     finally:
         if created_symlink and image_path_with_extension.exists():
             image_path_with_extension.unlink()
 
-    # Pick the middle T and Z slice; keep all channels.
-    data = data[data.shape[0] // 2, :, data.shape[2] // 2, :, :]
-    # Reorder to YXC for PIL.
-    data = data.transpose(1, 2, 0)
+    # BioIO separates scientific channels (C) from RGB(A) samples (S).
+    # Keep both; a missing dimension is supplied with length one by BioIO.
+    data = data.reshape(data.shape[0], data.shape[1], -1)
 
     data = data.astype(np.float32)
     data_min = float(data.min())

@@ -224,6 +224,8 @@ The browser image-viewer action checks its selected result's offsets through the
 Node-image, thumbnail, and Reveal requests resolve relative owned image paths against the immutable record captured for that request through the library's public asset API; absolute external image paths keep their declared location, and legacy unpinned results retain their existing lookup rules.
 Thumbnail setup and per-fingerprint renders are service-owned shared jobs: request cancellation and repeated selections cannot cancel or duplicate them, and shutdown joins submissions and startup before closing the pool.
 Thumbnail replies distinguish pending, ready, failed and unavailable states; cold setup stays pending until a real terminal outcome, shows a preparation notice only during actual environment mutation, and publishes PNGs atomically.
+After the initial three-second progress wait, cells use bounded 20-second completion waits with a short fixed retry gap; retained-result I/O runs off the event loop, and latest DataFrame reads reuse their admitted run-node relation only within that read.
+BioIO retains format/reader ownership and lazily computes the middle T/Z preview with channels and RGB(A) samples; versioned cache keys cover file metadata and directory-store descendants, including OME-Zarr chunk changes, with fingerprint walks and cache reads kept off the event loop.
 Visible cells coalesce in-flight requests, cancel only their own interest, and revalidate row-addressed URLs rather than using stale browser responses; the server owns the fingerprinted disk cache.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.

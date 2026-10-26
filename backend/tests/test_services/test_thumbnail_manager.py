@@ -71,6 +71,20 @@ def test_cache_path_stable_for_same_input(tmp_path: Path) -> None:
     assert mgr.cache_path(src, 128) == mgr.cache_path(src, 128)
 
 
+def test_directory_image_cache_detects_nested_chunk_changes(tmp_path: Path) -> None:
+    source = tmp_path / "image.ome.zarr"
+    chunk = source / "0" / "c" / "0"
+    chunk.parent.mkdir(parents=True)
+    chunk.write_bytes(b"old chunk")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    initial = mgr.cache_path(source, 128)
+    initial.write_bytes(b"cached")
+    assert mgr.get_cached(source, 128) == b"cached"
+    chunk.write_bytes(b"changed chunk contents")
+    assert mgr.cache_path(source, 128) != initial
+    assert mgr.get_cached(source, 128) is None
+
+
 def test_get_cached_returns_bytes_when_present(tmp_path: Path) -> None:
     src = tmp_path / "image.tif"
     src.write_bytes(b"x")
@@ -166,6 +180,25 @@ async def test_get_or_queue_returns_cached_immediately(tmp_path: Path) -> None:
     assert result == payload
 
 
+@pytest.mark.anyio
+async def test_directory_fingerprint_does_not_run_on_event_loop(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "image.ome.zarr"
+    source.mkdir()
+    (source / "zarr.json").write_text("{}")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    mgr.cache_path(source, 128).write_bytes(b"preview")
+    event_loop_thread = threading.get_ident()
+    cache_path = mgr.cache_path
+
+    def fingerprint(path, size):
+        assert threading.get_ident() != event_loop_thread
+        return cache_path(path, size)
+
+    monkeypatch.setattr(mgr, "cache_path", fingerprint)
+    assert await mgr.get_or_queue(source, 128) == b"preview"
+    assert mgr._startup_task is None
+
+
 # ---------------------------------------------------------------------------
 # Wetlands launch + queue (T3)
 # ---------------------------------------------------------------------------
@@ -258,6 +291,24 @@ async def test_queue_generate_passes_correct_args(tmp_path: Path) -> None:
     assert submitted[1] == "tif"  # extension without dot
     assert submitted[2] == str(mgr.cache_path(src, 128))
     assert submitted[3] == (128, 128)
+
+
+@pytest.mark.anyio
+async def test_directory_image_is_dispatched_once_to_bioio(tmp_path: Path) -> None:
+    source = tmp_path / "image.ome.zarr"
+    source.mkdir()
+    (source / "zarr.json").write_text("{}")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    release = asyncio.Event()
+    pool = _stub_pool(execution=_StubExecution(gate=release))
+    mgr._pool = pool
+    try:
+        await asyncio.gather(mgr.queue_generate(source, 128), mgr.queue_generate(source, 128))
+        pool.submit_path.assert_called_once()
+        assert pool.submit_path.call_args.kwargs["args"][0] == str(source)
+        assert mgr.status(source, 128) == "pending"
+    finally:
+        await mgr.shutdown()
 
 
 @pytest.mark.anyio

@@ -92,12 +92,12 @@ describe('ImageCell', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    // Advance past the first retry delay; expect a second fetch.
-    await vi.advanceTimersByTimeAsync(2_000)
+    await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(2)
 
-    await vi.advanceTimersByTimeAsync(4_000)
+    expect(new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost').searchParams.get('wait')).toBe('20')
+    await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(3)
 
@@ -161,7 +161,8 @@ describe('ImageCell', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const firstUrl = String(fetchMock.mock.calls[0][0])
     const secondUrl = String(fetchMock.mock.calls[1][0])
-    expect(secondUrl).toBe(firstUrl)
+    expect(new URL(secondUrl, 'http://localhost').searchParams.get('wait')).toBe('20')
+    expect(secondUrl.replace('&wait=20', '')).toBe(firstUrl)
     expect(fetchMock.mock.calls.every(call => call[1]?.cache === 'no-store')).toBe(true)
     // Both URLs should target the same endpoint
     expect(firstUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
@@ -171,9 +172,14 @@ describe('ImageCell', () => {
   it('keeps actual work pending beyond cold setup and renders it automatically when ready', async () => {
     let ready = false
     // Each HTTP request has its own body stream, as in a real browser.
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
-      makeFetchResponse(ready ? 'ready' : 'pending', ready ? READY_BYTES : PENDING_BYTES, 'installing'),
-    ))
+    const fetchMock = vi.fn().mockImplementation((url: string) => new Promise(resolve => {
+      // Model the server's bounded wait, rather than immediate pending replies
+      // that would unrealistically bypass its long-poll pacing.
+      const wait = new URL(url, 'http://localhost').searchParams.has('wait') ? 20_000 : 3_000
+      setTimeout(() => resolve(makeFetchResponse(
+        ready ? 'ready' : 'pending', ready ? READY_BYTES : PENDING_BYTES, 'installing',
+      )), wait)
+    }))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
@@ -192,7 +198,7 @@ describe('ImageCell', () => {
     expect(wrapper.find('.image-cell__pending').exists()).toBe(true)
     expect(useThumbnailsStore().installing).toBe(true)
     ready = true
-    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(21_000)
     await flushPromises()
     expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
     expect(useThumbnailsStore().installing).toBe(false)

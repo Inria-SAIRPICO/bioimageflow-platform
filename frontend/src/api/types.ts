@@ -10088,6 +10088,7 @@ export interface operations {
                 row?: number;
                 size?: number;
                 workflow_name?: string | null;
+                wait?: number;
             };
             header?: never;
             path: {

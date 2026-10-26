@@ -928,6 +928,28 @@ async def test_thumbnail_endpoint_validation() -> None:
         bad_col = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "nope"})
         bad_row = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 2, "col": "mask"})
         bad_size = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "mask", "size": 8})
+        bad_wait = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "wait": 21})
     assert bad_col.status_code == 422
     assert bad_row.status_code == 422
     assert bad_size.status_code == 422
+    assert bad_wait.status_code == 422
+
+
+async def test_thumbnail_resolution_runs_off_event_loop_and_forwards_long_wait(tmp_path: Path) -> None:
+    import threading
+
+    image = tmp_path / "image.png"
+    image.write_bytes(b"image")
+    request_thread = threading.get_ident()
+    store = MagicMock()
+
+    def read(*args, **kwargs):
+        assert threading.get_ident() != request_thread
+        return pd.DataFrame({"image": [image]})
+
+    store.get_latest_dataframe.side_effect = read
+    thumbs = _default_thumbnail_mock()
+    async with await _client(store, thumbs) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "image", "wait": 20})
+    assert response.status_code == 200
+    thumbs.get_or_queue.assert_awaited_once_with(image, 128, wait_timeout=20)

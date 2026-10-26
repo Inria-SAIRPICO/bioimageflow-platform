@@ -984,13 +984,17 @@ This ensures the frontend can reconstruct the correct state even if `node_state`
 
 The server generates thumbnails on demand for image files referenced in output DataFrames. Thumbnail and Reveal actions use the same captured-record asset resolution as the node-image endpoints, so an owned asset is read from its immutable record and an absolute external path remains external. Thumbnails are cached under the workspace runtime directory.
 
-- **Supported formats:** TIFF, PNG, JPEG, NIfTI (max-projection for 3D)
+- **Readers:** BioIO and the plugins installed in the managed thumbnail environment own format support, including TIFF/OME-TIFF, PNG, JPEG and directory-backed OME-Zarr; the platform does not replace BioIO with a TIFF-only decoding path.
+- **Preview:** Select the middle time point and Z plane through BioIO's lazy array API before computing pixels, preserving channels and RGB(A) samples; readers with selective I/O may skip unused planes, while some formats still require whole-image decoding internally.
 - **Size:** 128x128 pixels (configurable via query param)
-- **Cache key:** SHA-256 of the absolute file path, nanosecond modification time, byte length, and requested size; it invalidates when the file changes
+- **Cache key:** SHA-256 of renderer version, absolute source path, nanosecond modification time, byte length, and requested size; directory stores additionally include descendant names, modification times and lengths so nested chunk changes invalidate the preview without hashing all pixel bytes.
 
 ThumbnailManager reserves one service-owned job per fingerprint before environment setup or worker submission can yield.
 All outstanding images share one startup operation and one bounded two-worker pool; matching ready Wetlands content is reused, and only its public provisioning operation owns replacement of a stale thumbnail recipe.
 The response wait includes setup and is bounded independently of the shared job lifetime; abandoning a request or selecting another node does not cancel or resubmit shared work.
+The PNG endpoint accepts a bounded `wait` of 0–20 seconds, defaulting to three seconds so initial installation progress becomes visible promptly.
+Subsequent frontend requests wait up to 20 seconds on the same job and wake on completion; a fixed 250 ms inter-request delay avoids growing retry gaps after pixels are ready.
+Thumbnail result and owned-asset resolution, directory fingerprint walks and cache reads run off the server event loop; latest DataFrame reads reuse their already-validated run-node relation within that operation, without caching it across requests or bypassing library record validation.
 After setup, recheck the cache before worker submission, publish completed PNGs atomically, and discard a render if its source fingerprint changed during the job.
 Shutdown stops admission, cancels the owned provisioning operation and render tasks, joins in-flight thread submissions and startup, and closes the resulting pool.
 Terminal failures are memoized in bounded process-local state, while successful thumbnails remain in the disk cache.
@@ -999,9 +1003,10 @@ The PNG endpoint returns X-Thumbnail-Status=pending|ready|failed|unavailable and
 A ready header always accompanies rendered PNG bytes, including when generation completes at the response boundary.
 Row-addressed responses use no-store because their URL does not encode the source fingerprint; the backend retains its disk cache.
 Concurrent visible cells share an in-flight HTTP request for the same source and table identity, and only their own display interest is canceled when they leave.
-A pending job uses capped-backoff polling without converting slow active setup into an unavailable result after a fixed retry count; terminal responses stop polling.
+A pending job uses bounded completion waits without converting slow active setup into an unavailable result after a fixed retry count; terminal responses stop polling.
 During actual environment mutation, Node Data shows a persistent preparation notice explaining that first-time setup may take several minutes; warm startup alone does not flash this notice.
 The real TIFF browser acceptance must finish automatically after cold setup, without warming the endpoint through a separate API loop or reopening the workflow to repair an exhausted UI budget.
+The managed-reader browser acceptance also checks RGB PNG/JPEG, middle-plane OME-TIFF and directory-backed OME-Zarr output automatically through Node Data.
 
 ### 2.7 Tool Hot-Reload
 
