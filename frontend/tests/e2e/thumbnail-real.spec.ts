@@ -124,7 +124,6 @@ assert image.dtype == expected.dtype
   let cleanupFailure: unknown
   let created = false
   let catalogMayHaveChanged = false
-  let coldUiExhausted = false
   const firstRequestAt = Date.now()
   const restoreCatalog = async () => {
     const restored = await page.request.post(`${API}/tools/packages/${originalFiles.package}/use`, {
@@ -211,29 +210,10 @@ if code:
     const thumbnail = table.getByTestId('image-thumbnail')
     await expect(table).toBeVisible()
     await thumbnail.scrollIntoViewIfNeeded()
-    await expect(thumbnail).toHaveAttribute('aria-label', 'thumbnail generating')
-    // Provisioning is awaited before the endpoint's three-second render wait;
-    // its first real response may be ready rather than HTTP pending.
-    await expect.poll(() => observed.length, { timeout: 600_000 }).toBeGreaterThan(0)
-    expect(observed[0]!.status(), observed[0]!.url()).toBe(200)
-    await expect.poll(async () => {
-      if ((await thumbnail.getAttribute('src'))?.startsWith('blob:')) return 'ready'
-      if (await thumbnail.getAttribute('aria-label') === 'thumbnail unavailable') return 'exhausted'
-      return 'waiting'
-    }, { timeout: 50_000 }).not.toBe('waiting')
-    coldUiExhausted = await thumbnail.getAttribute('aria-label') === 'thumbnail unavailable'
-    if (coldUiExhausted) {
-      // Keep the real bounded UI outcome, then establish server readiness before
-      // an explicit user-equivalent reopen; no product retry budget is changed.
-      await expect.poll(async () => {
-        const response = await page.request.get(`${API}/nodes/${NODE}/thumbnail`, {
-          params: { workflow_name: name, col: 'path', row: 0, size: 256 }, timeout: 600_000,
-        })
-        expect(response.status(), await response.text()).toBe(200)
-        return response.headers()['x-thumbnail-status']
-      }, { timeout: 600_000, intervals: [1000, 2000, 5000] }).toBe('ready')
-      await openData(page, name, label)
-    }
+    // Cold setup is owned by the service. The UI must finish automatically,
+    // even when provisioning takes longer than the former 30-second budget.
+    await expect(thumbnail).toHaveAttribute('src', /^blob:/, { timeout: 600_000 })
+    expect(await thumbnail.getAttribute('aria-label')).not.toBe('thumbnail unavailable')
     const assertRendered = async () => {
       await expect(thumbnail).toHaveAttribute('src', /^blob:/, { timeout: 15_000 })
       const actual = await thumbnail.evaluate(async element => {
@@ -296,7 +276,7 @@ if code:
     await testInfo.attach('real-thumbnail-observation', { contentType: 'application/json', body: Buffer.from(JSON.stringify({
       source, source_sha256: sourceHash, result_identity: captured.source_identity, execution_id: execution.execution_id,
       package_version: version, contradictory_catalog: originalFiles,
-      case_started_at: firstRequestAt, cold_ui_retry_exhausted: coldUiExhausted, responses: headers,
+      case_started_at: firstRequestAt, responses: headers,
     }, null, 2)) })
   } catch (error) {
     primaryOccurred = true

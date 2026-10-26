@@ -10097,13 +10097,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Rendered PNG or a placeholder with explicit work status. */
             200: {
                 headers: {
+                    "X-Thumbnail-Status"?: "pending" | "ready" | "failed" | "unavailable";
+                    "X-Thumbnail-Environment"?: "idle" | "starting" | "installing" | "ready" | "failed";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "image/png": string;
                 };
             };
             /** @description Validation Error */

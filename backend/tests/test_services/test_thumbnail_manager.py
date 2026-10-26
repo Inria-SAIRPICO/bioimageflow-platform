@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest import mock
 import asyncio
+import threading
 
 import pytest
 from wetlands import EnvironmentSpec
@@ -335,6 +336,7 @@ async def test_concurrent_queue_generate_same_cache_uses_one_render(
         mgr.queue_generate(src, 128),
         mgr.queue_generate(src, 128),
     )
+    mgr.cache_path(src, 128).write_bytes(b"\x89PNG\r\n\x1a\nrendered")
     release.set()
     await asyncio.sleep(0)
 
@@ -409,6 +411,146 @@ async def test_get_or_queue_returns_placeholder_on_timeout(tmp_path: Path) -> No
     pool.submit_path.assert_called_once()
 
 
+@pytest.mark.anyio
+async def test_cold_requests_share_setup_and_render_after_a_waiter_leaves(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"tiff")
+    manager = ThumbnailManager(tmp_path / "cache")
+    release_setup = threading.Event()
+    release_render = asyncio.Event()
+    execution = _StubExecution(gate=release_render)
+    pool = _stub_pool(execution=execution)
+    launches = []
+
+    def launch():
+        launches.append(True)
+        manager._mark_installing()
+        release_setup.wait(5)
+        manager._env = mock.MagicMock()
+        manager._pool = pool
+
+    manager._launch = launch
+    try:
+        # Installation is still blocked, but the request deadline is honored.
+        responses = await asyncio.wait_for(asyncio.gather(*[
+            manager.get_or_queue(source, 128, wait_timeout=0.01) for _ in range(10)
+        ]), 1)
+        assert all(response == manager.placeholder_png(128) for response in responses)
+        assert manager.status(source, 128) == "pending"
+        assert len(launches) == 1
+        abandoned = asyncio.create_task(manager.get_or_queue(source, 128, wait_timeout=30))
+        await asyncio.sleep(0)
+        abandoned.cancel()
+        await asyncio.gather(abandoned, return_exceptions=True)
+        assert len(manager._pending_generations) == 1
+        release_setup.set()
+        await manager.queue_generate(source, 128)
+        pool.submit_path.assert_called_once()
+        manager.cache_path(source, 128).write_bytes(b"\x89PNG\r\n\x1a\nrendered")
+        job = next(iter(manager._pending_generations.values()))
+        release_render.set()
+        await job.task
+        await manager.queue_generate(source, 128)
+        assert len(launches) == 1
+        pool.submit_path.assert_called_once()
+        assert manager.status(source, 128) == "ready"
+    finally:
+        release_setup.set()
+        release_render.set()
+        await manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_cache_published_during_shared_setup_is_not_rendered_again(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"tiff")
+    manager = ThumbnailManager(tmp_path / "cache")
+    pool = _stub_pool()
+
+    def launch():
+        manager.cache_path(source, 128).write_bytes(b"\x89PNG\r\n\x1a\nrendered")
+        manager._env = mock.MagicMock()
+        manager._pool = pool
+
+    manager._launch = launch
+    await asyncio.gather(*(manager.queue_generate(source, 128) for _ in range(10)))
+    pool.submit_path.assert_not_called()
+    assert manager.status(source, 128) == "ready"
+    await manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_failed_render_is_terminal_for_the_same_fingerprint(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"tiff")
+    manager = ThumbnailManager(tmp_path / "cache")
+    manager._env = mock.MagicMock()
+    manager._pool = _stub_pool()  # Completes without writing a PNG.
+    await manager.get_or_queue(source, 128, wait_timeout=1)
+    assert manager.status(source, 128) == "failed"
+    for _ in range(10):
+        await manager.get_or_queue(source, 128)
+    manager._pool.submit_path.assert_called_once()
+    await manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_failed_startup_is_shared_without_reinstalling_on_later_requests(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"tiff")
+    manager = ThumbnailManager(tmp_path / "cache")
+    launches = []
+
+    def launch():
+        launches.append(True)
+        raise RuntimeError("Setup failed")
+
+    manager._launch = launch
+    await asyncio.gather(*(manager.get_or_queue(source, 128, wait_timeout=1) for _ in range(10)))
+    assert manager.status(source, 128) == "failed"
+    assert manager.environment_state == "failed"
+    another = tmp_path / "another.tif"
+    another.write_bytes(b"tiff")
+    await manager.get_or_queue(another, 128, wait_timeout=1)
+    assert launches == [True]
+    await manager.shutdown()
+
+
+@pytest.mark.anyio
+async def test_shutdown_joins_inflight_submission_before_closing_pool(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"tiff")
+    manager = ThumbnailManager(tmp_path / "cache")
+    submitting = threading.Event()
+    release = threading.Event()
+    execution = _StubExecution(gate=asyncio.Event())
+    pool = _stub_pool(execution=execution)
+    manager._env = mock.MagicMock()
+    manager._pool = pool
+
+    def submit(*args, **kwargs):
+        submitting.set()
+        release.wait(5)
+        return execution
+
+    pool.submit_path.side_effect = submit
+    queued = asyncio.create_task(manager.queue_generate(source, 128))
+    try:
+        assert await asyncio.to_thread(submitting.wait, 1)
+        stopping = asyncio.create_task(manager.shutdown())
+        await asyncio.sleep(0)
+        assert not stopping.done()
+        pool.close.assert_not_called()
+        release.set()
+        await asyncio.wait_for(stopping, 1)
+        await asyncio.wait_for(queued, 1)
+        assert execution.cancelled
+        pool.close.assert_called_once()
+    finally:
+        release.set()
+        await manager.shutdown()
+
+
 def test_launch_provisions_environment_and_starts_worker_pool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -434,10 +576,11 @@ def test_launch_provisions_environment_and_starts_worker_pool(
         "thumbnail",
         EnvironmentSpec(python="3.12.*", pypi=module._THUMBNAIL_ENV_PIP),
         replace_existing=True,
+        on_mutation_started=thumbnails._mark_installing,
     )
     operation.listen.assert_called_once()
     operation.wait_for.assert_called_once_with()
-    environment.start.assert_called_once_with(workers=8)
+    environment.start.assert_called_once_with(workers=2)
     assert thumbnails._pool is pool
 
 

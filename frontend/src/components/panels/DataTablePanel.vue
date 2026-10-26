@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
 import { useSettingsStore } from '@/stores/settings'
+import { useThumbnailsStore } from '@/stores/thumbnails'
 import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
 import type {
   ToolNodeState,
@@ -37,6 +38,7 @@ const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
 const settingsStore = useSettingsStore()
+const thumbnails = useThumbnailsStore()
 const nestedSessionsStore = useNestedWorkflowSessionsStore()
 const { currentGraph } = useGraphSync()
 const showAll = ref(false)
@@ -307,6 +309,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="data-table-panel" data-testid="data-table-panel">
+    <p v-if="thumbnails.installing" role="status" data-testid="thumbnail-installation-status">
+      Preparing thumbnail support. First-time setup may take several minutes.
+    </p>
     <div v-if="graphNodes.length === 0" class="data-table-panel__placeholder">
       No nodes in the workflow.
     </div>

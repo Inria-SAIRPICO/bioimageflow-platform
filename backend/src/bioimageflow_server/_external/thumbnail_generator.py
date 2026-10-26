@@ -11,6 +11,8 @@ can return its IPC response immediately and accept the next request.
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import tempfile
 
 
 def create_thumbnail(
@@ -80,5 +82,13 @@ def create_thumbnail(
         img = Image.fromarray(data_normalized.squeeze(axis=2), "L")
 
     img.thumbnail(size)
-    Path(thumbnail_path).parent.mkdir(parents=True, exist_ok=True)
-    img.save(thumbnail_path)
+    destination = Path(thumbnail_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Readers must never observe a partially written cache image.
+    with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".png", delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    try:
+        img.save(temporary_path, format="PNG")
+        os.replace(temporary_path, destination)
+    finally:
+        temporary_path.unlink(missing_ok=True)

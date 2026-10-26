@@ -85,6 +85,28 @@ def test_create_thumbnail_writes_png_for_2d_array(tmp_path: Path) -> None:
     assert captured["reader"].__name__ == "TiffReader"
 
 
+def test_thumbnail_publication_is_atomic(tmp_path: Path, monkeypatch) -> None:
+    import numpy as np
+    from PIL import Image
+
+    source = tmp_path / "source.tif"
+    source.write_bytes(b"tiff")
+    destination = tmp_path / "thumbnail.png"
+    helper = _load_module(_make_bioio_stub({"data": np.zeros((1, 1, 1, 8, 8))}))
+    original_save = Image.Image.save
+
+    def save(image, path, *args, **kwargs):
+        assert Path(path) != destination
+        assert not destination.exists()
+        original_save(image, path, *args, **kwargs)
+        assert not destination.exists()
+
+    monkeypatch.setattr(Image.Image, "save", save)
+    helper.create_thumbnail(str(source), "tif", str(destination))
+    assert destination.read_bytes().startswith(b"\x89PNG")
+    assert list(tmp_path.glob("*.png")) == [destination]
+
+
 def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None:
     import numpy as np
 

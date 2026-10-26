@@ -986,7 +986,22 @@ The server generates thumbnails on demand for image files referenced in output D
 
 - **Supported formats:** TIFF, PNG, JPEG, NIfTI (max-projection for 3D)
 - **Size:** 128x128 pixels (configurable via query param)
-- **Cache key:** SHA-256 of the absolute file path, file modification time, and requested size; it invalidates when the file changes
+- **Cache key:** SHA-256 of the absolute file path, nanosecond modification time, byte length, and requested size; it invalidates when the file changes
+
+ThumbnailManager reserves one service-owned job per fingerprint before environment setup or worker submission can yield.
+All outstanding images share one startup operation and one bounded two-worker pool; matching ready Wetlands content is reused, and only its public provisioning operation owns replacement of a stale thumbnail recipe.
+The response wait includes setup and is bounded independently of the shared job lifetime; abandoning a request or selecting another node does not cancel or resubmit shared work.
+After setup, recheck the cache before worker submission, publish completed PNGs atomically, and discard a render if its source fingerprint changed during the job.
+Shutdown stops admission, cancels the owned provisioning operation and render tasks, joins in-flight thread submissions and startup, and closes the resulting pool.
+Terminal failures are memoized in bounded process-local state, while successful thumbnails remain in the disk cache.
+
+The PNG endpoint returns X-Thumbnail-Status=pending|ready|failed|unavailable and X-Thumbnail-Environment=idle|starting|installing|ready|failed.
+A ready header always accompanies rendered PNG bytes, including when generation completes at the response boundary.
+Row-addressed responses use no-store because their URL does not encode the source fingerprint; the backend retains its disk cache.
+Concurrent visible cells share an in-flight HTTP request for the same source and table identity, and only their own display interest is canceled when they leave.
+A pending job uses capped-backoff polling without converting slow active setup into an unavailable result after a fixed retry count; terminal responses stop polling.
+During actual environment mutation, Node Data shows a persistent preparation notice explaining that first-time setup may take several minutes; warm startup alone does not flash this notice.
+The real TIFF browser acceptance must finish automatically after cold setup, without warming the endpoint through a separate API loop or reopening the workflow to repair an exhausted UI budget.
 
 ### 2.7 Tool Hot-Reload
 

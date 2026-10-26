@@ -662,7 +662,16 @@ async def reveal_node_image(
     return {"status": "ok"}
 
 
-@router.get("/{node_id:path}/thumbnail")
+@router.get("/{node_id:path}/thumbnail", response_class=Response, responses={
+    200: {
+        "description": "Rendered PNG or a placeholder with explicit work status.",
+        "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}},
+        "headers": {
+            "X-Thumbnail-Status": {"schema": {"type": "string", "enum": ["pending", "ready", "failed", "unavailable"]}},
+            "X-Thumbnail-Environment": {"schema": {"type": "string", "enum": ["idle", "starting", "installing", "ready", "failed"]}},
+        },
+    },
+})
 async def get_node_thumbnail(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -685,8 +694,20 @@ async def get_node_thumbnail(
     # placeholder still warming up — placeholders must not be cached or
     # a stale "pending" image sticks until the user hard-reloads.
     is_placeholder = png == thumbnail_manager.placeholder_png(size)
+    status = thumbnail_manager.status(image_path, size) if is_placeholder else "ready"
+    if is_placeholder and status == "ready":
+        # Rendering can publish between the bounded wait and this status read.
+        # Never label the earlier placeholder as a finished image.
+        cached = thumbnail_manager.get_cached(image_path, size)
+        if cached is not None:
+            png = cached
+        else:
+            status = "pending"
     headers = {
-        "X-Thumbnail-Status": "pending" if is_placeholder else "ready",
-        "Cache-Control": "no-store" if is_placeholder else "public, max-age=86400",
+        "X-Thumbnail-Status": status,
+        "X-Thumbnail-Environment": thumbnail_manager.environment_state,
+        # The URL names a row, not its current source-file fingerprint. Disk
+        # caching is managed by ThumbnailManager; browsers must revalidate it.
+        "Cache-Control": "no-store",
     }
     return Response(content=png, media_type="image/png", headers=headers)

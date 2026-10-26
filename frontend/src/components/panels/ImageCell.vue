@@ -4,6 +4,7 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
 import { useSettingsStore } from '@/stores/settings'
+import { useThumbnailsStore } from '@/stores/thumbnails'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import { openInFiji } from '@/api/fiji'
 import PathCell from './PathCell.vue'
@@ -75,6 +76,8 @@ try {
 }
 
 const settings = useSettingsStore()
+const thumbnails = useThumbnailsStore()
+const thumbnailSubscriber = Symbol('thumbnail-cell')
 const settingsPanel = useSettingsPanel()
 const fijiPending = ref(false)
 const avivatorPending = ref(false)
@@ -85,10 +88,8 @@ const thumbnailActivated = ref(false)
 const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
 
-// Backoff schedule for "pending" retries. ~30 s total budget across 5
-// retries — enough for most renders to finish without hammering the
-// server. The frontend gives up after this; the user can scroll away
-// and back to retrigger.
+// A real pending job stays pending through cold setup. Polling backs off
+// and is canceled when this cell leaves; terminal failures stop immediately.
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 const THUMBNAIL_REQUEST_SIZE = 256
 const THUMBNAIL_RENDER_SIZE = 96
@@ -192,27 +193,21 @@ function revokeBlob() {
 
 async function fetchThumbnail() {
   abort?.abort()
-  abort = new AbortController()
+  const controller = new AbortController()
+  abort = controller
   thumbnailPending.value = true
   fetchFailed.value = false
-  const versioned = `${baseUrl.value}&_v=${retryAttempt}`
   try {
-    const response = await fetch(versioned, { signal: abort.signal })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const status = response.headers.get('X-Thumbnail-Status')
+    const response = await thumbnails.request(baseUrl.value,
+      JSON.stringify([props.value, props.resultIdentity]), controller.signal)
+    if (abort !== controller) return
+    const status = response.status
+    thumbnails.setInstalling(thumbnailSubscriber, status === 'pending' && response.environment === 'installing')
     if (status === 'pending') {
       revokeBlob()
       fetchFailed.value = false
-      if (retryAttempt >= RETRY_DELAYS_MS.length) {
-        thumbnailPending.value = false
-        fetchFailed.value = true
-        clearTimer()
-        return
-      }
       thumbnailPending.value = true
-      const delay = RETRY_DELAYS_MS[retryAttempt]
+      const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)]!
       retryAttempt += 1
       clearTimer()
       retryTimer = setTimeout(() => {
@@ -222,14 +217,16 @@ async function fetchThumbnail() {
       return
     }
 
-    const blob = await response.blob()
+    if (status === 'failed' || status === 'unavailable') throw new Error('Thumbnail unavailable')
+    const blob = response.blob
     revokeBlob()
     blobUrl.value = URL.createObjectURL(blob)
     thumbnailPending.value = false
     fetchFailed.value = false
     clearTimer()
   } catch (exc) {
-    if ((exc as DOMException)?.name === 'AbortError') return
+    if (abort !== controller || (exc as DOMException)?.name === 'AbortError') return
+    thumbnails.setInstalling(thumbnailSubscriber, false)
     revokeBlob()
     thumbnailPending.value = false
     fetchFailed.value = true
@@ -238,6 +235,7 @@ async function fetchThumbnail() {
 }
 
 function reset() {
+  thumbnails.setInstalling(thumbnailSubscriber, false)
   avivatorRequestId += 1
   avivatorPending.value = false
   clearTimer()
@@ -268,7 +266,7 @@ function startObserving(): void {
 
 watch(
   () =>
-    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}::${props.thumbnailEnabled}`,
+    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}::${props.thumbnailEnabled}::${JSON.stringify(props.resultIdentity)}`,
   () => reset(),
   { immediate: true },
 )
@@ -283,6 +281,7 @@ watch(
 onMounted(startObserving)
 
 onBeforeUnmount(() => {
+  thumbnails.setInstalling(thumbnailSubscriber, false)
   avivatorRequestId += 1
   stopObserving?.()
   stopObserving = null

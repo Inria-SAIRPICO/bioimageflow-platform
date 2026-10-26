@@ -447,6 +447,9 @@ Node Data is a read-only inspection surface during execution.
 A result_pending HTTP 409 permits bounded publication retries; result_unavailable and unclassified conflicts are surfaced immediately without polling in individual and consolidated tables.
 Rejected immutable records, unsupported cache schemas and mismatched captured identities remain unavailable without raw-file fallback or automatic conversion, and their diagnostic retains the validation cause and recovery guidance.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
+Repeated selections share service-owned thumbnail setup and rendering by source fingerprint, and concurrent cells share in-flight requests without letting one departing subscriber cancel another.
+Pending work survives cold installation without a fixed client retry-count failure; terminal statuses stop polling, and actual installation shows the preparation notice defined in v1 Section 2.6.
+The backend disk cache remains fingerprint-authoritative, ready PNG publication is atomic, and row-addressed HTTP responses do not retain stale browser images.
 In an opened nested canvas, selecting an internal node queries its own result using the full root-relative instance path and root workflow storage identity.
 Focusing an already visible Node Data dock preserves the projection and in-progress cell gesture; revealing a previously hidden dock refreshes its projection.
 Node Data dock focus preserves that canvas selection; pending startup restoration cannot reactivate the root after an accepted Open and subsequent nested inspection (v1 Section 3.8).

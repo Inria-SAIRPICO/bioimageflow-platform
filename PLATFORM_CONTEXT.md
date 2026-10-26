@@ -222,6 +222,9 @@ Missing or explicitly dynamic producer output declarations use value inference; 
 They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
 The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 Node-image, thumbnail, and Reveal requests resolve relative owned image paths against the immutable record captured for that request through the library's public asset API; absolute external image paths keep their declared location, and legacy unpinned results retain their existing lookup rules.
+Thumbnail setup and per-fingerprint renders are service-owned shared jobs: request cancellation and repeated selections cannot cancel or duplicate them, and shutdown joins submissions and startup before closing the pool.
+Thumbnail replies distinguish pending, ready, failed and unavailable states; cold setup stays pending until a real terminal outcome, shows a preparation notice only during actual environment mutation, and publishes PNGs atomically.
+Visible cells coalesce in-flight requests, cancel only their own interest, and revalidate row-addressed URLs rather than using stale browser responses; the server owns the fingerprinted disk cache.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.

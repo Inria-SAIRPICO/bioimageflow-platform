@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config'
 import ImageCell from '../ImageCell.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { useThumbnailsStore } from '@/stores/thumbnails'
 
 vi.mock('@/api/client', () => ({
   api: { post: vi.fn() },
@@ -16,10 +17,10 @@ const READY_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x
 const PENDING_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9])
 const mockedPost = vi.mocked(api.post)
 
-function makeFetchResponse(status: 'ready' | 'pending', bytes: Uint8Array): Response {
+function makeFetchResponse(status: 'ready' | 'pending' | 'failed' | 'unavailable', bytes: Uint8Array, environment = 'ready'): Response {
   return new Response(bytes, {
     status: 200,
-    headers: { 'Content-Type': 'image/png', 'X-Thumbnail-Status': status },
+    headers: { 'Content-Type': 'image/png', 'X-Thumbnail-Status': status, 'X-Thumbnail-Environment': environment },
   })
 }
 
@@ -145,7 +146,7 @@ describe('ImageCell', () => {
     expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
   })
 
-  it('cache-busts retries with a versioned query param', async () => {
+  it('revalidates a stable thumbnail URL without browser-cache reuse', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(makeFetchResponse('pending', PENDING_BYTES))
@@ -160,15 +161,19 @@ describe('ImageCell', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const firstUrl = String(fetchMock.mock.calls[0][0])
     const secondUrl = String(fetchMock.mock.calls[1][0])
-    expect(secondUrl).not.toBe(firstUrl)
+    expect(secondUrl).toBe(firstUrl)
+    expect(fetchMock.mock.calls.every(call => call[1]?.cache === 'no-store')).toBe(true)
     // Both URLs should target the same endpoint
     expect(firstUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
     expect(secondUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
   })
 
-  it('stops retrying after the max attempts and shows thumbnail unavailable', async () => {
-    // Always pending — exhaust retries.
-    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('pending', PENDING_BYTES))
+  it('keeps actual work pending beyond cold setup and renders it automatically when ready', async () => {
+    let ready = false
+    // Each HTTP request has its own body stream, as in a real browser.
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      makeFetchResponse(ready ? 'ready' : 'pending', ready ? READY_BYTES : PENDING_BYTES, 'installing'),
+    ))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
@@ -182,9 +187,43 @@ describe('ImageCell', () => {
     // Allow some headroom but enforce a finite ceiling so a bug-induced
     // tight retry loop fails this test loudly.
     expect(calls).toBeGreaterThan(1)
-    expect(calls).toBeLessThanOrEqual(8)
+    expect(calls).toBeLessThanOrEqual(20)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(false)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(true)
+    expect(useThumbnailsStore().installing).toBe(true)
+    ready = true
+    await vi.advanceTimersByTimeAsync(15_000)
+    await flushPromises()
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    expect(useThumbnailsStore().installing).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['failed', 'unavailable'] as const)('stops polling a terminal %s response', async status => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse(status, PENDING_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountCell()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.image-cell__unavailable').exists()).toBe(true)
-    expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shares an in-flight request across repeated cell mounts without canceling another subscriber', async () => {
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn().mockReturnValue(new Promise<Response>(resolve => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const first = mountCell()
+    await flushPromises()
+    first.unmount()
+    const second = mountCell()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    finish(makeFetchResponse('ready', READY_BYTES))
+    await flushPromises()
+    expect(second.find('img.image-cell__thumb').exists()).toBe(true)
+    second.unmount()
   })
 
   it('shows the unavailable fallback when the fetch errors out', async () => {

@@ -70,6 +70,8 @@ def _default_thumbnail_mock() -> MagicMock:
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     mgr.placeholder_png.return_value = placeholder
     mgr.get_or_queue = AsyncMock(return_value=placeholder)
+    mgr.status.return_value = "pending"
+    mgr.environment_state = "idle"
     return mgr
 
 
@@ -751,7 +753,7 @@ async def test_thumbnail_endpoint(tmp_path: Path) -> None:
     image_path.write_bytes(b"tiff")
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
-    thumbs = MagicMock()
+    thumbs = _default_thumbnail_mock()
     real_png = b"\x89PNG\r\n\x1a\nrendered"
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     thumbs.placeholder_png.return_value = placeholder
@@ -779,7 +781,7 @@ async def test_thumbnail_endpoint_signals_pending_for_placeholder(tmp_path: Path
     image_path.write_bytes(b"tiff")
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
-    thumbs = MagicMock()
+    thumbs = _default_thumbnail_mock()
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     thumbs.placeholder_png.return_value = placeholder
     thumbs.get_or_queue = AsyncMock(return_value=placeholder)
@@ -788,6 +790,21 @@ async def test_thumbnail_endpoint_signals_pending_for_placeholder(tmp_path: Path
     assert resp.status_code == 200
     assert resp.headers["x-thumbnail-status"] == "pending"
     assert "no-store" in resp.headers["cache-control"]
+
+
+async def test_thumbnail_published_after_wait_returns_real_body_with_ready_status(tmp_path: Path) -> None:
+    image = tmp_path / "image.tif"
+    image.write_bytes(b"tiff")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+    thumbs = _default_thumbnail_mock()
+    thumbs.status.return_value = "ready"
+    real_png = b"\x89PNG\r\n\x1a\nreal"
+    thumbs.get_cached.return_value = real_png
+    async with await _client(store, thumbs) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask"})
+    assert response.headers["x-thumbnail-status"] == "ready"
+    assert response.content == real_png
 
 
 async def test_thumbnail_endpoint_resolves_relative_paths_against_workflow_storage(tmp_path: Path) -> None:
