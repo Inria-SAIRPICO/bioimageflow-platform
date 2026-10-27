@@ -35,7 +35,7 @@ def _storage_path(
 
 
 @router.post("/query", response_model=DataTableQueryResponse)
-async def query_data_table(
+def query_data_table(
     request: DataTableQueryRequest,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
@@ -60,7 +60,7 @@ async def query_data_table(
 
 
 @router.post("/csv")
-async def download_data_table_csv(
+def download_data_table_csv(
     request: DataTableCsvRequest,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],

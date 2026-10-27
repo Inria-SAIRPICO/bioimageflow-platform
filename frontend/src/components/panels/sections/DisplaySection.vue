@@ -8,12 +8,29 @@ const emit = defineEmits<{
 }>()
 
 const pageSizes = [25, 50, 100, 250, 500]
+const browsingModes = [
+  { label: 'Paginated', value: 'paginated' },
+  { label: 'Continuous scrolling', value: 'continuous' },
+]
 </script>
 
 <template>
   <div class="settings-section">
     <div class="field">
-      <label class="field-label" for="node-data-page-size">Node Data rows per page</label>
+      <label class="field-label" for="node-data-browsing-mode">Node Data browsing mode</label>
+      <Select
+        input-id="node-data-browsing-mode"
+        :model-value="modelValue.node_data_browsing_mode ?? 'paginated'"
+        :options="browsingModes"
+        option-label="label"
+        option-value="value"
+        data-testid="node-data-browsing-mode-setting"
+        @update:model-value="emit('update:field', { field: 'node_data_browsing_mode', value: $event })"
+      />
+      <small>Both modes render only the rows near the visible area. Continuous scrolling loads additional rows as needed.</small>
+    </div>
+    <div class="field">
+      <label class="field-label" for="node-data-page-size">Node Data rows per page (paginated mode)</label>
       <Select
         input-id="node-data-page-size"
         :model-value="modelValue.node_data_page_size"

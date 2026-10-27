@@ -356,6 +356,8 @@ Raw JSON import/export of local configuration may be a later advanced convenienc
 ### 5.3 Open button and dropdown
 
 The existing **Open in napari** becomes a split button.
+Mounting or scrolling an image cell does not resolve viewer environments; the primary/menu action requests fresh backend resolution for its captured artifact.
+Until that action, the button uses a generic opening/choice label rather than claiming that compatibility or an environment choice has already been checked.
 Its main action opens in the resolved environment; its tooltip/accessibility label includes that environment and selection reason.
 The arrow opens a popover showing all registered environments with status, detected napari version, and a short reason when requirements are unmet.
 Changing the selected artifact withdraws the previous resolved environment, reader, launch, clear-layers, and favorite actions while the new artifact resolves; late responses cannot revive those withdrawn actions.

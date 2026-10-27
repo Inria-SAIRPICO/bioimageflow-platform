@@ -4,14 +4,13 @@ import { useTableColumnWidths } from '@/composables/useTableColumnWidths'
 import NodeDataColumnResizer from './NodeDataColumnResizer.vue'
 import './nodeDataTable.css'
 import Button from 'primevue/button'
-import Column from 'primevue/column'
-import DataTable from 'primevue/datatable'
+import VirtualDataTable from './VirtualDataTable.vue'
 import ImageCell from './ImageCell.vue'
 import NodeDataActiveFilters from './NodeDataActiveFilters.vue'
 import NodeDataColumnHeader from './NodeDataColumnHeader.vue'
 import NodeDataPaginator from './NodeDataPaginator.vue'
 import { useDataTableStore } from '@/stores/dataTable'
-import type { ConsolidatedDataTableColumn, DataTableFilter } from '@/stores/dataTable'
+import type { DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
 import { useWorkflowStore } from '@/stores/workflow'
 
@@ -23,11 +22,16 @@ const store = useDataTableStore()
 const workflowStore = useWorkflowStore()
 const data = computed(() => store.projection?.mode === 'merged' ? store.projection : null)
 const pageState = computed(() => store.projectionPage)
-const rowModels = computed(() => (data.value?.rows ?? []).map((row) => ({
-  ...row.values,
-  __index: row.index,
-  __sourceRows: row.source_rows,
-})))
+const entries = computed(() => store.tableEntries())
+const rowModels = computed(() => entries.value.slice(0, 50).map(entry => entry.row))
+const continuous = computed(() => store.isContinuous())
+const windowErrors = computed(() => store.continuousErrors())
+const resetKey = computed(() => JSON.stringify([store.inspectionKey, store.browsingMode,
+  pageState.value.page, pageState.value.sortBy, pageState.value.sortOrder, pageState.value.filters]))
+function rowHeight(row: Record<string, unknown>): number {
+  return (data.value?.columns ?? []).some(column => hasImageBehavior(column.type, row[column.id])) ? 110 : 40
+}
+function range(start: number, end: number): void { store.loadTableRange(start, end) }
 
 function isTypedImage(type: string): boolean {
   return type === 'ImageFile' || type === 'ImageShared' || type === 'MaskPath'
@@ -41,7 +45,7 @@ function hasImageBehavior(type: string, value: unknown): boolean {
   return isTypedImage(type) || (type === 'Path' && isImagePath(value))
 }
 
-function hasRetainedNapariViewer(column: ConsolidatedDataTableColumn): boolean {
+function hasRetainedNapariViewer(column: { viewer_status?: string; viewer?: { napari?: unknown } | null }): boolean {
   return column.viewer_status === 'captured' && Boolean(column.viewer?.napari)
 }
 
@@ -78,10 +82,10 @@ function setFilters(filters: DataTableFilter[]): void {
     data-testid="merged-data-table"
   >
     <div class="merged-data-table__toolbar">
-      <span>{{ data.sources.map((source) => source.label).join(' → ') }}</span>
+      <span class="merged-data-table__caption" :title="data.sources.map(source => source.label).join(' → ')">{{ data.sources.map((source) => source.label).join(' → ') }}</span>
       <div class="merged-data-table__toolbar-actions">
         <slot name="toolbar-actions" />
-        <Button icon="pi pi-refresh" label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
+        <Button icon="pi pi-refresh" aria-label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
         <Button
           icon="pi pi-download"
           label="CSV"
@@ -96,23 +100,18 @@ function setFilters(filters: DataTableFilter[]): void {
       :labels="columnLabels"
       @change="setFilters"
     />
-    <DataTable
-      :value="rowModels"
-      data-key="__index"
-      size="small"
-      scrollable
-      scroll-height="flex"
-      :loading="store.projectionLoading"
-      :table-style="tableStyle"
-      class="merged-data-table__grid node-data-sized-grid"
-    >
-      <Column
-        v-for="column in data.columns"
-        :key="column.id"
-        :field="column.id"
-        :style="columnStyle(column)"
-      >
-        <template #header>
+    <div v-if="store.browsingMode === 'continuous' && !continuous" class="node-data-table__message">
+      Continuous scrolling requires captured results. These outputs use pagination.
+    </div>
+    <div v-for="message in windowErrors" :key="message" class="node-data-table__message" role="alert">
+      {{ message }} <Button label="Retry rows" text @click="store.retryContinuous()" />
+    </div>
+    <VirtualDataTable :columns="data.columns" :entries="entries"
+      :total-rows="continuous ? data.total_rows : data.rows.length" :row-height="rowHeight"
+      :estimated-row-height="data.columns.some(column => isTypedImage(column.type)) ? 110 : 40"
+      :column-style="columnStyle" :table-style="tableStyle" :reset-key="resetKey" :loading="store.projectionLoading"
+      class="merged-data-table__grid" @range="range">
+      <template #header="{ column }">
           <NodeDataColumnHeader
             :column="column.id"
             :label="column.label"
@@ -125,18 +124,20 @@ function setFilters(filters: DataTableFilter[]): void {
             @resize="(value, commit) => resize(column, value, commit)"
             @nudge="delta => resize(column, width(column) + delta, true)"
             @cancel="cancelResize" @autosize="autoSize(column)" />
-        </template>
-        <template #body="slotProps">
+
+      </template>
+      <template #body="{ row, column }">
           <ImageCell
             v-if="isTypedImage(column.type) || isPathType(column.type) || hasRetainedNapariViewer(column)"
             :node-id="column.source_node_id"
+            :inspection-key="store.inspectionKey"
             :workflow-name="props.workflowId"
-            :row="slotProps.data.__sourceRows[column.source_node_id]"
+            :row="row.__sourceRows[column.source_node_id]"
             :col="column.source_column"
-            :value="String(slotProps.data[column.id] ?? '')"
+            :value="String(row[column.id] ?? '')"
             :show-path="isPathType(column.type)"
-            :show-image-actions="hasImageBehavior(column.type, slotProps.data[column.id])"
-            :thumbnail-enabled="hasImageBehavior(column.type, slotProps.data[column.id])"
+            :show-image-actions="hasImageBehavior(column.type, row[column.id])"
+            :thumbnail-enabled="hasImageBehavior(column.type, row[column.id])"
             :explicit-napari-viewer="hasRetainedNapariViewer(column)"
             :result-identity="sourceIdentity(column.source_node_id)"
             :identity-generation="identityGeneration"
@@ -144,11 +145,13 @@ function setFilters(filters: DataTableFilter[]): void {
             :output-key="column.source_column"
             :output-name="column.label"
           />
-          <span v-else class="node-data-cell-text" :title="String(slotProps.data[column.id] ?? '')">{{ slotProps.data[column.id] }}</span>
-        </template>
-      </Column>
-    </DataTable>
+          <span v-else class="node-data-cell-text" :title="String(row[column.id] ?? '')">{{ row[column.id] }}</span>
+
+      </template>
+    </VirtualDataTable>
+    <div v-if="continuous" class="node-data-table__message" data-testid="continuous-row-count">{{ data.total_rows }} rows · Continuous scrolling</div>
     <NodeDataPaginator
+      v-if="!continuous"
       :page="pageState.page"
       :page-size="pageState.pageSize"
       :total-rows="data.total_rows"
@@ -166,28 +169,31 @@ function setFilters(filters: DataTableFilter[]): void {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--bif-border-muted);
-  padding-top: 0.5rem;
+  padding-top: 0;
 }
 
 .merged-data-table__toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   color: var(--p-text-muted-color);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
+
+.merged-data-table__caption { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .merged-data-table__toolbar-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
 }
 
 .merged-data-table__grid {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 89px;
   min-width: 0;
 }
 

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import type { NodeDataResponse } from '../../src/api/types'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const AVIVATOR_ORIGIN = 'https://avivator.gehlenborglab.org'
@@ -111,14 +112,12 @@ test.describe('Avivator viewer', () => {
       { data: { workflow_name: workflowName } },
     )
     expect(resultResponse.ok()).toBeTruthy()
-    const result = await resultResponse.json() as {
-      columns: string[]
-      rows: Array<{ mask: string, report: string }>
-    }
+    const result = await resultResponse.json() as NodeDataResponse
     expect(result.columns).toEqual(['mask', 'report'])
     expect(result.rows).toHaveLength(1)
-    await expect(displayedPaths.nth(0)).toHaveAttribute('title', result.rows[0].mask)
-    await expect(displayedPaths.nth(1)).toHaveAttribute('title', result.rows[0].report)
+    expect(result.source_identity).toBeTruthy()
+    await expect(displayedPaths.nth(0)).toHaveAttribute('title', String(result.rows[0]!.mask))
+    await expect(displayedPaths.nth(1)).toHaveAttribute('title', String(result.rows[0]!.report))
 
     const imageUrl = new URL(
       `/api/v1/nodes/${encodeURIComponent(nodeId!)}/image/mask.ome.tif`,
@@ -128,6 +127,7 @@ test.describe('Avivator viewer', () => {
     imageUrl.searchParams.set('col', 'mask')
     imageUrl.searchParams.set('format', 'ome-tiff')
     imageUrl.searchParams.set('workflow_name', workflowName)
+    imageUrl.searchParams.set('result_identity', JSON.stringify(result.source_identity))
 
     const preflight = await page.request.fetch(imageUrl.toString(), {
       method: 'OPTIONS',
@@ -195,8 +195,8 @@ test.describe('Avivator viewer', () => {
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     const reopenedTable = page.getByTestId('merged-data-table')
     await expect(reopenedTable).toBeVisible()
-    await expect(reopenedTable.getByTestId('path-display').nth(0)).toHaveAttribute('title', result.rows[0].mask)
-    await expect(reopenedTable.getByTestId('path-display').nth(1)).toHaveAttribute('title', result.rows[0].report)
+    await expect(reopenedTable.getByTestId('path-display').nth(0)).toHaveAttribute('title', String(result.rows[0]!.mask))
+    await expect(reopenedTable.getByTestId('path-display').nth(1)).toHaveAttribute('title', String(result.rows[0]!.report))
     await expect(reopenedTable.locator('.p-datatable-mask')).toHaveCount(0)
     await reopenedTable.getByTestId('open-avivator-0-mask').focus()
     await page.keyboard.press('Enter')

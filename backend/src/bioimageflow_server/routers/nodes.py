@@ -7,7 +7,9 @@ import logging
 import mimetypes
 import tempfile
 import time
+from concurrent.futures import Future
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Literal
 
 import numpy as np
@@ -15,6 +17,7 @@ import pandas as pd
 from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from starlette.responses import FileResponse
 
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
@@ -56,6 +59,8 @@ _TIFF_SUFFIXES = {".tif", ".tiff"}
 _OME_TIFF_CACHE_DIR = Path(tempfile.gettempdir()) / "bioimageflow-avivator-cache"
 _OME_TIFF_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 _OFFSET_JSON_SUFFIX = ".offsets.json"
+_OME_CONVERSION_LOCK = Lock()
+_OME_CONVERSIONS: dict[Path, Future[Path]] = {}
 
 
 def get_result_store() -> ResultStoreService:
@@ -68,6 +73,17 @@ def get_thumbnail_manager() -> ThumbnailManager:
 
 def get_workflow_store() -> WorkflowStoreService | None:
     return None
+
+
+def _query_result_identity(
+    result_identity: Annotated[str | None, Query(max_length=4096, description="JSON-encoded exact retained result identity; omission selects latest.")] = None,
+) -> ResultArtifactIdentity | None:
+    if result_identity is None:
+        return None
+    try:
+        return ResultArtifactIdentity.model_validate_json(result_identity)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid result_identity: {exc}") from exc
 
 
 def _workflow_storage_path(
@@ -89,6 +105,8 @@ def _get_node_dataframe(
     storage_path: Path | None,
     result_identity: ResultArtifactIdentity | None = None,
 ) -> pd.DataFrame:
+    if result_identity is not None and result_identity.node_key != node_id:
+        raise HTTPException(status_code=422, detail="Result identity does not match node")
     try:
         df = (
             result_store.get_latest_dataframe(node_id, storage_path=storage_path)
@@ -383,10 +401,36 @@ def _as_ome_tiff(image_path: Path) -> Path:
     if cache_path.is_file():
         return cache_path
 
+    with _OME_CONVERSION_LOCK:
+        pending = _OME_CONVERSIONS.get(cache_path)
+        owns_conversion = pending is None
+        if pending is None:
+            pending = Future()
+            _OME_CONVERSIONS[cache_path] = pending
+    if not owns_conversion:
+        return pending.result()
+    try:
+        result = _convert_ome_tiff(image_path, cache_path)
+        pending.set_result(result)
+        return result
+    except BaseException as exc:
+        pending.set_exception(exc)
+        raise
+    finally:
+        with _OME_CONVERSION_LOCK:
+            if _OME_CONVERSIONS.get(cache_path) is pending:
+                _OME_CONVERSIONS.pop(cache_path)
+
+
+def _convert_ome_tiff(image_path: Path, cache_path: Path) -> Path:
+    if cache_path.is_file():
+        return cache_path
     data = _read_image_array(image_path)
     axes = _ome_axes(data)
     _OME_TIFF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp_path = cache_path.with_name(f"{cache_path.name}.tmp")
+    # Separate processes can share the disk cache, but never a partial writer.
+    with tempfile.NamedTemporaryFile(dir=cache_path.parent, prefix=f".{cache_path.name}-", suffix=".tmp", delete=False) as temporary:
+        tmp_path = Path(temporary.name)
     try:
         import tifffile
 
@@ -436,7 +480,7 @@ def _tiff_offsets(path: Path) -> list[int]:
 
 
 @router.get("/{node_id:path}/data", response_model=NodeDataResponse)
-async def get_node_data(
+def get_node_data(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
@@ -462,7 +506,7 @@ async def get_node_data(
 
 
 @router.post("/{node_id:path}/data/query", response_model=NodeDataResponse)
-async def query_node_data(
+def query_node_data(
     node_id: str,
     request: NodeDataQueryRequest,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -488,7 +532,7 @@ async def query_node_data(
 
 
 @router.get("/{node_id:path}/data/csv")
-async def download_node_csv(
+def download_node_csv(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
@@ -541,7 +585,7 @@ async def download_node_csv(
 
 
 @router.post("/{node_id:path}/data/csv")
-async def download_filtered_node_csv(
+def download_filtered_node_csv(
     node_id: str,
     request: NodeDataCsvRequest,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -549,7 +593,7 @@ async def download_filtered_node_csv(
 ) -> Response:
     storage_path = _workflow_storage_path(request.workflow_name, workflow_store)
     dataframe = _filtered_node_csv(
-        _get_node_dataframe(node_id, result_store, storage_path),
+        _get_node_dataframe(node_id, result_store, storage_path, request.result_identity),
         request,
     )
     return Response(
@@ -568,9 +612,10 @@ def _node_image_response(
     workflow_name: str | None,
     output_format: Literal["ome-tiff"] | None,
     response_filename: str | None = None,
+    result_identity: ResultArtifactIdentity | None = None,
 ) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    df = _get_node_dataframe(node_id, result_store, storage_path)
+    df = _get_node_dataframe(node_id, result_store, storage_path, result_identity)
     value = _get_dataframe_cell(df, row, col)
     image_path = _dataframe_image_path(value, df, result_store, storage_path)
     media_type = _guess_image_media_type(image_path)
@@ -581,7 +626,7 @@ def _node_image_response(
             return JSONResponse(
                 content=_tiff_offsets(image_path),
                 headers={
-                    "Cache-Control": "public, max-age=86400",
+                    "Cache-Control": "no-store",
                     "Access-Control-Expose-Headers": "Content-Length, ETag",
                 },
             )
@@ -593,6 +638,7 @@ def _node_image_response(
         filename=filename,
         content_disposition_type="inline",
         headers={
+            "Cache-Control": "no-store",
             "Accept-Ranges": "bytes",
             "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range, ETag",
         },
@@ -600,7 +646,7 @@ def _node_image_response(
 
 
 @router.get("/{node_id:path}/image/{filename}")
-async def get_node_image_with_filename(
+def get_node_image_with_filename(
     node_id: str,
     filename: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -609,6 +655,7 @@ async def get_node_image_with_filename(
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
     output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
+    result_identity: Annotated[ResultArtifactIdentity | None, Depends(_query_result_identity)] = None,
 ) -> Response:
     return _node_image_response(
         node_id=node_id,
@@ -619,11 +666,12 @@ async def get_node_image_with_filename(
         workflow_name=workflow_name,
         output_format=output_format,
         response_filename=filename,
+        result_identity=result_identity,
     )
 
 
 @router.get("/{node_id:path}/image")
-async def get_node_image(
+def get_node_image(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
@@ -631,6 +679,7 @@ async def get_node_image(
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
     output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
+    result_identity: Annotated[ResultArtifactIdentity | None, Depends(_query_result_identity)] = None,
 ) -> Response:
     return _node_image_response(
         node_id=node_id,
@@ -640,20 +689,22 @@ async def get_node_image(
         row=row,
         workflow_name=workflow_name,
         output_format=output_format,
+        result_identity=result_identity,
     )
 
 
 @router.post("/{node_id:path}/reveal")
-async def reveal_node_image(
+def reveal_node_image(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
     col: str,
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
+    result_identity: Annotated[ResultArtifactIdentity | None, Depends(_query_result_identity)] = None,
 ) -> dict[str, str]:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    df = _get_node_dataframe(node_id, result_store, storage_path)
+    df = _get_node_dataframe(node_id, result_store, storage_path, result_identity)
     value = _get_dataframe_cell(df, row, col)
     image_path = _dataframe_image_path(value, df, result_store, storage_path)
     try:
@@ -683,10 +734,11 @@ async def get_node_thumbnail(
     size: Annotated[int, Query(ge=16, le=1024)] = 128,
     workflow_name: str | None = None,
     wait: Annotated[float, Query(ge=0, le=20)] = _THUMBNAIL_WAIT_TIMEOUT_SECONDS,
+    result_identity: Annotated[ResultArtifactIdentity | None, Depends(_query_result_identity)] = None,
 ) -> Response:
     def resolve_image() -> Path:
         storage_path = _workflow_storage_path(workflow_name, workflow_store)
-        df = _get_node_dataframe(node_id, result_store, storage_path)
+        df = _get_node_dataframe(node_id, result_store, storage_path, result_identity)
         value = _get_dataframe_cell(df, row, col)
         return _dataframe_image_path(value, df, result_store, storage_path)
 

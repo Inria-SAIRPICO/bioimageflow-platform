@@ -92,6 +92,7 @@ class Settings(BaseModel):
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     default_execution_target_id: str = "local"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
+    node_data_browsing_mode: Literal["paginated", "continuous"] = "paginated"
     keyboard_shortcuts: dict[str, str] = {}
     enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None

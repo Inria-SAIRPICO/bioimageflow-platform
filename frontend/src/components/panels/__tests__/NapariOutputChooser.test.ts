@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import Popover from 'primevue/popover'
 import NapariOutputChooser from '../NapariOutputChooser.vue'
 import {
   getViewerPreferences,
@@ -88,6 +89,7 @@ function mountChooser() {
 
 describe('NapariOutputChooser', () => {
   beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 0 })
     setActivePinia(createPinia())
     vi.mocked(openInNapari).mockReset().mockResolvedValue()
     vi.mocked(resolveNapariEnvironment).mockReset().mockResolvedValue(response())
@@ -122,7 +124,61 @@ describe('NapariOutputChooser', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('does no passive resolution for repeated mounted cells and resolves fresh on each action', async () => {
+    const cells = [mountChooser(), mountChooser(), mountChooser(), mountChooser()]
+    await flushPromises()
+    expect(resolveNapariEnvironment).not.toHaveBeenCalled()
+    expect(getViewerPreferences).not.toHaveBeenCalled()
+    expect(listNapariEnvironments).not.toHaveBeenCalled()
+    await cells[0]!.get('[data-testid="open-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    const nextEnvironment = 'b3a28e8d-63c0-4109-a4c7-2d3ef37e88ed'
+    vi.mocked(resolveNapariEnvironment).mockResolvedValueOnce(response({
+      effective_environment_id: nextEnvironment,
+      candidates: [{ ...response().candidates[0]!, environment_id: nextEnvironment, name: 'Tracking' }],
+    }))
+    await cells[0]!.get('[data-testid="open-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    expect(resolveNapariEnvironment).toHaveBeenCalledTimes(2)
+    expect(openInNapari).toHaveBeenLastCalledWith(expect.objectContaining({ environment_id: nextEnvironment }))
+    cells.forEach(cell => cell.unmount())
+  })
+
+  it('explains an unavailable saved favorite before dispatching to a fallback', async () => {
+    vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({ candidates: [
+      ...response().candidates,
+      { ...response().candidates[0]!, environment_id: 'moved', name: 'Old favorite',
+        preference: 'favorite', status: 'unavailable', reason: 'Interpreter was moved' },
+    ] }))
+    const wrapper = mountChooser()
+    await wrapper.get('[data-testid="open-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    expect(openInNapari).not.toHaveBeenCalled()
+    expect(resolveNapariEnvironment).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('Saved preference unavailable')
+    document.querySelector<HTMLButtonElement>('button[aria-label="Open once in Microscopy"]')!.click()
+    await flushPromises()
+    expect(openInNapari).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('does not resolve again when closing the menu and checks fresh choices when reopening', async () => {
+    const wrapper = mountChooser()
+    const menu = wrapper.get('[data-testid="choose-napari-42-labels"]')
+    await menu.trigger('click')
+    await flushPromises()
+    expect(resolveNapariEnvironment).toHaveBeenCalledOnce()
+    await menu.trigger('click')
+    await flushPromises()
+    expect(resolveNapariEnvironment).toHaveBeenCalledOnce()
+    await menu.trigger('click')
+    await flushPromises()
+    expect(resolveNapariEnvironment).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
   })
 
   it('opens the server-selected environment with the exact captured result identity', async () => {
@@ -130,9 +186,11 @@ describe('NapariOutputChooser', () => {
     await flushPromises()
 
     const primary = wrapper.get('[data-testid="open-napari-42-labels"]')
-    expect(primary.attributes('aria-label')).toBe('Open in Microscopy')
-    expect(primary.attributes('title')).toBe('Open in Microscopy.')
+    expect(primary.attributes('aria-label')).toBe('Open image in napari')
+    expect(resolveNapariEnvironment).not.toHaveBeenCalled()
     await primary.trigger('click')
+    await flushPromises()
+    expect(primary.attributes('aria-label')).toBe('Open in Microscopy')
 
     expect(openInNapari).toHaveBeenCalledWith({
       paths: ['/stale/client/path.tif'],
@@ -277,6 +335,94 @@ describe('NapariOutputChooser', () => {
     expect(openInNapari).toHaveBeenCalledTimes(1)
   })
 
+  it('does not open a deferred menu after its result selection changes', async () => {
+    let frame!: FrameRequestCallback
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frame = callback; return 0 })
+    const wrapper = mountChooser()
+    const show = vi.spyOn(wrapper.findComponent(Popover).vm, 'show')
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    await wrapper.setProps({ row: 43 })
+    frame(0)
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('waits for stable anchor geometry and queued ancestor scroll before showing the menu', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return 0 })
+    const wrapper = mountChooser()
+    const show = vi.spyOn(wrapper.findComponent(Popover).vm, 'show')
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    document.body.dispatchEvent(new Event('scroll'))
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('cancels a pending menu when the user scrolls and permits a later explicit reopen', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return 0 })
+    const wrapper = mountChooser()
+    const show = vi.spyOn(wrapper.findComponent(Popover).vm, 'show')
+    const button = wrapper.get('[data-testid="choose-napari-42-labels"]')
+    await button.trigger('click')
+    await flushPromises()
+    window.dispatchEvent(new Event('wheel'))
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).not.toHaveBeenCalled()
+    await button.trigger('click')
+    await flushPromises()
+    frames.shift()!(0)
+    await flushPromises()
+    frames.shift()!(0)
+    await flushPromises()
+    expect(show).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('retains the clicked button while resolving an async fallback chooser', async () => {
+    let finish!: (value: NapariResolveResponse) => void
+    vi.mocked(resolveNapariEnvironment).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = mountChooser()
+    const show = vi.spyOn(wrapper.findComponent(Popover).vm, 'show')
+    const button = wrapper.get<HTMLButtonElement>('[data-testid="open-napari-42-labels"]')
+    button.element.click()
+    finish(response({ effective_environment_id: null }))
+    await flushPromises()
+    expect(show).toHaveBeenCalledWith(expect.any(MouseEvent), button.element)
+    wrapper.unmount()
+  })
+
+  it('abandons a pending primary action if its captured path changes', async () => {
+    let finish!: (value: NapariResolveResponse) => void
+    vi.mocked(resolveNapariEnvironment).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = mountChooser()
+    await wrapper.get('[data-testid="open-napari-42-labels"]').trigger('click')
+    await wrapper.setProps({ path: '/replacement/path.tif' })
+    finish(response())
+    await flushPromises()
+    expect(openInNapari).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="open-napari-42-labels"]').trigger('click')
+    await flushPromises()
+    expect(openInNapari).toHaveBeenCalledWith(expect.objectContaining({ paths: ['/replacement/path.tif'] }))
+    wrapper.unmount()
+  })
+
   it('withdraws the previous replace action while a changed artifact awaits resolution', async () => {
     const wrapper = mountChooser()
     await flushPromises()
@@ -293,6 +439,7 @@ describe('NapariOutputChooser', () => {
     expect(openInNapari).not.toHaveBeenCalled()
     expect(toggleViewerFavorite).not.toHaveBeenCalled()
     const nextEnvironment = 'b3a28e8d-63c0-4109-a4c7-2d3ef37e88ed'
+    await wrapper.get('[data-testid="choose-napari-43-next-output"]').trigger('click')
     finishCurrent(response({ artifact_identity: nextIdentity, identity_generation: 8, output_key: 'next-output',
       preference_key: { ...preferenceKey, identity_generation: 8, output_key: 'next-output' },
       effective_environment_id: nextEnvironment,
@@ -352,8 +499,6 @@ describe('NapariOutputChooser', () => {
     await flushPromises()
     await wrapper.get('[data-testid="choose-napari-42-next-output"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="choose-napari-42-next-output"]').trigger('click')
-    await flushPromises()
     expect(document.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1)
     finishOldPreferences(preferences(1))
     await flushPromises()
@@ -397,6 +542,8 @@ describe('NapariOutputChooser', () => {
     vi.mocked(getViewerPreferences).mockResolvedValue({ ...preferences(1), favorites: [{ key: preferenceKey, environment_id: response().effective_environment_id! }] })
     await wrapper.setProps({ resultIdentity: nextIdentity, outputKey: 'next-output' })
     await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-next-output"]').trigger('click')
+    await flushPromises()
     const nextStar = document.querySelector<HTMLButtonElement>('button[aria-label="Set Microscopy as favorite for this output"]')!
     expect(nextStar.disabled).toBe(false)
     let finishNextToggle!: (value: ViewerPreferencesSnapshot) => void
@@ -430,6 +577,8 @@ describe('NapariOutputChooser', () => {
     oldOpen.click()
     await flushPromises()
     expect(openInNapari).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
+    await flushPromises()
     document.querySelector<HTMLButtonElement>('button[aria-label="Open once in Microscopy"]')!.click()
     await flushPromises()
     expect(openInNapari).toHaveBeenCalledOnce()
@@ -443,12 +592,15 @@ describe('NapariOutputChooser', () => {
     const oldResponse = new Promise<NapariResolveResponse>(resolve => { finishOld = resolve })
     vi.mocked(resolveNapariEnvironment).mockReturnValueOnce(oldResponse)
     const wrapper = mountChooser()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
     const nextIdentity = { ...identity, result_key: 'replacement-result' }
     vi.mocked(resolveNapariEnvironment).mockResolvedValue(response({
       artifact_identity: nextIdentity,
       candidates: [{ ...response().candidates[0]!, name: 'Current environment' }],
     }))
     await wrapper.setProps({ resultIdentity: nextIdentity })
+    await flushPromises()
+    await wrapper.get('[data-testid="choose-napari-42-labels"]').trigger('click')
     await flushPromises()
     const primary = wrapper.get('[data-testid="open-napari-42-labels"]')
     expect(primary.attributes('aria-label')).toBe('Open in Current environment')
@@ -459,6 +611,7 @@ describe('NapariOutputChooser', () => {
     expect(openInNapari).not.toHaveBeenCalled()
     expect(toggleViewerFavorite).not.toHaveBeenCalled()
     await primary.trigger('click')
+    await flushPromises()
     expect(openInNapari).toHaveBeenCalledOnce()
     expect(openInNapari).toHaveBeenCalledWith(expect.objectContaining({ result_identity: nextIdentity }))
     wrapper.unmount()

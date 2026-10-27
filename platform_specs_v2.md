@@ -439,7 +439,11 @@ Related selected nodes and requested upstream context use the consolidated proje
 
 Filtering, sorting, pagination, totals, and CSV export operate on the same immutable result snapshot and scoped node identities.
 Filtering precedes sorting and pagination, and CSV applies the same active filter and sort contract.
-The default page size is the persisted user preference, initially 250, while infinite scrolling is not part of the platform interaction model.
+The default page size is the persisted user preference, initially 250, in Paginated browsing mode.
+Preferences → Display also offers Continuous scrolling; both modes use the same bounded virtual row viewport, while continuous mode fetches and evicts blocks against a fixed per-source result-identity vector.
+Legitimate mixed-run source vectors remain valid; no source identity may change between blocks, and snapshot metadata outlives evicted row payloads.
+Sorting/filtering and mode changes reset the row window without replacing its selected results; Refresh or accepted replacement data starts a new inspection atomically, and prior responses cannot populate it.
+Stacked fallback retains its captured identities for each individual table and CSV; unpinned legacy tables retain paginated behavior with an explanation.
 Individual and merged tables share the column-sizing contract in v1 Section 3.6: bounded initial content sizing, stable widths across data-page updates, independent resizing through visible separators, and one **Reset column widths** action.
 Width persistence stores only explicit user choices by workflow/table and stable column identity, not measured component-update snapshots.
 
@@ -448,6 +452,9 @@ A result_pending HTTP 409 permits bounded publication retries; result_unavailabl
 Rejected immutable records, unsupported cache schemas and mismatched captured identities remain unavailable without raw-file fallback or automatic conversion, and their diagnostic retains the validation cause and recovery guidance.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
 Repeated selections share service-owned thumbnail setup and rendering by source fingerprint, and concurrent cells share in-flight requests without letting one departing subscriber cancel another.
+The frontend owns one polling chain and a bounded completed-Blob cache per exact source address within an accepted inspection; Refresh revalidates even unchanged retained IDs, including mutable external files.
+Thumbnail/image/offset/Reveal requests and individual CSV carry the displayed exact result, independently of later latest-pointer changes.
+Viewer environment resolution occurs only on an explicit primary/menu action, never for each mounted or scrolled image cell; every action retains its captured artifact and explains an unavailable saved preference before a fallback open.
 Pending work survives cold installation without a fixed client retry-count failure; terminal statuses stop polling, and actual installation shows the preparation notice defined in v1 Section 2.6.
 After the initial progress response, bounded server completion waits replace increasing client backoff; thumbnail result I/O runs off the event loop and BioIO selects the preview plane lazily across installed reader formats, including directory stores.
 The backend disk cache remains fingerprint-authoritative, ready PNG publication is atomic, and row-addressed HTTP responses do not retain stale browser images.

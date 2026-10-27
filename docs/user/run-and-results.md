@@ -49,6 +49,11 @@ Open an entry for details or use **Go to node** when it is available.
 When selected nodes have compatible rows, BioImageFlow can combine their fields in one table.
 Otherwise it shows separate tables.
 
+Choose **Paginated** or **Continuous scrolling** under **Edit → Preferences… → Display → Node Data browsing mode**.
+Both modes render the rows near the visible area; continuous scrolling loads more rows as you browse, while pagination keeps its page controls and rows-per-page preference.
+Sorting and filtering restart browsing at the beginning of the same selected results.
+Refresh selects current outputs again; older results without retained identity use pagination.
+
 Columns start at readable widths based on their headers and loaded values; wide tables scroll horizontally.
 Drag a visible header separator to resize just that column, or double-click it to auto-size it.
 You can also focus a separator with Tab and use Left/Right to resize or Enter to auto-size.
@@ -60,9 +65,12 @@ Widths stay stable while changing pages or loading thumbnails, and hovering trun
 ## Inspect images and paths
 
 Image paths can display preview thumbnails.
+Repeated occurrences of the same source reuse their previews during the current inspection.
+Use Refresh to recheck previews after editing an external image file.
 Path actions can reveal a file in the system file manager or copy its full path.
 
 Use **Open in Napari** for local interactive image viewing.
+The viewer choice is checked when you use its button or menu, so browsing a table does not issue a viewer check for every row.
 The main action uses the compatible environment selected by, in order, the output favorite, first matching filename rule, global default, or another compatible registered environment.
 Open the arrow beside it to see every environment and why it is compatible, incompatible, unknown, or unavailable.
 Choosing an environment there opens only the selected cell once and does not change your preferences.

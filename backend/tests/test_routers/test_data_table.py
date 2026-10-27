@@ -60,6 +60,23 @@ async def test_query_returns_merged_contract() -> None:
     assert body["unfiltered_total_rows"] == 1
 
 
+async def test_projection_reads_do_not_block_the_event_loop() -> None:
+    import threading
+
+    event_loop_thread = threading.get_ident()
+    store = configured_store({"a": pd.DataFrame({"x": [1]}, index=["r0"]), "b": pd.DataFrame({"y": [2]}, index=["r0"])})
+    read = store.get_dataframe_from_record.side_effect
+
+    def checked_read(*args, **kwargs):
+        assert threading.get_ident() != event_loop_thread
+        return read(*args, **kwargs)
+
+    store.get_dataframe_from_record.side_effect = checked_read
+    async with await client_for(store) as client:
+        response = await client.post("/api/v1/data-table/query", json=payload())
+    assert response.status_code == 200, response.text
+
+
 @pytest.mark.parametrize("retryable", [False, True])
 async def test_result_conflict_only_requests_retry_for_pending_publication(retryable: bool) -> None:
     from bioimageflow_server.services.result_store import ResultDataNotReadyError, ResultDataUnavailableError

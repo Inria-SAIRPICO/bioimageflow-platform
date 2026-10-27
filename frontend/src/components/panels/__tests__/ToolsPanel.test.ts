@@ -161,6 +161,7 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     new_workflow_execution: 'sequential',
     default_execution_target_id: 'local',
     node_data_page_size: 250,
+    node_data_browsing_mode: 'paginated',
     keyboard_shortcuts: {},
     enable_unsafe_webapp_features: false,
     datasets_root: null,

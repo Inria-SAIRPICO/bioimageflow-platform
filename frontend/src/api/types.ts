@@ -3944,6 +3944,7 @@ export interface components {
             sort_order: "asc" | "desc";
             /** Filters */
             filters?: components["schemas"]["DataTableFilter"][];
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
         };
         /**
          * NodeDataQueryRequest
@@ -4594,6 +4595,12 @@ export interface components {
              * @enum {integer}
              */
             node_data_page_size: 25 | 50 | 100 | 250 | 500;
+            /**
+             * Node Data Browsing Mode
+             * @default paginated
+             * @enum {string}
+             */
+            node_data_browsing_mode: "paginated" | "continuous";
             /**
              * Keyboard Shortcuts
              * @default {}
@@ -9978,6 +9985,8 @@ export interface operations {
                 row?: number;
                 workflow_name?: string | null;
                 format?: "ome-tiff" | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10015,6 +10024,8 @@ export interface operations {
                 row?: number;
                 workflow_name?: string | null;
                 format?: "ome-tiff" | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10050,6 +10061,8 @@ export interface operations {
                 col: string;
                 row?: number;
                 workflow_name?: string | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10089,6 +10102,8 @@ export interface operations {
                 size?: number;
                 workflow_name?: string | null;
                 wait?: number;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {

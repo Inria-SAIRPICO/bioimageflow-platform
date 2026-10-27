@@ -273,7 +273,8 @@ test('delayed sibling import viewing result cannot replace the accepted workflow
   await page.goto('/')
   await importInGui(page, first)
   await held
-  await expect(page.getByTestId('viewing-guidance')).toContainText(first.name)
+  await expect(page.getByTestId('workflow-title')).toHaveText(first.name)
+  await expect(page.getByTestId('viewing-guidance')).toHaveCount(0)
   const secondResponse = page.waitForResponse(response => response.url().endsWith('/napari/viewing-readiness') && JSON.stringify(response.request().postDataJSON()).includes('second-reader'))
   const imported = await importInGui(page, second)
   const report = await (await secondResponse).json() as NapariViewingReadinessResponse

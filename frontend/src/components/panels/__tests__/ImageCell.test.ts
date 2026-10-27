@@ -50,6 +50,7 @@ describe('ImageCell', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('renders the thumbnail when the server replies "ready" on the first call', async () => {
@@ -339,6 +340,7 @@ describe('ImageCell', () => {
       row: 0,
       col: 'mask',
       workflow_name: 'analysis',
+      result_identity: null,
     })
   })
 
@@ -514,7 +516,51 @@ describe('ImageCell', () => {
     expect(openEvent?.detail.imageUrl).toContain('new.ome.tif')
   })
 
-  it('waits for viewport intersection before requesting a thumbnail', async () => {
+  it('shares ready thumbnails until the inspection changes, even with unchanged result identity', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(makeFetchResponse('ready', READY_BYTES)))
+    vi.stubGlobal('fetch', fetchMock)
+    const resultIdentity = { run_id: 'run', node_key: 'n1', result_key: 'key', record_id: 'record' }
+    const first = mountCell({ inspectionKey: 'inspection-1', resultIdentity })
+    await flushPromises()
+    const request = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(request.searchParams.get('result_identity')!)).toEqual(resultIdentity)
+    first.unmount()
+    const repeated = mountCell({ inspectionKey: 'inspection-1', resultIdentity })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(repeated.find('img.image-cell__thumb').exists()).toBe(true)
+    await repeated.setProps({ inspectionKey: 'inspection-2' })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    repeated.unmount()
+  })
+
+  it('pins Reveal, Fiji and Avivator to the displayed result', async () => {
+    const identity = { run_id: 'run-a', node_key: 'n1', result_key: 'key-a', record_id: 'record-a' }
+    useSettingsStore().settings = { deployment_mode: 'desktop', fiji_path: '/Applications/Fiji.app' } as any
+    mockedPost.mockResolvedValue({ data: { status: 'ok' } })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([4096]), {
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountCell({ thumbnailEnabled: false, workflowName: 'analysis', resultIdentity: identity })
+    await wrapper.get('[data-testid="reveal-0-mask"]').trigger('click')
+    const revealUrl = new URL(String(mockedPost.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(revealUrl.searchParams.get('result_identity')!)).toEqual(identity)
+    await wrapper.get('[data-testid="open-fiji-0-mask"]').trigger('click')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/fiji/open', expect.objectContaining({ result_identity: identity }))
+    await wrapper.get('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+    const offsetsUrl = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(offsetsUrl.searchParams.get('result_identity')!)).toEqual(identity)
+    const opened = dispatch.mock.calls.map(([event]) => event)
+      .find((event): event is CustomEvent => event instanceof CustomEvent && event.type === 'bioimageflow:open-avivator')!
+    expect(JSON.parse(new URL(opened.detail.imageUrl).searchParams.get('result_identity')!)).toEqual(identity)
+    wrapper.unmount()
+  })
+
+  it('waits for viewport intersection and pauses polling when the cell leaves', async () => {
     let callback!: IntersectionObserverCallback
     const observe = vi.fn()
     const unobserve = vi.fn()
@@ -531,7 +577,9 @@ describe('ImageCell', () => {
       thresholds = [0]
     }
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
-    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeFetchResponse('pending', PENDING_BYTES))
+      .mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
@@ -548,6 +596,19 @@ describe('ImageCell', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    // Keep observing after entry so leaving the clipped table viewport can
+    // withdraw this cell's resource interest.
+    expect(unobserve).not.toHaveBeenCalled()
+    callback([{ target, isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="image-thumbnail"]').attributes('aria-label')).toBe('thumbnail not loaded')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    callback([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    wrapper.unmount()
     expect(unobserve).toHaveBeenCalledWith(target)
   })
 })

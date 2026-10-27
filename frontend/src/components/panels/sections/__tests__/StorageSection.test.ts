@@ -42,6 +42,7 @@ const settings = {
   new_workflow_execution: 'sequential' as const,
   default_execution_target_id: 'local',
   node_data_page_size: 250 as const,
+  node_data_browsing_mode: 'paginated' as const,
   keyboard_shortcuts: {},
   enable_unsafe_webapp_features: false,
   datasets_root: null,

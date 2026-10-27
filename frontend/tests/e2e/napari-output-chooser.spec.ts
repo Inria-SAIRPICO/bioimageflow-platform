@@ -90,12 +90,12 @@ async function fixture(page: Page) {
         viewer: { napari: { required_packages: [], recommended_packages: [], napari_version: null, reader_id: 'retained.reader' } },
         viewer_status: 'captured',
       }],
-      rows: Array.from({ length: 30 }, (_, offset) => ({
+      rows: Array.from({ length: 16 }, (_, offset) => ({
         index: `row-${offset}`, values: { 's0:mask': `/captured/labels-${42 + offset}.custom` },
         source_rows: { seed: 42 + offset },
       })),
-      total_rows: 30,
-      unfiltered_total_rows: 30,
+      total_rows: 16,
+      unfiltered_total_rows: 16,
       page: 0,
       page_size: 250,
     } })
@@ -186,17 +186,19 @@ test('napari captured result launches primary, one-shot and replacement exactly 
   const state = await fixture(page)
   await openNodeData(page, state.workflowName)
   const primary = page.getByTestId('open-napari-42-mask')
-  await expect(primary).toHaveAttribute('aria-label', 'Open in Microscopy')
+  await expect(primary).toHaveAttribute('aria-label', 'Open image in napari')
+  expect(state.resolveBodies).toEqual([])
+  expect(state.openBodies).toHaveLength(0)
+  await primary.click()
+  await expect.poll(() => state.openBodies.length).toBe(1)
   expect(state.resolveBodies).toContainEqual(expect.objectContaining({
     workflow_id: state.workflowName, node_path: ['seed'], output_key: 'mask', row: 42,
     result_identity: resultIdentity,
   }))
-  expect(state.openBodies).toHaveLength(0)
-  await primary.click()
-  await expect.poll(() => state.openBodies.length).toBe(1)
   expect(state.openBodies[0]).toEqual(expectedOpen(state.workflowName, environmentA))
   await page.getByTestId('choose-napari-42-mask').click()
   await expect(picker(page)).toContainText('Will open in Microscopy')
+  await expect(picker(page)).not.toContainText('Checking environments')
   await expect(picker(page).locator('button[aria-pressed="true"]')).toHaveCount(0)
   await picker(page).getByRole('button', { name: 'Open once in Tracking' }).click()
   await expect.poll(() => state.openBodies.length).toBe(2)
@@ -226,7 +228,7 @@ favoriteTest('napari exclusive structural favorite replaces, survives reload acr
   await test.step('Reload and launch row 43 using the retained favorite', async () => {
     await page.reload()
     await openNodeData(page, state.workflowName)
-    await expect(next).toHaveAttribute('aria-label', 'Open in Tracking')
+    await expect(next).toHaveAttribute('aria-label', 'Open image in napari')
     await next.click()
     await expect.poll(() => state.openBodies.length).toBe(1)
     expect(state.openBodies[0]).toEqual(expectedOpen(state.workflowName, environmentB, 43))
@@ -264,12 +266,14 @@ test('napari inactive visible dock keeps scroll gestures and refreshes only on r
   expect(state.openBodies[0]).toEqual(expectedOpen(state.workflowName, environmentA, 43))
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   const beforeArrow = state.controls.projectionQueryCount
-  const arrow = page.getByTestId('choose-napari-60-mask')
+  const arrow = page.getByTestId('choose-napari-54-mask')
+  // A virtual row must enter the mounted window before it can scroll itself.
+  await page.getByTestId('node-data-viewport').evaluate(viewport => { viewport.scrollTop = 12 * 40 })
   await arrow.scrollIntoViewIfNeeded()
   await expect(arrow).toBeInViewport()
   const scroll = await arrow.evaluate(button => {
     const viewport = button.closest('.p-datatable-table-container')!
-    const header = viewport.querySelector('.p-datatable-thead')!
+    const header = viewport.closest('.p-datatable')!.querySelector('.p-datatable-thead')!
     const b = button.getBoundingClientRect(), v = viewport.getBoundingClientRect(), h = header.getBoundingClientRect()
     return { x: v.x + v.width / 2, y: (h.bottom + v.bottom) / 2,
       delta: b.y + b.height / 2 - (h.bottom + v.bottom) / 2 }
@@ -278,13 +282,13 @@ test('napari inactive visible dock keeps scroll gestures and refreshes only on r
   await page.mouse.wheel(0, scroll.delta)
   await expect.poll(async () => arrow.evaluate(button => {
     const viewport = button.closest('.p-datatable-table-container')!
-    const header = viewport.querySelector('.p-datatable-thead')!
+    const header = viewport.closest('.p-datatable')!.querySelector('.p-datatable-thead')!
     const b = button.getBoundingClientRect(), v = viewport.getBoundingClientRect(), h = header.getBoundingClientRect()
     return b.top >= Math.max(v.top, h.bottom) && b.bottom <= v.bottom
   })).toBe(true)
   const geometry = await arrow.evaluate(button => {
     const viewport = button.closest('.p-datatable-table-container')!
-    const header = viewport.querySelector('.p-datatable-thead')!
+    const header = viewport.closest('.p-datatable')!.querySelector('.p-datatable-thead')!
     const b = button.getBoundingClientRect(), v = viewport.getBoundingClientRect(), h = header.getBoundingClientRect()
     const center = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
     return { unobscured: b.top >= Math.max(v.top, h.bottom) && b.bottom <= v.bottom
@@ -310,7 +314,7 @@ test('napari refuses unavailable choices without launch or favorite writes', asy
   state.controls.environmentBStatus = 'unavailable'
   await openNodeData(page, state.workflowName)
   const primary = page.getByTestId('open-napari-42-mask')
-  await expect(primary).toHaveAttribute('aria-label', 'Choose a napari environment')
+  await expect(primary).toHaveAttribute('aria-label', 'Open image in napari')
   await primary.click()
   await expect(picker(page)).toContainText('No registered environment has verified required packages')
   await expect(picker(page).getByRole('button', { name: 'Try opening anyway in Tracking' })).toBeDisabled()
@@ -340,7 +344,10 @@ test('napari stale captured result refusal never opens or saves a favorite', asy
   state.controls.projectedIdentity = { ...resultIdentity, result_key: 'result-replaced' }
   state.controls.resolveFailure = true
   await openNodeData(page, state.workflowName)
+  expect(state.resolveBodies).toEqual([])
+  await page.getByTestId('open-napari-42-mask').click()
   await expect(page.getByText('Captured result no longer exists').first()).toBeVisible()
+  await expect(picker(page)).not.toContainText('Checking environments')
   await page.getByTestId('open-napari-42-mask').click()
   await expect.poll(() => state.resolveBodies.filter(body => body.row === 42).length).toBeGreaterThan(1)
   expect(state.resolveBodies).toContainEqual(expect.objectContaining({ row: 42, result_identity: state.controls.projectedIdentity }))
@@ -351,7 +358,7 @@ test('napari stale captured result refusal never opens or saves a favorite', asy
 test('napari replaces captured artifact without stale clear or favorite dispatch', async ({ page }) => {
   const state = await fixture(page)
   await openNodeData(page, state.workflowName)
-  await expect(page.getByTestId('open-napari-42-mask')).toHaveAttribute('aria-label', 'Open in Microscopy')
+  await expect(page.getByTestId('open-napari-42-mask')).toHaveAttribute('aria-label', 'Open image in napari')
   const originalChooser = await page.getByTestId('choose-napari-42-mask').elementHandle()
   await page.getByTestId('choose-napari-42-mask').click()
   await expect(picker(page)).toContainText('Will open in Microscopy')
@@ -364,7 +371,8 @@ test('napari replaces captured artifact without stale clear or favorite dispatch
   await page.keyboard.press('Escape')
   await page.locator('.dv-tab').filter({ hasText: /^Execution$/ }).click()
   await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
-  await expect.poll(() => state.controls.pendingResolveCount).toBeGreaterThan(0)
+  await expect(page.getByTestId('open-napari-42-mask')).toHaveAttribute('aria-label', 'Open image in napari')
+  expect(state.controls.pendingResolveCount).toBe(0)
   const ownerPath = test.info().outputPath('replacement-owner.json')
   await writeFile(ownerPath, JSON.stringify({
     originalChooserConnected: await originalChooser!.evaluate(button => button.isConnected),
@@ -373,6 +381,7 @@ test('napari replaces captured artifact without stale clear or favorite dispatch
   }))
   await test.info().attach('replacement-owner', { contentType: 'application/json', path: ownerPath })
   await page.getByTestId('choose-napari-42-mask').click()
+  await expect.poll(() => state.controls.pendingResolveCount).toBe(1)
   const menu = picker(page)
   await expect(menu).toContainText('Checking environments')
   await expect(menu).not.toContainText('Will open in Microscopy')

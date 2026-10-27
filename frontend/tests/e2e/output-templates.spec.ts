@@ -149,12 +149,14 @@ test('output template edits persist and publish distinct files without replacing
         const execution = await response.json() as { execution_id: string; workflow_id: string; draft_revision: number }
         expect(execution).toMatchObject({ execution_id: expect.any(String), workflow_id: name })
         expect(response.request().postDataJSON()).toMatchObject({ workflow_id: name, draft_revision: execution.draft_revision })
+        // Cold managed provisioning includes Pixi installation and runtime
+        // capture; this journey verifies retained artifacts, not setup speed.
         await expect.poll(async () => {
           const status = await (await page.request.get(`${API}/execution/status`)).json() as {
             execution_id: string; state: string; last_result?: { success: boolean };
           }
           return { id: status.execution_id, state: status.state, success: status.last_result?.success }
-        }, { timeout: 60_000 }).toEqual({ id: execution.execution_id, state: 'idle', success: true })
+        }, { timeout: 120_000 }).toEqual({ id: execution.execution_id, state: 'idle', success: true })
         const data = await query(page, name)
         expect(data.identity_status).toBe('captured')
         expect(data.source_identity).toMatchObject({ node_key: 'write', run_id: expect.any(String), record_id: expect.any(String), result_key: expect.any(String) })

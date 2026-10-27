@@ -558,6 +558,50 @@ async def test_node_image_endpoint_can_convert_png_to_ome_tiff_for_avivator(
         assert tif.asarray().tolist() == np.arange(16, dtype=np.uint8).reshape(4, 4).tolist()
 
 
+def test_concurrent_viewer_requests_share_one_atomic_conversion(tmp_path: Path, monkeypatch) -> None:
+    from concurrent.futures import Future, ThreadPoolExecutor
+    import threading
+
+    source = tmp_path / "source.png"
+    expected = np.arange(16, dtype=np.uint8).reshape(4, 4)
+    Image.fromarray(expected).save(source)
+    cache = tmp_path / "converted"
+    monkeypatch.setattr(nodes_router, "_OME_TIFF_CACHE_DIR", cache)
+    reading = threading.Event()
+    release = threading.Event()
+    joined = threading.Event()
+    reads = []
+    original_read = nodes_router._read_image_array
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            joined.set()
+            return super().result(timeout)
+
+    def read(path):
+        reads.append(path)
+        reading.set()
+        assert release.wait(3), "conversion was not released"
+        return original_read(path)
+
+    monkeypatch.setattr(nodes_router, "Future", ObservedFuture)
+    monkeypatch.setattr(nodes_router, "_read_image_array", read)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(nodes_router._as_ome_tiff, source)
+        try:
+            assert reading.wait(3)
+            second = pool.submit(nodes_router._as_ome_tiff, source)
+            assert joined.wait(3), "second request did not join the conversion"
+        finally:
+            release.set()
+        converted = first.result(timeout=3)
+        assert second.result(timeout=3) == converted
+    assert reads == [source]
+    np.testing.assert_array_equal(tifffile.imread(converted), expected)
+    assert not list(cache.glob("*.tmp"))
+    assert not nodes_router._OME_CONVERSIONS
+
+
 async def test_node_image_endpoint_returns_offsets_json_for_avivator(
     tmp_path: Path,
 ) -> None:
@@ -933,6 +977,66 @@ async def test_thumbnail_endpoint_validation() -> None:
     assert bad_row.status_code == 422
     assert bad_size.status_code == 422
     assert bad_wait.status_code == 422
+
+
+@pytest.mark.parametrize("endpoint", ["thumbnail", "image", "image/preview.tif", "reveal"])
+async def test_image_actions_remain_on_captured_result_when_latest_advances(tmp_path: Path, monkeypatch, endpoint: str) -> None:
+    image = tmp_path / "old.tif"
+    image.write_bytes(b"old retained image")
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    retained = pd.DataFrame({"mask": [str(image)]})
+    retained.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.load_result_dataframe.return_value = retained
+    store.get_latest_dataframe.side_effect = AssertionError("Pinned request must not read latest")
+    thumbs = _default_thumbnail_mock()
+    reveal = MagicMock()
+    monkeypatch.setattr(nodes_router, "reveal_in_file_browser", reveal)
+    async with await _client(store, thumbs) as client:
+        method = client.post if endpoint == "reveal" else client.get
+        response = await method(f"/api/v1/nodes/n1/{endpoint}", params={
+            "col": "mask", "result_identity": identity.model_dump_json(),
+        })
+    assert response.status_code == 200, response.text
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
+    store.get_latest_dataframe.assert_not_called()
+    if endpoint.startswith("image"):
+        assert response.content == b"old retained image"
+        assert response.headers["cache-control"] == "no-store"
+    if endpoint == "reveal":
+        reveal.assert_called_once_with(str(image))
+
+
+async def test_rejected_pinned_thumbnail_cannot_fall_back_to_latest() -> None:
+    from bioimageflow_server.services.result_store import ResultDataUnavailableError
+
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    store = MagicMock()
+    store.load_result_dataframe.side_effect = ResultDataUnavailableError("Retained result was removed")
+    async with await _client(store) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "result_identity": identity.model_dump_json()})
+        malformed = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "result_identity": "{}"})
+        wrong_node = await client.get("/api/v1/nodes/other/thumbnail", params={"col": "mask", "result_identity": identity.model_dump_json()})
+    assert response.status_code == 409
+    assert response.json()["error"] == "result_unavailable"
+    assert malformed.status_code == 422
+    assert wrong_node.status_code == 422
+    store.get_latest_dataframe.assert_not_called()
+
+
+async def test_filtered_csv_uses_displayed_result_identity() -> None:
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    store = MagicMock()
+    store.load_result_dataframe.return_value = pd.DataFrame({"value": [3, 1]}, index=["old_a", "old_b"])
+    store.get_latest_dataframe.side_effect = AssertionError("Must export displayed result")
+    async with await _client(store) as client:
+        response = await client.post("/api/v1/nodes/n1/data/csv", json={
+            "result_identity": identity.model_dump(mode="json"), "sort_by": "value", "sort_order": "asc",
+        })
+    assert response.status_code == 200
+    assert response.text == ",value\nold_b,1\nold_a,3\n"
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
+    store.get_latest_dataframe.assert_not_called()
 
 
 async def test_thumbnail_resolution_runs_off_event_loop_and_forwards_long_wait(tmp_path: Path) -> None:

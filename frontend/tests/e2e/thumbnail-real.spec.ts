@@ -363,11 +363,20 @@ class ${className}(DataFrameTool):
       && new URL(response.url()).pathname === '/api/v1/execution/run', { timeout: 30_000 })
     await page.getByTestId('run-workflow-button').click()
     expect((await formatRun).status()).toBe(202)
-    const previews = table.getByTestId('image-thumbnail')
-    await expect(previews).toHaveCount(4, { timeout: 30_000 })
+    await expect(table).toBeVisible()
+    const viewport = table.getByTestId('node-data-viewport')
     for (let index = 0; index < formatSources.length; index += 1) {
-      const preview = previews.nth(index)
-      await preview.scrollIntoViewIfNeeded()
+      // Rows outside the virtual window have no DOM cells or passive work.
+      await viewport.evaluate((element, target) => {
+        element.scrollTop = element.scrollHeight * target.index / target.total
+      }, { index, total: formatSources.length })
+      const row = table.locator(`tr[data-virtual-index="${index}"]`)
+      await row.scrollIntoViewIfNeeded()
+      await expect(row.getByTestId('path-display')).toHaveAttribute('title', formatSources[index]!)
+      // The pending thumbnail element is replaced by an image on completion.
+      const cell = row.locator('.image-cell')
+      await cell.scrollIntoViewIfNeeded()
+      const preview = cell.getByTestId('image-thumbnail')
       await expect(preview).toHaveAttribute('src', /^blob:/, { timeout: 30_000 })
       const pixels = await preview.evaluate(async element => {
         const image = element as HTMLImageElement

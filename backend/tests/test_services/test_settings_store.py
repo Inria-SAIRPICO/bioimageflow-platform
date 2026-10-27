@@ -58,6 +58,17 @@ class FakeOmeroCredentials:
 
 
 class TestLoad:
+    async def test_node_data_mode_defaults_and_persists_without_changing_page_size(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"settings_version": 3, "node_data_page_size": 25}))
+        store = SettingsStore(path=path)
+        assert (await store.load()).node_data_browsing_mode == "paginated"
+        updated = await store.patch({"node_data_browsing_mode": "continuous"})
+        assert updated.node_data_page_size == 25
+        assert _read_disk(path)["node_data_browsing_mode"] == "continuous"
+        assert (await SettingsStore(path=path).load()).node_data_browsing_mode == "continuous"
+        with pytest.raises(ValueError):
+            await store.patch({"node_data_browsing_mode": "unbounded"})
     @pytest.mark.parametrize("configured,persisted", [("webapp", "desktop"), ("desktop", "webapp")])
     async def test_persisted_mode_cannot_override_process_policy(
         self, tmp_path: Path, configured: str, persisted: str

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
 import { useToast } from 'primevue/usetoast'
@@ -34,6 +34,8 @@ const props = defineProps<{
 }>()
 
 const popover = ref<InstanceType<typeof Popover> | null>(null)
+const menuVisible = ref(false)
+let menuEntered = false
 interface SelectionCapture {
   epoch: number
   token: string
@@ -63,6 +65,7 @@ try {
 let resolveRequest = 0
 let menuRequest = 0
 let favoriteRequest = 0
+let menuShowRequest = 0
 let selectionEpoch = 0
 let disposed = false
 
@@ -73,6 +76,7 @@ const identityToken = computed(() => JSON.stringify([
   props.outputKey,
   props.resultIdentity,
   props.row,
+  props.path,
 ]))
 const outputSlug = computed(() => props.outputKey.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const canResolve = computed(() => Boolean(
@@ -94,10 +98,10 @@ const favoriteUnavailable = computed(() => (
 ))
 const primaryLabel = computed(() => effectiveCandidate.value
   ? `Open in ${effectiveCandidate.value.name}`
-  : canResolve.value ? 'Choose a napari environment' : 'Result identity unavailable')
+  : canResolve.value ? 'Open image in napari' : 'Result identity unavailable')
 const primaryTitle = computed(() => {
   if (!canResolve.value) return 'Refresh output data before opening this result in napari'
-  if (!resolution.value) return 'Checking which napari environment can open this result'
+  if (!resolution.value) return 'Check available environments and open this result in napari'
   if (!effectiveCandidate.value) return resolution.value.effective_reason
   const savedWarning = favoriteUnavailable.value
     ? ` Saved preference unavailable: ${favoriteCandidate.value?.reason}.`
@@ -217,23 +221,26 @@ function invalidateSelection(): void {
   resolveRequest += 1
   menuRequest += 1
   favoriteRequest += 1
+  menuShowRequest += 1
   accepted.value = null
   preferences.value = null
   resolving.value = false
   loadingMenu.value = false
   favoritePending.value = false
+  menuVisible.value = false
+  menuEntered = false
+  popover.value?.hide()
 }
 
-watch(identityToken, () => {
-  invalidateSelection()
-  void resolveSelection()
-}, { immediate: true })
+// A mounted or visible cell does not need a viewer compatibility request.
+// Each explicit action resolves fresh registry/preferences for its capture.
+watch(identityToken, invalidateSelection)
 onBeforeUnmount(() => {
   disposed = true
   invalidateSelection()
 })
 
-async function loadMenu(): Promise<void> {
+async function loadMenu(resolve = true): Promise<void> {
   const selection = captureSelection()
   if (!selection) return
   const requestId = ++menuRequest
@@ -243,7 +250,7 @@ async function loadMenu(): Promise<void> {
     const [registry, snapshot] = await Promise.all([
       listNapariEnvironments(),
       getViewerPreferences(),
-      resolution.value ? Promise.resolve(resolution.value) : resolveSelection(),
+      resolve ? resolveSelection() : Promise.resolve(resolution.value),
     ])
     if (!ownsRequest()) return
     environments.value = registry.environments ?? []
@@ -251,13 +258,74 @@ async function loadMenu(): Promise<void> {
   } catch (error) {
     if (ownsRequest()) showError(error, 'Could not load napari environments')
   } finally {
-    if (ownsRequest()) loadingMenu.value = false
+    if (ownsRequest()) {
+      loadingMenu.value = false
+      await nextTick()
+      if (ownsRequest() && menuVisible.value && menuEntered) popover.value?.alignOverlay?.()
+    }
+  }
+}
+
+async function showMenu(event: Event, target: EventTarget | null): Promise<void> {
+  const selection = captureSelection()
+  if (!selection || !(target instanceof HTMLElement)) return
+  const requestId = ++menuShowRequest
+  menuVisible.value = true
+  const ownsMenu = () => requestId === menuShowRequest && menuVisible.value
+    && isCurrentSelection(selection) && target.isConnected
+  // Focusing a partly visible virtual row may queue scroll events beyond the
+  // next animation frame. Finish revealing the anchor, then wait for its
+  // geometry and ancestor scroll positions to settle before Popover subscribes.
+  await nextTick()
+  if (ownsMenu()) {
+    if (await settleMenuAnchor(target, ownsMenu)) popover.value?.show(event, target)
+    else if (ownsMenu()) menuVisible.value = false
+  }
+}
+
+async function settleMenuAnchor(target: HTMLElement, current: () => boolean): Promise<boolean> {
+  if (typeof requestAnimationFrame !== 'function') return current()
+  const ancestors = new Set<HTMLElement>()
+  for (let parent = target.parentElement; parent; parent = parent.parentElement) ancestors.add(parent)
+  let scrollRevision = 0
+  let userScrolled = false
+  const onScroll = (event: Event) => { if (ancestors.has(event.target as HTMLElement)) scrollRevision += 1 }
+  const onUserScroll = () => { userScrolled = true }
+  const position = () => {
+    const box = target.getBoundingClientRect()
+    return JSON.stringify([box.x, box.y, box.width, box.height, scrollRevision,
+      ...[...ancestors].flatMap(parent => [parent.scrollLeft, parent.scrollTop])])
+  }
+  window.addEventListener('scroll', onScroll, true)
+  window.addEventListener('wheel', onUserScroll, { capture: true, passive: true })
+  window.addEventListener('touchmove', onUserScroll, { capture: true, passive: true })
+  try {
+    target.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    let previous = position()
+    let stableFrames = 0
+    while (current() && !userScrolled && stableFrames < 2) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      const next = position()
+      stableFrames = next === previous ? stableFrames + 1 : 0
+      previous = next
+    }
+    return current() && !userScrolled
+  } finally {
+    window.removeEventListener('scroll', onScroll, true)
+    window.removeEventListener('wheel', onUserScroll, true)
+    window.removeEventListener('touchmove', onUserScroll, true)
   }
 }
 
 function toggleMenu(event: Event): void {
   if (disposed) return
-  popover.value?.toggle(event)
+  if (menuVisible.value) {
+    menuVisible.value = false
+    popover.value?.hide()
+    return
+  }
+  if (loadingMenu.value || resolving.value) return
+  void showMenu(event, event.currentTarget)
   void loadMenu()
 }
 
@@ -291,13 +359,19 @@ async function openCandidate(
 }
 
 async function primaryOpen(event: MouseEvent): Promise<void> {
+  if (disposed || resolving.value || loadingMenu.value) return
+  // Native currentTarget is cleared after dispatch, before the fresh async
+  // resolution completes. Retain the clicked button for a fallback chooser.
+  const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   const selection = captureSelection()
   if (!selection) return
-  const response = resolution.value ?? await resolveSelection()
+  const response = await resolveSelection()
   if (!isCurrentSelection(selection)) return
   const candidate = response?.candidates.find(candidate => candidate.environment_id === response.effective_environment_id)
-  if (!candidate) {
-    toggleMenu(event)
+  if (!candidate || favoriteUnavailable.value) {
+    // Explain a refused saved preference before offering a different viewer.
+    void showMenu(event, target ?? null)
+    void loadMenu(false)
     return
   }
   await openCandidate(candidate, event)
@@ -388,7 +462,7 @@ function createEnvironment(): void {
       :data-testid="`choose-napari-${row}-${outputSlug}`"
       @click.stop="toggleMenu"
     />
-    <Popover ref="popover">
+    <Popover ref="popover" @show="menuEntered = true" @hide="menuVisible = false; menuEntered = false">
       <section class="napari-picker" data-testid="napari-environment-picker" aria-label="Napari environments">
         <header>
           <strong>{{ outputName }}</strong>

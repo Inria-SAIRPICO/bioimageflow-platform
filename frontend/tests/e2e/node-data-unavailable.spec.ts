@@ -25,6 +25,7 @@ test('a rejected saved result shows an immediate persistent error without pollin
     await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
     await page.getByTestId('workflow-search').fill(name)
     await page.getByTestId(`workflow-row-${name}`).dblclick()
+    await expect(page.getByTestId('workflow-title')).toHaveText(name)
     await page.locator('.vue-flow__node[data-id="seed"]').click()
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     await expect(page.locator('.data-table-panel__error')).toHaveText(detail)

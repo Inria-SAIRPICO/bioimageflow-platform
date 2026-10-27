@@ -270,7 +270,7 @@ function childNode(graph: GraphState) {
   return node
 }
 
-function expectStableParentRoutes(graph: GraphState): void {
+function expectStableParentRoutes(graph: GraphState, bindingType: 'int' | 'float' = 'int'): void {
   expect(graph.edges).toEqual([{
     type: 'dataframe',
     id: 'parent-child-edge',
@@ -280,7 +280,7 @@ function expectStableParentRoutes(graph: GraphState): void {
     target_input: 'child-table-input',
   }])
   expect(childNode(graph).bindings).toEqual({
-    'child-number-input': { __type__: 'int', value: 7 },
+    'child-number-input': { __type__: bindingType, value: bindingType === 'float' ? 7.5 : 7 },
   })
 }
 
@@ -1797,6 +1797,12 @@ test.describe('workflow interface and grouping', () => {
       type: 'tool', id: 'child_blur', name: 'Child blur', tool_name: 'GaussianBlur',
       position: [600, 180], parameters: { input_image: '/tmp/child-input.tif' },
     })
+    // The dataframe fixture's number input is deliberately nonconnectable.
+    // Use the processing tool's connectable scalar for this removal scenario.
+    const scalarInput = initialChild.workflow.interface.inputs.find(input => input.id === 'child-number-input')!
+    scalarInput.schema = { type: 'float' }
+    scalarInput.targets = [{ node: 'child_blur', port: { kind: 'field', name: 'sigma' } }]
+    initialChild.bindings = { 'child-number-input': { __type__: 'float', value: 7.5 } }
     initialChild.workflow.interface.inputs.push({
       id: 'child-image-input', name: 'Child image', kind: 'field',
       schema: { type: 'ImageFile' }, default: null,
@@ -1837,14 +1843,14 @@ test.describe('workflow interface and grouping', () => {
     expect(childNode(before.graph).workflow.interface.inputs.map(input => input.id)).toEqual([
       'child-table-input', 'child-number-input', 'child-image-input',
     ])
-    expectStableParentRoutes(before.graph)
+    expectStableParentRoutes(before.graph, 'float')
     await page.locator('.vue-flow__node[data-id="child"]').dblclick()
     await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
 
     await page.getByTestId('unpublish-dataframe-0').click()
-    await page.getByTestId('interface-input-toggle-number').click()
     await page.locator('.vue-flow__node[data-id="child_blur"]:visible').click()
+    await page.getByTestId('interface-input-toggle-sigma').click()
     await page.getByTestId('interface-input-toggle-input_image').click()
     const privateRemoval = page.waitForResponse(response => (
       responseCarriesEmptyNestedInterface(response)
@@ -1881,7 +1887,7 @@ test.describe('workflow interface and grouping', () => {
     expect(afterCancel.draft_revision).toBe(before.draft_revision)
     expect(afterCancel.graph).toEqual(before.graph)
     expect(parentWriteCount).toBe(0)
-    expectStableParentRoutes(afterCancel.graph)
+    expectStableParentRoutes(afterCancel.graph, 'float')
     expect(afterCancel.graph.interface).toEqual(before.graph.interface)
     await expect(page.getByTestId('workflow-title')).toContainText('*')
     const durablePrivateResponse = await page.request.get(
@@ -2191,6 +2197,15 @@ test.describe('workflow interface and grouping', () => {
     const name = workflowName('nested_apply_remount')
     const displayName = `Nested apply remount ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
+    const initialChild = childNode(initial)
+    initialChild.workflow.nodes.push({
+      type: 'tool', id: 'child_blur', name: 'Child blur', tool_name: 'GaussianBlur',
+      position: [600, 180], parameters: { input_image: '/tmp/child-input.tif' },
+    })
+    const scalarInput = initialChild.workflow.interface.inputs.find(input => input.id === 'child-number-input')!
+    scalarInput.schema = { type: 'float' }
+    scalarInput.targets = [{ node: 'child_blur', port: { kind: 'field', name: 'sigma' } }]
+    initialChild.bindings = { 'child-number-input': { __type__: 'float', value: 7.5 } }
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
     expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
       data: { name, display_name: displayName },
@@ -2207,8 +2222,9 @@ test.describe('workflow interface and grouping', () => {
     await page.locator('.vue-flow__node[data-id="increment"]:visible').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     await page.getByTestId('unpublish-dataframe-0').click()
+    await page.locator('.vue-flow__node[data-id="child_blur"]:visible').click()
     const privateRemoval = page.waitForResponse(response => responseCarriesNestedInputCount(response, 0))
-    await page.getByTestId('interface-input-toggle-number').click()
+    await page.getByTestId('interface-input-toggle-sigma').click()
     const privateSnapshot = await (await privateRemoval).json() as {
       session_id: string
       graph: GraphState

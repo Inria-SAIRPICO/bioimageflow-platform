@@ -603,6 +603,10 @@ All validation transports use complete graph payloads. The server does not infer
 
 For a modern retained result, Node Data and CSV first validate the latest link schema and relative target, require its resolved view to be the canonical directory for the captured run and node, then validate the result key, record, and manifest through the library's exact-record path; a damaged selected record or provenance returns HTTP 409 and never falls back to a stale raw file or companion CSV. A latest view with absent `result.json` remains eligible for the legacy unpinned reader, so that deliberate compatibility path does not provide modern provenance guarantees. Pagination and viewer metadata use the captured identity, and a later integrity failure is also reported as unavailable rather than serving rows from another selection.
 Individual and merged modern tables derive column types and viewer declarations from the same request-local producer snapshot already admitted for that exact retained record, without an additional storage read.
+Modern thumbnail, image/offset and Reveal requests carry the displayed `ResultArtifactIdentity` as JSON in the `result_identity` query parameter; individual filtered CSV carries it in the request body.
+An explicitly selected result is validated through the exact retained-record reader and never falls back to latest when unavailable; omitted identity preserves the unpinned latest-selection API.
+Fiji actions likewise carry the displayed identity through their existing typed request.
+Node Data query/CSV and image file work runs through FastAPI's bounded worker thread boundary rather than blocking the async server event loop.
 Concrete carried output declarations remain authoritative for empty and all-null columns and never borrow a same-named current catalog schema; missing or dynamic declarations and columns not declared by a passthrough model use DataFrame type inference without catalog substitution.
 A malformed present output descriptor or mismatched carried metadata identity returns HTTP 409.
 Legacy unpinned tables retain their existing current-tool declaration and DataFrame inference behavior without modern producer-provenance guarantees.
@@ -1002,7 +1006,11 @@ Terminal failures are memoized in bounded process-local state, while successful 
 The PNG endpoint returns X-Thumbnail-Status=pending|ready|failed|unavailable and X-Thumbnail-Environment=idle|starting|installing|ready|failed.
 A ready header always accompanies rendered PNG bytes, including when generation completes at the response boundary.
 Row-addressed responses use no-store because their URL does not encode the source fingerprint; the backend retains its disk cache.
-Concurrent visible cells share an in-flight HTTP request for the same source and table identity, and only their own display interest is canceled when they leave.
+Concurrent visible cells share one request and polling chain for the same inspection, captured result, source node/row/column and requested size; only their own display interest is canceled when they leave.
+Successful PNG Blobs are reused within that accepted inspection, bounded to 128 cached entries and 32 MiB; cell-owned object URLs are revoked on departure independently of shared bytes.
+This reuse is an inspection snapshot, not a claim that external files are immutable: explicit Refresh, accepted replacement results and owner/workspace replacement start a new inspection even when retained result IDs are unchanged.
+Paging and mode changes retain the inspection; each new inspection revalidates sources through the server's fingerprinted cache.
+No subscriber means no further polling; an already-issued wait and the backend-owned setup/render may finish, but cannot restart abandoned polling or update another inspection.
 A pending job uses bounded completion waits without converting slow active setup into an unavailable result after a fixed retry count; terminal responses stop polling.
 During actual environment mutation, Node Data shows a persistent preparation notice explaining that first-time setup may take several minutes; warm startup alone does not flash this notice.
 The real TIFF browser acceptance must finish automatically after cold setup, without warming the endpoint through a separate API loop or reopening the workflow to repair an exhausted UI budget.
@@ -1437,7 +1445,11 @@ Focusing an already visible Node Data dock preserves its projection and the acti
 - **Column types:** Columns are annotated with their type. Image columns show special rendering.
 - **Column sizing:** Individual and merged tables initially size columns from the displayed header, reserved sort/filter controls, and a bounded sample of up to 50 loaded rows; image/path cells receive a stable preview/action allowance rather than waiting for thumbnails. Automatic widths are bounded to 120–480 CSS pixels and measured only after fonts are ready and the table is visible. Narrow tables do not stretch to fill the panel; wide tables scroll horizontally. Paging, sorting, filtering, panel resizing, and thumbnail loading do not continually resize established columns. Header text truncates with a full-text tooltip while sort/filter controls remain accessible.
 - **Manual column sizing:** Every header has a visible, theme-aware separator and a wider drag target. Dragging changes only that column within 120–1200 CSS pixels; focused separators also support Left/Right in 10-pixel steps. Double-click or Enter auto-sizes the column to current content. **Reset column widths** clears manual overrides for that table and recalculates automatic widths; there are no separate Fit or Auto modes. Only completed user resizes are persisted, scoped to workflow, table/source identities, and column ID/type; canceled gestures and hidden DOM measurements are never saved. Legacy automatic width snapshots are ignored.
+- **Browsing mode:** Preferences → Display chooses Paginated (the default) or Continuous scrolling for Node Data; there is no second table-local mode toggle.
+- **Virtual rows:** Both modes mount only a visible row window with a small buffer in individual, merged and stacked tables; hidden docks/cards do not initiate image work. Image and ordinary text/path rows retain their own bounded geometry, and scrolling uses source row identities independently of virtual positions. Width sampling uses actual loaded rows, never a total-length placeholder collection.
 - **Pagination:** Large DataFrames are paginated server-side. The application default is 250 rows and the user may choose 25, 50, 100, 250, or 500 in Preferences → Display. Each table may temporarily choose another page size.
+- **Continuous scrolling:** The same table viewport requests bounded server-side blocks near its visible range, deduplicates in-flight blocks, limits concurrent reads and evicts distant row payloads. Scrolling upward reloads evicted blocks against the same captured source identities; unloaded placeholders expose no artifact actions. Permanent result errors require an explicit retry or refresh and never loop automatically. Older unpinned results remain paginated with an explanation rather than claiming exact continuous snapshots.
+- **Snapshot and refresh:** A captured source vector may legitimately contain results from different runs; every source identity stays fixed across additional blocks. Sorting/filtering and changing browsing mode preserve the selected results and reset the viewport/window. Refresh and accepted execution updates replace the inspection atomically; late prior responses cannot append to the new window. Mode changes do not execute or modify the graph.
 - **Direct navigation:** The paginator provides first, previous, next, and last controls; a 1-based page input applied on Enter or blur; total pages; the visible row range; and filtered and unfiltered totals. Page input is clamped to the valid range.
 - **Sorting:** A column header cycles visibly through unsorted, ascending, descending, and unsorted. Sorting is server-side and resets pagination to the first page.
 - **Filtering:** Column-header popovers provide type-appropriate text, numeric, boolean, and empty-value operators. Filters combine with AND semantics, run server-side before sorting and pagination, appear as removable chips, and are applied to CSV export.
@@ -1637,7 +1649,9 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.4 Display
 
+- **Node Data browsing mode:** Paginated or Continuous scrolling, initially Paginated, applied to existing and new root/nested inspections. Changing it preserves selection, upstream levels, sort/filter and the selected results, while resetting the row viewport to the beginning.
 - **Node Data rows per page:** Select 25, 50, 100, 250, or 500 as the default for newly inspected tables. The initial default is 250, and a table-local page-size change does not rewrite this preference.
+  This preference applies to paginated mode; continuous fetch-block size is an internal bounded implementation choice.
 
 #### 3.12.5 Storage
 

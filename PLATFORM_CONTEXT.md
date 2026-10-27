@@ -214,6 +214,9 @@ Exact submitted-original-filename metadata fidelity remains a known store implem
 ### Execution and results
 
 Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
+Both browsing modes use bounded virtual row windows: Preferences → Display defaults to Paginated and optionally enables Continuous scrolling with bounded block loading, eviction and upward reload against a captured per-source result vector.
+Stacked inspections retain the same captured identities for individual queries and CSV; legacy unpinned tables remain paginated with an explanation.
+Mode/sort/filter changes reset the viewport while retaining the selected results; explicit Refresh or accepted replacement data starts a new inspection, and stale requests cannot repopulate it.
 Modern Node Data and CSV validate the latest link schema and contained relative target, require the canonical run/node view named by its provenance, and verify the retained result identity and immutable record before serving rows; corrupt provenance or Parquet produces a typed unavailable response, and only views with absent `result.json` use the deliberately unpinned legacy path.
 Result conflicts distinguish transient result_pending from rejected result_unavailable; individual and consolidated tables retry only explicitly pending publication, and display permanent failures immediately without polling.
 Unsupported retained cache formats keep their files intact and report the validation cause with regeneration guidance rather than claiming that waiting will make them readable.
@@ -227,6 +230,8 @@ Thumbnail replies distinguish pending, ready, failed and unavailable states; col
 After the initial three-second progress wait, cells use bounded 20-second completion waits with a short fixed retry gap; retained-result I/O runs off the event loop, and latest DataFrame reads reuse their admitted run-node relation only within that read.
 BioIO retains format/reader ownership and lazily computes the middle T/Z preview with channels and RGB(A) samples; versioned cache keys cover file metadata and directory-store descendants, including OME-Zarr chunk changes, with fingerprint walks and cache reads kept off the event loop.
 Visible cells coalesce in-flight requests, cancel only their own interest, and revalidate row-addressed URLs rather than using stale browser responses; the server owns the fingerprinted disk cache.
+The shared thumbnail resource owns polling and bounded completed-Blob reuse within one inspection, with fresh admission after Refresh even if result IDs are unchanged; this does not claim live external-file mutation detection while a preview remains displayed.
+Modern thumbnail, image/offset, Reveal and individual CSV requests carry the displayed retained identity rather than silently following latest, and viewer resolution is action-only with no passive per-cell Napari calls.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
