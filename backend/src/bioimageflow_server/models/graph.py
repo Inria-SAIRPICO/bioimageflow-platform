@@ -117,7 +117,59 @@ class SerializedConstant(WireModel):
         }[self.type_]
         if not valid:
             raise ValueError(f"Invalid payload for serialized constant type {self.type_!r}")
+        # Keep the graph's accepted wire representation intact.  The public
+        # library decoder is stricter than JSON about float payloads and uses
+        # typed children for sequences, so validate the translation as well.
+        self.to_library_dict()
         return self
+
+    def to_library_dict(self) -> dict[str, Any]:
+        """Translate the platform value through the public constant codec.
+
+        JSON does not distinguish ``1`` from JavaScript's ``1.0``.  Legacy
+        platform sequence values also contained raw JSON children; those are
+        still accepted without rewriting an existing graph merely on read.
+        Exact two-key type/value maps inside a sequence are reserved envelopes;
+        other maps remain literal data, including maps with extra metadata.
+        """
+        from bioimageflow import deserialize_constant, serialize_constant
+
+        try:
+            envelope = _normalize_library_constant(
+                {"__type__": self.type_, "value": self.value},
+            )
+            return serialize_constant(deserialize_constant(envelope))
+        except (TypeError, OverflowError) as exc:
+            raise ValueError(f"Invalid serialized workflow constant: {exc}") from exc
+
+
+def _normalize_library_constant(value: Any) -> Any:
+    """Normalize only known envelope positions, retaining literal JSON maps."""
+    from bioimageflow import serialize_constant
+
+    if not isinstance(value, dict) or set(value) != {"__type__", "value"}:
+        return value
+    kind, payload = value["__type__"], value["value"]
+    if kind == "float" and type(payload) is int:
+        payload = float(payload)
+    elif kind in {"list", "tuple"} and isinstance(payload, list):
+        payload = [
+            _normalize_library_constant(item)
+            if isinstance(item, dict) and set(item) == {"__type__", "value"}
+            else serialize_constant(item)
+            for item in payload
+        ]
+    elif kind == "dict" and isinstance(payload, list):
+        payload = [
+            {
+                "key": _normalize_library_constant(item["key"]),
+                "value": _normalize_library_constant(item["value"]),
+            }
+            if isinstance(item, dict) and set(item) == {"key", "value"}
+            else item
+            for item in payload
+        ]
+    return {"__type__": kind, "value": payload}
 
 
 class FieldInputPort(WireModel):

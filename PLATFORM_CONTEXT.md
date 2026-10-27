@@ -48,10 +48,13 @@ There are two explicit edge variants:
 - A DataFrame edge connects a complete DataFrame to a positional tool input or stable named workflow input ID.
 
 Workflow interface ports have stable immutable IDs and editable display names.
-The Nodes panel edits unconnected field bindings on selected workflow nodes by stable child input ID.
+The Nodes panel presents tool parameters and workflow-node field bindings through shared typed controls, using stable child input IDs for workflow edits.
+Connected fields remain visible as their source, while unconnected workflow fields distinguish explicit values, explicit null and inherited values; Reset removes the instance binding without rewriting the embedded workflow or its public default.
+Optional workflow editor hints follow recursive interface targets through the accepted graph's scoped metadata, without a separate metadata request or same-named catalog fallback for an explicit unavailable binding.
+Workflow pin visibility is transient presentation like tool pin visibility; connected pins stay visible, and hiding a pin never unpublishes a port or removes its bindings or edges.
 The Nodes panel publishes positional DataFrame inputs independently of tool parameters through **Published DataFrame inputs → Publish DataFrame input**.
 Each publication reserves the next free positional slot; connected and published slots compact together on removal without changing surviving public IDs.
-Existing child workflow DataFrame ports can also be published through the enclosing workflow interface.
+Existing child workflow DataFrame and field ports can also be published through the enclosing workflow interface by stable port ID; constant publication is independent of column-pin eligibility.
 Edges and bindings use the stable IDs, never display labels.
 Renaming a port must therefore preserve connections, while removing or incompatibly changing a connected port requires explicit destructive-effect handling.
 Canvas mutations must preserve interface referential integrity in the same graph snapshot: deleting nodes also removes outputs sourced from them and removes their input targets, dropping any input that has no surviving target.

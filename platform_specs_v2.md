@@ -115,7 +115,20 @@ Publications reserve slots alongside internal DataFrame connections; the canvas 
 Removing a publication or an internal connection compacts the remaining positional targets and edges together without changing surviving public port IDs or names.
 Source tools that do not accept upstream DataFrames do not offer positional publication.
 For a selected workflow node, the same section can publish each unconnected child DataFrame port through the enclosing interface, targeting the child's stable port ID rather than inventing positional inputs on the workflow node.
-For a selected workflow node, the Parameters section renders its unconnected field inputs and edits their instance bindings using the child's stable input IDs; connected fields are supplied by their edges.
+For a selected workflow node, the Parameters section renders all exposed field inputs using the same typed controls as ordinary tool parameters and edits instance bindings using the child's stable input IDs.
+Connected fields show their source instead of a value editor and disable value, Reset and None actions; disconnected fields expose the applicable numeric, choice, boolean, path, sequence and text editors, help and validation feedback.
+Explicit instance values override public interface defaults, which override local child defaults.
+Reset removes the instance binding; without a public default, the editor shows inheritance rather than fabricating a value or selecting one of several local defaults.
+An explicit typed null is distinct from an absent binding.
+The platform-to-library boundary uses the library's public constant codec for bindings and interface defaults, including recursive list and tuple children and integer JSON payloads under an explicit float tag.
+Accepted platform graph values are not rewritten merely by reading them; established string bindings continue to represent path-widget values.
+For historical raw sequence values, an exact two-key `__type__`/`value` map in a serialized sequence position is reserved as a typed envelope, while other literal JSON maps remain data; malformed reserved envelopes are rejected rather than stringified or dropped.
+An incoming edge and an instance constant cannot coexist for the same workflow input: connecting atomically removes that binding, disconnecting returns to public or child defaults, and Undo restores the previous graph including its binding.
+Public interface names, schemas and defaults remain canonical graph facts; optional editor hints are derived from the same accepted graph's scoped target metadata without persisting another schema or issuing per-field requests.
+Conflicting or unavailable hints use a conservative editor rather than inventing validation constraints or borrowing a same-named explicitly bound class from the catalog.
+The same field-publication action can forward a child workflow field through its enclosing interface with a workflow-port target carrying the stable child port ID.
+Publication is independent of column-connectability: constant-only DataFrameTool parameters may be published while remaining unavailable as column pins.
+Pin visibility is transient presentation and cannot disconnect an edge, clear a binding or unpublish a port; connected pins remain visible.
 These actions use the ordinary graph mutation lock, undo/redo, draft persistence, and nested-save reconciliation paths.
 Renaming a port changes its label while preserving its ID and parent connections.
 Removing or changing a connected port requires explicit confirmation and atomically removes affected bindings and edges.

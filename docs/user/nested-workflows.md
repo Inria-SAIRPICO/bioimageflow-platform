@@ -36,6 +36,23 @@ These inputs are separate from the tool's scalar parameters: do not declare a pa
 Use **Unpublish** to remove a public input; remaining table positions shift together while their public IDs and names stay stable.
 You can also select a child workflow node and publish one of its unconnected DataFrame inputs through the enclosing workflow.
 
+## Configure a workflow node
+
+Select the workflow node in its parent canvas to edit its exposed parameters in **Nodes**.
+Numbers, choices, booleans, paths and lists use the same controls as ordinary tool parameters, including applicable help, Reset, null and input-pin actions.
+Your changes belong to that workflow instance and do not rewrite the saved source workflow.
+
+**Reset to default** removes an explicit override.
+The field then uses its public workflow default, or shows that it inherits child values when there is no public default.
+An inherited value is different from an explicit null.
+
+A connected parameter shows the upstream source instead of an editor.
+Disconnect it before editing its value or hiding its pin.
+Connecting replaces your explicit value; disconnecting returns to the workflow default or inherited child values.
+Undo restores the previous connection and value state.
+Hiding a pin only changes the canvas display; use **Unpublish** or **Remove workflow input** to remove a public interface input.
+You can also expose a child workflow's field parameter through another enclosing workflow.
+
 ## Edit nested content
 
 Double-click a workflow node, or right-click it and choose **Open workflow**.

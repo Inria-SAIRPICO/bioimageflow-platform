@@ -1330,6 +1330,12 @@ The number of published DataFrames is not limited by the tool's declared `Inputs
 The recursive interface and positional compaction rules are defined in v2 Section 5.
 
 Each input field from the tool's `Inputs` is rendered as a parameter row. Fields are grouped by category (if the tool defines categories via `GUIMeta.group`; otherwise all in one group).
+Selected workflow nodes use the same parameter rows and value editors for their exposed field inputs, addressed by stable interface input ID.
+The public interface owns the field name, schema and typed default; optional editor hints come from matching accepted target metadata, recursively through nested interfaces, and are retained across multiple targets only when they agree.
+Unavailable hints leave a type-appropriate editor without creating an execution-blocking error or substituting another explicitly bound tool's metadata.
+Connected rows remain visible with their source and disable value, Reset and None actions; connection display takes precedence over a retained null or local value.
+Workflow Reset removes the instance override and displays the public default when present, otherwise an inherited/unset state without choosing one target's local default.
+Explicit null remains distinct from an absent override.
 
 **Each parameter row contains:**
 
@@ -1337,10 +1343,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 |---------|-------------|
 | **Pin toggle button** | Icon-only button placed **before** the label, only rendered when `connectable != "never"`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` (three-state: `"never" \| "not_by_default" \| "by_default"`) decides whether the button appears; the button itself decides whether the pin is shown. Current behaviour is to treat both `"not_by_default"` and `"by_default"` identically (pin visible) — a richer UX that hides pins by default for `"not_by_default"` fields is a separate plan. |
 | **Label** | Field name (human-readable) |
-| **Default button** | Resets the field to its default value |
+| **Default button** | Resets a tool parameter to its declared default; for a workflow field, removes the instance binding and restores inheritance. |
 | **None toggle** | Two-state button (only shown when `nullable` is `true` on the field schema). When active, the value is `None` and the input field is hidden. Independent of `required`: a required-and-nullable field still gets the toggle so the user can explicitly choose `None` as a valid value. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
-| **Help text** | Collapsible description from field metadata |
+| **Help text** | Description from field metadata, shown with the parameter. |
 
 **Input field types:**
 
@@ -1360,6 +1366,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `tuple`, `list` | Inline list editor | -- |
 
 When a connectable input is **connected** (pin has an edge), the input field is replaced by a read-only label showing the source: `"segmenter_1.mask"`.
+Its pin remains visible and its hide action is disabled with an explanation until the edge is disconnected.
+Workflow-field pin visibility follows the same transient presentation policy as ordinary pins; visibility changes do not change the workflow interface, bindings or edges.
+Publication is a separate action: fields that accept constants may be exposed through a workflow interface even when they cannot accept a column connection.
+Parameter focus, local parse errors and delayed file-picker results belong to the exact canvas registration, selected node and field; replacing that owner or locking mutation withdraws delayed edits.
 
 #### 3.5.4 Output Fields
 

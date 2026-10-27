@@ -82,7 +82,11 @@ def _tool_library_identity(
 
 
 def _interface_dict(graph: GraphState) -> dict[str, Any]:
-    return graph.interface.model_dump(mode="json", by_alias=True, exclude_none=True)
+    result = graph.interface.model_dump(mode="json", by_alias=True, exclude_none=True)
+    for port, serialized in zip(graph.interface.inputs, result["inputs"], strict=True):
+        if port.default is not None:
+            serialized["default"] = port.default.to_library_dict()
+    return result
 
 
 def _graph_to_library(
@@ -106,7 +110,7 @@ def _graph_to_library(
                     scope=(*scope, node.id),
                 ),
                 "bindings": {
-                    port_id: value.model_dump(mode="json", by_alias=True)
+                    port_id: value.to_library_dict()
                     for port_id, value in node.bindings.items()
                 },
             }

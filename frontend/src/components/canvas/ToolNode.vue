@@ -12,6 +12,7 @@ import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
 import { fieldDisplayName } from '@/utils/displayNames'
+import type { WorkflowInputPresentation } from '@/utils/workflowInputPresentation'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 export interface NodeData {
@@ -28,6 +29,7 @@ export interface NodeData {
   connectedInputs: Record<string, string>
   pinnedInputs: Record<string, boolean>
   output_templates: Record<string, string>
+  workflowInputPresentation?: Record<string, WorkflowInputPresentation>
   workflow?: GraphState
   workflowInterfaceContext?: { inputs: WorkflowInput[] }
   // Marks refreshed tool metadata; cleared when the user clicks the badge.
@@ -68,7 +70,10 @@ function exposedFieldType(schema: { [key: string]: unknown } | null | undefined)
 const connectableInputs = computed(() => {
   if (isNestedWorkflow.value) {
     return (props.data.workflow?.interface.inputs ?? [])
-      .filter(input => input.kind === 'field')
+      .filter(input => input.kind === 'field' && (
+        encodeEndpointHandle({ kind: 'workflow-input', id: input.id }) in props.data.connectedInputs
+        || ((props.data.workflowInputPresentation?.[input.id]?.canPin ?? true) && props.data.pinnedInputs[input.id] !== false)
+      ))
       .map((input) => [
         encodeEndpointHandle({ kind: 'workflow-input', id: input.id }),
         { type: exposedFieldType(input.schema), display_name: input.name },

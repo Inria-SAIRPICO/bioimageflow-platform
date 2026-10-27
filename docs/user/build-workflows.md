@@ -30,9 +30,14 @@ If the tool you need is missing, see [Find and Manage Tools](data-and-tools.md).
 The **Parameters** section uses controls suited to each input, such as text fields, number fields, choices, checkboxes, and paths.
 
 - **Reset to default** restores the value defined by the tool.
-- **Set to null** passes no value when the input permits it.
-- **Add input pin** makes the parameter connectable on the node.
+- **Set to null** supplies an explicit null when the input permits it.
+- **Add input pin** shows an available connection handle on the node.
 - **Expose as workflow input** makes the value available to a parent workflow.
+
+Workflow nodes use these same controls for their exposed parameters.
+For those fields, **Reset to default** removes your override and returns to the workflow's public default or inherited child values.
+Connected parameters show their source; disconnect the edge before editing the value or hiding its pin.
+Hiding a pin does not remove a public workflow input.
 
 Use a **Files** node for a group of input files or one source directory.
 Use local pickers or drag local files and folders onto the canvas.

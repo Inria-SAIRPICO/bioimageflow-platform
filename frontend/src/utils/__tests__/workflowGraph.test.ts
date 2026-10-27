@@ -48,6 +48,21 @@ describe('graphStateToVueFlow', () => {
     return graph
   }
 
+  it('resolves workflow hints with accepted scoped leaf metadata and refuses a missing explicit owner', () => {
+    const leaf = boundGraph()
+    leaf.interface.inputs.push({ id: 'image-port', name: 'Image', kind: 'field', schema: { type: 'ImageFile' }, default: null,
+      targets: [{ node: 'write', port: { kind: 'field', name: 'image' } }],
+    })
+    const graph = emptyGraph('root', 'Root')
+    graph.nodes.push({ type: 'workflow', id: 'child', name: 'Child', workflow: leaf, position: [0, 0], bindings: {}, enabled: true, collapsed: false })
+    const scopes: string[] = []
+    const rendered = graphStateToVueFlow(graph, () => tool, [], (_node, scopedId) => { scopes.push(scopedId); return null })
+    expect(scopes).toEqual(['child/write'])
+    expect(rendered.nodes[0].data.workflowInputPresentation['image-port']).toMatchObject({ canPin: false, metadataAvailable: false, field: { display_name: 'Image' } })
+    const accepted = graphStateToVueFlow(graph, () => undefined, [], (_node, scopedId) => scopedId === 'child/write' ? tool : null)
+    expect(accepted.nodes[0].data.workflowInputPresentation['image-port']).toMatchObject({ canPin: true, metadataAvailable: true })
+  })
+
   it('uses node-addressed Path metadata instead of a same-named catalog tool', () => {
     const graph = boundGraph()
     const scoped: ToolMetadata = {

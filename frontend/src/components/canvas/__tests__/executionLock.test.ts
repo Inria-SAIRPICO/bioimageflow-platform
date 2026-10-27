@@ -176,6 +176,9 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 
 const canvasCommandMocks = vi.hoisted(() => ({
   updateParameter: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+  updateWorkflowBinding: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+  resetWorkflowBinding: null as null | ((nodeId: string, key: string) => boolean),
+  setInputPinned: null as null | ((nodeId: string, key: string, pinned: boolean) => boolean),
   toggleWorkflowInput: null as null | ((nodeId: string, input: string | number) => unknown),
   clearNodeOutputs: null as null | ((nodeIds: string[]) => Promise<boolean>),
 }))
@@ -183,9 +186,15 @@ const canvasCommandMocks = vi.hoisted(() => ({
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: (options?: {
     updateParameter?: (nodeId: string, key: string, value: unknown) => boolean
+    updateWorkflowBinding?: (nodeId: string, key: string, value: unknown) => boolean
+    resetWorkflowBinding?: (nodeId: string, key: string) => boolean
+    setInputPinned?: (nodeId: string, key: string, pinned: boolean) => boolean
     toggleWorkflowInput?: (nodeId: string, input: string | number) => unknown
     clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
   }) => {
+    if (options?.updateWorkflowBinding) canvasCommandMocks.updateWorkflowBinding = options.updateWorkflowBinding
+    if (options?.resetWorkflowBinding) canvasCommandMocks.resetWorkflowBinding = options.resetWorkflowBinding
+    if (options?.setInputPinned) canvasCommandMocks.setInputPinned = options.setInputPinned
     if (options?.updateParameter) {
       canvasCommandMocks.updateParameter = options.updateParameter
     }
@@ -322,6 +331,9 @@ describe('CanvasView execution lock', () => {
     persistenceMocks.resolveFromDraft.mockReset()
     persistenceMocks.queueGraph.mockReset()
     canvasCommandMocks.updateParameter = null
+    canvasCommandMocks.updateWorkflowBinding = null
+    canvasCommandMocks.resetWorkflowBinding = null
+    canvasCommandMocks.setInputPinned = null
     canvasCommandMocks.toggleWorkflowInput = null
     canvasCommandMocks.clearNodeOutputs = null
   })
@@ -1038,6 +1050,64 @@ describe('CanvasView execution lock', () => {
           port: { kind: 'workflow', id: 'source-table' },
         }],
       })])
+    wrapper.unmount()
+  })
+
+  it('edits, resets and connects workflow constants through captured commands without duplicate authority', async () => {
+    const child = makeGraph({ interface: { inputs: [{
+      id: 'p', name: 'P', kind: 'field', schema: { type: 'float' },
+      default: { __type__: 'float', value: .001 }, targets: [],
+    }], outputs: [] } })
+    const graph = makeGraph({ nodes: [{ type: 'workflow', id: 'child', name: 'Child',
+      position: [0, 0], workflow: child, bindings: { p: { __type__: 'none', value: null } }, enabled: true, collapsed: false,
+    }] })
+    const { wrapper } = await mountNestedCanvas(graph)
+    const target = mockNodes.find(node => node.id === 'child')!
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', 1)).toBe(true)
+    expect(target.data.bindings.p).toEqual({ __type__: 'float', value: 1 })
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(true)
+    expect(target.data.bindings).toEqual({})
+    expect(child.interface.inputs[0]!.default).toEqual({ __type__: 'float', value: .001 })
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(false)
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .5)).toBe(true)
+    const handle = encodeEndpointHandle({ kind: 'workflow-input', id: 'p' })
+    connectHandler!({ source: 'source', target: 'child', sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'number' }), targetHandle: handle })
+    expect(target.data.bindings).toEqual({})
+    expect(mockEdges).toHaveLength(1)
+    expect(target.data.connectedInputs[handle]).toBeTruthy()
+    expect(canvasCommandMocks.setInputPinned?.('child', 'p', false)).toBe(false)
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .8)).toBe(false)
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(false)
+    useExecutionStore().state = 'running'
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .9)).toBe(false)
+    useExecutionStore().state = 'idle'
+    target.data.workflow.interface.inputs.push({ ...child.interface.inputs[0], id: 'q', name: 'Q' })
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'q', .4)).toBe(true)
+    const qHandle = encodeEndpointHandle({ kind: 'workflow-input', id: 'q' })
+    edgeUpdateHandler!({ edge: mockEdges[0], connection: { source: 'source', target: 'child',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'number' }), targetHandle: qHandle,
+    } })
+    expect(target.data.bindings).toEqual({})
+    expect(target.data.connectedInputs[handle]).toBeUndefined()
+    expect(target.data.connectedInputs[qHandle]).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('forwards a child field by stable ID without overriding its existing binding', async () => {
+    const child = makeGraph({ interface: { inputs: [{
+      id: 'p', name: 'P', kind: 'field', schema: { type: 'int', connectable: 'never' },
+      default: { __type__: 'int', value: 1 }, targets: [],
+    }], outputs: [] } })
+    const graph = makeGraph({ nodes: [{ type: 'workflow', id: 'child', name: 'Child', position: [0, 0],
+      workflow: child, bindings: { p: { __type__: 'int', value: 5 } }, enabled: true, collapsed: false,
+    }] })
+    const { wrapper, sessionId } = await mountNestedCanvas(graph)
+    expect(canvasCommandMocks.toggleWorkflowInput?.('child', 'p')).toEqual({ status: 'changed' })
+    const draft = useNestedWorkflowSessionsStore().sessionById(sessionId)!.draft
+    expect(draft.interface.inputs).toEqual([expect.objectContaining({ kind: 'field', default: null,
+      schema: { type: 'int', connectable: 'never' }, targets: [{ node: 'child', port: { kind: 'workflow', id: 'p' } }],
+    })])
+    expect(mockNodes.find(node => node.id === 'child')!.data.bindings.p).toEqual({ __type__: 'int', value: 5 })
     wrapper.unmount()
   })
 

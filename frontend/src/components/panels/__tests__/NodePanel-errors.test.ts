@@ -7,6 +7,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import InputNumber from 'primevue/inputnumber'
 import NodePanel from '../NodePanel.vue'
+import ParameterRow from '../shared/ParameterRow.vue'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
@@ -166,12 +167,33 @@ describe('NodePanel — parameter error wiring', () => {
       connectedInputs: { [encodeEndpointHandle({ kind: 'workflow-input', id: 'input-image' })]: 'Source' },
     })
     expect(wrapper.text()).toContain('Channel')
-    expect(wrapper.text()).not.toContain('Image')
+    expect(wrapper.text()).toContain('Image')
+    expect(wrapper.get('.connected-source').text()).toBe('Source')
     const input = wrapper.findComponent(InputNumber)
     expect(input.props('modelValue')).toBe(1)
     input.vm.$emit('update:modelValue', 2)
     await flushPromises()
     expect(workflowBindingUpdate).toHaveBeenCalledWith('node-1', 'input-channel', 2)
+    wrapper.unmount()
+  })
+  it('rejects a queued workflow row edit after selecting another node with the same input ID', async () => {
+    workflowBindingUpdate.mockClear()
+    const data = { nodeType: 'workflow', tool: null, bindings: {}, workflow: { interface: { inputs: [
+      { id: 'p', name: 'P', kind: 'field', schema: { type: 'float' }, default: { __type__: 'float', value: .001 }, targets: [] },
+    ], outputs: [] } } }
+    const wrapper = mountWithErrors(null, data)
+    const oldRow = wrapper.getComponent(ParameterRow)
+    const owner = oldRow.props('owner')
+    const ui = useUIStore()
+    ui.setGraphNodes([{ id: 'node-2', data: makeNodeData(data) }])
+    ui.setSelectedNodes(['node-2'])
+    await flushPromises()
+    oldRow.vm.$emit('updateValue', .9, owner)
+    oldRow.vm.$emit('reset', owner)
+    expect(workflowBindingUpdate).not.toHaveBeenCalled()
+    const current = wrapper.getComponent(ParameterRow)
+    current.vm.$emit('updateValue', .001001, current.props('owner'))
+    expect(workflowBindingUpdate).toHaveBeenCalledWith('node-2', 'p', .001001)
     wrapper.unmount()
   })
   it('shows every server validation error when clearing outputs fails', async () => {
