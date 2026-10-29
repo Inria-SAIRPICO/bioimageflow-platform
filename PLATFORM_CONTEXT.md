@@ -366,6 +366,9 @@ For persistence changes, identify every coordinator participating in saved workf
 - `frontend/src/App.vue` integrates the application shell, docks, menus, canvas lifecycle, and top-level actions.
 - Unit tests live beside or near their source; browser tests live under `frontend/tests/e2e/`.
 
+The left catalog group orders Datasets, Tools and Workflows tabs, selects Workflows by default, and returns reopened panels to an existing sibling's group at their ordered position.
+Desktop mode omits Datasets.
+
 Canvas views support zoom down to 5%; initial framing centers and fits nodes without exceeding 100%, and SVG grid identities are independent of encoded workflow paths.
 Run Selected remains directly visible in the execution toolbar.
 

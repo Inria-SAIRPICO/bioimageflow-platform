@@ -1017,13 +1017,16 @@ Unsaved workflow changes are not auto-saved to `workflow.json` on shutdown. Pend
 ### 3.2 Layout
 
 The application uses a Dockview-based multi-panel layout. Panels are resizable, dockable, and can be collapsed.
+The left group contains **Datasets**, **Tools**, and **Workflows** tabs in that left-to-right order, with **Workflows** selected by default.
+Desktop mode omits Datasets, retaining Tools followed by Workflows.
+Reopening any of these panels joins an existing sibling's group at its ordered tab position; only when all siblings are closed does reopening create a new left group.
 
 ```
 +------------------------------------------------------+
 | Menu bar (Workflow / Edit / Execution / View / Help) |
 +----------+----------------------------+--------------+
 |          |                            |              |
-|  Tools   |   Node Programming         |   Node       |
+|Workflows |   Node Programming         |   Node       |
 |  Panel   |   Interface (canvas)       |   Panel      |
 |          |                            |  (params)    |
 |          |                            |              |

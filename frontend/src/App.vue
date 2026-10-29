@@ -41,7 +41,7 @@ export default defineComponent({
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
-import { themeDark, themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
+import { themeDark, themeLight, type AddPanelOptions, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
@@ -336,6 +336,27 @@ const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLigh
 
 const panelKeys = ['tools', 'workflows', 'datasets', 'nodePanel', 'dataTable', 'execution', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
+const catalogPanelKeys = ['datasets', 'tools', 'workflows'] as const
+type CatalogPanelKey = typeof catalogPanelKeys[number]
+
+function catalogPanelOptions(api: DockviewApi, key: CatalogPanelKey): AddPanelOptions {
+  const titles = { datasets: 'Datasets', tools: 'Tools', workflows: 'Workflows' }
+  const options = { id: key, component: key, title: titles[key], initialWidth: 320 }
+  const rank = catalogPanelKeys.indexOf(key)
+  const next = catalogPanelKeys.slice(rank + 1).map(id => api.getPanel(id)).find(Boolean)
+  const previous = catalogPanelKeys.slice(0, rank).reverse().map(id => api.getPanel(id)).find(Boolean)
+  const reference = next ?? previous
+  if (!reference) return { ...options, position: { direction: 'left' } }
+
+  return {
+    ...options,
+    position: {
+      referencePanel: reference.id,
+      direction: 'within',
+      index: reference.group.panels.indexOf(reference) + (next ? 0 : 1),
+    },
+  }
+}
 
 function isDockPanelKey(id: string): id is DockPanelKey {
   return panelKeys.includes(id as DockPanelKey)
@@ -535,29 +556,11 @@ function onDockviewReady(event: DockviewReadyEvent) {
     params: { state: 'loading' },
   })
 
-  api.addPanel({
-    id: 'tools',
-    component: 'tools',
-    title: 'Tools',
-    initialWidth: 320,
-    position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'left' },
-  })
-
-  api.addPanel({
-    id: 'workflows',
-    component: 'workflows',
-    title: 'Workflows',
-    position: { referencePanel: 'tools', direction: 'within' },
-  })
-
-  if (!desktopRuntime) {
-    api.addPanel({
-      id: 'datasets',
-      component: 'datasets',
-      title: 'Datasets',
-      position: { referencePanel: 'tools', direction: 'within' },
-    })
+  for (const key of catalogPanelKeys) {
+    if (desktopRuntime && key === 'datasets') continue
+    api.addPanel(catalogPanelOptions(api, key))
   }
+  api.getPanel('workflows')?.api.setActive()
 
   api.addPanel({
     id: 'nodePanel',
@@ -1505,7 +1508,7 @@ watch(
         continue
       }
       if (isVisible && !panel) {
-        api.addPanel(getPanelAddOptions(key))
+        api.addPanel(getPanelAddOptions(api, key))
       } else if (!isVisible && panel) {
         api.removePanel(panel)
       }
@@ -1513,24 +1516,12 @@ watch(
   },
 )
 
-function getPanelAddOptions(key: string) {
+function getPanelAddOptions(api: DockviewApi, key: string) {
   switch (key) {
     case 'tools':
-      return { id: 'tools', component: 'tools', title: 'Tools', initialWidth: 320, position: { direction: 'left' as const } }
-    case 'workflows': {
-      const toolsPanel = dockviewApi.value?.getPanel('tools')
-      if (toolsPanel) {
-        return { id: 'workflows', component: 'workflows', title: 'Workflows', position: { referencePanel: 'tools' as const, direction: 'within' as const } }
-      }
-      return { id: 'workflows', component: 'workflows', title: 'Workflows', initialWidth: 320, position: { direction: 'left' as const } }
-    }
-    case 'datasets': {
-      const reference = dockviewApi.value?.getPanel('tools') ?? dockviewApi.value?.getPanel('workflows')
-      if (reference) {
-        return { id: 'datasets', component: 'datasets', title: 'Datasets', position: { referencePanel: reference.id, direction: 'within' as const } }
-      }
-      return { id: 'datasets', component: 'datasets', title: 'Datasets', initialWidth: 320, position: { direction: 'left' as const } }
-    }
+    case 'workflows':
+    case 'datasets':
+      return catalogPanelOptions(api, key)
     case 'nodePanel':
       return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':
