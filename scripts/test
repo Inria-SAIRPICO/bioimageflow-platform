@@ -19,14 +19,14 @@ source "$repo_root/scripts/ci/test_versions.env"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/test <command> [arguments]
+Usage: scripts/test [--suite local|distributed|all] <command> [arguments]
 
 Coding-loop commands:
   focus backend [PYTEST_ARGS...]  Run an exact backend selection.
-  focus unit [--campaign-local] [VITEST_ARGS...]
+  focus unit [VITEST_ARGS...]
                                   Run an exact frontend unit selection.
   focus related FILE...           Run Vitest tests related to source files.
-  focus e2e [--campaign-local] [PLAYWRIGHT_ARGS...]
+  focus e2e [PLAYWRIGHT_ARGS...]
                                   Run an exact browser selection; defaults to Chromium.
   quick                            Run fast, repository-owned checks in parallel.
 
@@ -43,7 +43,8 @@ Completion commands:
   check app                        Run backend/frontend checks and critical Chromium tests.
   check all                        Run backend/frontend checks and all Chromium tests.
   check                            Alias for check all.
-  full                             Run coverage, all browsers, and external certification.
+  full                             Run selected-suite coverage, both browsers, and external certification.
+  distributed                      Run optional distributed backend, unit, and both browser suites.
   certification                    Certify the pinned published common-tools package only.
 
 Examples:
@@ -52,12 +53,16 @@ Examples:
   scripts/test focus backend -k 'dataset and delete'
   scripts/test focus unit src/stores/__tests__/workflow.test.ts
   scripts/test focus unit src/stores/__tests__/workflow.test.ts -t 'deletes workflow'
-  scripts/test focus unit --campaign-local
+  scripts/test --suite distributed focus unit
   scripts/test focus related frontend/src/stores/workflow.ts
   scripts/test focus e2e tests/e2e/execution.spec.ts:111
   scripts/test focus e2e --project=firefox tests/e2e/hot-reload.spec.ts
   scripts/test focus e2e --grep 'executes a source tool'
-  scripts/test focus e2e --campaign-local --list
+  scripts/test --suite distributed focus e2e --list
+
+All commands default to the local feature suite. Distributed tests run only
+with --suite distributed, --suite all, or the distributed command. External
+package certification is a separate opt-in boundary.
 
 The full lane installs bioimageflow-common-tools from the package index into a
 fresh temporary store. It requires network access and never silently omits the
@@ -304,7 +309,9 @@ backend_full_coverage() (
     _ "$backend_dir"
 )
 
-backend_logging_order() {
+backend_logging_order() (
+  # Logging order is a shared infrastructure control, not a feature selection.
+  export BIOIMAGEFLOW_TEST_SUITE=local
   phase 'Backend logging-order certification' bash -c '
     cd "$1" && uv run --frozen pytest \
       tests/test_logging_config.py \
@@ -313,7 +320,7 @@ backend_logging_order() {
       tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger \
       -q
   ' _ "$backend_dir"
-}
+)
 
 frontend_lint() {
   phase 'Frontend lint' bash -c 'cd "$1" && bun run lint' _ "$frontend_dir"
@@ -476,6 +483,8 @@ backend_import_preflight() {
 }
 
 certification_lane() (
+  # Package compatibility is independent of the selected application features.
+  export BIOIMAGEFLOW_TEST_SUITE=local
   require_command uv
   if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
     printf 'Backend environment missing: run cd backend && uv sync --group dev --frozen\n' >&2
@@ -513,7 +522,7 @@ full_lane() (
   run_parallel backend_lint backend_full_coverage frontend_lint frontend_typecheck frontend_full_coverage frontend_build
   backend_logging_order
   run_parallel isolated_chromium_full_e2e isolated_firefox_full_e2e
-  printf '\nFull lane passed: repository tests, external certification, branch coverage, production build, Chromium, and Firefox all completed.\n'
+  printf '\nFull lane passed: selected feature suite, external certification, branch coverage, production build, Chromium, and Firefox all completed.\n'
   printf 'Coverage artifacts: backend/.pytest_cache/{coverage.xml,htmlcov/} and frontend/test-results/coverage/.\n'
 )
 
@@ -533,14 +542,6 @@ focus_lane() {
       ;;
     unit)
       require_command bun
-      if [[ "${1:-}" == "--campaign-local" ]]; then
-        export BIOIMAGEFLOW_CAMPAIGN_LOCAL=1
-        shift
-        if (( $# > 0 )); then
-          printf 'focus unit --campaign-local requires the complete Vitest collection and accepts no selectors\n' >&2
-          return 2
-        fi
-      fi
       cd "$frontend_dir"
       bun run test:unit -- "$@"
       ;;
@@ -559,21 +560,6 @@ focus_lane() {
       bun run vitest related "${related_files[@]}" --run
       ;;
     e2e)
-      if [[ "${1:-}" == "--campaign-local" ]]; then
-        export BIOIMAGEFLOW_CAMPAIGN_LOCAL=1
-        shift
-        local campaign_argument
-        for campaign_argument in "$@"; do
-          case "$campaign_argument" in
-            --list|--project=chromium|--project=firefox)
-              ;;
-            *)
-              printf 'focus e2e --campaign-local supports only complete project collections with --list and/or --project=chromium|firefox\n' >&2
-              return 2
-              ;;
-          esac
-        done
-      fi
       run_focused_e2e "$@"
       ;;
     *)
@@ -583,12 +569,38 @@ focus_lane() {
   esac
 }
 
+# Export one explicit feature selection to every native runner and child process.
+if [[ "${1:-}" == "--suite" ]]; then
+  if (( $# < 2 )); then
+    printf '%s\n' '--suite requires local, distributed, or all' >&2
+    exit 2
+  fi
+  export BIOIMAGEFLOW_TEST_SUITE="$2"
+  shift 2
+fi
+export BIOIMAGEFLOW_TEST_SUITE="${BIOIMAGEFLOW_TEST_SUITE:-local}"
+case "$BIOIMAGEFLOW_TEST_SUITE" in
+  local|distributed|all) ;;
+  *) printf 'Unknown test suite: %s\n' "$BIOIMAGEFLOW_TEST_SUITE" >&2; exit 2 ;;
+esac
 command="${1:-help}"
 if (( $# > 0 )); then
   shift
 fi
 
+if [[ "$command" == "distributed" ]]; then
+  export BIOIMAGEFLOW_TEST_SUITE=distributed
+fi
+printf 'Feature suite: %s\n' "$BIOIMAGEFLOW_TEST_SUITE"
+
 case "$command" in
+  distributed)
+    if (( $# > 0 )); then
+      printf 'distributed does not accept selectors; use --suite distributed focus instead\n' >&2
+      exit 2
+    fi
+    run_parallel backend_deterministic frontend_all_units isolated_chromium_full_e2e isolated_firefox_full_e2e
+    ;;
   help|-h|--help)
     usage
     ;;
@@ -612,6 +624,10 @@ case "$command" in
   full)
     if (( $# > 0 )); then
       printf 'full does not accept selectors; use scripts/test focus instead\n' >&2
+      exit 2
+    fi
+    if [[ "$BIOIMAGEFLOW_TEST_SUITE" == "distributed" ]]; then
+      printf 'full requires --suite local or all; use scripts/test distributed for optional distributed checks\n' >&2
       exit 2
     fi
     full_lane

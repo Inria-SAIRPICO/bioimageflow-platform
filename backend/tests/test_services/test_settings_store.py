@@ -166,7 +166,6 @@ class TestLoad:
         assert result.external_editor == "code {file_path}"
         assert result.new_workflow_execution == "sequential"
 
-    @pytest.mark.campaign_excluded(reason="parsl")
     async def test_legacy_execution_engine_parsl_loads_as_parallel(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         path.write_text(
@@ -182,7 +181,6 @@ class TestLoad:
         result = await store.load()
         assert result.new_workflow_execution == "parallel"
 
-    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     async def test_v1_execution_engine_migrates_to_v2_new_workflow_default(
         self, tmp_path: Path
     ) -> None:
@@ -398,7 +396,6 @@ class TestPatch:
         assert store.get() is result
         assert result.deployment_mode == "webapp"
 
-    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     async def test_patch_updates_state_and_disk(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)

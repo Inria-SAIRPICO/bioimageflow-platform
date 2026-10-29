@@ -6,6 +6,8 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 
 SCRIPT = Path(__file__).parents[2] / "scripts" / "test"
 
@@ -103,6 +105,36 @@ def test_backend_coverage_database_is_transient() -> None:
 
     assert 'export COVERAGE_FILE="$backend_dir/.pytest_cache/.coverage"' in runner
     assert 'rm -f -- "$COVERAGE_FILE"' in runner
+
+
+@pytest.mark.parametrize("suite", ["local", "distributed", "all"])
+def test_feature_suite_is_forwarded_without_changing_browser_filters(suite: str) -> None:
+    output = _run_test_runner("--suite", suite, "focus", "e2e", "--project=firefox")
+
+    assert f"Feature suite: {suite}" in output
+    assert "--project=firefox" in output
+    assert "--project=chromium" not in output
+
+
+def test_misspelled_suite_fails_before_starting_tests() -> None:
+    result = subprocess.run(
+        [str(SCRIPT), "--suite", "typo", "focus", "e2e"],
+        capture_output=True, text=True, timeout=5,
+    )
+
+    assert result.returncode == 2
+    assert "Unknown test suite" in result.stderr
+
+
+def test_full_rejects_distributed_only_before_preparing_external_packages() -> None:
+    result = subprocess.run(
+        [str(SCRIPT), "--suite", "distributed", "full"],
+        capture_output=True, text=True, timeout=5,
+    )
+
+    assert result.returncode == 2
+    assert "use scripts/test distributed" in result.stderr
+    assert "Install bioimageflow-common-tools" not in result.stdout
 
 
 def test_runner_children_fail_closed_without_importing_native_keyring(tmp_path: Path) -> None:

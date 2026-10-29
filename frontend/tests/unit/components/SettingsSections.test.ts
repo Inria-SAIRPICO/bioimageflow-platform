@@ -11,7 +11,7 @@ import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
 import * as workspaceApi from '@/api/workspace'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
@@ -185,7 +185,7 @@ describe('ExecutionSection', () => {
     expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
-  campaignExcluded('managed-remote')('exposes managed-cluster controls without legacy factories', () => {
+  distributedTest('exposes managed-cluster controls without legacy factories', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: { modelValue: baseSettings },

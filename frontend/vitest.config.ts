@@ -53,9 +53,7 @@ export default defineConfig({
     },
   },
   test: {
-    ...(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1'
-      ? { reporters: ['default', './tests/campaignVitestReporter.ts'] }
-      : {}),
+    runner: './tests/suiteRunner.ts',
     globals: true,
     onConsoleLog(log, type) {
       if (type === 'stderr') {

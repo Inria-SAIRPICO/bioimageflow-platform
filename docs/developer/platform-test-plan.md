@@ -595,8 +595,8 @@ Earlier local/manual publication instructions describe historical releases; the 
 
 ## Final acceptance
 
-Use the existing audited `--campaign-local` selectors and `tests/campaign-local-scope.json` to cover complete in-scope backend, unit, Chromium, and Firefox collections.
-Exact focused tests use ordinary selectors because campaign-wide selection cannot be combined with arbitrary grep/file filters.
+Use the default `local` feature suite documented in `docs/testing.md` to cover complete in-scope backend, unit, Chromium, and Firefox collections.
+Exact focused tests use the same suite with ordinary file/title selectors; distributed features run only through explicit `--suite distributed` or `--suite all` selection.
 Collect-only output establishes selection, not a pass; reconcile every selected, excluded, skipped, failed, and unrun case.
 Also cover lint/types/build, logging-order certification, documentation, published common-tools compatibility (`scripts/test certification`), and real sequential-worker acceptance with the documented commands.
 Choose comprehensive lanes only at final certification or when the change surface requires them; if a broad lane contains excluded behavior, report its broader scope or use the documented complete audited selections with the remaining checks recorded separately.

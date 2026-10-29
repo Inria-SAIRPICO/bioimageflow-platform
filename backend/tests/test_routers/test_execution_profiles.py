@@ -25,7 +25,7 @@ from tests.test_services.test_execution_profiles import profile_fields, write_co
 
 pytestmark = [
     pytest.mark.anyio,
-    pytest.mark.campaign_excluded(reason="managed-remote"),
+    pytest.mark.distributed,
 ]
 
 

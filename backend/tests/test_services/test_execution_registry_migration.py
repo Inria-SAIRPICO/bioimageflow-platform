@@ -29,7 +29,7 @@ def test_migration_preserves_local_v1(tmp_path: Path) -> None:
     assert json.loads(local_path.read_text(encoding="utf-8"))["schema_version"] == 2
 
 
-@pytest.mark.campaign_excluded(reason="distributed-engine")
+@pytest.mark.distributed
 def test_migration_erases_legacy_distributed_bytes(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     registry.root.mkdir(parents=True)

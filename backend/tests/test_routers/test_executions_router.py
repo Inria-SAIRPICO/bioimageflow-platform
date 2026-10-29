@@ -29,7 +29,7 @@ from bioimageflow_server.services.execution_runtime import (
 )
 
 
-pytestmark = pytest.mark.campaign_excluded(reason="distributed-engine")
+pytestmark = pytest.mark.distributed
 
 
 def _app(coordinator: ExecutionCoordinator) -> FastAPI:

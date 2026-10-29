@@ -75,7 +75,7 @@ vi.mock('@/composables/useCanvasCommands', () => ({
 }))
 
 import MenuBar from '../MenuBar.vue'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -2481,7 +2481,7 @@ describe('MenuBar', () => {
       expect(runSelected.disabled).toBe(false)
     })
 
-    campaignExcluded('distributed-engine')('routes distributed recompute to retained execution from the menu', async () => {
+    distributedTest('routes distributed recompute to retained execution from the menu', async () => {
       registerActiveRootWorkflow()
       const registry = useExecutionRegistryStore()
       registry.targets = [{

@@ -20,7 +20,7 @@ from bioimageflow_server.services.execution_runtime import SubmittedRunAdapter
 
 pytestmark = [
     pytest.mark.anyio,
-    pytest.mark.campaign_excluded(reason="distributed-engine"),
+    pytest.mark.distributed,
 ]
 
 

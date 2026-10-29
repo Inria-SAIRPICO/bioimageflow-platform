@@ -14,9 +14,8 @@ import { api } from '@/api/client'
 import ExecutionPanel from '../ExecutionPanel.vue'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useUIStore } from '@/stores/ui'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
-const excluded = campaignExcluded('distributed-engine')
 
 const retryActions = {
   cancel: { available: false, reason: 'Execution is terminal' },
@@ -70,7 +69,7 @@ describe('ExecutionPanel', () => {
     expect(wrapper.get('[data-testid="execution-job-details"]').text()).toContain('Resolving pixi.lock')
   })
 
-  excluded('renders hierarchical jobs and structured diagnostics from a normalized snapshot', async () => {
+  distributedTest('renders hierarchical jobs and structured diagnostics from a normalized snapshot', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -146,7 +145,7 @@ describe('ExecutionPanel', () => {
     expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeUndefined()
   })
 
-  excluded('previews and confirms the server-persisted retry plan digest', async () => {
+  distributedTest('previews and confirms the server-persisted retry plan digest', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -196,7 +195,7 @@ describe('ExecutionPanel', () => {
     expect(registry.selectedRunId).toBe('run-child')
   })
 
-  excluded('previews and applies cleanup for the exact managed run identity', async () => {
+  distributedTest('previews and applies cleanup for the exact managed run identity', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -264,7 +263,7 @@ describe('ExecutionPanel', () => {
   })
 
   for (const errorCode of ['retry-plan-integrity-error', 'retry-child-conflict']) {
-    excluded(`requires an explicit new preview for ${errorCode}`, async () => {
+    distributedTest(`requires an explicit new preview for ${errorCode}`, async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -328,7 +327,7 @@ describe('ExecutionPanel', () => {
     })
   }
 
-  excluded('observes the exact confirmed child after an uncertain submission', async () => {
+  distributedTest('observes the exact confirmed child after an uncertain submission', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -402,7 +401,7 @@ describe('ExecutionPanel', () => {
     )
   })
 
-  excluded('does not replan an unrelated conflict response', async () => {
+  distributedTest('does not replan an unrelated conflict response', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -444,7 +443,7 @@ describe('ExecutionPanel', () => {
     expect(wrapper.find('[data-testid="confirm-execution-retry"]').exists()).toBe(true)
   })
 
-  excluded('uses structured diagnostics instead of retained logs for managed runs', async () => {
+  distributedTest('uses structured diagnostics instead of retained logs for managed runs', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()

@@ -436,7 +436,11 @@ For an API change, trace the backend model and service, router, generated type, 
 ### Other important areas
 
 - `scripts/test` is the authoritative validation entry point.
-- `docs/testing.md` defines focused, quick, scoped completion, browser, full, and certification lanes.
+- `docs/testing.md` defines local/distributed feature suites and focused, quick, scoped completion, browser, full, and certification lanes.
+- Tests default to local features in every runner; `scripts/test --suite distributed|all ...` opts into distributed features.
+  Native distributed markers/tags replace campaign-specific selectors and duplicate exclusion inventories.
+  Required PR/push CI and Monday weekly validation run local features; `.github/workflows/distributed.yml` is a separate manual-only optional workflow.
+  Engine-neutral state, local scheduling, Direct and Wetlands tests remain in local validation, including mixed execution-runtime files.
 - [Current campaign checkpoint](docs/developer/platform-test-current.md) owns the active source revision, accepted outcomes, remaining gates and direct validation receipts.
 - [Campaign start](docs/developer/platform-test-start.md) resumes from that checkpoint and the task-relevant specification/source; the historical progress diary is optional lookup evidence, never required restart context.
 - [Specification intent](docs/developer/library-specification-intent-review.md), [test quality](docs/developer/library-test-quality-review.md) and [causal architecture review](docs/developer/library-causal-architecture-review.md) retain the accepted library findings and finite dispositions.

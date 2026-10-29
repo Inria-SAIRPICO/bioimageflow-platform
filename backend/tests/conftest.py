@@ -1,6 +1,7 @@
 """Shared test fixtures."""
 
 from collections.abc import AsyncIterator
+import os
 from pathlib import Path
 
 import httpx
@@ -8,7 +9,7 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
-from tests.campaign_scope import audit_backend_collection, load_backend_exclusions
+from tests.suite_selection import select_test_suite
 
 
 class _OfflinePyPIVersionService:
@@ -27,7 +28,7 @@ class _OfflinePyPIVersionService:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Keep external package certification explicit and opt-in."""
+    """Select feature coverage independently of external package certification."""
 
     parser.addoption(
         "--run-external",
@@ -44,10 +45,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
     parser.addoption(
-        "--campaign-local",
-        action="store_true",
-        default=False,
-        help="run the strictly audited local-platform campaign selection",
+        "--suite",
+        choices=("local", "distributed", "all"),
+        default=os.environ.get("BIOIMAGEFLOW_TEST_SUITE", "local"),
+        help="feature suite: local (default), distributed, or all",
     )
 
 
@@ -92,15 +93,9 @@ def pytest_collection_modifyitems(
             if item.get_closest_marker("external") is not None:
                 item.add_marker(skip)
 
-    if config.getoption("--campaign-local"):
-        try:
-            selected, excluded = audit_backend_collection(
-                items, load_backend_exclusions()
-            )
-        except ValueError as error:
-            raise pytest.UsageError(str(error)) from error
-        config.hook.pytest_deselected(items=excluded)
-        items[:] = selected
+    selected, deselected = select_test_suite(items, config.getoption("--suite"))
+    config.hook.pytest_deselected(items=deselected)
+    items[:] = selected
 
 
 @pytest.fixture(scope="session")

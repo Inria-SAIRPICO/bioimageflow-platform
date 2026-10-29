@@ -6,9 +6,8 @@ import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import Select from 'primevue/select'
 import ExecutionTargetSelector from '../ExecutionTargetSelector.vue'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
-const excluded = campaignExcluded('managed-remote')
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn() },
@@ -22,7 +21,7 @@ describe('ExecutionTargetSelector', () => {
     setActivePinia(pinia)
   })
 
-  excluded('keeps the direct-submit acknowledgement warning visible for managed targets', async () => {
+  distributedTest('keeps the direct-submit acknowledgement warning visible for managed targets', async () => {
     const registry = useExecutionRegistryStore()
     registry.targets = [
       { id: 'local', label: 'Local', mode: 'local', enabled: true },
@@ -48,7 +47,7 @@ describe('ExecutionTargetSelector', () => {
     expect(warning.text()).toContain('reconnect instead of resubmitting')
   })
 
-  excluded('omits unavailable managed profiles from the Run selector', () => {
+  distributedTest('omits unavailable managed profiles from the Run selector', () => {
     const registry = useExecutionRegistryStore()
     registry.targets = [
       { id: 'local', label: 'Local', mode: 'local', enabled: true },

@@ -328,6 +328,12 @@ Portable workflow archives remain free of platform profile IDs and remote attach
 
 ## 14. Acceptance Criteria
 
+Distributed-feature validation is an explicit optional suite, separate from required local application validation.
+PR/push CI and Monday weekly validation select local features; a separate manual-only distributed workflow selects distributed backend, frontend, and browser cases.
+Local Direct/Wetlands scheduling, engine-neutral state, persistence, and result recovery remain required local coverage even when their tests share a file with remote cases.
+A successful local workflow does not certify distributed behavior; external common-tools compatibility is a separate validation dimension.
+See [Test Lanes](docs/testing.md) for the canonical `local`, `distributed`, and `all` selectors.
+
 - Local Direct and Wetlands execution pass their existing validation and result tests without a managed cluster profile or reachable cluster.
 - A trusted script defining `cluster = RemoteCluster(...)` can be saved, described, selected, and submitted.
 - A missing or wrong `cluster` value produces a structured profile error without creating a run.

@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 import ExecutionRetryDialog from '../ExecutionRetryDialog.vue'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
-const excluded = campaignExcluded('distributed-engine')
 
 const jobs = [
   { id: 'prepare', scoped_node_path: 'prepare', state: 'succeeded' as const },
@@ -13,7 +12,7 @@ const jobs = [
 const available = { available: true, reason: null }
 
 describe('ExecutionRetryDialog', () => {
-  excluded('previews scoped recomputation with downstream cascade enabled by default', async () => {
+  distributedTest('previews scoped recomputation with downstream cascade enabled by default', async () => {
     const wrapper = mount(ExecutionRetryDialog, {
       props: {
         visible: true,
@@ -34,7 +33,7 @@ describe('ExecutionRetryDialog', () => {
     ]])
   })
 
-  excluded('shows invalidations and prevents confirmation while conflicts exist', async () => {
+  distributedTest('shows invalidations and prevents confirmation while conflicts exist', async () => {
     const wrapper = mount(ExecutionRetryDialog, {
       props: {
         visible: true,
@@ -66,7 +65,7 @@ describe('ExecutionRetryDialog', () => {
     expect(wrapper.get('[data-testid="confirm-execution-retry"]').attributes('disabled')).toBeDefined()
   })
 
-  excluded('disables an unavailable mode using the exact server reason', async () => {
+  distributedTest('disables an unavailable mode using the exact server reason', async () => {
     const wrapper = mount(ExecutionRetryDialog, {
       props: {
         visible: true,
@@ -87,7 +86,7 @@ describe('ExecutionRetryDialog', () => {
     expect(wrapper.emitted('preview')).toEqual([[null]])
   })
 
-  excluded('prevents confirmation when the planned action becomes unavailable', async () => {
+  distributedTest('prevents confirmation when the planned action becomes unavailable', async () => {
     const wrapper = mount(ExecutionRetryDialog, {
       props: {
         visible: true,

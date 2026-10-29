@@ -14,9 +14,8 @@ import {
   type ExecutionProfile,
   type ProfileDescription,
 } from '@/api/executionProfiles'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
-const excluded = campaignExcluded('managed-remote')
 
 const profile: ExecutionProfile = {
   schema: 'bioimageflow.platform.execution-profile.v2',
@@ -39,7 +38,7 @@ describe('managed execution profile API', () => {
     vi.mocked(api.delete).mockReset()
   })
 
-  excluded('keeps the persisted profile to one trusted script and non-secret identities', async () => {
+  distributedTest('keeps the persisted profile to one trusted script and non-secret identities', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       editable: false,
       profiles: [{ ...profile, editable: undefined }],
@@ -63,7 +62,7 @@ describe('managed execution profile API', () => {
     })
   })
 
-  excluded('describes capabilities and downloads the example archive', async () => {
+  distributedTest('describes capabilities and downloads the example archive', async () => {
     const description = {
       profile_id: profile.id, profile_revision: 1, config_digest: profile.config_digest,
       cluster_host: profile.cluster_host, cluster_root: profile.cluster_root, configured: true,

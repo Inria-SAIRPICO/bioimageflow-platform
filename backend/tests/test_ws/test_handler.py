@@ -97,7 +97,7 @@ async def _drain(mgr: Any) -> None:
         await asyncio.sleep(0)
 
 
-@pytest.mark.campaign_excluded(reason="managed-remote")
+@pytest.mark.distributed
 async def test_execution_snapshot_websocket_redacts_durable_reconnect_data() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 

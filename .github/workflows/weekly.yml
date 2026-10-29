@@ -1,0 +1,246 @@
+name: Weekly validation
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.8"
+  UV_VERSION: "0.10.9"
+  BIOIMAGEFLOW_HOME: ${{ github.workspace }}/.ci/bioimageflow-home
+  BIOIMAGEFLOW_TOOL_STORE: ${{ github.workspace }}/.ci/bioimageflow-home/tool_packages
+  BIOIMAGEFLOW_WETLANDS: ${{ github.workspace }}/.ci/bioimageflow-home/wetlands
+  BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.cache/bun
+  UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+  UV_FROZEN: "1"
+  UV_LINK_MODE: copy
+  BIOIMAGEFLOW_TEST_SUITE: local
+
+jobs:
+  backend:
+    name: Backend coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Import backend source
+        run: backend/.venv/bin/python -c 'import bioimageflow_server.app'
+      - name: Ruff
+        working-directory: backend
+        run: uv run --frozen ruff check .
+      - name: Run backend tests with branch coverage
+        working-directory: backend
+        env:
+          COVERAGE_FILE: .pytest_cache/.coverage
+        run: >-
+          uv run --frozen pytest
+          -m 'not external'
+          --cov=bioimageflow_server
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:.pytest_cache/coverage.xml
+          --cov-report=html:.pytest_cache/htmlcov
+          --durations=20
+      - name: Remove transient coverage database
+        if: always()
+        run: rm -f backend/.coverage backend/.pytest_cache/.coverage
+      - name: Check logging order
+        working-directory: backend
+        run: >-
+          uv run --frozen pytest
+          tests/test_logging_config.py
+          tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently
+          tests/test_ws/test_handler.py::test_publish_logs_future_exceptions
+          tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger
+          -q
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-coverage
+          path: |
+            backend/.pytest_cache/coverage.xml
+            backend/.pytest_cache/htmlcov/
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 7
+
+  common-tools:
+    name: Common-tools compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Certify published common tools
+        run: scripts/test certification
+
+  frontend:
+    name: Frontend coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Lint
+        working-directory: frontend
+        run: bun run lint
+      - name: Type-check
+        working-directory: frontend
+        run: bun run type-check
+      - name: Run frontend tests with branch coverage
+        working-directory: frontend
+        run: >-
+          bun run test:unit --
+          --coverage
+          --coverage.reporter=text
+          --coverage.reporter=html
+          --coverage.reportsDirectory=test-results/coverage
+      - name: Build frontend
+        working-directory: frontend
+        run: bun run build
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: frontend/test-results/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  chromium:
+    name: Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: frontend
+        run: bunx playwright install --with-deps chromium
+      - name: Run Chromium
+        run: scripts/test check browser
+      - name: Upload Chromium artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chromium-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  firefox:
+    name: Firefox
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Install Firefox
+        working-directory: frontend
+        run: bunx playwright install --with-deps firefox
+      - name: Run Firefox
+        run: scripts/test check browser-firefox
+      - name: Upload Firefox artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firefox-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  required:
+    name: Weekly validation result
+    if: always()
+    needs:
+      - backend
+      - common-tools
+      - frontend
+      - chromium
+      - firefox
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation job to pass
+        env:
+          BACKEND_RESULT: ${{ needs['backend'].result }}
+          EXTERNAL_RESULT: ${{ needs['common-tools'].result }}
+          FRONTEND_RESULT: ${{ needs['frontend'].result }}
+          CHROMIUM_RESULT: ${{ needs['chromium'].result }}
+          FIREFOX_RESULT: ${{ needs['firefox'].result }}
+        run: |
+          for result in \
+            "$BACKEND_RESULT" \
+            "$EXTERNAL_RESULT" \
+            "$FRONTEND_RESULT" \
+            "$CHROMIUM_RESULT" \
+            "$FIREFOX_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              printf 'Weekly validation result component did not pass: %s\n' "$result" >&2
+              exit 1
+            fi
+          done

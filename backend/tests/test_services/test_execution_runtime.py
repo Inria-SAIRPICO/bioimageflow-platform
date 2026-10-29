@@ -32,8 +32,6 @@ from bioimageflow_server.services.execution_runtime import (
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
-pytestmark = pytest.mark.campaign_excluded(reason="distributed-engine")
-
 
 def _snapshot(**updates: Any) -> ExecutionSnapshot:
     values = {
@@ -200,6 +198,7 @@ def test_reducer_retains_environment_phase_without_numeric_progress() -> None:
     assert reduced.jobs["cellpose"].current is None
 
 
+@pytest.mark.distributed
 def test_remote_reconnect_uses_only_durable_host_root_and_run_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -224,6 +223,7 @@ def test_remote_reconnect_uses_only_durable_host_root_and_run_id(
     assert opened["run_id"] == "run_remote"
 
 
+@pytest.mark.distributed
 def test_remote_reconnect_rejects_incomplete_attachment_identity() -> None:
     with pytest.raises(ValueError, match="metadata is incomplete"):
         open_public_submitted_run(
@@ -259,6 +259,7 @@ class _FakeHandle:
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_coordinator_reconnects_without_resubmission_and_cancels(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     saved = registry.save(_snapshot())
@@ -280,6 +281,7 @@ async def test_coordinator_reconnects_without_resubmission_and_cancels(tmp_path:
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_observation_failure_does_not_fail_authoritative_run(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     saved = registry.save(_snapshot(state="running"))
@@ -406,6 +408,7 @@ class _RecordingPublisher:
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_retry_plan_is_durable_and_confirmation_recovers_exact_child(
     tmp_path: Path,
 ) -> None:
@@ -460,6 +463,7 @@ async def test_retry_plan_is_durable_and_confirmation_recovers_exact_child(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_retry_confirmation_refreshes_parent_after_waiting_for_run_lock(
     tmp_path: Path,
 ) -> None:
@@ -520,6 +524,7 @@ async def test_retry_confirmation_refreshes_parent_after_waiting_for_run_lock(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -> None:
     parent_id = f"run_{uuid4().hex}"
     child_id = f"run_{uuid4().hex}"
@@ -556,6 +561,7 @@ async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_startup_keeps_one_reconnect_task_for_unreachable_uncertain_child(
     tmp_path: Path,
 ) -> None:
@@ -597,6 +603,7 @@ async def test_startup_keeps_one_reconnect_task_for_unreachable_uncertain_child(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
     tmp_path: Path,
 ) -> None:
@@ -680,6 +687,7 @@ async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_definite_retry_start_failure_retains_terminal_exact_child(
     tmp_path: Path,
 ) -> None:
@@ -721,6 +729,7 @@ async def test_definite_retry_start_failure_retains_terminal_exact_child(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_recompute_presentation_normalizes_library_tuple_to_json_list(
     tmp_path: Path,
 ) -> None:
@@ -971,6 +980,7 @@ async def test_startup_lost_conversion_rederives_and_publishes_actions(tmp_path:
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_managed_queued_execution_can_be_cancelled(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     handle = _FakeHandle()
@@ -988,6 +998,7 @@ async def test_managed_queued_execution_can_be_cancelled(tmp_path: Path) -> None
     assert cancelled.state == "cancel_requested"
 
 
+@pytest.mark.distributed
 def test_submitted_export_transient_failure_remains_pending(tmp_path: Path) -> None:
     class _ExportFailureHandle(_FakeHandle):
         def download_result(self, destination: Path) -> None:
@@ -1002,6 +1013,7 @@ def test_submitted_export_transient_failure_remains_pending(tmp_path: Path) -> N
     assert adapter.result_export.error_code == "workflow-result-export-error"
 
 
+@pytest.mark.distributed
 def test_submitted_export_unavailable_failure_is_terminal(tmp_path: Path) -> None:
     class _ExportFailureHandle(_FakeHandle):
         def download_result(self, destination: Path) -> None:
@@ -1041,6 +1053,7 @@ def test_operation_error_does_not_trust_arbitrary_code_or_details() -> None:
     assert "must-not-escape" not in repr(converted.details)
 
 
+@pytest.mark.distributed
 def test_operation_error_normalizes_public_cluster_diagnostic_with_identities() -> None:
     from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
 
@@ -1067,6 +1080,7 @@ def test_operation_error_normalizes_public_cluster_diagnostic_with_identities() 
     assert "scheduler acknowledgement" in str(converted)
 
 
+@pytest.mark.distributed
 def test_submitted_snapshot_projection_drops_unknown_and_sensitive_values() -> None:
     class _ObservationHandle(_FakeHandle):
         def snapshot(self) -> dict[str, Any]:
@@ -1084,6 +1098,7 @@ def test_submitted_snapshot_projection_drops_unknown_and_sensitive_values() -> N
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_cancel_normalizes_public_cluster_operation_error(tmp_path: Path) -> None:
     from bioimageflow.cluster import ClusterDiagnostic, ClusterOperationError
 
@@ -1133,6 +1148,7 @@ def _public_reconnect_error(*, phase: str, category: str) -> Exception:
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_retry_planning_normalizes_public_reconnect_diagnostic(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     saved = registry.save(_snapshot(state="failed"))
@@ -1160,6 +1176,7 @@ async def test_retry_planning_normalizes_public_reconnect_diagnostic(tmp_path: P
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_result_download_normalizes_public_reconnect_diagnostic(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     saved = registry.save(_snapshot(state="succeeded"))
@@ -1187,6 +1204,7 @@ async def test_result_download_normalizes_public_reconnect_diagnostic(tmp_path: 
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_retry_start_normalizes_parent_reconnect_diagnostic(tmp_path: Path) -> None:
     registry = ExecutionRegistry(tmp_path)
     parent = registry.save(_snapshot(execution_id=f"run_{uuid4().hex}", state="failed"))
@@ -1220,6 +1238,7 @@ async def test_retry_start_normalizes_parent_reconnect_diagnostic(tmp_path: Path
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1295,6 +1314,7 @@ async def test_cleanup_plan_is_bound_to_one_retained_managed_run(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_cleanup_plan_is_verified_before_persistence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1343,6 +1363,7 @@ async def test_cleanup_plan_is_verified_before_persistence(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> None:
     capabilities = {
         "remote_cluster_bootstrap": {"supported": True, "reason": None},
@@ -1372,6 +1393,7 @@ async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> No
     assert snapshot.actions.download_results.available
 
 
+@pytest.mark.distributed
 def test_submitted_adapter_uses_export_result_and_returns_zip(tmp_path: Path) -> None:
     handle = _FakeHandle()
     adapter = SubmittedRunAdapter(handle)
@@ -1431,6 +1453,7 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
 
 
 @pytest.mark.anyio
+@pytest.mark.distributed
 async def test_managed_download_reuses_verified_local_bundle_after_remote_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

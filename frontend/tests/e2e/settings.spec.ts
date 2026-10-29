@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CAMPAIGN_ANNOTATION } from '../../src/test-utils/campaignScope'
 
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
 
@@ -422,9 +421,9 @@ test.describe('Settings Panel', () => {
   })
 
   test('execution settings show managed-cluster controls', {
-    annotation: { type: CAMPAIGN_ANNOTATION, description: 'managed-remote' },
+    tag: '@distributed',
   }, async ({ page }) => {
-    test.skip(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1', 'Excluded from the local-platform campaign')
+
     await page.goto('/')
     await openSettings(page)
     const dialog = page.locator('[data-testid="settings-panel"]')

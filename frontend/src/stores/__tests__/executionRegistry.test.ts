@@ -8,9 +8,8 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import type { ExecutionSnapshot } from '@/api/executions'
-import { campaignExcluded } from '@/test-utils/campaignVitest'
+import { distributedTest } from '@/test-utils/distributedTest'
 
-const excluded = campaignExcluded('distributed-engine')
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -69,7 +68,7 @@ describe('execution registry store', () => {
     vi.mocked(api.post).mockReset()
   })
 
-  excluded('surfaces capability discovery failures without a legacy target fallback', async () => {
+  distributedTest('surfaces capability discovery failures without a legacy target fallback', async () => {
     vi.mocked(api.get).mockRejectedValueOnce(new Error('capability discovery failed'))
     const store = useExecutionRegistryStore()
 
@@ -80,7 +79,7 @@ describe('execution registry store', () => {
     expect(store.error).toBe('capability discovery failed')
   })
 
-  excluded('applies only monotonically newer snapshots', () => {
+  distributedTest('applies only monotonically newer snapshots', () => {
     const store = useExecutionRegistryStore()
     store.applySnapshot(snapshot(4, 'running'))
     store.applySnapshot(snapshot(3, 'failed'))
@@ -93,7 +92,7 @@ describe('execution registry store', () => {
     expect(store.activeRuns).toHaveLength(0)
   })
 
-  excluded('keeps cancellation and persisted retry plans scoped to the parent run', async () => {
+  distributedTest('keeps cancellation and persisted retry plans scoped to the parent run', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       data: snapshotWire(2, 'cancel_requested'),
     })
@@ -125,7 +124,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-2')
   })
 
-  excluded('loads retained history with backend offset pagination', async () => {
+  distributedTest('loads retained history with backend offset pagination', async () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: {
         items: [snapshotWire(1, 'succeeded', 'run-1')], total: 3, offset: 0, limit: 1,
@@ -148,7 +147,7 @@ describe('execution registry store', () => {
     expect(store.hasMoreRuns).toBe(true)
   })
 
-  excluded('keeps live snapshots inside the loaded workflow scope', async () => {
+  distributedTest('keeps live snapshots inside the loaded workflow scope', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1,
@@ -179,7 +178,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  excluded('accepts live snapshots from every workflow in workspace scope', async () => {
+  distributedTest('accepts live snapshots from every workflow in workspace scope', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1,
@@ -205,7 +204,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  excluded('buffers live snapshots against the destination scope during a scope switch', async () => {
+  distributedTest('buffers live snapshots against the destination scope during a scope switch', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1, offset: 0, limit: 50,
@@ -238,7 +237,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-b-live')
   })
 
-  excluded('reconciles live snapshots received during a same-scope refresh', async () => {
+  distributedTest('reconciles live snapshots received during a same-scope refresh', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
       total: 1, offset: 0, limit: 50,
@@ -275,7 +274,7 @@ describe('execution registry store', () => {
     expect(store.selectedRunId).toBe('run-a')
   })
 
-  excluded('ignores an older load that resolves after a newer scope request', async () => {
+  distributedTest('ignores an older load that resolves after a newer scope request', async () => {
     const pageA = deferred<{ data: {
       items: ReturnType<typeof snapshotWire>[]
       total: number

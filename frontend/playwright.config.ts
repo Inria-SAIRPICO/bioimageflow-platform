@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readTestSuite, suiteGrepInvert } from './src/test-utils/testSuite';
 
 const e2eRoot = process.env.BIOIMAGEFLOW_E2E_ROOT
   ?? mkdtempSync(join(tmpdir(), 'bioimageflow-platform-playwright-'));
@@ -22,9 +23,7 @@ process.env.BIOIMAGEFLOW_E2E_ROOT = e2eRoot;
 process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE = hotReloadFixture;
 
 export default defineConfig({
-  ...(process.env.BIOIMAGEFLOW_CAMPAIGN_LOCAL === '1'
-    ? { reporter: [['list'] as const, ['./tests/campaignPlaywrightReporter.ts'] as const] }
-    : {}),
+  grepInvert: suiteGrepInvert(readTestSuite()),
   testDir: './tests/e2e',
   outputDir: artifactSuffix ? join('test-results', artifactSuffix) : 'test-results',
   fullyParallel: false,

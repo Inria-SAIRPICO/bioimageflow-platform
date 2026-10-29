@@ -69,6 +69,7 @@ See [Local Development](docs/developer/local-development.md) for production-mode
 ## Testing
 
 Use `scripts/test` as the repository test entry point.
+Tests default to the local feature suite; distributed tests are optional through `scripts/test distributed` or `scripts/test --suite distributed focus <backend|unit|e2e>`.
 Run focused tests while editing, then the smallest scoped check that covers the completed change:
 
 ```bash
@@ -84,7 +85,8 @@ scripts/test check app
 ```
 
 Do not run `quick` immediately before a completion check that includes its phases.
-See [Test Lanes](docs/testing.md) for selectors, lane contents, browser coverage, and external package certification.
+PR/push CI and Monday validation run local features; the separate **Distributed tests** workflow runs only on manual dispatch.
+See [Test Lanes](docs/testing.md) for feature suites, selectors, lane contents, browser coverage, and external package certification.
 
 ## Build the documentation
 

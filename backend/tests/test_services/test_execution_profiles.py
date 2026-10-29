@@ -17,7 +17,7 @@ from bioimageflow_server.services.execution_profiles import (
 
 pytestmark = [
     pytest.mark.anyio,
-    pytest.mark.campaign_excluded(reason="managed-remote"),
+    pytest.mark.distributed,
 ]
 
 

@@ -8,6 +8,9 @@ When a change affects platform or library behavior, architecture, contracts, or 
 ## Testing
 
 Use `scripts/test` as the authoritative test entry point and see `docs/testing.md` for lane definitions and focused-test examples.
+Commands default to the local feature suite; distributed features are optional through `scripts/test --suite distributed ...` or `scripts/test distributed`.
+When changing distributed behavior, select its focused tests explicitly, then run the applicable scoped checks; `--suite all` includes both feature suites.
+Required PR/push CI and Monday weekly validation remain local, while the separate distributed workflow is manual-only.
 
 During implementation:
 

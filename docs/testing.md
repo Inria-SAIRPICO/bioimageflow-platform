@@ -35,6 +35,40 @@ Every `scripts/test` lane forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.K
 Credential-dependent tests inject memory providers explicitly; owned live integration can install a process-local RAM provider while replacement workers fail closed.
 This test guard does not change production credential behavior, and native credential integration remains outside automated acceptance.
 
+## Feature suites
+
+Every test command defaults to the **local** suite, including direct Pytest, Vitest, and Playwright invocations.
+The local suite covers the application, Direct and Wetlands execution, local scheduling, persistence, and engine-neutral execution state and results.
+The **distributed** suite covers managed cluster profiles, remote submission and preflight, distributed run observation, retry, and remote cleanup.
+Distributed tests are optional and run only when explicitly selected.
+
+```bash
+scripts/test check all                          # Required local checks
+scripts/test --suite distributed focus backend # Optional distributed backend tests
+scripts/test --suite distributed focus unit    # Optional distributed frontend tests
+scripts/test --suite distributed focus e2e --project=firefox
+scripts/test distributed                        # Distributed backend, units, and both browsers
+scripts/test --suite all full                    # Both feature suites plus external certification
+```
+
+`--suite local|distributed|all` precedes the command and applies to feature-test phases.
+`BIOIMAGEFLOW_TEST_SUITE` supplies the same selection to native runners; Pytest also accepts its own `--suite` option.
+Misspelled suite names fail rather than broadening the selection.
+File, title, browser, critical-test, and marker filters narrow the selected feature suite.
+A test excluded by the feature suite cannot be enabled by a title filter; choose `distributed` or `all` first.
+The `distributed` convenience command always selects distributed features regardless of the inherited suite.
+Shared logging-order checks always run their local infrastructure controls, and `certification` always selects common-tools compatibility independently of the feature suite.
+`full` accepts `local` or `all`; use `distributed` for distributed-only validation without external package setup.
+
+Backend tests declare `pytest.mark.distributed`, frontend unit tests use `distributedTest(...)`, and browser tests declare the native `@distributed` tag.
+These declarations are the feature classification authority; no duplicate list of test names or campaign exclusion inventory is maintained.
+Vitest applies selection before suite hooks and callbacks, while Pytest and Playwright deselect the other feature suite during collection.
+Collection/list output establishes selection, not successful execution.
+Historical campaign receipts retain the old command names as evidence for their original revision; current work uses the commands above.
+
+Feature suites and external compatibility are independent dimensions.
+Selecting distributed features does not enable external package/service tests, and common-tools certification does not certify distributed execution.
+
 ## Focused tests while editing
 
 Map changed files to their owning service/session, callers, persistence and event consumers, and public library boundary before choosing selectors; `focus related` alone cannot establish that impact map.
@@ -89,8 +123,8 @@ The quick lane runs independent phases in parallel:
 
 - Ruff and ESLint.
 - TypeScript type checking.
-- Backend tests that are not marked `integration`, `serial`, `slow`, or `external`.
-- Frontend tests in the Node Vitest project.
+- Selected-suite backend tests that are not marked `integration`, `serial`, `slow`, or `external`.
+- Selected-suite frontend tests in the Node Vitest project.
 
 It deliberately omits browsers, coverage instrumentation, external packages, and tests that cross application or process-global boundaries.
 Use it at intermediate checkpoints when development will continue, but do not treat it as completion validation.
@@ -126,16 +160,16 @@ Use the smallest scope that covers the changed surface:
 | Broad browser or E2E infrastructure | `check frontend` and `check browser-all` |
 | Broad architecture or test-runner changes | `check all` |
 
-`check backend` runs backend lint, every non-external backend test, and the logging-order certification.
-`check frontend` runs frontend lint, type checking, every Vitest project, and the production build.
+`check backend` runs backend lint, every non-external backend test in the selected feature suite, and the logging-order certification.
+`check frontend` runs frontend lint, type checking, the selected feature suite in every Vitest project, and the production build.
 `check campaign` verifies dashboard/inventory consistency and active campaign local links offline; it does not replace Sphinx for documentation structure or the final certification.
 `check docs` includes `check campaign`, then runs Sphinx with warnings treated as failures.
 Run `check campaign` once for a consolidated campaign-documentation task, not after each row or sentence edit.
 Run `check docs` when moving/renaming campaign files, changing documentation navigation/extensions, at a substantial documentation milestone, and at final certification; do not repeat it for routine campaign status edits.
-`check browser-smoke` runs only Chromium tests tagged `@critical`, while `check browser` runs the complete Chromium project.
+`check browser-smoke` runs only Chromium tests tagged `@critical`, while `check browser` runs the selected feature suite in Chromium.
 `check cross-browser-smoke` runs critical Chromium and Firefox tests in isolated parallel processes.
-`check browser-firefox` runs the complete Firefox project.
-`check browser-all` runs the complete Chromium and Firefox projects in isolated parallel processes without coverage or external certification.
+`check browser-firefox` runs the selected feature suite in Firefox.
+`check browser-all` runs the selected feature suite in Chromium and Firefox in isolated parallel processes without coverage or external certification.
 `check app` runs the backend and frontend checks in parallel and follows them with the critical Chromium smoke.
 `check all`, and the compatibility alias `check`, run the previous complete deterministic lane with the full Chromium project.
 Both include the quick product phases, so do not stack `quick` immediately before them; neither includes Firefox, external certification, or documentation.
@@ -150,13 +184,14 @@ scripts/test full
 
 Use the full lane after large plans, before releases, for package-loading or external-compatibility changes, when explicitly requested, or when complete local certification is otherwise required.
 Use the scoped cross-browser lanes for ordinary browser fixes.
-It runs all backend tests in one invocation with no marker exclusion, all frontend unit projects, branch coverage, the production build, the logging-order regression, and the complete Chromium and Firefox suites.
+It runs the selected feature suite across backend tests (including external tests), all frontend unit projects, branch coverage, the production build, the logging-order regression, and Chromium and Firefox.
+Distributed features remain opt-in even in `full`; use `scripts/test --suite all full` to include them.
 Before starting the tests it installs the pinned published `bioimageflow-common-tools` package into a fresh temporary tool store.
 The command fails if installation or external certification cannot run, so a successful full result never hides deselected external tests.
 Chromium and Firefox run against separate temporary roots and servers in parallel.
 Each browser server keeps Vite's generated dependency cache in its own temporary root, so parallel optimization cannot replace another server's cached modules.
 Local browser lanes stop after the first failure by default.
-`full` subsumes the backend/frontend product checks, both browser projects, and common-tools certification; it does not run `check docs` or native/manual acceptance.
+`full` subsumes the selected-suite backend/frontend product checks, both browser projects, and common-tools certification; it does not run `check docs` or native/manual acceptance.
 Run documentation acceptance separately when required rather than stacking already-covered product lanes before `full`.
 
 If a late full-suite phase fails, fix and stress the exact failure first.
@@ -209,20 +244,27 @@ Backend markers describe execution requirements rather than product ownership:
 Pytest marker validation is strict, so misspelled or unregistered categories fail collection.
 The external marker is the lane selector; `common_tools` identifies which external dependency supplies those cases.
 
-The local-platform campaign uses per-test markers or annotations together with the exact checked-in manifest at `tests/campaign-local-scope.json`.
-Run each complete audited selection directly with `scripts/test focus backend --campaign-local`, `scripts/test focus unit --campaign-local`, or `scripts/test focus e2e --campaign-local`.
-The browser selector defaults to Chromium; `--list`, `--project=chromium`, and `--project=firefox` are the only additional campaign arguments, and both project flags may be passed when both browser engines are required.
-Frontend-unit and browser campaign selectors reject test-file, title, line, and grep filters up front because a partial collection cannot prove that every manifest identity is still present.
-Collection fails if an annotation or manifest entry is missing, duplicated, stale, or uses a reason outside `parallel-scheduling`, `parsl`, `managed-remote`, and `distributed-engine`.
-These are intentionally separate scope selectors; a repository-wide campaign command remains unavailable until their combined orchestration and evidence reporting are validated.
+`distributed` is a feature marker rather than an execution-cost marker.
+Keep engine-neutral, local scheduling, Direct, and Wetlands cases unmarked even when they share a file with remote cases.
+Use per-case markers in mixed files; module-wide markers are appropriate only when every case tests distributed features.
 
-## CI mapping
+## CI workflows
 
-Pull-request jobs run the selected deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.
-Frontend changes, backend runtime changes, E2E fixtures, and shared test infrastructure also select a critical Firefox smoke job.
-The current path selector treats changes outside `backend/`, `frontend/`, `docs/`, and `README.md` as shared and selects all five PR jobs; this includes root instructions such as `AGENTS.md` and `PLATFORM_CONTEXT.md`.
-Routine documentation PRs still select the Sphinx job; the local campaign-status schedule does not change CI selection or demonstrate CI savings.
-Scheduled and manually dispatched certification splits backend coverage and external certification, frontend coverage and build, Chromium, and Firefox into independent jobs with a final required aggregator.
-Its backend job excludes `external`, and its external job runs common-tools certification only, so the separate real-worker fixtures and Sphinx still need explicit acceptance evidence.
-Independent jobs can overlap; actual elapsed cost also includes dependency setup and runner queue time, and no measured savings are claimed here.
+| Workflow | Trigger | Feature suite | Purpose |
+| --- | --- | --- | --- |
+| **CI** (`ci.yml`) | Push to `main`, pull request | Local | Path-selected backend/frontend quality, documentation, Chromium, and critical Firefox checks; aggregated by **Required CI**. |
+| **Weekly validation** (`weekly.yml`) | Monday at 04:00 UTC, or manual dispatch | Local | Backend/frontend branch coverage, production build, complete Chromium/Firefox local collections, and separate published common-tools compatibility. |
+| **Distributed tests** (`distributed.yml`) | Manual dispatch only | Distributed | Independent backend, frontend unit, Chromium, and Firefox checks; not a dependency of required CI or weekly validation. |
+
+The optional distributed workflow can fail without changing the result of either local workflow.
+Run it from Actions → Distributed tests → Run workflow, or with `gh workflow run distributed.yml --ref <branch>`.
+A green local workflow certifies only its selected local checks, not distributed functionality.
+
+PR changes outside `backend/`, `frontend/`, `docs/`, and `README.md` select all five local jobs, including changes to test infrastructure and root instructions.
+Frontend changes, backend runtime changes, and browser fixtures select critical Firefox coverage.
+Documentation PRs retain their Sphinx check.
+
+Weekly backend coverage excludes `external`; its common-tools job runs only the published package certification.
+Real-worker fixtures, documentation acceptance, and native/manual acceptance remain separate gates unless explicitly run through their documented commands.
 The published common-tools version has one source of truth in `scripts/ci/test_versions.env`, shared by local and CI runners.
+All workflows install the published backend dependencies from the lockfile and require no sibling library checkout.

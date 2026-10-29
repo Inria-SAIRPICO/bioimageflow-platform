@@ -96,7 +96,6 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings(deployment_mode="desktop", new_workflow_execution="dask")
 
-    @pytest.mark.campaign_excluded(reason="parallel-scheduling")
     def test_new_workflow_execution_parallel_is_valid(self):
         s = Settings(deployment_mode="desktop", new_workflow_execution="parallel")
         assert s.new_workflow_execution == "parallel"
