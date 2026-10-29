@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
+
+from bioimageflow.paths import get_home
 
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workspace import WorkspaceInfo
@@ -51,7 +54,11 @@ class WorkspaceService:
         configured = self._workspace_path or (
             Path(self.settings.workspace_path)
             if self.settings.workspace_path
-            else DEFAULT_DESKTOP_WORKSPACE
+            else (
+                get_home() / "workspace"
+                if os.environ.get("BIOIMAGEFLOW_HOME")
+                else DEFAULT_DESKTOP_WORKSPACE
+            )
         )
         return normalize_workspace_path(configured)
 

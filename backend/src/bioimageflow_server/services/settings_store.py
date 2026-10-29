@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationError
+from bioimageflow.paths import get_home
 
 from bioimageflow_server.models.settings import OMEROInstance, OMEROInstancePatch, Settings
 from bioimageflow_server.services.omero_credentials import (
@@ -54,7 +55,7 @@ class SettingsStore:
     ) -> "SettingsStore":
         """Return the standard per-user store, ready with startup defaults."""
         store = cls(
-            path=Path.home() / ".bioimageflow" / "settings.json",
+            path=get_home().expanduser().resolve() / "settings.json",
             deployment_mode=deployment_mode,
         )
         store._current = store._default_settings()

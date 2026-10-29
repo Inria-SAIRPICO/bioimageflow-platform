@@ -382,12 +382,12 @@ async def test_default_factory_serves_settings_from_the_standard_store(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(tmp_path / "profile"))
 
     app = create_app()
     store = app.dependency_overrides[get_settings_store]()
 
-    assert store.path == tmp_path / ".bioimageflow" / "settings.json"
+    assert store.path == tmp_path / "profile" / "settings.json"
     await store.load()
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

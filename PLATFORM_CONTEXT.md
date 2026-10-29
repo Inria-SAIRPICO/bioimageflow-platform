@@ -22,6 +22,9 @@ It must not reproduce backend validation or library behavior as an independent a
 The backend should use public BioImageFlow APIs and should not depend on private library storage or implementation details.
 
 The application supports desktop and webapp deployment modes.
+Launcher runtime sources/interpreters are separate from the user profile and survive or reset independently.
+Source-archive launcher runs report their own static project version when distribution metadata is absent.
+`BIOIMAGEFLOW_HOME` selects the platform settings and library state root and, when explicitly set, the default desktop workspace under that root; explicit workspace selection and the specific tool-store/Wetlands overrides retain precedence.
 Desktop mode is packaged with pywebview and may use trusted local capabilities such as native file dialogs and editor integration.
 Webapp mode uses managed server-side datasets and restricts capabilities that would expose or execute against arbitrary server paths.
 Desktop result images may also be opened in the platform-managed Napari environment or a user-installed Fiji application configured through Settings; Fiji launch requests resolve workflow result identities on the backend and are unavailable in webapp mode.

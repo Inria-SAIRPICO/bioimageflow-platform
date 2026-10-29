@@ -4568,11 +4568,8 @@ export interface components {
              * @default []
              */
             omero_instances: components["schemas"]["OMEROInstanceResponse"][];
-            /**
-             * Tool Store Path
-             * @default ~/.bioimageflow/tool_packages/
-             */
-            tool_store_path: string;
+            /** Tool Store Path */
+            tool_store_path?: string;
             /**
              * Update Mode
              * @default auto

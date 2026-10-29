@@ -107,6 +107,12 @@ Selecting the same global store again leaves its generations intact; changing in
 | `BIOIMAGEFLOW_TOOL_STORE` | Overrides only the tool store path. |
 | `BIOIMAGEFLOW_WETLANDS` | Overrides only the Wetlands instance path. |
 
+The default settings file is `<BIOIMAGEFLOW_HOME>/settings.json`, and a new settings document derives its tool-store default from `bioimageflow.paths.get_tool_store_path()`.
+An explicit `BIOIMAGEFLOW_HOME` also places the default desktop workspace at `<BIOIMAGEFLOW_HOME>/workspace`; an explicitly selected workspace still wins.
+Without that override, the desktop workspace remains `~/BioImageFlow/workspace`.
+Launcher runtime roots contain application sources and their interpreter environments, independently of this user profile: reinstalling or replacing a launcher runtime does not reset settings, tools, or workflows.
+The health endpoint reports installed distribution metadata when available, otherwise the static version from the platform's own source-archive `backend/pyproject.toml`; an unpackaged or unreadable project falls back to `0.0.0-dev`.
+
 The platform must not rely on Wetlands' own `EnvironmentManager()` default for BioImageFlow-managed environments. Plain Wetlands defaults its root to cwd-relative `./wetlands`; this can happen if a service calls Wetlands directly or calls `bioimageflow.env_manager.get_shared_environment_manager()` before BioImageFlow has configured it. Because Wetlands uses a process-wide shared manager, the first initialization in the process fixes the Wetlands path for later callers. Tool execution, manual tool environment controls, Napari, thumbnails, and embedded code-server must therefore all use the same BioImageFlow-resolved Wetlands root.
 
 **Agent source context for Wetlands:** The platform and library dependencies should resolve Wetlands from the published `wetlands` package for reproducible installs and CI. It is possible to inspect Wetlands implementation code: use the source-browsing symlink `external/wetlands-src` when it exists. This symlink is context-only: it points to the local Wetlands source checkout and must not be used as a package source in `pyproject.toml`, `uv.lock`, or runtime import configuration. If the symlink is absent, inspect the installed package source with `python -c "import inspect, wetlands; print(inspect.getfile(wetlands))"`.
@@ -745,7 +751,7 @@ class Settings(BaseModel):
     napari_environment_operations: list[NapariEnvironmentOperation] = []
     napari_suppressed_legacy_roots: list[str] = []
     omero_instances: list[OMEROInstance] = []
-    tool_store_path: str = "~/.bioimageflow/tool_packages/"
+    tool_store_path: str = Field(default_factory=lambda: str(get_tool_store_path()))
     update_mode: Literal["auto", "manual"] | str = "auto"
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250

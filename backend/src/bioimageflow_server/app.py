@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager, nullcontext
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -202,16 +201,14 @@ from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
 from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 from bioimageflow_server.services.workspace import WorkspaceService
+from bioimageflow_server.version import get_application_version
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
     register_ws,
 )
 
-try:
-    APPLICATION_VERSION = version("bioimageflow-server")
-except PackageNotFoundError:  # pragma: no cover - source tree without installed metadata
-    APPLICATION_VERSION = "0.0.0"
+APPLICATION_VERSION = get_application_version()
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",

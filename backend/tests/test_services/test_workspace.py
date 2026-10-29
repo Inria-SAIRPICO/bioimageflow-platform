@@ -26,6 +26,30 @@ def test_desktop_workspace_uses_configured_path(tmp_path: Path) -> None:
     assert info.user_editable is True
 
 
+def test_profile_override_isolates_default_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(tmp_path / "profile"))
+    service = WorkspaceService(
+        settings=Settings(deployment_mode="desktop"), deployment_mode="desktop",
+    )
+    assert service.workspace_path() == tmp_path / "profile" / "workspace"
+    service.settings.workspace_path = str(tmp_path / "selected-workspace")
+    assert service.workspace_path() == tmp_path / "selected-workspace"
+
+
+def test_default_desktop_workspace_without_profile_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BIOIMAGEFLOW_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    # expanduser resolves the actual user home independently of Path.home().
+    service = WorkspaceService(
+        settings=Settings(deployment_mode="desktop"), deployment_mode="desktop",
+    )
+    assert service.workspace_path() == Path("~/BioImageFlow/workspace").expanduser().resolve()
+
+
 def test_webapp_workspace_is_scoped_to_user(tmp_path: Path) -> None:
     service = WorkspaceService(
         settings=Settings(deployment_mode="webapp"),

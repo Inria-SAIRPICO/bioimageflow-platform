@@ -16,6 +16,11 @@ Do not download a source-code archive as a substitute for the launcher.
 The first launch can take several minutes while the launcher verifies the release, downloads the application, and prepares an isolated environment.
 Keep the launcher open while progress is displayed.
 Later launches normally reuse that environment and start faster.
+
+The installation location contains the application and its Python environment.
+Settings, installed tool packages, and workflows belong to your user profile and are reused even if you download another launcher or replace the application installation.
+Replacing an installation therefore does not reset your work.
+See [Storage](preferences.md#storage) to choose a different workspace.
 ```
 
 ## Open a bundled demo

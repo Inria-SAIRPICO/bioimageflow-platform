@@ -6,6 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from bioimageflow.paths import get_tool_store_path
 
 from bioimageflow_server.models.napari_environments import (
     NapariEnvironment,
@@ -87,7 +88,7 @@ class Settings(BaseModel):
     napari_environment_operations: list[NapariEnvironmentOperation] = Field(default_factory=list)
     napari_suppressed_legacy_roots: list[str] = Field(default_factory=list)
     omero_instances: list[OMEROInstance] = []
-    tool_store_path: str = "~/.bioimageflow/tool_packages/"
+    tool_store_path: str = Field(default_factory=lambda: str(get_tool_store_path()))
     update_mode: Literal["auto", "manual"] | str = "auto"
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     default_execution_target_id: str = "local"
