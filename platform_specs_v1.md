@@ -1195,6 +1195,9 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 - Workflow-input targets and targets with missing or unknown tool metadata: one standard solid, type-colored 2px strand.
 - Selected edges are highlighted.
 
+Replacing a displayed graph, including Undo/Redo, restores its accepted edges even when tool metadata is unavailable or current validation reports errors; restoration is not a new connection gesture.
+Interactive connection creation and endpoint updates retain compatibility and cycle checks, while backend validation remains authoritative for execution.
+
 #### 3.3.3 Pins
 
 Pins are the connection points on nodes. They are divided into two visual categories corresponding to the two edge types:

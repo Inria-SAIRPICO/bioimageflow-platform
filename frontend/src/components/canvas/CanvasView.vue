@@ -197,7 +197,7 @@ const {
   getNodes,
   getEdges,
   setNodes,
-  setEdges,
+  setEdges: setVueFlowEdges,
   updateEdge,
   onConnect,
   onNodesChange,
@@ -208,6 +208,22 @@ const {
   fitView,
   dimensions: canvasDimensions,
 } = useVueFlow(canvasPanelId)
+
+let replacingCanvasEdges = false
+
+function replaceCanvasEdges(edges: Parameters<typeof setVueFlowEdges>[0]): void {
+  // Vue Flow also applies its connection callback during setEdges. A graph
+  // replacement must retain existing edges for inspection and repair, even
+  // when they would be refused as new connections. This setter is synchronous;
+  // interactive gestures cannot run inside this temporary replacement scope.
+  const previous = replacingCanvasEdges
+  replacingCanvasEdges = true
+  try {
+    setVueFlowEdges(edges)
+  } finally {
+    replacingCanvasEdges = previous
+  }
+}
 
 function canvasConnectionSourceLabel(
   sourceNode: any,
@@ -892,7 +908,7 @@ async function applyGraphState(
   isApplyingGraphState = true
   try {
     setNodes([])
-    setEdges([])
+    replaceCanvasEdges([])
     await nextTick()
     if (isCanvasUnmounted) return
     setNodes(vueFlowGraph.nodes)
@@ -902,7 +918,7 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     if (isCanvasUnmounted) return
-    setEdges(vueFlowGraph.edges)
+    replaceCanvasEdges(vueFlowGraph.edges)
     refreshConnectedInputLabels()
     applyValidationEdgeErrors()
     if (isCanvasUnmounted) return
@@ -2403,6 +2419,10 @@ function inputTypeForHandle(node: any, handle: string): string | undefined {
   return exposedSchemaType(exposed?.schema)
 }
 
+function acceptCanvasConnection(connection: Parameters<typeof isValidConnection>[0]): boolean {
+  return replacingCanvasEdges || isValidConnection(connection)
+}
+
 function isValidConnection(connection: {
   source: string
   target: string
@@ -3051,7 +3071,7 @@ function createSelectedNestedWorkflow() {
   })
   attachInterfaceContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
-  setEdges(result.edges)
+  replaceCanvasEdges(result.edges)
   refreshConnectedInputLabels()
   uiStore.setCanvasSelectedNodes(canvasId, [id])
   emitGraphChanged()
@@ -3165,7 +3185,7 @@ function reconcileWorkflowParentState(
   const nextEdges = getEdges.value.filter((edge) => {
     return !removedEdgeIds.has(edge.id)
   })
-  setEdges(nextEdges)
+  replaceCanvasEdges(nextEdges)
 
   const parentNode = getNodes.value.find((n: any) => n.id === parentNodeId)
   if (!parentNode?.data) return false
@@ -3600,7 +3620,7 @@ function applyHistoryState(state: CanvasHistoryState) {
   isApplyingGraphState = true
   try {
     setNodes(restoredNodes)
-    setEdges(vueFlowGraph.edges)
+    replaceCanvasEdges(vueFlowGraph.edges)
     refreshConnectedInputLabels()
     const currentState = currentVueFlowState()
     const authoritativeGraph = rememberAuthoritativeGraph(state)
@@ -4310,7 +4330,7 @@ defineExpose({
       :id="canvasPanelId"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
-      :is-valid-connection="isValidConnection"
+      :is-valid-connection="acceptCanvasConnection"
       :nodes-draggable="!isLocked"
       :edges-updatable="!isLocked"
       :min-zoom="0.05"

@@ -61,6 +61,8 @@ Existing child workflow DataFrame and field ports can also be published through 
 Edges and bindings use the stable IDs, never display labels.
 Renaming a port must therefore preserve connections, while removing or incompatibly changing a connected port requires explicit destructive-effect handling.
 Canvas mutations must preserve interface referential integrity in the same graph snapshot: deleting nodes also removes outputs sourced from them and removes their input targets, dropping any input that has no surviving target.
+Graph restoration and Undo/Redo retain accepted edges even when metadata is missing or the snapshot has validation errors; restoring a graph is not a new connection gesture.
+Interactive connection creation and endpoint updates retain compatibility and cycle checks, while backend validation remains authoritative for execution.
 
 An embedded graph is the workflow node's execution authority.
 Its optional saved-workflow source is provenance only: changing, moving, or deleting the saved source must not silently mutate the embedded copy.
