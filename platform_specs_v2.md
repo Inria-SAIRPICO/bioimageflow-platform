@@ -449,7 +449,16 @@ Moving or renaming a demo detaches it from canonical status, so a later install 
 Settings exposes explicit install and remove actions.
 Install is idempotent, installs only missing templates, refuses canonical conflicts, and remains locked during execution.
 Remove deletes only recognized canonical demo workflows through the normal generation-aware deletion coordinator, preserves unrelated `Demo` children, and removes the folder only if it is empty.
-Missing tool packages are reported through the ordinary dependency UI and are never installed implicitly.
+Before publishing missing demos, both automatic initialization and explicit installation recursively collect their bundled package/version pins and install missing or load-failed versions through the normal package installer.
+Healthy exact installed versions are reused; alternative installed versions and active-version selections remain unchanged.
+Canonical conflicts and incomplete pins refuse before package installation, and canonical collisions are checked again before publishing the captured missing templates.
+No new demo is published until every required package succeeds; concurrent API reads after a workspace switch wait for this same setup gate.
+Desktop startup allows up to five minutes for readiness, including cold package downloads, emits a setup notice after ten seconds, and still fails immediately if the backend thread exits.
+Existing or edited installed demos never trigger dependency installation or replacement, and ordinary workflow opening keeps its existing missing-dependency diagnostics without installing packages.
+Automatic setup failure logs actionable retry guidance and leaves the application usable with an existing empty root, preventing automatic retries on later requests or restarts; Storage's explicit install action retries setup.
+Successful shared package installations survive a later failure and are reused on retry; explicit attempts preserve the primary package error even if catalog refresh also fails.
+Demo removal does not uninstall shared tool packages.
+Execution environments and public input data remain lazily prepared when the workflows run.
 
 ## 13. Node Data Inspection
 

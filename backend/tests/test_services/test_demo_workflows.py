@@ -322,3 +322,129 @@ def test_unrelated_workflow_at_canonical_path_is_a_visible_conflict(tmp_path: Pa
     assert status.can_install is False
     with pytest.raises(DemoWorkflowConflictError):
         service.install()
+
+
+@pytest.mark.anyio
+async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versions(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from bioimageflow_server.models.tools import PackageInfo
+    from bioimageflow_server.services.package_installer import PackageInstallerService
+
+    service, store = _service(tmp_path)
+    service.registry.register_package("bioimageflow_common_tools", PackageInfo(
+        name="bioimageflow_common_tools", installed_versions=["0.2.2", "9.0.0"], active_version="9.0.0",
+    ))
+    service.registry.register_package("bioimageflow_io_tools", PackageInfo(
+        name="bioimageflow_io_tools", installed_versions=["0.2.2"], load_errors={"0.2.2": "broken"},
+    ))
+    installer = AsyncMock(spec=PackageInstallerService)
+
+    async def install(package: str, *, version: str) -> None:
+        assert not (store.root_dir / "Demo").exists()
+        assert service.status().status == "missing"
+        service.registry.register_package(package, PackageInfo(name=package, installed_versions=[version]))
+
+    installer.install.side_effect = install
+    result = await service.install_with_packages(installer)
+
+    assert result.status == "installed"
+    assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
+        ("bioimageflow_io_tools", "0.2.2"),
+        ("bioimageflow_segmentation_tools", "0.3.2"),
+        ("bioimageflow_spot_tools", "0.2.2"),
+    ]
+    assert service.registry.get_package("bioimageflow_common_tools").active_version == "9.0.0"
+    assert store.get_workflow("Demo/Fish Analysis").missing_packages == []
+    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    before = fish_path.read_bytes()
+    installer.install.reset_mock()
+    assert (await service.install_with_packages(installer)).status == "installed"
+    installer.install.assert_not_awaited()
+    assert fish_path.read_bytes() == before
+
+
+@pytest.mark.anyio
+async def test_package_failure_keeps_demos_absent_and_retry_reuses_partial_installs(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from bioimageflow_server.models.tools import PackageInfo
+    from bioimageflow_server.services.package_installer import PackageInstallerService, PackageNetworkError
+
+    service, store = _service(tmp_path)
+    installer = AsyncMock(spec=PackageInstallerService)
+
+    async def install(package: str, *, version: str) -> None:
+        if package == "bioimageflow_segmentation_tools":
+            raise PackageNetworkError("offline")
+        service.registry.register_package(package, PackageInfo(name=package, installed_versions=[version]))
+
+    installer.install.side_effect = install
+    with pytest.raises(PackageNetworkError, match="offline"):
+        await service.install_with_packages(installer)
+    assert service.status().status == "missing"
+    assert not (store.root_dir / "Demo").exists()
+    installer.install.reset_mock(side_effect=True)
+    assert (await service.install_with_packages(installer)).status == "installed"
+    assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
+        ("bioimageflow_segmentation_tools", "0.3.2"),
+        ("bioimageflow_spot_tools", "0.2.2"),
+    ]
+
+
+@pytest.mark.anyio
+async def test_package_setup_refuses_conflicts_before_installing(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from bioimageflow_server.services.package_installer import PackageInstallerService
+
+    service, store = _service(tmp_path)
+    store.create_workflow(WorkflowCreate(name="Demo/Fish Analysis"))
+    installer = AsyncMock(spec=PackageInstallerService)
+    with pytest.raises(DemoWorkflowConflictError):
+        await service.install_with_packages(installer)
+    installer.install.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_all_bundled_pins_are_validated_before_any_download(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from bioimageflow_server.services.package_installer import PackageInstallerService
+
+    original, _ = _service(tmp_path / "original")
+    resources = tmp_path / "bundle"
+    shutil.copytree(original.resource_root, resources)
+    path = resources / "fish-analysis/workflow.json"
+    payload = json.loads(path.read_text())
+    # A nested-only requirement must be validated along with the root nodes.
+    branch = next(node for node in payload["graph"]["nodes"] if node["type"] == "workflow")
+    tool = next(node for node in branch["workflow"]["nodes"] if node.get("tool_package"))
+    tool["tool_package_version"] = None
+    path.write_text(json.dumps(payload))
+    service = DemoWorkflowService(original.store, original.registry, resource_root=resources)
+    installer = AsyncMock(spec=PackageInstallerService)
+    with pytest.raises(ValueError, match="must pin a version"):
+        await service.install_with_packages(installer)
+    installer.install.assert_not_awaited()
+    assert service.status().status == "missing"
+
+
+@pytest.mark.anyio
+async def test_collision_created_during_package_setup_is_preserved(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from bioimageflow_server.services.package_installer import PackageInstallerService
+
+    service, store = _service(tmp_path)
+    installer = AsyncMock(spec=PackageInstallerService)
+
+    async def install(package: str, *, version: str) -> None:
+        if package == "bioimageflow_spot_tools":
+            store.create_workflow(WorkflowCreate(name="Demo/Fish Analysis", display_name="My workflow"))
+
+    installer.install.side_effect = install
+    with pytest.raises(DemoWorkflowConflictError):
+        await service.install_with_packages(installer)
+    assert store.read_workflow_document("Demo/Fish Analysis").graph.display_name == "My workflow"
+    assert not store.has_workflow_collision("Demo/Parameters Space Exploration")

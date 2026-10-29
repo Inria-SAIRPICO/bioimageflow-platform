@@ -26,6 +26,8 @@ See [Storage](preferences.md#storage) to choose a different workspace.
 ## Open a bundled demo
 
 BioImageFlow normally installs **Fish Analysis** and **Parameters Space Exploration** in the **Demo** folder when it creates a workspace.
+It also installs their required tool-package versions in the shared tool store.
+First-time setup needs an internet connection to download missing packages.
 
 1. In the **Workflows** panel, expand **Demo**.
 2. Select **Fish Analysis** and read its description.
@@ -35,11 +37,11 @@ If the **Demo** folder is missing, choose **Edit → Preferences...**, open **St
 
 ![The Fish Analysis demo open on the workflow canvas.](images/quick-start-demo.png)
 
-## Resolve its tools
+## Inspect its tools
 
-The demo refers to separately installed tool packages.
-If a dependency dialog appears, click **Install all missing packages** to install the requested versions.
-You can also click **Manage tools** in the **Tools** panel to inspect packages and environments individually.
+Demo installation prepares its tool packages before the workflows appear.
+Click **Manage tools** in the **Tools** panel to inspect packages and environments individually.
+If packages were later removed, use **Manage tools** to reinstall the exact versions listed by the dependency dialog.
 
 ```{warning}
 Tool packages contain executable code.

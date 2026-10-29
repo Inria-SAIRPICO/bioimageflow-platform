@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from bioimageflow_server.models.demo_workflows import DemoWorkflowsStatus
+from bioimageflow_server.routers.tools import (
+    _raise_package_install_error,
+    _refresh_package_catalog,
+    get_package_catalog,
+    get_package_installer,
+)
 from bioimageflow_server.services.demo_workflows import (
     DemoWorkflowConflictError,
     DemoWorkflowService,
@@ -14,6 +21,7 @@ from bioimageflow_server.services.demo_workflows import (
 
 
 router = APIRouter(prefix="/demo-workflows", tags=["demo-workflows"])
+logger = logging.getLogger(__name__)
 
 
 def get_demo_workflow_service() -> DemoWorkflowService:  # pragma: no cover
@@ -40,15 +48,22 @@ async def install_demo_workflows(
     service: DemoWorkflowService = Depends(get_demo_workflow_service),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
+    installer: Any = Depends(get_package_installer),
+    catalog: Any = Depends(get_package_catalog),
 ) -> DemoWorkflowsStatus:
     if execution_manager is not None and getattr(execution_manager, "is_running", False):
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Workflow editing is locked while execution is in progress",
         )
+    refresh_catalog = False
     try:
         before = service.status()
-        result = service.install()
+        refresh_catalog = before.can_install
+        try:
+            result = await service.install_with_packages(installer)
+        except Exception as exc:
+            _raise_package_install_error(exc)
         if before.can_install and connection_manager is not None:
             connection_manager.publish_workflow_tree_changed(action="demos_installed")
         return result
@@ -61,3 +76,11 @@ async def install_demo_workflows(
                 + ", ".join(exc.workflow_ids),
             },
         ) from exc
+    finally:
+        # Shared packages can have been installed even when a later one fails.
+        # Catalog refresh must not replace that primary failure.
+        if refresh_catalog:
+            try:
+                await _refresh_package_catalog(catalog)
+            except Exception:
+                logger.warning("Demo package catalog refresh failed", exc_info=True)

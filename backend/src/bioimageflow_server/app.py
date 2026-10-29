@@ -513,6 +513,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             _current_workflow_store,
         )
     initialized_workflow_stores: set[str] = set()
+    pending_demo_installs: dict[str, WorkflowStoreService] = {}
+    demo_initialization_lock = asyncio.Lock()
 
     def _initialize_workflow_store(store: WorkflowStoreService) -> None:
         key = str(store.root_dir)
@@ -531,7 +533,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 exc_info=exc,
             )
         if is_new_workspace:
-            DemoWorkflowService(store, registry).install()
+            # Persist the new-root decision even if first-time package setup
+            # fails offline. Explicit Install demos remains available to retry.
+            store.root_dir.mkdir(parents=True, exist_ok=True)
+            pending_demo_installs[key] = store
         _register_workflow_custom_tools(store)
         initialized_workflow_stores.add(key)
 
@@ -573,6 +578,31 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     catalog = config.package_catalog or PackageCatalogService(
         registry=registry, known=known, pypi=pypi
     )
+
+    async def _install_pending_demos(
+        store: WorkflowStoreService, *, refresh_catalog: bool = True,
+    ) -> None:
+        key = str(store.root_dir)
+        if key not in pending_demo_installs:
+            return
+        async with demo_initialization_lock:
+            if key not in pending_demo_installs:
+                return
+            try:
+                await DemoWorkflowService(store, registry).install_with_packages(installer)
+            except Exception as exc:  # noqa: BLE001 — first-time demos must not prevent startup
+                _logger.warning(
+                    "Demo setup failed for %s; retry Install demos in Storage preferences: %s",
+                    store.root_dir, exc, exc_info=exc,
+                )
+            # Cancellation retains pending ownership; ordinary failure settles
+            # it so every request/restart does not repeat network installation.
+            pending_demo_installs.pop(key, None)
+            if refresh_catalog:
+                try:
+                    await catalog.refresh()
+                except Exception:
+                    _logger.warning("Demo package catalog refresh failed", exc_info=True)
 
     def _protected_tool_environment_names() -> set[str]:
         if napari_environment_service is None:
@@ -683,6 +713,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             await distributed_coordinator.start()
         current_workflow_store = _current_workflow_store()
         await asyncio.to_thread(_initialize_workflow_store, current_workflow_store)
+        await _install_pending_demos(current_workflow_store, refresh_catalog=False)
         try:
             await asyncio.to_thread(ensure_agent_workspace_context, workspace_path)
         except Exception as exc:  # noqa: BLE001
@@ -816,8 +847,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     workspace_mutation_request_lock = asyncio.Lock()
 
+    def _workflow_move_recovery_response(exc: WorkflowMoveRecoveryError) -> JSONResponse:
+        body = ErrorResponse(error="workflow_move_recovery_required", detail=str(exc))
+        return JSONResponse(status_code=503, content=body.model_dump())
+
     @app.middleware("http")
     async def pending_workflow_move_fence(request: Request, call_next: Any) -> Any:
+        if request.url.path.startswith("/api/v1/"):
+            # A workspace switch can discover a new root through synchronous
+            # consumers. Await its setup before reads can expose the demos.
+            try:
+                store = _current_workflow_store()
+                await _install_pending_demos(store)
+            except WorkflowMoveRecoveryError as exc:
+                return _workflow_move_recovery_response(exc)
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"} or not (
             request.url.path.startswith("/api/v1/")
         ):
@@ -835,11 +878,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             try:
                 _current_workflow_store().ensure_workflow_mutations_available()
             except WorkflowMoveRecoveryError as exc:
-                body = ErrorResponse(
-                    error="workflow_move_recovery_required",
-                    detail=str(exc),
-                )
-                return JSONResponse(status_code=503, content=body.model_dump())
+                return _workflow_move_recovery_response(exc)
             return await call_next(request)
 
     app.add_middleware(

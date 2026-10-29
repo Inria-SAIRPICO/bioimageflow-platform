@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.services.package_installer import PackageNetworkError
 from tests.suite_selection import select_test_suite
 
 
@@ -131,6 +132,14 @@ def isolated_bioimageflow_runtime(
     monkeypatch.setattr(
         "bioimageflow_server.app.PyPIVersionService",
         _OfflinePyPIVersionService,
+    )
+
+    def offline_tool_install(*_args: object, **_kwargs: object) -> None:
+        raise PackageNetworkError("Offline test runtime; inject a package installer for installation tests")
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.package_installer.ensure_installed",
+        offline_tool_install,
     )
 
 

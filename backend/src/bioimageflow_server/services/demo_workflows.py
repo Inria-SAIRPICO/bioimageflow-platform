@@ -3,21 +3,28 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+import anyio
+
 from bioimageflow_server.models.demo_workflows import (
     DemoWorkflowStatus,
     DemoWorkflowsStatus,
 )
+from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import WorkflowDocument
+from bioimageflow_server.services.package_installer import PackageInstallerService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import (
     WorkflowStoreService,
     WorkflowTemplate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DemoWorkflowConflictError(FileExistsError):
@@ -155,18 +162,61 @@ class DemoWorkflowService:
             tool_files=tool_files,
         )
 
-    def install(self) -> DemoWorkflowsStatus:
+    def _missing_templates(self) -> list[WorkflowTemplate]:
         current = self.status()
         conflicts = [item.workflow_id for item in current.workflows if item.status == "conflict"]
         if conflicts:
             raise DemoWorkflowConflictError(conflicts)
         missing_ids = {item.id for item in current.workflows if item.status == "missing"}
-        templates = [
+        return [
             self._workflow_template(template)
             for template in self.templates
             if template.id in missing_ids
         ]
-        installed = self.store.install_workflow_templates(templates)
+
+    @staticmethod
+    def _package_requirements(graph: GraphState) -> set[tuple[str, str]]:
+        requirements: set[tuple[str, str]] = set()
+        for node in graph.nodes:
+            if node.type == "workflow":
+                requirements.update(DemoWorkflowService._package_requirements(node.workflow))
+            elif node.source_module is None and node.tool_package not in {None, "__custom__"}:
+                if not node.tool_package_version:
+                    raise ValueError(f"Bundled tool package must pin a version: {node.tool_package}")
+                requirements.add((node.tool_package, node.tool_package_version))
+        return requirements
+
+    async def install_with_packages(self, installer: PackageInstallerService) -> DemoWorkflowsStatus:
+        """Prepare exact bundled dependencies before publishing any missing demos.
+
+        Successful shared package installs survive a later failure for retry.
+        Existing demos, their edited dependencies, and execution environments
+        are outside this operation.
+        """
+        templates = await anyio.to_thread.run_sync(self._missing_templates)
+        requirements = {
+            requirement
+            for template in templates
+            for requirement in self._package_requirements(template.document.graph)
+        }
+        for package, version in sorted(requirements):
+            info = self.registry.get_package(package)
+            if info is not None and version in info.installed_versions and version not in info.load_errors:
+                continue
+            logger.info("Installing demo tool package %s==%s", package, version)
+            await installer.install(package, version=version)
+        return await anyio.to_thread.run_sync(self._install_templates, templates)
+
+    def install(self) -> DemoWorkflowsStatus:
+        """Materialize bundled artifacts only; application callers use install_with_packages."""
+        return self._install_templates(self._missing_templates())
+
+    def _install_templates(self, templates: list[WorkflowTemplate]) -> DemoWorkflowsStatus:
+        # Recheck after awaited preparation without expanding its captured set.
+        missing_ids = {template.workflow_id for template in self._missing_templates()}
+        installed = self.store.install_workflow_templates([
+            template for template in templates if template.workflow_id in missing_ids
+        ])
         for info in installed:
             self.registry.register_custom_tools_directory(
                 self.store.workflow_tools_dir(info.id or info.name)

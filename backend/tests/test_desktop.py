@@ -1318,3 +1318,33 @@ class TestEntryPoint:
 
             main_desktop()
             mock_start.assert_called_once_with()
+
+
+def test_wait_for_server_allows_cold_demo_setup_and_still_has_a_deadline(monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    from bioimageflow_server import desktop
+
+    elapsed = 0.0
+    server = SimpleNamespace(started=False)
+    thread = MagicMock()
+    thread.is_alive.return_value = True
+
+    def advance(interval):
+        nonlocal elapsed
+        elapsed += interval
+        server.started = elapsed >= 15.0
+
+    monkeypatch.setattr(desktop.time, "monotonic", lambda: elapsed)
+    monkeypatch.setattr(desktop.time, "sleep", advance)
+    monkeypatch.setattr(desktop.urllib.request, "urlopen", MagicMock())
+    with caplog.at_level("INFO"):
+        desktop._wait_for_server(server, thread, "http://test/health", interval=1.0)
+    assert elapsed == 15.0
+    assert "first launch may download demo tool packages" in caplog.text
+
+    elapsed = 0.0
+    server.started = False
+    monkeypatch.setattr(desktop.time, "sleep", lambda interval: advance(interval / 100))
+    with pytest.raises(TimeoutError):
+        desktop._wait_for_server(server, thread, "http://test/health", timeout=0.01, interval=1.0)

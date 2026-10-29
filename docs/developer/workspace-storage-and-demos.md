@@ -122,5 +122,15 @@ Generation fails if any graph in the bundle is not recursively schema v2.
 The exporter pins published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2 independently of the example checkout’s package versions; update these explicit release pins when maintaining the bundle.
 Because portable BioImageFlow definitions have no GUI coordinates, export assigns the same deterministic dependency-layered platform layout recursively before calculating each demo's artifact hash.
 Ordinary platform development and CI use registry packages instead.
-The demos download their public inputs into workflow-managed run assets, do not depend on repository-local datasets, and retain normal missing-package diagnostics without installing tool packages automatically.
+Installing missing demos first installs their recursively declared exact tool-package versions through the normal package installer, then publishes the workflow files only after every package succeeds.
+Healthy installed versions are reused; other versions and the user's active version remain unchanged.
+Only missing bundled templates supply these requirements: existing or edited demos never trigger automatic dependency repair or replacement.
+The demos download their public inputs into workflow-managed run assets when run and do not depend on repository-local datasets.
+Demo installation does not prepare execution environments or download input data.
+Desktop readiness allows up to five minutes for cold startup and logs a setup notice after ten seconds; a backend thread that exits before readiness still fails immediately.
+First-time workspace initialization and reads after a workspace switch await the same package-first setup gate, so concurrent requests cannot open a partially prepared demo.
+If automatic setup fails, the application starts with the new root retained and the demos absent; the log points to **Install demos** in Storage preferences for an explicit retry.
+Successfully installed shared packages remain available after a partial failure, and subsequent requests or restarts do not retry automatic downloads.
+Explicit installation returns the package error without publishing new demos and refreshes the package catalog even after partial failure.
+Ordinary workflow opening retains normal missing-package diagnostics and never installs packages.
 An installed demo with matching bundled provenance is never replaced because the application version or bundle version changed, including on restart and explicit install calls; only missing canonical demos are installed.

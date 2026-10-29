@@ -100,7 +100,11 @@ The default is `~/.bioimageflow/tool_packages/`.
 ### Example workflows
 
 Click **Install demos** to add missing bundled examples under **Demo** without overwriting other workflows.
+Installation also downloads any required tool-package versions, so the examples open with their tools available.
+An internet connection is needed for packages that are not already installed.
+If first-time setup fails, reconnect and click **Install demos** to retry.
 Click **Remove demos** to remove only recognized bundled examples and their managed caches.
+Shared tool packages remain installed.
 
 ## OMERO
 

@@ -324,7 +324,8 @@ async function changeWorkspacePath() {
           <div class="field-label">Example workflows</div>
           <p class="help-text" data-testid="demo-workflows-status">
             {{ demoStatusLabel }}. Bundled examples use the
-            <code>Demo</code> folder and download their public input data when run.
+            <code>Demo</code> folder. Installation includes their required tool packages
+            and may need an internet connection. Public input data is downloaded when run.
           </p>
         </div>
         <span v-if="demoStatus" class="demo-count">

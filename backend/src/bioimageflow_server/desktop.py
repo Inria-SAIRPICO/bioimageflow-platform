@@ -22,6 +22,7 @@ _DESKTOP_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _LINUX_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.png"
 _MACOS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.icns"
 _WINDOWS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.ico"
+_SERVER_STARTUP_TIMEOUT = 300.0  # Cold demo tool-package setup can require downloads.
 
 
 def _configure_macos_application_identity() -> None:
@@ -545,16 +546,19 @@ def _wait_for_server(
     server: uvicorn.Server,
     server_thread: threading.Thread,
     health_url: str,
-    timeout: float = 10.0,
+    timeout: float = _SERVER_STARTUP_TIMEOUT,
     interval: float = 0.1,
 ) -> None:
     """Wait until uvicorn has started, or raise if the thread died first.
 
     Watches ``server.started`` and fails fast if the uvicorn thread exits
     before the server is ready. Uvicorn logs the underlying startup exception;
-    this guard prevents a silent hang after any such failure.
+    this guard prevents a silent hang after any such failure. Allow cold demo
+    package downloads before readiness; a dead server thread still fails fast.
     """
     deadline = time.monotonic() + timeout
+    setup_notice_at = time.monotonic() + 10.0
+    setup_notice_shown = False
     while time.monotonic() < deadline:
         if server.started:
             try:
@@ -568,6 +572,9 @@ def _wait_for_server(
                 "before the server became ready. Review the preceding uvicorn "
                 "error for the root cause."
             )
+        if not setup_notice_shown and time.monotonic() >= setup_notice_at:
+            logger.info("Waiting for backend setup; first launch may download demo tool packages")
+            setup_notice_shown = True
         time.sleep(interval)
     raise TimeoutError(f"Server did not become ready within {timeout}s")
 
