@@ -291,8 +291,6 @@ def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
     import importlib.metadata
     import threading
 
-    import anyio.to_thread
-
     from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected
 
     service = app.dependency_overrides[get_tool_environment_service]()
@@ -370,8 +368,11 @@ def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
     @app.post("/api/v1/dev/e2e/tool-lifecycle/close")
     async def close() -> dict[str, Any]:
         gate.set()
-        await service.close()
+        # This fixture owns only these pools; other browser journeys can retain
+        # distinct processing managers and shared-array owners in this server.
+        owned = {LifecycleSelected.environment.name, LifecycleOther.environment.name}
+        for name in owned:
+            await service.stop(name)
         value = evidence()
-        assert all(not item["worker_pids"] for item in value["inventory"])
-        await anyio.to_thread.run_sync(public.close)
+        assert all(not item["worker_pids"] for item in value["inventory"] if item["name"] in owned)
         return value

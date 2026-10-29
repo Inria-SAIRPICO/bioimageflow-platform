@@ -169,6 +169,7 @@ The transient Coverage.py database is stored under `backend/.pytest_cache/` and 
 The desktop suite remains headless and mocks pywebview, so even a successful full lane does not certify a packaged native window or operating-system dialogs.
 The ordinary E2E server declares the environment-lifecycle tools and observation routes without an opt-in flag, because their browser tests belong to the normal collection.
 Only an explicit lifecycle preparation request provisions those fixture environments and checks that their SDK distributions are published packages; server startup does not provision them.
+Its cleanup stops only the two environments that fixture owns, preserving unrelated journeys' manager and shared-array lifetimes in the same browser server.
 That boundary requires a future platform-specific smoke or manual release check and is not silently represented as automated coverage.
 
 The eight current external tests certify one integration package rather than representing eight general tool-package unit tests.
