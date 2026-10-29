@@ -23,7 +23,7 @@ Reuse stable existing worker/artifact drivers and content-bound recipe dependenc
 
 The [current checkpoint](platform-test-current.md) supersedes every dated completed-phase “Next MAIN”, old publication pause and older baseline below.
 The user authorized incorporating the October 23–27 commits and executing the remaining headless work with explicit agent orchestration.
-Current integrated source is `68bae0b`, with normal published BioImageFlow 0.9.6, Core 0.5.1 and Wetlands 2.6.1; held OMERO/logger work and unrelated user changes remain separately owned.
+Current integrated code is local main `4cdd58e`, including remote `1e25ecc`, preserved catalog-panel work and the reviewed campaign repair/control tasks, with normal published BioImageFlow 0.9.6, Core 0.5.1 and Wetlands 2.6.1; held OMERO/logger work and unrelated user changes remain separately owned.
 The ordered library specification→suite→main/secondary causal review and selected repairs/releases stay accepted in their recorded scope; do not restart them because newer platform changes require their own acceptance.
 
 The current change map includes installed-generation loading/package retirement, startup catalogs, canonical source-bound viewing/schema inspection, permanent-result refusal, cold/shared thumbnails, continuous/virtual Node Data and recursive typed workflow controls.
@@ -31,7 +31,8 @@ Review those causal consumers and existing tests before adding another control.
 The prior 438/499 dashboard and primary-GUI 224/224 are historical evidence counts, not current-revision certification; both historical temporary proof roots are absent from this checkout.
 Do not promote cells from source inspection, a test title, collection success or an unrelated broad green phase.
 
-Execute the checkpoint's finite H0–H5 sequence: reconcile/freeze; validate the recent integrated behaviors; finish remaining runnable M3 oracles; resolve or name OMERO external prerequisites; complete one audited integrated headless milestone; then hand off to native M5 LAST.
+First close the bounded main-integration handoff with one integrated scoped frontend check, affected backend controls and consolidated docs; broad campaign suites remain paused until that handoff.
+Then resume the checkpoint's finite H0–H5 sequence: reconcile/freeze; validate the recent integrated behaviors; finish remaining runnable M3 oracles; resolve or name OMERO external prerequisites; complete one audited integrated headless milestone; then hand off to native M5 LAST.
 The remaining headless assertions include held logger reconnect, existing shell/viewport/catalog complements, real edge metadata geometry and deployment-mode availability, plus the named settings/source/archive/cache/template/upload/thumbnail gaps.
 The historical dashboard contains 23 rows with gaps and one unassessed native Napari row; several rows mix headless, external and native obligations.
 Broad browser success does not close a missing oracle or a native/external boundary automatically.
@@ -49,14 +50,16 @@ Do not stack quick, scoped checks and a subsuming milestone invocation.
 An observed contradiction gets one distinguishing cheap control and a bounded owning repair rather than another whole-codebase sweep or automatic dependency release.
 Before an expensive fixture, check its actual public graph/source/API and middleware prerequisites; a held mutation request's release signal must not need the same mutation admission.
 
-Automated work must not access or depend on the personal/native Keychain.
+Automated product tests must not access or depend on the personal/native Keychain.
 `scripts/test` forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring`; Settings tests inject memory providers, and necessary live managed-worker checks use a private RAM-only broker with process-local read-only access.
 Replacement/unbootstrapped workers fail closed, and credentials stay out of graphs, artifacts, files, logs and command arguments.
 This does not change production credential behavior or certify native cross-executable integration; that integration is not an END prerequisite and must not resume automatically at M5.
 The future native preflight must also preserve the guard through sanitized child launch environments.
-Git/GitHub authentication is outside the Python guard: use only actually available noninteractive credentials outside Keychain and preserve public remote-source distinctions.
+Git/GitHub authentication is outside the product-test Python guard: the user-confirmed normal `gh` login now works, and authorized GitHub commands may use that login without token handling or printing.
+This does not permit product tests to discover native credentials; preserve public and exact remote-source distinctions.
+An independent agent owns `.worktrees/ci-test-suites` and its eventual merge; do not edit CI, push the old PR #20 branch or finalize integration before accounting for that work.
 
-October 29 public checks find PR #20 open at `d6b0506`, latest scheduled CI `40300423591` failed at `f0bab43`, and both OMERO PyPI project/version endpoints still 404; none certifies local `68bae0b`.
+October 29 public checks find PR #20 open at `d6b0506`, latest scheduled CI `40300423591` failed at `f0bab43`, and both OMERO PyPI project/version endpoints still 404; those initial snapshots do not certify the later integrated-main candidate.
 M4 includes the user-required basic first-party OMERO Download/Upload tools and the reviewed saved-card→active-canvas→Save/reload integration, with normal published package adoption rather than an editable workaround.
 The earlier candidate's actual RAM-only roundtrip and ordinary source CI remain historical recorded evidence; the first publication failed on publisher authorization.
 Do not retry publication without an actual publisher/authentication state change, advertise registry availability, or hide the held exact OMERO browser case through an unreported exclusion.
