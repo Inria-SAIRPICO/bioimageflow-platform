@@ -199,6 +199,8 @@ Closing a nested tab whose durable snapshot still owns an open descendant is ref
 Opening a custom node source in a nested editor creates and binds a private editable copy of that source under a new identity, using the snapshot revision guard.
 All references to that source within the private graph share the copy; other workflow instances retain their existing files.
 Reopening the source returns the same working file, and applying the graph preserves its new source binding.
+From the nested source-Open persistence barrier through acceptance of its returned snapshot, an unchanged hydration queue does not submit another write against the old revision.
+Actual graph edits still queue and prevent the returned source snapshot from replacing local changes; ordinary same-graph revalidation resumes outside that operation.
 
 Saving preserves compatible parent bindings and edges by stable port ID.
 Removed or incompatible connected ports require confirmation.

@@ -93,6 +93,7 @@ Do not conflate the following states:
 Saving a root canvas promotes the accepted root graph to the saved workflow.
 Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
+Nested node source Open suppresses unchanged hydration writes between its persistence barrier and response acceptance, while actual graph edits retain their conflict protection.
 Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
 Older saved workflows, root drafts, and nested snapshots are discovered by a write-free format scan.

@@ -7,6 +7,7 @@ import {
 } from '@/api/nestedWorkflowSnapshots'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { CanvasId, DisposableCanvasResource } from './canvasSessionRegistry'
+import { graphDocumentsEqual } from './graphDocument'
 import {
   createGraphSyncCoordinator,
   type GraphSyncCoordinator,
@@ -52,6 +53,7 @@ export interface NestedSnapshotPersistence extends DisposableCanvasResource {
   resolveConflictUsingRemote(): Promise<AcceptedNestedSnapshot>
   deleteLatest(): Promise<void>
   acceptSnapshot(snapshot: NestedWorkflowSnapshotResponse): void
+  beginSourceEdit(): () => void
 }
 
 export interface CreateNestedSnapshotPersistenceOptions {
@@ -144,6 +146,7 @@ export function createNestedSnapshotPersistence(
 ): NestedSnapshotPersistence {
   const transport = options.transport ?? defaultTransport
   let latestAccepted = cloneJson(options.initialSnapshot)
+  let sourceEditsOpening = 0
   let conflictResolution: {
     mode: 'keep-local' | 'use-remote'
     promise: Promise<AcceptedNestedSnapshot>
@@ -259,6 +262,16 @@ export function createNestedSnapshotPersistence(
     options.onAccepted?.(cloneJson(snapshot))
   }
 
+  function beginSourceEdit(): () => void {
+    sourceEditsOpening += 1
+    let finished = false
+    return () => {
+      if (finished) return
+      finished = true
+      sourceEditsOpening -= 1
+    }
+  }
+
   async function deleteLatest(): Promise<void> {
     const accepted = await flushLatest()
     const controller = new AbortController()
@@ -273,12 +286,21 @@ export function createNestedSnapshotPersistence(
     coordinator,
     validationResult: coordinator.validationResult,
     currentGraph: coordinator.currentGraph,
-    queue: graph => coordinator.queue(graph),
+    queue: graph => {
+      // Source Open returns validated authority. An unchanged hydration queue
+      // must not write the old revision while that operation owns the barrier.
+      // Actual edits still queue and prevent accepting a replacing snapshot.
+      if (sourceEditsOpening > 0 && graphDocumentsEqual(graph, coordinator.currentGraph.value)) {
+        return coordinator.semanticRevision.value
+      }
+      return coordinator.queue(graph)
+    },
     flushLatest,
     resolveConflictKeepingLocal,
     resolveConflictUsingRemote,
     deleteLatest,
     acceptSnapshot,
+    beginSourceEdit,
     dispose: coordinator.dispose,
   }
 }

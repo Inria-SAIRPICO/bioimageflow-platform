@@ -73,6 +73,45 @@ function response(
 }
 
 describe('nested snapshot persistence', () => {
+  it('ignores unchanged hydration during source Open but keeps real edits protected', () => {
+    const initial = response(1, graph('initial'))
+    const resource = createNestedSnapshotPersistence({
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
+      initialSnapshot: initial,
+      transport: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
+      debounceMs: 60_000,
+    })
+    const finish = resource.beginSourceEdit()
+    resource.queue(initial.graph)
+    expect(resource.coordinator.isPending.value).toBe(false)
+    const edited = response(2, graph('owned-source'))
+    resource.acceptSnapshot(edited)
+    expect(resource.currentGraph.value).toEqual(edited.graph)
+
+    resource.queue(graph('local-edit'))
+    expect(() => resource.acceptSnapshot(response(3, graph('remote-edit'))))
+      .toThrow('edited while its source was opening')
+    expect(resource.currentGraph.value).toEqual(graph('local-edit'))
+    finish()
+    finish()
+    resource.coordinator.dispose()
+  })
+
+  it('still revalidates unchanged graphs outside source Open', () => {
+    const initial = response(1, graph('initial'))
+    const resource = createNestedSnapshotPersistence({
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
+      initialSnapshot: initial,
+      transport: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
+      debounceMs: 60_000,
+    })
+    const finish = resource.beginSourceEdit()
+    finish()
+    resource.queue(initial.graph)
+    expect(resource.coordinator.isPending.value).toBe(true)
+    resource.coordinator.dispose()
+  })
+
   it('accepts an editor source binding without discarding subsequent local edits', () => {
     const accepted = vi.fn()
     const resource = createNestedSnapshotPersistence({

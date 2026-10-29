@@ -1,6 +1,6 @@
 import { api } from '@/api/client'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
-import { useGraphSync, acceptNestedSourceEdit } from '@/composables/useGraphSync'
+import { useGraphSync, acceptNestedSourceEdit, beginNestedSourceEdit } from '@/composables/useGraphSync'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
@@ -217,6 +217,9 @@ export async function openNodeWithEditor(
   const generation = workflow.workflowServerIdentityGeneration(workflowId)
   if (generation === null) throw new Error('The workflow identity is unavailable')
   const requestId = beginEditorOpenRequest()
+  const finishSourceEdit = descriptor.kind === 'nested'
+    ? beginNestedSourceEdit(descriptor.sessionId)
+    : () => {}
   if (options?.showEmbeddedLoading) showCodeEditorLoading('', requestId)
   try {
     await flushDraftIfAvailable()
@@ -242,6 +245,7 @@ export async function openNodeWithEditor(
     await handleEditorOpenResponse(data, null, requestId)
     return data
   } finally {
+    finishSourceEdit()
     if (options?.showEmbeddedLoading) finishCodeEditorLoading('', requestId)
   }
 }
