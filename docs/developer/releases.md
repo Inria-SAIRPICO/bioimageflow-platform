@@ -70,6 +70,8 @@ cd ..
 ```
 
 PyInstaller must be installed in the same `uv run` environment as Launcher.
+The development lock currently pins the official Launcher Git revision `4736c6677264ae06b590278ceb5d82bb8a777d26`, which contains the macOS icon, frozen Wetlands source, and preparation-progress fixes that are not yet in the published 0.3.9 package.
+Use the frozen project environment for release builds so these fixes cannot silently be replaced by the older registry package.
 Icons are generated with `scripts/generate_desktop_icons`.
 The generator keeps the Windows and Linux launcher artwork full-size and creates an inset `backend/packaging/launcher/app.icns` for the macOS launcher bundle.
 The frozen macOS Tk launcher must retain that bundle icon when it opens a window or dialog; falling back to the portable PNG replaces its margins and makes the Dock icon too large.

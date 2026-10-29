@@ -96,7 +96,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow-server"
-version = "0.1.30"
+version = "0.1.31"
 source = { editable = "." }
 dependencies = [
     { name = "bioimageflow", extra = ["parsl", "psij"] },
@@ -167,7 +167,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.9" },
-    { name = "wetlands-launcher", specifier = ">=0.3.9" },
+    { name = "wetlands-launcher", git = "https://github.com/arthursw/launcher?rev=4736c6677264ae06b590278ceb5d82bb8a777d26" },
 ]
 
 [[package]]
@@ -2085,7 +2085,7 @@ wheels = [
 [[package]]
 name = "wetlands-launcher"
 version = "0.3.9"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/arthursw/launcher?rev=4736c6677264ae06b590278ceb5d82bb8a777d26#4736c6677264ae06b590278ceb5d82bb8a777d26" }
 dependencies = [
     { name = "cryptography" },
     { name = "keyring" },
@@ -2095,8 +2095,4 @@ dependencies = [
     { name = "toml" },
     { name = "typing-extensions" },
     { name = "wetlands" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/91/a8/0a7ee7e9c86b5082d1994683837fe079b55331bde82454019ec9fa1103f9/wetlands_launcher-0.3.9.tar.gz", hash = "sha256:f9d5ad03f12a0db4bb5e80fea0ebdf9effea2a09b0775e6e68a94e1738adac59", size = 593484, upload-time = "2026-08-10T09:53:17.744Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/de/e19f0817407aba1f3c5565fb2c54318b62e53591233cdea909d417835f8a/wetlands_launcher-0.3.9-py3-none-any.whl", hash = "sha256:e3050484ddb9834226355ecc3ede6dd67e093d4f3546e79eaf9cda77a8723b07", size = 257492, upload-time = "2026-08-10T09:53:11.633Z" },
 ]
