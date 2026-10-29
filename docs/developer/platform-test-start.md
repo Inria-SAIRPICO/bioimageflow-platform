@@ -13,7 +13,10 @@ Reading these documents alone does not start tests, native setup or repairs.
 Resume the authorized campaign from docs/developer/platform-test-current.md.
 Read AGENTS.md and PLATFORM_CONTEXT.md once, then only the current task's relevant plan/specification sections and direct source-bound receipts.
 Do not read the full historical progress log or inherited campaign transcript; consult exact historical findings/paths/revisions only when needed.
-Keep the library-first order: remaining MAIN, SECONDARY/science, Phase 3 milestone, gated release/publication and platform adoption, headless platform checks, desktop LAST.
+Respect the accepted library-first review/repair milestone; do not restart closed MAIN/secondary/release work.
+Use the October 29 current-source impact map and H0–H5 headless queue, including normal published 0.9.6/Core 0.5.1 adoption, before desktop M5 LAST.
+Historical dashboard counts and absent temporary receipts do not certify the current source; complete the missing and invalidated owning/browser/external assertions with explicit exclusions.
+Automated checks must never access the personal/native Keychain; use scripts/test and injected memory/RAM credential providers, and preserve external publication/authentication blockers truthfully.
 Preserve essential local features, held work and consumer-owned environments; distributed execution remains excluded from the current library phase.
 Use a finite causal task packet, exact writer ownership and proportionate validation; retain unchanged successful phases and distinguish genuine baselines from setup failures and new target coverage.
 At a coherent boundary, update the compact current checkpoint and link direct proof/receipts rather than appending a detailed diary or duplicating hashes/results.

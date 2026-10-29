@@ -90,7 +90,7 @@ The new regressions cover same-content recreation and deterministic lifecycle se
 
 ## Campaign scheduling and evidence reuse
 
-Use the [campaign plan](platform-test-plan.md) and [checkpoint](platform-test-progress.md) for baseline reconciliation, readiness, and the current batch order.
+Use the [campaign plan](platform-test-plan.md) and [checkpoint](platform-test-current.md) for baseline reconciliation, readiness, and the current batch order.
 Select workflow follow-up work from each row's remaining gaps and baseline-invalidated evidence; completed private-edit, stale-parent, source-update, and recursive agent-copy claims retain their cited historical revisions rather than becoming an unfinished queue again.
 Check test names against their actual assertions, including nested binding deletion and incoming DataFrame grouping, before claiming a scenario is covered or adding a replacement test.
 Keep real desktop dialogs, external editor interaction, operating-system drag-and-drop, and application crash/restart acceptance explicitly separate from headless browser and in-process service checks.

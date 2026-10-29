@@ -9,7 +9,8 @@ The inventories retain assertion details, selectors, manual boundaries, and gaps
 The dashboard baseline is `b213223` (2026-09-15); its counts remained provisional until the complete applicability audit recorded in this revision.
 Change the denominator only when implementation or specification reconciliation adds, removes, splits, combines, or changes the applicability of a feature, and record the revision that made that change here.
 
-The [new campaign](platform-test-plan.md) is running: the four readiness outcomes pass in both browsers, and Wave 2 feature work is delegated.
+The [campaign](platform-test-plan.md) is running under the October 29 [current-source reconciliation and headless queue](platform-test-current.md).
+The older readiness and Wave 2 results below retain their historical source scope; current code includes subsequent dependency, loading, table, thumbnail and workflow-control changes awaiting integrated acceptance.
 The counts combine retained historical evidence with the ten newly accepted N1/E1 obligations at `884be6e` and `2290c67`; baseline reconciliation must assess the remaining historical cells before reporting a current campaign percentage.
 No cell is promoted or reset by the campaign redesign alone.
 
@@ -33,9 +34,10 @@ IDs must be unique across the inventories and dashboard.
 
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
-The canonical temporary receipt tree is unavailable on October 19, 2026; the [current checkpoint](platform-test-current.md) distinguishes historical claimed results from newly retained current proof and the remaining final certification gates.
+Both prior temporary receipt roots are unavailable in the October 29 checkout; the [current checkpoint](platform-test-current.md) distinguishes historical claimed results from newly retained current proof and the remaining headless/native gates.
+Changes through `68bae0b` extend existing rows with typed recursive workflow bindings, continuous/virtual tables, shared previews and cold thumbnail behavior; old V cells do not establish these extensions before their current owning/browser assertions run.
 
-- Overall: **438 V + 56 G + 0 I + 0 B + 5 U = 499 applicable obligations**, so **438 / 499 are verified (87.8%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **438 V + 56 G + 0 I + 0 B + 5 U = 499 applicable obligations**, so **438 / 499 are verified (87.8%)**; this is accumulated historical source-qualified evidence, not current-revision completion, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
 - Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 41 justified `N` decisions.
 
