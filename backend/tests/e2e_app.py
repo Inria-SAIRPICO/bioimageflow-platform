@@ -23,7 +23,9 @@ from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.tools import get_tool_environment_service
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.omero_credentials import OmeroCredentialKey
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from platform_test_tools.collective import CollectiveNumbers
 from platform_test_tools.held import HeldWorkerNumbers
 from tests.fixtures.package_metadata import write_package_metadata
 from tests.fixtures.stale_environment import (
@@ -31,6 +33,22 @@ from tests.fixtures.stale_environment import (
     pixi_forwarder,
 )
 from platform_test_tools.stale import IncompatibleWorkerNumbers, StaleWorkerNumbers
+
+
+class E2eOmeroCredentials:
+    """Deterministic Settings boundary, not actual OS-keyring certification."""
+
+    def __init__(self) -> None:
+        self._passwords: dict[OmeroCredentialKey, str] = {}
+
+    def get_password(self, key: OmeroCredentialKey) -> str | None:
+        return self._passwords.get(key)
+
+    def set_password(self, key: OmeroCredentialKey, password: str) -> None:
+        self._passwords[key] = password
+
+    def delete_password(self, key: OmeroCredentialKey) -> None:
+        self._passwords.pop(key, None)
 
 
 class Generate(DataFrameTool):
@@ -136,6 +154,9 @@ class _OfflinePyPIVersionService(PyPIVersionService):
 
 def create_app() -> FastAPI:
     """Return the real platform app with E2E-safe storage roots."""
+    deployment_mode = os.environ.get("BIOIMAGEFLOW_E2E_DEPLOYMENT_MODE", "desktop")
+    if deployment_mode not in {"desktop", "webapp"}:
+        raise ValueError("BIOIMAGEFLOW_E2E_DEPLOYMENT_MODE must be desktop or webapp")
     root = Path(
         os.environ.get(
             "BIOIMAGEFLOW_E2E_ROOT",
@@ -166,7 +187,7 @@ def create_app() -> FastAPI:
     # Files-node creation and hot reload against the real package loader.
     registry.scan_tool_store(tool_store)
     for tool_class in (
-        Generate, CrossJoin, ParameterControls, HeldWorkerNumbers,
+        Generate, CrossJoin, ParameterControls, CollectiveNumbers, HeldWorkerNumbers,
         StaleWorkerNumbers, IncompatibleWorkerNumbers,
     ):
         registry._register_tool_from_class(
@@ -178,9 +199,15 @@ def create_app() -> FastAPI:
         registry._register_tool_from_class(tool_class, tool_class.__name__, "lifecycle-proof", "1.0.0")
     app = create_platform_app(
         AppConfig(
+            deployment_mode=deployment_mode,
             tool_registry=registry,
-            settings_store=SettingsStore(path=root / "settings.json"),
+            settings_store=SettingsStore(
+                path=root / "settings.json",
+                deployment_mode=deployment_mode,
+                omero_credentials=E2eOmeroCredentials(),
+            ),
             workspace_path=root / "workspace",
+            workspaces_root=root / "webapp-users" if deployment_mode == "webapp" else None,
             pypi_versions=_OfflinePyPIVersionService(),
             storage_path=root / "storage",
             workflow_root=root / "workflows",

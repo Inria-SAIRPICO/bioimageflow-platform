@@ -64,6 +64,8 @@ Existing child workflow DataFrame and field ports can also be published through 
 Edges and bindings use the stable IDs, never display labels.
 Renaming a port must therefore preserve connections, while removing or incompatibly changing a connected port requires explicit destructive-effect handling.
 Canvas mutations must preserve interface referential integrity in the same graph snapshot: deleting nodes also removes outputs sourced from them and removes their input targets, dropping any input that has no surviving target.
+Graph restoration and Undo/Redo retain accepted edges even when metadata is missing or the snapshot has validation errors; restoring a graph is not a new connection gesture.
+Interactive connection creation and endpoint updates retain compatibility and cycle checks, while backend validation remains authoritative for execution.
 
 An embedded graph is the workflow node's execution authority.
 Its optional saved-workflow source is provenance only: changing, moving, or deleting the saved source must not silently mutate the embedded copy.
@@ -183,6 +185,8 @@ Node script opening addresses an accepted root draft or nested session by workfl
 Opening a local source in a nested editor first forks that source into the private session; applying the session carries the binding to the parent.
 Recursive embedding, copying, import, export, and source update must preserve all required local sources without registry shadowing when same-named sources have different content.
 Canvas embedding prepares a destination-owned copy of the source graph and files on the backend before inserting the returned graph; it must not insert another workflow's source identifiers directly.
+Failed owned-source publication rolls back only that attempt's new files and staged temporaries, preserving pre-existing source records.
+Independent cleanup continues and logs residual failures without masking the publication error; this is in-process cooperative rollback, not a power-loss or arbitrary external-writer guarantee.
 
 The embedded code editor uses a platform-generated multi-root VS Code workspace with the active BioImageFlow workspace first and the installed tool store second.
 Embedded editor startup remains a single locked launch operation, while side-effect-free status probes expose its current preparation, extension-installation, process-start, readiness, or failure phase to the Code Editor panel.
@@ -242,6 +246,9 @@ BioIO retains format/reader ownership and lazily computes the middle T/Z preview
 Visible cells coalesce in-flight requests, cancel only their own interest, and revalidate row-addressed URLs rather than using stale browser responses; the server owns the fingerprinted disk cache.
 The shared thumbnail resource owns polling and bounded completed-Blob reuse within one inspection, with fresh admission after Refresh even if result IDs are unchanged; this does not claim live external-file mutation detection while a preview remains displayed.
 Modern thumbnail, image/offset, Reveal and individual CSV requests carry the displayed retained identity rather than silently following latest, and viewer resolution is action-only with no passive per-cell Napari calls.
+
+The Logger retains its in-memory buffer and local level, node and search filters across WebSocket reconnection, while the new connection explicitly requests an unfiltered log subscription confirmed by the server's acknowledgement.
+Disconnected log messages are not replayed, and the GUI buffer has no default reload-retention guarantee; backend disk logs and retained run diagnostics are separate authorities.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
@@ -417,6 +424,9 @@ For persistence changes, identify every coordinator participating in saved workf
 - `frontend/src/utils/` contains graph operations and codecs such as grouping, clipboard handling, endpoint handles, output templates, and selection logic.
 - `frontend/src/App.vue` integrates the application shell, docks, menus, canvas lifecycle, and top-level actions.
 - Unit tests live beside or near their source; browser tests live under `frontend/tests/e2e/`.
+
+The left catalog group orders Datasets, Tools and Workflows tabs, selects Workflows by default, and returns reopened panels to an existing sibling's group at their ordered position.
+Desktop mode omits Datasets.
 
 Canvas views support zoom down to 5%; initial framing centers and fits nodes without exceeding 100%, and SVG grid identities are independent of encoded workflow paths.
 Run Selected remains directly visible in the execution toolbar.

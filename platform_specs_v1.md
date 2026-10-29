@@ -984,9 +984,11 @@ All client-to-server messages include an optional `message_id: str` field. When 
 **Reconnection strategy:** On WebSocket disconnect, the frontend uses exponential backoff (1s, 2s, 4s, 8s, max 30s) to reconnect. On reconnection, the frontend:
 1. Receives a contextual `status_snapshot` from the backend immediately after WebSocket registration. The frontend projects the retained execution state only onto the matching canvas and accepted draft revision.
 2. Fetches `GET /tools` to detect registry changes from controlled package operations, editable-source reloads or a server restart.
-3. Re-sends `subscribe_logs` with the previous filter (the subscription is server-side state tied to the WebSocket connection and is lost on disconnect). The frontend stores the last subscription filter locally.
+3. Sends an unfiltered `subscribe_logs` request (`node_id: null`, `level: null`), whose acknowledgement confirms the new server subscription. Logger level, node and search filters remain local presentation state and are retained across reconnection; they do not narrow the reconnected server stream.
 
-This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection. Log messages missed during disconnection are lost (logs are ephemeral; persistent logs are written to disk by the backend).
+This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection.
+Log messages missed during disconnection are lost.
+Configured backend disk logs and retained execution diagnostics have separate lifetimes and do not supply GUI log replay.
 
 **WebSocket error messages:** If a client-to-server message has an invalid payload, the server responds with an error message instead of `ack`: `{type: "error", ref?: str, code: str, detail: str}`. When `ref` is set, it correlates to the client's `message_id`.
 
@@ -1098,13 +1100,16 @@ Unsaved workflow changes are not auto-saved to `workflow.json` on shutdown. Pend
 ### 3.2 Layout
 
 The application uses a Dockview-based multi-panel layout. Panels are resizable, dockable, and can be collapsed.
+The left group contains **Datasets**, **Tools**, and **Workflows** tabs in that left-to-right order, with **Workflows** selected by default.
+Desktop mode omits Datasets, retaining Tools followed by Workflows.
+Reopening any of these panels joins an existing sibling's group at its ordered tab position; only when all siblings are closed does reopening create a new left group.
 
 ```
 +------------------------------------------------------+
 | Menu bar (Workflow / Edit / Execution / View / Help) |
 +----------+----------------------------+--------------+
 |          |                            |              |
-|  Tools   |   Node Programming         |   Node       |
+|Workflows |   Node Programming         |   Node       |
 |  Panel   |   Interface (canvas)       |   Panel      |
 |          |                            |  (params)    |
 |          |                            |              |
@@ -1194,6 +1199,9 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 - Collective column reference edges: three solid, type-colored 2px strands that converge into one at the target, with the tooltip "Rows are processed together."
 - Workflow-input targets and targets with missing or unknown tool metadata: one standard solid, type-colored 2px strand.
 - Selected edges are highlighted.
+
+Replacing a displayed graph, including Undo/Redo, restores its accepted edges even when tool metadata is unavailable or current validation reports errors; restoration is not a new connection gesture.
+Interactive connection creation and endpoint updates retain compatibility and cycle checks, while backend validation remains authoritative for execution.
 
 #### 3.3.3 Pins
 
@@ -1482,6 +1490,8 @@ Focusing an already visible Node Data dock preserves its projection and the acti
 ### 3.7 Logger Panel (Bottom Panel, Tab 2)
 
 Displays real-time logs streamed via WebSocket.
+The current browser session retains its in-memory log buffer and local filters across a WebSocket reconnection.
+Messages missed while disconnected are not replayed, and the GUI log buffer has no default reload-retention guarantee; backend disk logs and retained execution diagnostics have separate lifetimes.
 
 **Features:**
 - **Level filter:** Buttons to toggle DEBUG / INFO / WARNING / ERROR visibility
@@ -1525,6 +1535,8 @@ workspace/
 Each `workflow.json` stores a `WorkflowDocument` envelope containing the canonical recursive graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source IDs.
 Layout and GUI node state belong directly to that graph; library translation happens in memory.
 Custom tools created from the platform GUI live under `workspace/workflows/<workflow_id>/tools/`, and exported workflow archives carry the owned source files they use.
+Failed owned-source publication rolls back only that attempt's newly published files and staged temporaries, preserving existing source records.
+Independent cleanup continues after a cleanup failure, logs any residual path and preserves the original publication error; this is in-process rollback rather than power-loss atomicity (see [v2 Section 6.2](platform_specs_v2.md#62-saved-workflow-drag-and-drop)).
 A workflow directory may contain other local files, but these directories are not shown as user folders in the Workflows panel.
 
 Only directories containing `workflow.json` are platform workflows. Stray JSON

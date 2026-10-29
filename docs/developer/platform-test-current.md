@@ -12,18 +12,20 @@ Do not resume by reading or appending the historical progress log.
 ## Current state — October 29, 2026
 
 The user authorized updating the campaign for the latest commits and executing the remaining headless work with agent orchestration.
-The integrated source baseline is `68bae0b26bf59032b1444887131820f3be2de154` (October 27), plus explicitly inventoried held changes; dependencies are normal published BioImageFlow **0.9.6**, Core **0.5.1** and Wetlands **2.6.1**.
+The integrated code candidate is local `main` at `4cdd58e572e50dba71e5f612a6b306f6c6d32bd9`, combining authoritative remote `1e25ecc`, the preserved catalog-panel commit `a121575`, and reviewed campaign tasks `6cdac36`, `d81dcde` and `a76a31c`; dependencies are normal published BioImageFlow **0.9.6**, Core **0.5.1** and Wetlands **2.6.1**.
 Library-first specification, suite and causal review and its selected repairs/releases remain accepted in their recorded scope; this update does not restart that review or certify changes made since it.
 Distributed-engine, remote/HPC and parallel-execution feature review/repair remain excluded and their production code/tests must be preserved.
 Native dialogs, viewers, editor windows and application lifecycle belong to **M5 LAST**; no native launch is authorized by this headless increment.
-M3 coverage reconciliation and M4 automated/external acceptance remain open.
+Current priority is the finite main-integration handoff: one scoped integrated frontend check, affected backend checks and consolidated documentation acceptance, then reviewed publication of main and release of the temporary integration worktree.
+Broad campaign execution remains paused for this handoff; M3/M4 completion and native M5 are not claimed.
+The candidate is checked out in `.worktrees/campaign-main-integration`; the original campaign worktree retains unpublished OMERO binding changes and `.vscode/settings.json`, which are excluded from main.
 
 The prior checkpoint described October 19 source and dependencies and is superseded by this queue.
 The historical **438 V + 56 G + 5 U = 499** obligations, including primary GUI 224/224, remain source-qualified ledger entries; they are not a current pass percentage.
 The canonical `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption` receipt tree and `frontend/test-results/campaign-evidence-final-20261019/` are absent from this checkout.
 Their recorded results and original failures remain historical claims; no absent receipt is treated as newly inspected proof, and no old failure is rewritten as a successful command.
 New acceptance must retain its command, terminal result, duration, actual source projection, exclusions and available evidence location.
-Fresh October 29 preflight logs are retained locally under `frontend/test-results/campaign-headless-20261029/`; collection is not runtime acceptance.
+Fresh October 29 logs and receipts are retained locally under `frontend/test-results/campaign-headless-20261029/`; collection is not runtime acceptance, and the entries below retain their actual source projection.
 At `68bae0b` plus the inventoried held diff, backend admission collects 2,114 cases, selects 2,007 and explicitly excludes 107 (7.410s).
 The two browser collections total 296 cases: each project selects 146 and explicitly excludes two distributed cases (2.430s); the selected unpublished OMERO case remains an additional external execution prerequisite.
 The installed normal dependency versions match the manifest/lock; no source override is used.
@@ -41,10 +43,38 @@ Existing tests are the first acceptance controls, and their presence alone suppl
 | Permanently unavailable results | `6286e56`; typed refusal stops polling and keeps a visible error | Result/router owners and `node-data-unavailable.spec.ts`; retryable pending results remain distinct |
 | Shared cold thumbnail setup and BioIO formats | `75b2a7b`, `9781506`; shared setup/render jobs, automatic completion, real format/plane/channel interpretation | Thumbnail manager/generator/router controls; controlled `thumbnail-pending.spec.ts` and actual managed-reader `thumbnail-real.spec.ts`, with cold provisioning separately identified |
 | Bounded Node Data rendering and inspection reuse | `ee8d5dd`; virtual rows, paginated/continuous preference, pinned block reads, shared previews and exact-result actions | Table/store/image/chooser/Display controls; `node-data-window.spec.ts` and existing table/filter/CSV/latest/pinned journeys; mocked transport is not scientific result proof |
+| Profile isolation and release identity | `c3330d4`; explicit `BIOIMAGEFLOW_HOME` owns platform/library defaults and the default desktop workspace, specific overrides retain precedence, and source-archive runs report their static version | Settings/workspace/configuration, health/version and launcher controls; include this completed concurrent source task in the next frozen milestone |
 | Shared typed workflow parameters | `68bae0b`; stable input IDs, explicit/null/inherited bindings, recursive hints, transient pins and private editor ownership | Graph/default/binding contracts, shared ParameterRow/NodePanel/command controls and `workflow-parameter-controls.spec.ts`; accepted Run/persistence consumers |
 
 The benchmark harness and source-attribution commits (`ea0a8c5`, `f3a33c4`, `7bfd49e`) and demo release updates (`206335d`) are included in the impact map.
 Benchmark controls validate safe isolation and source attribution; rerunning a large timing campaign is unnecessary unless a new performance claim or regression needs measurement.
+
+## Current executed controls and integration handoff
+
+The retained Logger/parameter/source controls use `6658b84` plus their recorded held projection; the newer OMERO and corrected webapp controls use `c3330d4` plus their named held projection.
+None is whole-app or final integrated certification.
+Receipts are local ignored files under `frontend/test-results/campaign-headless-20261029/`.
+
+| Control | Result and command duration | Direct receipt |
+| --- | --- | --- |
+| Actual Logger reconnect, Chromium / Firefox | One pass each, 15.881956s / 25.147467s; all 705 recorded tracked inputs unchanged per command | `logger-chromium.json`, `logger-firefox.json` |
+| Retained Firefox parameter-persistence selector `critical-operation-races.spec.ts:741` | One pass unchanged, 13.910051s; original failure and unproven cause retained | `prior-parameter-firefox.json` |
+| Invalid-source repair and genuine archive failure/retry controls | Two passes, 5.147874s; scoped Ruff passes, 0.126161s | `source-recovery.json`, `source-recovery-ruff.json` |
+| Package-free OMERO card administration | Chromium / Firefox pass, 20.893554s / 42.610846s; scoped ESLint passes, 1.633853s | `omero-settings-chromium.json`, `omero-settings-firefox.json`, `omero-settings-eslint.json` |
+| Audited local backend/external selection | 2,016 pass, 107 explicitly excluded, zero skips; 379.429799s at `c3330d4` plus the frozen repaired backend projection, all 339 inputs unchanged | `backend-milestone.json`, `backend-milestone-inputs.json` |
+| Actual webapp Preferences with owned workspace containment | Chromium / Firefox pass, 28.569564s / 46.044609s; no unowned `/data` startup attempt | `deployment-webapp-chromium-owned-selector-recovery.json`, `deployment-webapp-firefox-owned.json` |
+
+Desktop Preferences availability/refusal controls pass both browsers within their recorded unchanged scope.
+The final edge journey passes both browsers after actual graph-admission and stale-Missing fixes; pointer refusal and Undo/Redo pass two cases per browser without weakening interactive validation.
+Custom-tool administration and the existing editable-source journey also pass both browsers; the latter retains its original two executions.
+Their exact current-root receipts are retained in the same evidence directory; original setup, precision, metadata-oracle and publication failures remain failed.
+These controls qualify their named effects; the integrated-main completion checks remain a separate gate, and no historical dashboard cells are promoted here.
+The package-free OMERO administration case is separate from the externally held published-tool binding journey.
+
+The concurrent profile/workspace/version source task is complete at `c3330d4` and enters the next source projection.
+An independent agent owns `.worktrees/ci-test-suites` and its eventual merge; that agent resumes after this campaign integration handoff.
+Do not edit/stage or merge that topic, overwrite other sessions, or push the old PR #20 branch.
+Check relevant imported inputs before and after acceptance; unrelated disjoint authoring does not invalidate an exact control by itself.
 
 ## Remaining headless queue and acceptance gates
 
@@ -57,8 +87,8 @@ Use `followup_task` to activate an existing agent for work and `send_message` fo
 | Order | Required outcome | Starting controls and completion boundary |
 | --- | --- | --- |
 | H0 — Reconcile and freeze | Review latest source and held diffs, verify installed normal dependencies and collection/exclusion manifests, inventory available evidence | Preserve unrelated `.vscode/settings.json`; inventory held OMERO binding/spec/fixture/version changes and logger reconnect separately; no blanket stage, reset or worktree cleanup |
-| H1 — Recent integrated behavior | Establish actual owning and browser results for each affected family in the table above; fix demonstrated defects through their causal owner | Reproduce the retained Firefox `critical-operation-races.spec.ts:741` failure first (delayed parameter persistence; earlier workflow Open did not reach its title); its cause is unproven. Run exact changed/new selectors before their browser project; no parallel test framework or unmotivated benchmark replay |
-| H2 — Remaining runnable M3 assertions | Finish logger reconnect, shell/viewport/catalog complements and actual edge-metadata geometry; reconcile Settings/deployment, custom-tool/source-opening, grouping/source/archive recovery, cache/template/refusal and upload/thumbnail gaps | Use the feature groups below and existing assertions before adding cases; separate real server/filesystem/network effects from controlled client faults; no source-only promotion or invented persistence/replay feature |
+| H1 — Recent integrated behavior | Establish actual owning and browser results for each affected family in the table above; fix demonstrated defects through their causal owner | Retain the unchanged exact Firefox `critical-operation-races.spec.ts:741` pass above; its earlier failure cause is unproven. Run exact changed/new selectors before their browser project; no parallel test framework or unmotivated benchmark replay |
+| H2 — Remaining runnable M3 assertions | Retain the executed logger/edge/deployment/custom/source-opening controls; reconcile their precise obligations and the remaining shell/catalog/grouping/cache/template/upload/thumbnail gaps | Use the feature groups below and existing assertions before adding cases; separate real server/filesystem/network effects from controlled client faults; no source-only promotion or invented persistence/replay feature |
 | H3 — OMERO publication/adoption | Verify current public package/release state, finish reviewed normal-package adoption and saved-card→active-canvas→Save/reload behavior | Use normal published artifacts; retain private RAM-only credentials for any required owned live test; no editable-package substitute for an unavailable publication; external blockers stay explicit |
 | H4 — Audited integrated headless milestone | Complete current local backend/external, frontend, both-browser, logging-order and documentation acceptance on a named frozen projection | Use existing campaign-local selectors, record exact exclusions and all failures/not-run phases; common-tools compatibility and actual worker/array/source/result boundaries remain separate evidence; see commands below |
 | H5 — Handoff to M5 | Reconcile every remaining cell against actual effects, commit task-only changes and retire only owned unused runtime/worktree resources | Review current source and retained proofs independently before final claims; report external/native limitations; desktop begins only after this headless gate is actually assessed |
@@ -87,16 +117,19 @@ Retain successful phases only when their source, fixtures, normal dependency ver
 
 ## Credentials and external prerequisites
 
-Automated work must not read or write the personal/native Keychain or depend on its unlocked/access state.
+Automated product tests must not read or write the personal/native Keychain or depend on its unlocked/access state.
 `scripts/test` forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring`; unit/UI Settings tests inject memory stores and live managed-worker checks use a private RAM-only broker with a process-local read-only provider.
 Unbootstrapped or replacement workers must fail closed, and test credentials must stay out of command arguments, files, graphs, artifacts and logs.
 The production credential adapter is unchanged; these tests do not certify native credential integration, which is not an END prerequisite and must not resume automatically at M5.
 Direct application/pytest/Playwright invocation can bypass the runner, and Git/GitHub credential helpers are outside the Python guard.
 Any future native automation must first preserve the guard through sanitized child environments; no native application is launched in this increment.
 
-Unauthenticated public checks on October 29 find PR #20 still open at `d6b0506`; the latest scheduled CI run is `40300423591`, terminal failed on October 26 at `f0bab43`, which is not local `68bae0b`.
-The locally reviewed short-error repair exists at `a47b2d6`, with clean derivative `efea356`; recheck current ancestry and source before any upload rather than pushing an old derivative blindly over newer work.
-No GitHub environment token or loaded SSH identity is available; do not try native Keychain authentication.
+Fresh integration ancestry proves the prior committed campaign head `c3330d4` already belongs to authoritative remote main `1e25ecc`.
+The genuine local catalog-panel commit `a121575` is preserved by normal merge `7f74749`; the equivalent CI derivative is recorded by tree-identical normal merge `f4656fa`, without replaying source.
+Reviewed backend, graph-restoration and standalone-control tasks are now merged locally; no CI/release/demo topic worktree was merged or removed.
+Normal user-confirmed `gh` authentication works separately from fail-closed product-test credentials; do not print or handle tokens.
+The old scheduled run `40300423591` failed before backend-dependent tests because of an absent sibling checkout; that stale remote result does not certify this candidate.
+No push has occurred at this checkpoint; publish only after the finite integrated checks and final tree review.
 OMERO source was recorded as merged through library PR #8 (`8c5d18e`); its release `39294070663` failed on PyPI project-creation authorization.
 Fresh October 29 public PyPI checks still return 404 for both project `bioimageflow-omero-tools` and version 0.1.0.
 Its final candidate RAM-only roundtrip was recorded as passing in 38.260697s with all nine owned server objects verified absent; those old local receipts are unavailable and this is historical evidence, not fresh acceptance.

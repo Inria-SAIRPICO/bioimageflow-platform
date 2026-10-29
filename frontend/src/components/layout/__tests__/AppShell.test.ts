@@ -5,7 +5,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import type { DockviewApi, DockviewReadyEvent } from 'dockview-vue'
-import type { IDockviewPanel } from 'dockview-core'
+import type { AddPanelOptions, IDockviewPanel } from 'dockview-core'
 import type { RootWorkflowPresentation } from '@/services/rootWorkflowPresentation'
 import { makeGraph } from '@/test-utils/graphFixtures'
 import { canvasIdFromPanelId, canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
@@ -36,15 +36,23 @@ function dockview() {
   let active: IDockviewPanel | undefined
   let onActivation: ((panel: IDockviewPanel) => void) | undefined
   const dispose = vi.fn()
-  const addPanel = vi.fn((options: { id: string; params?: Record<string, unknown> }) => {
+  const addPanel = vi.fn((options: AddPanelOptions) => {
+    const reference = options.position && 'referencePanel' in options.position
+      ? panels.get(String(options.position.referencePanel))
+      : undefined
+    const group = options.position?.direction === 'within' && reference
+      ? reference.group
+      : { panels: [] as IDockviewPanel[] }
     const panel = {
-      id: options.id, params: options.params,
+      id: options.id, params: options.params, group,
       api: { setTitle: vi.fn(), setActive: vi.fn(() => {
         if (active === panel) return
         active = panel
         onActivation?.(panel)
       }) },
     } as unknown as IDockviewPanel
+    const index = options.position && 'index' in options.position ? options.position.index : undefined
+    group.panels.splice(index ?? group.panels.length, 0, panel)
     if (options.id.startsWith('workflow:')) {
       canvasSessionRegistry.register({
         kind: 'root', canvasId: canvasIdFromPanelId(options.id), workflowId: options.id.slice(9),
@@ -56,7 +64,10 @@ function dockview() {
   const api = {
     addPanel,
     getPanel: (id: string) => panels.get(id),
-    removePanel: (panel: IDockviewPanel) => panels.delete(panel.id),
+    removePanel: (panel: IDockviewPanel) => {
+      panel.group.panels.splice(panel.group.panels.indexOf(panel), 1)
+      panels.delete(panel.id)
+    },
     onDidRemovePanel: () => ({ dispose }),
     onDidActivePanelChange: (listener: (panel: IDockviewPanel) => void) => {
       onActivation = listener

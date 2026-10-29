@@ -161,6 +161,72 @@ class ${toolName}(DataFrameTool):
       }
     }
     const first = await run([2, 3, 4])
+    // A controlled client transport failure must leave the already computed
+    // source, saved workflow, accepted draft and latest/pinned results intact.
+    // The explicit retry below still uses the genuine exact-node endpoint.
+    await node.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()
+    const beforeOpenDraft = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    const beforeOpenSaved = await (await page.request.get(`${API}/workflows/${imported}`)).json() as WorkflowFile
+    const beforeOpenDocument = readFileSync(importedFile.info.path)
+    const beforeOpenSource = readFileSync(path)
+    const beforeOpenLatest = await query()
+    const beforeOpenPinned = await query(first.identity)
+    const openFailure = 'Controlled exact-node editor open failure'
+    const openAttempts: WorkflowDraftResponse[] = []
+    await page.route('**/api/v1/editor/open-node', async route => {
+      const current = await page.request.get(`${API}/workflow-drafts/${imported}`)
+      expect(current.ok(), await current.text()).toBeTruthy()
+      const draft = await current.json() as WorkflowDraftResponse
+      expect(draft.graph).toEqual(beforeOpenDraft.graph)
+      expect(route.request().postDataJSON()).toEqual({
+        workflow_id: imported, identity_generation: importedFile.info.identity_generation,
+        node_id: 'increment', expected_revision: draft.draft_revision, session_id: null,
+      })
+      openAttempts.push(draft)
+      if (openAttempts.length === 1) {
+        await route.fulfill({ status: 503, json: {
+          error: 'controlled_editor_open_failure', detail: openFailure,
+        } })
+      } else await route.continue()
+    })
+    const scriptAction = page.getByTestId('open-tool-script')
+    const failedOpening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
+      && new URL(candidate.url()).pathname === '/api/v1/editor/open-node')
+    await scriptAction.click()
+    expect((await failedOpening).status()).toBe(503)
+    const scriptError = page.getByTestId('panel-nodePanel').getByRole('alert').filter({ hasText: openFailure })
+    await expect(scriptError).toHaveText(openFailure)
+    await expect(scriptAction).toBeEnabled()
+    expect(openAttempts).toHaveLength(1)
+    const afterFailedOpen = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    expect(afterFailedOpen.graph).toEqual(openAttempts[0]!.graph)
+    expect(afterFailedOpen.draft_revision).toBe(openAttempts[0]!.draft_revision)
+    expect((await (await page.request.get(`${API}/workflows/${imported}`)).json()).graph).toEqual(beforeOpenSaved.graph)
+    expect(readFileSync(importedFile.info.path)).toEqual(beforeOpenDocument)
+    expect(readFileSync(path)).toEqual(beforeOpenSource)
+    expect(readFileSync(originalPath)).toEqual(originalBytes)
+    expect(await query()).toEqual(beforeOpenLatest)
+    expect(await query(first.identity)).toEqual(beforeOpenPinned)
+    const retryOpening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
+      && new URL(candidate.url()).pathname === '/api/v1/editor/open-node')
+    await scriptAction.click()
+    const retried = await retryOpening
+    expect(retried.ok(), await retried.text()).toBeTruthy()
+    expect(await retried.json()).toMatchObject({ opened: true, method: 'external', path, snapshot: null })
+    await expect(scriptError).toHaveCount(0)
+    await expect(scriptAction).toBeEnabled()
+    expect(openAttempts).toHaveLength(2)
+    await page.unroute('**/api/v1/editor/open-node')
+    const afterRetriedOpen = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    expect(afterRetriedOpen.graph).toEqual(openAttempts[1]!.graph)
+    expect(afterRetriedOpen.draft_revision).toBe(openAttempts[1]!.draft_revision)
+    expect((await (await page.request.get(`${API}/workflows/${imported}`)).json()).graph).toEqual(beforeOpenSaved.graph)
+    expect(readFileSync(importedFile.info.path)).toEqual(beforeOpenDocument)
+    expect(readFileSync(path)).toEqual(beforeOpenSource)
+    expect(readFileSync(originalPath)).toEqual(originalBytes)
+    expect(await query()).toEqual(beforeOpenLatest)
+    expect(await query(first.identity)).toEqual(beforeOpenPinned)
     const validSource = readFileSync(path, 'utf8')
     const badge = node.locator('.updated-badge')
     if (await badge.isVisible()) await badge.click()
@@ -346,6 +412,7 @@ class ${toolName}(DataFrameTool):
     page.off('response', observeNestedWrite)
     const cleanups = [
       async () => { await page.goto('about:blank') },
+      async () => { await page.unrouteAll({ behavior: 'wait' }) },
       async () => { expect((await page.request.patch(`${API}/settings`, { data: { external_editor: oldEditor } })).ok()).toBeTruthy() },
       ...[imported, original, parent].map(name => async () => {
         let status = 0
