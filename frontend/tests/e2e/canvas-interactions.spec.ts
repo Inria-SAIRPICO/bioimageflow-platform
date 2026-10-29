@@ -351,8 +351,9 @@ test.describe('Canvas interactions', () => {
     const baseline = await currentDraft(page, workflowName)
     expect(baseline.graph.nodes).toEqual([])
     let failedWrites = 0
+    let serviceUnavailable = true
     await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
-      if (route.request().method() !== 'PUT' || failedWrites !== 0) return route.continue()
+      if (route.request().method() !== 'PUT' || !serviceUnavailable) return route.continue()
       failedWrites += 1
       await route.fulfill({ status: 500, json: { detail: 'forced catalog add failure' } })
     })
@@ -364,7 +365,7 @@ test.describe('Canvas interactions', () => {
     ))
     await tool.dblclick()
     await failedWrite
-    expect(failedWrites).toBe(1)
+    expect(failedWrites).toBeGreaterThanOrEqual(1)
     const localNode = page.locator('.vue-flow__node')
     await expect(localNode).toHaveCount(1)
     await expect(localNode.locator('.node-name')).toHaveText('Seed Numbers 1')
@@ -381,6 +382,9 @@ test.describe('Canvas interactions', () => {
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
+    // Keep the fault active through any queued validation writes; this journey
+    // checks explicit recovery rather than a race with automatic persistence.
+    serviceUnavailable = false
     await page.getByTestId('canvas-persistence-retry').click()
     await acceptedWrite
     await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)

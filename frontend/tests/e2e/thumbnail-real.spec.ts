@@ -211,7 +211,9 @@ if code:
     const table = page.getByTestId('merged-data-table')
     const thumbnail = table.getByTestId('image-thumbnail')
     await expect(table).toBeVisible()
-    await thumbnail.scrollIntoViewIfNeeded()
+    // The first result is already on screen; retry the assertion while result
+    // refreshes replace its element instead of scrolling a detached instance.
+    await expect(thumbnail).toBeInViewport()
     // Cold setup is owned by the service. The UI must finish automatically,
     // even when provisioning takes longer than the former 30-second budget.
     await expect(thumbnail).toHaveAttribute('src', /^blob:/, { timeout: 600_000 })
