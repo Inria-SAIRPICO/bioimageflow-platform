@@ -178,7 +178,7 @@ export function graphStateToVueFlow(
       : toolNodeData(
           node,
           tool,
-          scopedTool ? null : missingByNode.get(node.id) ?? null,
+          tool ? null : missingByNode.get(node.id) ?? null,
         )
     return {
       id: node.id,

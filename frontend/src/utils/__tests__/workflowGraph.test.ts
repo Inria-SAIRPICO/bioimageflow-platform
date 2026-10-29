@@ -106,6 +106,24 @@ describe('graphStateToVueFlow', () => {
     expect(rendered.nodes[0].data.pinnedInputs).toEqual({ image: true })
   })
 
+  it('clears a stale missing diagnostic after an ordinary catalog target is repaired', () => {
+    const graph = boundGraph()
+    const node = graph.nodes[0] as ToolNodeState
+    delete node.tool_module
+    delete node.tool_class
+    node.output_templates = { mask: 'mask_{row_index}.tif' }
+    const before = JSON.parse(JSON.stringify(graph))
+    const staleMissing = { node_id: 'write', tool_name: 'PreviouslyUnavailableTool', installed_versions: [] }
+    const rendered = graphStateToVueFlow(graph,
+      name => name === node.tool_name ? tool : undefined,
+      [staleMissing], () => undefined)
+
+    expect(rendered.nodes[0].data.tool).toEqual(tool)
+    expect(rendered.nodes[0].data.missingTool).toBeNull()
+    expect(rendered.nodes[0].data.output_templates).toEqual(node.output_templates)
+    expect(graph).toEqual(before)
+  })
+
   it('preserves carried templates and binding while scoped metadata is unavailable', () => {
     const graph = emptyGraph('root', 'Root')
     graph.nodes = [{

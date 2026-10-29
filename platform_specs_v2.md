@@ -170,6 +170,8 @@ Installed bindings retain package/version and read-only package provenance; owne
 Canvas construction uses the node-addressed metadata captured for the same accepted graph and owning root workflow or nested session; a different graph or session cannot reuse that projection.
 Authored parameters and output templates remain graph facts when metadata is unavailable, and an explicit unavailable bound class cannot borrow a same-named catalog schema.
 Later reconciliation uses settled validation for the displayed graph; pending validation or a global compilation diagnostic without node-specific refusal retains that bound node’s prior captured presentation metadata, which is never execution authority.
+Graph replacement, including Undo/Redo, preserves the accepted snapshot's edges when metadata is missing or validation reports errors; restoring a graph is not a new connection gesture.
+Interactive connection creation and endpoint updates retain compatibility and cycle checks, and backend validation remains authoritative for execution.
 Invalid edits remain visible on disk and invalidate execution; keeping previous catalog metadata must never cause Run to execute old code.
 
 Portable archives are transport artifacts only.
