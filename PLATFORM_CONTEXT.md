@@ -26,6 +26,7 @@ The application supports desktop and webapp deployment modes.
 Launcher runtime sources/interpreters are separate from the user profile and survive or reset independently.
 Source-archive launcher runs report their own static project version when distribution metadata is absent.
 Release tooling pins the official Launcher Git revision in `backend/pyproject.toml` and `backend/uv.lock` until its native-icon and frozen-runtime fixes reach the registry; this development-only source selection does not change the published application/library dependency policy.
+Local launcher-signing releases use the saved `glab` login and delegate API requests to the CLI without extracting tokens; the signing authentication contract and release guide cover one-time keyring setup, host ownership, retry/restart reuse and the retained CI job-token path.
 `BIOIMAGEFLOW_HOME` selects the platform settings and library state root and, when explicitly set, the default desktop workspace under that root; explicit workspace selection and the specific tool-store/Wetlands overrides retain precedence.
 Desktop mode is packaged with pywebview and may use trusted local capabilities such as native file dialogs and editor integration.
 Webapp mode uses managed server-side datasets and restricts capabilities that would expose or execute against arbitrary server paths.

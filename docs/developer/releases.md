@@ -87,22 +87,32 @@ backend/dist/BioImageFlow-launcher-X.Y.Z-windows-x64.zip
 
 Do not upload unsigned macOS or Windows packages publicly.
 Submit them to the Inria signing pipeline from the [`signing/`](https://github.com/Inria-SAIRPICO/bioimageflow-platform/tree/main/signing) submodule.
+Authenticate once on the release machine with `glab auth login --hostname gitlab-int.inria.fr --use-keyring` and verify it with `glab auth status --hostname gitlab-int.inria.fr`.
+Complete the login interactively in your own terminal; the credential stays with `glab` and the operating system keyring.
+Newer CLI versions may enable keyring storage by default.
+Release agents reuse that saved login and must not ask for a token in chat, a temporary token file, or a per-release environment export.
+The Inria host still requires the appropriate network/VPN connection.
+In a restricted agent session, run release commands with the normal execution permissions needed for network access and `glab` configuration/keyring access; do not extract a token to work around a sandbox error.
 The helper waits for signing and, on macOS, notarization, then downloads the verified result to `signing/signed/`:
 
 ```bash
 cd signing
-export GITLAB_TOKEN="<token>"
 
 uv run python scripts/submit_launcher.py \
   --file "../backend/dist/BioImageFlow-launcher-${RELEASE_TAG}-macos-arm64.zip" \
   --project-id "474" \
   --ref main \
-  --platform macos
+  --platform macos \
+  --token-type glab
 cd ..
 ```
 
-On Windows PowerShell, set the token with `$env:GITLAB_TOKEN="<token>"`.
+The same saved-login flow works on Windows; no PowerShell token export is needed.
 Use `--platform windows` with the `windows-x64` ZIP on Windows.
+An unavailable login fails before upload with status/login guidance; a network or VPN problem must be diagnosed before asking the user to authenticate again.
+The helper delegates API calls to `glab` without extracting its token, according to the [signing authentication contract](https://gitlab-int.inria.fr/amasson/bioimageit/-/blob/main/docs/release-authentication.md).
+Existing CI job-token and explicit access-token modes remain available; `auto` falls back to the saved CLI login when neither environment token is set.
+If a submission already uploaded its ZIP, use `--retry-pipeline-id` or `--restart-pipeline-id` with `--token-type glab` to reuse it rather than uploading it again.
 The helper infers the release tag from the standard package filename and rejects a platform or explicit-tag mismatch.
 Linux launcher packages bypass the Inria operating-system signing pipeline.
 
