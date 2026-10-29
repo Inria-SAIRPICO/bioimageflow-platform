@@ -24,7 +24,7 @@ from bioimageflow_server.services.workflow_artifacts import (
     capture_working_graph,
     resolve_local_source,
 )
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import WorkflowArchiveError, WorkflowStoreService
 from tests.test_services.test_workflow_store import _ArchiveAdapter
 
 
@@ -170,15 +170,60 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     # Only the initial legacy fixture import uses a fake adapter. Every archive
     # operation below uses a fresh store's genuine default library adapter.
     seed = imported_store(tmp_path)
+    seed.import_workflow_archive(b"fixture", filename="other.bioimageflow.zip")
     store = WorkflowStoreService(seed.root_dir, seed.tool_registry)
     original = store.read_workflow_document("reference")
     original_bytes = (store.workflow_dir("reference") / "workflow.json").read_bytes()
     original_generation = store.workflow_generation("reference")
+    other_document = store.read_workflow_document("other")
+    other_generation = store.workflow_generation("other")
+    other_files = {
+        path.relative_to(store.workflow_dir("other")): path.read_bytes()
+        for path in store.workflow_dir("other").rglob("*")
+        if path.is_file()
+    }
     origin_sources = OwnedWorkflowSources(store.workflow_dir("reference"))
     origin_path = origin_sources.source_path("increment")
+    origin_manifest = (origin_path.parent / "module.json").read_bytes()
     edited_bytes = SOURCE.replace("n + 1", "n + 20").encode("utf-8")
     origin_path.write_bytes(edited_bytes)
 
+    def assert_retained_authority() -> None:
+        assert store.read_workflow_document("reference") == original
+        assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
+        assert store.workflow_generation("reference") == original_generation
+        assert origin_path.read_bytes() == edited_bytes
+        assert (origin_path.parent / "module.json").read_bytes() == origin_manifest
+        assert store.read_workflow_document("other") == other_document
+        assert store.workflow_generation("other") == other_generation
+        assert {
+            path.relative_to(store.workflow_dir("other")): path.read_bytes()
+            for path in store.workflow_dir("other").rglob("*")
+            if path.is_file()
+        } == other_files
+
+    real_export = store.archive_adapter.export_archive
+    failed_exports: list[Path] = []
+
+    def fail_after_real_export(workflow_data, archive_path, *, storage_path):
+        real_export(workflow_data, archive_path, storage_path=storage_path)
+        with ZipFile(archive_path) as archive:
+            assert archive.namelist() == ["workflow.json"]
+            exported = json.loads(archive.read("workflow.json"))
+        assert exported["custom_sources"][0]["source"].encode("utf-8") == edited_bytes
+        failed_exports.append(archive_path)
+        raise OSError("Owned archive write failed after creating the ZIP")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(store.archive_adapter, "export_archive", fail_after_real_export)
+        with pytest.raises(WorkflowArchiveError, match="Owned archive write failed") as failed:
+            store.export_workflow_archive("reference")
+    assert isinstance(failed.value.__cause__, OSError)
+    assert len(failed_exports) == 1
+    assert not failed_exports[0].parent.exists()
+    assert_retained_authority()
+
+    # Explicit retry uses the real adapter again, without recomputing a result.
     filename, archive_bytes = store.export_workflow_archive("reference")
     assert filename == "reference.bioimageflow.zip"
     with ZipFile(BytesIO(archive_bytes)) as archive:
@@ -202,6 +247,27 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
     assert store.workflow_generation("reference") == original_generation
     assert origin_path.read_bytes() == edited_bytes
+
+    real_read = store.archive_adapter.read_archive
+    failed_reads: list[Path] = []
+
+    def fail_after_real_read(archive_path, *, storage_path):
+        inspected = real_read(archive_path, storage_path=storage_path)
+        assert inspected == exported
+        failed_reads.append(archive_path)
+        raise OSError("Owned archive read failed after inspecting the ZIP")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(store.archive_adapter, "read_archive", fail_after_real_read)
+        with pytest.raises(WorkflowArchiveError, match="Owned archive read failed") as failed:
+            store.import_workflow_archive(
+                archive_bytes, filename="roundtrip.bioimageflow.zip"
+            )
+    assert isinstance(failed.value.__cause__, OSError)
+    assert len(failed_reads) == 1
+    assert not failed_reads[0].parent.exists()
+    assert not store.workflow_dir("roundtrip").exists()
+    assert_retained_authority()
 
     # The held ZIP, rather than later working-file edits, owns the import.
     later_bytes = SOURCE.replace("n + 1", "n + 40").encode("utf-8")
@@ -259,17 +325,43 @@ def test_scoped_metadata_comes_from_executed_source(tmp_path: Path):
 
 def test_invalid_edit_blocks_execution_instead_of_reusing_old_code(tmp_path: Path):
     store = imported_store(tmp_path)
-    assert run(store) == [2, 3, 4]
-    OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment").write_text(
-        "invalid Python !!!"
-    )
-    validation = validate_graph(
-        store.get_workflow("reference").graph,
-        store.tool_registry,
-        storage_path=store.get_storage_path("reference"),
-    )
+    original = store.read_workflow_document("reference")
+    original_bytes = (store.workflow_dir("reference") / "workflow.json").read_bytes()
+    graph = original.graph
+    storage_path = store.get_storage_path("reference")
+    captured = build_workflow(graph, store.tool_registry, storage_path=storage_path)
+    assert captured.errors == []
+    source_path = OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment")
+    invalid_bytes = b"invalid Python !!!"
+    source_path.write_bytes(invalid_bytes)
+
+    validation = validate_graph(graph, store.tool_registry, storage_path=storage_path)
     assert not validation.valid
     assert "qa_increment.py" in validation.errors[0].detail
+    refused = build_workflow(graph, store.tool_registry, storage_path=storage_path)
+    assert refused.errors
+    assert any("qa_increment.py" in error.detail for error in refused.errors)
+    assert source_path.read_bytes() == invalid_bytes
+
+    # The admitted old snapshot remains executable, but a fresh compilation
+    # above cannot silently borrow it while the working file is invalid.
+    captured.workflow.compute()
+    assert ResultStoreService(
+        storage_path=storage_path, tool_registry=store.tool_registry
+    ).get_latest_dataframe("increment")["number_plus_one"].tolist() == [2, 3, 4]
+    assert source_path.read_bytes() == invalid_bytes
+
+    repaired_bytes = SOURCE.replace("n + 1", "n + 20").encode("utf-8")
+    source_path.write_bytes(repaired_bytes)
+    repaired = validate_graph(
+        graph, store.tool_registry, storage_path=storage_path
+    )
+    assert repaired.valid
+    assert repaired.errors == []
+    assert run(store) == [21, 22, 23]
+    assert store.read_workflow_document("reference") == original
+    assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
+    assert source_path.read_bytes() == repaired_bytes
 
 
 def test_package_helper_edits_are_captured_and_not_reused_from_python_import_cache(tmp_path: Path):
@@ -331,6 +423,73 @@ def test_invalid_later_record_leaves_no_staged_source_files(tmp_path: Path):
     with pytest.raises(ValueError, match="Python file"):
         OwnedWorkflowSources(tmp_path).stage([source_record(), invalid])
     assert not (tmp_path / "tools").exists()
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_owned_source_publish_rolls_back_only_new_files_and_keeps_primary_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    cleanup_fails: bool,
+) -> None:
+    from bioimageflow_server.services import workflow_artifacts
+
+    owned = OwnedWorkflowSources(tmp_path)
+    existing = source_record()
+    owned.publish(owned.stage([existing]))
+    before = {
+        path: path.read_bytes() for path in owned.root.rglob("*") if path.is_file()
+    }
+    added = source_record(SOURCE.replace("n + 1", "n + 20"), source_id="new")
+    staged = owned.stage([existing, added])
+    assert len(staged) >= 2
+    assert all(final.is_relative_to(owned.root / "new") for _, final in staged)
+    staged_bytes = {final: temporary.read_bytes() for temporary, final in staged}
+    primary = OSError("Owned source replace failed")
+    cleanup_error = PermissionError("Owned source rollback was refused")
+    residual = staged[0][1]
+    real_replace = workflow_artifacts.os.replace
+    real_unlink = Path.unlink
+    cleanup_attempts: list[Path] = []
+
+    def fail_second_replace(source, destination, *args, **kwargs):
+        if source == staged[1][0] and destination == staged[1][1]:
+            raise primary
+        return real_replace(source, destination, *args, **kwargs)
+
+    def observe_cleanup(path: Path, *args, **kwargs):
+        if path == residual or path in [temporary for temporary, _ in staged]:
+            cleanup_attempts.append(path)
+        if cleanup_fails and path == residual:
+            raise cleanup_error
+        return real_unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as failure, caplog.at_level(
+        "ERROR", logger=workflow_artifacts.__name__
+    ):
+        failure.setattr(workflow_artifacts.os, "replace", fail_second_replace)
+        failure.setattr(Path, "unlink", observe_cleanup)
+        with pytest.raises(OSError, match="Owned source replace failed") as raised:
+            owned.publish(staged)
+
+    assert raised.value is primary
+    assert residual in cleanup_attempts
+    assert all(temporary in cleanup_attempts for temporary, _ in staged)
+    assert all(not temporary.exists() for temporary, _ in staged)
+    assert all(not final.exists() for _, final in staged[1:])
+    for path, content in before.items():
+        assert path.read_bytes() == content
+    assert owned.read("increment") == existing
+    after = {path: path.read_bytes() for path in owned.root.rglob("*") if path.is_file()}
+    if cleanup_fails:
+        assert after == {**before, residual: staged_bytes[residual]}
+        assert any(
+            record.exc_info is not None
+            and record.exc_info[1] is cleanup_error
+            and str(residual) in record.getMessage()
+            for record in caplog.records
+        )
+    else:
+        assert after == before
+        assert not [record for record in caplog.records if record.name == workflow_artifacts.__name__]
 
 
 def test_known_local_source_can_be_opened_to_repair_invalid_python(tmp_path: Path):
@@ -480,6 +639,187 @@ def test_embedding_transfers_independent_sources_before_graph_insertion(tmp_path
     assert run(store) == [2, 3, 4]
     store.delete_workflow("reference")
     assert run(store, "parent", prepared.graph) == [21, 22, 23]
+
+
+def test_embedding_source_publication_failure_preserves_authority_and_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bioimageflow_server.services import workflow_artifacts
+    from bioimageflow_server.services.workflow_sources import WorkflowSourceService
+
+    store = imported_store(tmp_path)
+    for name in ("parent", "unrelated"):
+        store.import_workflow_archive(b"fixture", filename=f"{name}.bioimageflow.zip")
+    names = ("reference", "parent", "unrelated")
+    documents = {name: store.read_workflow_document(name) for name in names}
+    generations = {name: store.workflow_generation(name) for name in names}
+
+    def files() -> dict[Path, bytes]:
+        return {
+            path.relative_to(store.root_dir): path.read_bytes()
+            for name in names
+            for path in store.workflow_dir(name).rglob("*")
+            if path.is_file()
+        }
+
+    before = files()
+    service = WorkflowSourceService(lambda: store)
+    real_stage = OwnedWorkflowSources.stage
+    real_replace = workflow_artifacts.os.replace
+    staged_paths: list[tuple[Path, Path]] = []
+    staged_bytes: dict[tuple[Path, Path], bytes] = {}
+    attempted_paths: list[tuple[Path, Path]] = []
+    published_paths: list[Path] = []
+
+    def observe_stage(
+        owned: OwnedWorkflowSources, records: list[dict]
+    ) -> list[tuple[Path, Path]]:
+        staged = real_stage(owned, records)
+        if owned.root != store.workflow_tools_dir("parent"):
+            return staged
+        assert len(staged) >= 2
+        for temporary, final in staged:
+            assert temporary.is_file()
+            assert temporary.parent == final.parent
+            assert final.is_relative_to(store.workflow_tools_dir("parent"))
+            assert not final.exists()
+            staged_bytes[(temporary, final)] = temporary.read_bytes()
+        staged_paths.extend(staged)
+        return staged
+
+    def fail_second_owned_replace(source, destination, *args, **kwargs):
+        if not isinstance(source, (str, Path)) or not isinstance(destination, (str, Path)):
+            return real_replace(source, destination, *args, **kwargs)
+        pair = (Path(source), Path(destination))
+        if pair not in staged_bytes:
+            return real_replace(source, destination, *args, **kwargs)
+        attempted_paths.append(pair)
+        if len(attempted_paths) == 2:
+            raise OSError("Owned embedding source publication failed")
+        result = real_replace(source, destination, *args, **kwargs)
+        temporary, final = pair
+        assert final.read_bytes() == staged_bytes[pair]
+        assert not temporary.exists()
+        published_paths.append(final)
+        return result
+
+    with monkeypatch.context() as failure:
+        failure.setattr(OwnedWorkflowSources, "stage", observe_stage)
+        failure.setattr(workflow_artifacts.os, "replace", fail_second_owned_replace)
+        with pytest.raises(OSError, match="Owned embedding source publication failed"):
+            service.prepare_embedding(
+                "parent", "reference", identity_generation=generations["parent"]
+            )
+
+    assert len(attempted_paths) == 2
+    assert len(published_paths) == 1
+    assert staged_paths
+    assert all(not temporary.exists() for temporary, _ in staged_paths)
+    assert all(not final.exists() for _, final in staged_paths)
+    assert files() == before
+    reopened = WorkflowStoreService(store.root_dir, store.tool_registry)
+    for name in names:
+        assert reopened.read_workflow_document(name) == documents[name]
+        assert reopened.workflow_generation(name) == generations[name]
+
+    prepared = service.prepare_embedding(
+        "parent", "reference", identity_generation=generations["parent"]
+    )
+    source_id = prepared.graph.nodes[0].source_module
+    assert source_id is not None
+    assert source_id != documents["reference"].graph.nodes[0].source_module
+    path = OwnedWorkflowSources(store.workflow_dir("parent")).source_path(source_id)
+    assert path not in [final for _, final in staged_paths]
+    assert path.read_bytes() == SOURCE.encode("utf-8")
+    expected_graph = documents["reference"].graph.model_copy(deep=True)
+    expected_graph.nodes[0].source_module = source_id
+    assert prepared.graph == expected_graph
+    assert set(files()) - set(before) == {
+        path.relative_to(store.root_dir),
+        (path.parent / "module.json").relative_to(store.root_dir),
+    }
+    path.write_text(SOURCE.replace("n + 1", "n + 20"))
+    for relative, content in before.items():
+        assert (store.root_dir / relative).read_bytes() == content
+    for name in names:
+        assert reopened.read_workflow_document(name) == documents[name]
+        assert reopened.workflow_generation(name) == generations[name]
+
+
+def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residual(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from bioimageflow_server.services import workflow_artifacts
+    from bioimageflow_server.services.workflow_sources import WorkflowSourceService
+
+    store = imported_store(tmp_path)
+    store.import_workflow_archive(b"fixture", filename="parent.bioimageflow.zip")
+    generation = store.workflow_generation("parent")
+
+    def files() -> dict[Path, bytes]:
+        return {
+            path.relative_to(store.root_dir): path.read_bytes()
+            for path in store.root_dir.rglob("*") if path.is_file()
+        }
+
+    before = files()
+    primary = OSError("Embedding source publication failed")
+    cleanup_error = PermissionError("Embedding staged-file cleanup was refused")
+    real_stage = OwnedWorkflowSources.stage
+    real_replace = workflow_artifacts.os.replace
+    real_unlink = Path.unlink
+    staged_paths: list[tuple[Path, Path]] = []
+    staged_bytes: dict[Path, bytes] = {}
+
+    def observe_stage(
+        owned: OwnedWorkflowSources, records: list[dict]
+    ) -> list[tuple[Path, Path]]:
+        staged = real_stage(owned, records)
+        if owned.root == store.workflow_tools_dir("parent"):
+            assert len(staged) >= 2
+            assert all(not final.exists() for _, final in staged)
+            staged_paths.extend(staged)
+            staged_bytes.update({temporary: temporary.read_bytes() for temporary, _ in staged})
+        return staged
+
+    def fail_second_owned_replace(source, destination, *args, **kwargs):
+        if len(staged_paths) >= 2 and (source, destination) == staged_paths[1]:
+            raise primary
+        return real_replace(source, destination, *args, **kwargs)
+
+    def refuse_one_temporary_cleanup(path: Path, *args, **kwargs):
+        if len(staged_paths) >= 2 and path == staged_paths[1][0]:
+            raise cleanup_error
+        return real_unlink(path, *args, **kwargs)
+
+    service = WorkflowSourceService(lambda: store)
+    with monkeypatch.context() as failure, caplog.at_level(
+        "ERROR", logger=workflow_artifacts.__name__
+    ):
+        failure.setattr(OwnedWorkflowSources, "stage", observe_stage)
+        failure.setattr(workflow_artifacts.os, "replace", fail_second_owned_replace)
+        failure.setattr(Path, "unlink", refuse_one_temporary_cleanup)
+        with pytest.raises(OSError, match="Embedding source publication failed") as raised:
+            service.prepare_embedding("parent", "reference", identity_generation=generation)
+
+    assert raised.value is primary
+    assert staged_paths
+    residual = staged_paths[1][0]
+    assert residual.read_bytes() == staged_bytes[residual]
+    assert all(not final.exists() for _, final in staged_paths)
+    assert all(not temporary.exists() for temporary, _ in staged_paths if temporary != residual)
+    assert files() == {**before, residual.relative_to(store.root_dir): staged_bytes[residual]}
+    assert store.workflow_generation("parent") == generation
+    assert any(
+        record.exc_info is not None
+        and record.exc_info[1] is cleanup_error
+        and str(residual) in record.getMessage()
+        for record in caplog.records
+    )
+    # The injected permission failure is now restored. Only this test-owned
+    # residual needs explicit cleanup; no graph/source rollback is fabricated.
+    residual.unlink()
+    assert files() == before
 
 
 def test_embedding_rejects_stale_destination_and_self_containment(tmp_path: Path):

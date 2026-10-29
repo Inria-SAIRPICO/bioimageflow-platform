@@ -182,6 +182,8 @@ Node script opening addresses an accepted root draft or nested session by workfl
 Opening a local source in a nested editor first forks that source into the private session; applying the session carries the binding to the parent.
 Recursive embedding, copying, import, export, and source update must preserve all required local sources without registry shadowing when same-named sources have different content.
 Canvas embedding prepares a destination-owned copy of the source graph and files on the backend before inserting the returned graph; it must not insert another workflow's source identifiers directly.
+Failed owned-source publication rolls back only that attempt's new files and staged temporaries, preserving pre-existing source records.
+Independent cleanup continues and logs residual failures without masking the publication error; this is in-process cooperative rollback, not a power-loss or arbitrary external-writer guarantee.
 
 The embedded code editor uses a platform-generated multi-root VS Code workspace with the active BioImageFlow workspace first and the installed tool store second.
 Embedded editor startup remains a single locked launch operation, while side-effect-free status probes expose its current preparation, extension-installation, process-start, readiness, or failure phase to the Code Editor panel.

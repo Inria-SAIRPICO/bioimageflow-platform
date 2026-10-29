@@ -6,6 +6,7 @@ import hashlib
 import base64
 import ast
 import json
+import logging
 import os
 import tempfile
 from copy import deepcopy
@@ -14,6 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _definition_without_provenance(graph: GraphState) -> dict[str, Any]:
@@ -433,8 +437,20 @@ class OwnedWorkflowSources:
 
     @staticmethod
     def publish(staged: list[tuple[Path, Path]]) -> None:
-        for temporary, final in staged:
-            os.replace(temporary, final)
+        published: list[Path] = []
+        try:
+            for temporary, final in staged:
+                os.replace(temporary, final)
+                published.append(final)
+        except BaseException:
+            # Stage omits existing identical records, so only this attempt's
+            # new files and temporaries belong to publication rollback.
+            for path in [*reversed(published), *(temporary for temporary, _ in staged)]:
+                try:
+                    path.unlink(missing_ok=True)
+                except Exception:
+                    _LOGGER.exception("Could not roll back owned workflow source file %s", path)
+            raise
 
     @staticmethod
     def discard(staged: list[tuple[Path, Path]]) -> None:
