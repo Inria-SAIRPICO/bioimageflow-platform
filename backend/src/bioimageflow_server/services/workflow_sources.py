@@ -99,10 +99,7 @@ class WorkflowSourceService:
             graph, records = fork_workflow_sources(graph, records)
             owned = OwnedWorkflowSources(store.workflow_dir(workflow_id))
             staged = owned.stage(records)
-            try:
-                owned.publish(staged)
-            finally:
-                owned.discard(staged)
+            owned.publish(staged)
             return source.model_copy(update={"graph": graph})
 
     def preview_source_update(

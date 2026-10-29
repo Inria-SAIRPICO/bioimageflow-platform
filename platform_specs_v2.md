@@ -148,6 +148,9 @@ The node records workspace provenance with the saved workflow ID and artifact ha
 `POST /api/v1/workflows/{destination}/prepare-embedding` captures the source graph and saved files under source/destination identity locks, checks the destination generation and containment, and materializes fresh destination-owned source identities before returning the insertable graph.
 The canvas then inserts that graph through its normal draft persistence flow; the preparation operation does not modify the destination graph.
 Preparation only adds fresh, unreferenced files, so it does not take an execution mutation lease; the eventual graph insertion remains execution-guarded.
+If owned-source publication fails, roll back the files newly published by that attempt and its remaining staged temporaries, without changing pre-existing source records or the destination graph.
+Cleanup attempts continue independently; a cleanup failure logs its residual path while the original publication error remains the reported failure.
+This is in-process rollback under cooperating workflow ownership, not an arbitrary external-writer or power-loss atomicity guarantee.
 
 Workflow-local sources are ordinary editable files in destination-owned `tools/<source-id>/` directories.
 Each directory contains a `module.json` identity/layout manifest, with no executable source text, and the original Python files and package assets.

@@ -1525,6 +1525,8 @@ workspace/
 Each `workflow.json` stores a `WorkflowDocument` envelope containing the canonical recursive graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source IDs.
 Layout and GUI node state belong directly to that graph; library translation happens in memory.
 Custom tools created from the platform GUI live under `workspace/workflows/<workflow_id>/tools/`, and exported workflow archives carry the owned source files they use.
+Failed owned-source publication rolls back only that attempt's newly published files and staged temporaries, preserving existing source records.
+Independent cleanup continues after a cleanup failure, logs any residual path and preserves the original publication error; this is in-process rollback rather than power-loss atomicity (see [v2 Section 6.2](platform_specs_v2.md#62-saved-workflow-drag-and-drop)).
 A workflow directory may contain other local files, but these directories are not shown as user folders in the Workflows panel.
 
 Only directories containing `workflow.json` are platform workflows. Stray JSON
