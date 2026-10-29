@@ -1,5 +1,38 @@
 import { test, expect } from '@playwright/test'
 
+test('long workflow titles keep the menu height stable when a canvas opens', { tag: '@critical' }, async ({ page }) => {
+  const api = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
+  const suffix = `${test.info().project.name}_${Date.now()}`
+  const names = [`menu_short_${suffix}`, `menu_long_${suffix}`]
+  const labels = ['Short title', `Long workflow ${'descriptive analysis name '.repeat(12)}${suffix}`]
+  for (const [index, name] of names.entries()) {
+    const created = await page.request.post(`${api}/workflows`, {
+      data: { name, display_name: labels[index] },
+    })
+    expect(created.status()).toBe(201)
+  }
+  try {
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    const open = async (index: number) => {
+      await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+      await page.getByTestId('workflow-search').fill(names[index]!)
+      await page.getByTestId(`workflow-row-${names[index]}`).click()
+      await page.getByTestId('workflow-open-btn').click()
+      await expect(page.getByTestId('workflow-title')).toHaveText(labels[index]!)
+    }
+    await open(0)
+    const menu = page.getByTestId('app-menubar')
+    const before = await menu.boundingBox()
+    expect(before).not.toBeNull()
+    await open(1)
+    await expect.poll(async () => (await menu.boundingBox())!.height).toBe(before!.height)
+    await expect(page.getByTestId('workflow-title')).toHaveAttribute('title', labels[1]!)
+  } finally {
+    for (const name of names) await page.request.delete(`${api}/workflows/${name}`)
+  }
+})
+
 test.describe('app shell', () => {
   test('renders Dockview layout with menu bar and panels', async ({ page }) => {
     await page.goto('/')

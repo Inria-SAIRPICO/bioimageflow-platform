@@ -18,6 +18,7 @@ The product has three main layers:
 3. The BioImageFlow library owns the portable tool and workflow model and the execution contracts used by the backend.
 
 The frontend communicates with the backend through the versioned REST and WebSocket APIs.
+Long workflow titles remain within the desktop menu bar with an ellipsis and full hover text, so loading or activating a canvas does not wrap the menu and shift interaction targets.
 It must not reproduce backend validation or library behavior as an independent authority.
 The backend should use public BioImageFlow APIs and should not depend on private library storage or implementation details.
 

@@ -407,6 +407,20 @@ describe('MenuBar', () => {
         .toBe(true)
     })
 
+    it('keeps the unsaved marker outside the shortened workflow label', () => {
+      const displayName = 'Long workflow title '.repeat(20)
+      const { canvasId } = registerActiveRootWorkflow({
+        name: 'long-title', displayName, description: null,
+      })
+      canvasSessionRegistry.activate(canvasId)
+      useUIStore().markCanvasDirty(canvasId)
+      const wrapper = mountMenuBar()
+      const title = wrapper.get('[data-testid="workflow-title"]')
+      expect(title.attributes('title')).toBe(`${displayName} *`)
+      expect(title.get('.workflow-title__label').text()).toBe(displayName.trim())
+      expect(title.get('.workflow-title__dirty').text()).toBe('*')
+    })
+
     it('uses the active canvas workflow for action metadata and branching', async () => {
       const { canvasId: canvasA } = registerActiveRootWorkflow({
         name: 'a',
