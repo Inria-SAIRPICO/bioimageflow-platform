@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import type { WebSocket as PlaywrightWebSocket } from '@playwright/test'
+import type { GraphState, WorkflowDraftResponse, WorkflowInfo } from '../../src/api/types'
 
 const selectionTest = test.extend({ trace: 'retain-on-failure' })
 
@@ -275,4 +277,176 @@ test.describe('logger panel', () => {
     await expect(page.getByTestId('log-empty')).toHaveText('No log messages')
     await expect(copy).toBeDisabled()
   })
+})
+
+test('reconnects with an acknowledged unfiltered subscription while preserving local logger filters', async ({ page }) => {
+  const api = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
+  const name = `logger_reconnect_${test.info().project.name}_${Date.now()}`
+  const nodeId = 'logger_source'
+  const nodeLabel = 'Logger reconnect source'
+  const marker = `logger-reconnect-${Date.now()}`
+  let runRequests = 0
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/execution/run') runRequests += 1
+  })
+  type Frame = Record<string, unknown>
+  const transports: Array<{ socket: PlaywrightWebSocket; sent: Frame[]; received: Frame[] }> = []
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols)
+        if (new URL(url, window.location.href).pathname === '/ws') {
+          ;(window as unknown as { campaignLoggerSocket: WebSocket }).campaignLoggerSocket = this
+        }
+      }
+    }
+  })
+  page.on('websocket', socket => {
+    if (new URL(socket.url()).pathname !== '/ws') return
+    const transport = { socket, sent: [] as Frame[], received: [] as Frame[] }
+    transports.push(transport)
+    socket.on('framesent', frame => {
+      try { transport.sent.push(JSON.parse(frame.payload.toString()) as Frame) } catch { /* Non-JSON frame. */ }
+    })
+    socket.on('framereceived', frame => {
+      try { transport.received.push(JSON.parse(frame.payload.toString()) as Frame) } catch { /* Non-JSON frame. */ }
+    })
+  })
+  const acknowledgedSubscription = (transport: typeof transports[number]) => {
+    const subscription = transport.sent.filter(frame => frame.type === 'subscribe_logs').at(-1)
+    return subscription && transport.received.some(frame => frame.type === 'ack' && frame.ref === subscription.message_id)
+      ? subscription : null
+  }
+  const graph: GraphState = {
+    schema_version: 2, name, display_name: name,
+    nodes: [{ type: 'tool', id: nodeId, name: nodeLabel, tool_name: 'SeedNumbers', parameters: {}, position: [200, 160] }],
+    edges: [], interface: { inputs: [], outputs: [] },
+    config: { engine: 'direct', execution: 'sequential' },
+  }
+  let info: WorkflowInfo | null = null
+  let primaryOccurred = false
+  let cleanupFailed = false
+  let cleanupFailure: unknown
+  try {
+    expect((await page.request.post(`${api}/dev/seed`)).ok()).toBe(true)
+    const created = await page.request.post(`${api}/workflows`, { data: { name, display_name: name } })
+    expect(created.status(), await created.text()).toBe(201)
+    info = await created.json() as WorkflowInfo
+    const saved = await page.request.put(`${api}/workflows/${name}`, { data: { graph } })
+    expect(saved.ok(), await saved.text()).toBe(true)
+
+    await page.goto('/')
+    await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId(`workflow-row-${name}`).click()
+    await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(name)
+    const openedRequest = page.waitForRequest(request => request.method() === 'GET'
+      && new URL(request.url()).pathname === `/api/v1/workflow-drafts/${name}`)
+    const [opened] = await Promise.all([
+      page.waitForResponse(async response => response.request() === await openedRequest),
+      page.getByRole('button', { name: 'Open workflow', exact: true }).click(),
+    ])
+    expect(opened.ok(), await opened.text()).toBe(true)
+    const accepted = await opened.json() as WorkflowDraftResponse
+    expect(accepted.workflow_id).toBe(name)
+    await expect(page.getByTestId('workflow-title')).toHaveText(name)
+    await page.locator('.dv-tab').filter({ hasText: /^Logger$/ }).click()
+    await expect(page.getByTestId('panel-logger')).toBeVisible()
+    await expect.poll(() => transports.length).toBe(1)
+    const initial = transports[0]!
+    await expect.poll(() => acknowledgedSubscription(initial)).toMatchObject({
+      type: 'subscribe_logs', node_id: null, level: null, message_id: expect.any(String),
+    })
+    const initialSubscriptions = initial.sent.filter(frame => frame.type === 'subscribe_logs').length
+    const debug = page.getByTestId('log-level-DEBUG')
+    await expect(debug).toHaveAttribute('aria-pressed', 'true')
+    await debug.click()
+    await page.getByTestId('log-search').fill(marker)
+    await page.getByTestId('log-node-filter').click()
+    await page.getByRole('option', { name: nodeLabel, exact: true }).click()
+
+    // This existing dev publisher emits real contextual log/completion frames;
+    // it does not start scientific execution or produce durable run history.
+    const publish = async (phase: 'before' | 'after') => {
+      const context = {
+        execution_id: `${name}-${phase}`, workflow_id: name,
+        draft_revision: accepted.draft_revision, node_id: nodeId,
+      }
+      const error = `${marker}-${phase}`
+      const traceback = `${marker}-trace-${phase}`
+      const response = await page.request.post(`${api}/dev/e2e/execution-failure`, {
+        data: { ...context, error, traceback },
+      })
+      expect(response.ok(), await response.text()).toBe(true)
+      const expected = { type: 'log', level: 'ERROR', message: `${error}\n${traceback}`, ...context }
+      await expect.poll(() => transports.flatMap(transport => transport.received)
+        .filter(frame => frame.type === 'log' && frame.execution_id === context.execution_id)).toEqual([
+        { ...expected, timestamp: expect.any(Number) },
+      ])
+      const row = page.getByTestId('log-entry').filter({ hasText: error })
+      await expect(row).toHaveCount(1)
+      await expect(row.getByTestId('log-message')).toHaveText(expected.message)
+      await expect(row.getByTestId('log-node-name')).toHaveText(nodeLabel)
+      return error
+    }
+    const before = await publish('before')
+    expect(initial.sent.filter(frame => frame.type === 'subscribe_logs')).toHaveLength(initialSubscriptions)
+
+    await test.step('Close the actual socket and acknowledge the new unfiltered subscription', async () => {
+      const closed = new Promise<void>(resolve => initial.socket.once('close', resolve))
+      const connected = page.waitForEvent('websocket', socket => new URL(socket.url()).pathname === '/ws')
+      await page.evaluate(() => {
+        const socket = (window as unknown as { campaignLoggerSocket: WebSocket }).campaignLoggerSocket
+        if (socket.readyState !== WebSocket.OPEN) throw new Error('Logger socket must be open before disconnect')
+        socket.close(4001, 'Logger reconnect control')
+      })
+      await closed
+      const reconnected = await connected
+      expect(reconnected).not.toBe(initial.socket)
+      await expect.poll(() => transports.length).toBe(2)
+      expect(transports[1]!.socket).toBe(reconnected)
+      await expect.poll(() => acknowledgedSubscription(transports[1]!)).toMatchObject({
+        type: 'subscribe_logs', node_id: null, level: null, message_id: expect.any(String),
+      })
+    })
+
+    await expect(page.getByTestId('log-entry').filter({ hasText: before })).toHaveCount(1)
+    await expect(debug).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('log-search')).toHaveValue(marker)
+    await expect(page.getByTestId('log-node-filter')).toContainText(nodeLabel)
+    const after = await publish('after')
+    await expect(page.getByTestId('log-message')).toHaveText([
+      `${before}\n${marker}-trace-before`, `${after}\n${marker}-trace-after`,
+    ])
+    for (const phase of ['before', 'after']) {
+      expect(transports.flatMap(transport => transport.received)
+        .filter(frame => frame.type === 'log' && frame.execution_id === `${name}-${phase}`)).toHaveLength(1)
+    }
+    const finalDraft = await page.request.get(`${api}/workflow-drafts/${name}`)
+    expect(finalDraft.ok(), await finalDraft.text()).toBe(true)
+    expect(await finalDraft.json()).toEqual(accepted)
+    expect(runRequests).toBe(0)
+  } catch (error) {
+    primaryOccurred = true
+    throw error
+  } finally {
+    const cleanup: Array<() => Promise<unknown>> = [() => page.goto('about:blank')]
+    if (info) {
+      const generation = info.identity_generation
+      cleanup.push(async () => {
+        const removed = await page.request.delete(`${api}/workflows/${name}`, {
+          params: { expected_identity_generation: generation },
+        })
+        expect(removed.ok(), await removed.text()).toBe(true)
+      })
+    }
+    for (const action of cleanup) {
+      try { await action() } catch (error) {
+        if (primaryOccurred) console.error('Logger reconnect cleanup failed while preserving the primary:', error)
+        else if (!cleanupFailed) { cleanupFailed = true; cleanupFailure = error }
+      }
+    }
+  }
+  if (cleanupFailed) throw cleanupFailure
 })

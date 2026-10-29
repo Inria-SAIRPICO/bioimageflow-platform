@@ -243,6 +243,9 @@ Visible cells coalesce in-flight requests, cancel only their own interest, and r
 The shared thumbnail resource owns polling and bounded completed-Blob reuse within one inspection, with fresh admission after Refresh even if result IDs are unchanged; this does not claim live external-file mutation detection while a preview remains displayed.
 Modern thumbnail, image/offset, Reveal and individual CSV requests carry the displayed retained identity rather than silently following latest, and viewer resolution is action-only with no passive per-cell Napari calls.
 
+The Logger retains its in-memory buffer and local level, node and search filters across WebSocket reconnection, while the new connection explicitly requests an unfiltered log subscription confirmed by the server's acknowledgement.
+Disconnected log messages are not replayed, and the GUI buffer has no default reload-retention guarantee; backend disk logs and retained run diagnostics are separate authorities.
+
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
 The execution banner's single overall bar uses the run's retained scoped executable leaf-node plan, including cached and selected dependencies, rather than the active canvas node count. Its text distinguishes completed nodes, current row position or completed rows, and per-row task progress; a successful run reaches 100%.

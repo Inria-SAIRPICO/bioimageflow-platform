@@ -984,9 +984,11 @@ All client-to-server messages include an optional `message_id: str` field. When 
 **Reconnection strategy:** On WebSocket disconnect, the frontend uses exponential backoff (1s, 2s, 4s, 8s, max 30s) to reconnect. On reconnection, the frontend:
 1. Receives a contextual `status_snapshot` from the backend immediately after WebSocket registration. The frontend projects the retained execution state only onto the matching canvas and accepted draft revision.
 2. Fetches `GET /tools` to detect registry changes from controlled package operations, editable-source reloads or a server restart.
-3. Re-sends `subscribe_logs` with the previous filter (the subscription is server-side state tied to the WebSocket connection and is lost on disconnect). The frontend stores the last subscription filter locally.
+3. Sends an unfiltered `subscribe_logs` request (`node_id: null`, `level: null`), whose acknowledgement confirms the new server subscription. Logger level, node and search filters remain local presentation state and are retained across reconnection; they do not narrow the reconnected server stream.
 
-This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection. Log messages missed during disconnection are lost (logs are ephemeral; persistent logs are written to disk by the backend).
+This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection.
+Log messages missed during disconnection are lost.
+Configured backend disk logs and retained execution diagnostics have separate lifetimes and do not supply GUI log replay.
 
 **WebSocket error messages:** If a client-to-server message has an invalid payload, the server responds with an error message instead of `ack`: `{type: "error", ref?: str, code: str, detail: str}`. When `ref` is set, it correlates to the client's `message_id`.
 
@@ -1485,6 +1487,8 @@ Focusing an already visible Node Data dock preserves its projection and the acti
 ### 3.7 Logger Panel (Bottom Panel, Tab 2)
 
 Displays real-time logs streamed via WebSocket.
+The current browser session retains its in-memory log buffer and local filters across a WebSocket reconnection.
+Messages missed while disconnected are not replayed, and the GUI log buffer has no default reload-retention guarantee; backend disk logs and retained execution diagnostics have separate lifetimes.
 
 **Features:**
 - **Level filter:** Buttons to toggle DEBUG / INFO / WARNING / ERROR visibility
