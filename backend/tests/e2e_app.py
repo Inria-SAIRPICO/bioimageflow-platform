@@ -172,12 +172,10 @@ def create_app() -> FastAPI:
         registry._register_tool_from_class(
             tool_class, tool_class.__name__, "bioimageflow-e2e-dynamic", "1.0.0",
         )
-    lifecycle_fixture = os.environ.get("BIOIMAGEFLOW_T1_LIFECYCLE_FIXTURE") == "1"
-    if lifecycle_fixture:
-        from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected, LifecycleSibling
+    from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected, LifecycleSibling
 
-        for tool_class in (LifecycleSelected, LifecycleSibling, LifecycleOther):
-            registry._register_tool_from_class(tool_class, tool_class.__name__, "lifecycle-proof", "1.0.0")
+    for tool_class in (LifecycleSelected, LifecycleSibling, LifecycleOther):
+        registry._register_tool_from_class(tool_class, tool_class.__name__, "lifecycle-proof", "1.0.0")
     app = create_platform_app(
         AppConfig(
             tool_registry=registry,
@@ -259,8 +257,7 @@ def create_app() -> FastAPI:
         failure_marker.write_text("E1 injected install fault", encoding="utf-8")
         return {"fault": "E1 injected Pixi install failure (exit 77)"}
 
-    if lifecycle_fixture:
-        _install_lifecycle_fixture(app, root)
+    _install_lifecycle_fixture(app, root)
     return app
 
 
@@ -289,7 +286,7 @@ def _write_hot_reload_fixture(fixture_path: Path) -> None:
 
 
 def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
-    """Opt-in observation of one actual force click, without changing SDK outcomes."""
+    """Observe explicit lifecycle tests without provisioning at server startup."""
     import hashlib
     import importlib.metadata
     import threading
@@ -298,10 +295,6 @@ def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
 
     from platform_lifecycle_test_tools import LifecycleOther, LifecycleSelected
 
-    assert not os.environ.get("BIOIMAGEFLOW_CORE_SOURCE")
-    assert os.environ.get("BIOIMAGEFLOW_USE_LOCAL_CORE", "").lower() not in {"1", "true", "yes"}
-    for name in ("bioimageflow", "bioimageflow-core", "wetlands"):
-        assert importlib.metadata.distribution(name).read_text("direct_url.json") is None
     service = app.dependency_overrides[get_tool_environment_service]()
     delegate = service.manager
     public = get_shared_environment_manager()
@@ -345,6 +338,12 @@ def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
 
     @app.post("/api/v1/dev/e2e/tool-lifecycle/prepare")
     async def prepare() -> dict[str, Any]:
+        # Only the real-environment proof requires published SDK distributions.
+        # Declaring the tools and routes must also work for ordinary GUI tests.
+        assert not os.environ.get("BIOIMAGEFLOW_CORE_SOURCE")
+        assert os.environ.get("BIOIMAGEFLOW_USE_LOCAL_CORE", "").lower() not in {"1", "true", "yes"}
+        for name in ("bioimageflow", "bioimageflow-core", "wetlands"):
+            assert importlib.metadata.distribution(name).read_text("direct_url.json") is None
         external.parent.mkdir(parents=True, exist_ok=True)
         external.write_bytes(b"T1 independently owned unmanaged browser fixture\n")
         await service.start(LifecycleOther.environment.name)
