@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { encodeWorkflowConstant } from '@/utils/workflowConstants'
+import { workflowInputPresentations } from '@/utils/workflowInputPresentation'
 import { computed, ref, watch, markRaw, nextTick, onMounted, onBeforeUnmount, provide } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import CanvasBackground from './CanvasBackground.vue'
@@ -292,6 +294,7 @@ const canvasCommands = useCanvasCommands({
   renameWorkflowOutput,
   updateParameter: updateNodeParameter,
   updateWorkflowBinding: updateNodeWorkflowBinding,
+  resetWorkflowBinding: resetNodeWorkflowBinding,
   updateParameters: updateNodeParameters,
 })
 uiStore.setCanvasWorkflow(
@@ -315,7 +318,8 @@ const {
   queueGraph: queueCanvasPersistence,
   initializeFromDraft: initializeCanvasPersistenceFromDraft,
   resolveFromDraft: resolveCanvasPersistenceFromDraft,
-  isPending: isCanvasPersistencePending,
+  hasLocalSemanticChanges: hasLocalCanvasSemanticChanges,
+  isDraftPersistencePending: isCanvasDraftPersistencePending,
   dispose: disposeCanvasPersistence,
 } = canvasPersistence
 const rootPersistenceState = canvasPersistence.persistenceState
@@ -400,7 +404,7 @@ let hotReloadToast: ReturnType<typeof useToast> | null = null
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
-  uiStore.canvasHasUnsavedChanges(canvasId) || isCanvasPersistencePending.value
+  hasLocalCanvasSemanticChanges.value || isCanvasDraftPersistencePending.value
 ))
 
 const isPendingFrontendDraftEcho = computed(() => (
@@ -882,7 +886,7 @@ async function applyGraphState(
     graph,
     toolRegistryStore.getToolByName,
     missingTools,
-    node => scopedTools?.[node.id] ?? (carriedToolBinding(node) ? null : undefined),
+    (node, scopedId) => scopedTools?.[scopedId] ?? (carriedToolBinding(node) ? null : undefined),
   )
   attachInterfaceContextToNodes(vueFlowGraph.nodes)
   isApplyingGraphState = true
@@ -1037,7 +1041,7 @@ async function installAuthoritativeRootDraft(
       rootMetadataAuthority(draft),
     )
     if (isCanvasUnmounted) return false
-    resolveCanvasPersistenceFromDraft(draft)
+    resolveCanvasPersistenceFromDraft(draft, 'external')
     workflowDraftStore.acknowledgeAcceptedDraft(draft)
     return true
   } finally {
@@ -1094,7 +1098,7 @@ async function keepCurrentCanvasDraft(): Promise<void> {
     if (isCanvasUnmounted) return
     const hasNewerLocalEdit = rootEditEpoch !== editEpoch
     const latestGraph = hasNewerLocalEdit ? currentSerializedGraph() : null
-    resolveCanvasPersistenceFromDraft(response)
+    resolveCanvasPersistenceFromDraft(response, 'local')
     if (latestGraph !== null) {
       queueCanvasPersistence(latestGraph)
       uiStore.markCanvasDirty(canvasId)
@@ -1420,27 +1424,42 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   if (workflowDraftStore.workflowId !== workflowName) return
 
   const editEpoch = rootEditEpoch
+  let attemptedRevision = remoteRevision
+  const canContinue = () => (
+    !isCanvasUnmounted
+    && hasLoadedGraphState.value
+    && rootEditEpoch === editEpoch
+    && isActiveCanvasTab.value
+    && lifecycleOperation.value === null
+    && !isResolvingRemoteDraftConflict.value
+    && !isInstallingAuthoritativeDraft.value
+    && currentWorkflowName() === workflowName
+    && workflowDraftStore.workflowId === workflowName
+    && !hasLocalRemoteDraftConflict.value
+  )
   isAutoApplyingRemoteDraft = true
   try {
-    const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
-    const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
-    if (
-      isCanvasUnmounted
-      || rootEditEpoch !== editEpoch
-      || !isActiveCanvasTab.value
-      || lifecycleOperation.value !== null
-      || hasLocalRemoteDraftConflict.value
-      || isResolvingRemoteDraftConflict.value
-      || isInstallingAuthoritativeDraft.value
-      || currentWorkflowName() !== workflowName
-      || workflowDraftStore.workflowId !== workflowName
-      || currentRemoteRevision === null
-      || draft.draft_revision < currentRemoteRevision
-      || draft.draft_revision < remoteRevision
-    ) return
-    await installAuthoritativeRootDraft(draft)
-  } catch (err) {
-    console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
+    while (canContinue()) {
+      try {
+        const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
+        if (!canContinue()) return
+        const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
+        if (currentRemoteRevision === null) return
+        if (
+          draft.draft_revision >= currentRemoteRevision
+          && draft.draft_revision >= attemptedRevision
+        ) {
+          await installAuthoritativeRootDraft(draft)
+        }
+      } catch (err) {
+        console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
+      }
+      const nextRevision = workflowDraftStore.remoteAvailableRevision
+      // Watchers can run while fetch/install is busy. Drain that newer notice
+      // once; an unchanged pending revision or failure never retries itself.
+      if (nextRevision === null || nextRevision <= attemptedRevision || !canContinue()) return
+      attemptedRevision = nextRevision
+    }
   } finally {
     isAutoApplyingRemoteDraft = false
   }
@@ -1487,6 +1506,21 @@ watch(
     requestToolReconciliation()
   },
 )
+
+function refreshWorkflowInputPresentation(): void {
+  if (isApplyingGraphState || syncState.value !== 'idle') return
+  const displayed = serializeGraph({ nodes: getNodes.value, edges: getEdges.value })
+  if (!graphDocumentsEqual(graphSync.currentGraph.value, displayed)) return
+  const tools = validationResult.value?.node_tools
+  for (const node of getNodes.value) {
+    if (node.type !== 'workflow' || !node.data.workflow) continue
+    const next = workflowInputPresentations(node.data.workflow, node.id, (leaf, scopedId) => (
+      tools?.[scopedId] ?? (carriedToolBinding(leaf) ? null : toolRegistryStore.getToolByName(leaf.tool_name))
+    ))
+    if (!sameJson(node.data.workflowInputPresentation, next)) node.data.workflowInputPresentation = next
+  }
+}
+watch([() => validationResult.value?.node_tools, () => syncState.value], refreshWorkflowInputPresentation)
 
 watch(() => validationResult.value?.node_tools, (tools) => {
   for (const [nodeId, tool] of Object.entries(tools ?? {})) {
@@ -1986,6 +2020,11 @@ onConnect((connection) => {
     // only, and a stray value here (notably ``null``) would otherwise ride
     // along into the lib payload and override the upstream binding.
     const targetEndpoint = decodeEndpointHandle(targetHandle)
+    if (targetEndpoint.kind === 'workflow-input' && targetNode.type === 'workflow') {
+      const bindings = { ...targetNode.data.bindings }
+      delete bindings[targetEndpoint.id]
+      targetNode.data.bindings = bindings
+    }
     const targetParameter = targetEndpoint.kind === 'tool-input' ? targetEndpoint.name : null
     if (!edgeIsHeader && targetParameter && targetNode.data.parameters
         && targetParameter in targetNode.data.parameters) {
@@ -2136,6 +2175,13 @@ onEdgeUpdate(({ edge, connection }) => {
       [newTargetHandle]: sourceLabel,
     }
     pinConnectedBodyInput(targetNode, newTargetHandle, newSourceHandle)
+    const workflowEndpoint = decodeEndpointHandle(newTargetHandle)
+    if (workflowEndpoint.kind === 'workflow-input' && targetNode.type === 'workflow') {
+      const bindings = { ...targetNode.data.bindings }
+      delete bindings[workflowEndpoint.id]
+      targetNode.data.bindings = bindings
+    }
+
     // Mirror the onConnect cleanup: drop any constant for this input so
     // the wire payload carries non-connected fields only.
     const newEdgeIsHeader = isHeaderHandle(newTargetHandle) || isHeaderHandle(newSourceHandle)
@@ -3780,7 +3826,10 @@ function setInputPinned(
   if (isLocked.value) return false
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   if (!node?.data) return false
-  const nextPinned = input in (node.data.connectedInputs ?? {}) ? true : pinned
+  const handle = encodeEndpointHandle(node.data.nodeType === 'workflow'
+    ? { kind: 'workflow-input', id: input } : { kind: 'tool-input', name: input })
+  if (!pinned && handle in (node.data.connectedInputs ?? {})) return false
+  const nextPinned = pinned
   if (node.data.pinnedInputs?.[input] === nextPinned) return false
   node.data.pinnedInputs = {
     ...(node.data.pinnedInputs ?? {}),
@@ -3914,7 +3963,7 @@ function toggleWorkflowInput(
   }
 
   const childInput = node.data.workflow?.interface.inputs.find(
-    (port: WorkflowInput) => port.id === input && port.kind === 'dataframe',
+    (port: WorkflowInput) => port.id === input,
   )
   if (childInput) {
     const handle = encodeEndpointHandle({ kind: 'workflow-input', id: input })
@@ -3922,8 +3971,8 @@ function toggleWorkflowInput(
     const name = `${node.data.name ?? nodeId}.${childInput.name}`
     if (exposedNameIsUsed(context, name)) return workflowInterfaceRejected('duplicate_name', name)
     if (!replaceWorkflowInputs([...context.inputs, {
-      id: `input-${crypto.randomUUID()}`, name, kind: 'dataframe',
-      schema: { type: 'DataFrame' },
+      id: `input-${crypto.randomUUID()}`, name, kind: childInput.kind,
+      schema: deepClone(childInput.schema),
       default: null,
       targets: [{ node: nodeId, port: { kind: 'workflow', id: input } }],
     }])) return workflowInterfaceRejected('unavailable')
@@ -3933,7 +3982,6 @@ function toggleWorkflowInput(
 
   const field = toolForNode(node)?.inputs?.[input]
   if (!field) return workflowInterfaceRejected('not_found')
-  if (field.connectable === 'never') return workflowInterfaceRejected('not_exposable')
   const name = `${nodeId}.${input}`
   if (exposedNameIsUsed(context, name)) {
     return workflowInterfaceRejected('duplicate_name', name)
@@ -4049,9 +4097,9 @@ function updateNodeWorkflowBinding(nodeId: string, inputId: string, value: unkno
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   const input = node?.data?.workflow?.interface.inputs.find((item: WorkflowInput) => item.id === inputId)
   if (node?.type !== 'workflow' || input?.kind !== 'field') return false
-  const type = value === null ? 'none' : Array.isArray(value) ? 'list' : typeof value === 'number'
-    ? (input.schema?.type === 'float' ? 'float' : 'int') : typeof value === 'boolean' ? 'bool' : 'str'
-  const binding = { __type__: type, value }
+  if (encodeEndpointHandle({ kind: 'workflow-input', id: inputId }) in (node.data.connectedInputs ?? {})) return false
+  const binding = encodeWorkflowConstant(value, input.schema?.type as string | undefined,
+    node.data.bindings?.[inputId] ?? input.default)
   if (JSON.stringify(node.data.bindings?.[inputId]) === JSON.stringify(binding)) return false
   const presentationStatus = canvasStatusProjection.statusForNode(nodeId)?.presentationStatus
   node.data.bindings = { ...node.data.bindings, [inputId]: binding }
@@ -4059,6 +4107,22 @@ function updateNodeWorkflowBinding(nodeId: string, inputId: string, value: unkno
   canvasStatusProjection.stageSemanticStatus(nodeId, {
     node_id: nodeId, status: 'unexecuted', cached: false,
   }, presentationStatus)
+  emitGraphChanged({ statusesAlreadyStaged: true })
+  return true
+}
+
+function resetNodeWorkflowBinding(nodeId: string, inputId: string): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find(candidate => candidate.id === nodeId)
+  if (node?.type !== 'workflow' || !node.data.workflow?.interface.inputs.some((input: WorkflowInput) => input.id === inputId && input.kind === 'field')) return false
+  if (encodeEndpointHandle({ kind: 'workflow-input', id: inputId }) in (node.data.connectedInputs ?? {})) return false
+  if (!Object.prototype.hasOwnProperty.call(node.data.bindings ?? {}, inputId)) return false
+  const presentationStatus = canvasStatusProjection.statusForNode(nodeId)?.presentationStatus
+  const bindings = { ...node.data.bindings }
+  delete bindings[inputId]
+  node.data.bindings = bindings
+  canvasStatusProjection.stageCurrentSemanticStatuses()
+  canvasStatusProjection.stageSemanticStatus(nodeId, { node_id: nodeId, status: 'unexecuted', cached: false }, presentationStatus)
   emitGraphChanged({ statusesAlreadyStaged: true })
   return true
 }

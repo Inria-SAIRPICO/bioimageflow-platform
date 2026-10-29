@@ -84,8 +84,20 @@ The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/
 The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.x resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
-Store scanning uses the library's public installation-selector admission to ignore unrelated directories before loading or unloading a version.
+Store scanning and explicit package lifecycle operations use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
 Supported selectors with invalid or incomplete installations remain visible with their original load diagnostic; secondary unload failures do not replace that diagnostic.
+
+Installed code is held as an immutable admitted generation selected by canonical tool-store root, package name and version.
+Its first admission captures installation metadata, selected controller dependency compatibility, source content and installed inherited implementation owners; subsequent loads and plans reuse those facts without repeating distribution inventories, installation-record walks or installed-source checks.
+Editable and workflow-local sources retain fresh capture for each operation, while parameters, bindings, runtime readiness and selected immutable result records retain their normal checks.
+Generation counters and store paths govern selection and lifetime, not scientific cache identity.
+The normal platform dependency manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this lifecycle integration.
+
+Installed file edits do not trigger hot reload or change the admitted generation.
+A controlled refresh or uninstall must retire the exact selected generation before replacement or removal, and a real store-root change preflights all affected published selections together, including packages loaded only through carried workflow bindings.
+If an admitted operation still owns any affected generation, the operation refuses before changing files or registry state; it does not cancel the execution.
+A retired class cannot authorize a new operation, and a failed replacement does not restore retired code.
+Selecting the same global store again leaves its generations intact; changing installed controller dependencies requires a process restart.
 
 **BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
 
@@ -94,6 +106,12 @@ Supported selectors with invalid or incomplete installations remain visible with
 | `BIOIMAGEFLOW_HOME` | Changes the base directory for BioImageFlow state (`tool_packages`, `wetlands`, settings, etc.) unless a more specific variable is set. |
 | `BIOIMAGEFLOW_TOOL_STORE` | Overrides only the tool store path. |
 | `BIOIMAGEFLOW_WETLANDS` | Overrides only the Wetlands instance path. |
+
+The default settings file is `<BIOIMAGEFLOW_HOME>/settings.json`, and a new settings document derives its tool-store default from `bioimageflow.paths.get_tool_store_path()`.
+An explicit `BIOIMAGEFLOW_HOME` also places the default desktop workspace at `<BIOIMAGEFLOW_HOME>/workspace`; an explicitly selected workspace still wins.
+Without that override, the desktop workspace remains `~/BioImageFlow/workspace`.
+Launcher runtime roots contain application sources and their interpreter environments, independently of this user profile: reinstalling or replacing a launcher runtime does not reset settings, tools, or workflows.
+The health endpoint reports installed distribution metadata when available, otherwise the static version from the platform's own source-archive `backend/pyproject.toml`; an unpackaged or unreadable project falls back to `0.0.0-dev`.
 
 The platform must not rely on Wetlands' own `EnvironmentManager()` default for BioImageFlow-managed environments. Plain Wetlands defaults its root to cwd-relative `./wetlands`; this can happen if a service calls Wetlands directly or calls `bioimageflow.env_manager.get_shared_environment_manager()` before BioImageFlow has configured it. Because Wetlands uses a process-wide shared manager, the first initialization in the process fixes the Wetlands path for later callers. Tool execution, manual tool environment controls, Napari, thumbnails, and embedded code-server must therefore all use the same BioImageFlow-resolved Wetlands root.
 
@@ -113,6 +131,7 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 |--------|----------|-------------|
 | `GET` | `/tools` | List all discovered tools with metadata |
 | `GET` | `/tools/{tool_name}/source` | Get the tool's source directory path |
+| `GET` | `/tools/{tool_name}/usage` | Return affected saved workflow IDs, including references in recursively embedded workflows |
 | `GET` | `/tools/packages` | List all packages (installed and known). Returns installed versions, available versions, tools per version, and environment status. This is the single source of truth for the Tools Panel — no need to cross-reference with `GET /tools`. |
 | `POST` | `/tools/packages/refresh` | Refresh the known and installed package catalog from its configured package-index sources. |
 | `POST` | `/tools/packages/{package_name}/install` | Install a package version into the tool store (body: `{version?: str}`) |
@@ -121,13 +140,22 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `POST` | `/tools/environments/{env_name}/stop` | Stop a tool's Wetlands environment |
 | `POST` | `/tools/environments/{env_name}/recreate` | Create or replace a tool's managed Wetlands environment |
 
+Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
+It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
+
 **Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
 Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
 A configuration-level root symlink is supported; package/version symlinks, non-directory entries, traversal and unsafe selectors return HTTP 400 `bad_request`, while a safe absent selection returns 404.
-Admission precedes hot-reload suppression and registry changes; the captured root, package ancestor and selected directory identities are checked again at physical removal and before any failed-trash fallback.
-Fallback must not remove a missing or substituted target; successful removal forgets only the exact selected package/version and refreshes its catalog projection.
+Path admission precedes generation retirement, hot-reload suppression and registry changes; the captured root, package ancestor and selected directory identities are checked again at physical removal and before any failed-trash fallback.
+Supported version selectors are derived from the selected stored directories rather than successful metadata imports, and all affected loaded generations are preflighted atomically before retirement.
+An active-operation refusal leaves the directory and registry unchanged; safe legacy directory names unsupported by the loader remain removable without importing them.
+After retirement, selected package/version namespaces remain reserved through offloaded physical removal and registry update; a concurrent carried workflow read cannot re-admit the still-present directory.
+The reservation releases after removal or failure, and any recovery re-admission occurs only after release.
+Fallback must not remove a missing or substituted target; successful removal forgets only the exact selected package/version and explicitly publishes removals or the remaining active version's metadata without relying on watcher events.
+A failed physical removal can re-admit only the unchanged owned selection and restores its prior active-version choice only after that re-admission succeeds.
+It never restores retired class objects or imports a substituted or partially removed target, and recovery preserves the original removal error.
 Other versions/packages and managed worker environments remain independent.
-These checks serialize the service's cooperating operations and refuse observed ownership changes; they do not promise an atomic filesystem transaction against arbitrary external writers, rollback after physical removal, or cancellation-safe physical worker retirement.
+These checks serialize the service's cooperating operations and refuse observed ownership changes; they do not promise an atomic filesystem transaction against arbitrary external writers, rollback after physical removal, or cancellation-safe settlement of offloaded physical removal.
 
 **Tool metadata response (from `GET /tools`):**
 
@@ -174,6 +202,9 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `bif:v1:dataframe-output` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
 | `row_consumption` | `"mapped" \| "collective" \| null` | Required metadata describing column-edge row semantics. Processing tools use `mapped` when rows are independent and `collective` when one batch operation may combine aligned rows. DataFrame tools use `null`. |
 | `environment.path` | `string` | Platform-resolved absolute managed environment location, added to a declared environment for local display and management. It is not portable tool-definition state. |
+
+`GET /tools` resolves declared environment names against one fresh public managed-environment inventory per request, including expected paths for environments not yet created.
+This filesystem work runs off the server event loop, does not provision or start workers, does not mutate registry metadata, and retains no inventory across requests.
 
 **The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
@@ -324,7 +355,11 @@ class CellposeSegmenter(ProcessingTool):
 ]
 ```
 
-**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --target <dir>` to populate the tool store. This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
+**Package installation:** The platform app environment includes `pip` as a runtime dependency because both versioned package installation through BioImageFlow and URL/archive source imports run the app interpreter's `python -m pip install --no-deps --target <dir>` to populate the tool store.
+The platform supplies compatible controller dependencies; ProcessingTool worker dependencies remain in their declared execution environments.
+The selected package is explicitly indexed before installation reports success, and a load failure returns HTTP 400 with its original detail; an unrelated pending editable-source failure does not fail a successful selected installation.
+Re-indexing an already admitted unchanged version reuses its generation rather than retiring code held by a running operation.
+This operation is separate from Wetlands worker environment provisioning. During installation, the Tools Panel shows a spinning icon on the package row. Installation progress and errors are streamed to the Logger Panel. Installation can be interrupted via a stop button. **Package installations are serialized** — only one installation runs at a time. If the user requests a second installation while one is in progress, it is queued and a toast informs: "Installation queued — waiting for {package_name} to finish."
 
 **Execution during installation:** If a required package is currently being installed, the "Run" button is disabled with a tooltip: "Waiting for package installation to complete." Execution is blocked until all required packages are fully installed.
 
@@ -332,6 +367,10 @@ class CellposeSegmenter(ProcessingTool):
 Every platform-owned Wetlands provisioning path subscribes to its public operation events before waiting for the environment and streams setup stages and sanitized Pixi stdout/stderr lines to the Logger panel. During local workflow execution, those entries retain their execution and node attribution; replacement publishes `updating` and retains “Updating execution environment” for the affected node. A node-associated setup message is retained independently of numeric progress and shown in the Execution panel until tool execution begins. A tool may constrain `bioimageflow-core` only compatibly with the platform's exact runtime dependency; an explicit divergent requirement is reported as `environment_incompatible` during graph validation and is never silently replaced with another core version.
 Workflow execution passes a run-scoped observer to the engine through the public environment-manager API; the process-wide shared manager keeps its original methods across successive runs.
 The observer prepares runtime content before the scientific key and cache lookup during whole-workflow and stepwise execution; a cache hit starts no scientific pool.
+Each public SDK preparation call supplies its explicit executable `scoped_node_path`, captured with the immutable run context; environment names, shared receipts and the last started node never establish attribution.
+A retained waiting job can show its setup message before scientific start without a fabricated start timestamp or numeric progress.
+Late observations cannot mutate a newer run, explicit public failure diagnostics own node details, and unscoped exceptions remain run-level.
+Unsuccessful completion settles all known running node and retained job presentations without inventing a culprit or node traceback, preserving their recorded progress and explicit completed, failed and disabled states; logical settlement does not claim physical worker termination.
 Admission reports ready when no pool is running and preserves running for an already-live owned pool, so warm cache-only reuse cannot hide its Stop control.
 Dispatch revalidates and forwards the exact admitted runtime receipt and worker grant, without replacing or reprovisioning a generation already used for cache admission.
 Automatic Run admission and background `bioimageflow-general` refresh share a platform service guard across fresh inspection and conditional replacement; processing submission separately fences the held receipt under that same guard, so a later generation cannot receive a task identified against the earlier generation.
@@ -569,6 +608,14 @@ All validation transports use complete graph payloads. The server does not infer
 ```
 
 For a modern retained result, Node Data and CSV first validate the latest link schema and relative target, require its resolved view to be the canonical directory for the captured run and node, then validate the result key, record, and manifest through the library's exact-record path; a damaged selected record or provenance returns HTTP 409 and never falls back to a stale raw file or companion CSV. A latest view with absent `result.json` remains eligible for the legacy unpinned reader, so that deliberate compatibility path does not provide modern provenance guarantees. Pagination and viewer metadata use the captured identity, and a later integrity failure is also reported as unavailable rather than serving rows from another selection.
+Individual and merged modern tables derive column types and viewer declarations from the same request-local producer snapshot already admitted for that exact retained record, without an additional storage read.
+Modern thumbnail, image/offset and Reveal requests carry the displayed `ResultArtifactIdentity` as JSON in the `result_identity` query parameter; individual filtered CSV carries it in the request body.
+An explicitly selected result is validated through the exact retained-record reader and never falls back to latest when unavailable; omitted identity preserves the unpinned latest-selection API.
+Fiji actions likewise carry the displayed identity through their existing typed request.
+Node Data query/CSV and image file work runs through FastAPI's bounded worker thread boundary rather than blocking the async server event loop.
+Concrete carried output declarations remain authoritative for empty and all-null columns and never borrow a same-named current catalog schema; missing or dynamic declarations and columns not declared by a passthrough model use DataFrame type inference without catalog substitution.
+A malformed present output descriptor or mismatched carried metadata identity returns HTTP 409.
+Legacy unpinned tables retain their existing current-tool declaration and DataFrame inference behavior without modern producer-provenance guarantees.
 
 #### 2.4.4b Node Output Schema Resolution
 
@@ -704,7 +751,7 @@ class Settings(BaseModel):
     napari_environment_operations: list[NapariEnvironmentOperation] = []
     napari_suppressed_legacy_roots: list[str] = []
     omero_instances: list[OMEROInstance] = []
-    tool_store_path: str = "~/.bioimageflow/tool_packages/"
+    tool_store_path: str = Field(default_factory=lambda: str(get_tool_store_path()))
     update_mode: Literal["auto", "manual"] | str = "auto"
     new_workflow_execution: Literal["sequential", "parallel"] = "sequential"
     node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
@@ -772,6 +819,8 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 
 The Phase B registry foundation also exposes typed desktop-only routes under `/napari/environments` and `/napari/environment-settings`.
 They manage external Conda/venv registrations, adopt an existing managed `napari` Wetlands installation without provisioning, probe installed Python distribution metadata in the target interpreter, and persist ordered filename rules.
+Desktop startup with a pristine Napari registry and no existing installation registers a metadata-only setup-needed default recipe without acquiring an environment manager or probing.
+Its card offers explicit Setup with the same UUID through retry, disables Refresh before installation, and permits metadata-only Forget while it has no installed generation or active operation; the incremented registry revision prevents bootstrap from recreating it.
 Webapp mode rejects all of these local operations.
 The desktop-only passive viewing-readiness route accepts the manifest returned by workflow import directly and uses the same package-only candidate evaluator as retained-artifact resolution.
 It does not reread a workflow, probe or mutate environments, launch a viewer, or execute archive content; its response retains structural output identities, unknown reasons, candidates, effective environments, normalized requirement groups, honest managed-setup prefill, and covered/not-covered/unknown summary counts.
@@ -804,7 +853,7 @@ A configured external editor retains the project selection: a workflow-local cus
 Newly created tools also use `/editor/open-tool`, with their tool name and workflow identity.
 The embedded response returns the managed workspace URL without waiting for the opener extension; the panel loads the workbench first and then requests file focus, allowing the extension to activate without a circular startup wait.
 
-Embedded code-server instead uses the generated project `<workspace>/.bioimageflow/BioImageFlow.code-workspace`. This multi-root workspace contains the active BioImageFlow workspace as `Workspace` and the installed tool store as `Installed Tool Packages`; the workspace is first, is the integrated-terminal working directory, and the tool-store tree is marked read-only through VS Code workspace settings. Both custom and package tool opens retain this project and focus only the selected source, so switching tool kinds must not reload the workbench or terminate its terminals. Package sources installed through a tool-store symlink retain their lexical installed path when one can be identified so they remain navigable under the package root. `EditorOpenResponse.project_path` identifies the generated `.code-workspace` file for these embedded opens.
+Embedded code-server instead uses the generated project `<workspace>/.bioimageflow/BioImageFlow.code-workspace`. This multi-root workspace contains the active BioImageFlow workspace as `Workspace` and the installed tool store as `Installed Tool Packages`; the workspace is first, is the integrated-terminal working directory, and the tool-store tree is marked read-only through VS Code workspace settings. Both custom and package tool opens retain this project and focus only the selected source, so switching tool kinds must not reload the workbench or terminate its terminals. For an otherwise admitted installation, source navigation preserves a lexical tool-store symlink path when one can be identified so the file remains navigable under the package root. `EditorOpenResponse.project_path` identifies the generated `.code-workspace` file for these embedded opens.
 
 Plain status probes remain side-effect free. `GET /editor/status?launch=true&workspace=true` lazily creates or refreshes the generated file atomically and returns a code-server URL with the encoded `workspace` query parameter. Generation failure returns an embedded-editor diagnostic without replacing an existing valid file. Changing the active BioImageFlow workspace changes the generated project and may reload the workbench; selecting another tool within the same active workspace does not.
 
@@ -907,7 +956,7 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
-| `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
+| `tool_reload` | `{tool_name, tool_metadata}` | An editable tool reloaded or a controlled package operation updated its registry metadata. Includes the full updated tool schema. |
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
@@ -922,7 +971,7 @@ Progress, node-state, and completion messages always carry `execution_id`, `work
 
 There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
 
-The frontend retains `workflow_draft_changed` notices by `workflow_id` instead of projecting every notice onto the active canvas. A clean matching root canvas auto-loads and applies the newer draft. A matching canvas with local edits or pending persistence keeps its graph and presents conflict resolution; inactive workflows retain their notice until tracked. Nested canvases do not auto-apply root-draft notices.
+The frontend retains `workflow_draft_changed` notices by `workflow_id` instead of projecting every notice onto the active canvas. A matching root canvas without local semantic edits or pending draft writes auto-loads and applies the newer draft, including a strictly newer notice received during an earlier fetch or install. Accepted external graphs may remain dirty against the saved artifact, and recovery-only pending writes do not create a local conflict. A matching canvas with local semantic edits or pending draft writes keeps its graph and presents conflict resolution; inactive workflows retain their notice until tracked. Nested canvases do not auto-apply root-draft notices.
 
 **Client-to-server messages:**
 
@@ -934,7 +983,7 @@ All client-to-server messages include an optional `message_id: str` field. When 
 
 **Reconnection strategy:** On WebSocket disconnect, the frontend uses exponential backoff (1s, 2s, 4s, 8s, max 30s) to reconnect. On reconnection, the frontend:
 1. Receives a contextual `status_snapshot` from the backend immediately after WebSocket registration. The frontend projects the retained execution state only onto the matching canvas and accepted draft revision.
-2. Fetches `GET /tools` to detect tool registry changes (e.g., if the tool store was modified during the disconnection or a server restart).
+2. Fetches `GET /tools` to detect registry changes from controlled package operations, editable-source reloads or a server restart.
 3. Re-sends `subscribe_logs` with the previous filter (the subscription is server-side state tied to the WebSocket connection and is lost on disconnect). The frontend stores the last subscription filter locally.
 
 This ensures the frontend can reconstruct the correct state even if `node_state` messages were missed during disconnection. Log messages missed during disconnection are lost (logs are ephemeral; persistent logs are written to disk by the backend).
@@ -945,13 +994,39 @@ This ensures the frontend can reconstruct the correct state even if `node_state`
 
 The server generates thumbnails on demand for image files referenced in output DataFrames. Thumbnail and Reveal actions use the same captured-record asset resolution as the node-image endpoints, so an owned asset is read from its immutable record and an absolute external path remains external. Thumbnails are cached under the workspace runtime directory.
 
-- **Supported formats:** TIFF, PNG, JPEG, NIfTI (max-projection for 3D)
+- **Readers:** BioIO and the plugins installed in the managed thumbnail environment own format support, including TIFF/OME-TIFF, PNG, JPEG and directory-backed OME-Zarr; the platform does not replace BioIO with a TIFF-only decoding path.
+- **Preview:** Select the middle time point and Z plane through BioIO's lazy array API before computing pixels, preserving channels and RGB(A) samples; readers with selective I/O may skip unused planes, while some formats still require whole-image decoding internally.
 - **Size:** 128x128 pixels (configurable via query param)
-- **Cache key:** SHA-256 of the absolute file path, file modification time, and requested size; it invalidates when the file changes
+- **Cache key:** SHA-256 of renderer version, absolute source path, nanosecond modification time, byte length, and requested size; directory stores additionally include descendant names, modification times and lengths so nested chunk changes invalidate the preview without hashing all pixel bytes.
+
+ThumbnailManager reserves one service-owned job per fingerprint before environment setup or worker submission can yield.
+All outstanding images share one startup operation and one bounded two-worker pool; matching ready Wetlands content is reused, and only its public provisioning operation owns replacement of a stale thumbnail recipe.
+The response wait includes setup and is bounded independently of the shared job lifetime; abandoning a request or selecting another node does not cancel or resubmit shared work.
+The PNG endpoint accepts a bounded `wait` of 0–20 seconds, defaulting to three seconds so initial installation progress becomes visible promptly.
+Subsequent frontend requests wait up to 20 seconds on the same job and wake on completion; a fixed 250 ms inter-request delay avoids growing retry gaps after pixels are ready.
+Thumbnail result and owned-asset resolution, directory fingerprint walks and cache reads run off the server event loop; latest DataFrame reads reuse their already-validated run-node relation within that operation, without caching it across requests or bypassing library record validation.
+After setup, recheck the cache before worker submission, publish completed PNGs atomically, and discard a render if its source fingerprint changed during the job.
+Shutdown stops admission, cancels the owned provisioning operation and render tasks, joins in-flight thread submissions and startup, and closes the resulting pool.
+Terminal failures are memoized in bounded process-local state, while successful thumbnails remain in the disk cache.
+
+The PNG endpoint returns X-Thumbnail-Status=pending|ready|failed|unavailable and X-Thumbnail-Environment=idle|starting|installing|ready|failed.
+A ready header always accompanies rendered PNG bytes, including when generation completes at the response boundary.
+Row-addressed responses use no-store because their URL does not encode the source fingerprint; the backend retains its disk cache.
+Concurrent visible cells share one request and polling chain for the same inspection, captured result, source node/row/column and requested size; only their own display interest is canceled when they leave.
+Successful PNG Blobs are reused within that accepted inspection, bounded to 128 cached entries and 32 MiB; cell-owned object URLs are revoked on departure independently of shared bytes.
+This reuse is an inspection snapshot, not a claim that external files are immutable: explicit Refresh, accepted replacement results and owner/workspace replacement start a new inspection even when retained result IDs are unchanged.
+Paging and mode changes retain the inspection; each new inspection revalidates sources through the server's fingerprinted cache.
+No subscriber means no further polling; an already-issued wait and the backend-owned setup/render may finish, but cannot restart abandoned polling or update another inspection.
+A pending job uses bounded completion waits without converting slow active setup into an unavailable result after a fixed retry count; terminal responses stop polling.
+During actual environment mutation, Node Data shows a persistent preparation notice explaining that first-time setup may take several minutes; warm startup alone does not flash this notice.
+The real TIFF browser acceptance must finish automatically after cold setup, without warming the endpoint through a separate API loop or reopening the workflow to repair an exhausted UI budget.
+The managed-reader browser acceptance also checks RGB PNG/JPEG, middle-plane OME-TIFF and directory-backed OME-Zarr output automatically through Node Data.
 
 ### 2.7 Tool Hot-Reload
 
-The backend watches tool source directories for file changes (via `watchdog`). On change:
+The backend watches editable custom and workflow-owned source directories for file changes (via `watchdog`, supplemented by limited content polling).
+Installed package source files are read-only selections and their filesystem events do not authorize reload.
+For an editable custom tool change:
 
 1. Backend re-scans the changed tool module and updates the tool registry
 2. Backend sends `tool_reload` WebSocket message with the full updated tool metadata (same format as `GET /tools` response)
@@ -962,24 +1037,30 @@ The backend watches tool source directories for file changes (via `watchdog`). O
    - A temporary dismissable "tool updated" badge appears on affected nodes (small refresh icon, click to dismiss)
    - Executed nodes transition to "Out-of-date" (cache invalidated by code change)
 
-Changes are applied automatically — no manual reload action required from the user.
+Editable-source changes are applied automatically — no manual reload action required from the user.
 Imported custom tools are unpacked as editable workspace files, and node source links open those exact files.
 Run captures saved source bytes before compilation, independently of watcher timing; invalid edits block execution instead of using previous code.
 Workflow-owned source changes emit `tool_source_changed` with affected tool names for canvas revalidation, without overwriting global catalog metadata.
 Workflow-local source changes are detected through native file events and a periodic content check of registered editable tool directories, without scanning workflow results or datasets.
 Reload reads current source bytes even for same-size saves with unchanged timestamps, and reload operations are serialized.
-Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving the previous usable tools and unrelated registry entries.
+Each custom source is reloaded as a unit, including added, renamed, and removed classes; malformed edits report `tool_reload_failed` while preserving previous presentation metadata for repair and unrelated registry entries, without authorizing stale code for execution.
 Implementation-only edits emit `tool_reload` even when the metadata is unchanged, and canvases retain this notification through field-focus deferral and execution locks.
-Reloading an inactive package version preserves both the active class bindings and their displayed metadata.
-Installed-package reload preserves declared RECORD members, including pip-generated bytecode, and obtains fresh executable bytes through the public library loader rather than deleting installed cache files.
+An explicit installed-package refresh uses the generation lifecycle in Section 2.3, preserves an unaffected active version's class bindings and displayed metadata, and admits replacement bytes through the public library loader.
+It preserves declared RECORD members, including pip-generated bytecode, rather than deleting installed cache files.
+A failed replacement is reported as unavailable instead of restoring the retired class or module.
 
 **Hot-reload during editing:** If the user is editing a parameter field (field has focus) when a `tool_reload` message arrives, the update is buffered until the field loses focus (blur event). This prevents data loss from mid-edit schema changes. If the field being edited was removed in the new schema, a warning toast is shown after blur: "Field '{name}' was removed by the tool update."
 
 **Scientific identity:** Admitted executable source and ready runtime content always participate in cache identity through the library's public contracts; there is no development-mode setting or API argument.
 
-**Tool reloads during execution** affect only future executions. The currently running Workflow uses the tool code that was loaded when execution started. This is the natural behavior of Python object references — the Workflow holds references to the tool classes loaded at build time.
+**Tool reloads during execution:** Editable-source saves affect future compilations while an admitted execution retains its captured source.
+Installed-generation retirement is refused while an admitted operation owns that generation; Python class references alone are not execution admission.
+After retirement, a retained class reference cannot start a new operation and must be resolved through a freshly compiled workflow.
 
-**Hot-reload during package installation:** The file watcher is suppressed while a package is being installed (files are written sequentially during installation, which would trigger spurious reload events). Once installation completes, a single batch `tool_reload` event is emitted for all tools in the installed package.
+**Registry events during package installation:** The installer suppresses editable-source broadcasts while its operation is in progress and explicitly indexes the selected published package before returning.
+It emits the selected tool metadata differences directly, without relying on installed-file or private staging events, then processes unrelated pending editable changes separately.
+Uninstall likewise publishes selected removals or fallback-version metadata explicitly.
+Refreshing package-index availability metadata does not authorize reloading installed code.
 
 ### 2.8 Startup and Shutdown
 
@@ -1158,6 +1239,10 @@ Displays the available tools in a two-tier layout: a minimalist tool list for ev
 **Panel layout (top to bottom):**
 
 1. **Search bar** (with margins): Fuzzy search filtering by name, tags, categories, and keywords. This is not simple substring matching — it uses fuzzy matching so that partial or approximate terms still surface relevant results.
+Search uses the current catalog name, display name, tags, categories and documentation words, with CamelCase/acronym identifier boundaries split before case normalization.
+Every query token must match, and results retain the catalog order.
+Exact partial matches are accepted directly; an otherwise unmatched token of 4–64 characters may match a whole indexed word with one insertion, deletion, substitution or adjacent transposition.
+Short tokens and tokens longer than 64 characters retain exact partial matching only; the computed search index updates with catalog metadata and adds no separate persistent search authority.
 
 2. **Tool list:** A flat, scrollable list of tools. Each row contains:
 
@@ -1221,6 +1306,9 @@ Displays details and parameters for the currently selected node(s).
 
 **Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. Node Data shows the outputs of all selected nodes.
 
+**Dynamic outputs source context:** Requests from a saved root or nested canvas carry the root workflow name alongside the graph so local tools resolve from their owning directory; downstream refreshes keep that same captured context.
+A failed build, including a missing compiled workflow, returns an unresolved schema without an HTTP 500; an absent named workflow remains a 404.
+
 **Dynamic outputs refresh:** When an input field changes on a node whose tool has `dynamic_outputs === true`, a debounced (200ms) call to `POST /graph/nodes/{node_id}/output_schema` refreshes the node's resolved output pins. The refresh also propagates downstream along positional edges to any visited node with `dynamic_outputs === true`.
 
 **Single-node layout (top to bottom):**
@@ -1251,6 +1339,12 @@ The number of published DataFrames is not limited by the tool's declared `Inputs
 The recursive interface and positional compaction rules are defined in v2 Section 5.
 
 Each input field from the tool's `Inputs` is rendered as a parameter row. Fields are grouped by category (if the tool defines categories via `GUIMeta.group`; otherwise all in one group).
+Selected workflow nodes use the same parameter rows and value editors for their exposed field inputs, addressed by stable interface input ID.
+The public interface owns the field name, schema and typed default; optional editor hints come from matching accepted target metadata, recursively through nested interfaces, and are retained across multiple targets only when they agree.
+Unavailable hints leave a type-appropriate editor without creating an execution-blocking error or substituting another explicitly bound tool's metadata.
+Connected rows remain visible with their source and disable value, Reset and None actions; connection display takes precedence over a retained null or local value.
+Workflow Reset removes the instance override and displays the public default when present, otherwise an inherited/unset state without choosing one target's local default.
+Explicit null remains distinct from an absent override.
 
 **Each parameter row contains:**
 
@@ -1258,10 +1352,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 |---------|-------------|
 | **Pin toggle button** | Icon-only button placed **before** the label, only rendered when `connectable != "never"`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` (three-state: `"never" \| "not_by_default" \| "by_default"`) decides whether the button appears; the button itself decides whether the pin is shown. Current behaviour is to treat both `"not_by_default"` and `"by_default"` identically (pin visible) — a richer UX that hides pins by default for `"not_by_default"` fields is a separate plan. |
 | **Label** | Field name (human-readable) |
-| **Default button** | Resets the field to its default value |
+| **Default button** | Resets a tool parameter to its declared default; for a workflow field, removes the instance binding and restores inheritance. |
 | **None toggle** | Two-state button (only shown when `nullable` is `true` on the field schema). When active, the value is `None` and the input field is hidden. Independent of `required`: a required-and-nullable field still gets the toggle so the user can explicitly choose `None` as a valid value. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
-| **Help text** | Collapsible description from field metadata |
+| **Help text** | Description from field metadata, shown with the parameter. |
 
 **Input field types:**
 
@@ -1281,6 +1375,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `tuple`, `list` | Inline list editor | -- |
 
 When a connectable input is **connected** (pin has an edge), the input field is replaced by a read-only label showing the source: `"segmenter_1.mask"`.
+Its pin remains visible and its hide action is disabled with an explanation until the edge is disconnected.
+Workflow-field pin visibility follows the same transient presentation policy as ordinary pins; visibility changes do not change the workflow interface, bindings or edges.
+Publication is a separate action: fields that accept constants may be exposed through a workflow interface even when they cannot accept a column connection.
+Parameter focus, local parse errors and delayed file-picker results belong to the exact canvas registration, selected node and field; replacing that owner or locking mutation withdraws delayed edits.
 
 #### 3.5.4 Output Fields
 
@@ -1337,6 +1435,9 @@ A collapsible section at the bottom of the Node Panel that shows the tool's docu
 ### 3.6 Node Data (Bottom Panel, Tab 1)
 
 The "No output data for node" message is an informational empty state, styled blue in individual and consolidated tables.
+HTTP 409 result conflicts use the existing ErrorResponse envelope with error=result_pending for transient publication and error=result_unavailable for rejected identity, metadata, format or record validation.
+Individual and consolidated tables use bounded retries only for result_pending; permanent and unclassified conflicts stop loading and show their diagnostic immediately, without automatic polling.
+Unsupported saved cache formats retain their files and explain that compatible output must be regenerated; opening a table never rewrites or discards those results.
 
 Displays the output DataFrames of selected nodes in a tabular view.
 
@@ -1363,7 +1464,11 @@ Focusing an already visible Node Data dock preserves its projection and the acti
 - **Column types:** Columns are annotated with their type. Image columns show special rendering.
 - **Column sizing:** Individual and merged tables initially size columns from the displayed header, reserved sort/filter controls, and a bounded sample of up to 50 loaded rows; image/path cells receive a stable preview/action allowance rather than waiting for thumbnails. Automatic widths are bounded to 120–480 CSS pixels and measured only after fonts are ready and the table is visible. Narrow tables do not stretch to fill the panel; wide tables scroll horizontally. Paging, sorting, filtering, panel resizing, and thumbnail loading do not continually resize established columns. Header text truncates with a full-text tooltip while sort/filter controls remain accessible.
 - **Manual column sizing:** Every header has a visible, theme-aware separator and a wider drag target. Dragging changes only that column within 120–1200 CSS pixels; focused separators also support Left/Right in 10-pixel steps. Double-click or Enter auto-sizes the column to current content. **Reset column widths** clears manual overrides for that table and recalculates automatic widths; there are no separate Fit or Auto modes. Only completed user resizes are persisted, scoped to workflow, table/source identities, and column ID/type; canceled gestures and hidden DOM measurements are never saved. Legacy automatic width snapshots are ignored.
+- **Browsing mode:** Preferences → Display chooses Paginated (the default) or Continuous scrolling for Node Data; there is no second table-local mode toggle.
+- **Virtual rows:** Both modes mount only a visible row window with a small buffer in individual, merged and stacked tables; hidden docks/cards do not initiate image work. Image and ordinary text/path rows retain their own bounded geometry, and scrolling uses source row identities independently of virtual positions. Width sampling uses actual loaded rows, never a total-length placeholder collection.
 - **Pagination:** Large DataFrames are paginated server-side. The application default is 250 rows and the user may choose 25, 50, 100, 250, or 500 in Preferences → Display. Each table may temporarily choose another page size.
+- **Continuous scrolling:** The same table viewport requests bounded server-side blocks near its visible range, deduplicates in-flight blocks, limits concurrent reads and evicts distant row payloads. Scrolling upward reloads evicted blocks against the same captured source identities; unloaded placeholders expose no artifact actions. Permanent result errors require an explicit retry or refresh and never loop automatically. Older unpinned results remain paginated with an explanation rather than claiming exact continuous snapshots.
+- **Snapshot and refresh:** A captured source vector may legitimately contain results from different runs; every source identity stays fixed across additional blocks. Sorting/filtering and changing browsing mode preserve the selected results and reset the viewport/window. Refresh and accepted execution updates replace the inspection atomically; late prior responses cannot append to the new window. Mode changes do not execute or modify the graph.
 - **Direct navigation:** The paginator provides first, previous, next, and last controls; a 1-based page input applied on Enter or blur; total pages; the visible row range; and filtered and unfiltered totals. Page input is clamped to the valid range.
 - **Sorting:** A column header cycles visibly through unsorted, ascending, descending, and unsorted. Sorting is server-side and resets pagination to the first page.
 - **Filtering:** Column-header popovers provide type-appropriate text, numeric, boolean, and empty-value operators. Filters combine with AND semantics, run server-side before sorting and pagination, appear as removable chips, and are applied to CSV export.
@@ -1396,6 +1501,8 @@ Displays real-time logs streamed via WebSocket.
 Concurrent startup consumers share a workflow-tree HTTP request only while it is pending under the same catalog authority and structural generation.
 Successful metadata/catalog writes and deliberate post-mutation, workspace, migration or reconnect refreshes invalidate that pending authority; a completed response is never a persistent catalog cache.
 Tree and flat-list endpoints retain separate response contracts, bounded stale retries and request-owned loading/error state, so an older response or finalizer cannot undo accepted metadata or clear a newer refresh.
+Backend catalog and format discovery use a fresh folder walk that stops at each workflow.json boundary before inspecting workflow-owned results, sources or private state.
+One operation may reuse its own discovered paths for format checks and tree assembly; the next operation sees current filesystem content without a persistent catalog cache.
 
 The application has a persistent **Workflows** panel, analogous to the Tools
 panel. The workflow menu may expose the same commands, but the panel is the
@@ -1465,7 +1572,10 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format. Export saves/promotes
   a dirty draft first so the archive matches the current editable graph.
-  After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for pending checks, unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
+  After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
+  Pending-only checks remain silent so a covered result never flashes a temporary banner.
+  Saved inspection uses the normal graph compiler and source/store authority, without planning, provisioning or execution; unresolved metadata preserves its loading diagnostics.
+  The summary separates unknown tool/output metadata from known viewer requirements needing setup, and Manage/attach environments is available only when a known viewer requirement group needs attention.
   Readiness requests and all report, error, toast, and setup-prefill effects belong to the latest presentation intent, exact canvas registration, active owning workflow, and its local and durable server identity generations; superseded or refused presentations cannot overwrite the accepted workflow's guidance.
 - **Delete:** Delete with confirmation bound to the selected workflow identity generation and, when mounted, its exact canvas-session registration. The frontend and backend both reject a confirmation if that target was removed, remounted, or replaced by a newer same-ID incarnation while the dialog or a freshness flush was pending. The backend serializes deletion with saved workflow, draft, move, and retained-snapshot mutations, then removes the workflow directory, its draft metadata, retained nested snapshots, and configured workflow output/cache directory. The frontend keeps an open target mounted and lifecycle-gated until server success, then closes that exact root and its nested canvases, clears their local recovery and presentation state, and activates the most recently active remaining root tab. If no root tab remains, it opens an existing saved workflow in stable tree order; if no workflow exists, it shows a non-persistent New/Open empty state. A pre-commit failure leaves the target mounted. If local recovery cleanup fails after server deletion has committed, the deleted target stays closed and the UI reports a cleanup warning instead of offering a stale retry. A remote deletion follows the same convergence path, and server identity generations prevent a delayed event or response from deleting or reopening a newer same-ID incarnation. Folder deletion uses the platform dialog system. For non-empty folders, the dialog offers three choices: delete all child workflows/folders, move direct children up to the deleted folder's parent, or cancel.
 
@@ -1558,7 +1668,9 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.4 Display
 
+- **Node Data browsing mode:** Paginated or Continuous scrolling, initially Paginated, applied to existing and new root/nested inspections. Changing it preserves selection, upstream levels, sort/filter and the selected results, while resetting the row viewport to the beginning.
 - **Node Data rows per page:** Select 25, 50, 100, 250, or 500 as the default for newly inspected tables. The initial default is 250, and a table-local page-size change does not rewrite this preference.
+  This preference applies to paginated mode; continuous fetch-block size is an internal bounded implementation choice.
 
 #### 3.12.5 Storage
 
@@ -1623,10 +1735,13 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 2. Parameter commands also project the target node as provisional `unexecuted` before any asynchronous persistence starts.
 3. A root canvas debounces validated full-graph `PUT /workflow-drafts/{id}` writes with `expected_revision`; a nested canvas debounces revision-CAS snapshot writes.
 4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
-5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas or flush the active private snapshot and wait for acceptance for an active nested canvas. Every production graph owner is a registered canvas session; state-free menu and editor shell adapters only delegate to that active registered session.
+5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier.
+   Editor path and tool launches cross that same barrier for an active root canvas or flush the active private snapshot and wait for acceptance for an active nested canvas.
+   A nested node source Open suppresses unchanged hydration writes from its barrier through response acceptance, while actual graph edits retain their conflict protection.
+   Every production graph owner is a registered canvas session; state-free menu and editor shell adapters only delegate to that active registered session.
 6. Run submits the workflow ID and accepted draft revision after the canvas freshness barrier. Full Run and Run Selected both compile the complete backend-loaded graph. Run Selected derives its selected-plus-upstream root scope from that graph's edges and filters only diagnostics proven to belong to unrelated root branches. Only when such diagnostics were ignored, it publicly compiles the selected-plus-upstream execution projection and rechecks accepted draft authority; clean graphs need no second compilation.
 7. During attached local execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas. Durable managed remote editing follows [distributed execution Section 10](platform_specs_distributed_execution.md#10-execution-panel-and-target-selection).
-8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
+8. Draft-change notices are retained by workflow id. Each canonical root persistence resource distinguishes local semantic origin and draft-only pending writes from saved-artifact dirty presentation and recovery-only persistence. Matching canvases without local semantic edits or pending draft writes auto-apply newer external revisions. Same-graph validation preserves the admitted origin; Keep my canvas retains local ownership, while explicit external resolution and clean accepted Save clear it. A remounted dirty frontend draft is conservatively protected because durable writer metadata cannot recover its earlier semantic origin.
 
 `workflow.json` is a saved artifact, not the live editing source.
 Save promotes the accepted graph into its `WorkflowDocument` envelope; portable export translates that captured graph in memory through the public library API.
@@ -1711,6 +1826,7 @@ App starts
 ```
 
 **Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion.
+At desktop window widths, long workflow titles shrink with an ellipsis and expose their full text on hover instead of wrapping the menu bar and moving the application content during startup or canvas activation.
 
 Closing a clean root canvas closes it immediately. Closing a dirty root canvas presents **Save**, **Discard**, and **Cancel**, bound to the initiating canonical canvas even if activation changes while the action is pending. Save uses the exact-snapshot ordinary save path and closes only if no newer edit remains. Discard fences older draft and recovery writes, CAS-resets the accepted backend draft to the saved `workflow.json` graph, resets the initiating canvas state, and then closes; a conflict or failure leaves the tab open. Cancel changes nothing. Nested-snapshot close and discard remain separate and never reset a root draft.
 
@@ -1732,6 +1848,8 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 
 A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`models/workflow.py`](backend/src/bioimageflow_server/models/workflow.py), containing `platform_document_version`, `graph`, `metadata`, `authoring_source`, `owned_source_ids`, and `artifact_hash`.
 Its `graph` is the sole recursive editable definition, including layout and node presentation state; there is no separate persisted `workflow` payload or `gui` graph.
+Saved-workflow dependency inspection captures workflow-local source bindings from their exact owned files without changing the saved graph or compiling the workflow.
+An explicit flat `tools.<module>` binding resolves the contained workflow-relative module before catalog lookup; missing files retain the typed source-missing refusal, while syntax-invalid bytes remain available for editing and are rejected by validation.
 Root draft revision-CAS, private nested-snapshot revision-CAS, explicit promotion/apply, identity generations, source ownership, and workflow-owned runtime results follow [v2 Sections 2, 7, and 12](platform_specs_v2.md#2-canonical-graph-document).
 Detaching saved-workflow provenance follows the exact editor-owner fence in [v2 Section 10](platform_specs_v2.md#10-saved-source-provenance): an open editor at or below the target prevents mutation, and successful Detach preserves the embedded graph and bindings.
 The library workflow is compiled from the accepted graph in memory for validation, execution, and portable export.

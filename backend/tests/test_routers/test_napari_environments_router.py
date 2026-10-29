@@ -36,7 +36,7 @@ def _venv(root: Path) -> Path:
 
 
 async def _client(
-    tmp_path: Path, mode: str, probe_runner=None, manager=None
+    tmp_path: Path, mode: str, probe_runner=None, manager=None, initialize: bool = False,
 ) -> tuple[httpx.AsyncClient, SettingsStore]:
     store = SettingsStore(
         tmp_path / f"{mode}-settings.json",
@@ -48,6 +48,8 @@ async def _client(
         **({"probe_runner": probe_runner} if probe_runner else {}),
         **({"environment_manager_provider": lambda: manager} if manager else {}),
     )
+    if initialize:
+        await service.initialize_registry()
     app = create_app(
         AppConfig(
             settings_store=store,
@@ -60,6 +62,22 @@ async def _client(
         )
     )
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test"), store
+
+
+async def test_default_setup_required_probe_is_typed_409_without_probe_or_mutation(tmp_path: Path) -> None:
+    def forbidden(*_args: object) -> str:
+        raise AssertionError("a declaration cannot be probed before explicit setup")
+
+    client, store = await _client(tmp_path, "desktop", probe_runner=forbidden, initialize=True)
+    environment = store.get().napari_environments[0]
+    before = store.path.read_bytes()
+    async with client:
+        response = await client.post(
+            f"/api/v1/napari/environments/{environment.id}/probe", json={"expected_revision": 1},
+        )
+    assert response.status_code == 409
+    assert response.json()["error"] == "napari_environment_setup_required"
+    assert store.path.read_bytes() == before
 
 
 async def test_routes_return_typed_revisioned_mutations(tmp_path: Path) -> None:

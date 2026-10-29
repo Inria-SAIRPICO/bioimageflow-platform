@@ -58,6 +58,17 @@ class FakeOmeroCredentials:
 
 
 class TestLoad:
+    async def test_node_data_mode_defaults_and_persists_without_changing_page_size(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps({"settings_version": 3, "node_data_page_size": 25}))
+        store = SettingsStore(path=path)
+        assert (await store.load()).node_data_browsing_mode == "paginated"
+        updated = await store.patch({"node_data_browsing_mode": "continuous"})
+        assert updated.node_data_page_size == 25
+        assert _read_disk(path)["node_data_browsing_mode"] == "continuous"
+        assert (await SettingsStore(path=path).load()).node_data_browsing_mode == "continuous"
+        with pytest.raises(ValueError):
+            await store.patch({"node_data_browsing_mode": "unbounded"})
     @pytest.mark.parametrize("configured,persisted", [("webapp", "desktop"), ("desktop", "webapp")])
     async def test_persisted_mode_cannot_override_process_policy(
         self, tmp_path: Path, configured: str, persisted: str
@@ -80,12 +91,43 @@ class TestLoad:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        monkeypatch.delenv("BIOIMAGEFLOW_HOME", raising=False)
+        monkeypatch.setattr("bioimageflow.paths._DEFAULT_HOME", tmp_path / ".bioimageflow")
 
         store = SettingsStore.default()
         await store.load()
 
         assert store.path == tmp_path / ".bioimageflow" / "settings.json"
         assert store.get().deployment_mode == "desktop"
+
+    async def test_profile_override_isolates_settings_and_reuses_only_that_profile(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        personal = tmp_path / "personal"
+        personal.mkdir()
+        sentinel = personal / "settings.json"
+        sentinel.write_text('{"external_editor": "personal-editor"}')
+        monkeypatch.setattr("bioimageflow.paths._DEFAULT_HOME", personal)
+        monkeypatch.delenv("BIOIMAGEFLOW_TOOL_STORE", raising=False)
+        for profile_name in ("first", "second"):
+            profile = tmp_path / profile_name
+            monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(profile))
+            store = SettingsStore.default()
+            assert store.path == profile / "settings.json"
+            assert store.get().tool_store_path == str(profile / "tool_packages")
+            assert (await store.load()).external_editor is None
+            await store.patch({"external_editor": f"{profile_name}-editor"})
+            restarted = SettingsStore.default()
+            assert (await restarted.load()).external_editor == f"{profile_name}-editor"
+        assert sentinel.read_text() == '{"external_editor": "personal-editor"}'
+
+    async def test_profile_preserves_explicit_tool_store_override(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(tmp_path / "profile"))
+        monkeypatch.setenv("BIOIMAGEFLOW_TOOL_STORE", str(tmp_path / "shared-tools"))
+        store = SettingsStore.default()
+        assert (await store.load()).tool_store_path == str(tmp_path / "shared-tools")
 
     async def test_missing_file_seeds_defaults(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
@@ -369,7 +411,6 @@ class TestPatch:
         assert on_disk["new_workflow_execution"] == "parallel"
         assert store.get().new_workflow_execution == "parallel"
 
-    @pytest.mark.campaign_excluded(reason="parsl")
     async def test_patch_old_execution_engine_is_rejected(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)

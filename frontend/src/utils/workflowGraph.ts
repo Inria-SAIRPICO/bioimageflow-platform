@@ -10,6 +10,7 @@ import { connectionSourceLabel } from '@/utils/displayNames'
 import {
   encodeEndpointHandle,
 } from '@/utils/endpointHandles'
+import { workflowInputPresentations } from './workflowInputPresentation'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 
 export interface VueFlowGraph {
@@ -138,7 +139,7 @@ export function graphStateToVueFlow(
   graph: GraphState,
   getToolByName: (name: string) => ToolMetadata | undefined,
   missingTools: MissingTool[] = [],
-  getToolForNode?: (node: ToolNodeState) => ToolMetadata | null | undefined,
+  getToolForNode?: (node: ToolNodeState, scopedId: string) => ToolMetadata | null | undefined,
 ): VueFlowGraph {
   const missingByNode = new Map(missingTools.map(tool => [tool.node_id, tool]))
   const edges = graph.edges.map((edge) => {
@@ -164,12 +165,16 @@ export function graphStateToVueFlow(
     }
   })
   const nodes = graph.nodes.map((node) => {
-    const scopedTool = node.type === 'tool' ? getToolForNode?.(node) : undefined
+    const scopedTool = node.type === 'tool' ? getToolForNode?.(node, node.id) : undefined
     const tool = node.type === 'tool'
       ? scopedTool === undefined ? getToolByName(node.tool_name) : scopedTool
       : undefined
     const data = node.type === 'workflow'
-      ? workflowNodeData(node)
+      ? { ...workflowNodeData(node), workflowInputPresentation: workflowInputPresentations(node.workflow, node.id,
+          (leaf, scopedId) => {
+            const accepted = getToolForNode?.(leaf, scopedId)
+            return accepted === undefined ? getToolByName(leaf.tool_name) : accepted
+          }) }
       : toolNodeData(
           node,
           tool,

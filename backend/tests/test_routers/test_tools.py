@@ -14,6 +14,7 @@ import logging
 import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import anyio
@@ -30,7 +31,7 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
-from bioimageflow_server.models.graph import ToolNodeState
+from bioimageflow_server.models.graph import ToolNodeState, WorkflowNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
@@ -537,40 +538,53 @@ async def test_rename_tool_target_conflict(workflow_root: Path):
     assert resp.status_code == 409
 
 
-async def test_tool_usage_reports_saved_workflows(workflow_root: Path):
+@pytest.mark.parametrize("nested", [False, True])
+async def test_tool_usage_reports_saved_workflows(workflow_root: Path, nested: bool):
     registry = ToolRegistryService()
     registry.register_tool("MyTool", _make_tool("MyTool"))
     store = WorkflowStoreService(workflow_root, registry)
-    store.create_workflow(WorkflowCreate(name="uses_tool"))
+    workflow_id = "folder/uses_tool"
+    store.create_workflow(WorkflowCreate(name=workflow_id))
+    tool = ToolNodeState(
+        type="tool", id="n1", name="n1", tool_name="MyTool", position=(0, 0),
+        parameters={},
+    )
+    child = WorkflowNodeState(
+        type="workflow", id="child", name="MyTool", position=(320, 0),
+        bindings={},
+        workflow=graph_state(nodes=[tool] if nested else []),
+    )
+    outer = WorkflowNodeState(
+        type="workflow", id="outer", name="outer", position=(640, 0),
+        bindings={},
+        workflow=graph_state(nodes=[child]),
+    )
     store.save_workflow(
-        "uses_tool",
+        workflow_id,
         WorkflowSaveBody(
             graph=graph_state(
-                nodes=[
-                    ToolNodeState(type="tool",
-                        id="n1",
-                        name="n1",
-                        tool_name="MyTool",
-                        position=(0, 0),
-                        parameters={},
-                    )
-                ],
+                nodes=[outer] if nested else [outer, tool],
                 edges=[],
             )
         ),
     )
     store.create_workflow(WorkflowCreate(name="other"))
+    store.save_workflow(
+        "other", WorkflowSaveBody(graph=graph_state(nodes=[
+            child.model_copy(update={"workflow": graph_state()}),
+        ])),
+    )
     config = AppConfig(
         tool_registry=registry,
         workflow_root=workflow_root,
         workflow_store=store,
     )
     async for client in _client(config):
-        resp = await client.get("/api/v1/tools/MyTool/usage", params={"workflow_name": "uses_tool"})
+        resp = await client.get("/api/v1/tools/MyTool/usage", params={"workflow_name": workflow_id})
     assert resp.status_code == 200
     assert resp.json() == {
         "tool_name": "MyTool",
-        "affected_workflows": ["uses_tool"],
+        "affected_workflows": [workflow_id],
         "in_open_workflow": None,
     }
 
@@ -853,8 +867,8 @@ class _FakeToolEnvironmentService:
         self.stopped: list[str] = []
         self.recreated: list[str] = []
 
-    def location(self, env_name: str) -> str:
-        return f"/wetlands/environments/{env_name}"
+    def locations(self, env_names: set[str]) -> dict[str, str]:
+        return {name: f"/wetlands/environments/{name}" for name in env_names}
 
     async def start(self, env_name: str) -> str:
         self.started.append(env_name)
@@ -903,6 +917,82 @@ async def test_get_tools_includes_managed_environment_location():
         "name": "cellpose-env",
         "dependencies": {},
     }
+
+
+async def test_get_tools_batches_inventory_for_many_tools_and_refreshes_each_request(tmp_path: Path):
+    registry = ToolRegistryService()
+    for index in range(33):
+        tool = _make_tool(f"Tool{index}")
+        tool.environment = {"name": f"env-{index % 3}", "dependencies": {}}
+        registry.register_tool(tool.name, tool)
+    original = [tool.model_dump() for tool in registry.list_tools()]
+    managed = SimpleNamespace(
+        environments_root=tmp_path,
+        managed_environments=MagicMock(return_value=(SimpleNamespace(name="env-0", path=tmp_path / "first"),)),
+    )
+    envs = ToolEnvironmentService(registry=registry, managed_environment_manager=managed)
+    config = AppConfig(tool_registry=registry, tool_environment_service=envs, workflow_root=tmp_path / "workflows")
+
+    async for client in _client(config):
+        first = await client.get("/api/v1/tools")
+        assert first.status_code == 200
+        assert managed.managed_environments.call_count == 1
+        expected = [
+            {**tool, "environment": {**tool["environment"], "path": str((tmp_path / (
+                "first" if index % 3 == 0 else f"env-{index % 3}"
+            )).resolve())}}
+            for index, tool in enumerate(original)
+        ]
+        assert first.json() == expected
+        managed.managed_environments.return_value = (SimpleNamespace(name="env-0", path=tmp_path / "second"),)
+        second = await client.get("/api/v1/tools")
+        assert second.status_code == 200
+        assert second.json()[0]["environment"]["path"] == str((tmp_path / "second").resolve())
+        assert managed.managed_environments.call_count == 2
+    assert [tool.model_dump() for tool in registry.list_tools()] == original
+
+
+async def test_get_tools_without_environments_does_not_construct_manager(tmp_path: Path):
+    registry = ToolRegistryService()
+    registry.register_tool("Cellpose", _make_tool())
+    envs = ToolEnvironmentService(registry=registry)
+    config = AppConfig(tool_registry=registry, tool_environment_service=envs, workflow_root=tmp_path / "workflows")
+
+    async for client in _client(config):
+        response = await client.get("/api/v1/tools")
+
+    assert response.status_code == 200
+    assert response.json() == [registry.get_tool("Cellpose").model_dump()]
+    assert envs._wetlands is None
+    assert envs._managed_environments is None
+
+
+async def test_get_tools_inventory_io_does_not_block_health(tmp_path: Path):
+    entered, release = threading.Event(), threading.Event()
+
+    class BlockingLocations(_FakeToolEnvironmentService):
+        def locations(self, env_names: set[str]) -> dict[str, str]:
+            entered.set()
+            assert release.wait(timeout=5), "Inventory did not receive its release"
+            return super().locations(env_names)
+
+    registry = ToolRegistryService()
+    tool = _make_tool()
+    tool.environment = {"name": "cellpose-env", "dependencies": {}}
+    registry.register_tool(tool.name, tool)
+    config = AppConfig(tool_registry=registry, tool_environment_service=BlockingLocations(), workflow_root=tmp_path / "workflows")
+    async for client in _client(config):
+        tools = asyncio.create_task(client.get("/api/v1/tools"))
+        try:
+            assert await anyio.to_thread.run_sync(lambda: entered.wait(timeout=2))
+            with anyio.fail_after(2):
+                health = await client.get("/api/v1/health")
+            assert health.status_code == 200
+            assert not tools.done()
+        finally:
+            release.set()
+            response = await tools
+        assert response.status_code == 200
 
 
 async def test_stop_environment_delegates_to_environment_service():

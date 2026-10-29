@@ -1,5 +1,5 @@
 import { test, expect, type Response } from '@playwright/test'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { NodeDataResponse, ResultArtifactIdentity, NestedWorkflowSnapshotResponse, WorkflowFile } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
@@ -28,6 +28,14 @@ class ${toolName}(DataFrameTool):
   let primaryOccurred = false
   let cleanupFailed = false
   let cleanupFailure: unknown
+  const nestedWrites: Response[] = []
+  const observeNestedWrite = (response: Response) => {
+    if (response.request().method() === 'PUT'
+      && new URL(response.url()).pathname.startsWith('/api/v1/nested-workflow-snapshots/')) {
+      nestedWrites.push(response)
+    }
+  }
+  page.on('response', observeNestedWrite)
   try {
     expect((await page.request.patch(`${API}/settings`, { data: { external_editor: 'true' } })).ok()).toBeTruthy()
     expect((await page.request.post(`${API}/workflows`, { data: { name: original } })).ok()).toBeTruthy()
@@ -65,10 +73,21 @@ class ${toolName}(DataFrameTool):
     const node = page.locator('.vue-flow__node[data-id="increment"]')
     await expect(node).toBeVisible()
     await node.click()
-    const rootDraft = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
+    // The command flushes pending canvas edits before dispatch. Capture that
+    // accepted revision, rather than racing the flush with a pre-click GET.
+    let captureDraft!: (draft: WorkflowDraftResponse) => void
+    const draftAtDispatch = new Promise<WorkflowDraftResponse>(resolve => { captureDraft = resolve })
+    await page.route('**/api/v1/editor/open-node', async route => {
+      const response = await page.request.get(`${API}/workflow-drafts/${imported}`)
+      expect(response.ok(), await response.text()).toBeTruthy()
+      captureDraft(await response.json())
+      await route.continue()
+    })
     const opened = page.waitForResponse(response => response.url().endsWith('/editor/open-node'))
     await page.getByTestId('open-tool-script').click()
     const openResponse = await opened
+    const rootDraft = await draftAtDispatch
+    await page.unroute('**/api/v1/editor/open-node')
     expect(openResponse.ok(), await openResponse.text()).toBeTruthy()
     expect(openResponse.request().postDataJSON()).toEqual({
       workflow_id: imported, identity_generation: importedFile.info.identity_generation,
@@ -77,15 +96,15 @@ class ${toolName}(DataFrameTool):
     const openedRoot = await openResponse.json()
     expect(openedRoot).toMatchObject({
       opened: true, method: 'external', snapshot: null,
-      project_path: dirname(dirname(dirname(importedFile.info.path))),
     })
+    expect(realpathSync(openedRoot.project_path)).toBe(realpathSync(dirname(dirname(dirname(importedFile.info.path)))))
     const path = openedRoot.path
-    expect(path).not.toBe(originalPath)
+    expect(realpathSync(path)).not.toBe(realpathSync(originalPath))
     expect(path).toContain(imported)
     expect(readFileSync(path)).toEqual(originalBytes)
     const importedSourceRoot = join(dirname(importedFile.info.results_path), 'tools', importedNode.source_module)
     const importedManifest = JSON.parse(readFileSync(join(importedSourceRoot, 'module.json'), 'utf8'))
-    expect(path).toBe(join(importedSourceRoot, importedManifest.filename))
+    expect(realpathSync(path)).toBe(realpathSync(join(importedSourceRoot, importedManifest.filename)))
     expect(readFileSync(originalPath)).toEqual(originalBytes)
     expect((await (await page.request.get(`${API}/tools/${toolName}/source`)).json()).path).toBe(originalPath)
     const afterRootOpen = await (await page.request.get(`${API}/workflow-drafts/${imported}`)).json() as WorkflowDraftResponse
@@ -221,7 +240,7 @@ class ${toolName}(DataFrameTool):
     const sourceRoot = join(dirname(parentInfo.results_path), 'tools', sourceId)
     const manifest = JSON.parse(readFileSync(join(sourceRoot, 'module.json'), 'utf8'))
     const embeddedPath = join(sourceRoot, manifest.filename)
-    expect(embeddedPath).not.toBe(path)
+    expect(realpathSync(embeddedPath)).not.toBe(realpathSync(path))
     expect(readFileSync(embeddedPath, 'utf8')).toContain('n + 20')
     await expect.poll(async () => {
       const draft = await (await page.request.get(`${API}/workflow-drafts/${parent}`)).json()
@@ -249,41 +268,66 @@ class ${toolName}(DataFrameTool):
     await expect(page.locator('.nested-workflow-editor:visible')).toHaveCount(1)
     await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
-    const openPrivateSource = async (expectedRevision: number) => {
-      const opening = page.waitForResponse(candidate => candidate.request().method() === 'POST'
-        && new URL(candidate.url()).pathname === '/api/v1/editor/open-node')
+    const openPrivateSource = async (baseline: NestedWorkflowSnapshotResponse) => {
+      let writesBeforeOpen: Response[] = []
+      const invoked = page.waitForRequest(candidate => {
+        if (candidate.method() !== 'POST'
+          || new URL(candidate.url()).pathname !== '/api/v1/editor/open-node') return false
+        // Editor Open flushes any queued nested persistence before taking its
+        // CAS revision. Retain only writes accepted before this exact request.
+        writesBeforeOpen = nestedWrites.filter(response => new URL(response.url()).pathname
+          === `/api/v1/nested-workflow-snapshots/${nested.session_id}`)
+        return true
+      })
+      const opening = page.waitForResponse(async candidate => candidate.request() === await invoked)
       await page.getByTestId('open-tool-script').click()
       const accepted = await opening
       expect(accepted.ok(), await accepted.text()).toBeTruthy()
+      let before = baseline
+      for (const write of writesBeforeOpen) {
+        expect(write.ok(), await write.text()).toBeTruthy()
+        const snapshot = await write.json() as NestedWorkflowSnapshotResponse
+        if (snapshot.snapshot_revision <= before.snapshot_revision) continue
+        expect(write.request().postDataJSON()).toEqual({
+          expected_revision: before.snapshot_revision, graph: before.graph,
+        })
+        expect(snapshot.session_id).toBe(before.session_id)
+        expect(snapshot.owner).toEqual(before.owner)
+        expect(snapshot.parent_node_id).toBe(before.parent_node_id)
+        expect(snapshot.snapshot_revision).toBe(before.snapshot_revision + 1)
+        expect(snapshot.graph).toEqual(before.graph)
+        before = snapshot
+      }
       expect(accepted.request().postDataJSON()).toEqual({
         workflow_id: parent, identity_generation: parentInfo.identity_generation,
-        node_id: 'increment', session_id: nested.session_id, expected_revision: expectedRevision,
+        node_id: 'increment', session_id: nested.session_id, expected_revision: before.snapshot_revision,
       })
       const body = await accepted.json() as {
         opened: boolean; method: string; path: string; project_path: string; snapshot: NestedWorkflowSnapshotResponse;
       }
       expect(body).toMatchObject({
         opened: true, method: 'external',
-        project_path: dirname(dirname(dirname(parentInfo.path))),
       })
+      expect(realpathSync(body.project_path)).toBe(realpathSync(dirname(dirname(dirname(parentInfo.path)))))
       expect(body.snapshot.session_id).toBe(nested.session_id)
-      return body
+      return { ...body, before }
     }
-    const privateSource = await openPrivateSource(nested.snapshot_revision)
-    expect(privateSource.snapshot.snapshot_revision).toBe(nested.snapshot_revision + 1)
+    const privateSource = await openPrivateSource(nested)
+    expect(privateSource.snapshot.snapshot_revision).toBe(privateSource.before.snapshot_revision + 1)
     const privateNode = privateSource.snapshot.graph.nodes.find(candidate => candidate.id === 'increment')
     if (privateNode?.type !== 'tool' || !privateNode.source_module) throw new Error('No private source binding')
     expect(privateNode.source_module).toMatch(new RegExp(`^edit_${nested.session_id.replaceAll('-', '')}_`))
     expect(privateNode.source_module).not.toBe(sourceId)
-    expect(new Set([originalPath, path, embeddedPath, privateSource.path]).size).toBe(4)
+    expect(new Set([originalPath, path, embeddedPath, privateSource.path].map(path => realpathSync(path))).size).toBe(4)
     expect(readFileSync(privateSource.path)).toEqual(embeddedBytes)
     const privateManifestRoot = join(dirname(parentInfo.results_path), 'tools', privateNode.source_module)
     const privateManifest = JSON.parse(readFileSync(join(privateManifestRoot, 'module.json'), 'utf8'))
-    expect(privateSource.path).toBe(join(privateManifestRoot, privateManifest.filename))
+    expect(realpathSync(privateSource.path)).toBe(realpathSync(join(privateManifestRoot, privateManifest.filename)))
     await page.locator('.nested-workflow-editor:visible .vue-flow__node[data-id="increment"]').click()
-    const repeated = await openPrivateSource(privateSource.snapshot.snapshot_revision)
+    const repeated = await openPrivateSource(privateSource.snapshot)
     expect(repeated.path).toBe(privateSource.path)
-    expect(repeated.snapshot).toEqual(privateSource.snapshot)
+    expect(repeated.snapshot).toEqual(repeated.before)
+    expect(repeated.snapshot.graph).toEqual(privateSource.snapshot.graph)
     writeFileSync(privateSource.path, readFileSync(privateSource.path, 'utf8').replace('n + 20', 'n + 40'))
     expect(readFileSync(privateSource.path, 'utf8')).toContain('n + 40')
     expect(readFileSync(embeddedPath)).toEqual(embeddedBytes)
@@ -299,12 +343,25 @@ class ${toolName}(DataFrameTool):
     primaryOccurred = true
     throw error
   } finally {
+    page.off('response', observeNestedWrite)
     const cleanups = [
       async () => { await page.goto('about:blank') },
       async () => { expect((await page.request.patch(`${API}/settings`, { data: { external_editor: oldEditor } })).ok()).toBeTruthy() },
       ...[imported, original, parent].map(name => async () => {
-        const response = await page.request.delete(`${API}/workflows/${name}`)
-        expect([200, 204, 404]).toContain(response.status())
+        let status = 0
+        let detail = ''
+        // A final source-validation write can retain an idle mutation lease
+        // after the page closes. Retry only that explicit lock response;
+        // unrelated failures must still fail cleanup immediately.
+        await expect.poll(async () => {
+          const response = await page.request.delete(`${API}/workflows/${name}`)
+          status = response.status()
+          detail = await response.text()
+          if (status !== 423) return true
+          const conflict = await response.json()
+          return conflict.detail !== 'Workflow editing is locked while execution is in progress'
+        }, { timeout: 10_000, intervals: [100, 250, 500] }).toBe(true)
+        expect([200, 204, 404], detail).toContain(status)
       }),
     ]
     for (const cleanup of cleanups) {

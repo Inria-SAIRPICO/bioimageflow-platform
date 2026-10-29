@@ -21,6 +21,7 @@ from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_artifacts import (
     OwnedWorkflowSources,
     artifact_hash,
+    capture_working_graph,
     resolve_local_source,
 )
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -340,6 +341,112 @@ def test_known_local_source_can_be_opened_to_repair_invalid_python(tmp_path: Pat
     path.write_text("invalid Python !!!")
     registry = Mock(resolve_tool_source=Mock(return_value=path))
     assert resolve_local_source(tmp_path, "QaIncrement", registry) == path
+
+
+def test_explicit_flat_local_binding_precedes_catalog_and_unrelated_invalid_file(tmp_path: Path):
+    from unittest.mock import Mock
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "selected.py").write_text(SOURCE)
+    (tools / "unrelated.py").write_text("invalid Python !!!")
+    graph = GraphState.model_validate({
+        "schema_version": 2, "name": "local", "display_name": "Local",
+        "nodes": [{
+            "type": "tool", "id": "selected", "name": "Selected", "position": [0, 0],
+            "tool_name": "QaIncrement", "tool_class": "QaIncrement", "tool_module": "tools.selected",
+            "parameters": {},
+        }],
+        "edges": [], "interface": {"inputs": [], "outputs": []}, "config": {},
+    })
+    registry = Mock()
+    registry.get_tool.return_value.source_kind = "package"
+
+    captured, records = capture_working_graph(graph, tmp_path, registry)
+
+    assert captured.nodes[0].source_module == records[0]["id"]
+    assert records[0]["source"] == SOURCE
+    assert records[0]["filename"] == "selected.py"
+    assert graph.nodes[0].source_module is None
+    registry.get_tool.assert_not_called()
+    registry.resolve_tool_source.assert_not_called()
+
+
+@pytest.mark.parametrize("binding", [
+    {"tool_module": "selected.module"},
+    {"tool_module": "tools.selected", "tool_package": "selected-tools", "tool_package_version": "1.0"},
+])
+def test_explicit_module_or_package_cannot_borrow_same_named_local_class(tmp_path: Path, binding):
+    from unittest.mock import Mock
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "selected.py").write_text(SOURCE)
+    graph = GraphState.model_validate({
+        "schema_version": 2, "name": "bound", "display_name": "Bound",
+        "nodes": [{
+            "type": "tool", "id": "bound", "name": "Bound", "position": [0, 0],
+            "tool_name": "QaIncrement", "tool_class": "QaIncrement", **binding,
+            "parameters": {},
+        }],
+        "edges": [], "interface": {"inputs": [], "outputs": []}, "config": {},
+    })
+    registry = Mock()
+    registry.get_tool.return_value.source_kind = "custom"
+
+    captured, records = capture_working_graph(graph, tmp_path, registry)
+
+    assert captured == graph
+    assert records == []
+    registry.get_tool.assert_not_called()
+    registry.resolve_tool_source.assert_not_called()
+
+
+def test_unbound_class_scan_ignores_unrelated_syntax_error_and_preserves_ambiguity(tmp_path: Path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    source = tools / "unexpected_filename.py"
+    source.write_text(SOURCE)
+    (tools / "unrelated.py").write_text("invalid Python !!!")
+    assert resolve_local_source(tmp_path, "QaIncrement") == source
+    (tools / "duplicate.py").write_text(SOURCE)
+    with pytest.raises(ValueError, match="Several workflow files define QaIncrement"):
+        resolve_local_source(tmp_path, "QaIncrement")
+
+
+def test_rebind_preserves_current_local_binding_before_later_source_capture(tmp_path: Path):
+    from bioimageflow_server.models.workflow import WorkflowSaveBody
+
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(tmp_path / "workflows", registry)
+    store.create_workflow(WorkflowCreate(name="local"))
+    source = store.workflow_dir("local") / "tools" / "unexpected_filename.py"
+    source.parent.mkdir(exist_ok=True)
+    source.write_text(SOURCE)
+    registry.register_custom_tool_file(source, "QaIncrement")
+    graph = GraphState.model_validate({
+        "schema_version": 2, "name": "local", "display_name": "Local",
+        "nodes": [{
+            "type": "tool", "id": "selected", "name": "Selected", "position": [0, 0],
+            "tool_name": "QaIncrement", "parameters": {},
+        }],
+        "edges": [], "interface": {"inputs": [], "outputs": []}, "config": {},
+    })
+    store.save_workflow("local", WorkflowSaveBody(graph=graph))
+
+    rebound = store.rebind_versions("local").graph
+    edited = SOURCE.replace("n + 1", "n + 20")
+    source.write_text(edited)
+    captured, records = capture_working_graph(rebound, store.workflow_dir("local"), registry)
+
+    assert len(records) == 1
+    assert records[0]["source"] == edited
+    assert captured.nodes[0].source_module == records[0]["id"]
+    assert rebound.nodes[0].tool_module == graph.nodes[0].tool_module
+    assert rebound.nodes[0].tool_class == graph.nodes[0].tool_class
+    assert rebound.nodes[0].tool_package == graph.nodes[0].tool_package
+    assert rebound.nodes[0].tool_package_version == graph.nodes[0].tool_package_version
+    assert rebound.nodes[0].source_module == graph.nodes[0].source_module
 
 
 def test_owned_source_engine_does_not_depend_on_same_named_catalog_tool(tmp_path: Path):

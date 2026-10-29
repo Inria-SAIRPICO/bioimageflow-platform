@@ -14,6 +14,7 @@ type GraphGetter = () => RawGraph
 type ToolGetter = (nodeId: string) => ToolMetadata | undefined
 
 interface ResolvedOutputContext {
+  readonly canvasId: CanvasId
   readonly outputs: Record<string, NodeOutputSchemaResponse>
   readonly timers: Map<string, ReturnType<typeof setTimeout>>
   readonly requestIds: Map<string, number>
@@ -27,13 +28,28 @@ interface ResolvedOutputRequest {
 
 const EMPTY_OUTPUTS = Object.freeze({}) as Record<string, NodeOutputSchemaResponse>
 
-function createContext(): ResolvedOutputContext {
+function createContext(canvasId: CanvasId): ResolvedOutputContext {
   return {
+    canvasId,
     outputs: reactive<Record<string, NodeOutputSchemaResponse>>({}),
     timers: new Map(),
     requestIds: new Map(),
     released: false,
   }
+}
+
+/** Nested canvases keep their root workflow's owned source directory. */
+function workflowForCanvas(canvasId: CanvasId): string | null {
+  const seen = new Set<CanvasId>()
+  let current: CanvasId = canvasId
+  while (!seen.has(current)) {
+    seen.add(current)
+    const descriptor = canvasSessionRegistry.get(current)?.descriptor
+    if (!descriptor) return null
+    if (descriptor.kind === 'root') return descriptor.workflowId
+    current = descriptor.parentCanvasId
+  }
+  return null
 }
 
 export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
@@ -44,7 +60,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     if (releasedCanvasIds.has(canvasId)) return null
     const existing = canvasContexts.get(canvasId)
     if (existing) return existing
-    const created = createContext()
+    const created = createContext(canvasId)
     canvasContexts.set(canvasId, created)
     return created
   }
@@ -110,11 +126,12 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     nodeId: string,
     graph: SerializedGraph,
     requestId: number,
+    workflowName: string | null,
     origin?: ResolvedOutputRequest,
   ): Promise<boolean> {
     let result: NodeOutputSchemaResponse
     try {
-      result = await fetchNodeOutputSchema(nodeId, graph)
+      result = await fetchNodeOutputSchema(nodeId, graph, workflowName)
     } catch {
       result = { resolved: false, columns: {} }
     }
@@ -145,7 +162,8 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
       if (!isCurrentRequest(context, nodeId, requestId)) return
       const raw = getGraph()
       const graph = serializeGraph(raw)
-      const exposed = await fetchAndPublish(context, nodeId, graph, requestId)
+      const workflowName = workflowForCanvas(context.canvasId)
+      const exposed = await fetchAndPublish(context, nodeId, graph, requestId, workflowName)
       if (!exposed) return
       await propagateDownstream(
         context,
@@ -153,6 +171,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
         requestId,
         graph,
         getToolForNode,
+        workflowName,
       )
     }, 200)
     context.timers.set(nodeId, timer)
@@ -183,6 +202,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     startRequestId: number,
     graph: SerializedGraph,
     getToolForNode: ToolGetter,
+    workflowName: string | null,
   ): Promise<void> {
     const visited = new Set<string>()
     const queue = [startNodeId]
@@ -215,6 +235,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
             targetId,
             graph,
             requestId,
+            workflowName,
             { nodeId: startNodeId, requestId: startRequestId },
           )
           if (!isCurrentRequest(context, startNodeId, startRequestId)) return
@@ -234,7 +255,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     clearTimer(context, nodeId)
     const requestId = nextRequestId(context, nodeId)
     const graph = serializeGraph(getGraph())
-    await fetchAndPublish(context, nodeId, graph, requestId)
+    await fetchAndPublish(context, nodeId, graph, requestId, workflowForCanvas(context.canvasId))
   }
 
   function refreshNow(nodeId: string, getGraph: GraphGetter): Promise<void> {

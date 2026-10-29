@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useTableColumnWidths } from '@/composables/useTableColumnWidths'
 import NodeDataColumnResizer from './NodeDataColumnResizer.vue'
 import './nodeDataTable.css'
 import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import VirtualDataTable from './VirtualDataTable.vue'
 import ImageCell from './ImageCell.vue'
 import NodeDataActiveFilters from './NodeDataActiveFilters.vue'
 import NodeDataColumnHeader from './NodeDataColumnHeader.vue'
@@ -14,6 +13,8 @@ import { useDataTableStore } from '@/stores/dataTable'
 import type { DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
 import { useWorkflowStore } from '@/stores/workflow'
+import type { ResultArtifactIdentity } from '@/api/types'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   nodeId: string
@@ -22,10 +23,12 @@ const props = defineProps<{
   disabled?: boolean
   columnAliases?: Record<string, string>
   columnFilter?: string[]
+  resultIdentity?: ResultArtifactIdentity | null
 }>()
 
 const store = useDataTableStore()
 const workflowStore = useWorkflowStore()
+const settings = useSettingsStore()
 
 const data = computed(() => store.getNodeData(props.nodeId))
 const loading = computed(() => store.isLoading(props.nodeId))
@@ -33,14 +36,42 @@ const pending = computed(() => store.isPending(props.nodeId))
 const error = computed(() => store.getError(props.nodeId))
 const pageState = computed(() => store.getPageState(props.nodeId))
 
-const rowModels = computed(() => {
-  const response = data.value
-  if (!response) return []
-  return response.rows.map((row, i) => ({
-    ...row,
-    __absoluteRow: response.absolute_rows[i],
-  }))
+const entries = computed(() => store.tableEntries(props.nodeId))
+const rowModels = computed(() => entries.value.slice(0, 50).map(entry => entry.row))
+const continuous = computed(() => store.isContinuous(props.nodeId))
+const windowErrors = computed(() => store.continuousErrors(props.nodeId))
+const resetKey = computed(() => JSON.stringify([store.inspectionKey, props.nodeId, store.browsingMode,
+  pageState.value.page, pageState.value.sortBy, pageState.value.sortOrder, pageState.value.filters]))
+function rowHeight(row: Record<string, unknown>): number {
+  return visibleColumns.value.some(column => hasImageBehavior(column, row[column])) ? 110 : 40
+}
+function range(start: number, end: number): void { store.loadTableRange(start, end, props.nodeId) }
+const visible = ref(false)
+let observer: IntersectionObserver | null = null
+function loadVisible(force = false): void {
+  if (visible.value && (force || !data.value) && (force || (!loading.value && !error.value))) {
+    void store.fetchNodeData(props.nodeId, { workflowName: props.workflowName, toolName: props.toolName,
+      resultIdentity: props.resultIdentity ?? data.value?.source_identity, page: 0, pageSize: settings.settings?.node_data_page_size ?? 250 })
+  }
+}
+watch(visible, () => loadVisible())
+watch([() => props.nodeId, () => props.workflowName, () => props.resultIdentity], () => loadVisible(true))
+watch(() => store.inspectionKey, () => {
+  const needsWindow = store.isContinuous(props.nodeId) && (data.value?.total_rows ?? 0) > 0
+    && store.tableEntries(props.nodeId).length === 0
+  loadVisible(needsWindow || Boolean(data.value && !data.value.source_identity))
 })
+watch(() => store.browsingMode, () => loadVisible(true))
+watch(() => settings.settings?.node_data_page_size, () => { if (store.browsingMode === 'paginated') loadVisible(true) })
+onMounted(() => {
+  if (!root.value) return
+  if (typeof IntersectionObserver === 'undefined') visible.value = true
+  else {
+    observer = new IntersectionObserver(items => { visible.value = items.some(item => item.isIntersecting) })
+    observer.observe(root.value)
+  }
+})
+onBeforeUnmount(() => observer?.disconnect())
 
 const visibleColumns = computed(() => {
   const response = data.value
@@ -130,7 +161,7 @@ function onPage(page: number): void {
   >
     <div class="node-data-table__toolbar">
       <slot name="toolbar-actions" />
-      <Button icon="pi pi-refresh" label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
+      <Button icon="pi pi-refresh" aria-label="Reset column widths" size="small" text title="Size columns to headers and loaded values" @click="autoSize()" />
       <Button
         icon="pi pi-download"
         label="CSV"
@@ -171,23 +202,18 @@ function onPage(page: number): void {
         :labels="columnLabels"
         @change="setFilters"
       />
-      <DataTable
-        :value="rowModels"
-        data-key="__absoluteRow"
-        size="small"
-        scrollable
-        scroll-height="flex"
-        :loading="loading"
-        :table-style="tableStyle"
-        class="node-data-table__grid node-data-sized-grid"
-      >
-        <Column
-          v-for="column in sizingColumns"
-          :key="column.id"
-          :field="column.id"
-          :style="columnStyle(column)"
-        >
-          <template #header>
+      <div v-if="store.browsingMode === 'continuous' && !continuous && !data.source_identity" class="node-data-table__message">
+        Continuous scrolling requires a captured result. This output uses pagination.
+      </div>
+      <div v-for="message in windowErrors" :key="message" class="node-data-table__message" role="alert">
+        {{ message }} <Button label="Retry rows" text @click="store.retryContinuous(nodeId)" />
+      </div>
+      <VirtualDataTable :columns="sizingColumns" :entries="entries"
+        :total-rows="continuous ? data.total_rows : data.rows.length" :row-height="rowHeight"
+        :estimated-row-height="sizingColumns.some(column => isImageColumn(column.id)) ? 110 : 40"
+        :column-style="columnStyle" :table-style="tableStyle" :reset-key="resetKey" :loading="loading"
+        class="node-data-table__grid" @range="range">
+        <template #header="{ column }">
             <NodeDataColumnHeader
               :column="column.id"
               :label="column.label"
@@ -200,21 +226,23 @@ function onPage(page: number): void {
               @resize="(value, commit) => resize(column, value, commit)"
               @nudge="delta => resize(column, width(column) + delta, true)"
               @cancel="cancelResize" @autosize="autoSize(column)" />
-          </template>
-          <template #body="slotProps">
+
+        </template>
+        <template #body="{ row, column }">
             <div
               v-if="isImageColumn(column.id) || isPathColumn(column.id) || hasRetainedNapariViewer(column.id)"
               class="node-data-table__image-path"
             >
               <ImageCell
                 :node-id="nodeId"
+                :inspection-key="store.inspectionKey"
                 :workflow-name="workflowName"
-                :row="slotProps.data.__absoluteRow"
+                :row="row.__absoluteRow"
                 :col="column.id"
-                :value="String(slotProps.data[column.id] ?? '')"
+                :value="String(row[column.id] ?? '')"
                 :show-path="isPathColumn(column.id)"
-                :show-image-actions="hasImageBehavior(column.id, slotProps.data[column.id])"
-                :thumbnail-enabled="isImageColumn(column.id) || (data.column_types[column.id] === 'Path' && isImagePath(slotProps.data[column.id]))"
+                :show-image-actions="hasImageBehavior(column.id, row[column.id])"
+                :thumbnail-enabled="isImageColumn(column.id) || (data.column_types[column.id] === 'Path' && isImagePath(row[column.id]))"
                 :explicit-napari-viewer="hasRetainedNapariViewer(column.id)"
                 :result-identity="data.source_identity"
                 :identity-generation="identityGeneration"
@@ -223,11 +251,13 @@ function onPage(page: number): void {
                 :output-name="displayColumnName(column.id)"
               />
             </div>
-            <span v-else class="node-data-cell-text" :title="String(slotProps.data[column.id] ?? '')">{{ slotProps.data[column.id] }}</span>
-          </template>
-        </Column>
-      </DataTable>
+            <span v-else class="node-data-cell-text" :title="String(row[column.id] ?? '')">{{ row[column.id] }}</span>
+
+        </template>
+      </VirtualDataTable>
+      <div v-if="continuous" class="node-data-table__message" data-testid="continuous-row-count">{{ data.total_rows }} rows · Continuous scrolling</div>
       <NodeDataPaginator
+        v-if="!continuous"
         :page="pageState.page"
         :page-size="pageState.pageSize"
         :total-rows="data.total_rows"
@@ -246,7 +276,7 @@ function onPage(page: number): void {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--bif-border-muted);
-  padding-top: 0.5rem;
+  padding-top: 0;
 }
 
 .node-data-table--disabled {
@@ -255,11 +285,11 @@ function onPage(page: number): void {
 
 .node-data-table__toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
   justify-content: flex-end;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0;
 }
 
 .node-data-table__message {
@@ -274,7 +304,7 @@ function onPage(page: number): void {
 
 .node-data-table__grid {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 89px;
   min-width: 0;
 }
 

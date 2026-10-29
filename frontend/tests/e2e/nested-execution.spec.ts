@@ -1,9 +1,19 @@
 import { expect, test } from '@playwright/test'
-import type { Locator, Page } from '@playwright/test'
-import type { GraphState } from '../../src/api/types'
+import type { Locator, Page, Response } from '@playwright/test'
+import type { DataTableMergedResponse, DataTableQueryRequest, GraphState } from '../../src/api/types'
 import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
+const projectionResponses = new WeakMap<Page, Response[]>()
+
+test.beforeEach(({ page }) => {
+  const responses: Response[] = []
+  projectionResponses.set(page, responses)
+  page.on('response', response => {
+    if (response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/data-table/query') responses.push(response)
+  })
+})
 
 function workflowId(prefix: string): string {
   return `${prefix}_${test.info().project.name}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -157,19 +167,34 @@ async function expectExactTable(
 
 async function inspectNodeData(
   page: Page,
+  workflowName: string,
   nodeId: string,
   dataNodeId: string,
   columns: string[],
   rows: string[][],
 ) {
-  const projectionRequest = page.waitForRequest(request => (
-    request.url().endsWith('/api/v1/data-table/query') && request.method() === 'POST'
-  ))
   await page.locator(`.vue-flow__node[data-id="${nodeId}"]`).click()
   await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
-  expect((await projectionRequest).postDataJSON()).toMatchObject({
+  // A visible unchanged selection can already have its accepted projection.
+  // A changed source must still replace the latest response for this owner.
+  const latestProjection = () => [...(projectionResponses.get(page) ?? [])].reverse()
+    .find(response => (response.request().postDataJSON() as DataTableQueryRequest).workflow_id === workflowName)
+  await expect.poll(() => {
+    const response = latestProjection()
+    if (!response?.ok()) return null
+    const request = response.request().postDataJSON() as DataTableQueryRequest
+    return request.sources.map(source => source.node_id)
+  }).toEqual([dataNodeId])
+  const projection = latestProjection()!
+  expect(projection.request().postDataJSON()).toMatchObject({
+    workflow_id: workflowName,
     sources: [expect.objectContaining({ node_id: dataNodeId })],
   })
+  const accepted = await projection.json() as DataTableMergedResponse
+  expect(accepted.mode).toBe('merged')
+  expect(accepted.sources).toEqual([expect.objectContaining({
+    node_id: dataNodeId, result_identity: expect.objectContaining({ node_key: dataNodeId }),
+  })])
   await expectExactTable(page.getByTestId('data-table-panel'), columns, rows)
 }
 
@@ -237,9 +262,9 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
       },
     })
     expect(completed.node_statuses['unrelated_nested/nested_increment']).toBeUndefined()
-    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+    await inspectNodeData(page, rootName, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']])
-    await inspectNodeData(page, 'root_increment', 'root_increment',
+    await inspectNodeData(page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
 
     await page.locator('.vue-flow__node[data-id="unrelated_nested"]').click()
@@ -273,7 +298,7 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
       data: { workflow_name: siblingName },
     })
     expect(siblingResult.status()).toBe(404)
-    await inspectNodeData(page, 'root_increment', 'root_increment',
+    await inspectNodeData(page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
   }
   finally {
@@ -343,11 +368,11 @@ test('executes nested Direct work and preserves scoped results after save and re
 
     const rootRows = [['2', '3'], ['3', '4'], ['4', '5']]
     await inspectNodeData(
-      page, 'nested_step', 'nested_step/nested_increment',
+      page, rootName, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']],
     )
     await inspectNodeData(
-      page, 'root_increment', 'root_increment',
+      page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], rootRows,
     )
 
@@ -385,11 +410,11 @@ test('executes nested Direct work and preserves scoped results after save and re
     expect(reopenedDraft.graph).toEqual(draft.graph)
 
     await inspectNodeData(
-      page, 'nested_step', 'nested_step/nested_increment',
+      page, rootName, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']],
     )
     await inspectNodeData(
-      page, 'root_increment', 'root_increment',
+      page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], rootRows,
     )
 
@@ -674,9 +699,9 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
       ['number', 'label', 'number_plus_one'],
       [['1', 'one', '2'], ['2', 'two', '3'], ['3', 'three', '4']])
     await page.locator('.dv-tab').filter({ hasText: rootDisplayName }).click()
-    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+    await inspectNodeData(page, rootName, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']])
-    await inspectNodeData(page, 'root_increment', 'root_increment',
+    await inspectNodeData(page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
 
     const savePromise = page.waitForResponse(response => (
@@ -694,9 +719,9 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
     await expect(page.locator('.vue-flow__node[data-id="sibling_seed"]')).toBeVisible()
     await openWorkflow(page, rootName, rootDisplayName)
     expect((await acceptedDraft(page, rootName)).graph).toEqual(corrected.graph)
-    await inspectNodeData(page, 'nested_step', 'nested_step/nested_increment',
+    await inspectNodeData(page, rootName, 'nested_step', 'nested_step/nested_increment',
       ['number_plus_one'], [['2'], ['3'], ['4']])
-    await inspectNodeData(page, 'root_increment', 'root_increment',
+    await inspectNodeData(page, rootName, 'root_increment', 'root_increment',
       ['number_plus_one', 'number_plus_two'], [['2', '3'], ['3', '4'], ['4', '5']])
     const siblingAfter = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
     expect(siblingAfter).toEqual(siblingBefore)

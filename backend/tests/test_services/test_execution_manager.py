@@ -195,6 +195,7 @@ class _ProgressEventStub:
     timestamp: float = 0.0
     result_key: str | None = None
     record_id: str | None = None
+    diagnostic: Any = None
 
 
 class _FakeWorkflow:
@@ -263,12 +264,15 @@ class _FakeWetlandsManager:
         self.submitted_grants: list[Any] = []
         self.pools: set[str] = set()
         self.admission_memos: list[Any] = []
+        self.admission_scopes: list[str | None] = []
+        self.submitted_scopes: list[str | None] = []
 
     def admit_runtime(self, env_spec: _EnvSpecStub, *, provision: bool,
                       admissions: dict | None = None, replace_stale: bool = False,
                       on_preparation: Any = None, on_provision_event: Any = None,
-                      on_removal_event: Any = None) -> Any:
+                      on_removal_event: Any = None, scoped_node_path: str | None = None) -> Any:
         self.admission_memos.append(admissions)
+        self.admission_scopes.append(scoped_node_path)
         key = (env_spec.name, "recipe")
         if admissions is not None and key in admissions:
             receipt = admissions[key]
@@ -284,7 +288,10 @@ class _FakeWetlandsManager:
         if self.recipe_state == "stale" and not replace:
             raise EnvironmentReuseError("Stale managed recipe requires replacement")
         if on_preparation is not None:
-            on_preparation(SimpleNamespace(action="updating" if replace else "reusing" if existing else "creating"))
+            on_preparation(SimpleNamespace(
+                action="updating" if replace else "reusing" if existing else "creating",
+                scoped_node_path=scoped_node_path,
+            ))
         if existing is None or replace:
             if on_provision_event is not None:
                 on_provision_event(SimpleNamespace(
@@ -318,6 +325,7 @@ class _FakeWetlandsManager:
         self, env_spec: _EnvSpecStub, payload: dict[str, Any],
         max_workers: int = 1, worker_timeout: float | None = None, *,
         runtime_receipt: Any, shared_memory_grant: Any = None,
+        scoped_node_path: str | None = None,
     ) -> object:
         try:
             self.validate_runtime_receipt(env_spec, runtime_receipt)
@@ -329,6 +337,7 @@ class _FakeWetlandsManager:
         self.submitted_payloads.append(payload)
         self.submitted_receipts.append(runtime_receipt)
         self.submitted_grants.append(shared_memory_grant)
+        self.submitted_scopes.append(scoped_node_path)
         return SimpleNamespace(payload=payload)
 
     def running_environments(self) -> tuple[str, ...]:
@@ -576,8 +585,9 @@ def _observed_environment_adapter(
     bus: RecordingEventBus,
     *,
     replacement_allowed: bool,
+    execution: ExecutionManager | None = None,
 ) -> _ExecutionEnvironmentManager:
-    execution = ExecutionManager(
+    execution = execution or ExecutionManager(
         bus,
         MagicMock(),
         environment_replacement_authorizer=lambda _spec: replacement_allowed,
@@ -588,13 +598,12 @@ def _observed_environment_adapter(
     return _ExecutionEnvironmentManager(
         manager,
         context=_TEST_CONTEXT,
-        current_node_id=lambda: None,
         on_preparation=execution._on_environment_preparation,
         on_provision_event=execution._on_environment_event,
         on_ready=execution._on_environment_ready,
         on_admitted=execution._on_environment_admitted,
         on_failure=execution._on_environment_failure,
-        on_stopped=lambda name: execution._publish_environment_status(name, "stopped"),
+        on_stopped=execution._on_environment_stopped,
         replacement_authorizer=execution._environment_replacement_authorizer,
     )
 
@@ -653,8 +662,11 @@ def test_concurrent_submissions_replace_one_stale_generation_before_handoff() ->
     def submit(row: int) -> None:
         try:
             spec = _EnvSpecStub("cellpose-env")
-            receipt = adapter.admit_runtime(spec, provision=True, admissions={})
-            adapter.submit_processing_task(spec, {"row": row}, runtime_receipt=receipt)
+            scope = f"nested/worker-{row}"
+            receipt = adapter.admit_runtime(spec, provision=True, admissions={}, scoped_node_path=scope)
+            adapter.submit_processing_task(
+                spec, {"row": row}, runtime_receipt=receipt, scoped_node_path=scope,
+            )
         except BaseException as error:
             failures.append(error)
 
@@ -677,6 +689,151 @@ def test_concurrent_submissions_replace_one_stale_generation_before_handoff() ->
     assert manager.replace_existing_calls == [True, False]
     assert manager.task_generations == ["generation-1", "generation-1"]
     assert manager.retired_generations == []
+    assert manager.admission_scopes == ["nested/worker-1", "nested/worker-2"]
+    assert sorted(manager.submitted_scopes) == ["nested/worker-1", "nested/worker-2"]
+
+
+def test_environment_observations_keep_call_scope_and_reject_prior_run_callbacks() -> None:
+    class DelayedManager(_FakeWetlandsManager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.observers: list[dict[str, Any]] = []
+
+        def admit_runtime(self, env_spec: _EnvSpecStub, **kwargs: Any) -> Any:
+            self.observers.append(kwargs)
+            return super().admit_runtime(env_spec, **kwargs)
+
+    bus = RecordingEventBus()
+    execution = ExecutionManager(bus, MagicMock())
+    manager = DelayedManager()
+    adapter = _observed_environment_adapter(manager, bus, replacement_allowed=True, execution=execution)
+    progress = execution._make_progress_callback(_TEST_CONTEXT)
+    progress(_ProgressEventStub("source", "started"))
+    spec = _EnvSpecStub("shared-env")
+    first = adapter.admit_runtime(spec, provision=True, admissions={}, scoped_node_path="nested/first")
+    second = adapter.admit_runtime(spec, provision=True, admissions={}, scoped_node_path="nested/second")
+    assert first is second
+    adapter.submit_processing_task(spec, {}, runtime_receipt=second, scoped_node_path="nested/second")
+    adapter.submit_processing_task(spec, {}, runtime_receipt=first, scoped_node_path="nested/first")
+    delayed = SimpleNamespace(kind=SimpleNamespace(value="step"), stage="install", message="Delayed install")
+    manager.observers[0]["on_provision_event"](delayed)
+    phases = [event["payload"] for event in execution.retained_progress() if event["kind"] == "phase"]
+    assert phases[-3:] == [
+        {"node_name": "nested/second", "message": "Executing tool"},
+        {"node_name": "nested/first", "message": "Executing tool"},
+        {"node_name": "nested/first", "message": "Installing shared-env: Delayed install"},
+    ]
+    assert all(phase["node_name"] != "source" for phase in phases)
+    assert manager.submitted_scopes == ["nested/second", "nested/first"]
+    execution.context = _TEST_CONTEXT.model_copy(update={"execution_id": "new-run"})
+    before = (execution.retained_progress(), list(bus.log_events), list(bus.environment_events))
+    manager.observers[0]["on_preparation"](SimpleNamespace(action="updating", scoped_node_path="nested/first"))
+    manager.observers[0]["on_provision_event"](delayed)
+    execution._on_environment_ready(_TEST_CONTEXT, "nested/first", spec.name)
+    execution._on_environment_failure(_TEST_CONTEXT, spec.name)
+    execution._on_environment_stopped(_TEST_CONTEXT, spec.name)
+    progress(_ProgressEventStub("source", "failed", message="Late failure"))
+    execution._on_run_done(SimpleNamespace(exception=lambda: RuntimeError("Late completion")), _TEST_CONTEXT)
+    assert (execution.retained_progress(), bus.log_events, bus.environment_events) == before
+    assert execution.state == "running"
+    assert execution.last_result is None
+    assert execution._node_statuses["source"].status == "running"
+
+
+def test_local_setup_phase_creates_waiting_job_without_scientific_start_or_progress() -> None:
+    from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+    from bioimageflow_server.services.execution_progress import reduce_progress_events
+
+    snapshot = ExecutionSnapshot(
+        execution_id="local-setup", workflow_id="wf", backend="wetlands", target_id="local", state="running",
+    )
+    phase = {"sequence": 1, "kind": "phase", "payload": {
+        "node_name": "nested/worker", "message": "Updating execution environment shared-env",
+    }}
+    prepared = reduce_progress_events(snapshot, [phase])
+    job = prepared.jobs["nested/worker"]
+    assert job.state == "waiting"
+    assert job.message == phase["payload"]["message"]
+    assert job.started_at is None
+    assert job.current is None and job.maximum is None
+    assert reduce_progress_events(prepared, [phase]) == prepared
+    started = reduce_progress_events(prepared, [{"sequence": 2, "kind": "public", "payload": {
+        "node_name": "nested/worker", "status": "started", "timestamp": 1.0,
+    }}])
+    assert started.jobs["nested/worker"].state == "running"
+    assert started.jobs["nested/worker"].started_at is not None
+
+
+def test_progress_diagnostic_cannot_retarget_a_different_scoped_node() -> None:
+    from bioimageflow import NodeFailureDiagnostic
+
+    bus = RecordingEventBus()
+    execution = ExecutionManager(bus, MagicMock())
+    execution.context = _TEST_CONTEXT
+    execution.state = "running"
+    callback = execution._make_progress_callback(_TEST_CONTEXT)
+    callback(_ProgressEventStub(
+        "expected", "failed",
+        diagnostic=NodeFailureDiagnostic(
+            scoped_node_path="another/node", category="execution", exception_type="RuntimeError", message="Mismatch",
+        ),
+    ))
+    assert execution._node_statuses == {}
+    assert execution.retained_progress() == []
+    assert bus.node_state_events == []
+    assert bus.log_events == []
+
+
+@pytest.mark.parametrize("source", ["event", "diagnostic"])
+@pytest.mark.parametrize("details", ["absent", "independent", "contains-message"])
+def test_explicit_failed_progress_summarizes_state_without_losing_diagnostics(
+    source: str, details: str,
+) -> None:
+    from bioimageflow import NodeFailureDiagnostic
+
+    message = (
+        "Environment 'worker' cannot be reused: its recipe changed.\n"
+        "Existing recipe: original\nRequested recipe: replacement"
+    )
+    summary = "Environment 'worker' cannot be reused: its recipe changed."
+    provider_tb = {
+        "absent": None,
+        "independent": "Provider traceback:\nworker.py:42",
+        "contains-message": f"Provider traceback:\nworker.py:42\n{message}",
+    }[details]
+    expected_details = (
+        provider_tb if details == "contains-message"
+        else f"{message}\n\n{provider_tb}" if provider_tb else message
+    )
+    diagnostic = NodeFailureDiagnostic(
+        scoped_node_path="nested/worker", category="execution", exception_type="EnvironmentReuseError",
+        message=message, traceback=provider_tb,
+    ) if source == "diagnostic" else None
+    event = _ProgressEventStub(
+        "nested/worker", "failed", message=message if source == "event" else None,
+        traceback=provider_tb if source == "event" else None, diagnostic=diagnostic,
+    )
+    bus = RecordingEventBus()
+    execution = ExecutionManager(bus, MagicMock())
+    execution.context = _TEST_CONTEXT
+    execution.state = "running"
+
+    execution._make_progress_callback(_TEST_CONTEXT)(event)
+
+    status = execution._node_statuses["nested/worker"]
+    assert status.error == summary
+    assert status.traceback == expected_details
+    assert bus.node_state_events == [("nested/worker", "failed", False, summary, expected_details)]
+    error_logs = [item for item in bus.log_events if item[0] == "ERROR"]
+    assert len(error_logs) == 1
+    assert error_logs[0][2] == "nested/worker"
+    assert error_logs[0][1] == f"Node nested/worker failed: {summary}\n{expected_details}"
+    retained = execution.retained_progress()
+    if source == "diagnostic":
+        assert retained[0]["payload"]["message"] == message
+        assert retained[0]["payload"]["traceback"] == provider_tb
+    else:
+        assert retained[0]["payload"]["message"] == message
 
 
 # ---- B2: ExecutionManager ---------------------------------------------------
@@ -862,8 +1019,12 @@ class TestExecutionManagerLifecycle:
                 self.shutdown_all_wrappers.append(manager.shutdown_all)
                 if self.on_progress is not None:
                     self.on_progress(_ProgressEventStub("n1", "started"))
-                receipt = manager.admit_runtime(_EnvSpecStub("atlas"), provision=True, admissions={})
-                manager.submit_processing_task(_EnvSpecStub("atlas"), {}, runtime_receipt=receipt)
+                receipt = manager.admit_runtime(
+                    _EnvSpecStub("atlas"), provision=True, admissions={}, scoped_node_path="n1",
+                )
+                manager.submit_processing_task(
+                    _EnvSpecStub("atlas"), {}, runtime_receipt=receipt, scoped_node_path="n1",
+                )
                 return super().compute(*targets)
 
         bus = RecordingEventBus()
@@ -1644,7 +1805,7 @@ class TestExecutionManagerResult:
         assert em.last_result.success is False
         assert "recovery_action" not in em.last_result.errors[0]
 
-    async def test_wetlands_payload_is_summarized_for_client(
+    async def test_unscoped_wetlands_payload_is_summarized_without_blame_after_started(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         command_message = (
@@ -1680,10 +1841,88 @@ class TestExecutionManagerResult:
         assert "Remote traceback:" in error["traceback"]
         assert "Local traceback:" in error["traceback"]
         status = em.last_result.node_statuses["atlas_1"]
-        assert status.error == error["detail"]
-        assert status.traceback == error["traceback"]
+        assert status.error is None
+        assert status.traceback is None
+        assert status.status == "unexecuted"
+        assert [event[2] for event in bus.log_events if event[0] == "ERROR"] == [None]
+        from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+        from bioimageflow_server.services.execution_progress import reduce_progress_events
 
-    async def test_failed_progress_without_message_is_enriched_from_task_exception(
+        assert em.context is not None
+        reduced = reduce_progress_events(ExecutionSnapshot(
+            execution_id=em.context.execution_id, workflow_id="wf-test", backend="wetlands",
+            target_id="local", state="failed",
+        ), em.retained_progress_for(em.context))
+        assert reduced.jobs["atlas_1"].state == "cancelled"
+        assert reduced.jobs["atlas_1"].diagnostic is None
+
+    async def test_unscoped_failure_does_not_enrich_a_singleton_failed_event(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(events=[_ProgressEventStub("node", "failed")])
+        wf.raise_exc = RuntimeError("Unscoped run failure")
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock())
+        await em.start(_graph_with([("node", True)]), workflow_id="wf-test", draft_revision=1)
+        await _drain(em)
+        assert em.last_result is not None
+        assert em.last_result.errors[0]["detail"] == "Unscoped run failure"
+        assert em.last_result.node_statuses["node"].error is None
+        assert em.last_result.node_statuses["node"].status == "failed"
+        assert [event[2] for event in bus.log_events if event[0] == "ERROR"] == [None]
+
+    async def test_unscoped_cancellation_does_not_guess_the_last_started_node(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from bioimageflow.engine import WorkflowCancelledError
+
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(events=[
+            _ProgressEventStub("first", "started"), _ProgressEventStub("second", "started"),
+            _ProgressEventStub("first", "row_progress", row=2, total_rows=5,
+                               current=3, maximum=7, result_key="known-key", record_id="known-record"),
+            _ProgressEventStub("completed", "completed"),
+            _ProgressEventStub("failed", "failed", message="Explicit node failure"),
+        ])
+        wf.raise_exc = WorkflowCancelledError("Cancelled run")
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock())
+        await em.start(
+            _graph_with([("first", True), ("second", True), ("completed", True), ("failed", True)]),
+            workflow_id="wf-test", draft_revision=1,
+        )
+        await _drain(em)
+        assert em.last_result is not None
+        assert em.last_result.errors[0]["type"] == "cancelled"
+        statuses = em.last_result.node_statuses
+        for node_id in ("first", "second"):
+            assert statuses[node_id].status == "unexecuted"
+            assert statuses[node_id].error is None
+            assert statuses[node_id].traceback is None
+        assert statuses["completed"].status == "executed"
+        assert statuses["failed"].status == "failed"
+        assert statuses["failed"].error == "Explicit node failure"
+        assert {event[0] for event in bus.node_state_events if event[1] == "unexecuted"} == {"first", "second"}
+        from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+        from bioimageflow_server.services.execution_progress import reduce_progress_events
+
+        assert em.context is not None
+        retained = em.retained_progress_for(em.context)
+        reduced = reduce_progress_events(ExecutionSnapshot(
+            execution_id=em.context.execution_id, workflow_id="wf-test", backend="wetlands",
+            target_id="local", state="cancelled",
+        ), retained)
+        assert reduced.jobs["first"].state == reduced.jobs["second"].state == "cancelled"
+        assert reduced.jobs["first"].row == 2 and reduced.jobs["first"].total_rows == 5
+        assert reduced.jobs["first"].current == 3 and reduced.jobs["first"].maximum == 7
+        assert reduced.jobs["first"].result_key == "known-key"
+        assert reduced.jobs["first"].record_id == "known-record"
+        assert reduced.jobs["first"].diagnostic is None
+        assert reduced.jobs["completed"].state == "succeeded"
+        assert reduced.jobs["failed"].state == "failed"
+
+    async def test_failed_progress_uses_its_explicit_public_diagnostic(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         payload = {
@@ -1693,11 +1932,17 @@ class TestExecutionManagerResult:
                 '    raise NotImplementedError("Implement Chameau2.process_row")\n',
             ],
         }
+        from bioimageflow import NodeFailureDiagnostic
+
+        diagnostic = NodeFailureDiagnostic(
+            scoped_node_path="chameau2_1", category="execution", exception_type="NotImplementedError",
+            message="Implement Chameau2.process_row", traceback="Remote traceback:\nworker.py:1",
+        )
         bus = RecordingEventBus()
         wf = _FakeWorkflow(
             events=[
                 _ProgressEventStub("chameau2_1", "started"),
-                _ProgressEventStub("chameau2_1", "failed"),
+                _ProgressEventStub("chameau2_1", "failed", diagnostic=diagnostic),
             ],
         )
         wf.raise_exc = RuntimeError(payload)
@@ -1711,8 +1956,7 @@ class TestExecutionManagerResult:
         status = em.last_result.node_statuses["chameau2_1"]
         assert status.status == "failed"
         assert status.error == "Implement Chameau2.process_row"
-        assert status.traceback is not None
-        assert "Remote traceback:" in status.traceback
+        assert status.traceback == diagnostic.traceback
         failed_updates = [
             event
             for event in bus.node_state_events

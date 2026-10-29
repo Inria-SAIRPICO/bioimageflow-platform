@@ -229,10 +229,23 @@ async def list_tools(
     registry: ToolRegistryService = Depends(get_tool_registry),
     environment_service: Any = Depends(get_tool_environment_service),
 ) -> list[ToolMetadata]:
+    return await anyio.to_thread.run_sync(_tools_with_environment_locations, registry, environment_service)
+
+
+def _tools_with_environment_locations(
+    registry: ToolRegistryService, environment_service: Any,
+) -> list[ToolMetadata]:
     tools = registry.list_tools()
-    location = getattr(environment_service, "location", None)
-    if not callable(location):
+    locations = getattr(environment_service, "locations", None)
+    if not callable(locations):
         return tools
+    names = {
+        tool.environment["name"] for tool in tools
+        if tool.environment and isinstance(tool.environment.get("name"), str) and tool.environment["name"]
+    }
+    if not names:
+        return tools
+    paths = locations(names)
 
     enriched: list[ToolMetadata] = []
     for tool in tools:
@@ -241,7 +254,7 @@ async def list_tools(
         if not isinstance(env_name, str) or not env_name:
             enriched.append(tool)
             continue
-        env_path = location(env_name)
+        env_path = paths.get(env_name)
         if env_path is None:
             enriched.append(tool)
             continue

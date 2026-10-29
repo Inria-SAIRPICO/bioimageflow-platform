@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { isImagePath } from '@/utils/imagePaths'
 
 describe('isImagePath', () => {
+  it('recognizes directory-backed BioIO image stores', () => {
+    expect(isImagePath('/images/sample.ome.zarr')).toBe(true)
+    expect(isImagePath('/images/sample.ZARR')).toBe(true)
+  })
   it.each([
     '/data/a.tif',
     '/data/a.TIFF',

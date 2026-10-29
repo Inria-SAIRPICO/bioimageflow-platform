@@ -9,7 +9,8 @@ The inventories retain assertion details, selectors, manual boundaries, and gaps
 The dashboard baseline is `b213223` (2026-09-15); its counts remained provisional until the complete applicability audit recorded in this revision.
 Change the denominator only when implementation or specification reconciliation adds, removes, splits, combines, or changes the applicability of a feature, and record the revision that made that change here.
 
-The [new campaign](platform-test-plan.md) is running: the four readiness outcomes pass in both browsers, and Wave 2 feature work is delegated.
+The [campaign](platform-test-plan.md) is running under the October 29 [current-source reconciliation and headless queue](platform-test-current.md).
+The older readiness and Wave 2 results below retain their historical source scope; current code includes subsequent dependency, loading, table, thumbnail and workflow-control changes awaiting integrated acceptance.
 The counts combine retained historical evidence with the ten newly accepted N1/E1 obligations at `884be6e` and `2290c67`; baseline reconciliation must assess the remaining historical cells before reporting a current campaign percentage.
 No cell is promoted or reset by the campaign redesign alone.
 
@@ -33,12 +34,14 @@ IDs must be unique across the inventories and dashboard.
 
 The original 98-row applicability audit remains recorded, but a platform change scan through `15c5cc7` (2026-09-24) found ten additional in-scope obligations awaiting scenario-level evidence, including one older omitted import-readiness action.
 The counts below include those new gaps; older `V` cells cite their exact historical revisions and require focused revalidation when later changes affect their contract.
-The canonical temporary receipt tree is unavailable on October 19, 2026; the [current checkpoint](platform-test-current.md) distinguishes historical claimed results from newly retained current proof and the remaining final certification gates.
+Both prior temporary receipt roots are unavailable in the October 29 checkout; the [current checkpoint](platform-test-current.md) distinguishes historical claimed results from newly retained current proof and the remaining headless/native gates.
+Changes through `68bae0b` extend existing rows with typed recursive workflow bindings, continuous/virtual tables, shared previews and cold thumbnail behavior; old V cells do not establish these extensions before their current owning/browser assertions run.
 
-- Overall: **418 V + 76 G + 0 I + 0 B + 6 U = 500 applicable obligations**, so **418 / 500 are verified (83.6%)**; this is accumulated evidence, and blocked and unassessed are reported separately from the ratio numerator.
+- Overall: **438 V + 56 G + 0 I + 0 B + 5 U = 499 applicable obligations**, so **438 / 499 are verified (87.8%)**; this is accumulated historical source-qualified evidence, not current-revision completion, and blocked and unassessed are reported separately from the ratio numerator.
 - Primary GUI: **224 V + 0 G + 0 I + 0 B + 0 U = 224 applicable obligations**, so **224 / 224 are verified (100.0%)**.
-- Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 40 justified `N` decisions.
+- Inventory reconciliation: 108 feature rows, 540 scenario decisions, including 41 justified `N` decisions.
 
+The October 19 reconciliation promotes 20 exact executed obligations and changes RT-XCT-002 P to N under its session-only GUI Logger contract; this is an applicability correction, not a replay or persistence success.
 These ratios are coverage status, not a claim that the current revision passed a complete test lane.
 The integrated image/file/export evidence is credited only for its exact browser, archive-byte, deterministic refusal, rollback, and identity assertions; its remaining recovery, reload, and native-boundary cells stay gaps.
 
@@ -68,7 +71,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | GUI-EDT-010 | Undo/redo granularity and canvas isolation | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `e0aa123`, `30faeb6`, `4ec5dbc` |
 | GUI-EDT-011 | Clipboard structure and fresh identities | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `26551d6` |
 | GUI-EDT-012 | Keyboard commands, active context, and text focus | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `790345a`, `4ec5dbc` |
-| GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | V | G | G | V | V | in-progress | exact resource Chromium/Firefox at89f6508/733b9018 plus retained actual managed template assets; combined invalid-template R/F and actual allocation remain qualified gaps |
+| GUI-EDT-013 | Processing resources and output templates | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | resource/retained scientific success plus `d91bbba` invalid-template both-browser refusal/visible repair; no allocation |
 | GUI-AUT-008 | Manage Tools environment inventory and create/recreate | P1 | Desktop and webapp server processing GUI/API | no | V | V | V | V | V | verified | current T1 actualforce GUI72.764s, public-provider failure/retry/science60.066s, controlled visible Chrome8.872s/Firefox11.406s and deterministic105; physical versus client and original failures qualified in current checkpoint |
 | GUI-AUT-001 | Catalog search and selected-tool reveal | P1 | Desktop and webapp GUI | no | G | N (search has no invalid domain input; an unmatched query is successful empty-result behavior) | N (search and reveal have no cancellation or recovery lifecycle) | N (query and reveal state are not specified as durable) | G | gap | `fcb4408` inspection |
 | GUI-AUT-002 | Custom-tool create/rename/delete and editor opening | P1 | Desktop GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
@@ -83,7 +86,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | Stable ID | Feature (inventory row) | Priority | Supported surface | Primary GUI | S | R | F | P | B | Status | Evidence revision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | WF-LIF-015 | Confirmed workflow-format migration and backups | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344` implementation; focused browser/backend evidence `2ce96a0` |
-| WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | V | G | N (canonical document validation is synchronous; invalid documents are owned by R) | V | V | in-progress | current assembled owning20/canonical saved-document disk-read authority; full refused-write consequences remainG |
+| WF-LIF-001 | Canonical saved document and graph-owned visible name | P1 | Workflow API/storage | no | V | V | N (canonical document validation is synchronous; invalid documents are owned by R) | V | V | verified | current exact structural refusal; original mixed-command failure retained |
 | WF-LIF-002 | Create from dialog with generated identity | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `4a03750` |
 | WF-LIF-003 | Save As and workflow switching | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `a25ac17`, `4a03750` |
 | WF-LIF-004 | Save and reopen an accepted edited graph | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `4208769`, `dd20821` |
@@ -92,7 +95,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-LIF-007 | Reject stale duplicate generation | P1 | Workflow API/storage | no | N (this row owns stale-generation refusal; ordinary duplication is WF-LIF-005) | V | N (stale duplication is refused before side effects and has no recovery lifecycle) | V | V | verified | exact f20d9135 stale-token refusal across fresh public stores/full retained structural authority; no process/crash claim |
 | WF-LIF-008 | Durable workflow generation across restart | P1 | Workflow API/storage | no | V | N (generation durability accepts no user input to refuse) | V | V | V | verified | retained17 generation-ledger passes; same-process new-store persistence and injected-write recovery, source equality reconstructed against65bf8d28 |
 | WF-LIF-009 | Move results and rewrite provenance safely | P1 | Desktop browser and workflow API/storage | no | V | V | V | V | V | verified | `workflow-crud.spec.ts` Chromium/Firefox at base `ba46c5d`, frozen `80299af`; visible affected-owner refusal/retry and durable moved results/provenance, with API fixture preparation and native/physical-fault limits in inventory |
-| WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `0b3ee1e` |
+| WF-LIF-010 | Delete exact tab and preserve empty state | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | current exact stale DELETE2.982437s/fullauthority/current retry |
 | WF-LIF-011 | Revisioned draft writes, dirtiness, and validation | P0 | Draft API/storage and GUI | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-012 | Explicit root discard and conflict recovery | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `dd20821` |
 | WF-LIF-013 | Agent edits synchronize to a clean canvas | P1 | Desktop and webapp GUI/WebSocket | no | V | V | V | V | V | verified | `agent-draft-sync.spec.ts` exact Chromium/Firefox at base `41685fe`: clean live update plus visible dirty-edit CAS/Keep/copy isolation; durable-read limits in inventory |
@@ -101,7 +104,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | WF-REC-002 | Positional DataFrame publication and compaction | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `bcedaec` |
 | WF-REC-003 | Forward a child DataFrame port through parent interface | P1 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `3422e1c`, `dd9e231` |
 | WF-REC-004 | Deleting exposed node prunes interface atomically | P1 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `1e84421`, `dd9e231`, `72b21a0` |
-| WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | G | G | G | V | in-progress | `a36a4cb` |
+| WF-REC-005 | Group selected graph with stable ports | P1 | Graph utility/API | no | V | V | G | G | V | in-progress | current finite utility refusal/exact inputs; GUI F/P remainG |
 | WF-REC-006 | Group through canvas controls | P0 | Desktop and webapp GUI | yes | V | V | V | V | V | verified | `da0ded6`, `152c82b`, `0dc71b5`, `72b21a0` |
 | WF-REC-007 | Durable private nested snapshot isolation | P0 | Desktop and webapp nested GUI/API | yes | V | V | V | V | V | verified | `af58e4e`, `14582d0` |
 | WF-REC-008 | Nested CAS and descendant cleanup | P1 | Nested API/storage | yes | V | V | V | V | V | verified | `7575d0e` |
@@ -131,7 +134,7 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-017 | Corrupt selected cache refusal, quarantine, and recovery | P1 | Desktop and webapp GUI/API/storage | no | V | V | V | V | V | verified | `4a2a344`, `2dbdd7f` implementation; focused GUI, result-integrity, and recovery evidence `e58b8f1` |
 | RT-EXE-018 | Lazy stale processing-environment rebuild | P1 | Desktop GUI/local runtime | no | V | V | V | V | V | verified | `2290c67` integrated repair; real worker, three journeys per browser and scoped app completion |
 | RT-EXE-001 | Run accepted draft and Run Selected boundary | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `8908388`, `339330f`; accepted-draft router selectors `71b82da` |
-| RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | V | G | V | G | V | in-progress | retained28-route PASS subset/current exact captured test+router equality; mocked manager/draft route-only S/F/B, original overall FAIL |
+| RT-EXE-002 | Compilation/storage retry keeps one identity | P1 | Execution API/manager | no | V | V | V | G | V | in-progress | `b06030d` exact+owning47route/full replacement authority; no science |
 | RT-EXE-003 | Second-run refusal and mutation serialization/lock | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `da2ced2` |
 | RT-EXE-004 | Real Direct source execution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `4208769`, `9698d5b`; Direct manager/API selectors `71b82da` |
 | RT-EXE-005 | Recursive Direct execution and result attribution | P0 | Desktop and webapp GUI/runtime | yes | V | V | V | V | V | verified | `fd96f8f`, `8cdc768`, `339330f` |
@@ -140,8 +143,8 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-EXE-008 | Failure, cancellation, correction, and rerun | P0 | Local desktop GUI/runtime | yes | V | V | V | V | V | verified | `da2ced2`, `4676ffb` |
 | RT-EXE-009 | Cache invalidation and selected clear | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `30faeb6`, `fe0cf9d`, `0043397`, `58520b5`; ISSUE-011 resolved |
 | RT-EXE-010 | Validation/cache flags match computation | P1 | Runtime/API | no | V | G | G | V | V | in-progress | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
-| RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | V | G | G | V | V | in-progress | `output-templates.spec.ts` Chromium/Firefox at base `163f5b1`; two managed runs and immutable assets/pinned result; R/F limits in inventory |
-| RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | G | G | G | G | U | gap | `fcb4408` inspection |
+| RT-EXE-011 | Output-template filename and signature | P1 | Desktop and webapp GUI/runtime | no | V | V | G | V | V | in-progress | retained2managed runs plus `d91bbba` validation-only refusal; execution/export F remainsG |
+| RT-EXE-012 | Latest projection symlink/pointer fallback | P2 | Local filesystem/runtime | no | V | V | V | V | V | verified | `8d33578` real host filesystem7PASS; probe/publication EPERM fallback; exact current-host ownership/identity/refusal; other OS unverified |
 | RT-EXE-013 | Exact latest-result read and incomplete-data refusal | P1 | Results API/storage | no | V | V | V | V | V | verified | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
 | RT-EXE-014 | Latest-results folder export and rollback | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
 | RT-EXE-015 | Workflow-results bundle pins one run | P0 | Desktop and webapp GUI/API/storage | yes | V | V | V | V | V | verified | `7ab16e6`, `6ae081d` |
@@ -153,16 +156,16 @@ The integrated image/file/export evidence is credited only for its exact browser
 | RT-RES-005 | Dataset folders, moves, stale delete preview | P1 | Desktop and webapp GUI/API | no | V | V | V | V | V | verified | `ac1d6c9` scoped dataset Chromium/Firefox receipts + retained backend boundaries |
 | RT-RES-006 | Cancel and retry browser upload | P1 | Desktop and webapp GUI/API | no | V | G | V | V | V | in-progress | `ac1d6c9` scoped dataset Chromium/Firefox receipts + retained backend boundaries |
 | RT-RES-007 | Image identity, conversion, offsets, and browser viewer | P0 | Desktop and webapp GUI/API | yes | V | V | V | V | V | verified | `7ab16e6`, `af1951b`, `bfb6197`; exact viewer GUI recheck `9c4a435` |
-| RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-RES-008 | Thumbnail placeholder, paths, formats, and GUI display | P1 | Desktop and webapp GUI/API | no | V | G | G | V | V | in-progress | actual warm managed reader Chrome91.237517s/Firefox 58.461479s; exact frozen source; no refusal/recovery/native |
 | RT-RES-009 | Reveal path and native file dialogs | P2 | Native desktop/manual | no | G | G | G | N (native reveal and chooser actions are ephemeral) | G | gap | `fcb4408` inspection |
 | RT-RES-010 | Fiji result resolution and native launch | P2 | Native desktop/manual external app | no | G | G | G | N (launch is ephemeral; settings persistence is GUI-SHL-008) | G | gap | `fcb4408` inspection |
 | RT-RES-011 | Napari environment, launch, and reconnect lifecycle | P2 | Native desktop/manual external app | no | U | U | U | U | U | unassessed | `fcb4408` inspection pending |
 | RT-XCT-007 | Logger selection and filtered-log copying | P1 | Desktop and webapp GUI | no | V | N (an empty selection is a valid empty-result state, not invalid input) | N (copy has no durable cancellation or recovery lifecycle) | N (selection and clipboard content have no platform reload contract) | V | verified | `4a5b870`; exact Logger selectors in Chromium and Firefox at `cd81d42` |
 | RT-XCT-001 | WebSocket subscriptions, reconnect, and backpressure | P1 | Desktop and webapp GUI/WebSocket | no | V | V | V | V | V | verified | actual local held-worker reconnect/sibling isolation in both browsers, base62c783c/source318a3b5d; retained42 handler cases, no managed registry/distributed/durable-log claim |
-| RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | V | V | G | G | V | in-progress | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
+| RT-XCT-002 | Execution-log provenance and global background logs | P1 | Backend/WebSocket/GUI | no | V | V | G | N (GUI Logger history is session-only and has no reload or missed-history replay contract; backend disk logs and durable run diagnostics are separate) | V | in-progress | retained `65bf8d28` provenance subset; session-only GUI history applicability corrected under active v1 contract |
 | RT-XCT-003 | Contextual error history, Logger, and navigation | P0 | Desktop and webapp GUI/WebSocket | yes | V | V | V | N (session-only Error History and Logger have no reload-retention contract; durable run diagnostics belong to execution history) | V | verified | `4676ffb`; specialist contract review |
 | RT-XCT-004 | Structured HTTP errors and expected-error logging | P1 | REST API/logging | no | V | V | N (request error translation is synchronous and has no cancellation or recovery lifecycle) | N (request-scoped; no persisted user state) | V | verified | retained `65bf8d28` subset + captured/reconstructed current source, original overall FAIL |
-| RT-XCT-005 | MCP typed operations and stable interface IDs | P2 | MCP/API/GUI | no | G | G | G | G | G | gap | `fcb4408` inspection |
+| RT-XCT-005 | MCP typed operations and stable interface IDs | P2 | MCP/API/GUI | no | V | V | V | V | V | verified | realstdio Chromium16.531099s/generatedconfig/5typedops/stale409+currentretry/stableIDs/Save+reload; no crash/security/science |
 | RT-XCT-006 | Desktop startup identity, window, and shutdown | P2 | Native desktop/manual | no | G | G | G | N (startup shell has no portable saved state) | G | gap | `fcb4408` inspection |
 
 ## Applying later evidence

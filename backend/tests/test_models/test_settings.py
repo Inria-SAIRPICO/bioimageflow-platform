@@ -54,11 +54,12 @@ class TestSettings:
         assert s.deployment_mode == "desktop"
         assert s.external_editor == "code {file_path}"
 
-    def test_defaults(self):
+    def test_defaults(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BIOIMAGEFLOW_TOOL_STORE", str(tmp_path / "selected-tool-store"))
         s = Settings(deployment_mode="webapp")
         assert s.external_editor is None
         assert s.omero_instances == []
-        assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
+        assert s.tool_store_path == str(tmp_path / "selected-tool-store")
         assert s.update_mode == "auto"
         assert s.new_workflow_execution == "sequential"
         assert s.default_execution_target_id == "local"

@@ -90,11 +90,15 @@ export interface CanvasScopedPersistenceOptions {
   debounceMs?: number
 }
 
+export type CanvasDraftResolutionOrigin = 'local' | 'external'
+
 export interface CanvasPersistenceApi {
   readonly canvasId: CanvasId | null
   readonly workflowId: Ref<string | null>
   readonly acceptedDraftRevision: Ref<number | null>
   readonly currentGraph: Ref<GraphState>
+  readonly hasLocalSemanticChanges: Ref<boolean>
+  readonly isDraftPersistencePending: Ref<boolean>
   readonly isPending: Ref<boolean>
   readonly hasConflict: Ref<boolean>
   readonly persistenceState: Ref<CanvasPersistenceState>
@@ -102,7 +106,7 @@ export interface CanvasPersistenceApi {
   queueGraph(graph: GraphState): void
   queueDraft(graph: GraphState): void
   initializeFromDraft(response: WorkflowDraftResponse): void
-  resolveFromDraft(response: WorkflowDraftResponse): void
+  resolveFromDraft(response: WorkflowDraftResponse, origin: CanvasDraftResolutionOrigin): void
   flush(): Promise<void>
   retryPersistence(): Promise<void>
   dismissPersistenceIssue(issueId: string): void
@@ -119,6 +123,8 @@ export interface RootCanvasPersistenceResource extends DisposableCanvasResource 
   readonly validationResult: Ref<ValidationResult | null>
   readonly isValidationPending: Ref<boolean>
   readonly validationSyncState: Ref<SyncState>
+  readonly hasLocalSemanticChanges: Ref<boolean>
+  readonly isDraftPersistencePending: Ref<boolean>
   readonly isPending: Ref<boolean>
   readonly hasConflict: Ref<boolean>
   readonly persistenceState: Ref<CanvasPersistenceState>
@@ -128,7 +134,7 @@ export interface RootCanvasPersistenceResource extends DisposableCanvasResource 
   queueValidation(graph: GraphState, options?: { force?: boolean }): void
   flushValidation(): Promise<void>
   initializeFromDraft(response: WorkflowDraftResponse): void
-  resolveFromDraft(response: WorkflowDraftResponse): void
+  resolveFromDraft(response: WorkflowDraftResponse, origin: CanvasDraftResolutionOrigin): void
   flush(): Promise<void>
   retryPersistence(): Promise<void>
   dismissPersistenceIssue(issueId: string): void
@@ -223,6 +229,7 @@ function createRootPersistenceResource(options: {
   const workflowId = ref<string | null>(options.initialWorkflowId)
   const acceptedDraftRevision = ref<number | null>(null)
   const currentGraph = ref<GraphState>(emptyGraph()) as Ref<GraphState>
+  const hasLocalSemanticChanges = ref(false)
   const validationResult = ref<ValidationResult | null>(null)
   const draftCoordinator = shallowRef<WorkflowDraftCoordinator | null>(null)
   const remoteDraftRevision = ref<number | null>(null)
@@ -270,10 +277,12 @@ function createRootPersistenceResource(options: {
     if (state === 'error' || state === 'conflict') return 'error'
     return isValidationPending.value ? 'pending' : 'idle'
   })
-  const isPending = computed(() => (
+  const isDraftPersistencePending = computed(() => (
     hasUnqueuedDraft.value
     || draftCoordinator.value?.isPending.value === true
-    || recoveryCoordinator.isPending.value
+  ))
+  const isPending = computed(() => (
+    isDraftPersistencePending.value || recoveryCoordinator.isPending.value
   ))
   const hasConflict = computed(() => (
     draftCoordinator.value?.conflictDraftRevision.value !== null
@@ -393,8 +402,17 @@ function createRootPersistenceResource(options: {
     return candidate
   }
 
-  function acceptDraftResponse(response: WorkflowDraftResponse): void {
+  function acceptDraftResponse(
+    response: WorkflowDraftResponse,
+    preserveLocalOrigin = false,
+  ): void {
     const accepted = cloneJson(response)
+    // A fresh dirty frontend draft is conservatively local on remount. During
+    // this resource's lifetime, validation-only writes preserve the origin of
+    // the admitted graph rather than turning an agent graph into a local edit.
+    hasLocalSemanticChanges.value = accepted.dirty_against_saved && (
+      preserveLocalOrigin ? hasLocalSemanticChanges.value : accepted.updated_by === 'frontend'
+    )
     authoritativeDraft = accepted
     acceptedDraftRevision.value = accepted.draft_revision
     currentGraph.value = cloneGraph(accepted.graph)
@@ -405,7 +423,7 @@ function createRootPersistenceResource(options: {
   }
 
   function acceptDraftWrite(acceptance: WorkflowDraftAcceptance): void {
-    acceptDraftResponse(acceptance.response)
+    acceptDraftResponse(acceptance.response, true)
     useWorkflowDraftStore().acknowledgeAcceptedDraft(acceptance.response)
   }
 
@@ -442,7 +460,7 @@ function createRootPersistenceResource(options: {
         if (pendingDraft !== null) {
           queuedDraftRevision.value = pendingDraft.revision
         }
-        acceptDraftResponse(response)
+        acceptDraftResponse(response, initial !== null || pendingDraft !== null)
       }
       const coordinator = createWorkflowDraftCoordinator({
         canvasId: options.canvasId,
@@ -488,6 +506,9 @@ function createRootPersistenceResource(options: {
       )
     ) return null
 
+    if (!graphsEqual(snapshot, currentGraph.value)) {
+      hasLocalSemanticChanges.value = true
+    }
     currentGraph.value = cloneGraph(snapshot)
     currentGraphHasAcceptedValidation = false
     nextDraftRevision.value += 1
@@ -541,11 +562,14 @@ function createRootPersistenceResource(options: {
       pendingDraft === null
       || graphsEqual(currentGraph.value, response.graph)
     ) {
-      acceptDraftResponse(response)
+      acceptDraftResponse(response, pendingDraft !== null)
     }
   }
 
-  function resolveFromDraft(response: WorkflowDraftResponse): void {
+  function resolveFromDraft(
+    response: WorkflowDraftResponse,
+    origin: CanvasDraftResolutionOrigin,
+  ): void {
     const capturedId = captureWorkflowId(response.workflow_id)
     if (capturedId === null) return
     draftCoordinator.value?.dispose()
@@ -557,7 +581,8 @@ function createRootPersistenceResource(options: {
     pendingDraft = null
     queuedDraftRevision.value = 0
     nextDraftRevision.value = 0
-    acceptDraftResponse(response)
+    hasLocalSemanticChanges.value = origin === 'local' && response.dirty_against_saved
+    acceptDraftResponse(response, true)
     recoveryCoordinator.queue(capturedId, response.graph)
   }
 
@@ -648,7 +673,8 @@ function createRootPersistenceResource(options: {
     pendingDraft = null
     queuedDraftRevision.value = 0
     nextDraftRevision.value = 0
-    acceptDraftResponse(response)
+    hasLocalSemanticChanges.value = false
+    acceptDraftResponse(response, true)
     useWorkflowDraftStore().acknowledgeAcceptedDraft(response)
     try {
       await options.transports.clearRecovery(capturedId)
@@ -675,6 +701,8 @@ function createRootPersistenceResource(options: {
     validationResult,
     isValidationPending,
     validationSyncState,
+    hasLocalSemanticChanges,
+    isDraftPersistencePending,
     isPending,
     hasConflict,
     persistenceState,
@@ -703,6 +731,8 @@ function createBoundApi(
     workflowId: resource.workflowId,
     acceptedDraftRevision: resource.acceptedDraftRevision,
     currentGraph: resource.currentGraph,
+    hasLocalSemanticChanges: resource.hasLocalSemanticChanges,
+    isDraftPersistencePending: resource.isDraftPersistencePending,
     isPending: resource.isPending,
     hasConflict: resource.hasConflict,
     persistenceState: resource.persistenceState,
@@ -710,7 +740,7 @@ function createBoundApi(
     queueGraph: graph => resource.queueGraph(graph),
     queueDraft: graph => resource.queueDraft(graph),
     initializeFromDraft: response => resource.initializeFromDraft(response),
-    resolveFromDraft: response => resource.resolveFromDraft(response),
+    resolveFromDraft: (response, origin) => resource.resolveFromDraft(response, origin),
     flush: () => resource.flush(),
     retryPersistence: () => resource.retryPersistence(),
     dismissPersistenceIssue: issueId => resource.dismissPersistenceIssue(issueId),
@@ -734,6 +764,8 @@ function createUnavailableBoundApi(
     workflowId,
     acceptedDraftRevision,
     currentGraph,
+    hasLocalSemanticChanges: ref(false),
+    isDraftPersistencePending: ref(false),
     isPending: ref(false),
     hasConflict: ref(false),
     persistenceState: ref<CanvasPersistenceState>('idle'),
@@ -741,7 +773,7 @@ function createUnavailableBoundApi(
     queueGraph: () => {},
     queueDraft: () => {},
     initializeFromDraft: () => {},
-    resolveFromDraft: () => {},
+    resolveFromDraft: (_response, _origin) => {},
     flush: async () => {},
     retryPersistence: async () => {},
     dismissPersistenceIssue: () => {},
@@ -783,6 +815,8 @@ function createActiveFacade(): CanvasPersistenceApi {
       () => selected()?.acceptedDraftRevision.value ?? null,
     ),
     currentGraph: computed(() => selected()?.currentGraph.value ?? emptyGraph()),
+    hasLocalSemanticChanges: computed(() => selected()?.hasLocalSemanticChanges.value ?? false),
+    isDraftPersistencePending: computed(() => selected()?.isDraftPersistencePending.value ?? false),
     isPending: computed(() => selected()?.isPending.value ?? false),
     hasConflict: computed(() => selected()?.hasConflict.value ?? false),
     persistenceState: computed(
@@ -794,7 +828,7 @@ function createActiveFacade(): CanvasPersistenceApi {
     queueGraph: graph => required().queueGraph(graph),
     queueDraft: graph => required().queueDraft(graph),
     initializeFromDraft: response => required().initializeFromDraft(response),
-    resolveFromDraft: response => required().resolveFromDraft(response),
+    resolveFromDraft: (response, origin) => required().resolveFromDraft(response, origin),
     flush: () => required().flush(),
     retryPersistence: () => required().retryPersistence(),
     dismissPersistenceIssue: issueId => required().dismissPersistenceIssue(issueId),

@@ -1270,11 +1270,12 @@ defineExpose({
     data-testid="workflow-import-input"
     @change="onImportFileSelected"
   >
-  <Menubar :model="menuItems" data-testid="app-menubar">
+  <Menubar :model="menuItems" class="app-menubar" data-testid="app-menubar">
     <template #end>
       <div class="workflow-actions">
-        <span class="workflow-title" data-testid="workflow-title">
-          {{ workflowTitle }}
+        <span class="workflow-title" :title="workflowTitle" data-testid="workflow-title">
+          <span class="workflow-title__label">{{ uiStore.activeWorkflowName ?? 'No workflow' }}</span>
+          <span v-if="uiStore.hasUnsavedChanges" class="workflow-title__dirty">{{ ' *' }}</span>
         </span>
         <Button
           v-if="activeWorkflowId"
@@ -1316,7 +1317,7 @@ defineExpose({
     </template>
   </Menubar>
   <ViewingRequirementsGuidance
-    v-if="acceptedViewingOwner && !viewingDismissed && (napariStore.viewingReadinessPending || viewingError || (viewingReport && viewingReport.summary.outputs_needing_setup > 0))"
+    v-if="acceptedViewingOwner && !viewingDismissed && (viewingError || (viewingReport && (viewingReport.summary.outputs_needing_setup > 0 || viewingReport.summary.unknown_outputs > 0)))"
     :workflow-name="acceptedViewingOwner.workflowName"
     :report="viewingReport"
     :error="viewingError"
@@ -1456,15 +1457,40 @@ defineExpose({
 </template>
 
 <style scoped>
+.app-menubar {
+  flex-wrap: nowrap;
+}
+.app-menubar :deep(.p-menubar-root-list) {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+.app-menubar :deep(.p-menubar-end) {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .workflow-actions {
   align-items: center;
   display: flex;
   gap: 0.75rem;
+  min-width: 0;
 }
 .workflow-title {
   color: var(--text-color-secondary);
+  display: flex;
   font-size: 0.875rem;
+  flex: 1 1 0;
+  max-width: 20rem;
+  min-width: 0;
   white-space: nowrap;
+}
+.workflow-title__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-title__dirty {
+  flex-shrink: 0;
+  white-space: pre;
 }
 .rename-field {
   display: grid;

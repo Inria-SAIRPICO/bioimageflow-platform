@@ -19,15 +19,52 @@ The user explicitly authorizes continued execution until the END of the whole ca
 After the accepted library milestone, continue technically gated publication, platform API/pin adoption and T1/I1, complete M3/M4, and execute desktop M5 last; standing release authorization remains valid and does not waive technical gates.
 Reuse stable existing worker/artifact drivers and content-bound recipe dependencies, group causally overlapping repairs, retain unchanged successful phases, and request a new design decision only for a genuinely unbounded ambiguity.
 
-## Current priority after accepted library and adoption gates — October 8
+## Current priority after accepted library and adoption gates — October 29
 
-The current checkpoint overrides every completed-phase “Next MAIN”, publication pause and older baseline below.
-The October 4 specification/suite/causal review and selected milestone, technically gated dependency releases, coherent normal-registry adoption, credential compensation and configured deployment policy are closed in their exact receipts; do not restart them from historical instructions.
-I1/T1, portable output-schema inference and faithful hot-reload fixture metadata are accepted and delivered; owned-source refusal/recovery, dataset deletion/upload recovery and trusted Python materialization are accepted; local source-package lifecycle is accepted with its exact non-active removal and offline-installation scope; workspace API isolation and localized Preferences recovery/persistence are accepted; visible dirty-canvas agent-conflict and clean synchronization are accepted. Saved explicit-tool availability and initial scoped metadata/template preservation are repaired; actual managed template filename/pinned-record journeys pass in both browsers, with affected checks delivered at `2bcf6ee`. Node-addressed source opening against same-named catalog and nested owned-source identities passes both browsers without another scientific Run. Source-qualified runtime/source evidence and fresh nonempty recursive-operation atomicity now reconcile 39 additional obligations without replaying scientific certification. Genuine folder Rename/open-owner refusal and durable result/provenance preservation now pass in Chromium and Firefox; real local WebSocket reconnect/restored-owner effects now pass in both browsers; seven residual lifecycle cells are source-qualified from executed evidence. Genuine edited-source ZIP capture/import/reopen now passes without execution. Occupied-target copy refusal and genuine staged source-copy failure/cleanup/explicit retry now pass with complete retained authority; unchanged captured route evidence separately qualifies reservation/storage retry, without physical compilation or durable execution claims. Published common-tools 0.2.2 certification now passes eight discovery/schema cases on the normal pinned baseline, with no worker/OMERO/native claim. Nine additional canonical-document/detach-success/naming obligations are reconciled from source-qualified executed evidence. Stale duplicate and transitive containment refusal now preserve full structural authority across fresh public store reads; resource CPU/memory edit/reset/save/reopen and actual capacity refusal/repair now pass in both browsers without Run; canonical null inheritance no longer enables a no-op Reset. Combined invalid-template refusal/recovery and actual scheduling remain separate gaps; the open-editor Detach/durable provenance complement is next. Reconcile the remaining audited local obligations explicitly, then finish M4 audited local/external and supported OMERO certification before native desktop M5 LAST.
-An observed public contradiction gets one distinguishing cheap control and a bounded owned repair; it does not trigger another whole-codebase sweep or automatic dependency release.
-Combine the major SDK/platform adoption and I1/T1 retrospective with the M2→M3 transition, with the next ordinary lookback before M4/final certification.
-Operational checkpoints retain current source, accepted scoped receipt pointers, next commands and protected/active owners; detailed resolved chronology stays only in receipts and historical documents that ordinary continuation does not load.
-Before an expensive real fixture, check actual public context/graph/source/API and middleware prerequisites; a held mutation request's test-release signal must not need that same mutation admission.
+The [current checkpoint](platform-test-current.md) supersedes every dated completed-phase “Next MAIN”, old publication pause and older baseline below.
+The user authorized incorporating the October 23–27 commits and executing the remaining headless work with explicit agent orchestration.
+Current integrated source is `68bae0b`, with normal published BioImageFlow 0.9.6, Core 0.5.1 and Wetlands 2.6.1; held OMERO/logger work and unrelated user changes remain separately owned.
+The ordered library specification→suite→main/secondary causal review and selected repairs/releases stay accepted in their recorded scope; do not restart them because newer platform changes require their own acceptance.
+
+The current change map includes installed-generation loading/package retirement, startup catalogs, canonical source-bound viewing/schema inspection, permanent-result refusal, cold/shared thumbnails, continuous/virtual Node Data and recursive typed workflow controls.
+Review those causal consumers and existing tests before adding another control.
+The prior 438/499 dashboard and primary-GUI 224/224 are historical evidence counts, not current-revision certification; both historical temporary proof roots are absent from this checkout.
+Do not promote cells from source inspection, a test title, collection success or an unrelated broad green phase.
+
+Execute the checkpoint's finite H0–H5 sequence: reconcile/freeze; validate the recent integrated behaviors; finish remaining runnable M3 oracles; resolve or name OMERO external prerequisites; complete one audited integrated headless milestone; then hand off to native M5 LAST.
+The remaining headless assertions include held logger reconnect, existing shell/viewport/catalog complements, real edge metadata geometry and deployment-mode availability, plus the named settings/source/archive/cache/template/upload/thumbnail gaps.
+The historical dashboard contains 23 rows with gaps and one unassessed native Napari row; several rows mix headless, external and native obligations.
+Broad browser success does not close a missing oracle or a native/external boundary automatically.
+Validate a generic failure/persistence obligation against the real specification before inventing a feature to satisfy bookkeeping; retain explicit non-applicability reasons separately from executed credit.
+
+One orchestrator owns scope/cross-boundary decisions and independent review; one integration/runtime owner controls shared environment mutations, source freezes, tests and task-only Git integration.
+Other agents receive finite outcome-based packets with exact paths, current contracts, causal consumers, acceptance selectors and handoff gates.
+Use at most four concurrent agents including the orchestrator, avoid nested delegation by default, and use `followup_task` for actionable assignments so completed agents are actually activated.
+Coherent commits are progress boundaries rather than requests to stop or renew permission.
+Hold one strategic lookback before the integrated headless milestone; do not add a review loop after every selector or command.
+
+Use `scripts/test` and proportionate focused controls during repairs, then preserve unchanged successful phases on a proven equivalent source/dependency projection.
+The post-loading changes warrant the documented package-loading milestone, but unfiltered `full` includes excluded distributed behavior; use the complete audited local backend/external, frontend and both-browser selections with lint/types/build/logging/docs explicitly assembled and disclosed instead of claiming an unfiltered full pass.
+Do not stack quick, scoped checks and a subsuming milestone invocation.
+An observed contradiction gets one distinguishing cheap control and a bounded owning repair rather than another whole-codebase sweep or automatic dependency release.
+Before an expensive fixture, check its actual public graph/source/API and middleware prerequisites; a held mutation request's release signal must not need the same mutation admission.
+
+Automated work must not access or depend on the personal/native Keychain.
+`scripts/test` forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring`; Settings tests inject memory providers, and necessary live managed-worker checks use a private RAM-only broker with process-local read-only access.
+Replacement/unbootstrapped workers fail closed, and credentials stay out of graphs, artifacts, files, logs and command arguments.
+This does not change production credential behavior or certify native cross-executable integration; that integration is not an END prerequisite and must not resume automatically at M5.
+The future native preflight must also preserve the guard through sanitized child launch environments.
+Git/GitHub authentication is outside the Python guard: use only actually available noninteractive credentials outside Keychain and preserve public remote-source distinctions.
+
+October 29 public checks find PR #20 open at `d6b0506`, latest scheduled CI `40300423591` failed at `f0bab43`, and both OMERO PyPI project/version endpoints still 404; none certifies local `68bae0b`.
+M4 includes the user-required basic first-party OMERO Download/Upload tools and the reviewed saved-card→active-canvas→Save/reload integration, with normal published package adoption rather than an editable workaround.
+The earlier candidate's actual RAM-only roundtrip and ordinary source CI remain historical recorded evidence; the first publication failed on publisher authorization.
+Do not retry publication without an actual publisher/authentication state change, advertise registry availability, or hide the held exact OMERO browser case through an unreported exclusion.
+Continue independent local work while that external prerequisite remains unresolved.
+Native dialogs/viewers/editor/application lifecycle remain M5 LAST, after the headless gate is assessed; headless fixtures never supply native credit.
+
+Operational checkpoints retain current source, accepted evidence pointers, next commands and protected/active owners.
+Detailed completed chronology stays in its owning record; do not append diaries or copy long receipts into the checkpoint.
 
 ## Highest priority: deep library/Core review and validation — October 4
 
@@ -378,7 +415,7 @@ Keep the checkpoint focused on current state/decisions and put detailed complete
 | M1 — Complete codebase review | Every human-authored platform/library/Wetlands source and test file reviewed, generated/assets explicitly classified, held WIP inspected, all identified findings recorded, cross-boundary synthesis and independent completeness review; no static-review coverage credit |
 | M2 — Priority repairs and optimization | Validated coherent repairs, resolved or explicitly blocked dependency contracts, measured suite changes and consistent specifications |
 | M3 — Systematic implemented coverage | Reconciled inventories and missing real assertions across all in-scope families, with low-risk work following the architectural findings |
-| M4 — Automated and external certification | Complete audited local selections plus required lint/types/build/logging/docs, published compatibility and real-worker/scientific-boundary results |
+| M4 — Automated and external certification | Complete audited local selections plus required lint/types/build/logging/docs, published compatibility, real-worker/scientific-boundary results, and basic OMERO Download/Upload worker/live roundtrip acceptance |
 | M5 — Final desktop acceptance | Actual native outcomes at the end, named remaining limitations and clean committed task changes |
 
 Hold a strategic retrospective after M1, after several coherent repair batches or a major architectural integration, before systematic coverage expansion and before final certification.

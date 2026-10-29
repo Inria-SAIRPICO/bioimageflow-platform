@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+from bioimageflow_server.models.graph import GraphState, ToolNodeState, WorkflowNodeState
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -237,14 +238,23 @@ class CustomToolService:
     ) -> list[str]:
         if workflow_store is None:
             return []
+
+        def uses_tool(graph: GraphState) -> bool:
+            return any(
+                (isinstance(node, ToolNodeState) and node.tool_name == class_name)
+                or (isinstance(node, WorkflowNodeState) and uses_tool(node.workflow))
+                for node in graph.nodes
+            )
+
         affected: list[str] = []
         for info in workflow_store.list_workflows():
+            workflow_id = info.id or info.name
             try:
-                workflow = workflow_store.get_workflow(info.name)
+                workflow = workflow_store.get_workflow(workflow_id)
             except Exception:
                 continue
-            if any(node.tool_name == class_name for node in workflow.graph.nodes):
-                affected.append(info.name)
+            if uses_tool(workflow.graph):
+                affected.append(workflow_id)
         return affected
 
     def _resolve_under_root(self, relative_name: str) -> Path:

@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow"
-version = "0.9.3"
+version = "0.9.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bioimageflow-core" },
@@ -68,9 +68,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/0a/311219bf89968a3c85b95625977f7b9834e1170ee87ac9f63c659d749c80/bioimageflow-0.9.3.tar.gz", hash = "sha256:7ae000c4ffdd6857af734ce930c211d5ad8c5501b3afd24a75d3960acdcd283d", size = 435507, upload-time = "2026-10-08T03:45:49.4Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/43/be58ee075a37c18750525aa403d05e8d229cea928e0c6a4d0aa39cc5480f/bioimageflow-0.9.6.tar.gz", hash = "sha256:2a6f624cb39bb6145f8278aec892d52c1a2dfb0accaa63ca2737879772e47f4c", size = 438848, upload-time = "2026-10-24T12:04:41.626Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/db/c9c4de9d83bcba7e00fcc6bef4353da86f77c2c89101d4e7654e0387cdea/bioimageflow-0.9.3-py3-none-any.whl", hash = "sha256:eaa3cf8665b8b4da039fa3934c69f2a0354580afa46bde576bf60645c438b869", size = 547512, upload-time = "2026-10-08T03:45:47.842Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/04/2218df5d9b8ea5c0476e4ef2a90015341b487a989617276fa1ebe384677b/bioimageflow-0.9.6-py3-none-any.whl", hash = "sha256:a47fb1f60f7d00f470768abb6eb34542c41d6d3fd6dc5daca558f2a4e615ec28", size = 550913, upload-time = "2026-10-24T12:04:40.3Z" },
 ]
 
 [package.optional-dependencies]
@@ -83,20 +83,20 @@ psij = [
 
 [[package]]
 name = "bioimageflow-core"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/54/aa/155cd466c563f47892baf9f6cef703d223e68bebd5ec750bd06f4debbf7e/bioimageflow_core-0.5.0.tar.gz", hash = "sha256:d84c0aedfafb7126f09b7c8f43a8e37c4dcb898608d21a62f3072506b5c6d634", size = 68292, upload-time = "2026-10-07T16:40:20.467Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/ae/6b347627613a7cc51d94c8d8aec22e9e1fcf16962730453dfdb454bfd1e2/bioimageflow_core-0.5.1.tar.gz", hash = "sha256:efd7f4319f5fff2404f8276ff3c1a9f11d94056536cda5df2b6e712077eb683d", size = 70551, upload-time = "2026-10-23T20:42:28.017Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/5d/8963dc53065d5abc444d47624f32c773292000d7836f28662544e88786b3/bioimageflow_core-0.5.0-py3-none-any.whl", hash = "sha256:bdbe082304ac867da0f570470a795121053995edfbbf1486501bb611fb1efd11", size = 80530, upload-time = "2026-10-07T16:40:21.565Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/27/98cd42e9084dac08299b8ddeec4762911204630632a6c5000e7c0f0ff1a8/bioimageflow_core-0.5.1-py3-none-any.whl", hash = "sha256:d7fb35d0c0acefaabf25461cca0178d8e47f0981e961ab2d2581f229aad42cc5", size = 82643, upload-time = "2026-10-23T20:42:29.021Z" },
 ]
 
 [[package]]
 name = "bioimageflow-server"
-version = "0.1.30"
+version = "0.1.31"
 source = { editable = "." }
 dependencies = [
     { name = "bioimageflow", extra = ["parsl", "psij"] },
@@ -137,8 +137,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bioimageflow", extras = ["parsl", "psij"], specifier = "==0.9.3" },
-    { name = "bioimageflow-core", specifier = ">=0.5.0,<0.6" },
+    { name = "bioimageflow", extras = ["parsl", "psij"], specifier = "==0.9.6" },
+    { name = "bioimageflow-core", specifier = ">=0.5.1,<0.6" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.0" },
@@ -167,7 +167,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.9" },
-    { name = "wetlands-launcher", specifier = ">=0.3.9" },
+    { name = "wetlands-launcher", git = "https://github.com/arthursw/launcher?rev=4736c6677264ae06b590278ceb5d82bb8a777d26" },
 ]
 
 [[package]]
@@ -2085,7 +2085,7 @@ wheels = [
 [[package]]
 name = "wetlands-launcher"
 version = "0.3.9"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/arthursw/launcher?rev=4736c6677264ae06b590278ceb5d82bb8a777d26#4736c6677264ae06b590278ceb5d82bb8a777d26" }
 dependencies = [
     { name = "cryptography" },
     { name = "keyring" },
@@ -2095,8 +2095,4 @@ dependencies = [
     { name = "toml" },
     { name = "typing-extensions" },
     { name = "wetlands" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/91/a8/0a7ee7e9c86b5082d1994683837fe079b55331bde82454019ec9fa1103f9/wetlands_launcher-0.3.9.tar.gz", hash = "sha256:f9d5ad03f12a0db4bb5e80fea0ebdf9effea2a09b0775e6e68a94e1738adac59", size = 593484, upload-time = "2026-08-10T09:53:17.744Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/de/e19f0817407aba1f3c5565fb2c54318b62e53591233cdea909d417835f8a/wetlands_launcher-0.3.9-py3-none-any.whl", hash = "sha256:e3050484ddb9834226355ecc3ede6dd67e093d4f3546e79eaf9cda77a8723b07", size = 257492, upload-time = "2026-08-10T09:53:11.633Z" },
 ]

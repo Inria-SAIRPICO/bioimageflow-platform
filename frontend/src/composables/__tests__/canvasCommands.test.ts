@@ -15,6 +15,7 @@ function makeCanvasCommandHandlers() {
     clearNodeOutputs: vi.fn(async () => true),
     canClearNodeOutputs: true,
     setInputPinned: vi.fn(() => true),
+    resetWorkflowBinding: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
     toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
     toggleWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
@@ -55,6 +56,12 @@ const nodeEditCases: Array<{
     invoke: commands => commands.setInputPinned('shared', 'image', false),
     spy: handlers => handlers.setInputPinned,
     expectedArgs: ['shared', 'image', false],
+  },
+  {
+    name: 'workflow binding reset',
+    invoke: commands => commands.resetWorkflowBinding('shared', 'field-id'),
+    spy: handlers => handlers.resetWorkflowBinding,
+    expectedArgs: ['shared', 'field-id'],
   },
   {
     name: 'output template',

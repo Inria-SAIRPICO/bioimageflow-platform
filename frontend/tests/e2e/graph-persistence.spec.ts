@@ -85,7 +85,7 @@ async function fetchRecoveryTools(page: Page): Promise<{
     accepts_upstream: true,
     dataframe_output: true,
     inputs: {
-      number: { type: 'int', connectable: 'by_default' },
+      number: { type: 'int', connectable: 'never' },
     },
     outputs: { number_plus_one: { type: 'int' } },
   })

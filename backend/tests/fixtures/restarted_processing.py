@@ -32,7 +32,6 @@ def run_worker(manager: Any, results: Path) -> dict[str, Any]:
     adapter = _ExecutionEnvironmentManager(
         manager,
         context=context,
-        current_node_id=lambda: "worker",
         on_preparation=lambda preparation, *_args: preparations.append({
             "action": preparation.action,
             "requested_recipe_hash": preparation.requested_recipe_hash,
@@ -41,7 +40,7 @@ def run_worker(manager: Any, results: Path) -> dict[str, Any]:
         on_provision_event=lambda *_args: None,
         on_ready=lambda *_args: None,
         on_admitted=lambda *_args: None,
-        on_failure=failures.append,
+        on_failure=lambda _context, name: failures.append(name),
         on_stopped=lambda *_args: None,
         replacement_authorizer=service.can_replace_processing_environment,
         environment_lock=service.processing_environment_lock,

@@ -59,6 +59,7 @@ export interface CanvasScopedCommandsOptions {
   ) => CanvasInterfaceCommandResult
   updateParameter: (nodeId: string, key: string, value: unknown) => boolean
   updateWorkflowBinding?: (nodeId: string, inputId: string, value: unknown) => boolean
+  resetWorkflowBinding?: (nodeId: string, inputId: string) => boolean
   updateParameters?: (
     nodeId: string,
     values: Record<string, unknown>,
@@ -91,6 +92,7 @@ export interface CanvasCommandsApi {
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
   updateWorkflowBinding(nodeId: string, inputId: string, value: unknown): boolean
+  resetWorkflowBinding(nodeId: string, inputId: string): boolean
   updateParameters(nodeId: string, values: Record<string, unknown>): boolean
   dispose(): void
 }
@@ -121,6 +123,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
   updateWorkflowBinding(nodeId: string, inputId: string, value: unknown): boolean
+  resetWorkflowBinding(nodeId: string, inputId: string): boolean
   updateParameters(nodeId: string, values: Record<string, unknown>): boolean
 }
 
@@ -200,6 +203,7 @@ export function useCanvasCommands(
     updateWorkflowBinding: (nodeId, inputId, value) => (
       resource.updateWorkflowBinding(nodeId, inputId, value)
     ),
+    resetWorkflowBinding: (nodeId, inputId) => resource.resetWorkflowBinding(nodeId, inputId),
     updateParameters: (nodeId, values) => (
       resource.updateParameters(nodeId, values)
     ),
@@ -291,6 +295,10 @@ function createCommandResource(
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.updateWorkflowBinding?.(nodeId, inputId, value) ?? false
     },
+    resetWorkflowBinding: (nodeId, inputId) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.resetWorkflowBinding?.(nodeId, inputId) ?? false
+    },
     updateParameters: (nodeId, values) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       if (options.updateParameters) return options.updateParameters(nodeId, values)
@@ -374,6 +382,7 @@ function createActiveFacade(): CanvasCommandsApi {
     updateWorkflowBinding: (nodeId, inputId, value) => {
       return activeCommandResource()?.updateWorkflowBinding(nodeId, inputId, value) ?? false
     },
+    resetWorkflowBinding: (nodeId, inputId) => activeCommandResource()?.resetWorkflowBinding(nodeId, inputId) ?? false,
     updateParameters: (nodeId, values) => {
       return activeCommandResource()?.updateParameters(nodeId, values) ?? false
     },

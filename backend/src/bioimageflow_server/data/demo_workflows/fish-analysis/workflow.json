@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:cbbacc9e647f1c4e6d3a2e38f4fa0e2b638d84cd787b9b0413afb2497f59be75",
+  "artifact_hash": "sha256:f81c2e469b36d8a71d4824aaaa1cf496adfa5901a675f2a475b0f18b22e35477",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -164,7 +164,7 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.1",
+        "tool_package_version": "0.2.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -186,7 +186,7 @@
         "tool_module": "bioimageflow_segmentation_tools.cellpose_v3",
         "tool_name": "Cellpose3",
         "tool_package": "bioimageflow_segmentation_tools",
-        "tool_package_version": "0.3.1",
+        "tool_package_version": "0.3.2",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -445,7 +445,7 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -465,7 +465,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -485,7 +485,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -766,7 +766,7 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -786,7 +786,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -806,7 +806,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.1",
+              "tool_package_version": "0.2.2",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -856,7 +856,7 @@
   "metadata": {
     "bundled_template": {
       "id": "fish-analysis",
-      "version": 5
+      "version": 6
     },
     "description": "Analyze FISH marker spots per segmented nucleus."
   },

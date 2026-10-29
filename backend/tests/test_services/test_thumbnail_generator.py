@@ -11,7 +11,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 
@@ -24,10 +24,20 @@ def _make_bioio_stub(captured: dict[str, Any] | None = None) -> ModuleType:
         def __init__(self, path: Any, reader: Any = None) -> None:
             captured["path"] = str(path)
             captured["reader"] = reader
+            self.dims = SimpleNamespace(T=captured["data"].shape[0], Z=captured["data"].shape[2])
 
-        def get_image_data(self, order: str) -> Any:
+        def get_image_dask_data(self, order: str, **selectors: int) -> Any:
             captured["order"] = order
-            return captured.get("data")
+            captured["selectors"] = selectors
+
+            def compute():
+                captured["computed"] = True
+                data = captured["data"][selectors["T"], :, selectors["Z"], ...]
+                if data.ndim == 3:
+                    data = data[..., None]
+                return data.transpose(1, 2, 0, 3)
+
+            return SimpleNamespace(compute=compute)
 
     mod.__dict__["BioImage"] = _FakeBioImage
     return mod
@@ -80,9 +90,31 @@ def test_create_thumbnail_writes_png_for_2d_array(tmp_path: Path) -> None:
 
     assert thumbnail_path.is_file()
     assert thumbnail_path.read_bytes().startswith(b"\x89PNG")
-    # The TCZYX order request reaches bioio, with the canonical-extension symlink
-    assert captured["order"] == "TCZYX"
+    assert captured["order"] == "YXCS"
+    assert captured["selectors"] == {"T": 0, "Z": 0}
     assert captured["reader"].__name__ == "TiffReader"
+
+
+def test_thumbnail_publication_is_atomic(tmp_path: Path, monkeypatch) -> None:
+    import numpy as np
+    from PIL import Image
+
+    source = tmp_path / "source.tif"
+    source.write_bytes(b"tiff")
+    destination = tmp_path / "thumbnail.png"
+    helper = _load_module(_make_bioio_stub({"data": np.zeros((1, 1, 1, 8, 8))}))
+    original_save = Image.Image.save
+
+    def save(image, path, *args, **kwargs):
+        assert Path(path) != destination
+        assert not destination.exists()
+        original_save(image, path, *args, **kwargs)
+        assert not destination.exists()
+
+    monkeypatch.setattr(Image.Image, "save", save)
+    helper.create_thumbnail(str(source), "tif", str(destination))
+    assert destination.read_bytes().startswith(b"\x89PNG")
+    assert list(tmp_path.glob("*.png")) == [destination]
 
 
 def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None:
@@ -90,16 +122,11 @@ def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None
 
     captured: dict[str, Any] = {"data": np.zeros((1, 1, 1, 8, 8), dtype=np.uint8)}
 
-    class _StrictBioImage:
+    class _StrictBioImage(_make_bioio_stub(captured).BioImage):
         def __init__(self, path: Any, reader: Any = None) -> None:
             if not isinstance(path, str):
                 raise TypeError(f"expected str path, got {type(path)}")
-            captured["path"] = path
-            captured["reader"] = reader
-
-        def get_image_data(self, order: str) -> Any:
-            captured["order"] = order
-            return captured["data"]
+            super().__init__(path, reader)
 
     bioio_stub = ModuleType("bioio")
     bioio_stub.__dict__["BioImage"] = _StrictBioImage
@@ -190,3 +217,26 @@ def test_create_thumbnail_handles_rgba_data(tmp_path: Path) -> None:
     tg.create_thumbnail(str(image_path), "tif", str(thumbnail_path), size=(16, 16))
 
     assert thumbnail_path.is_file()
+
+
+def test_preview_selects_middle_plane_lazily_and_preserves_rgb_samples(tmp_path: Path) -> None:
+    import numpy as np
+    from PIL import Image
+
+    # T,C,Z,Y,X,S: unused planes deliberately differ from the chosen plane.
+    data = np.full((3, 1, 5, 8, 8, 3), 100, dtype=np.uint8)
+    data[1, 0, 2] = [255, 0, 0]
+    captured = {"data": data}
+    helper = _load_module(_make_bioio_stub(captured))
+    source = tmp_path / "rgb.png"
+    source.write_bytes(b"image")
+    destination = tmp_path / "preview.png"
+
+    helper.create_thumbnail(str(source), "png", str(destination))
+
+    assert captured["selectors"] == {"T": 1, "Z": 2}
+    assert captured["computed"] is True
+    assert captured["reader"] is None
+    with Image.open(destination) as preview:
+        assert preview.mode == "RGB"
+        assert preview.getpixel((0, 0)) == (255, 0, 0)

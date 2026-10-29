@@ -9,9 +9,11 @@ export const IMAGE_PATH_GLOBS = [
   '*.czi',
   '*.lsm',
   '*.nd2',
+  '*.ome.zarr',
+  '*.zarr',
 ] as const
 
-const IMAGE_PATH_PATTERN = /\.(?:ome\.tiff?|tiff?|png|jpe?g|czi|lsm|nd2)$/i
+const IMAGE_PATH_PATTERN = /\.(?:ome\.tiff?|tiff?|png|jpe?g|czi|lsm|nd2|zarr)$/i
 
 export function isImagePath(value: unknown): boolean {
   if (typeof value !== 'string') return false

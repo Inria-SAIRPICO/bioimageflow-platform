@@ -112,7 +112,8 @@ Deletion is available only for a platform-owned installation, reports affected d
 Use the public environment manager removal operation and never recursively delete a user-provided path.
 Deletion proves the recorded Wetlands name, public managed project path, and generation identity before removal; the nested `.pixi/envs/default` interpreter path is not substituted for that owned project path.
 Forgetting an entry clears every output favorite, filename rule, and global-default reference to it atomically, with a summary of those changes.
-Platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
+Installed platform-created managed entries cannot use forget and must use managed deletion; adopted entries can only be forgotten.
+A setup-needed managed declaration with no installed generation and no active operation can be forgotten as metadata only, using the same reference cleanup; no environment manager is acquired and no installed-environment files are removed or changed.
 
 ## 3. Portable output requirements
 
@@ -199,6 +200,8 @@ Export also carries a derived, versioned viewing-requirement manifest keyed by s
 This manifest is an export snapshot, not a second editable requirement store.
 After dependencies load, compare it with authoritative tool/graph metadata and report unresolved or changed declarations before declaring coverage.
 Missing or unresolvable tool metadata must produce “requirements unknown,” not an empty list and a green report.
+Saved-workflow inspection uses the same request-local compiler, workflow-owned source bundle and selected package store as normal loading, without cache planning, runtime provisioning or scientific execution.
+Construction errors remain explicit unknown diagnostics even when validation-only construction returns an empty diagnostic workflow.
 
 This required a coordinated library schema/API change: the strict graph/archive models rejected unsupported extra fields before that change.
 Do not hide the feature in unknown graph keys, environment labels, package execution requirements, or a platform-only archive that the library cannot preserve.
@@ -353,6 +356,8 @@ Raw JSON import/export of local configuration may be a later advanced convenienc
 ### 5.3 Open button and dropdown
 
 The existing **Open in napari** becomes a split button.
+Mounting or scrolling an image cell does not resolve viewer environments; the primary/menu action requests fresh backend resolution for its captured artifact.
+Until that action, the button uses a generic opening/choice label rather than claiming that compatibility or an environment choice has already been checked.
 Its main action opens in the resolved environment; its tooltip/accessibility label includes that environment and selection reason.
 The arrow opens a popover showing all registered environments with status, detected napari version, and a short reason when requirements are unmet.
 Changing the selected artifact withdraws the previous resolved environment, reader, launch, clear-layers, and favorite actions while the new artifact resolves; late responses cannot revive those withdrawn actions.
@@ -434,7 +439,8 @@ Preference changes are atomic local UI state and do not acquire a graph executio
 
 ## 7. Workflow import and setup guidance
 
-After an import or explicit saved Open has been accepted into its root canvas, run the passive viewing-requirements check and show persistent, non-blocking guidance while checking, when setup may be needed, or when the check fails.
+After an import or explicit saved Open has been accepted into its root canvas, run the passive viewing-requirements check and show persistent, non-blocking guidance when setup may be needed or when the check fails.
+A pending check alone does not mount a banner; a covered report completes silently, while completed unknown/setup/error guidance remains visible until dismissal or a change of owning presentation.
 Bind the check, report, error, toast, and requirement-group prefills to the latest presentation intent, workflow local and server identity generations, exact canvas registration, and currently active owning root; a refused or superseded presentation must not publish these effects.
 Superseding a request or removing its owning presentation invalidates both successful and failed late responses before they can replace another workflow's guidance or form.
 The guidance names the workflow, states that execution is unaffected, and offers expandable output identities, grouped requirements, candidate failures, unknown metadata, explicit setup actions, and dismissal to configure later.
@@ -447,6 +453,9 @@ Two required packages installed in different environments do not satisfy one out
 Conversely, two incompatible package sets used by different outputs are acceptable when separate environments cover them.
 Reader IDs, manifest discovery, enabled flags, and actual plugin loading do not participate in this passive check; any resulting failure is reported when napari handles the selected open request.
 Summaries should say “2 outputs need viewer setup,” rather than claiming that the workflow cannot run.
+That setup count includes only uncovered known requirement groups, including groups whose installed inventory cannot yet be verified; unknown manifest/tool metadata is counted and described separately.
+An unknown node wildcard identifies an unresolved node, not a known single output.
+Unknown-only guidance preserves its tool/source diagnostics and repair advice without Manage/attach or Create environment actions; those actions require a known viewer requirement group.
 
 For each uncovered requirement set, offer:
 
@@ -516,8 +525,12 @@ Preserve the current managed napari installation as one registered entry named �
 Migration inspects and adopts the actual installation without recreating it or discarding user-installed plugins.
 If it does not exist, register a setup-needed default recipe; first use presents setup and installation progress.
 Changing settings alone must not provision it.
-**Known implementation gap:** Startup currently adopts an existing singleton but skips a missing installation without registering the required setup-needed default recipe.
-Explicit managed creation is available from Settings and the output chooser; that path does not by itself close the default-recipe requirement, which needs an owned repair or an approved product decision.
+Desktop initialization atomically registers that default only when the Napari registry has revision zero, no entries, no default, no operation history and no legacy-adoption suppression.
+The declaration uses the same canonical default recipe as explicit managed creation and does not acquire an environment manager, probe, install or launch anything.
+Terminal-only operation history likewise needs no runtime reconciliation; nonterminal operations retain their existing recovery path.
+The default card exposes explicit **Setup** through the existing retry operation, retaining the declaration UUID across failed attempts.
+Until installation, **Refresh** is disabled and the probe API returns a typed setup-required conflict without probing.
+Forgetting the never-installed declaration increments the registry revision, preventing automatic recreation on the next startup.
 Legacy outputs with no viewer annotations retain normal opening behavior once a healthy default is available.
 
 Delivery advanced in three independently verifiable increments:
@@ -526,7 +539,7 @@ Delivery advanced in three independently verifiable increments:
 2. Coordinated schema-v2 library annotation/archive support, recursive normalization and artifact-hash/draft-baseline migration, output provenance, compatibility resolver, one favorite per structural output identity, filename rules with extension shortcuts, and import report.
 3. Managed environment creation with requirement-group prefills, plus the retained recipe-based copy API.
 
-The implementation for all three increments is delivered, subject to the missing-default-recipe gap above.
+The implementation for all three increments, including the metadata-only setup-needed default, is delivered.
 Feature acceptance additionally requires the native desktop checks in Section 10; those remain uncertified.
 The Phase B increment delivered the persistent registry, immutable registration and launch-context identity, package-only inventory probes, typed desktop-only registry/settings routes, singleton adoption, and ordered filename rules from increment 1.
 Phase C replaced the explicit-ID launch path with independently locked, UUID-keyed processes that use each entry's persisted argv prefix and configuration file, carry optional reader IDs as napari's `plugin=` argument, acknowledge only after Qt-thread completion, expose per-environment status/events, and never replay an open whose outcome may be unknown.

@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Automated children must never discover or request the user's native keyring.
+# Tests that need credentials explicitly inject their own in-process provider.
+export PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 backend_dir="$repo_root/backend"
 frontend_dir="$repo_root/frontend"

@@ -120,6 +120,34 @@ describe('resolvedOutputs store', () => {
     ],
   })
 
+  it('keeps the originating root source context during downstream refresh after a tab switch', async () => {
+    const [canvasA, canvasB] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const first = deferred<{ resolved: boolean; columns: object }>()
+    mockFetchNodeOutputSchema.mockReturnValueOnce(first.promise).mockResolvedValue({ resolved: true, columns: {} })
+    const graph = makeGraph()
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph,
+      id => graph.nodes.find(node => node.id === id)?.data.tool)
+    await vi.advanceTimersByTimeAsync(250)
+    canvasSessionRegistry.activate(canvasB)
+    first.resolve({ resolved: true, columns: {} })
+    await vi.runAllTimersAsync()
+    expect(mockFetchNodeOutputSchema).toHaveBeenNthCalledWith(1, 'gen_1', expect.anything(), 'a')
+    expect(mockFetchNodeOutputSchema).toHaveBeenNthCalledWith(2, 'cross_1', expect.anything(), 'a')
+  })
+
+  it('resolves nested canvas sources in its root workflow rather than the active sibling', async () => {
+    const [root, sibling] = registerCanvases()
+    const nested = canvasIdFromPanelId('nested:child')
+    const deep = canvasIdFromPanelId('nested:grandchild')
+    canvasSessionRegistry.register({ kind: 'nested', canvasId: nested, sessionId: 'child', parentCanvasId: root })
+    canvasSessionRegistry.register({ kind: 'nested', canvasId: deep, sessionId: 'grandchild', parentCanvasId: nested })
+    canvasSessionRegistry.activate(sibling)
+    mockFetchNodeOutputSchema.mockResolvedValue({ resolved: true, columns: {} })
+    await useResolvedOutputsStore().refreshCanvasNow(deep, 'gen_1', makeGraph)
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.anything(), 'a')
+  })
+
   it('refreshResolvedOutputs debounces and fetches', async () => {
     registerActiveCanvas()
     const store = useResolvedOutputsStore()
@@ -142,7 +170,7 @@ describe('resolvedOutputs store', () => {
     vi.advanceTimersByTime(250)
     await vi.runAllTimersAsync()
 
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object))
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object), 'a')
     expect(store.resolvedOutputsByNodeId['gen_1']).toEqual({
       resolved: true,
       columns: { sensitivity: { type: 'any' } },
@@ -173,8 +201,8 @@ describe('resolvedOutputs store', () => {
 
     // Both gen_1 and cross_1 should have been fetched
     expect(mockFetchNodeOutputSchema).toHaveBeenCalledTimes(2)
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object))
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('cross_1', expect.any(Object))
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object), 'a')
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('cross_1', expect.any(Object), 'a')
 
     expect(store.resolvedOutputsByNodeId['cross_1']).toEqual({
       resolved: true,
@@ -237,7 +265,7 @@ describe('resolvedOutputs store', () => {
     await vi.runAllTimersAsync()
 
     // custom_1 (MyCustomMerge) should also have been refreshed via propagation
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('custom_1', expect.any(Object))
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('custom_1', expect.any(Object), 'a')
     expect(store.resolvedOutputsByNodeId['custom_1']).toBeDefined()
   })
 
@@ -296,7 +324,7 @@ describe('resolvedOutputs store', () => {
 
     // Only gen_1 should be fetched (static_1 has dynamic_outputs=false)
     expect(mockFetchNodeOutputSchema).toHaveBeenCalledTimes(1)
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object))
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('gen_1', expect.any(Object), 'a')
   })
 
   it('removeNode clears the entry and any pending timer', () => {
@@ -432,7 +460,7 @@ describe('resolvedOutputs store', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('tail_1', expect.anything())
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('tail_1', expect.anything(), 'a')
     expect(store.getCanvasResolvedOutput(canvasA, 'cross_1')?.columns).toEqual({
       current: { type: 'str' },
     })
@@ -482,7 +510,7 @@ describe('resolvedOutputs store', () => {
     vi.advanceTimersByTime(200)
     await Promise.resolve()
     await Promise.resolve()
-    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('cross_1', expect.anything())
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('cross_1', expect.anything(), 'a')
 
     store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, getTool)
     childResult.resolve({ resolved: true, columns: {} })
@@ -490,7 +518,7 @@ describe('resolvedOutputs store', () => {
     await Promise.resolve()
 
     expect(store.getCanvasResolvedOutput(canvasA, 'cross_1')).toBeUndefined()
-    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('sibling_1', expect.anything())
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('sibling_1', expect.anything(), 'a')
   })
 
   it('does not cancel a newer target refresh from a live edge absent from the source snapshot', async () => {

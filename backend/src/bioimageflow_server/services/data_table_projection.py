@@ -27,6 +27,7 @@ from bioimageflow_server.services.dataframe_query import (
 from bioimageflow_server.services.result_store import (
     ResultDataNotReadyError,
     ResultStoreService,
+    dataframe_column_viewers,
 )
 
 
@@ -200,13 +201,7 @@ class DataTableProjectionService:
             types = self.result_store.get_column_types(
                 dataframe, tool_name=source.tool_name
             )
-            retained_viewers = (
-                self.result_store.result_viewers(
-                    source.result_identity, storage_path=storage_path
-                )
-                if source.result_identity is not None
-                else {}
-            )
+            retained_viewers = dataframe_column_viewers(dataframe)
             column_viewers = {
                 column: ViewerSpec.from_library(retained_viewers.get(column))
                 for column in dataframe.columns

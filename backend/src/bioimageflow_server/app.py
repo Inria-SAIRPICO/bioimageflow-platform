@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager, nullcontext
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -202,16 +201,14 @@ from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
 from bioimageflow_server.services.viewer_preferences import ViewerPreferenceStore
 from bioimageflow_server.services.workspace import WorkspaceService
+from bioimageflow_server.version import get_application_version
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
     register_ws,
 )
 
-try:
-    APPLICATION_VERSION = version("bioimageflow-server")
-except PackageNotFoundError:  # pragma: no cover - source tree without installed metadata
-    APPLICATION_VERSION = "0.0.0"
+APPLICATION_VERSION = get_application_version()
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -672,7 +669,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             and napari_environment_service.store.deployment_mode == "desktop"
         ):
             await napari_environment_service.recover_pending_environment_forget()
-            await napari_environment_service.adopt_managed_singleton()
+            await napari_environment_service.initialize_registry()
             await napari_environment_service.reconcile_managed_operations()
         if execution_profile_store is not None:
             profiles = await execution_profile_store.load()

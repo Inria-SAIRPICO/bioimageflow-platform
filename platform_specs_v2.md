@@ -115,7 +115,20 @@ Publications reserve slots alongside internal DataFrame connections; the canvas 
 Removing a publication or an internal connection compacts the remaining positional targets and edges together without changing surviving public port IDs or names.
 Source tools that do not accept upstream DataFrames do not offer positional publication.
 For a selected workflow node, the same section can publish each unconnected child DataFrame port through the enclosing interface, targeting the child's stable port ID rather than inventing positional inputs on the workflow node.
-For a selected workflow node, the Parameters section renders its unconnected field inputs and edits their instance bindings using the child's stable input IDs; connected fields are supplied by their edges.
+For a selected workflow node, the Parameters section renders all exposed field inputs using the same typed controls as ordinary tool parameters and edits instance bindings using the child's stable input IDs.
+Connected fields show their source instead of a value editor and disable value, Reset and None actions; disconnected fields expose the applicable numeric, choice, boolean, path, sequence and text editors, help and validation feedback.
+Explicit instance values override public interface defaults, which override local child defaults.
+Reset removes the instance binding; without a public default, the editor shows inheritance rather than fabricating a value or selecting one of several local defaults.
+An explicit typed null is distinct from an absent binding.
+The platform-to-library boundary uses the library's public constant codec for bindings and interface defaults, including recursive list and tuple children and integer JSON payloads under an explicit float tag.
+Accepted platform graph values are not rewritten merely by reading them; established string bindings continue to represent path-widget values.
+For historical raw sequence values, an exact two-key `__type__`/`value` map in a serialized sequence position is reserved as a typed envelope, while other literal JSON maps remain data; malformed reserved envelopes are rejected rather than stringified or dropped.
+An incoming edge and an instance constant cannot coexist for the same workflow input: connecting atomically removes that binding, disconnecting returns to public or child defaults, and Undo restores the previous graph including its binding.
+Public interface names, schemas and defaults remain canonical graph facts; optional editor hints are derived from the same accepted graph's scoped target metadata without persisting another schema or issuing per-field requests.
+Conflicting or unavailable hints use a conservative editor rather than inventing validation constraints or borrowing a same-named explicitly bound class from the catalog.
+The same field-publication action can forward a child workflow field through its enclosing interface with a workflow-port target carrying the stable child port ID.
+Publication is independent of column-connectability: constant-only DataFrameTool parameters may be published while remaining unavailable as column pins.
+Pin visibility is transient presentation and cannot disconnect an edge, clear a binding or unpublish a port; connected pins remain visible.
 These actions use the ordinary graph mutation lock, undo/redo, draft persistence, and nested-save reconciliation paths.
 Renaming a port changes its label while preserving its ID and parent connections.
 Removing or changing a connected port requires explicit confirmation and atomically removes affected bindings and edges.
@@ -139,11 +152,17 @@ Preparation only adds fresh, unreferenced files, so it does not take an executio
 Workflow-local sources are ordinary editable files in destination-owned `tools/<source-id>/` directories.
 Each directory contains a `module.json` identity/layout manifest, with no executable source text, and the original Python files and package assets.
 Source identifiers bind nodes to working directories and remain stable across source saves; they are not mutable content hashes.
-Package tools remain versioned package dependencies.
+Package tools remain versioned package dependencies selected from the exact canonical tool-store root.
+Installed files belong to an immutable admitted generation, so ordinary file changes do not trigger automatic reload; editable workflow sources retain fresh operation-local capture.
+Controlled refresh, uninstall and actual store-root changes use the generation retirement contract in [v1 Section 2.3](platform_specs_v1.md#23-tool-discovery-and-the-tool-store), including atomic refusal while admitted operations own affected code.
 Same-named local tools with different content must coexist without registry shadowing.
 Hot reload observes editable source directories and triggers canvas validation even for implementation-only changes.
 Validation includes `node_tools`, keyed by scoped node identity, so a successfully compiled source-bound or explicitly module/class-bound node's schemas come from its actual class rather than a same-named catalog entry.
 Saved-workflow dependency diagnostics resolve that carried executable identity through the same public class-resolution authority without compiling, planning or provisioning the workflow; a same-named catalog entry cannot rescue an unavailable carried binding.
+Workflow-local presence diagnostics first capture the same owned source bytes used by compilation and export, without modifying the saved graph.
+An explicit flat `tools.<module>` binding resolves its contained workflow-relative file before any catalog decision; another package or module binding cannot borrow a same-named local class.
+Missing explicitly bound local files retain the typed source-missing refusal, while present syntax-invalid source bytes remain available to Open for repair and are rejected by validation.
+The class-definition scan for genuinely unbound local nodes ignores unrelated syntax-invalid files and still refuses ambiguous class definitions.
 Installed bindings retain package/version and read-only package provenance; owned sources retain editable custom provenance.
 Canvas construction uses the node-addressed metadata captured for the same accepted graph and owning root workflow or nested session; a different graph or session cannot reuse that projection.
 Authored parameters and output templates remain graph facts when metadata is unavailable, and an explicit unavailable bound class cannot borrow a same-named catalog schema.
@@ -180,6 +199,8 @@ Closing a nested tab whose durable snapshot still owns an open descendant is ref
 Opening a custom node source in a nested editor creates and binds a private editable copy of that source under a new identity, using the snapshot revision guard.
 All references to that source within the private graph share the copy; other workflow instances retain their existing files.
 Reopening the source returns the same working file, and applying the graph preserves its new source binding.
+From the nested source-Open persistence barrier through acceptance of its returned snapshot, an unchanged hydration queue does not submit another write against the old revision.
+Actual graph edits still queue and prevent the returned source snapshot from replacing local changes; ordinary same-graph revalidation resumes outside that operation.
 
 Saving preserves compatible parent bindings and edges by stable port ID.
 Removed or incompatible connected ports require confirmation.
@@ -207,11 +228,17 @@ Errors use scoped paths such as `segment_and_measure/cellpose_segmenter`.
 Full Run rejects every diagnostic from complete-graph compilation. Run Selected derives its requested root nodes and transitive upstream root nodes from the accepted graph edges and ignores only diagnostics whose scoped node path proves ownership by an unrelated root node. Descendant diagnostics within a selected or upstream workflow boundary, global or unattributable diagnostics, unknown or unresolved requested targets, and a missing compiled workflow remain blocking.
 
 The stateless graph endpoint validates the same canonical graph shape but does not retain editor state.
+Dynamic output-schema requests accept either a bare GraphState or the existing graph/workflow_name request envelope.
+Saved root and nested canvases send their originating root workflow name with the serialized graph, and downstream refreshes retain that captured owner independently of active-tab changes.
+The backend resolves workflow-owned sources in that named storage context and rechecks its identity and storage after compilation; missing workflows return 404, while failed materialization or an unavailable target returns resolved: false with empty columns, including when the builder returns no workflow.
 
 ## 9. Execution And Status
 
 Execution compiles the accepted recursive graph to one flat plan.
 Attached progress callbacks are fenced to the active running execution context; a delayed event from an earlier run cannot change a later run's status or emitted progress.
+Worker preparation and provision logs carry the public SDK call's explicit executable `scoped_node_path` with immutable run context, never a scope inferred from environment names, shared receipts or the last started node.
+A waiting job can display setup before scientific start without a fabricated start timestamp or numeric progress.
+Explicit public failure diagnostics own node details; unscoped exceptions remain run-level, and unsuccessful completion settles known running node and retained job presentations while preserving recorded progress and explicit terminal or disabled states, without claiming physical worker termination.
 Internal nodes receive scoped structural IDs.
 Caching remains per internal tool node, and logs, progress, validation, cache clearing, and output lookup retain scoped paths.
 The attached run retains the fixed scoped executable leaf-node plan and its display names across start response, status snapshots, and completion, including selected-run dependencies and cached nodes while excluding disabled nodes and aggregate workflow boundaries. The execution banner counts unique completed or cached planned nodes, never nodes on the currently visible canvas, so nested workflows, tab changes, and Run Selected cannot alter its denominator. Row events preserve their zero-based row index and total separately from `row_progress` task current/maximum, and the browser labels each measurement according to its event kind. The banner presents one progress bar with completed-node and current-work text, reaches 100% on success, and leaves partial progress visible for failures and cancellations.
@@ -222,7 +249,9 @@ The capture is not reused as current saved authority across released locks or re
 Each stable projected GET attempt uses one public compilation for definition validation and live cache projection, with at most one plan under the final authority/Clear fence; the compilation is request-local.
 A synthesized response adopts the full compiled validation, including definition errors and tool schemas; persisted accepted drafts retain their non-cache diagnostic/schema authority, and execution authority readers remain strictly validated.
 While execution is idle, a failed status in that accepted validation with an owned `cache_corrupt` diagnostic overrides a matching retained execution badge, including an aggregate workflow node with a corrupt descendant. Semantic edits, active execution states, and ordinary terminal execution badges retain their existing precedence; the exception ends when Clear removes the diagnostic.
-Each compilation captures current source bytes before loading the library workflow, without waiting for filesystem notifications.
+Each compilation captures current editable and workflow-owned source bytes before loading the library workflow, without waiting for filesystem notifications.
+Installed package and inherited installed-owner facts are reused from the held admitted generation rather than rescanned on every compilation or plan.
+This reuse does not retain compiled workflows across requests or bypass per-invocation declarations, parameters, inputs, runtime readiness, result-record integrity, or the saved/draft and Clear fences.
 Source-bound nodes select the worker-capable engine without consulting a same-named global catalog class.
 The captured library payload assigns content-derived source-module identities, including helper and asset contents, to isolate Python imports between source versions.
 An execution retains its captured code while later source saves affect subsequent runs.
@@ -317,6 +346,10 @@ When an older `.bioimageflow/dependencies/<source-id>/source.json` record exists
 HTTP 404 remains reserved for an absent workflow on this read path.
 
 Root drafts use revision compare-and-swap, a saved-artifact baseline, validation, dirty state, and writer metadata.
+The canonical root persistence resource distinguishes locally authored semantic changes and pending draft writes from saved-artifact dirty presentation and recovery-only persistence.
+Accepted external graphs can remain unsaved while receiving newer revisions, including notices received during an earlier fetch or install, when no local semantic edit or draft write intervenes.
+Same-graph validation preserves origin; Keep my canvas retains local ownership, while explicit external resolution and clean accepted Save clear it.
+A remounted dirty frontend draft remains conservatively protected because writer metadata cannot recover its earlier semantic origin.
 Nested snapshots use their own revision compare-and-swap and ownership chain.
 Save and Run operate on exact accepted snapshots.
 Remote draft changes are resolved explicitly before destructive or execution operations.
@@ -327,6 +360,8 @@ The copy request carries the captured source identity generation to reject a del
 
 Workflow identities are path-derived and carry durable identity generations.
 Catalog read freshness also includes accepted same-ID metadata updates such as Save and dependency refresh; these are not identity-generation changes.
+Backend listing and format scans discover current workspace folders without descending into a workflow directory after its workflow.json boundary; workflow-owned results and sources are not catalog folders.
+Any shared path snapshot expires with that operation rather than hiding subsequent external filesystem changes.
 Pending tree reuse is limited to that current catalog authority, and a caller retries a stale catalog read at most once without joining its own expired request.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves update drafts, retained snapshots, and provenance references atomically.
@@ -346,6 +381,9 @@ Every direct or merged result-table response pins each displayed source to the l
 Modern Node Data and CSV validate the latest link schema and contained relative target, require the canonical retained run/node view named by its provenance, and validate that retained identity and its immutable record before serving rows; malformed latest or run-node provenance and corrupted Parquet return HTTP 409 without a raw-file or companion-CSV fallback. Only a latest view with absent `result.json` uses the legacy unpinned reader; a malformed present file is not legacy.
 Node-image, thumbnail, and Reveal requests capture their requested node's current result before reading its DataFrame and resolve relative owned-asset values through that exact record's library manifest; absolute external-path values remain absolute, and legacy unpinned values retain their existing lookup rules.
 For each displayed structural column, the same response carries the viewer declaration captured by that exact retained identity; a captured `null` declaration is distinct from legacy unpinned metadata whose viewer status is explicitly unknown.
+Individual and merged modern tables derive column types and viewers from the same request-local producer snapshot already admitted for that record, without another storage read or a cross-request metadata cache.
+Concrete carried output declarations remain authoritative for empty and all-null columns and never borrow a same-named current catalog schema; missing or dynamic declarations and columns not declared by a passthrough model use DataFrame type inference without catalog substitution.
+A malformed present output descriptor or mismatched carried metadata identity returns HTTP 409; legacy unpinned tables retain their separately qualified current-tool declaration and DataFrame inference behavior.
 Pagination and selected-cell viewer requests reuse that exact identity and never resolve `latest` again; displayed row offsets select only a cell within the pinned artifact and never participate in preference identity.
 Legacy retained views with absent result provenance remain readable as explicitly unpinned tables, but they cannot use exact selected-cell viewer resolution or modern retained-identity guarantees.
 Effective viewer requirements for retained output come from that run-node result's stored viewer metadata, including cache hits, rather than from a mutable current tool schema.
@@ -386,7 +424,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 ### Bundled demo workflows
 
-The application loads demo bundle version 5 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+The application loads demo bundle version 6 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+All packaged-tool bindings pin published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2; the maintainer exporter retains those release pins independently of source-checkout package versions.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
 The bundled Fish Analysis marker branches use distinct internal node IDs and parallel execution with the locked published BioImageFlow runtime, whose parallel branch workers retain scoped names and result views. The final tool groups mapped overlap rows by their immediate parent image row index, yielding one row per input image and a weighted Global average row.
@@ -415,12 +454,25 @@ Related selected nodes and requested upstream context use the consolidated proje
 
 Filtering, sorting, pagination, totals, and CSV export operate on the same immutable result snapshot and scoped node identities.
 Filtering precedes sorting and pagination, and CSV applies the same active filter and sort contract.
-The default page size is the persisted user preference, initially 250, while infinite scrolling is not part of the platform interaction model.
+The default page size is the persisted user preference, initially 250, in Paginated browsing mode.
+Preferences → Display also offers Continuous scrolling; both modes use the same bounded virtual row viewport, while continuous mode fetches and evicts blocks against a fixed per-source result-identity vector.
+Legitimate mixed-run source vectors remain valid; no source identity may change between blocks, and snapshot metadata outlives evicted row payloads.
+Sorting/filtering and mode changes reset the row window without replacing its selected results; Refresh or accepted replacement data starts a new inspection atomically, and prior responses cannot populate it.
+Stacked fallback retains its captured identities for each individual table and CSV; unpinned legacy tables retain paginated behavior with an explanation.
 Individual and merged tables share the column-sizing contract in v1 Section 3.6: bounded initial content sizing, stable widths across data-page updates, independent resizing through visible separators, and one **Reset column widths** action.
 Width persistence stores only explicit user choices by workflow/table and stable column identity, not measured component-update snapshots.
 
 Node Data is a read-only inspection surface during execution.
+A result_pending HTTP 409 permits bounded publication retries; result_unavailable and unclassified conflicts are surfaced immediately without polling in individual and consolidated tables.
+Rejected immutable records, unsupported cache schemas and mismatched captured identities remain unavailable without raw-file fallback or automatic conversion, and their diagnostic retains the validation cause and recovery guidance.
 Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
+Repeated selections share service-owned thumbnail setup and rendering by source fingerprint, and concurrent cells share in-flight requests without letting one departing subscriber cancel another.
+The frontend owns one polling chain and a bounded completed-Blob cache per exact source address within an accepted inspection; Refresh revalidates even unchanged retained IDs, including mutable external files.
+Thumbnail/image/offset/Reveal requests and individual CSV carry the displayed exact result, independently of later latest-pointer changes.
+Viewer environment resolution occurs only on an explicit primary/menu action, never for each mounted or scrolled image cell; every action retains its captured artifact and explains an unavailable saved preference before a fallback open.
+Pending work survives cold installation without a fixed client retry-count failure; terminal statuses stop polling, and actual installation shows the preparation notice defined in v1 Section 2.6.
+After the initial progress response, bounded server completion waits replace increasing client backoff; thumbnail result I/O runs off the event loop and BioIO selects the preview plane lazily across installed reader formats, including directory stores.
+The backend disk cache remains fingerprint-authoritative, ready PNG publication is atomic, and row-addressed HTTP responses do not retain stale browser images.
 In an opened nested canvas, selecting an internal node queries its own result using the full root-relative instance path and root workflow storage identity.
 Focusing an already visible Node Data dock preserves the projection and in-progress cell gesture; revealing a previously hidden dock refreshes its projection.
 Node Data dock focus preserves that canvas selection; pending startup restoration cannot reactivate the root after an accepted Open and subsequent nested inspection (v1 Section 3.8).
@@ -452,6 +504,8 @@ OpenAPI is the sole normative frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
 Workflow-draft routes and response models are also generated; the remaining handwritten draft response/conflict shapes in `frontend/src/api/workflowDrafts.ts` are transitional debt to remove, not an additional contract authority.
 `POST /api/v1/napari/viewing-readiness` accepts a `ViewingRequirementsManifest` directly, including the exact manifest returned after import, and returns the backend-authoritative desktop-only passive compatibility report without rereading workflow state.
+Unknown manifest metadata remains a separate diagnostic category and does not contribute to outputs_needing_setup; unknown inventory for a known requirement group still requires viewer verification.
+Saved viewing inspection derives the manifest through the normal source-aware graph compiler and preserves actual construction diagnostics instead of treating an empty failed construction as complete metadata.
 The report preserves every structural output identity and declaration or unknown reason, shares registered-inventory candidate evaluation with retained-artifact resolution, and returns independent normalized requirement groups with managed-create prefill rather than unioning incompatible output needs.
 `POST /api/v1/editor/open-node` identifies the workflow ID and identity generation, the accepted revision, the node ID, and an optional nested session UUID.
 It resolves the addressed node's actual source and rejects stale or missing identities instead of falling back to the global registry for bound local sources.
@@ -480,6 +534,7 @@ Fiji is also a platform-owned desktop integration, but the Fiji application rema
 Named napari environment registrations, managed recipes and operations, inventories, defaults, filename rules, and output favorites are likewise platform-owned local integration state.
 They never enter recursive `GraphState`, artifact hashes, workflow archives, retained result snapshots, or processing dependency resolution.
 Managed creation, copy, retry, cancellation, and deletion therefore do not acquire a workflow graph mutation lock; their own environment UUID and registry revision contracts prevent them from targeting a replaced local installation.
+A pristine desktop Napari registry receives a metadata-only setup-needed default without runtime access; explicit Setup/retry retains its UUID, while Forget of that never-installed declaration prevents automatic recreation through the registry revision.
 
 ## 15. Keyboard And Context Actions
 

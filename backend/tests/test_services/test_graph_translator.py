@@ -504,7 +504,14 @@ def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() ->
     restored_child = translated.lib_dict["nodes"][0]
     assert translated.lib_dict["schema_version"] == 2
     assert restored_child["name"] == "child"
-    assert restored_child["bindings"] == library["nodes"][0]["bindings"]
+    # Historical platform sequences remain readable and unmodified in storage,
+    # but translation emits the current recursive public constant grammar.
+    assert graph.nodes[0].bindings["input-values"].model_dump(
+        mode="json", by_alias=True,
+    ) == library["nodes"][0]["bindings"]["input-values"]
+    assert restored_child["bindings"] == {
+        "input-values": {"__type__": "list", "value": [{"__type__": "int", "value": 7}]},
+    }
     assert restored_child["workflow"]["schema_version"] == 2
     assert restored_child["workflow"]["name"] == "generate_value"
     assert restored_child["workflow"]["nodes"] == library["nodes"][0]["workflow"]["nodes"]

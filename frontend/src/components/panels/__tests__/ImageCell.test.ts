@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config'
 import ImageCell from '../ImageCell.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { useThumbnailsStore } from '@/stores/thumbnails'
 
 vi.mock('@/api/client', () => ({
   api: { post: vi.fn() },
@@ -16,10 +17,10 @@ const READY_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x
 const PENDING_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9])
 const mockedPost = vi.mocked(api.post)
 
-function makeFetchResponse(status: 'ready' | 'pending', bytes: Uint8Array): Response {
+function makeFetchResponse(status: 'ready' | 'pending' | 'failed' | 'unavailable', bytes: Uint8Array, environment = 'ready'): Response {
   return new Response(bytes, {
     status: 200,
-    headers: { 'Content-Type': 'image/png', 'X-Thumbnail-Status': status },
+    headers: { 'Content-Type': 'image/png', 'X-Thumbnail-Status': status, 'X-Thumbnail-Environment': environment },
   })
 }
 
@@ -49,6 +50,7 @@ describe('ImageCell', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('renders the thumbnail when the server replies "ready" on the first call', async () => {
@@ -91,12 +93,12 @@ describe('ImageCell', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    // Advance past the first retry delay; expect a second fetch.
-    await vi.advanceTimersByTimeAsync(2_000)
+    await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(2)
 
-    await vi.advanceTimersByTimeAsync(4_000)
+    expect(new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost').searchParams.get('wait')).toBe('20')
+    await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(3)
 
@@ -145,7 +147,7 @@ describe('ImageCell', () => {
     expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
   })
 
-  it('cache-busts retries with a versioned query param', async () => {
+  it('revalidates a stable thumbnail URL without browser-cache reuse', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(makeFetchResponse('pending', PENDING_BYTES))
@@ -160,15 +162,25 @@ describe('ImageCell', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const firstUrl = String(fetchMock.mock.calls[0][0])
     const secondUrl = String(fetchMock.mock.calls[1][0])
-    expect(secondUrl).not.toBe(firstUrl)
+    expect(new URL(secondUrl, 'http://localhost').searchParams.get('wait')).toBe('20')
+    expect(secondUrl.replace('&wait=20', '')).toBe(firstUrl)
+    expect(fetchMock.mock.calls.every(call => call[1]?.cache === 'no-store')).toBe(true)
     // Both URLs should target the same endpoint
     expect(firstUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
     expect(secondUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
   })
 
-  it('stops retrying after the max attempts and shows thumbnail unavailable', async () => {
-    // Always pending — exhaust retries.
-    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('pending', PENDING_BYTES))
+  it('keeps actual work pending beyond cold setup and renders it automatically when ready', async () => {
+    let ready = false
+    // Each HTTP request has its own body stream, as in a real browser.
+    const fetchMock = vi.fn().mockImplementation((url: string) => new Promise(resolve => {
+      // Model the server's bounded wait, rather than immediate pending replies
+      // that would unrealistically bypass its long-poll pacing.
+      const wait = new URL(url, 'http://localhost').searchParams.has('wait') ? 20_000 : 3_000
+      setTimeout(() => resolve(makeFetchResponse(
+        ready ? 'ready' : 'pending', ready ? READY_BYTES : PENDING_BYTES, 'installing',
+      )), wait)
+    }))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
@@ -182,9 +194,43 @@ describe('ImageCell', () => {
     // Allow some headroom but enforce a finite ceiling so a bug-induced
     // tight retry loop fails this test loudly.
     expect(calls).toBeGreaterThan(1)
-    expect(calls).toBeLessThanOrEqual(8)
+    expect(calls).toBeLessThanOrEqual(20)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(false)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(true)
+    expect(useThumbnailsStore().installing).toBe(true)
+    ready = true
+    await vi.advanceTimersByTimeAsync(21_000)
+    await flushPromises()
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    expect(useThumbnailsStore().installing).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['failed', 'unavailable'] as const)('stops polling a terminal %s response', async status => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse(status, PENDING_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountCell()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.image-cell__unavailable').exists()).toBe(true)
-    expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shares an in-flight request across repeated cell mounts without canceling another subscriber', async () => {
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn().mockReturnValue(new Promise<Response>(resolve => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const first = mountCell()
+    await flushPromises()
+    first.unmount()
+    const second = mountCell()
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    finish(makeFetchResponse('ready', READY_BYTES))
+    await flushPromises()
+    expect(second.find('img.image-cell__thumb').exists()).toBe(true)
+    second.unmount()
   })
 
   it('shows the unavailable fallback when the fetch errors out', async () => {
@@ -294,6 +340,7 @@ describe('ImageCell', () => {
       row: 0,
       col: 'mask',
       workflow_name: 'analysis',
+      result_identity: null,
     })
   })
 
@@ -469,7 +516,51 @@ describe('ImageCell', () => {
     expect(openEvent?.detail.imageUrl).toContain('new.ome.tif')
   })
 
-  it('waits for viewport intersection before requesting a thumbnail', async () => {
+  it('shares ready thumbnails until the inspection changes, even with unchanged result identity', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(makeFetchResponse('ready', READY_BYTES)))
+    vi.stubGlobal('fetch', fetchMock)
+    const resultIdentity = { run_id: 'run', node_key: 'n1', result_key: 'key', record_id: 'record' }
+    const first = mountCell({ inspectionKey: 'inspection-1', resultIdentity })
+    await flushPromises()
+    const request = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(request.searchParams.get('result_identity')!)).toEqual(resultIdentity)
+    first.unmount()
+    const repeated = mountCell({ inspectionKey: 'inspection-1', resultIdentity })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(repeated.find('img.image-cell__thumb').exists()).toBe(true)
+    await repeated.setProps({ inspectionKey: 'inspection-2' })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    repeated.unmount()
+  })
+
+  it('pins Reveal, Fiji and Avivator to the displayed result', async () => {
+    const identity = { run_id: 'run-a', node_key: 'n1', result_key: 'key-a', record_id: 'record-a' }
+    useSettingsStore().settings = { deployment_mode: 'desktop', fiji_path: '/Applications/Fiji.app' } as any
+    mockedPost.mockResolvedValue({ data: { status: 'ok' } })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([4096]), {
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountCell({ thumbnailEnabled: false, workflowName: 'analysis', resultIdentity: identity })
+    await wrapper.get('[data-testid="reveal-0-mask"]').trigger('click')
+    const revealUrl = new URL(String(mockedPost.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(revealUrl.searchParams.get('result_identity')!)).toEqual(identity)
+    await wrapper.get('[data-testid="open-fiji-0-mask"]').trigger('click')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/fiji/open', expect.objectContaining({ result_identity: identity }))
+    await wrapper.get('[data-testid="open-avivator-0-mask"]').trigger('click')
+    await flushPromises()
+    const offsetsUrl = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(JSON.parse(offsetsUrl.searchParams.get('result_identity')!)).toEqual(identity)
+    const opened = dispatch.mock.calls.map(([event]) => event)
+      .find((event): event is CustomEvent => event instanceof CustomEvent && event.type === 'bioimageflow:open-avivator')!
+    expect(JSON.parse(new URL(opened.detail.imageUrl).searchParams.get('result_identity')!)).toEqual(identity)
+    wrapper.unmount()
+  })
+
+  it('waits for viewport intersection and pauses polling when the cell leaves', async () => {
     let callback!: IntersectionObserverCallback
     const observe = vi.fn()
     const unobserve = vi.fn()
@@ -486,7 +577,9 @@ describe('ImageCell', () => {
       thresholds = [0]
     }
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
-    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeFetchResponse('pending', PENDING_BYTES))
+      .mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
@@ -503,6 +596,19 @@ describe('ImageCell', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    // Keep observing after entry so leaving the clipped table viewport can
+    // withdraw this cell's resource interest.
+    expect(unobserve).not.toHaveBeenCalled()
+    callback([{ target, isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="image-thumbnail"]').attributes('aria-label')).toBe('thumbnail not loaded')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    callback([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    wrapper.unmount()
     expect(unobserve).toHaveBeenCalledWith(target)
   })
 })

@@ -41,7 +41,7 @@ describe('ExecutionPanel', () => {
     })
   })
 
-  it('shows an environment setup message without numeric job progress', async () => {
+  it.each(['waiting', 'running'] as const)('shows an environment setup message for a %s job without numeric progress', async (state) => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -51,7 +51,7 @@ describe('ExecutionPanel', () => {
       backend: 'wetlands' as const, state: 'running' as const,
       created_at: '2026-09-18T10:00:00Z', child_execution_ids: [],
       actions: retryActions, observation: reachableObservation,
-      jobs: [{ id: 'cellpose', scoped_node_path: 'cellpose', state: 'running' as const,
+      jobs: [{ id: 'cellpose', scoped_node_path: 'cellpose', state,
         message: 'Installing cellpose-env: Resolving pixi.lock', progress: null }],
     }
     registry.applySnapshot(snapshot)
@@ -63,6 +63,9 @@ describe('ExecutionPanel', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.get('button.job-row').text()).toContain('Installing cellpose-env')
+    expect(wrapper.get('button.job-row').text()).toContain(state)
+    expect(wrapper.get('button.job-row').text()).not.toContain('%')
+    expect(wrapper.find('.job-progress').exists()).toBe(false)
     await wrapper.get('button.job-row').trigger('click')
     expect(wrapper.get('[data-testid="execution-job-details"]').text()).toContain('Resolving pixi.lock')
   })

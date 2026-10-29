@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from bioimageflow_server.services import agent_workspace_context as context
@@ -16,6 +17,56 @@ FORBIDDEN_AGENT_CONTEXT_PHRASES = [
     "workflow-drafts",
     "execution/run",
 ]
+
+
+def test_local_source_reference_is_a_real_shallow_latest_checkout(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True, timeout=10)
+    (source / "docs/agents").mkdir(parents=True)
+    (source / ".bioimageflow").mkdir()
+    (source / ".bioimageflow/retained.txt").write_text("source metadata")
+    for revision in ("first", "latest"):
+        (source / "README.md").write_text(f"{revision} source\n")
+        (source / "docs/agents/README.md").write_text(f"{revision} agent docs\n")
+        subprocess.run(
+            ["git", "-C", str(source), "add", "."],
+            check=True, capture_output=True, timeout=10,
+        )
+        subprocess.run(
+            [
+                "git", "-C", str(source),
+                "-c", "user.name=Platform test", "-c", "user.email=platform-test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-m", revision,
+            ],
+            check=True, capture_output=True, timeout=10,
+        )
+
+    workspace = tmp_path / "workspace"
+    context.ensure_agent_workspace_context(workspace, source_root=source)
+
+    target = workspace / ".bioimageflow" / context.PLATFORM_SOURCE_DIR
+    for arguments, expected in (
+        (["rev-parse", "--is-shallow-repository"], b"true"),
+        (["rev-list", "--count", "HEAD"], b"1"),
+    ):
+        assert subprocess.check_output(["git", "-C", str(target), *arguments], timeout=10).strip() == expected
+    assert subprocess.check_output(
+        ["git", "-C", str(source), "rev-list", "--count", "HEAD"], timeout=10,
+    ).strip() == b"2"
+    for revision in ("HEAD", "HEAD^{tree}"):
+        assert subprocess.check_output(
+            ["git", "-C", str(target), "rev-parse", revision], timeout=10,
+        ) == subprocess.check_output(
+            ["git", "-C", str(source), "rev-parse", revision], timeout=10,
+        )
+    assert (target / "README.md").read_text() == "latest source\n"
+    assert (target / "docs/agents/README.md").read_text() == "latest agent docs\n"
+    assert not (target / ".bioimageflow").exists()
+    assert (source / ".bioimageflow/retained.txt").read_text() == "source metadata"
+    assert "Do not edit files here" in (target / "READ_ONLY_AGENT_NOTE.md").read_text()
+    assert "Status: `available`" in (workspace / ".bioimageflow/platform-source.README.md").read_text()
+    assert "MCP Tool Reference" in (workspace / "AGENTS.md").read_text()
 
 
 def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_note(

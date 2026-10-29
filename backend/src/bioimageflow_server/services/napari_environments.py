@@ -44,6 +44,7 @@ from bioimageflow_server.models.napari_environments import (
     NapariManagedMetadata,
     NapariManagedOperationMutation,
     NapariManagedRecipe,
+    NapariManagedRecipeSelection,
 )
 from bioimageflow_server.services.environment_logging import log_environment_operation_event
 from bioimageflow_server.services.operation_failures import (
@@ -360,7 +361,9 @@ class NapariEnvironmentService:
                 "a failed deletion must be retried through managed DELETE",
             )
         self._require_no_active_operation(environment_id)
-        operation = self._new_operation(environment_id, "retry", "Retry queued")
+        operation = self._new_operation(
+            environment_id, "retry", "Setup queued" if environment.state == "setup_needed" else "Retry queued",
+        )
         updated = environment.model_copy(
             update={"state": "creating", "last_error": None, "inventory": None}
         )
@@ -485,11 +488,16 @@ class NapariEnvironmentService:
 
     async def reconcile_managed_operations(self) -> None:
         """Reconcile persisted non-terminal operations without claiming live progress."""
+        operations = [
+            operation
+            for operation in self.store.get().napari_environment_operations
+            if operation.state not in {"completed", "failed", "cancelled"}
+        ]
+        if not operations:
+            return
         manager = self.environment_manager_provider()
         infos = {item.name: item for item in manager.managed_environments()}
-        for operation in list(self.store.get().napari_environment_operations):
-            if operation.state in {"completed", "failed", "cancelled"}:
-                continue
+        for operation in operations:
             environment = next(
                 (
                     item
@@ -544,15 +552,32 @@ class NapariEnvironmentService:
     ) -> NapariManagedOperationMutation:
         settings = self.store.get()
         self._require_unique_name(name, settings.napari_environments)
+        environment = self._new_managed_declaration(
+            name, recipe, registration_order=max(
+                (item.registration_order for item in settings.napari_environments), default=-1,
+            ) + 1, state="creating",
+        )
+        operation = self._new_operation(environment.id, kind, "Creation queued")
+        changes: dict[str, Any] = {
+            "napari_environments": [*settings.napari_environments, environment],
+            "napari_environment_operations": self._append_operation(
+                settings.napari_environment_operations, operation
+            ),
+        }
+        await self._patch(expected_revision, changes)
+        await self._start_provisioning(environment, operation)
+        return self.managed_operation(environment.id, operation.id)
+
+    @staticmethod
+    def _new_managed_declaration(
+        name: str, recipe: NapariManagedRecipe, *, registration_order: int,
+        state: Literal["setup_needed", "creating"],
+    ) -> NapariEnvironment:
         environment_id = uuid4()
         wetlands_name = f"napari-{environment_id.hex}"
-        operation = self._new_operation(environment_id, kind, "Creation queued")
-        environment = NapariEnvironment(
+        return NapariEnvironment(
             id=environment_id,
-            registration_order=max(
-                (item.registration_order for item in settings.napari_environments), default=-1
-            )
-            + 1,
+            registration_order=registration_order,
             name=name,
             ownership="managed",
             kind="conda",
@@ -565,19 +590,13 @@ class NapariEnvironmentService:
                 installation_generation=None,
                 recipe=recipe,
             ),
-            state="creating",
+            state=state,
         )
-        changes: dict[str, Any] = {
-            "napari_environments": [*settings.napari_environments, environment],
-            "napari_environment_operations": self._append_operation(
-                settings.napari_environment_operations, operation
-            ),
-        }
-        await self._patch(expected_revision, changes)
-        await self._start_provisioning(environment, operation)
-        return self.managed_operation(environment.id, operation.id)
 
-    async def adopt_managed_singleton(self) -> None:
+    async def initialize_registry(self) -> None:
+        """Adopt existing legacy content or declare the first-use default, never install it."""
+        if self.store.deployment_mode != "desktop":
+            return
         settings = self.store.get()
         for root in self.managed_singleton_roots:
             try:
@@ -611,6 +630,29 @@ class NapariEnvironmentService:
                 },
             )
             return
+
+        def bootstrap(current: Any) -> dict[str, Any]:
+            # This is the Napari registry's own configuration revision, not
+            # global settings history. Only a pristine registry is initialized;
+            # deliberate Forget/default/manual registration decisions survive.
+            if (
+                current.napari_registry_revision != 0
+                or current.napari_environments
+                or current.napari_default_environment_id is not None
+                or current.napari_environment_operations
+                or current.napari_suppressed_legacy_roots
+            ):
+                return {}
+            environment = self._new_managed_declaration(
+                "Default napari", NapariManagedRecipeSelection().resolved(),
+                registration_order=0, state="setup_needed",
+            )
+            return {
+                "napari_environments": [environment],
+                "napari_default_environment_id": environment.id,
+            }
+
+        await self.store.mutate_napari_registry(bootstrap)
 
     async def _start_provisioning(
         self, environment: NapariEnvironment, platform_operation: NapariEnvironmentOperation
@@ -1094,6 +1136,7 @@ class NapariEnvironmentService:
         if (
             environment.managed is not None
             and environment.managed.recipe.source == "managed"
+            and not self._is_uninstalled_declaration(environment)
         ):
             raise NapariEnvironmentError(
                 "napari_managed_forget_forbidden",
@@ -1132,6 +1175,17 @@ class NapariEnvironmentService:
         if self.preference_store is not None:
             self.preference_store.complete_environment_forget()
         return self.snapshot()
+
+    @staticmethod
+    def _is_uninstalled_declaration(environment: NapariEnvironment) -> bool:
+        return (
+            environment.state == "setup_needed"
+            and environment.managed is not None
+            and environment.managed.recipe.source == "managed"
+            and environment.managed.installation_generation is None
+            and environment.root == f"managed-pending:{environment.managed.wetlands_name}"
+            and not environment.interpreter
+        )
 
     async def recover_pending_environment_forget(self) -> None:
         """Forward-complete a crash-interrupted registry/preference cleanup."""
@@ -1181,6 +1235,10 @@ class NapariEnvironmentService:
 
     async def probe(self, environment_id: UUID, *, expected_revision: int) -> NapariEnvironment:
         current = self._with_current_interpreter_state(self._get(environment_id))
+        if current.state == "setup_needed":
+            raise NapariEnvironmentError(
+                "napari_environment_setup_required", "Set up this environment before checking its installed packages",
+            )
         if current.state == "missing":
             await self._replace_environment(current, expected_revision=expected_revision)
             raise NapariEnvironmentError(

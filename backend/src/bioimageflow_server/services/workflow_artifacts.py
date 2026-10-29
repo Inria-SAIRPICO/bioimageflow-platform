@@ -120,7 +120,11 @@ def resolve_local_source(workflow_dir: Path, class_name: str, registry: Any = No
             )
     matches = []
     for path in sorted((workflow_dir / "tools").glob("*.py")):
-        tree = ast.parse(path.read_bytes(), filename=str(path))
+        try:
+            tree = ast.parse(path.read_bytes(), filename=str(path))
+        except SyntaxError:
+            # One unrelated edited file cannot hide another class definition.
+            continue
         if any(isinstance(node, ast.ClassDef) and node.name == class_name for node in tree.body):
             matches.append(OwnedWorkflowSources._safe_file(workflow_dir / "tools", path.name))
     if len(matches) > 1:
@@ -145,10 +149,23 @@ def capture_working_graph(
                 continue
             if node.source_module:
                 continue
-            metadata = registry.get_tool(node.tool_name)
-            if metadata is not None and metadata.source_kind != "custom":
+            if node.tool_package not in (None, "__custom__"):
                 continue
-            path = resolve_local_source(workflow_dir, node.tool_class or node.tool_name, registry)
+            module = node.tool_module
+            if module and node.tool_class:
+                if not module.startswith("tools.") or module.count(".") != 1:
+                    # An explicit carried binding cannot borrow a local class
+                    # merely because its display/catalog name is the same.
+                    continue
+                filename = module.removeprefix("tools.") + ".py"
+                path = OwnedWorkflowSources._safe_file(workflow_dir / "tools", filename)
+                if not path.is_file():
+                    raise WorkflowSourceMissingError(module, f"tools/{filename}", None)
+            else:
+                metadata = registry.get_tool(node.tool_name)
+                if metadata is not None and metadata.source_kind != "custom":
+                    continue
+                path = resolve_local_source(workflow_dir, node.tool_class or node.tool_name, registry)
             if path is None:
                 continue
             source = path.read_text(encoding="utf-8")

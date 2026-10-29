@@ -251,15 +251,82 @@ def test_rebind_versions_preserves_recursive_canvas_presentation(tmp_path: Path)
 
 
 def test_unknown_persisted_sections_are_rejected_without_fallback(tmp_path: Path) -> None:
+    from bioimageflow_server.models.nested_workflow_snapshot import NestedSnapshotOwner
+    from bioimageflow_server.services.nested_workflow_snapshot import NestedWorkflowSnapshotService
+    from bioimageflow_server.services.workflow_draft import WorkflowDraftService
+
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="demo"))
+    drafts = WorkflowDraftService(lambda: store)
+    snapshots = NestedWorkflowSnapshotService(lambda: store)
+    private = {}
+    for workflow_id in ("demo", "unrelated"):
+        store.create_workflow(WorkflowCreate(name=workflow_id))
+        graph = _graph(f"{workflow_id}-definition", f"Saved {workflow_id}")
+        store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
+        drafts.put_draft(
+            workflow_id,
+            graph=graph.model_copy(update={"display_name": f"Pending {workflow_id}"}),
+            expected_revision=0,
+            should_validate=False,
+        )
+        private[workflow_id] = snapshots.open_snapshot(
+            NestedSnapshotOwner(
+                kind="root", canvas_id=f"canvas:{workflow_id}", workflow_id=workflow_id,
+            ),
+            "child",
+            _graph(f"{workflow_id}-private"),
+        )
+        # Inert file sentinels prove retention, not executable source or results.
+        tools = store.workflow_dir(workflow_id) / "tools"
+        tools.mkdir(exist_ok=True)
+        (tools / "retained.txt").write_bytes(f"source sentinel: {workflow_id}".encode())
+        results = store.get_storage_path(workflow_id)
+        results.mkdir(exist_ok=True)
+        (results / "retained.bin").write_bytes(f"result sentinel: {workflow_id}".encode())
+    foreign = tmp_path / "unmanaged.bin"
+    foreign.write_bytes(b"unmanaged sentinel")
+    unrelated = store.read_workflow_document("unrelated")
     path = store.workflow_dir("demo") / "workflow.json"
     raw = json.loads(path.read_text())
     raw["derived"] = {"nodes": []}
     path.write_text(json.dumps(raw), encoding="utf-8")
 
-    with pytest.raises(ValidationError):
+    def authority(current_store, current_drafts, current_snapshots):
+        return {
+            workflow_id: (
+                json.loads((current_store.workflow_dir(workflow_id) / "workflow.json").read_text()),
+                current_drafts.get_draft_authority_snapshot(workflow_id),
+                current_store.workflow_generation(workflow_id),
+                current_snapshots.get_snapshot(private[workflow_id].session_id),
+            )
+            for workflow_id in ("demo", "unrelated")
+        }
+
+    def files():
+        return {
+            item.relative_to(tmp_path).as_posix(): item.read_bytes()
+            for item in tmp_path.rglob("*") if item.is_file()
+        }
+
+    retained = authority(store, drafts, snapshots)
+    retained_files = files()
+    with pytest.raises(ValidationError, match="derived"):
         store.get_workflow("demo")
+    # A valid replacement graph cannot bypass the invalid saved-document fence.
+    with pytest.raises(ValidationError, match="derived"):
+        store.save_workflow("demo", WorkflowSaveBody(graph=_graph("replacement")))
+    assert authority(store, drafts, snapshots) == retained
+    assert files() == retained_files
+    assert store.read_workflow_document("unrelated") == unrelated
+
+    reopened = _store(tmp_path)
+    reopened_drafts = WorkflowDraftService(lambda: reopened)
+    reopened_snapshots = NestedWorkflowSnapshotService(lambda: reopened)
+    with pytest.raises(ValidationError, match="derived"):
+        reopened.get_workflow("demo")
+    assert reopened.read_workflow_document("unrelated") == unrelated
+    assert authority(reopened, reopened_drafts, reopened_snapshots) == retained
+    assert files() == retained_files
 
 
 def test_duplicate_assigns_new_definition_identity_atomically(tmp_path: Path) -> None:

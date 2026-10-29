@@ -8,7 +8,7 @@ import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import pytest
@@ -366,6 +366,52 @@ async def test_modified_copy_has_independent_identity_and_recipe(tmp_path: Path)
     await _wait_terminal(service, copied.environment.id, copied.operation.id)
 
 
+async def test_default_declaration_explicit_setup_failure_and_retry_keep_one_identity(tmp_path: Path) -> None:
+    manager = FakeManager()
+    service = await _service(tmp_path, manager)
+    await service.initialize_registry()
+    declaration = service.snapshot().environments[0]
+    assert declaration.managed is not None
+    assert manager.provision_calls == []
+    assert declaration.state == "setup_needed"
+    try:
+        started = await service.retry_managed(declaration.id, expected_revision=1)
+        assert started.environment.id == declaration.id
+        assert started.operation.state == "resolving"
+        name = declaration.managed.wetlands_name
+        assert manager.provision_calls[0][0] == name
+        manager.provision_operations[name].emit_progress(1, 2, "Installing default viewer")
+        for _ in range(20):
+            progress = service.managed_operation(declaration.id, started.operation.id).operation
+            if progress.state == "installing":
+                break
+            await asyncio.sleep(0.01)
+        assert progress.state == "installing"
+        assert progress.message == "Installing default viewer"
+        manager.provision_operations[name].fail(RuntimeError("Controlled setup failure"))
+        failed = await _wait_terminal(service, declaration.id, started.operation.id)
+        assert failed.environment.id == declaration.id
+        assert failed.environment.state == "failed"
+        assert service.snapshot().default_environment_id == declaration.id
+        retried = await service.retry_managed(declaration.id, expected_revision=service.snapshot().revision)
+        assert retried.environment.id == declaration.id
+        assert manager.provision_calls[1][0] == name
+        project = _managed_project(tmp_path / "owned-default")
+        manager.complete_provision(name, project)
+        completed = await _wait_terminal(service, declaration.id, retried.operation.id)
+        assert completed.environment.state == "ready"
+        assert completed.environment.id == declaration.id
+        assert completed.environment.managed.recipe == declaration.managed.recipe
+        assert len(service.snapshot().environments) == 1
+        assert service.snapshot().default_environment_id == declaration.id
+        reloaded = await _service(tmp_path, manager)
+        await reloaded.initialize_registry()
+        assert reloaded.snapshot().environments[0].id == declaration.id
+        assert len(manager.provision_calls) == 2
+    finally:
+        await service.close()
+
+
 async def test_retry_reuses_failed_entry_and_recovers_published_generation(
     tmp_path: Path,
 ) -> None:
@@ -591,6 +637,37 @@ async def test_post_remove_finalization_failure_is_recovered_after_restart(
     assert recovered.operation.state == "completed"
     assert recovered.environment is None
     assert cleanup_calls[-1] == created.environment.id
+
+
+async def test_restart_reconciliation_preserves_terminal_history_without_runtime_access(tmp_path: Path) -> None:
+    def forbidden(*_args: object) -> object:
+        raise AssertionError("terminal history must not access a runtime or probe")
+
+    store = SettingsStore(tmp_path / "settings.json")
+    await store.load()
+    terminal_states: tuple[Literal["completed", "failed", "cancelled"], ...] = (
+        "completed", "failed", "cancelled",
+    )
+    operations = [
+        NapariEnvironmentOperation(
+            id=uuid4(), environment_id=uuid4(), kind="remove", state=state,
+            progress=100, message="Retained terminal history",
+        )
+        for state in terminal_states
+    ]
+    await store.patch_napari_registry(0, {"napari_environment_operations": operations})
+    reloaded = SettingsStore(store.path)
+    await reloaded.load()
+    service = NapariEnvironmentService(
+        reloaded, probe_runner=forbidden, environment_manager_provider=forbidden,
+    )
+    before = reloaded.path.read_bytes()
+    snapshot = service.snapshot()
+
+    await service.reconcile_managed_operations()
+
+    assert service.snapshot() == snapshot
+    assert reloaded.path.read_bytes() == before
 
 
 async def test_restart_reconciliation_recovers_ready_or_marks_interrupted(tmp_path: Path) -> None:

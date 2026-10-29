@@ -59,6 +59,8 @@ function registerPersistence(
     validationResult: ref(null),
     isValidationPending: ref(false),
     validationSyncState: ref<'idle' | 'pending' | 'error'>('idle'),
+    hasLocalSemanticChanges: ref(false),
+    isDraftPersistencePending: ref(false),
     isPending: ref(false),
     hasConflict: ref(false),
     persistenceState: ref<'idle' | 'saving' | 'error' | 'conflict'>('idle'),

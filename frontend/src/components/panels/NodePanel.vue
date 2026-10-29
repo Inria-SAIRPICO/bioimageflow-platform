@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch, type ComputedRef } from 'vue'
 import InputText from 'primevue/inputtext'
-import InputNumber from 'primevue/inputnumber'
-import Checkbox from 'primevue/checkbox'
 import ToggleSwitch from 'primevue/toggleswitch'
 import ToggleButton from 'primevue/togglebutton'
 import Button from 'primevue/button'
-import Select from 'primevue/select'
-import Slider from 'primevue/slider'
 import Dialog from 'primevue/dialog'
 import { openNodeWithEditor } from '@/api/editor'
 import { useSettingsStore } from '@/stores/settings'
@@ -32,7 +28,9 @@ import {
   canvasSessionRegistry,
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
-import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
+import ParameterRow from '@/components/panels/shared/ParameterRow.vue'
+import { decodeWorkflowConstant } from '@/utils/workflowConstants'
+import type { WorkflowInputPresentation } from '@/utils/workflowInputPresentation'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
 import NodeResourcesTab from '@/components/panels/NodeResourcesTab.vue'
 import type {
@@ -58,10 +56,8 @@ interface OutputFieldSchema {
   display_name?: string | null
 }
 
-// Connectable is a three-state string: `"never" | "not_by_default" | "by_default"`.
-// For this PR we treat every non-`"never"` value as "pin visible"; the richer
-// three-state UX (`not_by_default` → hidden pin with a reveal toggle) is a
-// separate plan.
+// Eligibility is separate from transient visibility and publication.
+// Connected eligible inputs keep their pin even when its local toggle was off.
 function canConnect(field: InputFieldSchema): boolean {
   return field.connectable !== 'never'
 }
@@ -122,20 +118,57 @@ const selectedNode = computed(() => {
 })
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
+let nextNodeIdentity = 0
+const nodeIdentities = new WeakMap<object, number>()
+const parameterOwner = computed(() => {
+  const id = canvasSessionRegistry.activeCanvasId.value
+  const node = selectedNode.value
+  if (node && !nodeIdentities.has(node)) nodeIdentities.set(node, ++nextNodeIdentity)
+  return `${id}:${id ? canvasSessionRegistry.get(id)?.registrationToken : ''}:${node?.id}:${node ? nodeIdentities.get(node) : ''}`
+})
 const editableWorkflowInputs = computed(() => (
-  (nodeData.value?.workflow?.interface.inputs ?? []).filter((input: WorkflowInput) => (
-    input.kind === 'field'
-    && !((encodeEndpointHandle({ kind: 'workflow-input', id: input.id })) in (nodeData.value?.connectedInputs ?? {}))
-  )) as WorkflowInput[]
+  (nodeData.value?.workflow?.interface.inputs ?? []).filter((input: WorkflowInput) => input.kind === 'field') as WorkflowInput[]
 ))
-
-function workflowInputValue(input: WorkflowInput): unknown {
-  return nodeData.value?.bindings?.[input.id]?.value ?? input.default?.value ?? null
+function workflowPresentation(input: WorkflowInput): WorkflowInputPresentation | undefined {
+  return nodeData.value?.workflowInputPresentation?.[input.id]
 }
-
-function updateWorkflowInputValue(inputId: string, value: unknown): void {
+function workflowField(input: WorkflowInput): InputFieldSchema {
+  return workflowPresentation(input)?.field ?? {
+    type: typeof input.schema?.type === 'string' ? input.schema.type : 'any',
+    display_name: input.name, nullable: input.schema?.nullable === true,
+    required: input.default == null, connectable: 'never',
+  }
+}
+function workflowValue(input: WorkflowInput): { value: unknown; inherited: boolean; unsupported?: string } {
+  const bindings = nodeData.value?.bindings ?? {}
+  const inherited = !Object.prototype.hasOwnProperty.call(bindings, input.id)
+  const constant = inherited ? input.default : bindings[input.id]
+  if (constant == null) return { value: undefined, inherited }
+  try { return { value: decodeWorkflowConstant(constant), inherited } }
+  catch (error) { return { value: undefined, inherited, unsupported: error instanceof Error ? error.message : String(error) } }
+}
+function workflowErrors(input: WorkflowInput): GraphValidationError[] {
+  const errors = [...fieldErrorsFor(input.id)]
+  for (const target of workflowPresentation(input)?.targets ?? []) {
+    for (const error of getFieldErrors(target.node, target.field)) {
+      if (!errors.includes(error)) errors.push({ ...error, detail: `${target.node}.${target.field}: ${error.detail}` })
+    }
+  }
+  return errors
+}
+function updateWorkflowInputValue(inputId: string, value: unknown, owner?: string): void {
+  if (owner !== undefined && owner !== parameterOwner.value) return
   const nodeId = selectedNode.value?.id
   if (nodeId) canvasCommands.updateWorkflowBinding(nodeId, inputId, value)
+}
+function resetWorkflowInput(inputId: string, owner?: string): void {
+  if (owner !== undefined && owner !== parameterOwner.value) return
+  const nodeId = selectedNode.value?.id
+  if (nodeId) canvasCommands.resetWorkflowBinding(nodeId, inputId)
+}
+function toolValue(key: string, field: InputFieldSchema): unknown {
+  const params = nodeData.value?.parameters ?? {}
+  return Object.prototype.hasOwnProperty.call(params, key) ? params[key] : field.default
 }
 const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
@@ -166,15 +199,12 @@ async function openToolScript() {
 }
 
 const interfaceNameError = ref<string | null>(null)
-const listInputErrors = ref<Record<string, string>>({})
 
 const editingName = ref(false)
 const activeTab = ref<'parameters' | 'resources' | 'execution'>('parameters')
 const nameInput = ref('')
 const nameError = ref<string | null>(null)
 
-/** Track which optional fields have been set to null by the user */
-const nulledFields = ref<Record<string, boolean>>({})
 
 /** Documentation section collapsed state (open by default) */
 const docCollapsed = ref(false)
@@ -360,14 +390,11 @@ const destructiveDialogMessage = computed(() => {
   return `Clear cached outputs for ${count} selected node${count === 1 ? '' : 's'}? This cannot be undone.`
 })
 
-function updateParameter(key: string, value: unknown) {
+function updateParameter(key: string, value: unknown, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   canvasCommands.updateParameter(nodeId, key, value)
-}
-
-function listParameterText(key: string, field: InputFieldSchema): string {
-  return JSON.stringify(nodeData.value.parameters[key] ?? field.default ?? [], null, 2)
 }
 
 function isFilesSourceNode(): boolean {
@@ -382,24 +409,7 @@ function isFilesListField(key: string, field: InputFieldSchema): boolean {
   return key === 'files' && field.type === 'list' && isFilesSourceNode()
 }
 
-function updateListParameter(key: string, event: Event) {
-  let value: unknown
-  try {
-    value = JSON.parse((event.target as HTMLTextAreaElement).value)
-    if (!Array.isArray(value)) throw new Error('Value must be a JSON array')
-    delete listInputErrors.value[key]
-  } catch (error) {
-    listInputErrors.value[key] = error instanceof Error ? error.message : 'Invalid JSON array'
-    return
-  }
-  // Keep command/graph failures out of the field's JSON validation message.
-  // In particular, an editor blur caused by selecting another node must never
-  // display an unrelated graph error below that node's list input.
-  updateParameter(key, value)
-}
-
 watch(() => selectedNode.value?.id, () => {
-  listInputErrors.value = {}
   nameError.value = null
   editingName.value = false
   activeTab.value = 'parameters'
@@ -455,44 +465,14 @@ function toggleEnabled() {
   canvasCommands.setNodeEnabled(nodeId, !nodeData.value.enabled)
 }
 
-function resetToDefault(key: string) {
-  if (!nodeData.value?.tool) return
-  const field = nodeData.value.tool.inputs[key] as InputFieldSchema | undefined
-  if (field) {
-    updateParameter(key, field.default ?? null)
-    // If it was nulled, un-null it
-    nulledFields.value[key] = false
-  }
+function resetToDefault(key: string, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
+  const field = nodeData.value?.tool?.inputs[key] as InputFieldSchema | undefined
+  if (field) updateParameter(key, field.default ?? null)
 }
 
-function toggleNull(key: string) {
-  if (!nodeData.value) return
-  const isCurrentlyNull = nulledFields.value[key] ?? (nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined)
-  if (isCurrentlyNull) {
-    // Restore to default
-    const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-    const defaultVal = field?.default ?? ''
-    updateParameter(key, defaultVal)
-    nulledFields.value[key] = false
-  } else {
-    // Set to null
-    updateParameter(key, null)
-    nulledFields.value[key] = true
-  }
-}
-
-function isFieldNulled(key: string): boolean {
-  if (!nodeData.value) return false
-  const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-  // Non-nullable fields can never be in a "null" state. For required-but-
-  // nullable fields, an undefined value is treated as null until the user
-  // toggles to a real value (the toggle is the only affordance to set one).
-  if (!field || !field.nullable) return false
-  if (nulledFields.value[key]) return true
-  return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
-}
-
-function togglePinned(key: string) {
+function togglePinned(key: string, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   canvasCommands.setInputPinned(nodeId, key, !isPinned(key))
@@ -505,7 +485,8 @@ function isPinned(key: string): boolean {
 }
 
 function connectedInputSource(key: string): string | null {
-  const handle = encodeEndpointHandle({ kind: 'tool-input', name: key })
+  const handle = encodeEndpointHandle(nodeData.value?.nodeType === 'workflow'
+    ? { kind: 'workflow-input', id: key } : { kind: 'tool-input', name: key })
   return nodeData.value?.connectedInputs?.[handle] ?? null
 }
 
@@ -539,18 +520,6 @@ function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {
   // Outputs are column declarations, not files written to disk.
   if (nodeData.value?.tool?.tool_type === 'DataFrameTool') return false
   return isPathType(field.type)
-}
-
-function isImageSharedType(type: string): boolean {
-  return ['ImageShared', 'SharedArray'].includes(type)
-}
-
-function hasChoices(field: InputFieldSchema): boolean {
-  return Array.isArray(field.choices) && field.choices.length > 0
-}
-
-function isSliderField(field: InputFieldSchema): boolean {
-  return field.type === 'float' && field.min != null && field.max != null && field.step != null
 }
 
 const workflowInterfaceContext = computed(() => (
@@ -602,13 +571,15 @@ function applyInterfaceResult(result: CanvasInterfaceCommandResult): void {
   if (result.status !== 'rejected') interfaceNameError.value = null
 }
 
-function toggleWorkflowInputExposure(fieldName: string | number) {
+function toggleWorkflowInputExposure(fieldName: string | number, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   applyInterfaceResult(canvasCommands.toggleWorkflowInput(nodeId, fieldName))
 }
 
-function updateWorkflowInputName(fieldName: string | number, value: string) {
+function updateWorkflowInputName(fieldName: string | number, value: string, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   applyInterfaceResult(
@@ -664,38 +635,46 @@ function updateWorkflowOutputName(outputName: string, value: string) {
   )
 }
 
-async function pickFile(key: string, type: string) {
-  const path = await pickFileNative({
-    parameterName: key,
-    fileTypes: fileTypesForField(type),
-  })
-  if (path !== null) {
-    updateParameter(key, path)
+function captureParameterEdit(key: string): ((value: unknown, filesMode?: boolean) => void) | null {
+  const node = selectedNode.value
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  const registration = canvasId ? canvasSessionRegistry.get(canvasId)?.registrationToken : undefined
+  if (!node || isNodeEditingDisabled.value) return null
+  const workflow = node.data.nodeType === 'workflow'
+  const declaration = workflow ? node.data.workflow?.interface.inputs.find((input: WorkflowInput) => input.id === key) : node.data.tool?.inputs[key]
+  if (!declaration) return null
+  const filesSource = isFilesSourceNode()
+  return (value, filesMode = false) => {
+    if (isNodeEditingDisabled.value || selectedNode.value !== node || canvasSessionRegistry.activeCanvasId.value !== canvasId) return
+    if (canvasId && canvasSessionRegistry.get(canvasId)?.registrationToken !== registration) return
+    const current = workflow ? node.data.workflow?.interface.inputs.find((input: WorkflowInput) => input.id === key) : node.data.tool?.inputs[key]
+    if (current !== declaration || connectedInputSource(key) !== null) return
+    if (workflow) canvasCommands.updateWorkflowBinding(node.id, key, value)
+    else if (filesMode || (filesSource && key === 'path')) canvasCommands.updateParameters(node.id,
+      filesMode ? { path: null, files: value } : { path: value, files: null })
+    else canvasCommands.updateParameter(node.id, key, value)
   }
 }
-
-async function pickFolder(key: string) {
+async function pickFile(key: string, type: string, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
+  const apply = captureParameterEdit(key)
+  if (!apply) return
+  const path = await pickFileNative({ parameterName: key, fileTypes: fileTypesForField(type) })
+  if (path !== null) apply(path)
+}
+async function pickFolder(key: string, owner?: string) {
+  if (owner !== undefined && owner !== parameterOwner.value) return
+  const apply = captureParameterEdit(key)
+  if (!apply) return
   const path = await pickFolderNative({ parameterName: key })
-  if (path !== null) {
-    const nodeId = selectedNode.value?.id
-    if (nodeId && key === 'path' && isFilesSourceNode()) {
-      canvasCommands.updateParameters(nodeId, { path, files: null })
-    } else {
-      updateParameter(key, path)
-    }
-  }
+  if (path !== null) apply(path)
 }
-
 async function pickFiles(key: string) {
-  if (!isDesktop()) {
-    showDatasetsPanel()
-    return
-  }
+  if (!isDesktop()) { showDatasetsPanel(); return }
+  const apply = captureParameterEdit(key)
+  if (!apply) return
   const paths = await pickFilesNative({ parameterName: key })
-  const nodeId = selectedNode.value?.id
-  if (paths.length > 0 && nodeId) {
-    canvasCommands.updateParameters(nodeId, { path: null, files: paths })
-  }
+  if (paths.length > 0) apply(paths, true)
 }
 </script>
 
@@ -898,259 +877,40 @@ async function pickFiles(key: string) {
         <small v-if="interfaceNameError" class="interface-name-error" role="alert">{{ interfaceNameError }}</small>
       </section>
 
-      <!-- Parameters section -->
-      <div v-if="nodeData.nodeType === 'workflow'" class="parameters-section">
+      <!-- Both node variants use the same parameter controls. -->
+      <div v-if="nodeData.nodeType === 'workflow' || nodeData.tool" class="parameters-section">
         <h4>Parameters</h4>
-        <div v-for="input in editableWorkflowInputs" :key="input.id" class="param-row">
-          <label :for="`workflow-binding-${input.id}`">{{ input.name }}</label>
-          <InputNumber
-            v-if="input.schema?.type === 'int' || input.schema?.type === 'float'"
-            :input-id="`workflow-binding-${input.id}`"
-            :model-value="workflowInputValue(input) as number"
-            :min-fraction-digits="input.schema?.type === 'float' ? 1 : 0"
-            :disabled="isNodeEditingDisabled"
-            :data-testid="`workflow-binding-${input.id}`"
-            @update:model-value="updateWorkflowInputValue(input.id, $event)"
-          />
-          <Checkbox
-            v-else-if="input.schema?.type === 'bool'"
-            :input-id="`workflow-binding-${input.id}`"
-            :model-value="workflowInputValue(input) as boolean"
-            binary
-            :disabled="isNodeEditingDisabled"
-            :data-testid="`workflow-binding-${input.id}`"
-            @update:model-value="updateWorkflowInputValue(input.id, $event)"
-          />
-          <InputText
-            v-else
-            :id="`workflow-binding-${input.id}`"
-            :model-value="String(workflowInputValue(input) ?? '')"
-            :disabled="isNodeEditingDisabled"
-            :data-testid="`workflow-binding-${input.id}`"
-            @update:model-value="updateWorkflowInputValue(input.id, $event)"
-          />
-        </div>
-      </div>
-      <div v-if="nodeData.tool" class="parameters-section">
-        <h4>Parameters</h4>
-        <div
-          v-if="interfaceNameError"
-          class="interface-name-error"
-          data-testid="interface-name-error"
-        >
-          {{ interfaceNameError }}
-        </div>
-        <div
-          v-for="[key, field] in Object.entries(nodeData.tool.inputs)"
-          :key="key"
-          class="param-row"
-          @focusin="trackParameterFocus(key, $event)"
-          @focusout="trackParameterBlur($event)"
-        >
-          <div class="param-header">
-            <Button
-              v-if="workflowInterfaceContext && canConnect(field as InputFieldSchema)"
-              :icon="isWorkflowInputExposed(key) ? 'pi pi-minus' : 'pi pi-plus'"
-              class="p-button-text p-button-sm param-action-btn interface-toggle-btn"
-              :disabled="isNodeEditingDisabled"
-              :title="isWorkflowInputExposed(key) ? 'Remove workflow input' : 'Expose as workflow input'"
-              :aria-pressed="isWorkflowInputExposed(key)"
-              @click="toggleWorkflowInputExposure(key)"
-              :data-testid="`interface-input-toggle-${key}`"
-            />
-            <!-- Pin visibility toggle (icon-only, before the label) -->
-            <Button
-              v-if="canConnect(field as InputFieldSchema)"
-              :icon="isPinned(key) ? 'pi pi-times' : 'pi pi-arrow-right-arrow-left'"
-              class="p-button-text p-button-sm param-action-btn pin-toggle-btn"
-              :disabled="isNodeEditingDisabled"
-              :title="isPinned(key) ? 'Remove input pin' : 'Add input pin'"
-              :aria-pressed="isPinned(key)"
-              @click="togglePinned(key)"
-              data-testid="pin-toggle"
-            />
-            <label>{{ fieldDisplayName(key, field as InputFieldSchema) }}</label>
-            <span class="param-actions">
-              <!-- Fix 15: Reset to default button -->
-              <Button
-                icon="pi pi-undo"
-                class="p-button-text p-button-sm param-action-btn"
-                :disabled="isNodeEditingDisabled"
-                @click="resetToDefault(key)"
-                title="Reset to default"
-                data-testid="reset-default"
-              />
-            </span>
-            <!-- None toggle for nullable fields. Two-state icon button —
-                 the icon shows the action that will happen on click: pencil
-                 when the field is null (click to edit), Ø (pi-ban) when the
-                 field is editable (click to set to null). -->
-            <span v-if="(field as InputFieldSchema).nullable" class="param-toggles">
-              <Button
-                :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
-                class="p-button-text p-button-sm param-action-btn none-toggle-btn"
-                :disabled="isNodeEditingDisabled"
-                :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
-                :aria-pressed="isFieldNulled(key)"
-                @click="toggleNull(key)"
-                data-testid="none-toggle"
-              />
-            </span>
-          </div>
-
-          <InputText
-            v-if="workflowInterfaceContext && isWorkflowInputExposed(key)"
-            :model-value="workflowInterfaceContext.inputs[workflowInputIndex(key)].name"
-            class="workflow-interface-name-input"
-            :disabled="isNodeEditingDisabled"
-            :data-testid="`workflow-input-name-${key}`"
-            @update:model-value="updateWorkflowInputName(key, $event as string)"
-          />
-
-          <!-- Fix 18: Always-visible help text -->
-          <small
-            v-if="(field as InputFieldSchema).description"
-            class="param-help"
-            data-testid="param-help-text"
-          >
-            {{ (field as InputFieldSchema).description }}
-          </small>
-
-          <!-- Input widget (hidden when field is nulled) -->
-          <ParameterFieldError v-if="!isFieldNulled(key)" :errors="fieldErrorsFor(key)">
-            <!-- Connected input: show source label -->
-            <span v-if="connectedInputSource(key) !== null" class="connected-source">
-              {{ connectedInputSource(key) }}
-            </span>
-            <!-- Gap 5: ImageShared/SharedArray — connection-only, no manual input -->
-            <span
-              v-else-if="isImageSharedType((field as InputFieldSchema).type)"
-              class="connect-hint"
-              data-testid="image-shared-hint"
-            >
-              Connect to upstream node
-            </span>
-            <!-- Generic list editor. Lists remain editable even when their element type has no special widget. -->
-            <div v-else-if="(field as InputFieldSchema).type === 'list'" class="list-input-row">
-              <textarea
-                :value="listParameterText(key, field as InputFieldSchema)"
-                class="param-input list-input"
-                :disabled="isNodeEditingDisabled"
-                :data-testid="`list-input-${key}`"
-                @change="updateListParameter(key, $event)"
-              />
-              <small v-if="listInputErrors[key]" class="list-input-error">{{ listInputErrors[key] }}</small>
-            </div>
-            <!-- Gap 3: Enum/Literal dropdown when choices are available -->
-            <Select
-              v-else-if="hasChoices(field as InputFieldSchema)"
-              :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
-              :options="(field as InputFieldSchema).choices!"
-              class="param-input"
-              :disabled="isNodeEditingDisabled"
-              :data-testid="`choices-select-${key}`"
-              @update:model-value="updateParameter(key, $event)"
-            />
-            <!-- Boolean checkbox -->
-            <Checkbox
-              v-else-if="(field as InputFieldSchema).type === 'bool'"
-              :model-value="nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? false"
-              binary
-              :disabled="isNodeEditingDisabled"
-              @update:model-value="updateParameter(key, $event)"
-            />
-            <!-- Gap 4: Slider + InputNumber for float fields with min, max, and step all defined -->
-            <div
-              v-else-if="isSliderField(field as InputFieldSchema)"
-              class="slider-row"
-              :data-testid="`slider-row-${key}`"
-            >
-              <Slider
-                :model-value="(nodeData.parameters[key] as number) ?? ((field as InputFieldSchema).default as number) ?? (field as InputFieldSchema).min!"
-                :min="(field as InputFieldSchema).min!"
-                :max="(field as InputFieldSchema).max!"
-                :step="(field as InputFieldSchema).step!"
-                class="slider-input"
-                :disabled="isNodeEditingDisabled"
-                @update:model-value="updateParameter(key, $event)"
-              />
-              <InputNumber
-                :model-value="(nodeData.parameters[key] as number) ?? ((field as InputFieldSchema).default as number)"
-                :min="(field as InputFieldSchema).min ?? undefined"
-                :max="(field as InputFieldSchema).max ?? undefined"
-                :step="(field as InputFieldSchema).step ?? 1"
-                :min-fraction-digits="1"
-                class="slider-number"
-                :disabled="isNodeEditingDisabled"
-                @update:model-value="updateParameter(key, $event)"
-              />
-            </div>
-            <!-- Standard numeric input (int, or float without full slider metadata) -->
-            <InputNumber
-              v-else-if="(field as InputFieldSchema).type === 'int' || (field as InputFieldSchema).type === 'float'"
-              :model-value="nodeData.parameters[key] as number ?? (field as InputFieldSchema).default as number"
-              :min="(field as InputFieldSchema).min ?? undefined"
-              :max="(field as InputFieldSchema).max ?? undefined"
-              :step="(field as InputFieldSchema).step ?? 1"
-              :min-fraction-digits="(field as InputFieldSchema).type === 'float' ? 1 : 0"
-              show-buttons
-              class="param-input param-number"
-              :disabled="isNodeEditingDisabled"
-              @update:model-value="updateParameter(key, $event)"
-            />
-            <!-- Path-typed input: text input + native file/folder picker buttons -->
-            <div
-              v-else-if="isPathType((field as InputFieldSchema).type)"
-              class="path-input-row"
-              :data-testid="`path-input-${key}`"
-            >
-              <InputText
-                :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
-                class="path-input"
-                :disabled="isNodeEditingDisabled"
-                @update:model-value="updateParameter(key, $event)"
-              />
-              <Button
-                v-if="showsFilePicker(field as InputFieldSchema)"
-                icon="pi pi-file"
-                class="p-button-text p-button-sm path-picker-btn"
-                title="Select file"
-                :disabled="isNodeEditingDisabled"
-                :data-testid="`select-file-${key}`"
-                @click="pickFile(key, (field as InputFieldSchema).type)"
-              />
-              <Button
-                v-if="showsFolderPicker(field as InputFieldSchema)"
-                icon="pi pi-folder-open"
-                class="p-button-text p-button-sm path-picker-btn"
-                title="Select folder"
-                :disabled="isNodeEditingDisabled"
-                :data-testid="`select-folder-${key}`"
-                @click="pickFolder(key)"
-              />
-            </div>
-            <!-- Text / non-connectable string input -->
-            <InputText
-              v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
-              :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
-              class="param-input"
-              :disabled="isNodeEditingDisabled"
-              @update:model-value="updateParameter(key, $event)"
-            />
-            <!-- Fallback: connectable-only field with no manual widget -->
-            <span v-else class="connect-hint">Connect to upstream node</span>
-          </ParameterFieldError>
-          <span v-else class="null-indicator">null</span>
-          <Button
-            v-if="isFilesListField(key, field as InputFieldSchema)"
-            :label="isDesktop() ? 'Select files' : 'Select in Datasets panel'"
-            :icon="isDesktop() ? 'pi pi-file' : 'pi pi-folder-open'"
-            class="p-button-sm files-source-picker"
-            :disabled="isNodeEditingDisabled"
-            data-testid="select-files-source"
-            @click="pickFiles(key)"
-          />
-        </div>
+        <div v-if="interfaceNameError" class="interface-name-error" data-testid="interface-name-error">{{ interfaceNameError }}</div>
+        <ParameterRow v-for="input in editableWorkflowInputs" :key="`${parameterOwner}:${input.id}`"
+          :owner="parameterOwner" :field-key="input.id" :field="workflowField(input)" :value="workflowValue(input).value"
+          :inherited="workflowValue(input).inherited" :unsupported="workflowValue(input).unsupported"
+          :connected-source="connectedInputSource(input.id)" :disabled="isNodeEditingDisabled"
+          :can-pin="workflowPresentation(input)?.canPin === true" :pinned="isPinned(input.id)"
+          :can-publish="!!workflowInterfaceContext" :published="isWorkflowInputExposed(input.id)"
+          :published-name="workflowInterfaceContext?.inputs[workflowInputIndex(input.id)]?.name"
+          :file-picker="showsFilePicker(workflowField(input))" :folder-picker="showsFolderPicker(workflowField(input))"
+          :widget-test-id="`workflow-binding-${input.id}`" :errors="workflowErrors(input)"
+          @update-value="(value, owner) => updateWorkflowInputValue(input.id, value, owner)" @reset="owner => resetWorkflowInput(input.id, owner)"
+          @toggle-pin="owner => togglePinned(input.id, owner)" @toggle-publication="owner => toggleWorkflowInputExposure(input.id, owner)"
+          @rename-publication="(value, owner) => updateWorkflowInputName(input.id, value, owner)"
+          @pick-file="owner => pickFile(input.id, workflowField(input).type, owner)" @pick-folder="owner => pickFolder(input.id, owner)"
+          @focusin="trackParameterFocus(input.id, $event)" @focusout="trackParameterBlur($event)" />
+        <ParameterRow v-for="[key, field] in Object.entries(nodeData.tool?.inputs ?? {})" :key="`${parameterOwner}:${key}`"
+          :owner="parameterOwner" :field-key="key" :field="field as InputFieldSchema" :value="toolValue(key, field as InputFieldSchema)"
+          :connected-source="connectedInputSource(key)" :disabled="isNodeEditingDisabled"
+          :can-pin="canConnect(field as InputFieldSchema)" :pinned="isPinned(key)"
+          :can-publish="!!workflowInterfaceContext" :published="isWorkflowInputExposed(key)"
+          :published-name="workflowInterfaceContext?.inputs[workflowInputIndex(key)]?.name"
+          :file-picker="showsFilePicker(field as InputFieldSchema)" :folder-picker="showsFolderPicker(field as InputFieldSchema)"
+          :errors="fieldErrorsFor(key)" @update-value="(value, owner) => updateParameter(key, value, owner)" @reset="owner => resetToDefault(key, owner)"
+          @toggle-pin="owner => togglePinned(key, owner)" @toggle-publication="owner => toggleWorkflowInputExposure(key, owner)"
+          @rename-publication="(value, owner) => updateWorkflowInputName(key, value, owner)"
+          @pick-file="owner => pickFile(key, (field as InputFieldSchema).type, owner)" @pick-folder="owner => pickFolder(key, owner)"
+          @focusin="trackParameterFocus(key, $event)" @focusout="trackParameterBlur($event)">
+          <Button v-if="isFilesListField(key, field as InputFieldSchema)" :label="isDesktop() ? 'Select files' : 'Select in Datasets panel'"
+            :icon="isDesktop() ? 'pi pi-file' : 'pi pi-folder-open'" class="p-button-sm files-source-picker" :disabled="isNodeEditingDisabled"
+            data-testid="select-files-source" @click="pickFiles(key)" />
+        </ParameterRow>
       </div>
 
       <!-- Outputs section (Fix 19: output template editing) -->

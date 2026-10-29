@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import type { GraphState as CanonicalGraphState } from '../../src/api/types'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -153,6 +155,7 @@ async function installDraftWebSocketProbe(page: Page) {
 
 test.describe('agent draft sync', () => {
   test('backend operation edits appear on the active clean canvas through WebSocket', async ({ page }) => {
+    test.setTimeout(60_000)
     const workflowName = uniqueName('agent_sync')
     await installDraftWebSocketProbe(page)
     await deleteWorkflowIfExists(page, workflowName)
@@ -177,28 +180,32 @@ test.describe('agent draft sync', () => {
         if (frame === page.mainFrame()) navigationsAfterOperation += 1
       })
 
-      const response = await page.request.post(
-        `${API_BASE}/api/v1/workflow-draft-operations/${workflowName}`,
-        {
-          data: {
-            expected_revision: 0,
-            operations: [
-              {
-                type: 'create_tool_node',
-                node_id: 'agent_seed_1',
-                tool_name: 'SeedNumbers',
-                name: 'Agent Seed',
-                position: [160, 120],
-                parameters: {},
-              },
-            ],
-          },
-        },
-      )
-      expect(response.ok()).toBeTruthy()
+      const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+      expect(workflowResponse.ok()).toBeTruthy()
+      const workflow = await workflowResponse.json() as { info: { workspace_path: string } }
+      const configPath = join(workflow.info.workspace_path, '.bioimageflow', 'mcp-client-config.json')
+      await expect.poll(() => existsSync(configPath)).toBe(true)
+      type MCPReport = {
+        protocol_version: string
+        final: { graph: CanonicalGraphState; draft_revision: number; dirty_against_saved: boolean }
+        transcript: Array<{ tool: string; result: { ok: boolean; error?: string; status_code?: number } }>
+      }
+      const driveMCP = (mode: 'edit' | 'read'): MCPReport => JSON.parse(execFileSync(
+        resolve('../backend/.venv/bin/python'),
+        [resolve('../backend/tests/fixtures/stdio_mcp_workflow.py'),
+          '--config', configPath, '--workflow', workflowName, '--mode', mode],
+        { encoding: 'utf8', timeout: 25_000, maxBuffer: 4 * 1024 * 1024 },
+      )) as MCPReport
+      const edited = driveMCP('edit')
+      expect(edited.protocol_version).not.toBe('')
+      expect(edited.transcript.find(call => call.tool === 'rename_node' && !call.result.ok)?.result)
+        .toMatchObject({ error: 'draft_revision_conflict', status_code: 409 })
+      await test.info().attach('actual-stdio-mcp-edit', {
+        body: Buffer.from(JSON.stringify(edited)), contentType: 'application/json',
+      })
 
       await expect.poll(
-        () => page.evaluate((id) => {
+        () => page.evaluate(({ id, revision }) => {
           const messages = window.__agentDraftSyncMessages ?? []
           return messages.some((message) => {
             if (typeof message !== 'object' || message === null) return false
@@ -206,19 +213,55 @@ test.describe('agent draft sync', () => {
               type?: unknown
               workflow_id?: unknown
               updated_by?: unknown
+              draft_revision?: unknown
             }
             return draftMessage.type === 'workflow_draft_changed' &&
               draftMessage.workflow_id === id &&
-              draftMessage.updated_by === 'agent'
+              draftMessage.updated_by === 'agent' && draftMessage.draft_revision === revision
           })
-        }, workflowName),
+        }, { id: workflowName, revision: edited.final.draft_revision }),
       ).toBe(true)
       await expect(page.locator('.vue-flow__node[data-id="agent_seed_1"]')).toBeVisible({
         timeout: 5000,
       })
+      await expect(page.locator('.vue-flow__node[data-id="agent_increment_1"]'))
+        .toContainText('MCP accepted increment')
+      await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
       await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
       expect(navigationsAfterOperation).toBe(0)
+
+      let savedResponseSeen = false
+      const savedResponse = page.waitForResponse(response => {
+        const matches = response.request().method() === 'PUT'
+          && new URL(response.url()).pathname === `/api/v1/workflows/${workflowName}`
+        if (matches) savedResponseSeen = true
+        return matches
+      })
+      const cleanResponse = page.waitForResponse(response => savedResponseSeen
+        && response.request().method() === 'PUT'
+        && new URL(response.url()).pathname === `/api/v1/workflow-drafts/${workflowName}`
+        && response.status() === 200)
+      await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+      expect((await savedResponse).status()).toBe(200)
+      const cleanDraft = await (await cleanResponse).json() as { dirty_against_saved: boolean }
+      expect(cleanDraft.dirty_against_saved).toBe(false)
+      await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+      await page.reload()
+      await expect(page.locator('.vue-flow__node[data-id="agent_increment_1"]'))
+        .toContainText('MCP accepted increment')
+      await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+      const reopened = driveMCP('read')
+      expect(reopened.final.graph).toEqual(edited.final.graph)
+      expect(reopened.final.dirty_against_saved).toBe(false)
+      const saved = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+      expect(saved.ok()).toBeTruthy()
+      expect((await saved.json()).graph).toEqual(reopened.final.graph)
+      await test.info().attach('actual-stdio-mcp-reopened', {
+        body: Buffer.from(JSON.stringify(reopened)), contentType: 'application/json',
+      })
     } finally {
+      await page.goto('about:blank')
       await deleteWorkflowIfExists(page, workflowName)
     }
   })
@@ -440,18 +483,42 @@ test('copies an agent graph with recursively owned unsaved sources without alias
       },
     }
 
+    await installDraftWebSocketProbe(page)
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await rememberLastOpenedWorkflow(page, name)
-    await page.reload()
+    // Use the real named Open intent rather than racing startup with a direct
+    // preference-store write. Later assertions still exercise copy restoration.
+    await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId(`workflow-row-${name}`).dblclick()
     await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
-    await page.evaluate(async () => {
-      const { useUIStore } = await import('/src/stores/ui.ts')
-      const { canvasSessionRegistry } = await import('/src/sessions/canvasSessionRegistry.ts')
-      const id = canvasSessionRegistry.activeCanvasId.value
-      if (id === null) throw new Error('No active canvas')
-      useUIStore().markCanvasDirty(id)
-    })
+    await expect.poll(() => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0)).toBeGreaterThan(0)
+    const ownedNode = page.locator('.vue-flow__node[data-id="owned_numbers"]')
+    await expect(ownedNode).toBeVisible()
+    const nodeBox = await ownedNode.boundingBox()
+    expect(nodeBox).not.toBeNull()
+    const localWrite = page.waitForResponse(response => (
+      new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+      && response.request().method() === 'PUT'
+      && response.request().postDataJSON().updated_by === 'frontend'
+      && JSON.stringify(response.request().postDataJSON().graph.nodes[0].position)
+        !== JSON.stringify(savedRoot.graph.nodes[0].position)
+    ))
+    // A real graph edit establishes local semantic ownership. Setting only a
+    // presentation dirty flag can be cleared by the initial same-graph response.
+    const dragStart = {
+      x: nodeBox!.x + nodeBox!.width / 2,
+      y: nodeBox!.y + Math.min(24, nodeBox!.height / 2),
+    }
+    await page.mouse.move(dragStart.x, dragStart.y)
+    await page.mouse.down()
+    await page.mouse.move(dragStart.x + 60, dragStart.y + 40, { steps: 8 })
+    await page.mouse.up()
+    const localResponse = await localWrite
+    expect(localResponse.ok(), await localResponse.text()).toBeTruthy()
+    const localDraft = await localResponse.json()
+    expect(localDraft).toMatchObject({ updated_by: 'frontend', dirty_against_saved: true })
+    expect(localDraft.graph.nodes[0].position).not.toEqual(savedRoot.graph.nodes[0].position)
 
     const originalDocumentPath = join(dirname(savedRoot.info.results_path), 'workflow.json')
     const originalDocumentBytes = readFileSync(originalDocumentPath)
@@ -484,6 +551,8 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     const agent = await agentResponse.json()
     expect(agent.validation).toMatchObject({ valid: true, errors: [] })
     await expect(page.locator('.workflow-draft-conflict')).toBeVisible()
+    await expect(page.locator('.vue-flow__node')).toHaveCount(1)
+    await expect(page.locator('.vue-flow__node[data-id="embedded_child"]')).toHaveCount(0)
 
     const copied = page.waitForResponse(response => (
       response.request().method() === 'PATCH'

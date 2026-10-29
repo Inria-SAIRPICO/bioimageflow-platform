@@ -15,12 +15,13 @@ from bioimageflow_core.worker_origins import SourceFileOrigin, load_worker_tool
 from bioimageflow.template import resolve_template
 from bioimageflow.worker_origins import resolve_worker_tool_origin
 
+from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.demo_workflows import (
     DemoWorkflowConflictError,
     DemoWorkflowService,
 )
-from bioimageflow_server.services.workflow_artifacts import artifact_hash
+from bioimageflow_server.services.workflow_artifacts import WorkflowSourceMissingError, artifact_hash
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -36,7 +37,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 5
+    assert service.bundle_version == 6
     assert {path.name for path in service.resource_root.iterdir()} == {
         "manifest.json",
         "fish-analysis",
@@ -48,12 +49,22 @@ def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
         for node in graph["nodes"]:
             if node["type"] == "workflow":
                 assert_schema_v2(node["workflow"])
+            elif node.get("tool_package"):
+                assert node["tool_package_version"] == {
+                    "bioimageflow_common_tools": "0.2.2",
+                    "bioimageflow_io_tools": "0.2.2",
+                    "bioimageflow_segmentation_tools": "0.3.2",
+                    "bioimageflow_spot_tools": "0.2.2",
+                }[node["tool_package"]]
 
     for template in service.templates:
         payload = json.loads(
             (service.resource_root / template.directory / "workflow.json").read_text()
         )
         assert_schema_v2(payload["graph"])
+        assert payload["artifact_hash"] == artifact_hash(
+            GraphState.model_validate(payload["graph"]), [],
+        )
 
 
 def test_bundled_graphs_flow_left_to_right_without_overlapping_nodes(tmp_path: Path) -> None:
@@ -137,6 +148,29 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
         assert any(output.name == "source_image" for output in branch.workflow.interface.outputs)
     branch_node_ids = [node.id for branch in branches.values() for node in branch.workflow.nodes]
     assert len(branch_node_ids) == len(set(branch_node_ids))
+    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    saved_bytes = fish_path.read_bytes()
+    generation = store.workflow_generation("Demo/Fish Analysis")
+    reopened = WorkflowStoreService(store.root_dir, ToolRegistryService())
+    fresh_fish = reopened.get_workflow("Demo/Fish Analysis")
+    local_names = {"DownloadImages", "AverageSpotsPerNucleus", "FishLabelOverlaps"}
+    assert not local_names.intersection(item.tool_name for item in fresh_fish.missing_tools)
+    assert fresh_fish.graph == fish_document.graph
+    assert fresh_fish.artifact_hash == fish_document.artifact_hash
+
+    # Presence and syntax validation are separate: an edited local file stays
+    # available to Open for repair, without hiding the other bundled sources.
+    download = reopened.workflow_tools_dir("Demo/Fish Analysis") / "download_images.py"
+    download.write_text("invalid Python !!!")
+    edited_fish = reopened.get_workflow("Demo/Fish Analysis")
+    assert not local_names.intersection(item.tool_name for item in edited_fish.missing_tools)
+    assert edited_fish.graph == fish_document.graph
+    download.unlink()
+    with pytest.raises(WorkflowSourceMissingError) as missing:
+        reopened.get_workflow("Demo/Fish Analysis")
+    assert missing.value.missing_path == "tools/download_images.py"
+    assert fish_path.read_bytes() == saved_bytes
+    assert reopened.workflow_generation("Demo/Fish Analysis") == generation
 
 
 def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(

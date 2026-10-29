@@ -18,10 +18,15 @@ The product has three main layers:
 3. The BioImageFlow library owns the portable tool and workflow model and the execution contracts used by the backend.
 
 The frontend communicates with the backend through the versioned REST and WebSocket APIs.
+Long workflow titles remain within the desktop menu bar with an ellipsis and full hover text, so loading or activating a canvas does not wrap the menu and shift interaction targets.
 It must not reproduce backend validation or library behavior as an independent authority.
 The backend should use public BioImageFlow APIs and should not depend on private library storage or implementation details.
 
 The application supports desktop and webapp deployment modes.
+Launcher runtime sources/interpreters are separate from the user profile and survive or reset independently.
+Source-archive launcher runs report their own static project version when distribution metadata is absent.
+Release tooling pins the official Launcher Git revision in `backend/pyproject.toml` and `backend/uv.lock` until its native-icon and frozen-runtime fixes reach the registry; this development-only source selection does not change the published application/library dependency policy.
+`BIOIMAGEFLOW_HOME` selects the platform settings and library state root and, when explicitly set, the default desktop workspace under that root; explicit workspace selection and the specific tool-store/Wetlands overrides retain precedence.
 Desktop mode is packaged with pywebview and may use trusted local capabilities such as native file dialogs and editor integration.
 Webapp mode uses managed server-side datasets and restricts capabilities that would expose or execute against arbitrary server paths.
 Desktop result images may also be opened in the platform-managed Napari environment or a user-installed Fiji application configured through Settings; Fiji launch requests resolve workflow result identities on the backend and are unavailable in webapp mode.
@@ -48,10 +53,13 @@ There are two explicit edge variants:
 - A DataFrame edge connects a complete DataFrame to a positional tool input or stable named workflow input ID.
 
 Workflow interface ports have stable immutable IDs and editable display names.
-The Nodes panel edits unconnected field bindings on selected workflow nodes by stable child input ID.
+The Nodes panel presents tool parameters and workflow-node field bindings through shared typed controls, using stable child input IDs for workflow edits.
+Connected fields remain visible as their source, while unconnected workflow fields distinguish explicit values, explicit null and inherited values; Reset removes the instance binding without rewriting the embedded workflow or its public default.
+Optional workflow editor hints follow recursive interface targets through the accepted graph's scoped metadata, without a separate metadata request or same-named catalog fallback for an explicit unavailable binding.
+Workflow pin visibility is transient presentation like tool pin visibility; connected pins stay visible, and hiding a pin never unpublishes a port or removes its bindings or edges.
 The Nodes panel publishes positional DataFrame inputs independently of tool parameters through **Published DataFrame inputs → Publish DataFrame input**.
 Each publication reserves the next free positional slot; connected and published slots compact together on removal without changing surviving public IDs.
-Existing child workflow DataFrame ports can also be published through the enclosing workflow interface.
+Existing child workflow DataFrame and field ports can also be published through the enclosing workflow interface by stable port ID; constant publication is independent of column-pin eligibility.
 Edges and bindings use the stable IDs, never display labels.
 Renaming a port must therefore preserve connections, while removing or incompatibly changing a connected port requires explicit destructive-effect handling.
 Canvas mutations must preserve interface referential integrity in the same graph snapshot: deleting nodes also removes outputs sourced from them and removes their input targets, dropping any input that has no surviving target.
@@ -69,6 +77,8 @@ Do not conflate the following states:
    The envelope contains the canonical graph, workspace metadata, artifact hash, optional Python-authoring provenance, and owned local-source identifiers.
 2. An open root canvas edits a durable workflow draft under that workflow directory.
    Draft writes use expected-revision compare-and-swap, record their writer, validate the accepted graph, and track whether the draft differs from the saved artifact.
+   The canonical root persistence resource separately tracks local semantic changes and pending draft writes; an accepted external graph may remain dirty against the saved artifact and continue receiving newer revisions while only recovery persistence is pending.
+   Same-graph validation preserves that origin, Keep my canvas preserves local ownership, and explicit external resolution or clean accepted Save clears it; a remounted dirty frontend draft remains conservatively protected because its earlier semantic origin cannot be recovered from writer metadata.
    Revision-zero synthesis captures one saved graph/hash/metadata snapshot per existing mutation-lock phase; captures expire as current saved authority at lock release and later phases and requests recheck current saved/draft authority, generation and storage.
    Each projected GET attempt reuses one public compilation outside the mutation lock and at most one plan under the final authority/Clear fence, without retaining compilation or metadata across requests.
    Synthesized responses adopt complete definition diagnostics and resolved schemas; persisted accepted drafts retain their non-cache diagnostic/schema authority, and execution authority helpers remain strictly validated.
@@ -84,9 +94,11 @@ Do not conflate the following states:
 Saving a root canvas promotes the accepted root graph to the saved workflow.
 Saving a nested canvas applies the accepted snapshot to its parent node.
 Closing or replacing dirty state must use the appropriate confirmation and conflict behavior.
+Nested node source Open suppresses unchanged hydration writes between its persistence barrier and response acceptance, while actual graph edits retain their conflict protection.
 Nested tabs close in descendant-first order: a refused or failed durable snapshot deletion leaves the editor recoverable with a visible reason, and never silently discards child sessions.
 
 Older saved workflows, root drafts, and nested snapshots are discovered by a write-free format scan.
+Catalog and format discovery walk workspace folders freshly and stop at workflow.json boundaries, without traversing workflow-owned results or sources; one catalog operation reuses its own path snapshot.
 They remain byte-for-byte unchanged and unavailable until the user confirms the content-derived plan; current unrelated workflows remain usable.
 Confirmation first synchronizes exact backups under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, then replaces all planned authorities through one forward-recoverable journal whose already-confirmed work is completed after restart.
 
@@ -107,6 +119,8 @@ There is no second editable child-graph language and no separately persisted lib
 
 Validation must cover the whole recursive graph, including unique identities, endpoint compatibility, tool availability, interfaces, local-source ownership, containment cycles, bindings, and the selected execution context.
 Errors should retain scoped node paths so a failure inside an embedded workflow remains attributable to its actual internal node.
+Dynamic output-schema inspection carries its originating root workflow identity, including for nested canvases, and resolves owned sources in that workflow’s directory.
+Unavailable compilation returns an unresolved schema rather than dereferencing a missing workflow; named inspection rechecks workflow identity and storage before publishing its result.
 An incompatible runtime recipe retains its node-attributed validation error without attempting cache planning for that refused graph.
 
 Frontend graph and workflow-draft routes/response types are generated from backend OpenAPI into `frontend/src/api/types.ts`.
@@ -121,17 +135,27 @@ Complete upstream DataFrames connect positionally, and the library rejects colum
 Tool annotation introspection resolves postponed and inherited annotations while preserving GUI and image metadata, so registry schemas and execution validation describe the same declared types.
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
 Output metadata preserves each field's required and nullable facts from the library schema.
-Tool-store scanning admits package/version selectors through the library, ignores unsupported directory names, and keeps genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
+Tool-store scanning and explicit package lifecycle operations admit package/version selectors through the library, ignore unsupported directory names including private installer staging, and keep genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
+Installed tools use an admitted generation selected by the exact canonical store root, package and version; installation metadata, selected controller dependency compatibility, source content and installed inherited owners are captured once and reused while that selection remains immutable.
+The normal dependency manifest and lock select published BioImageFlow 0.9.6/Core 0.5.1 with this workflow-loading lifecycle.
+See [Workflow Loading Performance](docs/developer/workflow-loading.md) for the admission lifetime, fixture isolation and cold/warm measurement protocol.
+Repeated workflow compilation and planning reuse those installed facts rather than walking host distributions, RECORD files or installed sources again.
+Editable and workflow-owned sources retain fresh capture for each operation, independently of watcher delivery; invocation declarations, parameters, inputs, runtime readiness and selected result-record integrity remain current checks.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 Missing or null resource fields inherit the declaration; the resource form enables Reset all only for explicit overrides, including numeric zero subject to normal validation.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
+Saved-workflow dependency diagnostics capture exact owned source bytes without changing the canonical graph or compiling it; explicit flat workflow-local module bindings resolve their contained file before catalog lookup, and present invalid source stays available to Open for repair.
 Saved-workflow dependency diagnostics resolve that same carried executable identity through the public class loader without compiling, planning or provisioning; an unavailable explicit binding cannot borrow a same-named catalog entry.
 Canvas hydration uses node-addressed metadata from the same accepted graph and root workflow or nested session before reconciling input/template presentation; unavailable metadata cannot erase authored parameters or output templates.
 Pending validation or a global compilation failure may retain the bound node’s prior captured presentation metadata, without borrowing a same-named catalog class or treating that metadata as execution authority.
 Installed bindings retain their package/version and read-only provenance; owned sources retain their editable custom provenance.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
-Successful code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain the previous usable registry entries.
-Installed-package reload preserves every declared RECORD member, including pip-generated bytecode; fresh executable bytes are admitted and compiled through the public library loader without deleting installed files.
+Successful editable code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain prior presentation metadata for repair without authorizing execution of stale code.
+Installed file events, including staging writes, do not trigger automatic reload.
+Controlled package refresh retires the old generation before admitting a replacement through the public loader; it preserves installed RECORD members, including pip-generated bytecode, and a failed replacement remains unavailable rather than restoring retired classes.
+All affected generations are preflighted together before uninstall or an actual store-root transition; active admitted operations refuse retirement without changing files or registry state.
+Uninstall reserves retired package/version namespaces through physical removal and registry update, so concurrent workflow reads cannot re-admit the still-present directory.
+Selecting the same global store for another workspace does not retire its generations, and replacing controller dependencies requires a process restart.
 Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
 The canvas derives column-edge strands reactively from the target tool metadata and does not persist this presentation state in the graph.
 Do not infer structural names from UI labels or filenames.
@@ -139,10 +163,14 @@ Do not infer structural names from UI labels or filenames.
 Installed package tools are versioned dependencies resolved through the tool store.
 Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
 An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
+Retirement follows path admission and precedes physical removal; supported versions are selected from the stored directories even when catalog discovery failed, while safe unsupported legacy names remain removable without SDK admission.
+Install and uninstall explicitly publish registry diffs without depending on filesystem events, and a selected package that cannot be indexed fails installation with its original load detail.
 A carried module/class/package/version binding takes precedence over a same-named catalog entry during translation and compilation; only explicit version rebind changes that dependency.
 Explicit package references remain package requirements even when the catalog has a same-named custom tool, while module/class-only references are local references without an invented package requirement.
-The platform app environment supplies `pip` for tool-store package installation; the current BioImageFlow library and platform source-import path invoke the app interpreter's `python -m pip`, independently of Wetlands worker environments.
+The platform app environment supplies `pip` for tool-store package installation; versioned and source-import paths install only the selected tool distribution through the app interpreter, using the already installed compatible controller dependencies.
+Processing recipes provision their worker dependencies through Wetlands at execution preparation, independently of tool-store installation.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
+Custom-tool usage reports traverse saved recursive graphs, distinguish tool and workflow nodes, and return each affected workspace-relative workflow ID once.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
 An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
 There is no opened-bundle execution mode or persisted JSON source-text fallback.
@@ -167,7 +195,10 @@ Newly created tools use the same tool-opening route: return the managed workspac
 The Nodes panel opens the selected tool script through the node-addressed editor route after the canvas persistence barrier and deployment checks.
 Tool catalog rows and newly created tools use the separate catalog tool-opening route; catalog names never override an explicitly bound node source.
 In the main tool catalog, single-click toggles the bottom documentation panel and double-click creates a node through the active-canvas command facade; catalog secondary actions remain isolated from both row gestures.
+Catalog search derives a reactive index from names, display names, tags, categories and documentation words, splitting identifier word boundaries before normalization.
+It preserves all-token exact partial matching and stable catalog order, and permits one conservative whole-word edit for otherwise unmatched tokens of 4–64 characters without new wire metadata or stored search state.
 The Manage Tools inventory is independent of the catalog search query, and its tool information and actions expose each declared managed environment's location and explicit create/recreate operation.
+Tool metadata resolves all declared environment locations from one fresh public inventory per request, off the event loop, without provisioning or retaining that inventory between requests.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 
 Trusted `workflow.py` files are authoring inputs only.
@@ -192,10 +223,24 @@ Exact submitted-original-filename metadata fidelity remains a known store implem
 ### Execution and results
 
 Individual and merged Node Data tables share bounded content-aware column sizing and visible independent resize handles.
+Both browsing modes use bounded virtual row windows: Preferences → Display defaults to Paginated and optionally enables Continuous scrolling with bounded block loading, eviction and upward reload against a captured per-source result vector.
+Stacked inspections retain the same captured identities for individual queries and CSV; legacy unpinned tables remain paginated with an explanation.
+Mode/sort/filter changes reset the viewport while retaining the selected results; explicit Refresh or accepted replacement data starts a new inspection, and stale requests cannot repopulate it.
 Modern Node Data and CSV validate the latest link schema and contained relative target, require the canonical run/node view named by its provenance, and verify the retained result identity and immutable record before serving rows; corrupt provenance or Parquet produces a typed unavailable response, and only views with absent `result.json` use the deliberately unpinned legacy path.
+Result conflicts distinguish transient result_pending from rejected result_unavailable; individual and consolidated tables retry only explicitly pending publication, and display permanent failures immediately without polling.
+Unsupported retained cache formats keep their files intact and report the validation cause with regeneration guidance rather than claiming that waiting will make them readable.
+Individual and merged modern Node Data responses take column types and image viewers from the captured result's public producer declaration, using the same admitted DataFrame and immutable record rather than a same-named catalog tool or another result read.
+Missing or explicitly dynamic producer output declarations use value inference; malformed retained declarations are unavailable, while unpinned legacy results keep their existing catalog behavior.
 They measure only visible, font-ready content and persist deliberate user widths by workflow/table and column identity, never automatic DOM measurements; **Reset column widths** restores content sizing.
 The browser image-viewer action checks its selected result's offsets through the same-origin backend API before opening the external Avivator iframe, so an unavailable conversion is reported locally and the unchanged action can retry without opening a broken panel.
 Node-image, thumbnail, and Reveal requests resolve relative owned image paths against the immutable record captured for that request through the library's public asset API; absolute external image paths keep their declared location, and legacy unpinned results retain their existing lookup rules.
+Thumbnail setup and per-fingerprint renders are service-owned shared jobs: request cancellation and repeated selections cannot cancel or duplicate them, and shutdown joins submissions and startup before closing the pool.
+Thumbnail replies distinguish pending, ready, failed and unavailable states; cold setup stays pending until a real terminal outcome, shows a preparation notice only during actual environment mutation, and publishes PNGs atomically.
+After the initial three-second progress wait, cells use bounded 20-second completion waits with a short fixed retry gap; retained-result I/O runs off the event loop, and latest DataFrame reads reuse their admitted run-node relation only within that read.
+BioIO retains format/reader ownership and lazily computes the middle T/Z preview with channels and RGB(A) samples; versioned cache keys cover file metadata and directory-store descendants, including OME-Zarr chunk changes, with fingerprint walks and cache reads kept off the event loop.
+Visible cells coalesce in-flight requests, cancel only their own interest, and revalidate row-addressed URLs rather than using stale browser responses; the server owns the fingerprinted disk cache.
+The shared thumbnail resource owns polling and bounded completed-Blob reuse within one inspection, with fresh admission after Refresh even if result IDs are unchanged; this does not claim live external-file mutation detection while a preview remains displayed.
+Modern thumbnail, image/offset, Reveal and individual CSV requests carry the displayed retained identity rather than silently following latest, and viewer resolution is action-only with no passive per-cell Napari calls.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
@@ -212,6 +257,9 @@ Recursive graphs compile to scoped jobs while workflow nodes project aggregate d
 Caching and result attribution remain per internal tool node, and failures preserve their scoped path through nested workflow boundaries.
 An opened nested canvas maps its local node IDs through its durable owner chain to the root execution's scoped IDs for status, progress, and Node Data; private edits use the nested editor's validation until applied.
 Every platform-owned Wetlands provisioning path forwards public environment-operation events, including sanitized Pixi output, to the Logger panel. Local workflow execution passes a run-scoped environment observer to the public engine API, keeping the shared Wetlands manager's methods unchanged while attributing provisioning to the correct execution and node. Retained job snapshots carry a setup message independently of numeric row progress, so the Execution panel distinguishes environment installation from tool execution.
+Published BioImageFlow 0.9.4 supplies the explicit executable `scoped_node_path` for each preparation call; the platform captures that scope with immutable run context rather than inferring it from environment names, shared receipts or the last started node.
+Setup can appear on a waiting job before scientific start without inventing a start timestamp or numeric progress; late observations cannot mutate a newer run.
+Explicit public failure diagnostics own node details, while unscoped exceptions remain run-level; unsuccessful completion settles known running presentations without assigning a culprit and preserves explicit completed, failed and disabled states.
 The run observer forwards public preparation, provision and removal events during runtime admission before scientific identity and cache lookup.
 Admission emits ready status when no pool is running and preserves an already-live pool status; it never starts a pool itself.
 A warm cache hit does not start new scientific work or hide the controls needed to retire an existing pool.
@@ -232,7 +280,8 @@ Application close terminates new execution admission, settles active execution a
 A warm application-owned pool can retain physical grants until retirement; per-run completion does not certify per-run zero physical resources.
 Its configured-backend planning reports unavailable ready authority as PENDING_RUNTIME without managed provisioning, worker startup or content probes; metadata-only planning preserves record/asset integrity reads without array hydration or controller array-owner allocation. Ready warm hits do not start a scientific pool.
 Column-bound planning and computation normalize omitted defaults to the same effective scientific constants, preserving existing compute keys and exact selected records while retaining bound-column, value and container distinctions.
-The campaign library also admits the finite selected primary Python package and inherited constructor/row/batch owners before runtime preparation and cache lookup, and rejects stale controller or resident worker code.
+The campaign library admits the finite selected primary Python package and inherited constructor/row/batch owners before runtime preparation and cache lookup.
+Installed owners follow their immutable admitted generation; editable owners retain operation-local capture, and controlled retirement prevents new operations from using retired classes.
 Canonical worker tasks retain the same admitted source bytes through scientific callbacks, including lazy imports; Direct retains its actual callback authority.
 Direct Processing scientific identity captures both effective row and batch callbacks independently of its selected execution callback map; all source-bound Direct tools pair admitted source bytes with actual supported inherited/runtime callback evidence.
 Published BioImageFlow 0.9.2 keeps exact declared output-class authority separate from its detached validation facade, allowing original global Outputs returns while retaining strict captured field/value validation.
@@ -262,7 +311,7 @@ Actual PyPI wheel/sdist hashes and source bytes match the admitted release cohor
 Wetlands 2.6.1 is also published and verified; platform dependency/API adoption, actual returned-array export/lifetime, T1 deterministic/real-provider/force-GUI and scoped client recovery/reopen, and I1 two-browser imported-viewer guidance are accepted with the distinct evidence limits in the current checkpoint.
 Published common-tools 0.2.2 discovery/schema certification passes on normal BioImageFlow 0.9.3, Core 0.5.0 and Wetlands 2.6.1 (eight selected cases); actual worker/science, supported OMERO, native desktop and final audited campaign certification remain separate gates.
 Arbitrary trusted Python state/dependency closure, whole merged-input provenance, external filesystem tampering and automatic pressure scheduling are explicit accepted boundaries; the campaign milestone and named remaining tasks remain open; the [current checkpoint](docs/developer/platform-test-current.md) holds source-bound proof and the remaining queue.
-The backend dependency manifest resolves published `bioimageflow[parsl,psij]==0.9.3`, Core 0.5 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout.
+The backend dependency manifest resolves published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout.
 The explicit scheduler groups replace a dependency-free `cluster` selection; installed package availability does not certify excluded distributed features.
 The Python debug launch profiles use that backend environment.
 Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
@@ -310,6 +359,8 @@ WebSocket events carry logs, execution progress, status, and workspace changes t
 Execution-attributed BioImageFlow and Wetlands logs carry the immutable execution context used by progress and terminal events, while non-execution tool, environment, thumbnail, and platform logs remain contextless and global.
 
 The MCP server in `backend/src/bioimageflow_server/agent_mcp.py` is a separate control surface for agents operating the active user workspace.
+Workspace agent setup creates its optional read-only platform source reference as a depth-one clone, including for a local development checkout by using Git's regular transport rather than its local object-copy optimization.
+The reference remains separate from running application code, and clone failure remains nonfatal.
 The material under `docs/agents/` documents that workflow-operation contract; it is not the development architecture guide.
 Platform development agents may edit repository source normally, but should not use direct saved-workflow JSON edits as a substitute for MCP when a task is about operating an active workflow.
 
@@ -388,7 +439,8 @@ For an API change, trace the backend model and service, router, generated type, 
   Collective consumed-row groups and record relation/domain metadata preserve association independently of positional DataFrame merging and Processing column-pin alignment.
 - Native values capture independent accepted bytes and mutable SharedArrays receive independent sealed backings; numeric NPY2 views retain explicit controller scope ownership.
   Exact result-group discard releases only its leases; readers and physical worker grants must drain before backing reclamation, and compute/GC never implicitly closes a whole owner or retires an idle pool.
-- Selected package installation uses owned staging, METADATA/RECORD/import-member admission and exclusive publication; active dependency requirements and namespace owners are rechecked, and workers never inherit the controller dependency-store path.
+- Selected package installation uses owned staging, METADATA/RECORD/import-member admission and exclusive publication; selected controller dependency compatibility and installed owners are admitted once for the held generation, while editable source evidence stays operation-local.
+  Controlled refresh, removal and store-root changes retire generations only after admitted operations release them; arbitrary external installed-file mutation is outside that contract, and workers never inherit the controller dependency-store path.
   EnvironmentSpec captures a detached recipe and returns fresh ordinary projections, with exact/flexible Pip and finite Conda grammar admission.
 - Execution setup/science failure preserves the primary error, uses captured run-directory authority for persistence, and reports truthful pending cleanup.
   Frozen observer events run outside scheduler locks; logical outcome, registered persistence retry and physical engine/pool close are distinct responsibilities.
@@ -403,7 +455,7 @@ For an API change, trace the backend model and service, router, generated type, 
 The selected local-library Phase 3 milestone is technically accepted, with source selectors, normal artifact/cohort checks, actual WorkerPool results and Core OS/Python floor receipts qualified separately in the checkpoint.
 Its finite MAIN and SECONDARY obligations are complete within that scope; arbitrary trusted Python/dependency closure, external filesystem tampering, conservative merged-input provenance and automatic quota scheduling remain explicit limitations.
 These accepted library contracts do not prove platform T1/I1, published tool compatibility or desktop acceptance.
-The backend's actual lock selects normal published `bioimageflow[parsl,psij]==0.9.3`, Core 0.5.0 and Wetlands 2.6.1; the coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
+The backend's actual lock selects normal published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1; the coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
 The subsequent 0.9.2 pin and bundle-only export adoption has its own exact export/tamper, mapped local completion and actual returned-array acceptance, with causally unchanged frontend/schema/browser phases retained; prior failed invocations remain failed and no monolithic app/full success is inferred.
 The v1 application-owned scope release contract requires physical reader/grant drain and truthful pending/error reporting at that adoption boundary.
 
@@ -421,6 +473,7 @@ Build and validate one publication set rather than routinely rebuilding in both 
 The user authorizes continuation through the campaign END, subject to technical gates and explicit scope decisions; M3/M4 follow adoption and desktop M5 is LAST.
 
 Campaign task worktrees have explicit ownership and retirement: preserve held/dirty/unmerged work, stop owned processes, retire only completed task-owned runtimes/caches, then move clean merged trees to Trash, prune and remove merged branches as AGENTS requires.
+Parallel browser test servers keep Vite's generated dependency cache within their separate disposable E2E runtime roots.
 Cleanup measurements supply no product evidence, and protected/shared/user environments and metadata remain untouched.
 Keep caller incarnation, accepted revision, catalog freshness, presentation intent and physical lifetime as separate authorities when choosing follow-up repairs.
 Use one clean current design without backward-only aliases or duplicate authorities, preserving essential features, current data and recovery.
@@ -429,7 +482,8 @@ Inspect obvious repeated reads/hashes/copies and unnecessary dispatch on changed
 ### Remaining repository areas
 
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
-- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundled deterministic workflow artifacts.
+- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 6 with deterministic workflow artifacts pinned to published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2.
+  The exporter retains these explicit release pins independently of the example source checkout’s package versions.
 - Fish Analysis gives its marker branches distinct internal node IDs and runs in parallel using the locked published BioImageFlow runtime, whose worker-thread scope propagation preserves nested result identities and Node Data views. Its summary groups mapped overlap rows by their immediate parent image row index.
 - `bioimageflow/` may be a local library checkout or link used to inspect the library source and specification; the installed dependency remains the runtime authority selected by the lockfile.
 - `external/wetlands-src` is an optional source-browsing link and must not become a package or runtime dependency.
@@ -453,7 +507,10 @@ Its package-compatibility contract uses installed Python distribution metadata a
 Managed creation uses Python 3.12 from Conda and installs the remaining distributions from PyPI, with napari 0.9.1/PyQt6 as the default matrix and napari 0.6.6/PyQt5 as the older smoke matrix.
 Its coordinated portable contract uses canonical recursive schema-v2 graphs, explicit schema-v1 normalization, strict viewer metadata, normalized artifact hashes, and a previewed, explicitly confirmed, byte-backed-up, forward-recoverable saved-document/root-draft/nested-snapshot migration.
 Its Phase B backend foundation implements the settings-backed environment registry, explicit immutable launch/managed identity, package-only bounded probes, singleton adoption, revisioned desktop-only routes, and ordered filename rules.
-Startup adoption still does not create the required setup-needed default recipe when no legacy installation exists; explicit managed creation does not close that known requirement gap.
+Desktop startup adopts an existing singleton or atomically registers one setup-needed default recipe when the Napari registry is pristine; creating that declaration does not acquire an environment manager, probe, provision or launch.
+Reconciliation acquires no environment manager when there are no nonterminal operations; interrupted operations retain their existing runtime recovery.
+The default card offers explicit Setup through the existing retry operation with the same UUID; Refresh is unavailable before installation.
+A never-installed setup-needed declaration can be forgotten through metadata and reference cleanup without removing or changing installed-environment files, and its registry revision prevents recreation on the next startup.
 Phase C implements UUID-keyed lazy launcher processes and locks, frozen registered-environment argv dispatch, public Wetlands generation-owned spawning for recipe-created managed entries with a narrow persisted-interpreter fallback for adopted legacy Wetlands 1 workspaces, per-environment napari settings files, optional explicit reader dispatch, Qt-completion acknowledgements, typed open failures, unknown-outcome no-replay semantics, and attributed lifecycle status/events.
 Its dedicated environment launch route starts an empty viewer without dispatching `viewer.open([])`.
 The managed installer backend implements strict default, legacy-smoke, and explicit advanced recipes, PyPI-only requested distribution validation, immutable create/copy generations, durable public-Wetlands operation progress/cancellation/restart reconciliation, metadata-only validation probes, and ownership-proven removal coordinated with per-environment launcher shutdown and an idempotent local-reference cleanup seam.
@@ -464,6 +521,10 @@ Resolve responses return the exact server-derived persistent output-preference k
 Nested favorite finalization derives its destination from the stored snapshot owner and remaps only after the accepted parent snapshot or current root draft embeds the exact child graph; unsaved roots cannot create durable favorites.
 The frontend Image Viewers settings UI manages registered and managed environments, defaults, ordered filename rules, lifecycle operations, and empty launches.
 Workflow import and explicit saved Open present persistent output-specific missing/unknown viewing guidance outside Settings, without blocking Run or installing viewers.
+Saved-workflow viewing inspection uses the normal request-local graph compiler, workflow-owned source capture and selected tool store; it never plans or executes a workflow to obtain viewer declarations.
+Construction and missing-source diagnostics remain unknown metadata, including an empty diagnostic workflow returned with validation errors, and are never counted as evidence of missing viewer packages.
+Unknown metadata remains visible with tool/source diagnostics; environment setup actions are offered only for known viewer requirement groups.
+Pending-only viewing checks stay silent; successful covered reports never mount a transient guidance banner, while completed warnings and failures remain dismissible.
 Guidance, readiness errors and setup suggestions belong to the accepted registered root canvas, its registration token, local/server workflow identity and current request intent; switching, closing or replacing that owner invalidates delayed responses and queued transfers.
 Settings receives a copied requirement set through an explicit action; automatic prefills update only an untouched, idle creation form, and older setup completions cannot consume a newer owner's groups.
 A constrained napari set displays its original version range and requires an explicit exact release in the advanced recipe; the default preset is not assumed compatible, and installed inventory remains the compatibility authority.

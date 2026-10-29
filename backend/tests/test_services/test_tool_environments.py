@@ -85,13 +85,17 @@ class _FakeWetlandsWrapper:
 
     def admit_runtime(self, env_spec: object, *, provision: bool, replace_stale: bool = False,
                       admissions: Any = None, on_preparation: Any = None,
-                      on_provision_event: Any = None, on_removal_event: Any = None) -> Any:
+                      on_provision_event: Any = None, on_removal_event: Any = None,
+                      scoped_node_path: str | None = None) -> Any:
         name = str(getattr(env_spec, "name"))
         self.admit_calls.append((name, replace_stale))
         if self.state is EnvironmentRecipeState.STALE and not replace_stale:
             raise RuntimeError("Stale generation requires replacement")
         if on_preparation is not None:
-            on_preparation(SimpleNamespace(action="updating" if self.state is EnvironmentRecipeState.STALE else "reusing"))
+            on_preparation(SimpleNamespace(
+                action="updating" if self.state is EnvironmentRecipeState.STALE else "reusing",
+                scoped_node_path=scoped_node_path,
+            ))
         self.state = EnvironmentRecipeState.CURRENT
         receipt = SimpleNamespace(generation_id=getattr(self, "generation", 0))
         if admissions is not None:
@@ -206,6 +210,41 @@ async def test_location_reports_existing_and_expected_managed_paths(tmp_path: Pa
 
     assert service.location("cellpose-env") == str(env_path.resolve())
     assert service.location("new-env") == str((env_path.parent / "new-env").resolve())
+
+
+async def test_locations_uses_one_fresh_inventory_and_exact_environment_names(tmp_path: Path) -> None:
+    env_path = tmp_path / "environments" / "cellpose-env"
+    managed = MagicMock(wraps=_FakeWetlandsManager(env_path))
+    managed.environments_root = env_path.parent
+    wetlands = _FakeWetlandsWrapper(managed)
+    service = ToolEnvironmentService(
+        registry=_registry(), wetlands_manager=wetlands, managed_environment_manager=managed,
+    )
+
+    assert service.locations(["cellpose-env", "new-env", "CELLPOSE-ENV", "cellpose-env"]) == {
+        "cellpose-env": str(env_path.resolve()),
+        "new-env": str((env_path.parent / "new-env").resolve()),
+        "CELLPOSE-ENV": str((env_path.parent / "CELLPOSE-ENV").resolve()),
+    }
+    assert managed.managed_environments.call_count == 1
+    relocated = tmp_path / "current-environment"
+    managed.managed_environments.return_value = (SimpleNamespace(name="cellpose-env", path=relocated),)
+    assert service.location("cellpose-env") == str(relocated.resolve())
+    assert managed.managed_environments.call_count == 2
+    assert wetlands.get_calls == []
+    assert wetlands.admit_calls == []
+
+
+async def test_empty_locations_does_not_construct_environment_manager() -> None:
+    class LazyService(ToolEnvironmentService):
+        @property
+        def manager(self) -> Any:
+            pytest.fail("An empty catalog must not construct an environment manager")
+
+    service = LazyService(registry=_registry())
+    assert service.locations([]) == {}
+    assert service._managed_environments is None
+    assert service._wetlands is None
 
 
 async def test_recreate_uses_public_managed_replacement_path(tmp_path: Path) -> None:
@@ -501,7 +540,7 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
     service._processing_environment_lock = guard
     adapter = _ExecutionEnvironmentManager(
         manager, context=ExecutionContext(execution_id="startup-race", workflow_id="wf", draft_revision=1),
-        current_node_id=lambda: "worker", on_preparation=lambda *_args: None,
+        on_preparation=lambda *_args: None,
         on_provision_event=lambda *_args: None, on_ready=lambda *_args: None,
         on_admitted=lambda *_args: None,
         on_failure=lambda *_args: None, on_stopped=lambda *_args: None,
@@ -509,8 +548,10 @@ async def test_startup_general_refresh_cannot_retire_processing_handoff(tmp_path
         environment_lock=service.processing_environment_lock,
     )
     def prepare_and_submit() -> Any:
-        receipt = adapter.admit_runtime(GENERAL_ENV, provision=True, admissions={})
-        return adapter.submit_processing_task(GENERAL_ENV, {"row": 1}, runtime_receipt=receipt)
+        receipt = adapter.admit_runtime(GENERAL_ENV, provision=True, admissions={}, scoped_node_path="worker")
+        return adapter.submit_processing_task(
+            GENERAL_ENV, {"row": 1}, runtime_receipt=receipt, scoped_node_path="worker",
+        )
 
     submission = None
     if first_owner == "startup":

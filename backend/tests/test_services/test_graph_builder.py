@@ -132,6 +132,50 @@ def test_empty_graph(registry: ToolRegistryService, tmp_path: Path) -> None:
     assert disabled == set()
 
 
+def test_nested_installed_tool_uses_registry_store_instead_of_process_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow.tool_loader import unload_versioned_package
+    from bioimageflow.workflow_node import WorkflowNode
+    from tests.fixtures.package_metadata import write_package_metadata
+    from bioimageflow_server.models.graph import WorkflowNodeState
+
+    selected = tmp_path / "selected-store"
+    package = selected / "explicit_store_tools" / "1.0.0" / "explicit_store_tools"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text('''from bioimageflow_core import ProcessingTool, RowConsumption, IOModel, EnvironmentSpec
+class SelectedTool(ProcessingTool):
+    row_consumption = RowConsumption.MAPPED
+    environment = EnvironmentSpec("selected-store", {})
+    class Inputs(IOModel): pass
+    class Outputs(IOModel): value: int
+    def process_row(self, arguments): return self.Outputs(value=7)
+''')
+    write_package_metadata(package, "1.0.0")
+    monkeypatch.setattr("bioimageflow.tool_loader._get_tool_store_path", lambda: tmp_path / "empty-default")
+    registry = ToolRegistryService()
+    try:
+        registry.scan_tool_store(selected)
+        child = graph_state(nodes=[ToolNodeState(
+            type="tool", id="selected", name="selected", tool_name="SelectedTool",
+            position=(0, 0), parameters={}, tool_module="explicit_store_tools",
+            tool_class="SelectedTool", tool_package="explicit_store_tools", tool_package_version="1.0.0",
+        )])
+        graph = graph_state(nodes=[WorkflowNodeState(
+            type="workflow", id="nested", name="nested", workflow=child,
+            bindings={}, position=(0, 0),
+        )])
+        workflow, errors, _ = build_workflow(graph, registry, storage_path=tmp_path / "records")
+        assert errors == []
+        nested = workflow.nodes["nested"]
+        assert isinstance(nested, WorkflowNode)
+        tool = nested.workflow.nodes["selected"].tool
+        assert type(tool) is registry.get_tool_class("SelectedTool")
+        assert Path(type(tool).process_row.__code__.co_filename).is_relative_to(selected)
+    finally:
+        unload_versioned_package("explicit_store_tools", "1.0.0", selected)
+
+
 def test_single_valid_node(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[

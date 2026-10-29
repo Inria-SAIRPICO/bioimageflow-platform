@@ -24,6 +24,7 @@ from bioimageflow_server.routers import nodes as nodes_router
 from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.result_store import DATAFRAME_RESULT_IDENTITY_ATTR
+from bioimageflow_server.services.result_store import DATAFRAME_RESULT_METADATA_ATTR, ResultColumnMetadata
 from bioimageflow_server.services.result_store import ResultStoreService
 
 pytestmark = pytest.mark.anyio
@@ -69,6 +70,8 @@ def _default_thumbnail_mock() -> MagicMock:
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     mgr.placeholder_png.return_value = placeholder
     mgr.get_or_queue = AsyncMock(return_value=placeholder)
+    mgr.status.return_value = "pending"
+    mgr.environment_state = "idle"
     return mgr
 
 
@@ -136,7 +139,10 @@ async def test_pagination_reuses_captured_result_after_latest_changes() -> None:
             "reader_id": "retained.reader",
         }
     })
-    store.result_viewers.return_value = {"x": retained_viewer}
+    for dataframe in (initial, retained):
+        dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = ResultColumnMetadata(
+            identity=identity, types={"x": "int"}, viewers={"x": retained_viewer},
+        )
     async with await _client(store) as client:
         first = await client.get("/api/v1/nodes/n1/data", params={"page_size": 1})
         second = await client.post(
@@ -152,7 +158,7 @@ async def test_pagination_reuses_captured_result_after_latest_changes() -> None:
     assert first.json()["column_viewers"]["x"]["napari"]["reader_id"] == "retained.reader"
     assert second.json()["rows"] == [{"x": 2}]
     store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
-    assert store.result_viewers.call_count == 2
+    store.result_viewers.assert_not_called()
 
 
 async def test_legacy_node_data_marks_viewer_metadata_unknown() -> None:
@@ -260,11 +266,10 @@ async def test_get_node_data_returns_409_when_cache_not_ready() -> None:
 
     assert resp.status_code == 409
     assert "not ready" in resp.json()["detail"]
+    assert resp.json()["error"] == "result_pending"
 
 
 async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt() -> None:
-    from bioimageflow_server.services.result_store import ResultDataNotReadyError
-
     identity = ResultArtifactIdentity(
         run_id="run_0123456789abcdef0123456789abcdef",
         node_key="n1",
@@ -273,14 +278,19 @@ async def test_node_data_returns_409_if_captured_viewer_metadata_becomes_corrupt
     )
     dataframe = pd.DataFrame({"x": [2]})
     dataframe.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    dataframe.attrs[DATAFRAME_RESULT_METADATA_ATTR] = ResultColumnMetadata(
+        identity=identity.model_copy(update={"record_id": "rec_other"}), types={"x": "int"}, viewers={},
+    )
     store = MagicMock()
     store.get_latest_dataframe.return_value = dataframe
     store.get_column_types.return_value = {"x": "int"}
-    store.result_viewers.side_effect = ResultDataNotReadyError("Viewer metadata is not ready")
     async with await _client(store) as client:
         response = await client.post("/api/v1/nodes/n1/data/query", json={})
 
     assert response.status_code == 409
+    assert "metadata identity does not match" in response.json()["detail"]
+    assert response.json()["error"] == "result_unavailable"
+    store.result_viewers.assert_not_called()
 
 
 async def test_get_node_data_forwards_tool_name() -> None:
@@ -548,6 +558,50 @@ async def test_node_image_endpoint_can_convert_png_to_ome_tiff_for_avivator(
         assert tif.asarray().tolist() == np.arange(16, dtype=np.uint8).reshape(4, 4).tolist()
 
 
+def test_concurrent_viewer_requests_share_one_atomic_conversion(tmp_path: Path, monkeypatch) -> None:
+    from concurrent.futures import Future, ThreadPoolExecutor
+    import threading
+
+    source = tmp_path / "source.png"
+    expected = np.arange(16, dtype=np.uint8).reshape(4, 4)
+    Image.fromarray(expected).save(source)
+    cache = tmp_path / "converted"
+    monkeypatch.setattr(nodes_router, "_OME_TIFF_CACHE_DIR", cache)
+    reading = threading.Event()
+    release = threading.Event()
+    joined = threading.Event()
+    reads = []
+    original_read = nodes_router._read_image_array
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            joined.set()
+            return super().result(timeout)
+
+    def read(path):
+        reads.append(path)
+        reading.set()
+        assert release.wait(3), "conversion was not released"
+        return original_read(path)
+
+    monkeypatch.setattr(nodes_router, "Future", ObservedFuture)
+    monkeypatch.setattr(nodes_router, "_read_image_array", read)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(nodes_router._as_ome_tiff, source)
+        try:
+            assert reading.wait(3)
+            second = pool.submit(nodes_router._as_ome_tiff, source)
+            assert joined.wait(3), "second request did not join the conversion"
+        finally:
+            release.set()
+        converted = first.result(timeout=3)
+        assert second.result(timeout=3) == converted
+    assert reads == [source]
+    np.testing.assert_array_equal(tifffile.imread(converted), expected)
+    assert not list(cache.glob("*.tmp"))
+    assert not nodes_router._OME_CONVERSIONS
+
+
 async def test_node_image_endpoint_returns_offsets_json_for_avivator(
     tmp_path: Path,
 ) -> None:
@@ -743,7 +797,7 @@ async def test_thumbnail_endpoint(tmp_path: Path) -> None:
     image_path.write_bytes(b"tiff")
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
-    thumbs = MagicMock()
+    thumbs = _default_thumbnail_mock()
     real_png = b"\x89PNG\r\n\x1a\nrendered"
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     thumbs.placeholder_png.return_value = placeholder
@@ -771,7 +825,7 @@ async def test_thumbnail_endpoint_signals_pending_for_placeholder(tmp_path: Path
     image_path.write_bytes(b"tiff")
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
-    thumbs = MagicMock()
+    thumbs = _default_thumbnail_mock()
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     thumbs.placeholder_png.return_value = placeholder
     thumbs.get_or_queue = AsyncMock(return_value=placeholder)
@@ -780,6 +834,21 @@ async def test_thumbnail_endpoint_signals_pending_for_placeholder(tmp_path: Path
     assert resp.status_code == 200
     assert resp.headers["x-thumbnail-status"] == "pending"
     assert "no-store" in resp.headers["cache-control"]
+
+
+async def test_thumbnail_published_after_wait_returns_real_body_with_ready_status(tmp_path: Path) -> None:
+    image = tmp_path / "image.tif"
+    image.write_bytes(b"tiff")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+    thumbs = _default_thumbnail_mock()
+    thumbs.status.return_value = "ready"
+    real_png = b"\x89PNG\r\n\x1a\nreal"
+    thumbs.get_cached.return_value = real_png
+    async with await _client(store, thumbs) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask"})
+    assert response.headers["x-thumbnail-status"] == "ready"
+    assert response.content == real_png
 
 
 async def test_thumbnail_endpoint_resolves_relative_paths_against_workflow_storage(tmp_path: Path) -> None:
@@ -903,6 +972,88 @@ async def test_thumbnail_endpoint_validation() -> None:
         bad_col = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "nope"})
         bad_row = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 2, "col": "mask"})
         bad_size = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "mask", "size": 8})
+        bad_wait = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "wait": 21})
     assert bad_col.status_code == 422
     assert bad_row.status_code == 422
     assert bad_size.status_code == 422
+    assert bad_wait.status_code == 422
+
+
+@pytest.mark.parametrize("endpoint", ["thumbnail", "image", "image/preview.tif", "reveal"])
+async def test_image_actions_remain_on_captured_result_when_latest_advances(tmp_path: Path, monkeypatch, endpoint: str) -> None:
+    image = tmp_path / "old.tif"
+    image.write_bytes(b"old retained image")
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    retained = pd.DataFrame({"mask": [str(image)]})
+    retained.attrs[DATAFRAME_RESULT_IDENTITY_ATTR] = identity
+    store = MagicMock()
+    store.load_result_dataframe.return_value = retained
+    store.get_latest_dataframe.side_effect = AssertionError("Pinned request must not read latest")
+    thumbs = _default_thumbnail_mock()
+    reveal = MagicMock()
+    monkeypatch.setattr(nodes_router, "reveal_in_file_browser", reveal)
+    async with await _client(store, thumbs) as client:
+        method = client.post if endpoint == "reveal" else client.get
+        response = await method(f"/api/v1/nodes/n1/{endpoint}", params={
+            "col": "mask", "result_identity": identity.model_dump_json(),
+        })
+    assert response.status_code == 200, response.text
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
+    store.get_latest_dataframe.assert_not_called()
+    if endpoint.startswith("image"):
+        assert response.content == b"old retained image"
+        assert response.headers["cache-control"] == "no-store"
+    if endpoint == "reveal":
+        reveal.assert_called_once_with(str(image))
+
+
+async def test_rejected_pinned_thumbnail_cannot_fall_back_to_latest() -> None:
+    from bioimageflow_server.services.result_store import ResultDataUnavailableError
+
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    store = MagicMock()
+    store.load_result_dataframe.side_effect = ResultDataUnavailableError("Retained result was removed")
+    async with await _client(store) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "result_identity": identity.model_dump_json()})
+        malformed = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "mask", "result_identity": "{}"})
+        wrong_node = await client.get("/api/v1/nodes/other/thumbnail", params={"col": "mask", "result_identity": identity.model_dump_json()})
+    assert response.status_code == 409
+    assert response.json()["error"] == "result_unavailable"
+    assert malformed.status_code == 422
+    assert wrong_node.status_code == 422
+    store.get_latest_dataframe.assert_not_called()
+
+
+async def test_filtered_csv_uses_displayed_result_identity() -> None:
+    identity = ResultArtifactIdentity(run_id="run_old", node_key="n1", result_key="rk_old", record_id="rec_old")
+    store = MagicMock()
+    store.load_result_dataframe.return_value = pd.DataFrame({"value": [3, 1]}, index=["old_a", "old_b"])
+    store.get_latest_dataframe.side_effect = AssertionError("Must export displayed result")
+    async with await _client(store) as client:
+        response = await client.post("/api/v1/nodes/n1/data/csv", json={
+            "result_identity": identity.model_dump(mode="json"), "sort_by": "value", "sort_order": "asc",
+        })
+    assert response.status_code == 200
+    assert response.text == ",value\nold_b,1\nold_a,3\n"
+    store.load_result_dataframe.assert_called_once_with(identity, storage_path=None)
+    store.get_latest_dataframe.assert_not_called()
+
+
+async def test_thumbnail_resolution_runs_off_event_loop_and_forwards_long_wait(tmp_path: Path) -> None:
+    import threading
+
+    image = tmp_path / "image.png"
+    image.write_bytes(b"image")
+    request_thread = threading.get_ident()
+    store = MagicMock()
+
+    def read(*args, **kwargs):
+        assert threading.get_ident() != request_thread
+        return pd.DataFrame({"image": [image]})
+
+    store.get_latest_dataframe.side_effect = read
+    thumbs = _default_thumbnail_mock()
+    async with await _client(store, thumbs) as client:
+        response = await client.get("/api/v1/nodes/n1/thumbnail", params={"col": "image", "wait": 20})
+    assert response.status_code == 200
+    thumbs.get_or_queue.assert_awaited_once_with(image, 128, wait_timeout=20)

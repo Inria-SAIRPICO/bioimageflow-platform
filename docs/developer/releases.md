@@ -70,8 +70,14 @@ cd ..
 ```
 
 PyInstaller must be installed in the same `uv run` environment as Launcher.
+The development lock currently pins the official Launcher Git revision `4736c6677264ae06b590278ceb5d82bb8a777d26`, which contains the macOS icon, frozen Wetlands source, and preparation-progress fixes that are not yet in the published 0.3.9 package.
+Use the frozen project environment for release builds so these fixes cannot silently be replaced by the older registry package.
 Icons are generated with `scripts/generate_desktop_icons`.
 The generator keeps the Windows and Linux launcher artwork full-size and creates an inset `backend/packaging/launcher/app.icns` for the macOS launcher bundle.
+The frozen macOS Tk launcher must retain that bundle icon when it opens a window or dialog; falling back to the portable PNG replaces its margins and makes the Dock icon too large.
+Rebuild with the launcher fix that preserves the native bundle icon, then verify the running launcher as well as the packaged `.icns`.
+The generated bundle must also include Wetlands' Python sources as physical data files: its runtime-content probe and worker executor are copied into managed interpreters and cannot be supplied solely as frozen bytecode.
+Verify `wetlands/_internal/runtime_content.py` is present in the bundle before testing with current Wetlands.
 Standard package names include the inferred release tag:
 
 ```text
@@ -175,3 +181,16 @@ Confirm that:
 - the final `distribution.yml` change is committed and pushed;
 - an existing installed launcher can discover, verify, install, and start the new application release;
 - every newly rebuilt launcher starts successfully on a clean target system.
+
+### Keep installation tests isolated
+
+Treat the launcher runtime and platform user profile as separate lifetimes.
+`LAUNCHER_STATE_DIR` selects disposable launcher state; choose a disposable installation root in the native location dialog.
+`BIOIMAGEFLOW_HOME` selects disposable settings, tools, Wetlands state, and the default desktop workspace.
+Unset inherited `BIOIMAGEFLOW_TOOL_STORE` and `BIOIMAGEFLOW_WETLANDS` when testing a completely fresh profile, or deliberately record them when testing shared stores.
+Ordinary launches without these overrides reuse the user's existing profile, even after **Replace** recreates the application runtime.
+Never run that test against a live personal workspace or an active development session.
+
+Verify first installation, warm restart, **Use Existing**, **Cancel**, refusal of an unrelated nonempty directory, and **Replace** against owned disposable roots.
+Record which profile and runtime each run uses, and check that replacing the runtime preserves profile settings and workflow files.
+Stop the owned application and launcher processes before removing large environments, sources, build directories, and download caches.

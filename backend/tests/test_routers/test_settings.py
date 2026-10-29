@@ -546,7 +546,6 @@ class TestPatchSettings:
         assert response.status_code == 200
         assert response.json()["external_editor"] is None
 
-    @pytest.mark.campaign_excluded(reason="parsl")
     async def test_patch_old_execution_engine_is_rejected(
         self, settings_client: httpx.AsyncClient
     ) -> None:

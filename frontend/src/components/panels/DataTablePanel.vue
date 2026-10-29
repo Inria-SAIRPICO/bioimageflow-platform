@@ -15,6 +15,7 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
 import { useSettingsStore } from '@/stores/settings'
+import { useThumbnailsStore } from '@/stores/thumbnails'
 import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
 import type {
   ToolNodeState,
@@ -37,6 +38,7 @@ const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
 const settingsStore = useSettingsStore()
+const thumbnails = useThumbnailsStore()
 const nestedSessionsStore = useNestedWorkflowSessionsStore()
 const { currentGraph } = useGraphSync()
 const showAll = ref(false)
@@ -217,34 +219,22 @@ function statusProjectionForTarget(target: DataTableTarget): CanvasStatusProject
     : getCanvasStatusProjection(target.canvasId)
 }
 
-function fetchEntry(entry: DataTableEntry, force = false): void {
+function refreshProjection(captureLatest = false, newInspection = false, preserveQuery = true): void {
   if (!settingsReady.value) return
-  if (force || (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId))) {
-    void dataTableStore.fetchNodeData(entry.dataNodeId, {
-      toolName: entry.toolName,
-      workflowName: activeWorkflowId.value,
-      pageSize: settingsStore.settings?.node_data_page_size ?? 250,
-    })
-  }
-}
-
-function refreshProjection(captureLatest = false): void {
-  if (!settingsReady.value) return
-  if (projectionSources.value.length === 0 || localFallback.value) {
+  if (projectionSources.value.length === 0) {
     dataTableStore.clearProjection()
     return
   }
   void dataTableStore.fetchProjection({
     workflow_id: activeWorkflowId.value,
     sources: projectionSources.value,
-  }, { captureLatest })
+  }, { captureLatest, newInspection, preserveQuery })
 }
 
 watch(maximumDepth, (maximum) => {
   if (dataTableStore.upstreamDepth > maximum) dataTableStore.setUpstreamDepth(maximum)
 })
-watch(projectionKey, () => refreshProjection(), { immediate: true })
-watch(stackedEntries, (entries) => entries.forEach(entry => fetchEntry(entry)), { immediate: true })
+watch(projectionKey, () => refreshProjection(false, false, false), { immediate: true })
 watch(() => executionStore.lastResult, (result) => {
   if (result?.success) refreshProjection(true)
 })
@@ -277,27 +267,27 @@ onMounted(async () => {
   const needsInitialRefresh = !settingsReady.value
   if (!settingsStore.isLoaded) await settingsStore.fetchSettings()
   dataTableStore.setPreferredPageSize(settingsStore.settings?.node_data_page_size ?? 250)
+  dataTableStore.setBrowsingMode(settingsStore.settings?.node_data_browsing_mode ?? 'paginated')
   settingsReady.value = true
   if (needsInitialRefresh) {
     refreshProjection()
-    stackedEntries.value.forEach(entry => fetchEntry(entry, true))
   }
   visibilityChangeDisposable = props.params?.api?.onDidVisibilityChange(({ isVisible }) => {
-    if (isVisible) refreshProjection()
+    if (isVisible) refreshProjection(false, true)
   }) ?? null
 })
 
 watch(() => settingsStore.settings?.node_data_page_size, (pageSize, previous) => {
   if (pageSize === undefined) return
   dataTableStore.setPreferredPageSize(pageSize)
-  if (!settingsReady.value || previous === undefined || pageSize === previous) return
+  if (!settingsReady.value || previous === undefined || pageSize === previous || dataTableStore.browsingMode === 'continuous') return
   refreshProjection()
-  stackedEntries.value.forEach(entry => {
-    void dataTableStore.setPageSize(entry.dataNodeId, pageSize, {
-      toolName: entry.toolName,
-      workflowName: activeWorkflowId.value,
-    })
-  })
+
+})
+watch(() => settingsStore.settings?.node_data_browsing_mode, (mode, previous) => {
+  if (!mode || mode === previous) return
+  dataTableStore.setBrowsingMode(mode)
+  if (settingsReady.value) refreshProjection()
 })
 onBeforeUnmount(() => {
   scope?.stop()
@@ -307,6 +297,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="data-table-panel" data-testid="data-table-panel">
+    <p v-if="thumbnails.installing" role="status" data-testid="thumbnail-installation-status">
+      Preparing thumbnail support. First-time setup may take several minutes.
+    </p>
     <div v-if="graphNodes.length === 0" class="data-table-panel__placeholder">
       No nodes in the workflow.
     </div>
@@ -332,6 +325,7 @@ onBeforeUnmount(() => {
           size="small"
           data-testid="upstream-depth"
         />
+        <Button icon="pi pi-refresh" label="Refresh data" text size="small" :loading="dataTableStore.projectionLoading" @click="refreshProjection(true, true)" />
       </div>
       <div
         v-if="dataTableStore.projectionError"
@@ -342,13 +336,13 @@ onBeforeUnmount(() => {
         {{ dataTableStore.projectionError }}
       </div>
       <div
-        v-else-if="dataTableStore.projectionLoading && !dataTableStore.projection"
+        v-if="dataTableStore.projectionLoading && !dataTableStore.projection"
         class="data-table-panel__placeholder"
       >
         Loading consolidated data...
       </div>
       <MergedDataTable
-        v-else-if="dataTableStore.projection?.mode === 'merged'"
+        v-else-if="dataTableStore.projection?.mode === 'merged' && !isStacked"
         :workflow-id="activeWorkflowId"
       >
         <template #toolbar-actions>
@@ -364,10 +358,11 @@ onBeforeUnmount(() => {
               size="small"
               data-testid="upstream-depth"
             />
+            <Button icon="pi pi-refresh" label="Refresh data" text size="small" :loading="dataTableStore.projectionLoading" @click="refreshProjection(true, true)" />
           </div>
         </template>
       </MergedDataTable>
-      <div v-else-if="isStacked" class="data-table-panel__stack">
+      <div v-else-if="isStacked && dataTableStore.projection" class="data-table-panel__stack">
         <div class="data-table-panel__info" data-testid="data-table-fallback">
           {{ fallbackMessage }}
         </div>
@@ -398,6 +393,7 @@ onBeforeUnmount(() => {
             :disabled="entry.disabled"
             :column-aliases="entry.columnAliases"
             :column-filter="entry.columnFilter"
+            :result-identity="dataTableStore.projection?.sources.find(source => source.node_id === entry.dataNodeId)?.result_identity ?? null"
           >
             <template v-if="index === 0" #toolbar-actions>
               <div class="data-table-panel__controls">
@@ -412,6 +408,7 @@ onBeforeUnmount(() => {
                   size="small"
                   data-testid="upstream-depth"
                 />
+                <Button icon="pi pi-refresh" label="Refresh data" text size="small" :loading="dataTableStore.projectionLoading" @click="refreshProjection(true, true)" />
               </div>
             </template>
           </NodeDataTable>
@@ -428,8 +425,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  padding: 0.75rem;
+  overflow: auto;
+  padding: 0 0.5rem;
 }
 
 .data-table-panel__stack {

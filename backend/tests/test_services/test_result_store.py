@@ -15,6 +15,7 @@ from bioimageflow_server.models.results import ResultArtifactIdentity
 from bioimageflow_server.services.result_store import (
     DATAFRAME_RECORD_DIR_ATTR,
     ResultDataNotReadyError,
+    ResultDataUnavailableError,
     ResultStoreService,
 )
 
@@ -174,6 +175,43 @@ def test_get_latest_dataframe_loads_library_generated_v1_view(tmp_path: Path) ->
 
     assert df is not None
     assert df["x"].tolist() == [2]
+
+
+def test_latest_read_reuses_captured_relation_but_next_read_admits_again(tmp_path: Path, monkeypatch) -> None:
+    from bioimageflow.storage import Storage
+
+    _modern_record(tmp_path)
+    original = Storage.read_run_node_result
+    reads = []
+
+    def read(storage, run_id, node_key):
+        reads.append((run_id, node_key))
+        return original(storage, run_id, node_key)
+
+    monkeypatch.setattr(Storage, "read_run_node_result", read)
+    store = _store(tmp_path)
+    assert store.get_latest_dataframe("n1")["x"].tolist() == [2]
+    assert len(reads) == 1
+    _modern_record(tmp_path, sig_hash="next", run_id="run_1123456789abcdef0123456789abcdef", value=7)
+    reads.clear()
+    assert store.get_latest_dataframe("n1")["x"].tolist() == [7]
+    assert len(reads) == 1
+
+
+def test_unsupported_record_schema_is_unavailable_without_modifying_results(tmp_path: Path) -> None:
+    _identity, record = _modern_record(tmp_path)
+    manifest_path = record / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["schema"] = "bioimageflow.cache.record.v1"
+    manifest_path.write_text(json.dumps(manifest))
+    original = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+
+    with pytest.raises(ResultDataUnavailableError, match="Invalid record manifest schema") as failure:
+        _store(tmp_path).get_latest_dataframe("n1")
+
+    assert failure.value.retryable is False
+    assert "Re-run" in str(failure.value)
+    assert all(path.read_bytes() == content for path, content in original.items())
 
 
 @pytest.mark.parametrize("tamper", ["invalid_parquet", "valid_wrong_rows"])

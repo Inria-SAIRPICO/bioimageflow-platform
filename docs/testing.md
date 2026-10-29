@@ -25,11 +25,15 @@ cd ../frontend
 bun install --frozen-lockfile
 ```
 
-The backend lock resolves published `bioimageflow[parsl,psij]==0.9.3`, Core 0.5 and Wetlands 2.6.1 from the registry; ordinary tests and CI do not require a sibling source checkout.
+The backend lock resolves published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1 from the registry; ordinary tests and CI do not require a sibling source checkout.
 Installing the explicit scheduler dependency groups preserves the packaged capability and does not certify excluded distributed features.
 Explicit source investigations use a separate owned interpreter and record their library revision, as described in [Local Development](developer/local-development.md#use-local-bioimageflow-source); they do not certify published compatibility.
 Reuse a checkout's prepared environments while its lockfiles, dependency metadata and installation options remain compatible; resync the affected environment when installation requirements change.
 Keep dependencies and build/runtime state separate between worktrees, and keep browser runtime roots and certification stores disposable even when dependency installation is reused.
+
+Every `scripts/test` lane forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` before launching subprocesses, overriding an inherited native backend so automated checks cannot discover or prompt for the personal Keychain.
+Credential-dependent tests inject memory providers explicitly; owned live integration can install a process-local RAM provider while replacement workers fail closed.
+This test guard does not change production credential behavior, and native credential integration remains outside automated acceptance.
 
 ## Focused tests while editing
 
@@ -64,6 +68,12 @@ Related-test selection is advisory because dynamic imports and runtime wiring ar
 Focused browser runs use Chromium unless one or more Playwright `--project` options are provided.
 Explicit project options are honored exactly, so `--project=firefox` does not also launch Chromium.
 Focused runs use a fresh temporary runtime root, automatically selected local ports unless the caller explicitly sets the corresponding `BIOIMAGEFLOW_E2E_*` variables, and `--max-failures=1` unless the caller supplies another limit.
+
+The noncritical `thumbnail-real.spec.ts` journey prepares its own 8×8 TIFF and installs the published common-tools version from `scripts/ci/test_versions.env` without dependencies into that isolated runtime's tool store.
+It needs no manually prepared input or package installation and runs in the ordinary complete Chromium and Firefox collections, including CI; cold package and thumbnail-reader provisioning require network access.
+The test restores the original E2E Files catalog before Run and checks that the explicitly bound result retains Path semantics despite the catalog's contradictory string declaration.
+After the cold TIFF journey, the same isolated managed-reader test checks automatic RGB PNG/JPEG, middle-plane OME-TIFF and directory-backed OME-Zarr previews without thumbnail API warming.
+An optional `BIOIMAGEFLOW_THUMBNAIL_TIFF` can supply an already prepared matching TIFF inside the same runtime for an owned recovery attempt; it is validated and never overwritten.
 
 For a failing browser test, first reproduce its exact selector and project.
 After a change, run it once, then use `--repeat-each=5` only when validating a timing or race fix.
@@ -144,6 +154,7 @@ It runs all backend tests in one invocation with no marker exclusion, all fronte
 Before starting the tests it installs the pinned published `bioimageflow-common-tools` package into a fresh temporary tool store.
 The command fails if installation or external certification cannot run, so a successful full result never hides deselected external tests.
 Chromium and Firefox run against separate temporary roots and servers in parallel.
+Each browser server keeps Vite's generated dependency cache in its own temporary root, so parallel optimization cannot replace another server's cached modules.
 Local browser lanes stop after the first failure by default.
 `full` subsumes the backend/frontend product checks, both browser projects, and common-tools certification; it does not run `check docs` or native/manual acceptance.
 Run documentation acceptance separately when required rather than stacking already-covered product lanes before `full`.
@@ -157,6 +168,9 @@ Coverage artifacts are written to `backend/.pytest_cache/coverage.xml`, `backend
 The transient Coverage.py database is stored under `backend/.pytest_cache/` and removed on success or failure, so the suite does not leave `backend/.coverage` behind.
 
 The desktop suite remains headless and mocks pywebview, so even a successful full lane does not certify a packaged native window or operating-system dialogs.
+The ordinary E2E server declares the environment-lifecycle tools and observation routes without an opt-in flag, because their browser tests belong to the normal collection.
+Only an explicit lifecycle preparation request provisions those fixture environments and checks that their SDK distributions are published packages; server startup does not provision them.
+Its cleanup stops only the two environments that fixture owns, preserving unrelated journeys' manager and shared-array lifetimes in the same browser server.
 That boundary requires a future platform-specific smoke or manual release check and is not silently represented as automated coverage.
 
 The eight current external tests certify one integration package rather than representing eight general tool-package unit tests.

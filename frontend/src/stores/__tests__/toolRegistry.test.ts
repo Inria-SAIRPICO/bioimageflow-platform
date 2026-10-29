@@ -7,12 +7,35 @@ vi.mock('@/api/client', () => ({
 
 import { api } from '@/api/client'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import type { ToolMetadata } from '@/api/types'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
   patch: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
+}
+
+function catalogTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
+  return {
+    name: 'CustomTool',
+    display_name: 'Custom Tool',
+    package: '__custom__',
+    package_version: 'local',
+    tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
+    dataframe_output: false,
+    row_consumption: 'mapped',
+    documentation: '',
+    inputs: {},
+    outputs: {},
+    tags: [],
+    categories: [],
+    source_kind: 'custom',
+    editable: true,
+    ...overrides,
+  }
 }
 
 describe('toolRegistry custom tool actions', () => {
@@ -24,6 +47,88 @@ describe('toolRegistry custom tool actions', () => {
       if (url === '/api/v1/tools/packages') return Promise.resolve({ data: [] })
       return Promise.resolve({ data: {} })
     })
+  })
+
+  it('finds an existing catalog tool when its query omits one letter', () => {
+    const store = useToolRegistryStore()
+    store.tools = [catalogTool()]
+
+    expect(store.searchTools('custm')).toEqual(store.tools)
+  })
+
+  it.each([
+    ['identifier with acronym boundaries', { name: 'OMEImageReader', display_name: 'Unrelated' }, 'imgae'],
+    ['display name', { display_name: 'Gaussian Blur' }, 'gausian'],
+    ['tag', { tags: ['segmentation'] }, 'segmentationx'],
+    ['category', { categories: ['Morphology'] }, 'morpholpgy'],
+    ['documentation keyword', { documentation: 'Measures fluorescence.' }, 'fluorescense'],
+  ] satisfies Array<[string, Partial<ToolMetadata>, string]>)(
+    'matches a minor typo in a %s', (_field, metadata, query) => {
+      const store = useToolRegistryStore()
+      store.tools = [catalogTool(metadata)]
+
+      expect(store.searchTools(query)).toEqual(store.tools)
+    },
+  )
+
+  it('preserves partial matching, all query tokens, original references and catalog order', () => {
+    const store = useToolRegistryStore()
+    store.tools = [
+      catalogTool({ name: 'Second', display_name: 'Gaussian Measure', tags: ['image'], categories: ['Denoising'] }),
+      catalogTool({ name: 'First', display_name: 'Gaussian Blur', tags: ['image'], categories: ['Denoising'] }),
+      catalogTool({ name: 'Third', display_name: 'Gaussian Blur', tags: ['table'], categories: ['Statistics'] }),
+    ]
+
+    expect(store.searchTools(' GAUSS  IMAGE denois ')).toEqual(store.tools.slice(0, 2))
+    expect(store.searchTools('gausian imgae')).toEqual(store.tools.slice(0, 2))
+    expect(store.searchTools('gauss image')[0]).toBe(store.tools[0])
+    expect(store.searchTools('gauss image')[1]).toBe(store.tools[1])
+    expect(store.searchTools('gauss missing')).toEqual([])
+    expect(store.searchTools('')).toBe(store.tools)
+    expect(store.searchTools('   ')).toEqual(store.tools)
+  })
+
+  it('keeps short queries exact and refuses unrelated or multiple-edit terms', () => {
+    const store = useToolRegistryStore()
+    store.tools = [catalogTool({ name: 'Cat', display_name: 'Cat' }), catalogTool()]
+
+    expect(store.searchTools('cat')).toEqual([store.tools[0]])
+    expect(store.searchTools('cot')).toEqual([])
+    expect(store.searchTools('custxx')).toEqual([])
+    expect(store.searchTools('unrelated')).toEqual([])
+  })
+
+  it('bounds typo matching to 64 characters without limiting exact partial matches', () => {
+    const store = useToolRegistryStore()
+    const stem = 'x'.repeat(63)
+    store.tools = [catalogTool({ name: 'LongIdentifier', display_name: `${stem}z ${stem}xz` })]
+
+    expect(store.searchTools(`${stem}y`)).toEqual(store.tools)
+    expect(store.searchTools(`${stem}xy`)).toEqual([])
+    expect(store.searchTools(`${stem}xz`)).toEqual(store.tools)
+  })
+
+  it('derives search terms from reactive metadata changes, replacements, reloads and removal', () => {
+    const store = useToolRegistryStore()
+    store.tools = [catalogTool()]
+    expect(store.searchTools('custm')).toEqual(store.tools)
+
+    store.tools[0]!.name = 'RenamedMolecules'
+    store.tools[0]!.display_name = 'Renamed Molecules'
+    expect(store.searchTools('custm')).toEqual([])
+    expect(store.searchTools('moleculs')).toEqual(store.tools)
+
+    store.applyToolReload({
+      type: 'tool_reload', tool_name: 'RenamedMolecules',
+      tool_metadata: catalogTool({ name: 'RenamedMolecules', display_name: 'Fluorescence Detector' }),
+    })
+    expect(store.searchTools('fluorescense')).toEqual(store.tools)
+    store.applyToolRemoved({ type: 'tool_removed', tool_name: 'RenamedMolecules' })
+    expect(store.searchTools('fluorescense')).toEqual([])
+
+    store.tools = [catalogTool({ name: 'Replacement', display_name: 'Gaussian' })]
+    expect(store.searchTools('gausian')).toEqual(store.tools)
+    expect(store.searchTools('custm')).toEqual([])
   })
 
   it('createTool posts the documented body and refreshes read models', async () => {

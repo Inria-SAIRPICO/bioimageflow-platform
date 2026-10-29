@@ -87,6 +87,11 @@ class FakeRegistry:
             self._state[(pkg, ver)] = dict(outcome)
         return dict(self._state.get((pkg, ver), {}))
 
+    index_package = reload_package
+
+    def get_tool(self, name):
+        return next((tools[name] for tools in self._state.values() if name in tools), None)
+
     def resolve_package_for_path(
         self, path: Path
     ) -> tuple[str, str] | None:
@@ -228,7 +233,7 @@ def test_add_watch_root_creates_missing_directory(tmp_path):
 async def test_single_file_change_emits_one_tool_reload(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"GaussianSmooth": _meta("GaussianSmooth")})
 
@@ -257,7 +262,7 @@ async def test_single_file_change_emits_one_tool_reload(tmp_path):
 async def test_rapid_calls_coalesce_to_single_reload(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -286,7 +291,7 @@ async def test_debounce_coalesces_by_package_pair_not_path(tmp_path):
     one reload."""
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -313,7 +318,7 @@ async def test_debounce_coalesces_by_package_pair_not_path(tmp_path):
 async def test_snapshot_diff_added_changed_removed(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     # Prior: A and B
     reg.set_state(pkg, ver, {"A": _meta("A"), "B": _meta("B")})
@@ -356,7 +361,7 @@ async def test_snapshot_diff_added_changed_removed(tmp_path):
 async def test_code_only_change_emits_updated_metadata(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     state = {"A": _meta("A")}
     reg.set_state(pkg, ver, state)
@@ -384,7 +389,7 @@ async def test_code_only_change_emits_updated_metadata(tmp_path):
 async def test_reload_failure_broadcasts_system_error(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -413,7 +418,7 @@ async def test_subsequent_event_processed_after_failure(tmp_path):
     """A reload failure must not break the service for later events."""
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -441,7 +446,7 @@ async def test_subsequent_event_processed_after_failure(tmp_path):
 async def test_full_package_removal_emits_tool_removed_per_class(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A"), "B": _meta("B")})
 
@@ -657,8 +662,8 @@ async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
     reg = FakeRegistry(tmp_path)
-    reg.set_state("p1", "1.0.0", {"A": _meta("A", package="p1")})
-    reg.set_state("p2", "1.0.0", {"B": _meta("B", package="p2")})
+    reg.set_state("__custom__", "1.0.0", {"A": _meta("A", package="p1")})
+    reg.set_state("__custom__", "2.0.0", {"B": _meta("B", package="p2")})
 
     cm = MagicMock()
     cm.broadcast_tool_reload = AsyncMock()
@@ -669,8 +674,8 @@ async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):
 
     svc.suppress()
 
-    await svc._handle_event(tmp_path / "p1" / "1.0.0" / "p1" / "a.py")
-    await svc._handle_event(tmp_path / "p2" / "1.0.0" / "p2" / "b.py")
+    await svc._handle_event(tmp_path / "__custom__" / "1.0.0" / "p1" / "a.py")
+    await svc._handle_event(tmp_path / "__custom__" / "2.0.0" / "p2" / "b.py")
     # Wait through the debounce window: nothing should fire while suppressed.
     await asyncio.sleep(0.05)
     cm.broadcast_tool_reload.assert_not_awaited()
@@ -678,8 +683,8 @@ async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):
 
     # On resume(emit_batch=True), each accumulated pair gets reloaded once
     # and the diff is computed against the pre-suppress snapshot.
-    reg.set_reload_outcome("p1", "1.0.0", {"A": _meta_with_input("A", "x")})
-    reg.set_reload_outcome("p2", "1.0.0", {"B": _meta_with_input("B", "y")})
+    reg.set_reload_outcome("__custom__", "1.0.0", {"A": _meta_with_input("A", "x")})
+    reg.set_reload_outcome("__custom__", "2.0.0", {"B": _meta_with_input("B", "y")})
 
     svc.resume(emit_batch=True)
 
@@ -687,7 +692,7 @@ async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):
         lambda: cm.broadcast_tool_reload.await_count == 2, timeout=1.0
     )
     pairs = sorted(reg.reload_calls)
-    assert pairs == [("p1", "1.0.0"), ("p2", "1.0.0")]
+    assert pairs == [("__custom__", "1.0.0"), ("__custom__", "2.0.0")]
 
 
 async def test_resume_after_install_indexes_fresh_package_before_returning(tmp_path):
@@ -717,7 +722,7 @@ async def test_resume_emit_batch_false_drops_events(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
     reg = FakeRegistry(tmp_path)
-    reg.set_state("p1", "1.0.0", {"A": _meta("A", package="p1")})
+    reg.set_state("__custom__", "1.0.0", {"A": _meta("A", package="p1")})
 
     cm = MagicMock()
     cm.broadcast_tool_reload = AsyncMock()
@@ -726,7 +731,7 @@ async def test_resume_emit_batch_false_drops_events(tmp_path):
 
     svc = ToolHotReloadService(registry=reg, connection_manager=cm, debounce_ms=15)
     svc.suppress()
-    await svc._handle_event(tmp_path / "p1" / "1.0.0" / "p1" / "a.py")
+    await svc._handle_event(tmp_path / "__custom__" / "1.0.0" / "p1" / "a.py")
     svc.resume(emit_batch=False)
 
     await asyncio.sleep(0.05)
@@ -759,7 +764,7 @@ async def test_handle_event_outside_store_is_noop(tmp_path):
 async def test_pycache_paths_ignored(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -787,7 +792,7 @@ async def test_pycache_paths_ignored(tmp_path):
 async def test_stop_cancels_pending_timer(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -844,7 +849,7 @@ async def test_concurrent_suppress_resume_thread_safety(tmp_path):
     RuntimeError, no half-applied state)."""
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -890,7 +895,7 @@ async def test_tool_reload_payload_contains_full_outputs(tmp_path):
     reference removed outputs without a separate fetch."""
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
 
     base_meta = ToolMetadata(
@@ -981,7 +986,7 @@ def test_source_change_observable_in_reloaded_class(tmp_path):
     try:
         mod = load_versioned_package(pkg, ver, tmp_path)
         old_src = inspect.getsource(mod.GaussianSmooth)
-        unload_versioned_package(pkg, ver)
+        unload_versioned_package(pkg, ver, tmp_path)
 
         # Edit the source to change a parameter default.
         (pkg_dir / "filters.py").write_text(
@@ -1005,7 +1010,7 @@ def test_source_change_observable_in_reloaded_class(tmp_path):
         assert new_src != old_src
     finally:
         try:
-            unload_versioned_package(pkg, ver)
+            unload_versioned_package(pkg, ver, tmp_path)
         except Exception:
             pass
         for k in list(sys.modules):
@@ -1052,7 +1057,7 @@ def test_class_source_unchanged_for_sibling_helper_edit(tmp_path):
     try:
         mod = load_versioned_package(pkg, ver, tmp_path)
         old_src = inspect.getsource(mod.GaussianSmooth)
-        unload_versioned_package(pkg, ver)
+        unload_versioned_package(pkg, ver, tmp_path)
 
         # Edit the sibling helper but leave filters.py untouched.
         (helper_dir / "helpers.py").write_text("def helper():\n    return 999\n")
@@ -1065,7 +1070,7 @@ def test_class_source_unchanged_for_sibling_helper_edit(tmp_path):
         assert new_src == old_src
     finally:
         try:
-            unload_versioned_package(pkg, ver)
+            unload_versioned_package(pkg, ver, tmp_path)
         except Exception:
             pass
         for k in list(sys.modules):
@@ -1079,7 +1084,7 @@ async def test_changed_metadata_uses_model_dump_in_payload(tmp_path):
     inputs and outputs."""
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 
-    pkg, ver = "dummy", "1.0.0"
+    pkg, ver = "__custom__", "1.0.0"
     reg = FakeRegistry(tmp_path)
     reg.set_state(pkg, ver, {"A": _meta("A")})
 
@@ -1103,3 +1108,61 @@ async def test_changed_metadata_uses_model_dump_in_payload(tmp_path):
     assert payload["package_version"] == "1.0.0"
     assert "diameter" in payload["inputs"]
     assert "y" in payload["outputs"]
+
+
+async def test_installed_edits_and_staging_events_do_not_reload(tmp_path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = FakeRegistry(tmp_path)
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    service = ToolHotReloadService(registry, cm, debounce_ms=1)
+    service.suppress()
+    await service._handle_event(tmp_path / "installed" / "1.0" / "tool.py")
+    await service._handle_event(tmp_path / "installed" / ".1.0-install-abc" / "tool.py")
+    service.resume()
+    await asyncio.sleep(0.02)
+    assert registry.reload_calls == []
+    cm.broadcast_tool_reload.assert_not_awaited()
+    cm.broadcast_system_error.assert_not_awaited()
+
+
+async def test_selected_install_failure_propagates_but_pending_failure_does_not(tmp_path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = FakeRegistry(tmp_path)
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    service = ToolHotReloadService(registry, cm)
+    registry.set_reload_outcome("selected", "1.0", ImportError("selected dependency conflict"))
+    service.suppress()
+    with pytest.raises(ImportError, match="selected dependency conflict"):
+        await service.resume_after_install("selected", "1.0")
+    registry.set_reload_outcome("__custom__", "local.py", SyntaxError("unrelated edit"))
+    registry.set_reload_outcome("selected", "1.0", {"Good": _meta("Good")})
+    service.suppress()
+    service._pending.add(("__custom__", "local.py"))
+    await service.resume_after_install("selected", "1.0")
+    assert registry.snapshot("selected", "1.0") == {"Good": _meta("Good")}
+    assert cm.broadcast_system_error.await_count == 2
+
+
+async def test_uninstall_broadcasts_removal_without_filesystem_events(tmp_path):
+    from bioimageflow_server.models.tools import PackageInfo
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = FakeRegistry(tmp_path)
+    registry._packages = {"selected": PackageInfo(name="selected", installed_versions=["1.0"])}
+    registry.set_state("selected", "1.0", {"Gone": _meta("Gone")})
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    service = ToolHotReloadService(registry, cm)
+    service.suppress()
+    registry.forget_package("selected", "1.0")
+    await service.resume_after_uninstall("selected", ["1.0"])
+    cm.broadcast_tool_removed.assert_awaited_once_with("Gone")
+    assert registry.reload_calls == []

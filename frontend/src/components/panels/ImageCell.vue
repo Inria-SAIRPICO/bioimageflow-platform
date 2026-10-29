@@ -4,25 +4,26 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
 import { useSettingsStore } from '@/stores/settings'
+import { useThumbnailsStore, type ThumbnailState } from '@/stores/thumbnails'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import { openInFiji } from '@/api/fiji'
 import PathCell from './PathCell.vue'
 import NapariOutputChooser from './NapariOutputChooser.vue'
 import type { ResultArtifactIdentity } from '@/api/types'
 
-const intersectionCallbacks = new WeakMap<Element, () => void>()
+const intersectionCallbacks = new WeakMap<Element, (visible: boolean) => void>()
 const observedElements = new Set<Element>()
 let sharedIntersectionObserver: IntersectionObserver | null = null
 
-function observeIntersection(element: Element, callback: () => void): () => void {
+function observeIntersection(element: Element, callback: (visible: boolean) => void): () => void {
   if (typeof IntersectionObserver === 'undefined') {
-    callback()
+    callback(true)
     return () => undefined
   }
   if (sharedIntersectionObserver === null) {
     sharedIntersectionObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (entry.isIntersecting) intersectionCallbacks.get(entry.target)?.()
+        intersectionCallbacks.get(entry.target)?.(entry.isIntersecting)
       }
     }, { rootMargin: '0px', threshold: 0 })
   }
@@ -55,6 +56,7 @@ const props = withDefaults(defineProps<{
   outputKey?: string
   outputName?: string
   explicitNapariViewer?: boolean
+  inspectionKey?: string
 }>(), {
   showPath: true,
   showImageActions: true,
@@ -65,6 +67,7 @@ const props = withDefaults(defineProps<{
   outputKey: '',
   outputName: '',
   explicitNapariViewer: false,
+  inspectionKey: '',
 })
 
 let toast: ReturnType<typeof useToast> | null = null
@@ -75,6 +78,7 @@ try {
 }
 
 const settings = useSettingsStore()
+const thumbnails = useThumbnailsStore()
 const settingsPanel = useSettingsPanel()
 const fijiPending = ref(false)
 const avivatorPending = ref(false)
@@ -85,11 +89,6 @@ const thumbnailActivated = ref(false)
 const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
 
-// Backoff schedule for "pending" retries. ~30 s total budget across 5
-// retries — enough for most renders to finish without hammering the
-// server. The frontend gives up after this; the user can scroll away
-// and back to retrigger.
-const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 const THUMBNAIL_REQUEST_SIZE = 256
 const THUMBNAIL_RENDER_SIZE = 96
 const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
@@ -132,6 +131,7 @@ const baseUrl = computed(() => {
   if (props.workflowName && props.workflowName.trim() !== '') {
     params.set('workflow_name', props.workflowName)
   }
+  if (props.resultIdentity) params.set('result_identity', JSON.stringify(props.resultIdentity))
   return `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/thumbnail?${params.toString()}`
 })
 const avivatorApiOrigin = computed(() => {
@@ -150,6 +150,7 @@ const imageUrl = computed(() => {
   if (props.workflowName && props.workflowName.trim() !== '') {
     params.set('workflow_name', props.workflowName)
   }
+  if (props.resultIdentity) params.set('result_identity', JSON.stringify(props.resultIdentity))
   return new URL(
     `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image/${encodeURIComponent(avivatorImageFileName.value)}?${params.toString()}`,
     avivatorApiOrigin.value,
@@ -166,18 +167,10 @@ const offsetsPath = computed(() => {
   return `${url.pathname}${url.search}`
 })
 
-let abort: AbortController | null = null
-let retryTimer: ReturnType<typeof setTimeout> | null = null
-let retryAttempt = 0
+let unsubscribeThumbnail: (() => void) | null = null
 let stopObserving: (() => void) | null = null
+let thumbnailLease = 0
 let avivatorRequestId = 0
-
-function clearTimer() {
-  if (retryTimer !== null) {
-    clearTimeout(retryTimer)
-    retryTimer = null
-  }
-}
 
 function revokeBlob() {
   if (blobUrl.value !== null) {
@@ -190,86 +183,62 @@ function revokeBlob() {
   }
 }
 
-async function fetchThumbnail() {
-  abort?.abort()
-  abort = new AbortController()
-  thumbnailPending.value = true
-  fetchFailed.value = false
-  const versioned = `${baseUrl.value}&_v=${retryAttempt}`
-  try {
-    const response = await fetch(versioned, { signal: abort.signal })
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const status = response.headers.get('X-Thumbnail-Status')
-    if (status === 'pending') {
-      revokeBlob()
-      fetchFailed.value = false
-      if (retryAttempt >= RETRY_DELAYS_MS.length) {
-        thumbnailPending.value = false
-        fetchFailed.value = true
-        clearTimer()
-        return
-      }
-      thumbnailPending.value = true
-      const delay = RETRY_DELAYS_MS[retryAttempt]
-      retryAttempt += 1
-      clearTimer()
-      retryTimer = setTimeout(() => {
-        retryTimer = null
-        void fetchThumbnail()
-      }, delay)
-      return
-    }
-
-    const blob = await response.blob()
-    revokeBlob()
-    blobUrl.value = URL.createObjectURL(blob)
-    thumbnailPending.value = false
-    fetchFailed.value = false
-    clearTimer()
-  } catch (exc) {
-    if ((exc as DOMException)?.name === 'AbortError') return
-    revokeBlob()
-    thumbnailPending.value = false
-    fetchFailed.value = true
-    clearTimer()
-  }
-}
-
-function reset() {
-  avivatorRequestId += 1
-  avivatorPending.value = false
-  clearTimer()
-  abort?.abort()
-  abort = null
+function releaseThumbnail(): void {
+  thumbnailLease += 1
+  unsubscribeThumbnail?.()
+  unsubscribeThumbnail = null
   revokeBlob()
   thumbnailPending.value = false
-  fetchFailed.value = false
-  retryAttempt = 0
-  thumbnailActivated.value = false
-  startObserving()
 }
 
-function activateThumbnail(): void {
-  if (thumbnailActivated.value || !props.thumbnailEnabled) return
+function setThumbnailVisible(visible: boolean): void {
+  if (!visible || !props.thumbnailEnabled) {
+    releaseThumbnail()
+    thumbnailActivated.value = false
+    return
+  }
+  if (unsubscribeThumbnail !== null) return
   thumbnailActivated.value = true
-  stopObserving?.()
-  stopObserving = null
-  void fetchThumbnail()
+  fetchFailed.value = false
+  const lease = ++thumbnailLease
+  const key = JSON.stringify([
+    props.inspectionKey, props.workflowName, props.identityGeneration,
+    props.resultIdentity, props.nodeId, props.row, props.col,
+    THUMBNAIL_REQUEST_SIZE, props.value,
+  ])
+  unsubscribeThumbnail = thumbnails.subscribe(key, baseUrl.value, (state: ThumbnailState) => {
+    if (lease !== thumbnailLease) return
+    thumbnailPending.value = state.status === 'pending'
+    fetchFailed.value = state.status === 'failed' || state.status === 'unavailable'
+    if (state.status === 'ready' && state.blob) {
+      revokeBlob()
+      blobUrl.value = URL.createObjectURL(state.blob)
+    }
+  })
 }
 
 function startObserving(): void {
   stopObserving?.()
   stopObserving = null
   if (!props.thumbnailEnabled || cellElement.value === null) return
-  stopObserving = observeIntersection(cellElement.value, activateThumbnail)
+  stopObserving = observeIntersection(cellElement.value, setThumbnailVisible)
+}
+
+function reset(): void {
+  avivatorRequestId += 1
+  avivatorPending.value = false
+  releaseThumbnail()
+  fetchFailed.value = false
+  thumbnailActivated.value = false
+  startObserving()
 }
 
 watch(
-  () =>
-    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}::${props.thumbnailEnabled}`,
-  () => reset(),
+  () => JSON.stringify([
+    props.inspectionKey, props.nodeId, props.workflowName, props.identityGeneration,
+    props.row, props.col, props.value, props.thumbnailEnabled, props.resultIdentity,
+  ]),
+  reset,
   { immediate: true },
 )
 
@@ -286,10 +255,7 @@ onBeforeUnmount(() => {
   avivatorRequestId += 1
   stopObserving?.()
   stopObserving = null
-  clearTimer()
-  abort?.abort()
-  abort = null
-  revokeBlob()
+  releaseThumbnail()
 })
 
 function showError(detail: string) {
@@ -312,6 +278,7 @@ async function openFiji() {
       row: props.row,
       col: props.col,
       workflow_name: props.workflowName ?? null,
+      result_identity: props.resultIdentity,
     })
   } catch (exc: any) {
     const code = exc?.response?.data?.error
@@ -387,6 +354,7 @@ async function reveal() {
     if (props.workflowName && props.workflowName.trim() !== '') {
       params.set('workflow_name', props.workflowName)
     }
+    if (props.resultIdentity) params.set('result_identity', JSON.stringify(props.resultIdentity))
     await api.post(`/api/v1/nodes/${encodeURIComponent(props.nodeId)}/reveal?${params.toString()}`)
   } catch (exc: any) {
     showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not reveal file')

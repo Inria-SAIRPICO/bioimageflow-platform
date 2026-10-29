@@ -189,6 +189,8 @@ C4 may use tools prepared in C6, and C1's table checks may use the larger result
 - Exercise each shortcut in [Keyboard Shortcuts](../user/keyboard-shortcuts.md) with the root canvas active, then with a nested canvas active; move focus out of text fields first.
   For Escape, open a node context menu before pressing the key.
 - In **Edit → Preferences... → Display**, change **Node Data rows per page** and confirm the value is used in a newly opened result table with enough rows to paginate.
+- Change **Node Data browsing mode** between Paginated and Continuous scrolling, including in an opened nested canvas; verify selected results, sorting and filters survive, scrolling restarts at the top, and switching modes never runs the graph.
+  Use small repeated-image results, scroll forward and back, and confirm previews are reused, off-screen cards do not issue image work, and no viewer-resolution calls occur until using a viewer action.
 - In **Storage**, use **Browse...** to switch to a separately prepared empty existing workspace, confirm demos are not silently copied, then switch back to the generated QA workspace.
 - In **Storage → Example workflows**, test **Install demos** and **Remove demos**; create an unrelated disposable workflow under `Demo/` first and confirm it survives removal.
 - In **Storage → Latest output view**, click **Retest** and record the reported symbolic-link or portable-pointer-file mode and any warning.

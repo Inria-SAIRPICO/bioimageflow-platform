@@ -8,7 +8,6 @@ import json
 import shutil
 import sys
 import tempfile
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,7 +31,7 @@ from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noq
 from bioimageflow_server.models.graph import GraphState  # noqa: E402
 
 
-BUNDLE_VERSION = 5
+BUNDLE_VERSION = 6
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -69,14 +68,13 @@ DEFINITIONS = (
     ),
 )
 
+# Published releases compatible with the platform's Core 0.5 runtime.
+# Keep template requirements independent of an example checkout's package versions.
 PACKAGE_REQUIREMENTS = {
-    "bioimageflow_common_tools": ("bioimageflow_common_tools", "bioimageflow-common-tools"),
-    "bioimageflow_io_tools": ("bioimageflow_io_tools", "bioimageflow-io-tools"),
-    "bioimageflow_segmentation_tools": (
-        "bioimageflow_segmentation_tools",
-        "bioimageflow-segmentation-tools",
-    ),
-    "bioimageflow_spot_tools": ("bioimageflow_spot_tools", "bioimageflow-spot-tools"),
+    "bioimageflow_common_tools": "0.2.2",
+    "bioimageflow_io_tools": "0.2.2",
+    "bioimageflow_segmentation_tools": "0.3.2",
+    "bioimageflow_spot_tools": "0.2.2",
 }
 
 
@@ -132,24 +130,7 @@ def _materialize_custom_tools(
     return files
 
 
-def _annotate_package_requirements(
-    graph_data: dict[str, Any],
-    bioimageflow_source: Path,
-) -> None:
-    versions = {
-        module: str(
-            tomllib.loads(
-                (
-                    bioimageflow_source
-                    / "packages"
-                    / directory
-                    / "pyproject.toml"
-                ).read_text(encoding="utf-8")
-            )["project"]["version"]
-        )
-        for module, (_, directory) in PACKAGE_REQUIREMENTS.items()
-    }
-
+def _annotate_package_requirements(graph_data: dict[str, Any]) -> None:
     def visit(definition: dict[str, Any]) -> None:
         for node in definition.get("nodes", []):
             if node.get("type") == "workflow":
@@ -162,8 +143,8 @@ def _annotate_package_requirements(
             requirement = PACKAGE_REQUIREMENTS.get(package_module)
             if requirement is None:
                 continue
-            node["tool_package"] = requirement[0]
-            node["tool_package_version"] = versions[package_module]
+            node["tool_package"] = package_module
+            node["tool_package_version"] = requirement
 
     visit(graph_data)
 
@@ -188,7 +169,7 @@ def _render_definition(
 
     library_graph = json.loads(json.dumps(exported["workflow"]))
     tool_files = _materialize_custom_tools(library_graph, exported["custom_sources"])
-    _annotate_package_requirements(library_graph, bioimageflow_source)
+    _annotate_package_requirements(library_graph)
     graph = lib_dict_to_graph_state(library_graph)
     if definition.template_id == "fish-analysis":
         branch_names = {

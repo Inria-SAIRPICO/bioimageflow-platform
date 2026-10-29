@@ -214,6 +214,12 @@ interface NestedSnapshotPersistenceLease {
 
 const retainedNestedSnapshotResources = new Map<string, NestedSnapshotPersistence>()
 
+export function beginNestedSourceEdit(sessionId: string): () => void {
+  const resource = retainedNestedSnapshotResources.get(sessionId)
+  if (!resource) throw new Error('Nested editor closed while opening its source')
+  return resource.beginSourceEdit()
+}
+
 export function acceptNestedSourceEdit(snapshot: NestedWorkflowSnapshotResponse): void {
   const resource = retainedNestedSnapshotResources.get(snapshot.session_id)
   if (!resource) throw new Error('Nested editor closed while opening its source')

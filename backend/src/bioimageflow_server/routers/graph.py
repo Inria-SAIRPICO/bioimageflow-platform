@@ -139,9 +139,10 @@ async def validate_graph_endpoint(
 @router.post("/nodes/{node_id}/output_schema")
 async def resolve_node_output_schema(
     node_id: str,
-    graph: GraphState,
+    body: GraphState | GraphValidationRequest,
     registry: ToolRegistryService = Depends(get_tool_registry),
     storage_path: Path | None = Depends(get_storage_path),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> NodeOutputSchemaResponse:
     """Return the resolved output column schema for a single node.
 
@@ -150,16 +151,24 @@ async def resolve_node_output_schema(
     ``{resolved: false, columns: {}}`` — input edits frequently produce
     transiently invalid graph states.
     """
-    graph = graph.model_copy(deep=True)
-    return await run_graph_work(
-        partial(
-            _resolve_node_output_schema,
-            node_id,
-            graph,
-            registry,
-            storage_path,
-        )
-    )
+    graph = (body.graph if isinstance(body, GraphValidationRequest) else body).model_copy(deep=True)
+    workflow_name = body.workflow_name if isinstance(body, GraphValidationRequest) else None
+    while True:
+        try:
+            context = await run_graph_work(partial(
+                _capture_workflow_validation_context, workflow_name, workflow_store, storage_path,
+            ))
+            schema = await run_graph_work(partial(
+                _resolve_node_output_schema, node_id, graph, registry, context.storage_path,
+            ))
+            await run_graph_work(partial(
+                _ensure_workflow_validation_context, workflow_name, workflow_store, storage_path, context,
+            ))
+            return schema
+        except _WorkflowValidationContextChanged:
+            continue
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_name}' not found") from exc
 
 
 def _capture_workflow_validation_context(
@@ -233,7 +242,9 @@ def _resolve_node_output_schema(
         return NodeOutputSchemaResponse(resolved=False, columns={})
 
     workflow = result.workflow
-    node = workflow._nodes.get(node_id)
+    if workflow is None:
+        return NodeOutputSchemaResponse(resolved=False, columns={})
+    node = workflow.nodes.get(node_id)
     if node is None:
         # Node was in the request but didn't make it into the workflow
         # (e.g. unknown tool, missing package). Return unresolved.

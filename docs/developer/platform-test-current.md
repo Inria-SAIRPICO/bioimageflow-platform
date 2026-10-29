@@ -5,108 +5,109 @@ orphan: true
 # Campaign current checkpoint
 
 This is the operational resume pointer, not a diary.
-Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then the relevant specification and exact receipt below; do not restart from `platform-test-progress.md`.
+Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the relevant task/specification and directly available evidence.
+The [plan](platform-test-plan.md) defines the campaign outcomes; the [dashboard](platform-test-dashboard.md) is the historical obligation ledger, not current-revision certification.
+Do not resume by reading or appending the historical progress log.
 
-## Current state — October 19, 2026
+## Current state — October 29, 2026
 
-The FULL campaign continues under standing authorization through END, including technically gated source upload, CI and package publication.
-Commits are progress boundaries; distributed production review/repair is EXCLUDED and native desktop M5 is LAST.
-This Detach delivery is the commit containing this checkpoint, based on the isolated stale campaign-manifest correction `db26035` after the ten-path resource delivery `9be353a`.
-The separate reviewed Detach owner fence and durable provenance journey are now validated in both browsers on `9be353a` plus their named frozen diff; the scoped local frontend assembly passes and its exact source projection is retained below.
-Current coverage is **418 V + 76 G + 6 U = 500** applicable obligations; primary GUI remains 224/224.
-This is accumulated scoped evidence, not a monolithic app/full/campaign PASS.
+The user authorized updating the campaign for the latest commits and executing the remaining headless work with agent orchestration.
+The integrated source baseline is `68bae0b26bf59032b1444887131820f3be2de154` (October 27), plus explicitly inventoried held changes; dependencies are normal published BioImageFlow **0.9.6**, Core **0.5.1** and Wetlands **2.6.1**.
+Library-first specification, suite and causal review and its selected repairs/releases remain accepted in their recorded scope; this update does not restart that review or certify changes made since it.
+Distributed-engine, remote/HPC and parallel-execution feature review/repair remain excluded and their production code/tests must be preserved.
+Native dialogs, viewers, editor windows and application lifecycle belong to **M5 LAST**; no native launch is authorized by this headless increment.
+M3 coverage reconciliation and M4 automated/external acceptance remain open.
 
-The integration owner exclusively controls Git, dependencies, environments, runtime/tests, Context, checkpoints and physical cleanup.
-The reviewed Detach source partition is frozen at browser `ea27d351`, CanvasView `2dab7d3a`, session store `9db3f9e4` and unit `c35f2fe0`; its exact Firefox and Chromium consumers are complete with no retries or skips.
-No application or browser consumer is active; source mutations require the runtime owner's explicit IDLE handoff.
+The prior checkpoint described October 19 source and dependencies and is superseded by this queue.
+The historical **438 V + 56 G + 5 U = 499** obligations, including primary GUI 224/224, remain source-qualified ledger entries; they are not a current pass percentage.
+The canonical `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption` receipt tree and `frontend/test-results/campaign-evidence-final-20261019/` are absent from this checkout.
+Their recorded results and original failures remain historical claims; no absent receipt is treated as newly inspected proof, and no old failure is rewritten as a successful command.
+New acceptance must retain its command, terminal result, duration, actual source projection, exclusions and available evidence location.
+Fresh October 29 preflight logs are retained locally under `frontend/test-results/campaign-headless-20261029/`; collection is not runtime acceptance.
+At `68bae0b` plus the inventoried held diff, backend admission collects 2,114 cases, selects 2,007 and explicitly excludes 107 (7.410s).
+The two browser collections total 296 cases: each project selects 146 and explicitly excludes two distributed cases (2.430s); the selected unpublished OMERO case remains an additional external execution prerequisite.
+The installed normal dependency versions match the manifest/lock; no source override is used.
 
-The canonical `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption` receipt tree is absent in the restored October 19 host state.
-The unavailable historical path references below preserve their original labels and source-qualified claimed results, including original failures, but cannot currently be inspected or treated as new current certification.
-Retained project browser artifact siblings remain available under `frontend/test-results/`; their fresh index and new command logs/source hashes live in `frontend/test-results/campaign-evidence-final-20261019/`.
-Accumulated historical `V` claims do not replace the final audited local backend/frontend/two-browser/external assembly or the specific remaining actual and native oracles.
+## Changes incorporated into this increment
 
-## Normal dependency floor and closed releases
+The range `c03f7bc..68bae0b` contains 17 commits and changes 124 paths; source review, not a blind file-count review, determines the consumers below.
+Existing tests are the first acceptance controls, and their presence alone supplies no executed credit.
 
-Normal noneditable dependencies are `bioimageflow[parsl,psij]==0.9.3`, Core 0.5.0 and Wetlands 2.6.1; registry admission (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-093-lock-installed-admission.json`) retains 173 BIF/23 Core members and 93-package consistency.
-Independent 0.9.3 publication (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/library-output-schema-independent-publication-peer.json`) owns exact source `81dbccef`, ordinary CI, publisher/tag and both immutable public archives; earlier SDK/Core/Wetlands releases remain CLOSED.
-The canonical Core wheel/same-wheel Linux and Windows floor is retained by public cohort verification (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/actual-base10-pypi-verification.json`) and its linked floor receipts; no editable or local-source workaround is authorized.
-Known-source optional-output inference preserves explicit carried-schema authority and genuinely dynamic unknowns.
-Credential compensation, configured deployment policy, SDK source/resource architecture and previously accepted actual scalar/array/lifecycle science remain closed within their recorded limits.
+| Coherent change | Source anchors and current contract | Affected acceptance |
+| --- | --- | --- |
+| Published loading generations and package lifecycle | `1675884`, `4a0d17d`, `11d1837`, `ef946bf`, `5f3c335`; normal lock now 0.9.6/0.5.1, selected installed generations reused, controlled retirement, fresh editable captures | Registry, installer, environment and hot-reload owners; recursive owned-source compilation; real worker/cache compatibility and existing package/source browser journeys |
+| Startup catalog cost | `d048ac4`; one fresh environment inventory per catalog request and folder scans stop at workflow boundaries | Workflow catalog, registry/environment enrichment and startup/Open ownership controls; retain measured results in [Workflow Loading](workflow-loading.md) within their fixture/version limits |
+| Canonical viewing and dynamic schemas | `eacc0cf`, `d07edab`; accepted graph, selected store and workflow-owned sources determine metadata; unresolved source stays diagnostic | Viewing-inspection and graph/node routers; `import-viewing-guidance.spec.ts`, `owned-output-schema.spec.ts` and chooser consumers |
+| Permanently unavailable results | `6286e56`; typed refusal stops polling and keeps a visible error | Result/router owners and `node-data-unavailable.spec.ts`; retryable pending results remain distinct |
+| Shared cold thumbnail setup and BioIO formats | `75b2a7b`, `9781506`; shared setup/render jobs, automatic completion, real format/plane/channel interpretation | Thumbnail manager/generator/router controls; controlled `thumbnail-pending.spec.ts` and actual managed-reader `thumbnail-real.spec.ts`, with cold provisioning separately identified |
+| Bounded Node Data rendering and inspection reuse | `ee8d5dd`; virtual rows, paginated/continuous preference, pinned block reads, shared previews and exact-result actions | Table/store/image/chooser/Display controls; `node-data-window.spec.ts` and existing table/filter/CSV/latest/pinned journeys; mocked transport is not scientific result proof |
+| Shared typed workflow parameters | `68bae0b`; stable input IDs, explicit/null/inherited bindings, recursive hints, transient pins and private editor ownership | Graph/default/binding contracts, shared ParameterRow/NodePanel/command controls and `workflow-parameter-controls.spec.ts`; accepted Run/persistence consumers |
 
-## Accepted source-qualified phases
+The benchmark harness and source-attribution commits (`ea0a8c5`, `f3a33c4`, `7bfd49e`) and demo release updates (`206335d`) are included in the impact map.
+Benchmark controls validate safe isolation and source attribution; rerunning a large timing campaign is unnecessary unless a new performance claim or regression needs measurement.
 
-Each pointer owns its source/dependency projection, selectors, command duration, original failures, exclusions and cleanup details.
-Retained earlier successful subsets do not relabel their original failed command.
+## Remaining headless queue and acceptance gates
 
-| Phase | Canonical receipt and practical scope |
-| --- | --- |
-| Registry/API/frontend adoption | 0.9.1 delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-091-delivery.json`): 1935 nonexternal backend cases assembled from 1932 successes and exact 3 recovery; original backend/app commands remain FAILED, 10 external deselections/zero skips; generated API/frontend and original critical browser phases retain their own source scope. |
-| Actual scalar/force owners | stale-generation control (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-actual-stale-generation-command.json`) and T1 actual recovery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-t1-actual-force-exact-recovery.json`): real fault/retry/warm/new generation/PIDs/files and physical shutdown; scalar authority does not supply an array claim. |
-| Actual array export/lifetime | 0.9.2 delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-092-delivery.json`): actual transformed pixels and verified bundle-only ZIP survive source drain; materialized-array owners remain separate SDK authority. |
-| I1 guidance and T1 GUI | feature delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-i1-t1-delivery.json`): accepted canvas/request/form ownership, real force busy/replacement/logger, separate controlled client failure/reopen; physical provider/science and client projections remain distinct. |
-| Normal 0.9.3 consumers | adoption delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-registry-093-delivery.json`): normal installed source, cheap semantic-output construction control, seven actual compiler/binding consumers and real grouping boundary. |
-| Installed-source hot reload | Chromium (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-hotreload-chromium-selector-recovery.json`) and Firefox (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-hotreload-firefox-acceptance.json`): genuine RECORD hash/size refreshed before source event, exact restoration; no loader weakening. |
-| Owned-source refusal/repair | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-editable-source-delivery.json`): two real Direct runs, intervening revision-addressed422, visible global syntax/repair, exact latest+pinned identities; installed failure transport/native editor remain distinct. |
-| Dataset public effects | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-dataset-effects-delivery.json`): real upload Retry/sibling bytes and delete Cancel/stale409/fresh confirmation; controlled storage_error/fake TIFF are not server fault/image decoding. |
-| Trusted Python Build | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-python-authoring-delivery.json`): factory-once preview, stale409, post-save Cancel, captured source staging, accepted root label, poisoned authoring then scalar Run; no zero-Save/native claim. |
-| Local source package | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-package-lifecycle-delivery.json`): genuine offline ZIP 1.0/1.0.0 installation, confirmation Cancel/current, exact nonactive uninstall and recorded-bytecode preservation; network failures/active fallback/rebind/native remain unclaimed. |
-| Workspace/Preferences | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-settings-workspace-delivery.json`): public A→B→A one-run saved/draft/results bytes, controlled GET503/PATCH422 with real recovery/persistence; no native Browse/active concurrent switch/table consumption. |
-| Agent conflict/clean sync | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-agent-conflict-delivery.json`): actual clean WebSocket plus visible dirty edits/staleCAS/Keep/copy identity; copied-content restart is unclaimed. |
-| Bound schemas/template assets | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-bound-template-delivery.json`): exact carried-loader dependency diagnosis and matching accepted graph/session metadata, global-failure presentation retention, two actual Wetlands template runs/immutable manifest assets/pinned result; CPU/memory/resource scheduling remain separate. |
-| Root/nested source opening | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-node-source-opening-delivery.json`): imported versus real same-name catalog, exact root/session identity, private fork/reuse, two retained Direct runs; harmless external command is not native/code-server readiness, visible launch failure remainsG. |
-| Structural recursive atomicity | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-m3-evidence-atomic-delivery.json`): real nonempty binding/edge prune, failed batch full authority/bytes retention, one revision/broadcast and fresh read; structural validate:false setup is not scientific validation. |
-| Folder move | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-workflow-folder-move-delivery.json`): actual affected-root/nested refusal before zero PATCH, close/retry, durable result/provenance/identity preservation/reload; one existing Run, no physical fault/native drag/active-run move. |
-| Local reconnect | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-execution-reconnect-delivery.json`): actual socket close/new transport/server snapshot, same-ID sibling isolation, originating latest+pinned results and existing cancel/rerun; no distributed registry replay/durable logs. |
-| Genuine edited ZIP | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-edited-source-zip-delivery.json`): held n+20 source ZIP/import/fresh store versus later independent n+40 origin; zero compute/plan/create_engine entry, initial fake seed only setup. |
-| Copy source-loss/route retry | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-duplicate-source-loss-delivery.json`): real collision no mutation/staged-copy OSError cleanup/explicit retry; separate unchanged captured route controls use mocked manager/draft and do not certify physical compilation/storage retry. |
-| Published common-tools | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-m4-common-workflow-delivery.json`): actual index 0.2.2, 8 PASS/1973 deliberate marker deselections/zero skips, 36.86s pytest/43.542s command at e3d0248; 14 declared members/8 sources captured. Discovery/schema/public loading only, not callback/worker/decoder/OMERO/native. |
-| Stale/cycle retained authority | delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-stale-cycle-authority-delivery.json`): exact two PASS at 33c1e4d/f20d9135, full selected/unrelated structural authority through fresh public stores; composed owning20, strict docs and exact retirement accepted; inert files are not scientific records or process restart. |
+The orchestrator owns scope, cross-boundary decisions and independent review.
+Delegate bounded packets with current inputs, exact owned paths, causal consumers and acceptance selectors; keep at most four active agents including the orchestrator.
+One integration/runtime owner controls shared dependency changes, source freezes, test processes, Git and task-only commits.
+Other agents may inspect independently or edit explicitly disjoint files; they must hand back a frozen diff before its consumers run.
+Use `followup_task` to activate an existing agent for work and `send_message` for information.
 
-## Current Detach validation and next commands
+| Order | Required outcome | Starting controls and completion boundary |
+| --- | --- | --- |
+| H0 — Reconcile and freeze | Review latest source and held diffs, verify installed normal dependencies and collection/exclusion manifests, inventory available evidence | Preserve unrelated `.vscode/settings.json`; inventory held OMERO binding/spec/fixture/version changes and logger reconnect separately; no blanket stage, reset or worktree cleanup |
+| H1 — Recent integrated behavior | Establish actual owning and browser results for each affected family in the table above; fix demonstrated defects through their causal owner | Reproduce the retained Firefox `critical-operation-races.spec.ts:741` failure first (delayed parameter persistence; earlier workflow Open did not reach its title); its cause is unproven. Run exact changed/new selectors before their browser project; no parallel test framework or unmotivated benchmark replay |
+| H2 — Remaining runnable M3 assertions | Finish logger reconnect, shell/viewport/catalog complements and actual edge-metadata geometry; reconcile Settings/deployment, custom-tool/source-opening, grouping/source/archive recovery, cache/template/refusal and upload/thumbnail gaps | Use the feature groups below and existing assertions before adding cases; separate real server/filesystem/network effects from controlled client faults; no source-only promotion or invented persistence/replay feature |
+| H3 — OMERO publication/adoption | Verify current public package/release state, finish reviewed normal-package adoption and saved-card→active-canvas→Save/reload behavior | Use normal published artifacts; retain private RAM-only credentials for any required owned live test; no editable-package substitute for an unavailable publication; external blockers stay explicit |
+| H4 — Audited integrated headless milestone | Complete current local backend/external, frontend, both-browser, logging-order and documentation acceptance on a named frozen projection | Use existing campaign-local selectors, record exact exclusions and all failures/not-run phases; common-tools compatibility and actual worker/array/source/result boundaries remain separate evidence; see commands below |
+| H5 — Handoff to M5 | Reconcile every remaining cell against actual effects, commit task-only changes and retire only owned unused runtime/worktree resources | Review current source and retained proofs independently before final claims; report external/native limitations; desktop begins only after this headless gate is actually assessed |
 
-The exact `scripts/test focus e2e --project=firefox tests/e2e/workflow-interface.spec.ts:790` passes one case in 23.6s (91.822453s command), followed by exact Chromium in 17.2s (83.512684s command), at `9be353a` plus the frozen reviewed Detach diff.
-The five owning `nestedWorkflowSessions.test.ts` tests pass (1.346s command), including exact root canvas/workflow/node and private-session ownership isolation.
-The new journey observes a visible refusal with zero Detach PUTs and unchanged complete parent/private/saved/file authority while the exact editor is open; after private Apply/discard and close, Detach changes only source provenance, survives Save/reload and preserves the independent saved source and unrelated workflow bytes.
-No new Run, worker, callback or scientific result is supplied by this packet.
-The retained earlier Firefox 30s final-reload timeout remains FAILED; its new exact pass required no source or deadline change.
-The first complete local frontend selection passes 1330 tests with 43 explicit distributed exclusions but remains FAILED (24.204134s) because its manifest still names a deliberately deleted scheduling-summary test.
-The reviewed manifest-only correction is `db26035`; the corrected complete `scripts/test focus unit --campaign-local` passes 1330 selected tests in 135 files with 43 explicit exclusions (20.006650s command), without restoring the retired test or suppressing a current test.
-This local frontend assembly combines that audited selection with unchanged lint, type checking and build phases; it is not an unfiltered `check frontend` PASS.
-Corrected frontend lint (8.849764s), build-mode type checking (1.276590s) and production build (5.834501s) pass; the build retains its existing chunk-size warning.
-Three earlier Bun invocations emitted help without validation despite exit zero and are explicitly INVALID in their receipts.
-Current Detach delivery (LOCAL untracked receipt: `frontend/test-results/campaign-evidence-final-20261019/detach-delivery.json`) retains exact command logs, named source/dependency hashes and the limited pass artifacts separately from unavailable historical receipts.
-Only WF-SRC-002 R/P/B close from this packet, adding three verified obligations; no unrelated gap changes.
-Both new exact runtime roots are physically retired after copied available pass-status artifacts, explicit consumer release, fresh UID/inode equality and empty exact process/open-handle checks.
+The remaining runnable historical groups are: shell/settings (`GUI-SHL-001/005/007/008`), catalog/edge/custom-tool/editor behavior (`GUI-EDT-002/005`, `GUI-AUT-001/002/005/006`), grouping/source/archive recovery (`WF-REC-005`, `WF-SRC-004/007/009`), durable execution/cache/template boundaries (`RT-EXE-002/010/011`), upload/thumbnail refusal and recovery (`RT-RES-006/008`), and logger reconnect (`RT-XCT-002`).
+Some rows mix headless and native/external obligations: close only the named assertion actually executed and retain its remaining boundary for H3 or M5.
+A generic failure or persistence cell must be checked against the actual specification before inventing a new feature or another test; a justified applicability correction is distinct from a pass.
+In particular, review utility-only grouping failure/persistence against the existing actual `workflow-interface.spec.ts` cancellation/retry/Save/reload journey before duplicating it, and check whether an invalid cancellation obligation exists for the active-only upload Cancel control.
+Thumbnail refusal/terminal failure/pending recovery already has newer owning and browser controls to execute; the October 19 warm-reader description does not describe the October 26 implementation.
+The later commits also extend previously verified rows (typed workflow parameters, continuous tables, shared previews and modern thumbnail behavior); old row credit does not establish those new contracts.
 
-The current Detach receipt records strict documentation status, including the original campaign-link failure and the corrected result; no failed command is relabeled.
+### Proportionate execution
 
-1. Reconcile every remaining applicable cell before new tests; preserve grouping refusal/recovery, invalid template, log history, real thumbnail/image, source/execution failure and specialist gaps unless their exact current oracle closes them.
-2. Finish the chosen final audited local/backend/frontend/two-browser/external assembly and strict docs on the final frozen baseline, reusing only unchanged valid phase projections and avoiding quick/check/full stacks.
-3. Establish an actual supported OMERO tool/integration and authorized reachable account/server separately from mocked credentials/settings; no supported consumer has yet been identified and no platform dataset API may be invented.
-4. Execute native desktop dialogs/viewers/editor/window/process M5 LAST, then final source/coverage/cleanup review. No headless/mock result supplies native acceptance.
+Use `scripts/test` and the lane rules in [Testing](../testing.md).
+During repair, run the exact owning selector and use `--repeat-each=5` only for an evidenced timing/race defect.
+Do not stack quick, scoped completion checks and a later milestone command that subsumes them.
+After finite edits freeze, the existing complete audited selections are `scripts/test focus backend --campaign-local --run-external`, `scripts/test focus unit --campaign-local`, and `scripts/test focus e2e --campaign-local --project=chromium --project=firefox`.
+The runtime owner must use an owned pytest temporary root outside the repository, isolated browser runtime roots/ports, and fresh external package stores.
+Record collection totals and exact distributed exclusions from `tests/campaign-local-scope.json`; do not use old totals as current collection results.
+For the frontend completion phase, `BIOIMAGEFLOW_CAMPAIGN_LOCAL=1 scripts/test check frontend` activates the existing exact local-scope audit while running lint, types, all selected Vitest projects and the production build; use it instead of duplicating a complete focused unit run and those same quality phases.
+Label that result a scoped frontend assembly, not an unfiltered frontend pass.
+Complete separate logging-order certification and `scripts/test check docs`, with the backend/external and browser phases, as an explicit assembly when excluded distributed scope prevents an honest unfiltered full claim.
+`full` is the documented package-loading milestone lane, but it includes excluded distributed behavior; a scoped assembly must disclose that distinction and include every applicable local phase rather than calling itself a full pass.
+If an unpublished OMERO case cannot run, record its exact case/project exclusion and externally blocked outcome alongside the complete remaining selection; never hide it through an unreported skip or silently broaden the exclusion manifest.
+Retain successful phases only when their source, fixtures, normal dependency versions, generated artifacts and runtime assumptions are demonstrably unchanged.
 
-## Retained committed resource delivery
+## Credentials and external prerequisites
 
-The original resource Chromium attempt failed before edits because Reset counted canonical null keys as explicit overrides (28.246s command/9s case).
-The exact component baseline reproduced that affordance inconsistency; the owning three controls pass after the component-only fix, including an explicit numeric zero.
-Scoped ESLint, build-mode typing and production build pass; the build retains its existing chunk-size warning.
-The first repaired browser attempt progressed through real edit/reset/refusal/repair but exceeded the whole-case 30s deadline during final readback (46.472s command/31.2s case); it remains FAILED.
-The renewed browser changes only its four-reopen total budget to 60s, leaving individual waits and the 15s cleanup budget unchanged.
-The first Firefox attempt failed because navigation interrupted frontend Save after its saved-file response but before its draft update; the truthful dirty marker is preserved, and the test now waits the actual post-save draft200/clean-title boundary.
-Final exact Firefox passes 33.7s case/47.566809s command, then affected Chromium refresh passes 29.5s/48.670170s at base89f6508/frozen733b9018; zero retries/skips and physical process trees empty.
-Earlier Chromium passes 30.9s/69.150734s on the prior342ccb2b helper; all three failed browser commands and the component RED remain failed, with only their observed partial credit.
-No Run, callback, worker provisioning, allocation or scheduling is part of this resource-form packet.
-GUI-EDT-013 adds only combined S/P/B, joined with the separately retained actual managed template evidence; invalid-template R/F stay G.
-Resource-form delivery (historical receipt unavailable: `/private/tmp/bioimageflow-library-deep-review/architecture-repair-design/local-milestone/published-provider-consumption/platform-node-resources-delivery.json`) owns final ten task hashes, original failures, scoped quality/docs and exact runtime retirement.
+Automated work must not read or write the personal/native Keychain or depend on its unlocked/access state.
+`scripts/test` forces `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring`; unit/UI Settings tests inject memory stores and live managed-worker checks use a private RAM-only broker with a process-local read-only provider.
+Unbootstrapped or replacement workers must fail closed, and test credentials must stay out of command arguments, files, graphs, artifacts and logs.
+The production credential adapter is unchanged; these tests do not certify native credential integration, which is not an END prerequisite and must not resume automatically at M5.
+Direct application/pytest/Playwright invocation can bypass the runner, and Git/GitHub credential helpers are outside the Python guard.
+Any future native automation must first preserve the guard through sanitized child environments; no native application is launched in this increment.
 
+Unauthenticated public checks on October 29 find PR #20 still open at `d6b0506`; the latest scheduled CI run is `40300423591`, terminal failed on October 26 at `f0bab43`, which is not local `68bae0b`.
+The locally reviewed short-error repair exists at `a47b2d6`, with clean derivative `efea356`; recheck current ancestry and source before any upload rather than pushing an old derivative blindly over newer work.
+No GitHub environment token or loaded SSH identity is available; do not try native Keychain authentication.
+OMERO source was recorded as merged through library PR #8 (`8c5d18e`); its release `39294070663` failed on PyPI project-creation authorization.
+Fresh October 29 public PyPI checks still return 404 for both project `bioimageflow-omero-tools` and version 0.1.0.
+Its final candidate RAM-only roundtrip was recorded as passing in 38.260697s with all nine owned server objects verified absent; those old local receipts are unavailable and this is historical evidence, not fresh acceptance.
+The exact externally held browser title is `saved OMERO actions capture installed tools and preserve node targets after settings edits and reload` in `settings.spec.ts`; record its omission separately for each project if normal publication remains unavailable.
+Do not retry publication without an actual publisher/authentication state change or advertise an unpublished package as available.
+Continue independent local work while an external prerequisite remains unresolved.
 
-## Active/protected resources and retirement authority
+## Protected work and cleanup
 
-Main backend/.venv, frontend/node_modules and campaign UV cache remain protected until final consumers.
-Protected campaign-library-source-containment development interpreter and b134 Core artifact interpreter retain their original metadata; dirty held force/I1/T1 worktrees remain read-only oracle sources.
-Earlier completed release, fixture, browser and certification roots, including the stale/cycle runtime, are physically retired in their linked delivery manifests.
-The historical resource delivery records six resource-form roots as retired after copied proofs and ownership/process/handle checks; the canonical retirement receipt is now unavailable, while the existing project browser artifacts remain retained.
-Canonical temporary receipts and archives cannot be confirmed on the restored host; existing project failure traces and pass-status files are retained, and no absence is relabeled as a prior command failure.
-Unknown/shared/user roots and the user's VSCode/debugpy runtime are untouched.
-Only the runtime owner may retire exact receipt-listed roots after reader releases, fresh UID/inode checks and absence of matching processes/open handles; never delete by age/prefix or claim sampled free space.
-Clean merged manual worktrees move to Trash with mv/worktree prune and merged branch deletion; never reset original library main.
+Preserve main `backend/.venv`, `frontend/node_modules`, user workspace/data/tool stores, adopted/shared environments and every unrelated held worktree until their actual owners release them.
+The dirty OMERO source/tests/specification/version partition and standalone logger case must be reviewed and validated before task-only integration; no status document authorizes staging them together.
+Old cleanup receipts are historical: absence of a temporary tree does not prove who removed it or how much storage was reclaimed.
+Retire only positively owned current resources after copied proof, reader release, fresh identity and process/open-handle checks; never clean by age, prefix or global cache.
+Merged manually created task worktrees move to Trash with `mv`, followed by `git worktree prune` and deletion of only their proven merged branches.

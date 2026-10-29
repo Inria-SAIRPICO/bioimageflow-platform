@@ -32,6 +32,7 @@ class NodeDataCsvRequest(BaseModel):
     sort_by: str | None = None
     sort_order: Literal["asc", "desc"] = "asc"
     filters: list[DataTableFilter] = Field(default_factory=list)
+    result_identity: ResultArtifactIdentity | None = None
 
 
 class NodeDataResponse(BaseModel):

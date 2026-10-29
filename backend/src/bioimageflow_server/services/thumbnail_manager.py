@@ -1,26 +1,16 @@
-"""ThumbnailManager service.
+"""Own shared thumbnail setup, background rendering, and a fingerprinted PNG cache.
 
-Manager-side counterpart to ``_external/thumbnail_generator.py``. Owns
-the lifecycle of a Wetlands env (``bioio`` + ``pillow`` + bioio
-readers) and dispatches thumbnail generation to it via fire-and-forget
-``execute()`` calls.
-
-The shape mirrors Galaxy's ``ThumbnailManager`` (env + queue) plus the
-on-disk cache layer required by ``platform_specs_v1 §2.6``.
-
-Task split:
-  * T2 — cache key, cached retrieval, placeholder, ``get_or_queue``
-    fast paths (cached / missing source).
-  * T3 — Wetlands env lazy launch + ``queue_generate`` dispatch.
-  * T4 — ``get_or_queue`` bounded wait that polls the cache file.
+Request cancellation only withdraws a waiter; the service owns setup and render
+lifetimes until completion or explicit shutdown.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
+from dataclasses import dataclass
 import hashlib
 import logging
-import os
 import time
 from io import BytesIO
 from pathlib import Path
@@ -37,10 +27,17 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
-# Polling resolution for ``get_or_queue`` bounded wait. 50 ms is a fine
-# balance: bioio renders are typically 100 ms – 2 s, and the event loop
-# sees at most ~20 wake-ups per request.
-_POLL_INTERVAL_SECONDS = 0.05
+_MAX_FAILURES = 256
+_WORKERS = 2
+_RENDER_VERSION = "bioio-preview-2"
+
+
+@dataclass
+class _Generation:
+    started: asyncio.Future[None]
+    task: asyncio.Task[None] | None = None
+    execution: ExecutionTask[Any] | None = None
+    submission: asyncio.Task[ExecutionTask[Any]] | None = None
 
 
 # Absolute path to the subprocess-side helper. Wetlands' ``execute``
@@ -82,10 +79,12 @@ class ThumbnailManager:
         self._connection_manager = connection_manager
         self._env: ManagedEnvironment | None = None
         self._pool: WorkerPool | None = None
-        self._lock = asyncio.Lock()
-        self._pending_generations: dict[
-            Path, tuple[ExecutionTask[Any], asyncio.Task[None]]
-        ] = {}
+        self._startup_task: asyncio.Task[None] | None = None
+        self._operation: Any = None
+        self.environment_state = "idle"
+        self._closed = False
+        self._pending_generations: dict[Path, _Generation] = {}
+        self._failures: OrderedDict[Path, str] = OrderedDict()
         self._placeholder_cache: dict[int, bytes] = {}
 
     # ------------------------------------------------------------------
@@ -95,10 +94,9 @@ class ThumbnailManager:
     def cache_path(self, file_path: str | Path, size: int) -> Path:
         """Return the on-disk cache path for ``file_path`` at ``size``.
 
-        Key matches the ``platform_specs_v1`` recipe — SHA-256 of
-        ``file_path + mtime + size`` — so the cache invalidates when the
-        source changes. ``size`` is included so 128 px and 256 px don't
-        clobber each other.
+        Include renderer version and source metadata. Directory-backed images
+        (e.g. OME-Zarr) include descendant names, timestamps and lengths so an
+        edited chunk invalidates its preview without hashing its pixel payload.
         """
         path = Path(file_path)
         try:
@@ -106,20 +104,34 @@ class ThumbnailManager:
         except OSError:
             absolute = str(path)
         try:
-            mtime = str(os.path.getmtime(path))
+            stat = path.stat()
+            mtime = f"{stat.st_mtime_ns}:{stat.st_size}"
         except (FileNotFoundError, OSError):
             mtime = ""
-        digest = hashlib.sha256(
-            f"{absolute}|{mtime}|{size}".encode("utf-8")
-        ).hexdigest()
-        return self.cache_dir / f"{digest}.png"
+        digest = hashlib.sha256(f"{_RENDER_VERSION}|{absolute}|{mtime}|{size}".encode("utf-8"))
+        if path.is_dir():
+            for member in sorted(path.rglob("*")):
+                try:
+                    stat = member.stat()
+                    facts = (member.relative_to(path).as_posix(), stat.st_mtime_ns, stat.st_size)
+                except OSError:
+                    # A store can be replaced while it is inspected. Such a
+                    # snapshot must not alias a previously readable cache key.
+                    facts = (member.relative_to(path).as_posix(), "unavailable")
+                digest.update(repr(facts).encode("utf-8"))
+        return self.cache_dir / f"{digest.hexdigest()}.png"
 
     def get_cached(self, file_path: str | Path, size: int) -> bytes | None:
-        path = self.cache_path(file_path, size)
+        return self._read_cached(self.cache_path(file_path, size))
+
+    def _read_cached(self, path: Path) -> bytes | None:
         if path.is_file():
             try:
                 return path.read_bytes()
             except OSError as exc:
+                self._failures[path] = str(exc)
+                while len(self._failures) > _MAX_FAILURES:
+                    self._failures.popitem(last=False)
                 _logger.warning("failed to read cached thumbnail %s: %r", path, exc)
                 self._publish_log(
                     "WARNING",
@@ -159,120 +171,147 @@ class ThumbnailManager:
           * Cache hit → return immediately.
           * Source missing/not a file → return ``placeholder_png(size)``.
           * Otherwise → queue generation, poll the cache file up to
-            ``wait_timeout`` seconds; if it appears, return its bytes,
-            else return ``placeholder_png(size)`` so the frontend can
-            retry.
+            ``wait_timeout`` seconds; join the job without canceling it on
+            timeout, then return cached bytes or a status placeholder.
         """
-        cached = self.get_cached(file_path, size)
+        # A directory store may contain many chunks. Keep its metadata walk
+        # and cache I/O off the event loop, and reuse that fingerprint when
+        # reserving a shared job rather than walking the store twice.
+        path = Path(file_path)
+        key = await asyncio.to_thread(self.cache_path, path, size)
+        cached = await asyncio.to_thread(self._read_cached, key)
         if cached is not None:
             return cached
 
-        path = Path(file_path)
-        if not path.is_file():
+        if not _is_image_source(path):
             return self.placeholder_png(size)
 
-        # T3 / T4 — wired in subsequent commits.
-        await self.queue_generate(path, size)
+        job = self._schedule_generation(path, size, key=key)
+        if job is not None and job.task is not None and wait_timeout > 0:
+            try:
+                await asyncio.wait_for(asyncio.shield(job.task), wait_timeout)
+            except TimeoutError:
+                pass
+        cached = await asyncio.to_thread(self.get_cached, path, size)
+        return cached or self.placeholder_png(size)
 
-        if wait_timeout > 0:
-            cache_file = self.cache_path(path, size)
-            deadline = time.monotonic() + wait_timeout
-            while time.monotonic() < deadline:
-                if cache_file.is_file():
-                    try:
-                        return cache_file.read_bytes()
-                    except OSError:
-                        break
-                await asyncio.sleep(_POLL_INTERVAL_SECONDS)
+    def status(self, file_path: str | Path, size: int) -> str:
+        """Report actual work state; a placeholder alone cannot establish failure."""
+        if self.get_cached(file_path, size) is not None:
+            return "ready"
+        path = Path(file_path)
+        key = self.cache_path(path, size)
+        if key in self._failures or self.environment_state == "failed":
+            return "failed"
+        if self._closed or not _is_image_source(path):
+            return "unavailable"
+        return "pending"
 
-        return self.placeholder_png(size)
+    def _schedule_generation(self, path: Path, size: int, *, key: Path) -> _Generation | None:
+        if self._closed or not _is_image_source(path) or key.is_file() or key in self._failures:
+            return None
+        existing = self._pending_generations.get(key)
+        if existing is not None:
+            return existing
+        # Reserve before the first await, including while the environment starts.
+        job = _Generation(started=asyncio.get_running_loop().create_future())
+        self._pending_generations[key] = job
+        job.task = asyncio.create_task(self._generate(job, path, key, size))
+        return job
 
     async def queue_generate(self, file_path: str | Path, size: int) -> None:
-        """Submit a thumbnail-render task into the Wetlands env.
-
-        Idempotent: returns immediately if the cache file already exists
-        or the source isn't a regular file. Launches the env on first
-        use.
-        """
+        """Join the shared startup/submission without owning its cancellation."""
         path = Path(file_path)
-        if not path.is_file():
+        key = await asyncio.to_thread(self.cache_path, path, size)
+        job = self._schedule_generation(path, size, key=key)
+        if job is not None:
+            await asyncio.shield(job.started)
+
+    async def _ensure_environment(self) -> None:
+        if self._pool is not None:
             return
-        cache_file = self.cache_path(path, size)
-        if cache_file.is_file():
-            return
-
-        async with self._lock:
-            if self._env is None:
-                self._publish_log("INFO", "Launching thumbnail environment")
-                await asyncio.to_thread(self._launch)
-
-        pool = self._pool
-        if pool is None:
-            # Launch failed — _launch already logged. Don't raise; the
-            # endpoint returns a placeholder which the frontend retries.
-            return
-
-        extension = path.suffix.lstrip(".")
-        async with self._lock:
-            pending = self._pending_generations.get(cache_file)
-            if pending is None or pending[1].done():
-                self._publish_log(
-                    "INFO",
-                    f"Queued thumbnail generation for {path}",
-                )
-                execution = await asyncio.to_thread(
-                    pool.submit_path,
-                    _GENERATOR_MODULE_NAME,
-                    "create_thumbnail",
-                    args=(str(path), extension, str(cache_file), (size, size)),
-                )
-                waiter = asyncio.create_task(
-                    self._wait_for_generation(execution, path, cache_file)
-                )
-                self._pending_generations[cache_file] = (execution, waiter)
-
-    async def _wait_for_generation(
-        self,
-        execution: ExecutionTask[Any],
-        source: Path,
-        cache_file: Path,
-    ) -> None:
+        if self._startup_task is None:
+            self.environment_state = "starting"
+            self._publish_log("INFO", "Launching thumbnail environment")
+            self._startup_task = asyncio.create_task(asyncio.to_thread(self._launch))
         try:
-            await execution
+            await asyncio.shield(self._startup_task)
+        except Exception:
+            self.environment_state = "failed"
+            raise
+        if self._pool is not None:
+            self.environment_state = "ready"
+
+    async def _generate(self, job: _Generation, source: Path, key: Path, size: int) -> None:
+        try:
+            await self._ensure_environment()
+            if self._closed or key.is_file():
+                return
+            pool = self._pool
+            if pool is None:
+                raise RuntimeError("Thumbnail environment did not provide a worker pool")
+            self._publish_log("INFO", f"Queued thumbnail generation for {source}")
+            job.submission = asyncio.create_task(asyncio.to_thread(
+                pool.submit_path, _GENERATOR_MODULE_NAME, "create_thumbnail",
+                args=(str(source), source.suffix.lstrip("."), str(key), (size, size)),
+            ))
+            job.execution = await asyncio.shield(job.submission)
+            if not job.started.done():
+                job.started.set_result(None)
+            await job.execution
+            if not key.is_file():
+                raise RuntimeError("Renderer completed without publishing a thumbnail")
+            current_key = (
+                await asyncio.to_thread(self.cache_path, source, size)
+                if source.is_dir() else self.cache_path(source, size)
+            )
+            if key != current_key:
+                # An external file changed while rendering; never publish that
+                # image under its previous fingerprint.
+                key.unlink(missing_ok=True)
+                return
+            self._publish_log("INFO", f"Thumbnail generation completed for {source}")
         except asyncio.CancelledError:
-            execution.cancel()
+            if job.execution is None and job.submission is not None:
+                # A thread submission cannot be canceled by dropping its awaiter.
+                # Join it before retiring its eventual worker task and pool.
+                job.execution = await job.submission
+            if job.execution is not None:
+                job.execution.cancel()
             raise
         except Exception as exc:  # noqa: BLE001
+            self._failures[key] = str(exc)
+            while len(self._failures) > _MAX_FAILURES:
+                self._failures.popitem(last=False)
             self._publish_log("ERROR", f"Thumbnail generation failed for {source}: {exc}")
-        else:
-            self._publish_log("INFO", f"Thumbnail generation completed for {source}")
         finally:
-            current = asyncio.current_task()
-            pending = self._pending_generations.get(cache_file)
-            if pending is not None and pending[1] is current:
-                self._pending_generations.pop(cache_file, None)
+            if not job.started.done():
+                job.started.set_result(None)
+            if self._pending_generations.get(key) is job:
+                self._pending_generations.pop(key, None)
 
     async def shutdown(self) -> None:
-        """Cancel pending renders and close the managed worker pool."""
-        pending = tuple(self._pending_generations.values())
-        for execution, waiter in pending:
-            execution.cancel()
-            waiter.cancel()
-        if pending:
-            await asyncio.gather(
-                *(waiter for _, waiter in pending),
-                return_exceptions=True,
-            )
+        """Retire this owner, join startup, cancel renders, then close its pool."""
+        self._closed = True
+        if self._operation is not None:
+            self._operation.cancel()
+        jobs = list(self._pending_generations.values())
+        tasks = [job.task for job in jobs if job.task is not None]
+        for job in jobs:
+            if not job.started.done():
+                job.started.set_result(None)
+            if job.execution is not None:
+                job.execution.cancel()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if self._startup_task is not None:
+            await asyncio.gather(self._startup_task, return_exceptions=True)
         self._pending_generations.clear()
-        pool = self._pool
-        self._pool = None
+        pool, self._pool = self._pool, None
         self._env = None
-        if pool is None:
-            return
-        try:
+        if pool is not None:
             await asyncio.to_thread(pool.close)
-        except Exception as exc:  # noqa: BLE001
-            _logger.warning("thumbnail worker pool close raised: %r", exc)
 
     # ------------------------------------------------------------------
     # Hooks
@@ -297,16 +336,26 @@ class ThumbnailManager:
                 "thumbnail",
                 EnvironmentSpec(python="3.12.*", pypi=_THUMBNAIL_ENV_PIP),
                 replace_existing=True,
+                on_mutation_started=self._mark_installing,
             )
+            self._operation = operation
+            if self._closed:
+                operation.cancel()
             operation.listen(
                 lambda event: log_environment_operation_event(event, owner="Thumbnail environment")
             )
             env = operation.wait_for()
-            pool = env.start(workers=8)
+            if self._closed:
+                return
+            pool = env.start(workers=_WORKERS)
             self._env = env
             self._pool = pool
+            self.environment_state = "ready"
             self._publish_log("INFO", "Thumbnail environment running")
         except Exception:  # noqa: BLE001
+            if self._closed:
+                return
+            self.environment_state = "failed"
             _logger.exception("thumbnail Wetlands env failed to launch")
             self._publish_log(
                 "ERROR",
@@ -315,6 +364,12 @@ class ThumbnailManager:
             self._env = None
             self._pool = None
             raise
+        finally:
+            self._operation = None
+
+    def _mark_installing(self) -> None:
+        self.environment_state = "installing"
+        self._publish_log("INFO", "Preparing thumbnail support. First-time setup may take several minutes.")
 
     def _publish_log(self, level: str, message: str) -> None:
         cm = self._connection_manager
@@ -329,6 +384,12 @@ class ThumbnailManager:
 # ---------------------------------------------------------------------------
 # Placeholder generation
 # ---------------------------------------------------------------------------
+
+
+def _is_image_source(path: Path) -> bool:
+    # Let BioIO's installed plugins decide whether a concrete file or directory
+    # store is readable. In particular, OME-Zarr must reach its reader.
+    return path.is_file() or path.is_dir()
 
 
 def _build_placeholder_png(size: int) -> bytes:

@@ -99,7 +99,8 @@ async def test_real_archive_import_preserves_grouped_requirements_and_unknown_sn
     assert report.summary.not_covered_outputs == 2
     assert report.summary.unknown_outputs == 1
     assert report.summary.covered_outputs == 1
-    assert report.summary.outputs_needing_setup == 3
+    assert report.summary.outputs_needing_setup == 2
+    assert report.summary.message == "2 outputs need viewer setup; viewing requirements are unknown for 1 output"
     assert len(report.groups) == 1
     assert sorted(report.groups[0].members) == sorted(known)
     assert report.groups[0].managed_create_prefill.requested_packages == ["unavailable-reader<3,>=2"]

@@ -3944,6 +3944,7 @@ export interface components {
             sort_order: "asc" | "desc";
             /** Filters */
             filters?: components["schemas"]["DataTableFilter"][];
+            result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
         };
         /**
          * NodeDataQueryRequest
@@ -4567,11 +4568,8 @@ export interface components {
              * @default []
              */
             omero_instances: components["schemas"]["OMEROInstanceResponse"][];
-            /**
-             * Tool Store Path
-             * @default ~/.bioimageflow/tool_packages/
-             */
-            tool_store_path: string;
+            /** Tool Store Path */
+            tool_store_path?: string;
             /**
              * Update Mode
              * @default auto
@@ -4594,6 +4592,12 @@ export interface components {
              * @enum {integer}
              */
             node_data_page_size: 25 | 50 | 100 | 250 | 500;
+            /**
+             * Node Data Browsing Mode
+             * @default paginated
+             * @enum {string}
+             */
+            node_data_browsing_mode: "paginated" | "continuous";
             /**
              * Keyboard Shortcuts
              * @default {}
@@ -6706,7 +6710,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GraphState"];
+                "application/json": components["schemas"]["GraphState"] | components["schemas"]["GraphValidationRequest"];
             };
         };
         responses: {
@@ -9978,6 +9982,8 @@ export interface operations {
                 row?: number;
                 workflow_name?: string | null;
                 format?: "ome-tiff" | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10015,6 +10021,8 @@ export interface operations {
                 row?: number;
                 workflow_name?: string | null;
                 format?: "ome-tiff" | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10050,6 +10058,8 @@ export interface operations {
                 col: string;
                 row?: number;
                 workflow_name?: string | null;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10088,6 +10098,9 @@ export interface operations {
                 row?: number;
                 size?: number;
                 workflow_name?: string | null;
+                wait?: number;
+                /** @description JSON-encoded exact retained result identity; omission selects latest. */
+                result_identity?: string | null;
             };
             header?: never;
             path: {
@@ -10097,13 +10110,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Rendered PNG or a placeholder with explicit work status. */
             200: {
                 headers: {
+                    "X-Thumbnail-Status"?: "pending" | "ready" | "failed" | "unavailable";
+                    "X-Thumbnail-Environment"?: "idle" | "starting" | "installing" | "ready" | "failed";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "image/png": string;
                 };
             };
             /** @description Validation Error */

@@ -19,6 +19,7 @@ import {
   useCanvasPersistence,
 } from '@/composables/useCanvasPersistence'
 import { useDatasetsStore } from '@/stores/datasets'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useUIStore } from '@/stores/ui'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { registerRootCanvas } from '@/test-utils/canvasFixtures'
@@ -131,6 +132,7 @@ describe('NodePanel Files source pickers', () => {
     const datasets = useDatasetsStore()
     expect(datasets.activationRequest).toBe(1)
     expect(datasets.picker).toBeNull()
+    wrapper.unmount()
   })
 
   it('offers native multi-file and folder actions in desktop mode', async () => {
@@ -146,5 +148,29 @@ describe('NodePanel Files source pickers', () => {
     await flushPromises()
 
     expect(mockedSelectFiles).toHaveBeenCalledWith('Select files for: files', [])
+    wrapper.unmount()
   })
+  it('ignores a delayed native picker result after node selection changes', async () => {
+    mockedIsDesktop.mockReturnValue(true)
+    let finish!: (paths: string[]) => void
+    mockedSelectFiles.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountFilesNode()
+    const canvasId = canvasSessionRegistry.activeCanvasId.value!
+    const update = vi.fn(() => true)
+    useCanvasCommands({ descriptor: canvasSessionRegistry.get(canvasId)!.descriptor,
+      renameNode: vi.fn(), setNodeEnabled: vi.fn(), setInputPinned: vi.fn(), setOutputTemplate: vi.fn(),
+      toggleWorkflowInput: vi.fn(), toggleWorkflowOutput: vi.fn(), renameWorkflowInput: vi.fn(), renameWorkflowOutput: vi.fn(),
+      updateParameter: update, updateParameters: update,
+    })
+    await wrapper.get('[data-testid="select-files-source"]').trigger('click')
+    const ui = useUIStore((wrapper.vm as any).$pinia)
+    ui.setCanvasSelectedNodes(canvasId, [])
+    await flushPromises()
+    expect(wrapper.text()).toContain('Select a node')
+    finish(['/late.tif'])
+    await flushPromises()
+    expect(update).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
 })

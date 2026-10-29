@@ -3,14 +3,16 @@
 # provides bioio, Pillow, NumPy, and the bioio readers.
 """Thumbnail generator helper (subprocess-side).
 
-Pattern lifted from Galaxy's ``galaxy/thumbnail_generator.py``: a
-single-process pool dispatches per-image renders so the Wetlands worker
-can return its IPC response immediately and accept the next request.
+BioIO owns reader selection and dimension handling for every supported format.
+Workers retain its imports between images; only the selected preview plane is
+computed, rather than eagerly materializing a complete time series or Z stack.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import tempfile
 
 
 def create_thumbnail(
@@ -49,15 +51,20 @@ def create_thumbnail(
             image = BioImage(str(image_path_with_extension), reader=TiffReader)
         else:
             image = BioImage(str(image_path_with_extension))
-        data = image.get_image_data("TCZYX")
+        # Slice the lazy array BEFORE computing. BioIO's get_image_data eagerly
+        # reads the whole image even when given T/Z selectors. The dask API
+        # lets readers that support selective I/O skip unused planes instead.
+        # Preserve the established middle-T/middle-Z preview and all channels.
+        data = image.get_image_dask_data(
+            "YXCS", T=image.dims.T // 2, Z=image.dims.Z // 2,
+        ).compute()
     finally:
         if created_symlink and image_path_with_extension.exists():
             image_path_with_extension.unlink()
 
-    # Pick the middle T and Z slice; keep all channels.
-    data = data[data.shape[0] // 2, :, data.shape[2] // 2, :, :]
-    # Reorder to YXC for PIL.
-    data = data.transpose(1, 2, 0)
+    # BioIO separates scientific channels (C) from RGB(A) samples (S).
+    # Keep both; a missing dimension is supplied with length one by BioIO.
+    data = data.reshape(data.shape[0], data.shape[1], -1)
 
     data = data.astype(np.float32)
     data_min = float(data.min())
@@ -80,5 +87,13 @@ def create_thumbnail(
         img = Image.fromarray(data_normalized.squeeze(axis=2), "L")
 
     img.thumbnail(size)
-    Path(thumbnail_path).parent.mkdir(parents=True, exist_ok=True)
-    img.save(thumbnail_path)
+    destination = Path(thumbnail_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Readers must never observe a partially written cache image.
+    with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".png", delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    try:
+        img.save(temporary_path, format="PNG")
+        os.replace(temporary_path, destination)
+    finally:
+        temporary_path.unlink(missing_ok=True)

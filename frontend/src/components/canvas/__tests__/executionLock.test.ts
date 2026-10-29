@@ -4,6 +4,7 @@ import { defineComponent, ref, computed, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import InputText from 'primevue/inputtext'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 
 // --- Mock shared state that matches the pattern in CanvasView.test.ts ---
 
@@ -13,11 +14,16 @@ let connectHandler: ((connection: any) => void) | null = null
 let edgeUpdateHandler: ((event: any) => void) | null = null
 let nodeDragStartHandler: ((event: any) => void) | null = null
 let nodeDragStopHandler: ((event: any) => void) | null = null
-const vueFlowMocks = vi.hoisted(() => ({ updateEdge: vi.fn() }))
+const vueFlowMocks = vi.hoisted(() => ({ updateEdge: vi.fn(), setNodes: vi.fn() }))
 const graphSyncMocks = vi.hoisted(() => ({
   syncGraphState: vi.fn(),
   flushNow: vi.fn(),
   validationResult: null as any,
+}))
+const persistenceMocks = vi.hoisted(() => ({
+  isPending: null as null | { value: boolean },
+  resolveFromDraft: vi.fn(),
+  queueGraph: vi.fn(),
 }))
 
 vi.mock('@vue-flow/core', () => {
@@ -65,6 +71,7 @@ vi.mock('@vue-flow/core', () => {
       },
       setNodes: (nodes: any[]) => {
         mockNodes.splice(0, mockNodes.length, ...nodes)
+        vueFlowMocks.setNodes(nodes)
       },
       setEdges: (edges: any[]) => {
         mockEdges.splice(0, mockEdges.length, ...edges)
@@ -102,7 +109,7 @@ vi.mock('@vue-flow/controls', () => ({
 
 vi.mock('@/composables/useGraphSync', () => ({
   serializeGraph: (raw: { nodes: any[]; edges: any[] }) => ({
-    schema_version: 1,
+    schema_version: 2,
     name: 'execution-lock',
     display_name: 'Execution lock',
     nodes: raw.nodes.map((node) => ({
@@ -126,9 +133,14 @@ vi.mock('@/composables/useGraphSync', () => ({
   }),
   useGraphSync: () => {
     graphSyncMocks.validationResult = ref(null)
+    const currentGraph = ref(makeGraph())
     return {
       syncGraph: vi.fn(),
-      syncGraphState: graphSyncMocks.syncGraphState,
+      syncGraphState: (graph: ReturnType<typeof makeGraph>) => {
+        currentGraph.value = graph
+        graphSyncMocks.syncGraphState(graph)
+      },
+      currentGraph,
       flushNow: graphSyncMocks.flushNow,
       dispose: vi.fn(),
       loadWorkflow: vi.fn().mockResolvedValue(null),
@@ -141,17 +153,32 @@ vi.mock('@/composables/useGraphSync', () => ({
 }))
 
 vi.mock('@/composables/useCanvasPersistence', () => ({
-  useCanvasPersistence: () => ({
-    queueGraph: vi.fn(),
-    initializeFromDraft: vi.fn(),
-    isPending: ref(false),
-    acceptedDraftRevision: ref(7),
-    dispose: vi.fn(),
-  }),
+  useCanvasPersistence: () => {
+    const hasLocalSemanticChanges = ref(false)
+    return {
+      queueGraph: (graph: unknown) => {
+        hasLocalSemanticChanges.value = true
+        persistenceMocks.queueGraph(graph)
+      },
+      initializeFromDraft: vi.fn(),
+      resolveFromDraft: (response: WorkflowDraftResponse, origin: 'local' | 'external') => {
+        hasLocalSemanticChanges.value = origin === 'local' && response.dirty_against_saved
+        persistenceMocks.resolveFromDraft(response, origin)
+      },
+      hasLocalSemanticChanges,
+      isDraftPersistencePending: ref(false),
+      isPending: persistenceMocks.isPending ?? ref(false),
+      acceptedDraftRevision: ref(7),
+      dispose: vi.fn(),
+    }
+  },
 }))
 
 const canvasCommandMocks = vi.hoisted(() => ({
   updateParameter: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+  updateWorkflowBinding: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+  resetWorkflowBinding: null as null | ((nodeId: string, key: string) => boolean),
+  setInputPinned: null as null | ((nodeId: string, key: string, pinned: boolean) => boolean),
   toggleWorkflowInput: null as null | ((nodeId: string, input: string | number) => unknown),
   clearNodeOutputs: null as null | ((nodeIds: string[]) => Promise<boolean>),
 }))
@@ -159,9 +186,15 @@ const canvasCommandMocks = vi.hoisted(() => ({
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: (options?: {
     updateParameter?: (nodeId: string, key: string, value: unknown) => boolean
+    updateWorkflowBinding?: (nodeId: string, key: string, value: unknown) => boolean
+    resetWorkflowBinding?: (nodeId: string, key: string) => boolean
+    setInputPinned?: (nodeId: string, key: string, pinned: boolean) => boolean
     toggleWorkflowInput?: (nodeId: string, input: string | number) => unknown
     clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
   }) => {
+    if (options?.updateWorkflowBinding) canvasCommandMocks.updateWorkflowBinding = options.updateWorkflowBinding
+    if (options?.resetWorkflowBinding) canvasCommandMocks.resetWorkflowBinding = options.resetWorkflowBinding
+    if (options?.setInputPinned) canvasCommandMocks.setInputPinned = options.setInputPinned
     if (options?.updateParameter) {
       canvasCommandMocks.updateParameter = options.updateParameter
     }
@@ -193,11 +226,13 @@ import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
 import {
   _resetCanvasStatusProjectionForTest,
 } from '@/composables/useCanvasStatusProjection'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { createRecoveryPersistenceCoordinator } from '@/sessions/recoveryPersistenceCoordinator'
 import { rootCanvasId, rootCanvasParams } from '@/test-utils/canvasFixtures'
 import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
 import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
@@ -270,6 +305,7 @@ describe('CanvasView execution lock', () => {
     setActivePinia(createPinia())
     _resetClipboardForTest()
     mockedApi.get.mockResolvedValue({ data: [] })
+    vi.mocked(api.put).mockReset()
     mockedApi.post.mockResolvedValue({
       data: {
         name: 'untitled',
@@ -288,12 +324,360 @@ describe('CanvasView execution lock', () => {
     nodeDragStartHandler = null
     nodeDragStopHandler = null
     vueFlowMocks.updateEdge.mockClear()
+    vueFlowMocks.setNodes.mockReset()
     graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.flushNow.mockReset()
+    persistenceMocks.isPending = null
+    persistenceMocks.resolveFromDraft.mockReset()
+    persistenceMocks.queueGraph.mockReset()
     canvasCommandMocks.updateParameter = null
+    canvasCommandMocks.updateWorkflowBinding = null
+    canvasCommandMocks.resetWorkflowBinding = null
+    canvasCommandMocks.setInputPinned = null
     canvasCommandMocks.toggleWorkflowInput = null
     canvasCommandMocks.clearNodeOutputs = null
   })
+
+  it('drains a newer remote draft revision received while an earlier clean-canvas fetch is busy', async () => {
+    const workflowId = 'execution-lock'
+    const draft = (revision: number, label: string): WorkflowDraftResponse => ({
+      draft_version: 1,
+      workflow_id: workflowId,
+      base_saved_revision: 'sha256:accepted-base',
+      draft_revision: revision,
+      updated_at: '2026-10-19T12:00:00Z',
+      updated_by: 'agent',
+      dirty_against_saved: revision > 0,
+      graph: makeGraph({
+        name: workflowId,
+        display_name: 'Execution lock',
+        nodes: [makeGraphNode({ id: 'remote-node', name: label })],
+      }),
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    })
+    const initial = draft(0, 'Initial node')
+    const first = draft(1, 'First agent node')
+    const latest = draft(2, 'Latest agent node')
+    const tracked = useWorkflowDraftStore()
+    tracked.trackWorkflow(workflowId)
+    tracked.acknowledgeAcceptedDraft(initial)
+    let releaseFirst!: (value: WorkflowDraftResponse) => void
+    const held = new Promise<WorkflowDraftResponse>((resolve) => { releaseFirst = resolve })
+    const fetch = vi.spyOn(tracked, 'fetchLatestDraft')
+      .mockReturnValueOnce(held)
+      .mockResolvedValue(latest)
+    const canvas = mountCanvas(initial.graph)
+    const publish = (response: WorkflowDraftResponse) => tracked.noteRemoteChange({
+      type: 'workflow_draft_changed', workflow_id: workflowId,
+      draft_revision: response.draft_revision, updated_by: 'agent',
+      updated_at: response.updated_at, dirty_against_saved: response.dirty_against_saved,
+    })
+    try {
+      await flushPromises()
+      expect(mockNodes[0].data.name).toBe('Initial node')
+      expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(false)
+      expect(canvas.find('.workflow-draft-conflict').exists()).toBe(false)
+      publish(first)
+      await nextTick()
+      expect(fetch).toHaveBeenCalledOnce()
+      publish(latest)
+      await nextTick()
+      expect(tracked.remoteAvailableRevision).toBe(2)
+      expect(fetch).toHaveBeenCalledOnce()
+      expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(false)
+      expect(canvas.find('.workflow-draft-conflict').exists()).toBe(false)
+      releaseFirst(first)
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(mockNodes[0].data.name).toBe('Latest agent node')
+      expect(graphSyncMocks.syncGraphState).toHaveBeenLastCalledWith(latest.graph)
+      expect(tracked.appliedDraftRevision).toBe(2)
+      expect(tracked.remoteAvailableRevision).toBeNull()
+    } finally {
+      canvas.unmount()
+      releaseFirst(first)
+      await flushPromises()
+      fetch.mockRestore()
+    }
+  })
+
+  it('drains a newer remote revision received during an accepted remote installation', async () => {
+    const workflowId = 'execution-lock'
+    const draft = (revision: number, label: string): WorkflowDraftResponse => ({
+      draft_version: 1, workflow_id: workflowId, base_saved_revision: 'sha256:accepted-base',
+      draft_revision: revision, updated_at: '2026-10-19T12:00:00Z', updated_by: 'agent',
+      dirty_against_saved: revision > 0,
+      graph: makeGraph({ name: workflowId, display_name: 'Execution lock',
+        nodes: [makeGraphNode({ id: 'remote-node', name: label })] }),
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    })
+    const initial = draft(0, 'Initial node')
+    const first = draft(1, 'First accepted agent node')
+    const latest = draft(2, 'Latest accepted agent node')
+    const tracked = useWorkflowDraftStore()
+    tracked.trackWorkflow(workflowId)
+    tracked.acknowledgeAcceptedDraft(initial)
+    const publish = (response: WorkflowDraftResponse) => tracked.noteRemoteChange({
+      type: 'workflow_draft_changed', workflow_id: workflowId,
+      draft_revision: response.draft_revision, updated_by: 'agent',
+      updated_at: response.updated_at, dirty_against_saved: response.dirty_against_saved,
+    })
+    let publishedDuringInstall = false
+    let secondFetchSawRemoteDirty = false
+    const fetch = vi.spyOn(tracked, 'fetchLatestDraft')
+      .mockResolvedValueOnce(first)
+      .mockImplementation(async () => {
+        secondFetchSawRemoteDirty = useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))
+        return latest
+      })
+    const canvas = mountCanvas(initial.graph)
+    try {
+      await flushPromises()
+      expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(false)
+      vueFlowMocks.setNodes.mockImplementation((nodes: any[]) => {
+        if (!publishedDuringInstall && nodes[0]?.data.name === first.graph.nodes[0]?.name) {
+          publishedDuringInstall = true
+          publish(latest)
+        }
+      })
+      publish(first)
+      await flushPromises()
+      expect(publishedDuringInstall).toBe(true)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(secondFetchSawRemoteDirty).toBe(true)
+      expect(mockNodes[0].data.name).toBe('Latest accepted agent node')
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(first.graph)
+      expect(graphSyncMocks.syncGraphState).toHaveBeenLastCalledWith(latest.graph)
+      expect(tracked.appliedDraftRevision).toBe(2)
+      expect(tracked.remoteAvailableRevision).toBeNull()
+      expect(canvas.find('.workflow-draft-conflict').exists()).toBe(false)
+    } finally {
+      canvas.unmount()
+      fetch.mockRestore()
+    }
+  })
+
+  it.each(['settled before r2', 'held through r2'] as const)(
+    'applies a later remote revision without GUI edits when accepted r1 recovery is %s',
+    async (recoveryTiming) => {
+      const workflowId = 'execution-lock'
+      const draft = (revision: number, label: string): WorkflowDraftResponse => ({
+        draft_version: 1, workflow_id: workflowId, base_saved_revision: 'sha256:accepted-base',
+        draft_revision: revision, updated_at: '2026-10-19T12:00:00Z', updated_by: 'agent',
+        dirty_against_saved: revision > 0,
+        graph: makeGraph({ name: workflowId, display_name: 'Execution lock',
+          nodes: [makeGraphNode({ id: 'remote-node', name: label })] }),
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      })
+      const initial = draft(0, 'Initial node')
+      const first = draft(1, 'First accepted agent node')
+      const latest = draft(2, 'Later accepted agent node')
+      const tracked = useWorkflowDraftStore()
+      tracked.trackWorkflow(workflowId)
+      tracked.acknowledgeAcceptedDraft(initial)
+      let releaseRecovery!: () => void
+      const heldRecovery = new Promise<void>((resolve) => { releaseRecovery = resolve })
+      const writeRecovery = vi.fn().mockReturnValueOnce(heldRecovery).mockResolvedValue(undefined)
+      const recovery = createRecoveryPersistenceCoordinator({
+        canvasId: rootCanvasId(workflowId), transport: writeRecovery,
+      })
+      persistenceMocks.isPending = recovery.isPending
+      // Production resolveFromDraft accepts the authoritative draft and queues
+      // its recovery snapshot without authoring any local semantic draft write.
+      persistenceMocks.resolveFromDraft.mockImplementation((response: WorkflowDraftResponse) => {
+        recovery.queue(workflowId, response.graph)
+      })
+      const fetch = vi.spyOn(tracked, 'fetchLatestDraft')
+        .mockResolvedValueOnce(first).mockResolvedValue(latest)
+      const canvas = mountCanvas(initial.graph)
+      const publish = (response: WorkflowDraftResponse) => tracked.noteRemoteChange({
+        type: 'workflow_draft_changed', workflow_id: workflowId,
+        draft_revision: response.draft_revision, updated_by: 'agent',
+        updated_at: response.updated_at, dirty_against_saved: response.dirty_against_saved,
+      })
+      let recoveryWrite: ReturnType<typeof recovery.flushLatest> | undefined
+      try {
+        await flushPromises()
+        expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(false)
+        publish(first)
+        await flushPromises()
+        expect(fetch).toHaveBeenCalledOnce()
+        expect(mockNodes[0].data.name).toBe('First accepted agent node')
+        expect(tracked.appliedDraftRevision).toBe(1)
+        expect(tracked.remoteAvailableRevision).toBeNull()
+        expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledExactlyOnceWith(first, 'external')
+        expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+        expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(true)
+        expect(canvas.find('.workflow-draft-conflict').exists()).toBe(false)
+        recoveryWrite = recovery.flushLatest()
+        await flushPromises()
+        expect(writeRecovery).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          recoveryKey: workflowId, graph: first.graph,
+        }))
+        expect(recovery.isPending.value).toBe(true)
+        if (recoveryTiming === 'settled before r2') {
+          releaseRecovery()
+          await recoveryWrite
+          await flushPromises()
+          expect(recovery.isPending.value).toBe(false)
+        }
+        publish(latest)
+        await flushPromises()
+        if (recoveryTiming === 'held through r2') {
+          expect(recovery.isPending.value).toBe(true)
+          releaseRecovery()
+          await recoveryWrite
+          await flushPromises()
+          expect(recovery.isPending.value).toBe(false)
+        }
+        expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(mockNodes[0].data.name).toBe('Later accepted agent node')
+        expect(graphSyncMocks.syncGraphState).toHaveBeenLastCalledWith(latest.graph)
+        expect(tracked.appliedDraftRevision).toBe(2)
+        expect(tracked.remoteAvailableRevision).toBeNull()
+        expect(canvas.find('.workflow-draft-conflict').exists()).toBe(false)
+      } finally {
+        releaseRecovery()
+        await recoveryWrite
+        recovery.dispose()
+        canvas.unmount()
+        fetch.mockRestore()
+      }
+    },
+  )
+
+  it('protects the locally kept canvas from a later agent notice after Keep my canvas succeeds', async () => {
+    const workflowId = 'execution-lock'
+    const initial: WorkflowDraftResponse = {
+      draft_version: 1, workflow_id: workflowId, base_saved_revision: 'sha256:accepted-base',
+      draft_revision: 0, updated_at: '2026-10-19T12:00:00Z', updated_by: 'system',
+      dirty_against_saved: false,
+      graph: makeGraph({ name: workflowId, display_name: 'Execution lock',
+        nodes: [makeGraphNode({ id: 'remote-node', name: 'Initial node' })] }),
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
+    const localGraph = makeGraph({ name: workflowId, display_name: 'Execution lock',
+      nodes: [makeGraphNode({ id: 'remote-node', name: 'Initial node',
+        parameters: { value: 'Kept local value' } })] })
+    const first: WorkflowDraftResponse = {
+      ...initial, draft_revision: 1, updated_by: 'agent', dirty_against_saved: true,
+      graph: makeGraph({ name: workflowId, display_name: 'Execution lock',
+        nodes: [makeGraphNode({ id: 'remote-node', name: 'Agent node' })] }),
+    }
+    const kept: WorkflowDraftResponse = {
+      ...first, draft_revision: 2, updated_by: 'frontend', graph: localGraph,
+    }
+    const latest = { ...first, draft_revision: 3 }
+    const tracked = useWorkflowDraftStore()
+    tracked.trackWorkflow(workflowId)
+    tracked.acknowledgeAcceptedDraft(initial)
+    const fetch = vi.spyOn(tracked, 'fetchLatestDraft').mockResolvedValue(latest)
+    const publish = (response: WorkflowDraftResponse) => tracked.noteRemoteChange({
+      type: 'workflow_draft_changed', workflow_id: workflowId,
+      draft_revision: response.draft_revision, updated_by: response.updated_by,
+      updated_at: response.updated_at, dirty_against_saved: response.dirty_against_saved,
+    })
+    const canvas = mountCanvas(initial.graph)
+    try {
+      await flushPromises()
+      expect(canvasCommandMocks.updateParameter?.('remote-node', 'value', 'Kept local value')).toBe(true)
+      publish(first)
+      await flushPromises()
+      expect(canvas.find('.workflow-draft-conflict').exists()).toBe(true)
+      mockedApi.get.mockResolvedValueOnce({ data: first })
+      vi.mocked(api.put).mockResolvedValueOnce({ data: kept })
+      const keepButton = canvas.findAll('.workflow-draft-conflict button')
+        .find(button => button.text() === 'Keep my canvas')
+      expect(keepButton).toBeDefined()
+      await keepButton!.trigger('click')
+      await flushPromises()
+      expect(api.put).toHaveBeenCalledExactlyOnceWith(`/api/v1/workflow-drafts/${workflowId}`, {
+        graph: localGraph, expected_revision: 1, updated_by: 'frontend',
+      })
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledExactlyOnceWith(kept, 'local')
+      expect(tracked.appliedDraftRevision).toBe(2)
+      expect(tracked.remoteAvailableRevision).toBeNull()
+      expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(true)
+      publish(latest)
+      await flushPromises()
+      expect(fetch).not.toHaveBeenCalled()
+      expect(mockNodes[0].data.name).toBe('Initial node')
+      expect(mockNodes[0].data.parameters.value).toBe('Kept local value')
+      expect(tracked.appliedDraftRevision).toBe(2)
+      expect(tracked.remoteAvailableRevision).toBe(3)
+      expect(canvas.find('.workflow-draft-conflict').exists()).toBe(true)
+    } finally {
+      canvas.unmount()
+      fetch.mockRestore()
+    }
+  })
+
+  it.each(['local edit', 'unmount'] as const)(
+    'refuses a pending remote drain after %s invalidates its clean canvas owner',
+    async (invalidation) => {
+      const workflowId = 'execution-lock'
+      const draft = (revision: number, label: string): WorkflowDraftResponse => ({
+        draft_version: 1, workflow_id: workflowId, base_saved_revision: 'sha256:accepted-base',
+        draft_revision: revision, updated_at: '2026-10-19T12:00:00Z', updated_by: 'agent',
+        dirty_against_saved: revision > 0,
+        graph: makeGraph({ name: workflowId, display_name: 'Execution lock',
+          nodes: [makeGraphNode({ id: 'remote-node', name: label })] }),
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      })
+      const initial = draft(0, 'Initial node')
+      const first = draft(1, 'Refused first agent node')
+      const latest = draft(2, 'Refused latest agent node')
+      const tracked = useWorkflowDraftStore()
+      tracked.trackWorkflow(workflowId)
+      tracked.acknowledgeAcceptedDraft(initial)
+      let releaseFirst!: (value: WorkflowDraftResponse) => void
+      const held = new Promise<WorkflowDraftResponse>((resolve) => { releaseFirst = resolve })
+      const fetch = vi.spyOn(tracked, 'fetchLatestDraft').mockReturnValueOnce(held).mockResolvedValue(latest)
+      const canvas = mountCanvas(initial.graph)
+      let unmounted = false
+      let projectionsAtUnmount = 0
+      const publish = (response: WorkflowDraftResponse) => tracked.noteRemoteChange({
+        type: 'workflow_draft_changed', workflow_id: workflowId,
+        draft_revision: response.draft_revision, updated_by: 'agent',
+        updated_at: response.updated_at, dirty_against_saved: response.dirty_against_saved,
+      })
+      try {
+        await flushPromises()
+        expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(false)
+        publish(first)
+        await nextTick()
+        expect(fetch).toHaveBeenCalledOnce()
+        publish(latest)
+        await nextTick()
+        if (invalidation === 'local edit') {
+          expect(canvasCommandMocks.updateParameter?.('remote-node', 'value', 'Local edit')).toBe(true)
+          expect(useUIStore().canvasHasUnsavedChanges(rootCanvasId(workflowId))).toBe(true)
+        } else {
+          canvas.unmount()
+          unmounted = true
+          projectionsAtUnmount = vueFlowMocks.setNodes.mock.calls.length
+        }
+        releaseFirst(first)
+        await flushPromises()
+        expect(fetch).toHaveBeenCalledOnce()
+        expect(tracked.appliedDraftRevision).toBe(0)
+        expect(tracked.remoteAvailableRevision).toBe(2)
+        if (invalidation === 'local edit') {
+          expect(mockNodes[0].data.name).toBe('Initial node')
+          expect(mockNodes[0].data.parameters.value).toBe('Local edit')
+          expect(canvas.find('.workflow-draft-conflict').exists()).toBe(true)
+        } else {
+          expect(vueFlowMocks.setNodes).toHaveBeenCalledTimes(projectionsAtUnmount)
+        }
+      } finally {
+        if (!unmounted) canvas.unmount()
+        releaseFirst(first)
+        await flushPromises()
+        fetch.mockRestore()
+      }
+    },
+  )
 
   it('removes a repaired cache-corruption diagnostic after clearing outputs', async () => {
     const graph = makeGraph({
@@ -666,6 +1050,64 @@ describe('CanvasView execution lock', () => {
           port: { kind: 'workflow', id: 'source-table' },
         }],
       })])
+    wrapper.unmount()
+  })
+
+  it('edits, resets and connects workflow constants through captured commands without duplicate authority', async () => {
+    const child = makeGraph({ interface: { inputs: [{
+      id: 'p', name: 'P', kind: 'field', schema: { type: 'float' },
+      default: { __type__: 'float', value: .001 }, targets: [],
+    }], outputs: [] } })
+    const graph = makeGraph({ nodes: [{ type: 'workflow', id: 'child', name: 'Child',
+      position: [0, 0], workflow: child, bindings: { p: { __type__: 'none', value: null } }, enabled: true, collapsed: false,
+    }] })
+    const { wrapper } = await mountNestedCanvas(graph)
+    const target = mockNodes.find(node => node.id === 'child')!
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', 1)).toBe(true)
+    expect(target.data.bindings.p).toEqual({ __type__: 'float', value: 1 })
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(true)
+    expect(target.data.bindings).toEqual({})
+    expect(child.interface.inputs[0]!.default).toEqual({ __type__: 'float', value: .001 })
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(false)
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .5)).toBe(true)
+    const handle = encodeEndpointHandle({ kind: 'workflow-input', id: 'p' })
+    connectHandler!({ source: 'source', target: 'child', sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'number' }), targetHandle: handle })
+    expect(target.data.bindings).toEqual({})
+    expect(mockEdges).toHaveLength(1)
+    expect(target.data.connectedInputs[handle]).toBeTruthy()
+    expect(canvasCommandMocks.setInputPinned?.('child', 'p', false)).toBe(false)
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .8)).toBe(false)
+    expect(canvasCommandMocks.resetWorkflowBinding?.('child', 'p')).toBe(false)
+    useExecutionStore().state = 'running'
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'p', .9)).toBe(false)
+    useExecutionStore().state = 'idle'
+    target.data.workflow.interface.inputs.push({ ...child.interface.inputs[0], id: 'q', name: 'Q' })
+    expect(canvasCommandMocks.updateWorkflowBinding?.('child', 'q', .4)).toBe(true)
+    const qHandle = encodeEndpointHandle({ kind: 'workflow-input', id: 'q' })
+    edgeUpdateHandler!({ edge: mockEdges[0], connection: { source: 'source', target: 'child',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'number' }), targetHandle: qHandle,
+    } })
+    expect(target.data.bindings).toEqual({})
+    expect(target.data.connectedInputs[handle]).toBeUndefined()
+    expect(target.data.connectedInputs[qHandle]).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('forwards a child field by stable ID without overriding its existing binding', async () => {
+    const child = makeGraph({ interface: { inputs: [{
+      id: 'p', name: 'P', kind: 'field', schema: { type: 'int', connectable: 'never' },
+      default: { __type__: 'int', value: 1 }, targets: [],
+    }], outputs: [] } })
+    const graph = makeGraph({ nodes: [{ type: 'workflow', id: 'child', name: 'Child', position: [0, 0],
+      workflow: child, bindings: { p: { __type__: 'int', value: 5 } }, enabled: true, collapsed: false,
+    }] })
+    const { wrapper, sessionId } = await mountNestedCanvas(graph)
+    expect(canvasCommandMocks.toggleWorkflowInput?.('child', 'p')).toEqual({ status: 'changed' })
+    const draft = useNestedWorkflowSessionsStore().sessionById(sessionId)!.draft
+    expect(draft.interface.inputs).toEqual([expect.objectContaining({ kind: 'field', default: null,
+      schema: { type: 'int', connectable: 'never' }, targets: [{ node: 'child', port: { kind: 'workflow', id: 'p' } }],
+    })])
+    expect(mockNodes.find(node => node.id === 'child')!.data.bindings.p).toEqual({ __type__: 'int', value: 5 })
     wrapper.unmount()
   })
 

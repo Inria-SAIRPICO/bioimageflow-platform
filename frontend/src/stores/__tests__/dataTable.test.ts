@@ -98,7 +98,7 @@ describe('dataTable store canvas ownership', () => {
     expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe('/a.csv')
 
     mockedPost.mockRejectedValueOnce({
-      response: { status: 409, data: { detail: 'B is preparing' } },
+      response: { status: 409, data: { error: 'result_pending', detail: 'B is preparing' } },
     })
     await store.fetchCanvasNodeData(canvasB, 'shared', {
       page: 8,
@@ -157,7 +157,7 @@ describe('dataTable store canvas ownership', () => {
         attemptsA += 1
         if (attemptsA === 1) {
           return Promise.reject({
-            response: { status: 409, data: { detail: 'A is preparing' } },
+            response: { status: 409, data: { error: 'result_pending', detail: 'A is preparing' } },
           }) as any
         }
         return Promise.resolve({ data: response('/retried-a.csv', 0) }) as any
@@ -401,7 +401,7 @@ describe('dataTable store canvas ownership', () => {
     canvasSessionRegistry.activate(canvasA)
     const store = useDataTableStore()
     mockedPost
-      .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Preparing data' } } })
+      .mockRejectedValueOnce({ response: { status: 409, data: { error: 'result_pending', detail: 'Preparing data' } } })
       .mockResolvedValueOnce({ data: {
         mode: 'merged',
         sources: [],
@@ -423,6 +423,34 @@ describe('dataTable store canvas ownership', () => {
     expect(mockedPost).toHaveBeenCalledTimes(2)
     expect(store.projection?.mode).toBe('merged')
     expect(store.projectionLoading).toBe(false)
+  })
+
+  it('shows permanent consolidated conflicts immediately without polling', async () => {
+    vi.useFakeTimers()
+    const [canvas] = registerCanvases()
+    canvasSessionRegistry.activate(canvas)
+    mockedPost.mockRejectedValue({ response: { status: 409, data: { error: 'result_unavailable', detail: 'Unsupported saved result; re-run this node' } } })
+    const store = useDataTableStore()
+    await store.fetchProjection({
+      workflow_id: 'a', sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
+    })
+    expect(store.projectionLoading).toBe(false)
+    expect(store.projectionError).toBe('Unsupported saved result; re-run this node')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows permanent individual conflicts immediately without polling', async () => {
+    vi.useFakeTimers()
+    const [canvas] = registerCanvases()
+    mockedPost.mockRejectedValue({ response: { status: 409, data: { detail: 'Captured result identity no longer matches' } } })
+    const store = useDataTableStore()
+    await store.fetchCanvasNodeData(canvas, 'node', { workflowName: 'a' })
+    expect(store.isCanvasPending(canvas, 'node')).toBe(false)
+    expect(store.isCanvasLoading(canvas, 'node')).toBe(false)
+    expect(store.getCanvasError(canvas, 'node')).toBe('Captured result identity no longer matches')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 
   it('downloads merged CSV with the current source and sort contract', async () => {
@@ -465,5 +493,140 @@ describe('dataTable store canvas ownership', () => {
       sort_order: 'desc',
     })
     expect(mockedPost.mock.calls[2][1]).not.toHaveProperty('page')
+  })
+
+  it('publishes one inspection epoch only after an unchanged-ID refresh succeeds', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const identity = { run_id: 'run-A', node_key: 'node', result_key: 'rk-A', record_id: 'rec-A' }
+    const request = { workflow_id: 'a', sources: [{ node_id: 'node', role: 'anchor' as const, label: 'Node', column_aliases: {} }] }
+    const data = { mode: 'merged', sources: [{ ...request.sources[0], result_identity: identity }],
+      columns: [], rows: [], total_rows: 0, unfiltered_total_rows: 0, page: 0, page_size: 250 }
+    mockedPost.mockResolvedValueOnce({ data } as any)
+    await store.fetchProjection(request)
+    const epoch = store.inspectionKey
+    const pendingRefresh = deferred<{ data: any }>()
+    mockedPost.mockReturnValueOnce(pendingRefresh.promise as any)
+    const refresh = store.fetchProjection(request, { captureLatest: true })
+    expect(store.inspectionKey).toBe(epoch)
+    expect(store.projection).toEqual(data)
+    pendingRefresh.resolve({ data })
+    await refresh
+    expect(Number(store.inspectionKey.split(':')[1])).toBe(Number(epoch.split(':')[1]) + 1)
+    const accepted = store.inspectionKey
+    mockedPost.mockRejectedValueOnce(new Error('Refresh unavailable'))
+    await store.fetchProjection(request, { captureLatest: true })
+    expect(store.inspectionKey).toBe(accepted)
+    expect(store.projection).toEqual(data)
+  })
+
+  it('fences pending old-mode responses and preserves pins and sort across a mode change', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const identity = { run_id: 'run-A', node_key: 'node', result_key: 'rk-A', record_id: 'rec-A' }
+    const request = { workflow_id: 'a', sources: [{ node_id: 'node', role: 'anchor' as const, label: 'Node', column_aliases: {} }] }
+    const data = { mode: 'merged', sources: [{ ...request.sources[0], result_identity: identity }],
+      columns: [], rows: [], total_rows: 0, unfiltered_total_rows: 0, page: 0, page_size: 250 }
+    mockedPost.mockResolvedValue({ data } as any)
+    await store.fetchProjection(request)
+    await store.setProjectionFilters([{ column: 'value', operator: 'equals', value: 1 }])
+    await store.setProjectionSort('value', 'desc')
+    const epoch = store.inspectionKey
+    const obsolete = deferred<{ data: any }>()
+    mockedPost.mockReturnValueOnce(obsolete.promise as any)
+    const oldRead = store.setProjectionPage(1)
+    const oldSignal = mockedPost.mock.calls[mockedPost.mock.calls.length - 1]![2]!.signal as AbortSignal
+    store.setBrowsingMode('continuous')
+    expect(oldSignal.aborted).toBe(true)
+    obsolete.resolve({ data: { ...data, total_rows: 1000 } })
+    await oldRead
+    expect(store.projection?.mode === 'merged' && store.projection.total_rows).toBe(0)
+    await store.fetchProjection(request, { preserveQuery: true })
+    expect(mockedPost.mock.calls[mockedPost.mock.calls.length - 1]![1]).toMatchObject({
+      page: 0, page_size: 32, sort_by: 'value', sort_order: 'desc',
+      filters: [{ column: 'value', operator: 'equals', value: 1 }],
+      sources: [{ ...request.sources[0], result_identity: identity }],
+    })
+    expect(store.inspectionKey).toBe(epoch)
+  })
+
+  it('keeps captured stacked identities when downloading a displayed individual result', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const identity = { run_id: 'run-A', node_key: 'node', result_key: 'rk-A', record_id: 'rec-A' }
+    const request = { workflow_id: 'a', sources: [{ node_id: 'node', role: 'anchor' as const, label: 'Node', column_aliases: {} }] }
+    mockedPost.mockResolvedValueOnce({ data: { mode: 'stacked', sources: [{ ...request.sources[0], result_identity: identity }], reason: 'independent', message: 'Separate' } } as any)
+    await store.fetchProjection(request)
+    const epoch = store.inspectionKey
+    mockedPost.mockResolvedValueOnce({ data: { ...response('/captured.tif', 0), source_identity: identity, identity_status: 'captured' } } as any)
+    await store.fetchNodeData('node', { workflowName: 'a', resultIdentity: identity })
+    expect(store.inspectionKey).toBe(epoch)
+    mockedPost.mockResolvedValueOnce({ data: new Blob(['csv']) } as any)
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:csv') })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    await store.downloadCsv('node', 'a')
+    expect(mockedPost.mock.calls[2]![1]).toMatchObject({ result_identity: identity })
+  })
+
+  it('uses the preferred and local page sizes for a legacy merged fallback in continuous mode', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    store.setPreferredPageSize(250)
+    store.setBrowsingMode('continuous')
+    const captured = { run_id: 'run-A', node_key: 'captured', result_key: 'rk-A', record_id: 'rec-A' }
+    const request = { workflow_id: 'a', sources: [
+      { node_id: 'captured', role: 'anchor' as const, label: 'Captured', column_aliases: {} },
+      { node_id: 'legacy', role: 'context' as const, label: 'Legacy', column_aliases: {} },
+    ] }
+    mockedPost.mockImplementation(async (_url, body: any) => ({ data: {
+      mode: 'merged', sources: body.sources.map((source: any) => ({ ...source,
+        result_identity: source.node_id === 'captured' ? captured : null })),
+      columns: [], rows: [{ index: '0', values: {}, source_rows: { captured: 0, legacy: 0 } }],
+      total_rows: 1, unfiltered_total_rows: 1, page: body.page, page_size: body.page_size,
+    } }) as any)
+    await store.fetchProjection(request)
+    expect(mockedPost.mock.calls.map(call => (call[1] as any).page_size)).toEqual([32, 250])
+    expect((mockedPost.mock.calls[1]![1] as any).sources.map((source: any) => source.result_identity)).toEqual([captured, null])
+    expect(store.projectionPage.pageSize).toBe(250)
+    expect(store.isContinuous()).toBe(false)
+    const acceptedEpoch = store.inspectionKey
+    await store.setProjectionPage(0, 25)
+    expect(mockedPost.mock.calls).toHaveLength(3)
+    expect(mockedPost.mock.calls[2]![1]).toMatchObject({ page_size: 25 })
+    expect(store.projectionPage.pageSize).toBe(25)
+    expect(store.inspectionKey).toBe(acceptedEpoch)
+    await store.fetchProjection(request, { preserveQuery: true })
+    expect(mockedPost.mock.calls).toHaveLength(4)
+    expect(mockedPost.mock.calls[3]![1]).toMatchObject({ page_size: 25 })
+  })
+
+  it('uses real paginator sizes for unknown and known legacy individual results in continuous mode', async () => {
+    const [canvasA, canvasB] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    store.setPreferredPageSize(250)
+    store.setBrowsingMode('continuous')
+    mockedPost.mockImplementation(async (_url, body: any) => ({ data: {
+      ...response('/legacy.tif', body.page), page_size: body.page_size,
+      total_rows: 1, unfiltered_total_rows: 1, source_identity: null,
+    } }) as any)
+    await store.fetchNodeData('node', { workflowName: 'a' })
+    expect(mockedPost.mock.calls.map(call => (call[1] as any).page_size)).toEqual([32, 250])
+    expect(store.getPageState('node').pageSize).toBe(250)
+    expect(store.isContinuous('node')).toBe(false)
+    const acceptedEpoch = store.inspectionKey
+    await store.setPageSize('node', 25, { workflowName: 'a' })
+    expect(mockedPost.mock.calls).toHaveLength(3)
+    expect(mockedPost.mock.calls[2]![1]).toMatchObject({ page_size: 25 })
+    expect(store.getPageState('node').pageSize).toBe(25)
+    expect(store.inspectionKey).toBe(acceptedEpoch)
+    await store.fetchCanvasNodeData(canvasB, 'node', { workflowName: 'b', pageSize: 25 })
+    expect(mockedPost.mock.calls.slice(3).map(call => (call[1] as any).page_size)).toEqual([32, 25])
+    expect(store.getCanvasPageState(canvasB, 'node').pageSize).toBe(25)
   })
 })

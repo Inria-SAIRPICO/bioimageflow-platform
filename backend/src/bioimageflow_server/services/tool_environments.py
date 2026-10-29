@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Callable
 
@@ -186,6 +187,13 @@ class ToolEnvironmentService:
 
     def location(self, env_name: str) -> str | None:
         """Return the managed location for an environment, including before creation."""
+        return self.locations((env_name,))[env_name]
+
+    def locations(self, env_names: Iterable[str]) -> dict[str, str]:
+        """Resolve exact names from one fresh inventory without creating runtimes."""
+        names = dict.fromkeys(env_names)
+        if not names:
+            return {}
         manager = self._managed_environments
         if manager is None:
             # Construct the BioImageFlow wrapper first so it configures the
@@ -194,17 +202,12 @@ class ToolEnvironmentService:
             from bioimageflow.env_manager import get_shared_environment_manager
 
             manager = self._managed_environments = get_shared_environment_manager()
-        info = next(
-            (
-                candidate
-                for candidate in manager.managed_environments()
-                if candidate.name == env_name
-            ),
-            None,
-        )
-        if info is not None:
-            return str(Path(info.path).expanduser().resolve())
-        return str((Path(manager.environments_root) / env_name).expanduser().resolve())
+        inventory = {info.name: info.path for info in manager.managed_environments()}
+        paths: dict[str, str] = {}
+        for name in names:
+            target = inventory[name] if name in inventory else Path(manager.environments_root) / name
+            paths[name] = str(Path(target).expanduser().resolve())
+        return paths
 
     def _environment_spec(self, tool: Any) -> EnvironmentSpec | None:
         if not tool.environment:

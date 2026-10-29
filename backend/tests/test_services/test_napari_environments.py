@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import os
 import sys
 from pathlib import Path
+from uuid import uuid4
 import pytest
 
 from bioimageflow_server.models.napari_environments import (
     NapariFilenameRuleCreate,
+    NapariEnvironmentOperation,
+    NapariManagedRecipeSelection,
 )
 from bioimageflow_server.services.napari_environments import (
     PROBE_OUTPUT_LIMIT,
@@ -151,7 +155,7 @@ async def test_legacy_wetlands_workspace_is_adopted_without_probe(tmp_path: Path
 
     service = await _service(tmp_path, managed_singleton_roots=[workspace], probe_runner=runner)
 
-    await service.adopt_managed_singleton()
+    await service.initialize_registry()
 
     snapshot = service.snapshot()
     assert snapshot.revision == 1
@@ -180,7 +184,7 @@ async def test_forgotten_legacy_installation_stays_forgotten_after_restart(tmp_p
     workspace = tmp_path / "wetlands" / "pixi" / "workspaces" / "napari"
     _conda(workspace / ".pixi" / "envs" / "default")
     service = await _service(tmp_path, managed_singleton_roots=[workspace])
-    await service.adopt_managed_singleton()
+    await service.initialize_registry()
     adopted = service.snapshot().environments[0]
 
     forgotten = await service.forget(adopted.id, expected_revision=1)
@@ -188,8 +192,104 @@ async def test_forgotten_legacy_installation_stays_forgotten_after_restart(tmp_p
     assert service.store.get().napari_suppressed_legacy_roots == [adopted.root]
 
     reloaded = await _service(tmp_path, managed_singleton_roots=[workspace])
-    await reloaded.adopt_managed_singleton()
+    await reloaded.initialize_registry()
     assert reloaded.snapshot().environments == []
+
+
+async def test_initialize_registry_declares_one_persistent_default_without_runtime_access(tmp_path: Path) -> None:
+    def forbidden(*_args: object) -> object:
+        raise AssertionError("initial registry setup must not access a runtime or probe")
+
+    service = await _service(
+        tmp_path, managed_singleton_roots=[tmp_path / "absent-legacy"],
+        probe_runner=forbidden, environment_manager_provider=forbidden,
+    )
+    await service.store.patch({"fiji_path": "/unchanged/manual/fiji"})
+    await asyncio.gather(service.initialize_registry(), service.initialize_registry())
+    snapshot = service.snapshot()
+    assert snapshot.revision == 1
+    assert len(snapshot.environments) == 1
+    environment = snapshot.environments[0]
+    assert environment.state == "setup_needed"
+    assert environment.name == "Default napari"
+    assert environment.managed is not None
+    assert environment.managed.recipe == NapariManagedRecipeSelection().resolved()
+    assert environment.managed.installation_generation is None
+    assert environment.interpreter == ""
+    assert snapshot.default_environment_id == environment.id
+    assert snapshot.operations == []
+    assert not (tmp_path / "absent-legacy").exists()
+    before = service.store.path.read_bytes()
+    with pytest.raises(NapariEnvironmentError) as refusal:
+        await service.probe(environment.id, expected_revision=1)
+    assert refusal.value.code == "napari_environment_setup_required"
+    reloaded = await _service(tmp_path, probe_runner=forbidden, environment_manager_provider=forbidden)
+    await reloaded.initialize_registry()
+    assert reloaded.snapshot() == snapshot
+    assert reloaded.store.path.read_bytes() == before
+    assert reloaded.store.get().fiji_path == "/unchanged/manual/fiji"
+
+
+async def test_initialize_registry_preserves_manual_entries_and_default_choice(tmp_path: Path) -> None:
+    service = await _service(tmp_path)
+    await service.register("My viewer", str(_venv(tmp_path / "manual")), expected_revision=0)
+    await service.set_default(None, expected_revision=1)
+    before = service.store.path.read_bytes()
+    await service.initialize_registry()
+    assert service.store.path.read_bytes() == before
+    assert service.snapshot().default_environment_id is None
+    assert [entry.name for entry in service.snapshot().environments] == ["My viewer"]
+
+
+async def test_forget_uninstalled_default_clears_references_without_recreation(tmp_path: Path) -> None:
+    def forbidden(*_args: object) -> object:
+        raise AssertionError("forgetting a declaration must not touch runtime or probe")
+
+    service = await _service(tmp_path, probe_runner=forbidden, environment_manager_provider=forbidden)
+    await service.initialize_registry()
+    environment = service.snapshot().environments[0]
+    await service.add_rule(NapariFilenameRuleCreate(
+        value="tif", mode="extension", environment_id=environment.id, expected_revision=1,
+    ))
+    await service.forget(environment.id, expected_revision=2)
+    assert service.snapshot().environments == []
+    assert service.snapshot().filename_rules == []
+    assert service.snapshot().default_environment_id is None
+    before = service.store.path.read_bytes()
+    reloaded = await _service(tmp_path, probe_runner=forbidden, environment_manager_provider=forbidden)
+    await reloaded.initialize_registry()
+    assert reloaded.snapshot().environments == []
+    assert reloaded.store.path.read_bytes() == before
+
+
+async def test_forget_uninstalled_declaration_refuses_an_active_operation(tmp_path: Path) -> None:
+    service = await _service(tmp_path)
+    await service.initialize_registry()
+    environment = service.snapshot().environments[0]
+    operation = NapariEnvironmentOperation(
+        id=uuid4(), environment_id=environment.id, kind="retry", state="pending", progress=0, message="Setup queued",
+    )
+    await service.store.patch_napari_registry(1, {"napari_environment_operations": [operation]})
+    before = service.store.path.read_bytes()
+    with pytest.raises(NapariEnvironmentError) as refusal:
+        await service.forget(environment.id, expected_revision=2)
+    assert refusal.value.code == "napari_environment_mutation_active"
+    assert service.store.path.read_bytes() == before
+
+
+async def test_initialize_registry_is_inert_in_webapp_mode(tmp_path: Path) -> None:
+    store = SettingsStore(tmp_path / "webapp.json", deployment_mode="webapp")
+    await store.load()
+
+    def forbidden(*_args: object) -> object:
+        raise AssertionError("webapp must not inspect a local installation")
+
+    service = NapariEnvironmentService(store, managed_singleton_roots=[tmp_path / "legacy"],
+                                      probe_runner=forbidden, environment_manager_provider=forbidden)
+    service._resolve_installation = forbidden  # type: ignore[method-assign, assignment]
+    await service.initialize_registry()
+    assert service.snapshot().revision == 0
+    assert service.snapshot().environments == []
 
 
 async def test_probe_is_package_metadata_only_and_detects_drift(tmp_path: Path) -> None:

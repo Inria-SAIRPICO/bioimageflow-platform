@@ -61,7 +61,7 @@ def ensure_platform_source_reference(
     if source is not None and (source / ".git").exists():
         try:
             subprocess.run(
-                ["git", "clone", "--depth", "1", "--no-tags", str(source), str(target)],
+                ["git", "clone", "--no-local", "--depth", "1", "--no-tags", str(source), str(target)],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

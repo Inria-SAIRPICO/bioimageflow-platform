@@ -59,7 +59,7 @@ def _build_workflow(
     """Translate ``graph`` into a library :class:`Workflow`.
 
     Returns a ``(workflow, errors, disabled_node_ids)`` tuple. The
-    workflow is always non-None (``validate_only=True, partial=True``).
+    workflow may be None when owned source capture fails before materialization.
     """
     from bioimageflow.workflow import Workflow
 
@@ -81,6 +81,7 @@ def _build_workflow(
         engine=root_engine,
         execution=translation.lib_dict["config"]["execution"],
         auto_install=False,
+        tool_store_path=registry.tool_store_path(),
     )
     assert isinstance(result, tuple)
     workflow, lib_errors = result
