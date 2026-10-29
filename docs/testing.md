@@ -154,6 +154,7 @@ It runs all backend tests in one invocation with no marker exclusion, all fronte
 Before starting the tests it installs the pinned published `bioimageflow-common-tools` package into a fresh temporary tool store.
 The command fails if installation or external certification cannot run, so a successful full result never hides deselected external tests.
 Chromium and Firefox run against separate temporary roots and servers in parallel.
+Each browser server keeps Vite's generated dependency cache in its own temporary root, so parallel optimization cannot replace another server's cached modules.
 Local browser lanes stop after the first failure by default.
 `full` subsumes the backend/frontend product checks, both browser projects, and common-tools certification; it does not run `check docs` or native/manual acceptance.
 Run documentation acceptance separately when required rather than stacking already-covered product lanes before `full`.

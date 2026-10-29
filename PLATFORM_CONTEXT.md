@@ -468,6 +468,7 @@ Build and validate one publication set rather than routinely rebuilding in both 
 The user authorizes continuation through the campaign END, subject to technical gates and explicit scope decisions; M3/M4 follow adoption and desktop M5 is LAST.
 
 Campaign task worktrees have explicit ownership and retirement: preserve held/dirty/unmerged work, stop owned processes, retire only completed task-owned runtimes/caches, then move clean merged trees to Trash, prune and remove merged branches as AGENTS requires.
+Parallel browser test servers keep Vite's generated dependency cache within their separate disposable E2E runtime roots.
 Cleanup measurements supply no product evidence, and protected/shared/user environments and metadata remain untouched.
 Keep caller incarnation, accepted revision, catalog freshness, presentation intent and physical lifetime as separate authorities when choosing follow-up repairs.
 Use one clean current design without backward-only aliases or duplicate authorities, preserving essential features, current data and recovery.
