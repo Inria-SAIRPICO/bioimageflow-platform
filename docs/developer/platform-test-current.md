@@ -5,7 +5,7 @@ orphan: true
 # Campaign current checkpoint
 
 This is the operational resume pointer, not a diary.
-Read [AGENTS.md](../../AGENTS.md), [PLATFORM_CONTEXT.md](../../PLATFORM_CONTEXT.md), then only the relevant task/specification and directly available evidence.
+Read [AGENTS.md](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/AGENTS.md), [PLATFORM_CONTEXT.md](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/PLATFORM_CONTEXT.md), then only the relevant task/specification and directly available evidence.
 The [plan](platform-test-plan.md) defines the campaign outcomes; the [dashboard](platform-test-dashboard.md) is the historical obligation ledger, not current-revision certification.
 Do not resume by reading or appending the historical progress log.
 

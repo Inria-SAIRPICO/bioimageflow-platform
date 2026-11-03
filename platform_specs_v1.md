@@ -81,7 +81,7 @@ Clean selected graphs reuse their complete-graph compilation.
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
 
-The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.x resolves lazily evaluated class annotations on Python 3.14 so installed tools retain their input and output schemas.
+The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.2 or newer in the 0.5.x line resolves lazily evaluated class annotations and captures compiler-generated slice constants on Python 3.14 so installed tools retain their schemas and executable identity.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
 Store scanning and explicit package lifecycle operations use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
@@ -91,7 +91,7 @@ Installed code is held as an immutable admitted generation selected by canonical
 Its first admission captures installation metadata, selected controller dependency compatibility, source content and installed inherited implementation owners; subsequent loads and plans reuse those facts without repeating distribution inventories, installation-record walks or installed-source checks.
 Editable and workflow-local sources retain fresh capture for each operation, while parameters, bindings, runtime readiness and selected immutable result records retain their normal checks.
 Generation counters and store paths govern selection and lifetime, not scientific cache identity.
-The normal platform dependency manifest and lock select published BioImageFlow 0.9.5/Core 0.5.1 with this lifecycle integration.
+The normal platform dependency manifest and lock select published BioImageFlow 0.9.6/Core 0.5.2 with this lifecycle integration.
 
 Installed file edits do not trigger hot reload or change the admitted generation.
 A controlled refresh or uninstall must retire the exact selected generation before replacement or removal, and a real store-root change preflights all affected published selections together, including packages loaded only through carried workflow bindings.
