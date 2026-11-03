@@ -173,6 +173,7 @@ Explicit package references remain package requirements even when the catalog ha
 The platform app environment supplies `pip` for tool-store package installation; versioned and source-import paths install only the selected tool distribution through the app interpreter, using the already installed compatible controller dependencies.
 Processing recipes provision their worker dependencies through Wetlands at execution preparation, independently of tool-store installation.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
+Owned source members reject POSIX and Windows path anchors, including rooted and drive-relative paths, before walking ancestors for symlink checks.
 Custom-tool usage reports traverse saved recursive graphs, distinguish tool and workflow nodes, and return each affected workspace-relative workflow ID once.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
 An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
@@ -438,6 +439,7 @@ For an API change, trace the backend model and service, router, generated type, 
 
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines local/distributed feature suites and focused, quick, scoped completion, browser, full, and certification lanes.
+  The Release validation workflow runs the local full lane and documentation check for exact `release/**` candidates before promotion to main; native desktop acceptance remains separate.
 - Tests default to local features in every runner; `scripts/test --suite distributed|all ...` opts into distributed features.
   Native distributed markers/tags replace campaign-specific selectors and duplicate exclusion inventories.
   Required PR/push CI and Monday weekly validation run local features; `.github/workflows/distributed.yml` is a separate manual-only optional workflow.

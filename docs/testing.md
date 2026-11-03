@@ -250,6 +250,8 @@ Use per-case markers in mixed files; module-wide markers are appropriate only wh
 
 ## CI workflows
 
+Pushes to `release/**` and explicit **Release validation** dispatches run the authoritative local `full` lane followed by `check docs` on one exact candidate commit. The retained artifact includes command logs, browser evidence and coverage for 30 days. This is the automated release gate for machines that cannot run the Unix-oriented full runner locally; native desktop acceptance remains separate.
+
 | Workflow | Trigger | Feature suite | Purpose |
 | --- | --- | --- | --- |
 | **CI** (`ci.yml`) | Push to `main`, pull request | Local | Path-selected backend/frontend quality, documentation, Chromium, and critical Firefox checks; aggregated by **Required CI**. |

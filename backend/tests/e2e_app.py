@@ -349,12 +349,10 @@ def _install_lifecycle_fixture(app: FastAPI, root: Path) -> None:
             "worker_pids": [worker.process_id for worker in public.running_workers(item.name)],
         } for item in public.managed_environments()]
         alive = []
+        from tests.fixtures.process_state import process_is_running
         for pid in retired:
-            try:
-                os.kill(pid, 0)
+            if process_is_running(pid):
                 alive.append(pid)
-            except ProcessLookupError:
-                pass
         return {
             "inventory": inventory, "recreate_calls": list(calls),
             "retired_worker_pids": retired, "retired_workers_alive": alive,

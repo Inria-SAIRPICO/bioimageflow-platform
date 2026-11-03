@@ -105,9 +105,9 @@ async def _drive(runtime: Path, receipt: Path) -> None:
         return value
 
     def absent(pids: list[int]) -> None:
+        from tests.fixtures.process_state import process_is_running
         for pid in pids:
-            with pytest.raises(ProcessLookupError):
-                os.kill(pid, 0)
+            assert not process_is_running(pid)
 
     def closed(value: dict[str, Any]) -> bool:
         return value["state"] == "closed" and not any(

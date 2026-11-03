@@ -22,6 +22,7 @@ from typing import Any
 import zipfile
 
 import pytest
+from tests.fixtures.process_state import process_is_running
 
 pytestmark = [pytest.mark.external, pytest.mark.integration, pytest.mark.serial, pytest.mark.slow]
 
@@ -278,8 +279,7 @@ async def _drive(runtime: Path, receipt: Path) -> None:
         assert not wetlands.is_running(ManagedArray.environment.name)
         assert get_shared_environment_manager().running_workers(ManagedArray.environment.name) == ()
         assert selected_pid is not None
-        with pytest.raises(ProcessLookupError):
-            os.kill(selected_pid, 0)
+        assert not process_is_running(selected_pid)
         manager.retry_resource_cleanup()
         drained = status(compute_context.shared_memory_context)
         assert completely_closed(drained)

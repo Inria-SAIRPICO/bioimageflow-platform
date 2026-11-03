@@ -149,12 +149,10 @@ class ObservedProcessingManager:
             "current" if info["recipe_hash"] == requested else "stale"
         )
         alive: list[int] = []
+        from tests.fixtures.process_state import process_is_running
         for pid in self.retired_worker_pids:
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                continue
-            alive.append(pid)
+            if process_is_running(pid):
+                alive.append(pid)
         return json.loads(json.dumps({
             "inventory": infos, "preparations": list(self.preparations),
             "events": list(self.events),
