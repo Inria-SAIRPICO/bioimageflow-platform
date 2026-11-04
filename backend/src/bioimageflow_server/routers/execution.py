@@ -15,11 +15,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from bioimageflow.storage import CacheCorruptionError
 
 from bioimageflow_server.models.execution import (
     ExecutionRequest,
 )
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.output_planning import (
+    OutputTemplateCheckRequest,
+    OutputTemplateCheckResponse,
+)
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow import validate_workflow_id
 from bioimageflow_server.models.workflow_draft import (
@@ -29,6 +34,7 @@ from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionManager,
     ExecutionRetryError,
+    OutputTemplateCorrectionUnavailable,
     WorkflowBuildError,
     NodeCacheClearPlan,
     commit_node_cache_clear,
@@ -237,6 +243,7 @@ async def run_execution(
                         draft_revision=body.draft_revision,
                         ensure_context_current=ensure_context_current,
                         reserved_context=reserved_context,
+                        workflow_generation=attempt_context.identity_generation,
                     )
                     return {"status": "started", **context.model_dump()}
                 except _RunWorkflowContextChanged:
@@ -287,6 +294,65 @@ async def run_execution(
             status_code=422,
             detail=f"Invalid workflow draft: {exc}",
         ) from exc
+
+
+@router.post("/output-templates/check", response_model=OutputTemplateCheckResponse)
+async def check_output_templates(
+    body: OutputTemplateCheckRequest,
+    execution_manager: ExecutionManager | None = Depends(get_execution_manager),
+    storage_path: Path | None = Depends(get_storage_path),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+    workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
+) -> OutputTemplateCheckResponse:
+    """Check a correction without changing its graph, cache, or execution."""
+    if execution_manager is None or workflow_store is None or workflow_draft_service is None:
+        raise HTTPException(status_code=503, detail="Output template correction is not configured")
+    if execution_manager.is_running:
+        raise HTTPException(status_code=423, detail="Wait for execution to settle before correcting outputs")
+
+    def capture_authority() -> tuple[Any, _WorkflowRuntimeContext]:
+        with workflow_store.workflow_mutation(body.workflow_id):
+            workflow_store.ensure_workflow_mutations_available()
+            draft = workflow_draft_service.get_draft_authority_snapshot(body.workflow_id)
+            if draft.draft_revision != body.draft_revision:
+                raise WorkflowDraftRevisionConflict(
+                    expected_revision=body.draft_revision, current=draft,
+                )
+            return draft, _WorkflowRuntimeContext(
+                workflow_store.workflow_generation(body.workflow_id),
+                resolve_workflow_storage_path(body.workflow_id, workflow_store, storage_path),
+            )
+
+    try:
+        async with execution_manager.exclusive_idle_mutation():
+            draft, expected = await run_graph_work(capture_authority)
+            if expected.storage_path is None:
+                raise OutputTemplateCorrectionUnavailable("The original workflow storage is unavailable")
+            result = await run_graph_work(partial(
+                execution_manager.check_output_templates,
+                execution_id=body.execution_id,
+                workflow_id=body.workflow_id,
+                draft_revision=body.draft_revision,
+                node_id=body.node_id,
+                templates=body.templates,
+                graph=draft.graph,
+                workflow_generation=expected.identity_generation,
+                storage_path=expected.storage_path,
+            ))
+            await run_graph_work(partial(
+                _ensure_run_workflow_context,
+                workflow_store, body.workflow_id, storage_path, expected,
+                workflow_draft_service, body.draft_revision, draft.graph,
+            ))
+            return result
+    except WorkflowDraftRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OutputTemplateCorrectionUnavailable, ExecutionConflictError, _RunWorkflowContextChanged) as exc:
+        raise HTTPException(status_code=409, detail=str(exc) or "The workflow context changed") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="The original workflow is unavailable") from exc
+    except (ValueError, TypeError, CacheCorruptionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/stop")

@@ -17,6 +17,7 @@ function makeCanvasCommandHandlers() {
     setInputPinned: vi.fn(() => true),
     resetWorkflowBinding: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
+    setOutputTemplates: vi.fn(() => true),
     toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
     toggleWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
     renameWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
@@ -69,6 +70,12 @@ const nodeEditCases: Array<{
     spy: handlers => handlers.setOutputTemplate,
     expectedArgs: ['shared', 'result', '/tmp/out.tif'],
   },
+  {
+    name: 'atomic scoped output templates',
+    invoke: commands => commands.setOutputTemplates('child/shared', { mask: 'mask_{row_index}.tif', table: 'table_{row_index}.csv' }),
+    spy: handlers => handlers.setOutputTemplates,
+    expectedArgs: ['child/shared', { mask: 'mask_{row_index}.tif', table: 'table_{row_index}.csv' }],
+  },
 ]
 
 const workflowInterfaceCases: Array<{
@@ -108,6 +115,14 @@ afterEach(() => {
 })
 
 describe('active canvas commands', () => {
+  it('refuses a delayed output correction after another canvas becomes active', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const handlers = makeCanvasCommandHandlers()
+    useCanvasCommands({ descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' }, ...handlers, updateParameter: vi.fn() })
+    graphSyncCanvasSessions.activate(rootId)
+    expect(useCanvasCommands().setOutputTemplates('child/shared', { mask: 'safe.tif' }, canvasIdFromPanelId('workflow:other'))).toBe(false)
+    expect(handlers.setOutputTemplates).not.toHaveBeenCalled()
+  })
   it('routes tool creation with parameter overrides to the active canvas', () => {
     const rootId = canvasIdFromPanelId('workflow:root')
     const addToolNode = vi.fn(() => 'files_1')

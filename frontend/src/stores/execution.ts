@@ -12,6 +12,7 @@ import type {
   GraphState,
   GraphValidationError,
   NodeStatus,
+  OutputPlanningReport,
 } from '@/api/types'
 
 export interface ProgressInfo {
@@ -29,6 +30,7 @@ interface ExecutionResult {
   success: boolean
   errors: Array<Record<string, unknown>>
   node_statuses: Record<string, NodeStatus>
+  output_planning_reports?: OutputPlanningReport[]
 }
 
 interface ExecutionStatus {
@@ -777,13 +779,15 @@ export const useExecutionStore = defineStore('execution', () => {
         payload,
       )
       const { reportError } = useErrorReporting()
-      reportError({
-        kind: 'execution_failed',
-        detail,
-        ...(fullDetail ? { fullDetail } : {}),
-        ...(nodeId ? { nodeId } : {}),
-        logToLogger: false,
-      })
+      if (!payload.output_planning_reports?.length) {
+        reportError({
+          kind: 'execution_failed',
+          detail,
+          ...(fullDetail ? { fullDetail } : {}),
+          ...(nodeId ? { nodeId } : {}),
+          logToLogger: false,
+        })
+      }
       if (!alreadyLogged) {
         useLoggerStore().addEntry({
           level: 'ERROR',

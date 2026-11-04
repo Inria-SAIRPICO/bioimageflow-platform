@@ -4,6 +4,7 @@ import type { ToolMetadata } from '@/api/types'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
+    output_file_declarations: {},
     name: 'LabelOverlaps',
     display_name: 'Label Overlaps',
     package: 'bioimageflow-common-tools',
@@ -30,6 +31,26 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
 }
 
 describe('reconcileOutputTemplates', () => {
+  it('initializes only declared writable destinations and naming bases', () => {
+    const result = reconcileOutputTemplates(makeTool({
+      outputs: {
+        exact: { type: 'Path', default: 'mask.tif' }, base: { type: 'Path', default: 'tile.tif' }, reference: { type: 'Path' },
+      },
+      output_file_declarations: {
+        exact: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+        base: { output_role: 'base', file_group: null, description: 'Generated filenames.' },
+        reference: { output_role: 'reference', file_group: null, description: '' },
+      },
+    }))
+    expect(result).toEqual({ exact: 'mask.tif', base: 'tile.tif' })
+  })
+
+  it('preserves an authored legacy override for backend diagnosis rather than silently erasing it', () => {
+    expect(reconcileOutputTemplates(makeTool({
+      outputs: { reference: { type: 'Path' } },
+      output_file_declarations: { reference: { output_role: 'reference', file_group: null, description: '' } },
+    }), { reference: 'legacy.tif' })).toEqual({ reference: 'legacy.tif' })
+  })
   it('drops stale template keys that are no longer path outputs', () => {
     const result = reconcileOutputTemplates(makeTool(), {
       overlaps: '{label_image.stem}_overlaps.csv',
@@ -55,6 +76,7 @@ describe('reconcileOutputTemplates', () => {
   it('does not create templates for DataFrameTool column declarations', () => {
     const result = reconcileOutputTemplates(
       makeTool({
+        output_file_declarations: {},
         tool_type: 'DataFrameTool',
         outputs: { path: { type: 'Path' } },
       }),

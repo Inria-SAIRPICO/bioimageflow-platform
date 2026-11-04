@@ -1,7 +1,10 @@
 """DownloadImages — download images from URLs."""
 
 from pathlib import Path
+from hashlib import sha256
+import re
 from typing import Annotated, Any
+from urllib.parse import unquote, urlsplit
 
 from bioimageflow_core import (
     Arguments,
@@ -12,6 +15,7 @@ from bioimageflow_core import (
     GUIMeta,
     IOModel,
     ProcessingTool,
+    PathBase,
     RowConsumption,
 )
 
@@ -50,7 +54,7 @@ class DownloadImages(ProcessingTool):
                 display_name="Path",
                 description="Local path of the downloaded file.",
             ),
-        ]
+        ] = PathBase("downloads/download")
         filename: Annotated[
             str,
             GUIMeta(
@@ -77,15 +81,20 @@ class DownloadImages(ProcessingTool):
         if context is None:
             raise RuntimeError("DownloadImages requires an execution context.")
 
-        output_dir = context.assets_dir
+        output_dir = Path(getattr(arguments, "path", context.assets_dir / "download")).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
         urls = [u.strip() for u in arguments.urls.strip().split("\n") if u.strip()]
         results = []
 
         for url in urls:
-            filename = url.rstrip("/").split("/")[-1]
-            dest = output_dir / filename
+            filename = unquote(urlsplit(url).path.rstrip("/").split("/")[-1]) or "download"
+            asset_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+            if asset_name in {".", ".."}:
+                asset_name = "download"
+            url_dir = output_dir / sha256(url.encode("utf-8")).hexdigest()
+            url_dir.mkdir(parents=True, exist_ok=True)
+            dest = url_dir / asset_name
 
             if not dest.exists():
                 print(f"Downloading {url} ...")

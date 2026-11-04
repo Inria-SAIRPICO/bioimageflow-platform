@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 
 RunState = Literal[
     "preparing",
@@ -55,6 +56,7 @@ class FailureDiagnosticSnapshot(BaseModel):
     attempt_id: str | None = None
     retry_status: str = "terminal"
     terminal: bool = True
+    output_planning_report: OutputPlanningReport | None = None
 
 
 class ClusterDiagnosticValue(BaseModel):

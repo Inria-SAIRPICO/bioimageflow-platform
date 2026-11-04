@@ -240,6 +240,17 @@ The backend resolves workflow-owned sources in that named storage context and re
 
 ## 9. Execution And Status
 
+Local processing exact-output planning uses the public library's `FileGroup` ownership contract before affected scientific callbacks.
+`Template` declares an exact destination, `PathBase` a generated naming base, and bare Path outputs returned references; template edits cannot change those roles or owner groups.
+Per-row, once and keyed file ownership remain independent of mapped/collective record consumption and DataFrame lineage.
+Reports distinguish `output_path_collision` from `output_group_destination_mismatch` and retain effective patterns, group identity, accurate counts, bounded expansion examples and verified correction suggestions.
+Completion events, status snapshots and retained local diagnostics preserve the typed report without parsing exception strings; incomplete or expired correction evidence retains explanation without claiming full revalidation.
+The correction flow waits for ordinary run settlement, checks exact current draft/run/source authority, applies a normal accepted graph edit without automatic Save, and starts a new run with the original full/selected targets.
+Nested corrections address the embedded graph's scoped node and respect private snapshot ownership rather than modifying saved-source provenance or silently overwriting an open editor.
+Proven editing warnings use the same public checker; unknown cases remain silent.
+Unexpected occupied files and dynamic generated file families retain their separate lower-level safeguards and are not automatically labelled template collisions.
+The versioned output/declaration contract prevents reuse of previously unsafe processing cache selections without deleting historical records or changing their read/export authority.
+
 Execution compiles the accepted recursive graph to one flat plan.
 Attached progress callbacks are fenced to the active running execution context; a delayed event from an earlier run cannot change a later run's status or emitted progress.
 Worker preparation and provision logs carry the public SDK call's explicit executable `scoped_node_path` with immutable run context, never a scope inferred from environment names, shared receipts or the last started node.
@@ -430,8 +441,8 @@ A workspace-document backup, when provided, remains a separate platform artifact
 
 ### Bundled demo workflows
 
-The application loads demo bundle version 6 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
-All packaged-tool bindings pin published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2; the maintainer exporter retains those release pins independently of source-checkout package versions.
+The application loads demo bundle version 7 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+All packaged-tool bindings pin the Core 0.6 output-ownership cohort: common/I/O/spot tools 0.3.0 and segmentation tools 0.4.0; the maintainer exporter retains those release pins independently of source-checkout package versions.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
 The bundled Fish Analysis marker branches use distinct internal node IDs and parallel execution with the locked published BioImageFlow runtime, whose parallel branch workers retain scoped names and result views. The final tool groups mapped overlap rows by their immediate parent image row index, yielding one row per input image and a weighted Global average row.

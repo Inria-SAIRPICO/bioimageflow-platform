@@ -6,6 +6,7 @@ import NodeResourcesTab from '../NodeResourcesTab.vue'
 import type { ToolMetadata } from '@/api/types'
 
 const tool = {
+  output_file_declarations: {},
   name: 'Segment', display_name: 'Segment', package: 'tests', package_version: '1',
   tool_type: 'ProcessingTool', accepts_upstream: true, dynamic_outputs: false,
   dataframe_output: true, row_consumption: 'mapped', documentation: '', tags: [], categories: [], inputs: {}, outputs: {},

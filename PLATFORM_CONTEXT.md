@@ -160,6 +160,9 @@ All affected generations are preflighted together before uninstall or an actual 
 Uninstall reserves retired package/version namespaces through physical removal and registry update, so concurrent workflow reads cannot re-admit the still-present directory.
 Selecting the same global store for another workspace does not retire its generations, and replacing controller dependencies requires a process restart.
 Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
+Local exact file ownership is separately declared by `Template(..., group=FileGroup.per_row()/once()/by(...))`; a bare Path output is a returned reference, while `PathBase(...)` identifies a generated naming family.
+Mapped exact templates default to per-row owners; collective templates declare ownership explicitly, and shared owners require one whole-node batch callback under either row-consumption mode.
+Output metadata exposes `output_role` and read-only `file_group` descriptions, so template controls do not infer writable intent from a Path annotation or let user naming edits change ownership.
 The canvas derives column-edge strands reactively from the target tool metadata and does not persist this presentation state in the graph.
 Do not infer structural names from UI labels or filenames.
 
@@ -252,6 +255,11 @@ The Logger retains its in-memory buffer and local level, node and search filters
 Disconnected log messages are not replayed, and the GUI buffer has no default reload-retention guarantee; backend disk logs and retained run diagnostics are separate authorities.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
+The library resolves admitted exact file owners before affected science, distinguishing different owners sharing one destination from one group requesting different destinations; `{group_index}` distinguishes keyed owners without splitting their members.
+Typed planning reports retain effective patterns and bounded expansion evidence across completion/status, while bounded lightweight correction evidence is separately fenced to the captured run, graph, inputs and source authority.
+After run settlement, the GUI checks custom templates through that same public library API, applies an ordinary durable draft edit without automatic Save, and starts a new run with the original full/selected intent and valid cache reuse.
+Stale or conflicting nested ownership refuses correction, accepted edits survive later start failure, and proven editing warnings remain separate from blocking graph validation; unknown cases stay silent.
+Returned references and naming bases retain their explicit scope; arbitrary internal writes are not made safe by declaration checks alone, and the final no-overwrite guard remains independent.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
 The execution banner's single overall bar uses the run's retained scoped executable leaf-node plan, including cached and selected dependencies, rather than the active canvas node count. Its text distinguishes completed nodes, current row position or completed rows, and per-row task progress; a successful run reaches 100%.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
@@ -448,7 +456,7 @@ For an API change, trace the backend model and service, router, generated type, 
 - [Campaign start](docs/developer/platform-test-start.md) resumes from that checkpoint and the task-relevant specification/source; the historical progress diary is optional lookup evidence, never required restart context.
 - [Specification intent](docs/developer/library-specification-intent-review.md), [test quality](docs/developer/library-test-quality-review.md) and [causal architecture review](docs/developer/library-causal-architecture-review.md) retain the accepted library findings and finite dispositions.
 - [Platform architecture audit](docs/developer/platform-test-architecture-audit.md) and [supplemental review](docs/developer/platform-supplemental-architecture-review.md) retain source coverage, cross-layer ownership and qualified candidates; their ledgers are evidence rather than application certification.
-- The current candidate's Task4/Result4 portable declaration and row/group contexts are checked before science and controller publication; normal Processing returns require a pinned selected record, while explicit public Storage/launcher transient workspaces remain separate.
+- The output-ownership candidate uses Task5/Result5, declaration contract v2 and execution contract v3; complete file-owner projection and row/group contexts are checked before science and controller publication, while normal Processing returns require a pinned selected record and explicit public Storage/launcher transient workspaces remain separate.
 - Canonical records preserve finite container kind, ordered primitive keys, exact scalar dtype/bytes, precision, nonfinite values and signed zero; Path/native/SharedArray leaves require exact manifest role/cell authority before hydration.
   Collective consumed-row groups and record relation/domain metadata preserve association independently of positional DataFrame merging and Processing column-pin alignment.
 - Native values capture independent accepted bytes and mutable SharedArrays receive independent sealed backings; numeric NPY2 views retain explicit controller scope ownership.
@@ -496,7 +504,7 @@ Inspect obvious repeated reads/hashes/copies and unnecessary dispatch on changed
 ### Remaining repository areas
 
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
-- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 6 with deterministic workflow artifacts pinned to published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2.
+- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 7 with deterministic workflow artifacts pinned to the Core 0.6 output-ownership cohort: common/I/O/spot tools 0.3.0 and segmentation tools 0.4.0.
   The exporter retains these explicit release pins independently of the example source checkout’s package versions.
   New-root initialization and explicit demo installation install the missing templates' exact recursive tool-package pins before publishing workflows, reusing healthy installed versions without changing active selections or existing demos.
   An awaited setup gate also covers reads after workspace switching; automatic failure leaves a usable empty root and logs explicit Storage retry guidance without repeating downloads on restart.

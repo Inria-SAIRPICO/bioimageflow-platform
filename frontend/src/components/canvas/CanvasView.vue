@@ -304,6 +304,7 @@ const canvasCommands = useCanvasCommands({
   setNodeResources,
   setInputPinned,
   setOutputTemplate,
+  setOutputTemplates,
   toggleWorkflowInput,
   toggleWorkflowOutput,
   renameWorkflowInput,
@@ -3870,6 +3871,43 @@ function setOutputTemplate(
   node.data.output_templates = {
     ...(node.data.output_templates ?? {}),
     [output]: value,
+  }
+  emitGraphChanged()
+  return true
+}
+
+function setOutputTemplates(nodePath: string, templates: Record<string, string>): boolean {
+  if (isLocked.value || isNestedWorkflowEditor || Object.keys(templates).length === 0) return false
+  const segments = nodePath.split('/')
+  const rootId = segments.shift()
+  const root = getNodes.value.find((candidate: any) => candidate.id === rootId)
+  if (!root?.data) return false
+  if (segments.length === 0) {
+    if (root.data.nodeType !== 'tool') return false
+    if (Object.entries(templates).every(([field, value]) => root.data.output_templates?.[field] === value)) return false
+    root.data.output_templates = { ...(root.data.output_templates ?? {}), ...templates }
+  } else {
+    if (root.data.nodeType !== 'workflow') return false
+    if (nestedWorkflowSessionsStore.hasOpenEditorForNode({
+      kind: 'root', canvas_id: canvasId, workflow_id: ownedWorkflowName.value,
+    }, root.id)) {
+      throw new Error('Close the nested workflow editor before correcting its output templates.')
+    }
+    const workflow = deepClone(root.data.workflow) as GraphState
+    let graph = workflow
+    for (const [position, id] of segments.entries()) {
+      const node = graph.nodes.find(candidate => candidate.id === id)
+      if (!node) return false
+      if (position === segments.length - 1) {
+        if (node.type !== 'tool') return false
+        if (Object.entries(templates).every(([field, value]) => node.output_templates?.[field] === value)) return false
+        node.output_templates = { ...node.output_templates, ...templates }
+      } else {
+        if (node.type !== 'workflow') return false
+        graph = node.workflow
+      }
+    }
+    root.data.workflow = workflow
   }
   emitGraphChanged()
   return true

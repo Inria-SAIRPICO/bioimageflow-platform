@@ -18,6 +18,7 @@ const mockedApi = api as unknown as {
 
 function catalogTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
+    output_file_declarations: {},
     name: 'CustomTool',
     display_name: 'Custom Tool',
     package: '__custom__',
@@ -253,6 +254,7 @@ describe('toolRegistry custom tool actions', () => {
       type: 'tool_reload',
       tool_name: 'CustomTool',
       tool_metadata: {
+        output_file_declarations: {},
         name: 'CustomTool',
         display_name: 'Custom Tool',
         package: '__custom__',
@@ -279,6 +281,7 @@ describe('toolRegistry custom tool actions', () => {
   it('applyToolRemoved removes tools and package membership', () => {
     const store = useToolRegistryStore()
     store.tools = [{
+      output_file_declarations: {},
       name: 'CustomTool',
       display_name: 'Custom Tool',
       package: '__custom__',

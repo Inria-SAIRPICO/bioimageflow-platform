@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from bioimageflow_server.models.tools import ToolMetadata
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 
 
 NodeStatusValue = Literal[
@@ -57,3 +58,4 @@ class ValidationResult(BaseModel):
     node_statuses: dict[str, NodeStatus] = {}
     errors: list[GraphValidationError] = []
     node_tools: dict[str, ToolMetadata] = Field(default_factory=dict)
+    output_planning_warnings: list[OutputPlanningReport] = Field(default_factory=list)

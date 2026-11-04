@@ -22,6 +22,7 @@ from bioimageflow_server.models.execution import (
     ProgressInfo,
 )
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.output_planning import OutputTemplateCheckResponse
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.validation import (
     GraphValidationError,
@@ -36,6 +37,7 @@ from bioimageflow_server.routers.execution import (
 )
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
+    OutputTemplateCorrectionUnavailable,
     WorkflowBuildError,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -265,6 +267,122 @@ async def idle_client(
 
 
 # ---- POST /execution/run ----------------------------------------------------
+
+
+async def test_output_template_check_is_bound_and_does_not_apply_or_restart(tmp_path: Path) -> None:
+    manager = _FakeExecutionManager()
+    manager.check_output_templates = MagicMock(return_value=OutputTemplateCheckResponse(valid=True))
+    store = MagicMock()
+    store.get_storage_path.return_value = tmp_path
+    store.workflow_generation.return_value = 3
+    drafts = MagicMock()
+    draft = _accepted_draft()
+    drafts.get_draft_authority_snapshot.return_value = draft
+    client = await _make_client(
+        tmp_path, execution_manager=manager, workflow_store=store,
+        workflow_draft_service=drafts, tool_registry=_make_registry(),
+    )
+    async with client:
+        response = await client.post("/api/v1/execution/output-templates/check", json={
+            "execution_id": "failed-run", "workflow_id": "wf", "draft_revision": 7,
+            "node_id": "n1", "templates": {"mask": "mask_{row_index}.tif"},
+        })
+    assert response.status_code == 200, response.text
+    assert response.json() == {"valid": True, "reports": []}
+    assert manager.check_output_templates.call_args.kwargs["workflow_generation"] == 3
+    assert manager.check_output_templates.call_args.kwargs["graph"] == draft.graph
+    manager.start.assert_not_called()
+    drafts.put_draft.assert_not_called()
+
+
+async def test_output_template_check_rechecks_revision_after_inspection(tmp_path: Path) -> None:
+    manager = _FakeExecutionManager()
+    manager.check_output_templates = MagicMock(return_value=OutputTemplateCheckResponse(valid=True))
+    store = MagicMock()
+    store.get_storage_path.return_value = tmp_path
+    store.workflow_generation.return_value = 3
+    drafts = MagicMock()
+    drafts.get_draft_authority_snapshot.side_effect = [
+        _accepted_draft(revision=7), _accepted_draft(revision=8),
+    ]
+    client = await _make_client(
+        tmp_path, execution_manager=manager, workflow_store=store,
+        workflow_draft_service=drafts, tool_registry=_make_registry(),
+    )
+    async with client:
+        response = await client.post("/api/v1/execution/output-templates/check", json={
+            "execution_id": "failed-run", "workflow_id": "wf", "draft_revision": 7,
+            "node_id": "n1", "templates": {"mask": "mask_{row_index}.tif"},
+        })
+    assert response.status_code == 409
+    manager.start.assert_not_called()
+
+
+async def test_output_template_check_unavailable_evidence_is_actionable(tmp_path: Path) -> None:
+    manager = _FakeExecutionManager()
+    manager.check_output_templates = MagicMock(side_effect=OutputTemplateCorrectionUnavailable(
+        "Correction inputs have expired; edit the output template and run again."
+    ))
+    store = MagicMock()
+    store.get_storage_path.return_value = tmp_path
+    store.workflow_generation.return_value = 3
+    drafts = MagicMock()
+    drafts.get_draft_authority_snapshot.return_value = _accepted_draft()
+    client = await _make_client(
+        tmp_path, execution_manager=manager, workflow_store=store,
+        workflow_draft_service=drafts, tool_registry=_make_registry(),
+    )
+    async with client:
+        response = await client.post("/api/v1/execution/output-templates/check", json={
+            "execution_id": "failed-run", "workflow_id": "wf", "draft_revision": 7,
+            "node_id": "n1", "templates": {"mask": "mask_{row_index}.tif"},
+        })
+    assert response.status_code == 409
+    assert "expired" in response.json()["detail"]
+    manager.start.assert_not_called()
+
+
+async def test_output_template_check_refuses_active_execution(tmp_path: Path) -> None:
+    manager = _FakeExecutionManager(running=True)
+    manager.check_output_templates = MagicMock()
+    client = await _make_client(
+        tmp_path, execution_manager=manager, workflow_store=MagicMock(),
+        workflow_draft_service=MagicMock(), tool_registry=_make_registry(),
+    )
+    async with client:
+        response = await client.post("/api/v1/execution/output-templates/check", json={
+            "execution_id": "failed-run", "workflow_id": "wf", "draft_revision": 7,
+            "node_id": "n1", "templates": {"mask": "mask_{row_index}.tif"},
+        })
+    assert response.status_code == 423
+    manager.check_output_templates.assert_not_called()
+
+
+async def test_output_template_check_rejects_an_unsafe_proposal_without_server_error(tmp_path: Path) -> None:
+    from bioimageflow.storage import CacheCorruptionError
+
+    manager = _FakeExecutionManager()
+    manager.check_output_templates = MagicMock(side_effect=CacheCorruptionError(
+        "Unsafe output template path: '../outside.tif'"
+    ))
+    store = MagicMock()
+    store.get_storage_path.return_value = tmp_path
+    store.workflow_generation.return_value = 3
+    drafts = MagicMock()
+    drafts.get_draft_authority_snapshot.return_value = _accepted_draft()
+    client = await _make_client(
+        tmp_path, execution_manager=manager, workflow_store=store,
+        workflow_draft_service=drafts, tool_registry=_make_registry(),
+    )
+    async with client:
+        response = await client.post("/api/v1/execution/output-templates/check", json={
+            "execution_id": "failed-run", "workflow_id": "wf", "draft_revision": 7,
+            "node_id": "n1", "templates": {"mask": "../outside.tif"},
+        })
+    assert response.status_code == 422
+    assert "Unsafe output template path" in response.json()["detail"]
+    manager.start.assert_not_called()
+    drafts.put_draft.assert_not_called()
 
 
 async def test_run_returns_202(idle_client) -> None:

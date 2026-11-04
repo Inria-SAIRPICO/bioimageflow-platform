@@ -1387,12 +1387,14 @@ Parameter focus, local parse errors and delayed file-picker results belong to th
 
 #### 3.5.4 Output Fields
 
-Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
+Each output field from `Outputs` is displayed with editable path templates for explicitly declared exact destinations and naming bases **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImageFile, int, etc.)
 - **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImageFile`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the [library's output templating engine](bioimageflow/docs/source/specs.md#71-output-templating-engine). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
+- **File ownership:** Public `output_role` metadata distinguishes `exact`, `base` and `reference`; bare returned Path references have no template editor. Exact destinations expose immutable `file_group` metadata and a read-only description: one file per input row, one for the whole batch, or one per named input group. Grouping belongs to the tool declaration and cannot be changed through a workflow template. The OUTPUTS description explains that each file needs its own destination and some tools combine several rows into one file. Naming bases explain that the tool generates the final filenames and complete collision prediction is unavailable.
+- **Proven warnings:** Current authoritative input evidence may produce a nonblocking inline collision or group-destination disagreement warning. Unknown values, absence of `{row_index}`, and unavailable bound-tool metadata do not produce speculative warnings. The library owns resolution and ownership checking; the frontend does not reproduce it.
 - **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImageFile` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept; [library Section 3.5](bioimageflow/docs/source/specs.md#35-dataframetool) defines `DataFrameTool` as returning DataFrames directly. The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
@@ -1606,6 +1608,14 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 - **Stop button:** Cancels execution. The banner updates to "Execution stopped" and disappears after 3 seconds (or on click).
 - **On completion:** The banner shows "Execution complete" (green) or "Execution failed" (red, with error summary) and disappears after 5 seconds (or on click). On failure, the failed node is auto-selected so its error is visible in the Node Panel.
 - **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation, draft mutations, workflow mutations, and cache clearing while an execution is starting or running with HTTP 423 Locked. Ordinary admitted mutations serialize with one another and exclude Run; they are not themselves reported as a running execution.
+
+Local exact-output planning errors have a dedicated correction dialog after the original run's submitted work settles and mutation admission is available.
+It explains the scoped node, file group, effective template and bounded literal/token expansion examples; different owners sharing one destination and one owner requesting different destinations have distinct messages.
+The user may cancel unchanged or submit custom templates, with a verified row-index or group-index suggestion where appropriate and no live preview.
+The backend checks the proposal against exact failed-run evidence and current workflow authority before the ordinary canvas/durable-draft edit.
+After durable acceptance, Continue starts a new run preserving the original full/selected intent and normal cache reuse; it does not mutate the original failed run or automatically Save the workflow.
+Submission disables dismissal until settlement; a refused edit prevents restart, and an accepted edit remains applied if restart fails.
+Run, workspace, workflow generation, draft revision, scoped node and nested-editor ownership fence delayed actions and duplicate completion events.
 
 ### 3.10 Image Viewer
 

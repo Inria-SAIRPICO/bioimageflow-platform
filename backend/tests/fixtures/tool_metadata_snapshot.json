@@ -69,6 +69,16 @@
     }
   },
   "name": "SnapshotCellpose",
+  "output_file_declarations": {
+    "mask": {
+      "description": "One file per input row",
+      "file_group": {
+        "keys": [],
+        "kind": "per_row"
+      },
+      "output_role": "exact"
+    }
+  },
   "outputs": {
     "cell_count": {
       "default": null,
@@ -85,6 +95,11 @@
       "default": "{input_image.stem}_mask{ext}",
       "description": "Labeled segmentation mask.",
       "display_name": "Mask",
+      "file_group": {
+        "description": "One file per input row",
+        "keys": [],
+        "kind": "per_row"
+      },
       "group": null,
       "image_spec": {
         "dtypes": [],
@@ -99,6 +114,7 @@
       "max": null,
       "min": null,
       "nullable": false,
+      "output_role": "exact",
       "required": false,
       "step": null,
       "template": "{input_image.stem}_mask{ext}",

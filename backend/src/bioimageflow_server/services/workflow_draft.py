@@ -26,7 +26,7 @@ from bioimageflow_server.services.agent_workspace_context import (
     agent_workspace_instructions,
 )
 from bioimageflow_server.services.graph_compiler import GraphCompiler
-from bioimageflow_server.services.graph_validator import GraphValidationService, validate_graph
+from bioimageflow_server.services.graph_validator import GraphValidationService, OutputWarningProvider, validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_store import (
@@ -294,6 +294,10 @@ class WorkflowDraftService:
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self.server_boot_id = server_boot_id or uuid.uuid4().hex
+        self._output_warning_provider: OutputWarningProvider | None = None
+
+    def set_output_warning_provider(self, provider: OutputWarningProvider | None) -> None:
+        self._output_warning_provider = provider
 
     def get_draft(
         self,
@@ -674,6 +678,8 @@ class WorkflowDraftService:
                         is not None
                     ),
                     planned_node_ids=planned_node_ids,
+                    output_warning_provider=self._output_warning_provider,
+                    storage_path=authority.storage_path,
                 )
                 if not accepted:
                     return draft.model_copy(update={"validation": projected})
@@ -705,6 +711,7 @@ class WorkflowDraftService:
                                 "valid": not errors,
                                 "errors": errors,
                                 "node_statuses": statuses,
+                                "output_planning_warnings": projected.output_planning_warnings,
                             }
                         )
                     }
@@ -914,6 +921,7 @@ class WorkflowDraftService:
             graph,
             store.tool_registry,
             storage_path=store.get_storage_path(workflow_id),
+            output_warning_provider=self._output_warning_provider,
         )
 
     @staticmethod

@@ -8,9 +8,14 @@ Prevent declared processing outputs from overwriting one another, explain how co
 The library reports an actionable error; the platform offers **Cancel execution** or **Update template and continue**.
 There is no silent renaming or overwrite option.
 
-This is a proposed implementation, not a description of released behavior.
+This document records the implementation design; the feature is not yet released.
 It covers the BioImageFlow library and the platform's local Direct/Wetlands execution path, including nested workflows and Run Selected.
 Managed distributed execution is a separate follow-up: preserve its existing contracts and do not imply that changing a local draft changes an immutable remote submission.
+
+The library and platform code, migrated first-party declarations, specifications, documentation and regression tests for Phases 1–4 are implemented in the output-template feature work.
+Source-cohort worker and browser checks have passed, and the candidate Core, SDK and tool wheels have been built without workspace sources.
+Phase 5 remains a release/adoption gate: the platform's normal manifest and lock still select SDK 0.9.7/Core 0.5.2, and the new platform code requires the candidate SDK 0.10/Core 0.6 cohort until an explicitly authorized publication and published-dependency adoption is completed.
+Candidate-environment checks do not certify the current normal lock or the eventual published cohort.
 
 ## Agreed user experience
 
@@ -211,7 +216,7 @@ Create any task worktrees under their repository's `.worktrees/` and keep depend
 Implementation must update the library specifications for execution, validation, templating, cache compatibility, and errors, plus its public API reference.
 Update affected platform v1 execution, Node Panel, error-handling, and API sections; v2 validation, execution, nested-editing, and storage sections; and `PLATFORM_CONTEXT.md` when implementing the corresponding behavior.
 Add concise public user guidance for template corrections.
-This planning-only task leaves implemented specifications unchanged.
+The implemented specifications are updated with their corresponding feature code.
 
 ## Phase 1 Define the public library contract
 

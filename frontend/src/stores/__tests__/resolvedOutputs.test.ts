@@ -50,6 +50,7 @@ function registerActiveCanvas(workflowId = 'a'): CanvasId {
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
+    output_file_declarations: {},
     name: 'test',
     display_name: 'Test',
     package: 'test',

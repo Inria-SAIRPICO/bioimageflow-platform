@@ -652,6 +652,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ),
         )
 
+    workflow_draft_service.set_output_warning_provider(
+        getattr(execution_manager, "output_planning_warnings", None)
+    )
+
     # Always instantiate a launcher (cheap config + state). The expensive
     # Conda solve is deferred to the first /napari/open call.
     napari_launcher = config.napari_launcher or NapariLauncher(

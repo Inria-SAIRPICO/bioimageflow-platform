@@ -39,6 +39,7 @@ export interface CanvasScopedCommandsOptions {
   setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
+  setOutputTemplates?: (nodePath: string, templates: Record<string, string>) => boolean
   toggleWorkflowInput: (
     nodeId: string,
     input: string | number,
@@ -78,6 +79,7 @@ export interface CanvasCommandsApi {
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
+  setOutputTemplates(nodePath: string, templates: Record<string, string>, expectedCanvasId?: CanvasId): boolean
   toggleWorkflowInput(nodeId: string, input: string | number): CanvasInterfaceCommandResult
   toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
   renameWorkflowInput(
@@ -109,6 +111,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
+  setOutputTemplates(nodePath: string, templates: Record<string, string>): boolean
   toggleWorkflowInput(nodeId: string, input: string | number): CanvasInterfaceCommandResult
   toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
   renameWorkflowInput(
@@ -184,6 +187,11 @@ export function useCanvasCommands(
     ),
     setOutputTemplate: (nodeId, output, value) => (
       resource.setOutputTemplate(nodeId, output, value)
+    ),
+    setOutputTemplates: (nodePath, templates, expectedCanvasId) => (
+      expectedCanvasId !== undefined && expectedCanvasId !== options.descriptor.canvasId
+        ? false
+        : resource.setOutputTemplates(nodePath, templates)
     ),
     toggleWorkflowInput: (nodeId, input) => (
       resource.toggleWorkflowInput(nodeId, input)
@@ -270,6 +278,10 @@ function createCommandResource(
     setOutputTemplate: (nodeId, output, value) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setOutputTemplate(nodeId, output, value)
+    },
+    setOutputTemplates: (nodePath, templates) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.setOutputTemplates?.(nodePath, templates) ?? false
     },
     toggleWorkflowInput: (nodeId, input) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -360,6 +372,10 @@ function createActiveFacade(): CanvasCommandsApi {
     setOutputTemplate: (nodeId, output, value) => (
       activeCommandResource()?.setOutputTemplate(nodeId, output, value) ?? false
     ),
+    setOutputTemplates: (nodePath, templates, expectedCanvasId) => {
+      if (expectedCanvasId !== undefined && expectedCanvasId !== graphSyncCanvasSessions.activeCanvasId.value) return false
+      return activeCommandResource()?.setOutputTemplates(nodePath, templates) ?? false
+    },
     toggleWorkflowInput: (nodeId, input) => (
       activeCommandResource()?.toggleWorkflowInput(nodeId, input)
       ?? workflowInterfaceUnavailable()

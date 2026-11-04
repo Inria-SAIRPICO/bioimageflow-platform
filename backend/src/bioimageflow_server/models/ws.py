@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
@@ -92,6 +93,7 @@ class ExecutionCompleteMessage(_MessageBase):
     node_statuses: dict[str, Any]
     planned_node_ids: list[str] = Field(default_factory=list)
     planned_node_names: dict[str, str] = Field(default_factory=dict)
+    output_planning_reports: list[OutputPlanningReport] = Field(default_factory=list)
     execution_id: str
     workflow_id: str
     draft_revision: int | None = None

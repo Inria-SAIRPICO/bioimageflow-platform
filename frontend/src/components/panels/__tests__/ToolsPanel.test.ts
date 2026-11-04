@@ -52,6 +52,7 @@ const addToolNodeMock = vi.fn<(
 
 const mockTools: ToolMetadata[] = [
   {
+    output_file_declarations: {},
     name: 'threshold',
     display_name: 'Threshold',
     package: 'bioimageflow-core',
@@ -71,6 +72,7 @@ const mockTools: ToolMetadata[] = [
     editable: false,
   },
   {
+    output_file_declarations: {},
     name: 'gaussian_blur',
     display_name: 'Gaussian Blur',
     package: 'bioimageflow-core',
@@ -90,6 +92,7 @@ const mockTools: ToolMetadata[] = [
     editable: false,
   },
   {
+    output_file_declarations: {},
     name: 'cellpose',
     display_name: 'Cellpose',
     package: 'bioimageflow-cellpose',
@@ -109,6 +112,7 @@ const mockTools: ToolMetadata[] = [
     editable: false,
   },
   {
+    output_file_declarations: {},
     name: 'MyCustomTool',
     display_name: 'My Custom Tool',
     package: '__custom__',
