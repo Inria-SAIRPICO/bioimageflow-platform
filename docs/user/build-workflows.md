@@ -65,21 +65,19 @@ Give each public output a clear name.
 For file outputs, enter a relative path that describes the result, such as `segmentation/masks.tif`.
 Keep output paths distinct when one tool writes several files.
 
-The field description tells you whether the tool writes one file per input row,
-one for the entire batch, or one for each source-image group.
-Use `{row_index}` to distinguish independent rows, or `{group_index}` to distinguish
-groups while keeping one filename for all rows contributing to a file.
+The field description tells you whether the tool writes one file per input row, one for the entire batch, or one for each source-image group.
+Use `{row_index}` to distinguish independent rows, or `{group_index}` to distinguish groups while keeping one filename for all rows contributing to a file.
 Returned references to existing files have no filename-template editor.
 For a naming base, the tool generates the individual filenames itself.
 
-If declared output paths collide during execution, a dialog explains the template
-and shows how its parts resolve to the conflicting filename.
-You can cancel, or change the template and continue with a new run that reuses
-available cached results.
+If declared output paths collide during execution, a dialog explains the template and shows how its parts resolve to the conflicting filename.
+You can cancel, or change the template and continue with a new run that reuses available cached results.
 The change updates your workflow draft without automatically saving it.
 Changing filenames can affect downstream tools that interpret names.
-Warnings during editing appear only when a conflict is known; missing upstream
-data does not produce a speculative warning.
+Warnings during editing appear only when a conflict is known; missing upstream data does not produce a speculative warning.
+
+Existing workflows retain their pinned tool-package versions.
+Update incompatible tool dependencies explicitly; installing a newer package does not rewrite existing workflows automatically.
 
 ## Group related steps
 

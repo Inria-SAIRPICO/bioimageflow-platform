@@ -242,6 +242,8 @@ The backend resolves workflow-owned sources in that named storage context and re
 
 Local processing exact-output planning uses the public library's `FileGroup` ownership contract before affected scientific callbacks.
 `Template` declares an exact destination, `PathBase` a generated naming base, and bare Path outputs returned references; template edits cannot change those roles or owner groups.
+Template controls and reconciliation follow the library's declared role, including outputs with a Path/array union annotation, rather than matching a displayed type name.
+Authored overrides on returned references remain available for an explicit backend compatibility diagnostic instead of being silently erased.
 Per-row, once and keyed file ownership remain independent of mapped/collective record consumption and DataFrame lineage.
 Reports distinguish `output_path_collision` from `output_group_destination_mismatch` and retain effective patterns, group identity, accurate counts, bounded expansion examples and verified correction suggestions.
 Completion events, status snapshots and retained local diagnostics preserve the typed report without parsing exception strings; incomplete or expired correction evidence retains explanation without claiming full revalidation.

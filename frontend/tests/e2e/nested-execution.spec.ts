@@ -711,6 +711,9 @@ test('recovers a failed nested Direct child through an applied GUI correction', 
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
     await savePromise
+    // Root Save still accepts its durable draft after the workflow PUT returns.
+    // Wait for the UI completion before simulating an application reload.
+    await expect(page.getByTestId('workflow-title')).toHaveText(rootDisplayName)
     const saved = await (await page.request.get(`${API_BASE}/api/v1/workflows/${rootName}`)).json()
     expect(saved.graph).toEqual(corrected.graph)
     await page.reload()

@@ -22,7 +22,7 @@ class LocalPackageNumbers(ProcessingTool):
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(
         name="e2e-local-package-numbers",
-        dependencies={{"python": "3.12", "pip": ["bioimageflow-core>=0.5,<0.6"]}},
+        dependencies={{"python": "3.12", "pip": ["bioimageflow-core>=0.6,<0.7"]}},
         allow_flexible_versions=True,
     )
 

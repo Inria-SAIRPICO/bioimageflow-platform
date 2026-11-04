@@ -157,6 +157,25 @@ function mountWithErrors(
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('offers template controls for declared union destinations and keeps union references read-only', () => {
+    const tool = makeTool()
+    const union = 'pathlib._local.Path | bioimageflow_core.types.SharedArray'
+    tool.outputs = {
+      image: { type: union, default: 'image_{row_index}.tif' },
+      reference: { type: union },
+    }
+    tool.output_file_declarations = {
+      image: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+      reference: { output_role: 'reference', file_group: null, description: '' },
+    }
+    const wrapper = mountWithErrors({ valid: true, node_statuses: {}, errors: [] }, {
+      tool, output_templates: { image: 'authored_{row_index}.tif' },
+    })
+    expect(wrapper.findAll('[data-testid="output-template"]')).toHaveLength(1)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="output-template"]').element.value).toBe('authored_{row_index}.tif')
+    expect(wrapper.get('[data-testid="output-group-image"]').text()).toContain('One file per input row')
+    wrapper.unmount()
+  })
   it('shows writable groups and proven warnings without treating references as template destinations', () => {
     const tool = makeTool()
     tool.outputs = {

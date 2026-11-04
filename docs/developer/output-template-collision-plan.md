@@ -8,14 +8,22 @@ Prevent declared processing outputs from overwriting one another, explain how co
 The library reports an actionable error; the platform offers **Cancel execution** or **Update template and continue**.
 There is no silent renaming or overwrite option.
 
-This document records the implementation design; the feature is not yet released.
+This document records the implemented design, published library releases and normal platform adoption.
 It covers the BioImageFlow library and the platform's local Direct/Wetlands execution path, including nested workflows and Run Selected.
 Managed distributed execution is a separate follow-up: preserve its existing contracts and do not imply that changing a local draft changes an immutable remote submission.
 
 The library and platform code, migrated first-party declarations, specifications, documentation and regression tests for Phases 1–4 are implemented in the output-template feature work.
 Source-cohort worker and browser checks have passed, and the candidate Core, SDK and tool wheels have been built without workspace sources.
-Phase 5 remains a release/adoption gate: the platform's normal manifest and lock still select SDK 0.9.7/Core 0.5.2, and the new platform code requires the candidate SDK 0.10/Core 0.6 cohort until an explicitly authorized publication and published-dependency adoption is completed.
-Candidate-environment checks do not certify the current normal lock or the eventual published cohort.
+The authorized Phase 5 release published ten existing projects from library revision `66067b0`: Core 0.6.0, SDK 0.10.0, common/I/O/measurement/restoration/SAIRPICO/spot tools 0.3.0, and segmentation/tracking tools 0.4.0.
+Every actual PyPI wheel and source distribution matches the canonical ordinary-CI artifact; the same Core wheel passed all nine contract/lifetime families on Linux and Windows with Python 3.9 and 3.12, and the public-index worker gate passed without a source override.
+Phasor and OMERO remain unpublished and were excluded from this release selection.
+The normal platform manifest, registry lock and installed environment now select SDK 0.10.0/Core 0.6.0; the external certification pin is common tools 0.3.0.
+Published-cohort validation uses the scoped phase-reuse rules in [Test lanes](../testing.md): the original `scripts/test full` passed 2,070 backend tests, external compatibility and real workers, logging-order checks, and the frontend product phases, but failed two browser tests that advanced before Save/apply finished.
+Those tests now wait for observable Save completion without weakening their saved-graph or clean-title assertions, and each repaired case passed five timing repetitions.
+Final frontend completion includes the union-template preservation fix, and `scripts/test check browser-all` passed all 151 selected tests in each browser without skips or retries.
+The final frontend completion and coverage checks passed 1,441 tests with 43 selected-suite skips; documentation validation also passed.
+The original full attempt remains recorded as failed; successful unchanged backend/logging phases are retained alongside the final frontend, coverage, browser and documentation checks rather than described as a new monolithic full run.
+Candidate-environment checks remain separate source evidence.
 
 ## Agreed user experience
 
@@ -207,8 +215,8 @@ Preserve exact destination comparison separately from abbreviated display text.
 ## Source baseline and specification work
 
 The plan-update source baseline is platform revision `dbdae39`; inspect and preserve unrelated working-tree changes when implementation starts.
-The backend currently selects published BioImageFlow 0.9.7 and Core 0.5.2.
-The sibling `bioimageflow/` link points to older source at `8ba6ef6`; the `bioimageflow-v0.9.6` tag used for the initial design investigation is not the current runtime baseline.
+Implementation began from published BioImageFlow 0.9.7/Core 0.5.2; normal adoption now selects SDK 0.10.0/Core 0.6.0.
+At implementation start, the sibling `bioimageflow/` link pointed to older source at `8ba6ef6`; the `bioimageflow-v0.9.6` tag used for the initial design investigation was not the runtime baseline.
 Select the published release lineage or a reviewed descendant before implementing library changes, read that checkout's AGENTS and testing instructions, and verify source/artifact correspondence.
 Do not patch installed `.venv` files or use the old sibling working tree as the runtime authority.
 Create any task worktrees under their repository's `.worktrees/` and keep dependencies and runtime state separate.
@@ -320,6 +328,7 @@ Integrate inline proven-collision/group-disagreement warnings, read-only groupin
 Warnings are separate from blocking graph errors, follow node/scoped-field identities, disappear when their evidence is no longer current, and stay absent for unknown cases.
 Use the selected bound tool's metadata and effective default template rather than a same-named catalog tool.
 Only exact destinations and declared naming bases receive template editors; returned references do not receive implicit template controls.
+The declared role governs controls and template preservation even for union annotations; a displayed type name is not a second writable-output authority.
 Keep naming-base limitations visible without treating unknown generated-file collisions as errors or routine warnings.
 
 **Exit:** users can cancel unchanged or submit a valid custom template, understand its expansion, and continue from the accepted updated draft without automatic Save.
@@ -328,8 +337,10 @@ Keep naming-base limitations visible without treating unknown generated-file col
 
 Use ordinary imported processing fixtures with small files; do not use scientific models or downloads for routine coverage.
 Follow the selected library checkout's authoritative focused and completion commands and record its exact source/artifact revisions.
-Platform adoption must use a published compatible dependency in its manifest and lock, rather than depend on an ignored sibling checkout.
-The plan does not authorize publishing packages or modifying the user's actual demo workflow; those actions require their own explicit implementation/release scope.
+Platform adoption uses the authorized SDK 0.10.0/Core 0.6.0 release cohort and common-tools certification pin 0.3.0, with compatible dependencies resolved from the registry in its normal manifest and lock.
+The user has explicitly authorized publication and normal platform adoption; this does not authorize modifying the user's actual saved demo workflow.
+Wait for verified registry visibility of the selected packages before regenerating `backend/uv.lock`, then synchronize the normal environment without editable sources and run the normal local full lane plus documentation check.
+Retain the earlier source-cohort receipts as source evidence rather than relabelling them as normal published compatibility results.
 
 | Area | Required evidence |
 | --- | --- |

@@ -1,6 +1,7 @@
 import type { OutputFileDeclaration, ToolMetadata } from '@/api/types'
 
 const PATH_OUTPUT_TYPES = new Set(['Path', 'ImageFile', 'MaskPath'])
+const OUTPUT_FILE_ROLES = new Set(['exact', 'base', 'reference'])
 
 export type OutputFileMetadata = Partial<OutputFileDeclaration> & {
   type?: string
@@ -15,7 +16,6 @@ export function isWritableOutputTemplate(field: unknown): field is OutputFileMet
   return (
     typeof field === 'object'
     && field !== null
-    && PATH_OUTPUT_TYPES.has(String((field as { type?: unknown }).type ?? ''))
     && ['exact', 'base'].includes(String((field as OutputFileMetadata).output_role ?? ''))
   )
 }
@@ -41,7 +41,7 @@ export function reconcileOutputTemplates(
   const reconciled: Record<string, string> = {}
   for (const [key, rawField] of Object.entries(tool.outputs ?? {})) {
     const field = outputFileMetadata(tool, key, rawField)
-    if (!PATH_OUTPUT_TYPES.has(String(field.type ?? ''))) continue
+    if (!OUTPUT_FILE_ROLES.has(String(field.output_role ?? '')) && !PATH_OUTPUT_TYPES.has(String(field.type ?? ''))) continue
     const current = existing[key]
     if (typeof current === 'string') {
       reconciled[key] = current
