@@ -24,6 +24,28 @@ The inspected platform result reader takes types and viewer declarations from th
 The relevant presentation code is in `backend/src/bioimageflow_server/services/result_store.py`, with table projection in `services/data_table_projection.py` and image-action gating in `frontend/src/components/panels/NodeDataTable.vue`.
 The repair should preserve captured-result authority rather than borrow metadata from the current tool registry.
 
+## Existing contracts and scope
+
+The design must extend these contracts rather than assume they already preserve dynamic metadata:
+
+- The library's `DataFrameTool` lifecycle has two stages: `merge_dataframes` followed by `transform`; the default merge is an inner join on index, not an identity operation.
+  Its existing `Outputs`, `Passthrough`, `resolve_outputs`, and `resolve_merge_schema` facilities provide construction-time declarations, but do not by themselves prove runtime cell provenance.
+- The current library storage specification treats `DataFrameTool` path outputs as external references and prohibits mixing owned assets and external paths within one logical column.
+  Propagating references to upstream owned assets therefore requires an explicit versioned library storage extension, not merely attaching more schema information in the platform.
+- The platform pins inspection to `(run_id, node_key, result_key, record_id)` and resolves owned paths through the selected record's public manifest API.
+  A transformed table needs to preserve that inspection identity while resolving each referenced cell through its admitted origin.
+- The platform's workflow-and-results export is currently an export artifact; importing that outer bundle is explicitly unsupported in platform specification v2 Section 12.
+  Library bundle round-trip tests do not imply a new platform import feature.
+
+These constraints come from the library specification Sections 3.5, 5.3, 6 and 7 and its `reference/output_cache_storage.md`, plus `platform_specs_v2.md` Sections 12 and 13.
+The optional library source checkout is useful design evidence; implementation must verify the public APIs against the dependency versions selected by the platform lockfile.
+
+The first release should cover scalar file-backed image cells passed through selection and renaming within one workflow storage authority.
+It should preserve existing ordinary table values, ordering, indices, nulls, and numerical results.
+Shared arrays, images nested inside containers, aggregation, automatic semantic inference, and references across independent workflow stores are outside that first slice.
+Existing behavior for those values must remain supported; they do not gain the new preservation guarantee until their ownership rules are separately specified and tested.
+Later joins and concatenation use the same contract once their additional acceptance gates pass.
+
 ## Desired invariant
 
 Selecting, renaming, filtering, reordering, joining, or stacking existing columns should preserve their known meaning and the identity of referenced assets according to explicit operation rules.
@@ -47,6 +69,8 @@ columns:
 
 Reuse the existing canonical type descriptors, `ImageSpec`, and portable viewer declarations instead of inventing parallel definitions.
 The column description should retain applicable nullability and other declared field facts as well as the image and viewer information.
+Field presence and cell nullability are distinct: an outer join can keep a required output column while introducing null cells.
+An empty or all-null result retains its known declaration; lack of observed values is not evidence of a different type.
 Distinguish unavailable metadata from a known ordinary string type and from a known absence of optional viewer requirements.
 A missing description must not be silently upgraded to an image declaration because a value ends in `.tif`.
 
@@ -79,14 +103,33 @@ For `labels → tile`, the metadata operation is simply to move the existing des
 The image remains the same asset.
 A semantic change, such as converting labels into an intensity image, requires a new output declaration rather than blind metadata inheritance.
 
+### Alignment and declaration precedence
+
+Propagation must cover both lifecycle stages, using the actual operation's input slots, resolved output names and row mapping.
+Do not replay a pandas join independently to reconstruct references, match equal path strings, or assume that equal index labels establish provenance.
+For each preserved output cell, the operation must identify the corresponding input cell, or explicitly indicate an introduced null; many-to-many joins duplicate that mapping along with the values.
+A null cell has no asset reference.
+Join-key coalescing needs the same per-cell origin rule as payload columns, including right-only rows in outer joins.
+Unsupported duplicate or non-string column labels must follow existing table validation, never collapse silently when metadata keys are stringified.
+
+Use the captured explicit output declaration for a newly computed or replaced column; inherit only for columns the operation explicitly preserves.
+When an explicit declaration contradicts a claimed preservation rule, report a contract violation rather than arbitrarily choosing one.
+Validate output names, mapping bounds, null positions and reference shape against the actual returned table before publication.
+This verifies structural consistency, not the truth of arbitrary custom scientific code.
+The existing `Passthrough` marker alone must not authorize references for values that a custom transform replaces.
+Construction-time projection and execution-time propagation must share the same declarative rules, and unknown static schemas must remain unresolved until execution provides evidence.
+
 ### Concatenation and conflicts
 
 Concatenation needs an explicit compatibility policy, but not a general inference engine.
-The first implementation can preserve equivalent descriptions, allow a small documented set of safe widenings, and report incompatible known types.
+Initially preserve canonically equivalent descriptions and widen nullability only when the operation introduces missing values; other widenings require their own specified compatibility rules and tests.
 For example, differing image layout constraints could eventually have a documented common representation, but such widening must not assert facts that are false for some rows.
 Absent columns introduce nullability according to the table operation's existing behavior.
 
-Incompatible known column types should produce an actionable diagnostic instead of silently becoming strings.
+Incompatible known column types should produce an actionable metadata diagnostic and an unresolved effective description instead of silently becoming strings.
+A metadata conflict alone must not turn an otherwise valid existing concatenation into an execution failure.
+Preserve the values and independently valid references, but withhold actions requiring a proven column contract.
+An explicit output contract violation, invalid reference, or existing downstream type-validation failure remains an error; compatibility does not permit publishing corrupt authority.
 When an input's description is unknown, retain that uncertainty rather than treating another input's declaration as proof about its values.
 Unknown columns must not acquire authoritative image actions until their asset and type contracts are established.
 
@@ -116,16 +159,57 @@ If a public contract is missing, extend it at the library boundary instead of te
 References may be represented by compact handles with a deduplicated origin table; copying full provenance into every cell is unnecessary.
 The mechanism only needs the origin required to identify and resolve the referenced asset, not the complete ancestry of the computation.
 
-At execution time, the library resolves the reference into the path needed by an existing processing tool.
+At execution time, the library resolves the reference into the path needed by existing DataFrame and processing tools, preserving their current Python call signatures and expected value types.
+Do not require tool code to accept a new handle object or add hidden columns that alter user table operations.
 That private resolved path is an execution detail and must not replace the durable asset reference in the user-facing result.
 Selection and joins preserve references without copying image bytes or changing asset ownership.
-Stored references must retain the original assets through the library's normal result-retention and bundle mechanisms.
+Stored references must participate in the library's result-retention and bundle mechanisms; existing upstream provenance alone is not proof that those mechanisms retain or export the needed assets.
+The reference locator must use immutable record/asset identity within the admitted storage authority, not a run ID, node name, `current` pointer or `latest` path.
+Run identity remains inspection provenance and does not enter scientific cache identity.
 Deletion, unavailability, and export/import must not leave an apparently usable reference that silently resolves to another record.
 
 The platform presents a readable filename or relative asset path and resolves image, thumbnail, Reveal, and viewer requests against the captured identity.
 Resolution must preserve existing manifest admission, containment, deployment-mode restrictions, and unavailable-result behavior.
 An asset reference is not permission to read arbitrary server files.
 External input files retain their existing external-file policy and must not be falsely represented as owned result assets.
+
+### Publication, cache identity and lifetime
+
+The library must publish the DataFrame, effective descriptions, cell references and dependency declarations as one admitted immutable record.
+A separate mutable metadata file written after record publication is not acceptable.
+Malformed present metadata or mismatched cell references are corruption, not legacy absence or permission to fall back to inferred image types.
+Concurrent publishers must return the selected winner's values and metadata together; the losing candidate's descriptions cannot decorate a cache hit.
+
+Before implementation, specify which canonical descriptors and references participate in the logical record digest, output-contract version and result-key material.
+A changed propagation rule or semantic output declaration must not select a record created under incompatible rules.
+Reuse the existing cache versioning machinery; do not hash absolute paths, local viewer preferences or run IDs, and do not add runtime results to the editable graph's artifact hash.
+Portable viewer requirements must retain the existing separation from scientific cache identity while remaining bound to the admitted retained result.
+Old results must never be relabeled with a newer propagation contract on read.
+
+References introduce storage dependencies even when no downstream pixel computation consumes them.
+Before enabling them, demonstrate that cache invalidation and Clear remove reusable selections/disposable views without deleting assets still needed by retained downstream records.
+Specify the root set and release behavior for explicit storage cleanup; this proposal does not require a background garbage collector.
+Capture referenced dependencies under the library's publication and export lifetime rules so concurrent cleanup cannot publish a successful but incomplete record or bundle.
+A missing, corrupt or inaccessible origin remains unavailable, even if a newer result has the same filename.
+
+Bundle export must include the referenced dependency closure, including assets from upstream cache hits produced in older runs, and validate it before destination publication.
+Import or relocation through supported library APIs must preserve logical identity without retaining source-machine paths or consulting the original store.
+Reject cycles or unsupported reference chains at admission; prefer direct original-asset locators to repeated resolution through every intermediate table.
+Directory-backed images require the existing complete directory-asset manifest checks; supporting them is a separate gate if the first slice supports files only.
+External files keep their current non-self-contained export policy and cannot be silently promoted to bundle-owned data.
+
+### Selected-cell resolution and table presentation
+
+The browser should address a cell by the displayed table's pinned result, output key and source-row position.
+The backend derives its origin from that admitted table; accepting an arbitrary origin locator from the client would bypass the table's authority.
+Sorting, filtering, pagination, continuous scrolling and merged projections must retain that source-cell mapping.
+Keep the selected output's viewer requirements and preference identity separate from the original asset's storage location: opening `tile` does not inherit favorites from `labels`.
+The existing projection alignment rules remain unchanged; metadata preservation does not justify merging tables whose row lineage is ambiguous.
+
+Readable asset labels must be derived without rewriting the scientific values supplied to tools.
+All image actions must use the same reference resolver, including thumbnails, browser image access, desktop Reveal and external viewers.
+A descriptive filename is not an actionable path, and unresolved viewer requirements must not be serialized as known `null` requirements.
+Plain CSV needs an explicit documented policy for reference labels or materialized assets; human-readable labels alone are not a portable round trip.
 
 ## Preserve portable viewer requirements, not local preferences
 
@@ -140,10 +224,10 @@ Preserving a portable viewer requirement does not authorize installing packages 
 ## Custom tools and unknown metadata
 
 Automatic preservation cannot be safe for arbitrary Python code that can replace values, change column meanings, or introduce unrelated strings.
-Custom dataframe tools need a small opt-in contract: identify preserved columns, provide a rename map, or declare new output columns and their metadata.
+Custom dataframe tools need a small opt-in contract: identify preserved columns and their row mapping, provide a rename map, or declare new output columns and their metadata.
 A tool that changes an existing column's meaning must replace or invalidate its old description.
 For dynamically generated columns, a supported metadata callback may derive descriptions from input descriptions and parameters without scientific execution or arbitrary image inspection.
-Its exact public API is an implementation decision.
+Reuse or extend `resolve_outputs` and `resolve_merge_schema` rather than introduce a competing schema callback family; any added callback must retain their pure, deterministic, no-I/O contract and be covered by executable/output-contract versioning.
 
 A tool without such a declaration may continue to execute under the existing dynamic-output contract, but unsupported metadata remains explicitly unknown.
 Do not claim to infer arbitrary transformations, and do not automatically preserve metadata solely because an output column happens to keep an input column's name.
@@ -156,7 +240,11 @@ Do not claim to infer arbitrary transformations, and do not automatically preser
 4. Expose those captured facts through the platform result services and existing typed table APIs, regenerating frontend API types if the transport changes.
 5. Keep the Node Data UI as a consumer of those facts: readable asset labels, working image actions, and clear unresolved metadata diagnostics.
 
-Start with selection and renaming as the smallest complete vertical slice, then add the other standard operations.
+Start with selection and renaming as the smallest complete vertical slice, including cold execution, cache reuse, publication, lifetime, export and the actual Node Data actions.
+Do not ship image-action enablement before durable reference admission and resolution are complete.
+Keep the feature gated until the library/Core, common-tools and platform dependency versions implement the same contract; old tools remain executable with their existing metadata limitations.
+Then add the other standard operations independently, with evidence for each operation's value and reference mapping.
+If retention or portable export cannot support cross-record references safely, defer release of that preservation guarantee rather than add untracked paths or silently copy bytes during ordinary table operations.
 Do not implement separate frontend schema inference or a platform-only metadata sidecar with an independent lifecycle.
 Construction-time output schemas may project facts already known from the same rules, but scientific execution must not run merely to discover a schema.
 
@@ -171,19 +259,40 @@ A plain table export should not silently bake private cache locations into a sup
 - Selecting and renaming a label-image column preserves its type, declared image contract, compatible portable viewer requirements, and original asset identity.
 - Filtering, reordering, and joining rows retain the correct reference for every resulting cell, including duplicated rows.
 - Concatenating assets from two different records with the same relative filename still opens the correct image in each row.
-- Conflicting known types are reported; unknown types and viewer conflicts do not silently inherit unrelated declarations.
+- Conflicting known types produce explicit unresolved metadata without failing otherwise valid table operations; unknown types and viewer conflicts do not silently inherit unrelated declarations.
 - New ordinary string columns remain strings even when their values resemble image filenames.
-- The same preserved image actions work after cache reuse, application restart, and supported result-bundle export/import.
+- The same preserved image actions work after cache reuse and application restart; supported library bundle round trips preserve the descriptors and asset resolution after relocation without access to the original store.
+- Platform result export preserves referenced assets; the existing refusal to import the outer workflow-and-results bundle remains unchanged.
 - Changing or removing the current tool installation does not change how an existing captured result is interpreted.
 - Missing or rejected assets produce the existing typed unavailable response rather than resolving another record or exposing an internal path.
 - No standard selection, rename, or merge needs to inspect image bytes, copy those bytes, provision a viewer, or execute scientific callbacks to propagate metadata.
 - The Synthetic Cells workflow retains image behavior in its selection, summary, join, and concatenation tables, as checked in the actual Node Data panel in addition to execution and numerical checks.
 
+### Regression and release gates
+
+The implementation tests must establish both preservation and unchanged behavior:
+
+| Area | Required evidence |
+| --- | --- |
+| Table semantics | Compare actual values, dtypes, order and indices before/after the change; cover empty/all-null inputs, introduced nulls, suffix collisions, many-to-many joins and concat with missing columns. |
+| Lifecycle | Exercise default merge followed by transform, merge-only tools, custom replacements and unknown outputs; no reference inheritance by column name alone. |
+| Record authority | Cold publication and cache hits agree; incompatible contract versions cannot reuse stale metadata; concurrent publication uses the winner's metadata; malformed present metadata fails closed. |
+| Asset lifetime | Clear/invalidate an origin, reopen retained downstream output, export cached origins from older runs, relocate the bundle, and verify explicit cleanup behavior and failed-export recovery. |
+| Security and UI | Reject forged origins, traversal and symlink escape; test both deployment modes and pinned cells after sorting, filtering, pagination and merged projection. No passive viewer provisioning. |
+| Compatibility | Old records remain readable with documented limitations; old/custom tools keep their table behavior; declared new outputs still use existing runtime validation. |
+| Cost | Measure representative large tables and repeated references for metadata size, publication/load time and visible-page reads; avoid per-cell storage reads, whole-file image inspection and unbounded provenance duplication. |
+
+Use library storage/contract tests and common-tool operation tests first, then focused platform service and browser tests through `scripts/test`.
+A real Wetlands processing consumer must receive the correct paths for cells from different origins; Direct-only evidence does not certify the worker boundary.
+If managed distributed execution can encounter the new format, explicitly run its result-transfer tests or refuse that unsupported format before dispatch; local tests alone do not certify remote portability.
+Record the tested versions and scope; a documentation build validates this proposal's rendering, not its implementation safety.
+
 ## Complexity assessment
 
-This is a bounded engineering change if the scope stays at explicit standard-operation contracts, captured column descriptions, and existing asset identities.
-Most operations are dictionary selection or renaming plus the same row mappings already used for the dataframe values.
-Concatenation compatibility, cross-record asset retention, and serialization are the main design work and require focused tests.
+The schema-selection rules are small, but this is not solely a metadata or UI fix.
+Cross-record references extend storage ownership, logical identity, export and cleanup behavior, and row mappings must be supplied by the operation rather than reconstructed from its result.
+The scope is manageable only if the initial operation set stays narrow and the storage, compatibility and lifecycle gates are met before expanding it.
+These gates reduce regression risk; they do not prove the absence of all possible defects.
 
 The complexity would grow substantially if the system tried to interpret arbitrary pandas programs, recover image semantics from path strings, or reconstruct provenance from private directory names.
 Those mechanisms are unnecessary for the reported problem.
