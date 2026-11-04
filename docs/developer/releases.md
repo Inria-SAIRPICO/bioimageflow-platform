@@ -9,7 +9,7 @@ The [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/b
 This page is the BioImageFlow-specific application and launcher release checklist.
 
 The exact static version in `backend/pyproject.toml` is the release tag.
-The `requires-python` range also controls the launcher-managed application interpreter. Python 3.14 requires BioImageFlow Core 0.4.1 or newer in the 0.4.x line so lazily evaluated tool annotations produce input and output schemas. Keep the dependency floor and lockfile aligned with that requirement, and exclude untested newer Python versions.
+The `requires-python` range also controls the launcher-managed application interpreter. Python 3.14 requires BioImageFlow Core 0.5.2 or newer in the 0.5.x line so tool annotations produce schemas and compiler-generated slice constants can participate in executable identity. Keep the dependency floor and lockfile aligned with that requirement, and exclude untested newer Python versions.
 Do not add a `v` prefix: version `0.1.21` produces Git tag `0.1.21`, release assets containing `0.1.21`, and no `v0.1.21` alias.
 The `RELEASE_TAG` variable below only makes filenames readable; launcher commands independently infer and verify the same value from `pyproject.toml`.
 
@@ -42,6 +42,8 @@ git status --short --untracked-files=no
 ```
 
 Run the [complete manual platform test plan](manual-testing.md#complete-test-plan) on the same revision and retain its operating-system and blocker record with the release evidence.
+
+When the release machine cannot run the Unix-oriented full lane, push the clean candidate to `release/${RELEASE_TAG}` and wait for **Release validation** to pass on that exact commit. This workflow runs `scripts/test full` and `scripts/test check docs` on Linux and retains their logs and browser/coverage artifacts for 30 days. Its default local suite does not certify optional distributed features or replace native desktop acceptance. Promote the same validated commit to `main` before tagging.
 
 The tracked worktree and index must be clean.
 If validation requires a fix, commit it and rerun the full lane.

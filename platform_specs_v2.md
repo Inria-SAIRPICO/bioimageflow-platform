@@ -153,6 +153,7 @@ Cleanup attempts continue independently; a cleanup failure logs its residual pat
 This is in-process rollback under cooperating workflow ownership, not an arbitrary external-writer or power-loss atomicity guarantee.
 
 Workflow-local sources are ordinary editable files in destination-owned `tools/<source-id>/` directories.
+Source filenames and package members must be relative and unanchored on both POSIX and Windows: rooted paths, drive-relative paths, UNC paths, parent traversal and backslash paths are rejected before ancestor or symlink checks.
 Each directory contains a `module.json` identity/layout manifest, with no executable source text, and the original Python files and package assets.
 Source identifiers bind nodes to working directories and remain stable across source saves; they are not mutable content hashes.
 Package tools remain versioned package dependencies selected from the exact canonical tool-store root.

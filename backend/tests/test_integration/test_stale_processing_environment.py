@@ -101,8 +101,8 @@ def test_real_stale_generation_failure_retry_and_fresh_process_reuse(
         manager.shutdown_all()
         assert observed.pending_run_contexts == []
         assert get_shared_environment_manager().running_workers(name) == ()
-        with pytest.raises(ProcessLookupError):
-            os.kill(prior_pid, 0)
+        from tests.fixtures.process_state import process_is_running
+        assert not process_is_running(prior_pid)
         get_shared_environment_manager().close()
         restarted = subprocess.run(
             [sys.executable, "-m", "tests.fixtures.restarted_processing",

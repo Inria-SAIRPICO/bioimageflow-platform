@@ -409,7 +409,10 @@ def test_package_helper_edits_are_captured_and_not_reused_from_python_import_cac
     assert run(store) == [21, 22, 23]
 
 
-@pytest.mark.parametrize("filename", ["../escape.py", "/tmp/escape.py", "a\\escape.py"])
+@pytest.mark.parametrize("filename", [
+    "../escape.py", "/tmp/escape.py", "a\\escape.py",
+    "C:escape.py", "C:/escape.py", "//server/share/escape.py",
+])
 def test_import_rejects_unsafe_source_paths(tmp_path: Path, filename: str):
     record = source_record()
     record["filename"] = filename

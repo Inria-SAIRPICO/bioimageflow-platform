@@ -11,7 +11,7 @@ import os
 import tempfile
 from copy import deepcopy
 from uuid import uuid4
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
@@ -306,7 +306,8 @@ class OwnedWorkflowSources:
     def _safe_file(root: Path, relative: str) -> Path:
         path = Path(relative)
         if (
-            path.is_absolute()
+            path.anchor
+            or PureWindowsPath(relative).anchor
             or not path.parts
             or any(p in ("..", ".") for p in path.parts)
             or "\\" in relative

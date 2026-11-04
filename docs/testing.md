@@ -25,7 +25,7 @@ cd ../frontend
 bun install --frozen-lockfile
 ```
 
-The backend lock resolves published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1 from the registry; ordinary tests and CI do not require a sibling source checkout.
+The backend lock resolves published `bioimageflow[parsl,psij]==0.9.7`, Core 0.5.2 and Wetlands 2.6.1 from the registry; ordinary tests and CI do not require a sibling source checkout.
 Installing the explicit scheduler dependency groups preserves the packaged capability and does not certify excluded distributed features.
 Explicit source investigations use a separate owned interpreter and record their library revision, as described in [Local Development](developer/local-development.md#use-local-bioimageflow-source); they do not certify published compatibility.
 Reuse a checkout's prepared environments while its lockfiles, dependency metadata and installation options remain compatible; resync the affected environment when installation requirements change.
@@ -249,6 +249,8 @@ Keep engine-neutral, local scheduling, Direct, and Wetlands cases unmarked even 
 Use per-case markers in mixed files; module-wide markers are appropriate only when every case tests distributed features.
 
 ## CI workflows
+
+Pushes to `release/**` and explicit **Release validation** dispatches run the authoritative local `full` lane followed by `check docs` on one exact candidate commit. The retained artifact includes command logs, browser evidence and coverage for 30 days. This is the automated release gate for machines that cannot run the Unix-oriented full runner locally; native desktop acceptance remains separate.
 
 | Workflow | Trigger | Feature suite | Purpose |
 | --- | --- | --- | --- |
