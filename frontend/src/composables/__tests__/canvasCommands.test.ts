@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   _resetCanvasCommandsForTest,
@@ -136,7 +137,7 @@ describe('active canvas commands', () => {
     graphSyncCanvasSessions.activate(rootId)
 
     expect(active.addToolNode('Files', { files: ['/data/a.tif'] })).toBe('files_1')
-    expect(addToolNode).toHaveBeenCalledWith('Files', { files: ['/data/a.tif'] })
+    expect(addToolNode).toHaveBeenCalledWith('Files', { files: ['/data/a.tif'] }, undefined)
   })
 
   it('routes tool creation only to the active nested canvas', () => {
@@ -166,7 +167,7 @@ describe('active canvas commands', () => {
     graphSyncCanvasSessions.activate(nestedId)
 
     expect(useCanvasCommands().addToolNode('SeedNumbers')).toBe('nested_tool_1')
-    expect(addNestedTool).toHaveBeenCalledWith('SeedNumbers', undefined)
+    expect(addNestedTool).toHaveBeenCalledWith('SeedNumbers', undefined, undefined)
     expect(addRootTool).not.toHaveBeenCalled()
   })
 
@@ -182,6 +183,34 @@ describe('active canvas commands', () => {
 
     expect(useCanvasCommands().addToolNode('SeedNumbers')).toBeNull()
     expect(addToolNode).not.toHaveBeenCalled()
+  })
+
+  it('forwards exact tool bindings and follows the active canvas writable state', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const writable = ref(true)
+    const addToolNode = vi.fn(() => 'download_1')
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      addToolNode,
+      canAddToolNode: () => writable.value,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+    const commands = useCanvasCommands()
+    expect(commands.canAddToolNode()).toBe(false)
+    graphSyncCanvasSessions.activate(rootId)
+    expect(commands.canAddToolNode()).toBe(true)
+    const binding = {
+      tool_module: 'bioimageflow_omero_tools.omero', tool_class: 'OmeroDownloadDataset',
+      tool_package: 'bioimageflow_omero_tools', tool_package_version: '0.2.0',
+    }
+    const connection = { host: 'omero.example.com', port: 4064, username: 'scientist' }
+    expect(commands.addToolNode('OmeroDownloadDataset', connection, binding)).toBe('download_1')
+    expect(addToolNode).toHaveBeenCalledWith('OmeroDownloadDataset', connection, binding)
+    writable.value = false
+    expect(commands.canAddToolNode()).toBe(false)
+    expect(commands.addToolNode('OmeroDownloadDataset', connection, binding)).toBeNull()
+    expect(addToolNode).toHaveBeenCalledTimes(1)
   })
 
   it('rejects late tool creation through a disposed fixed-canvas resource', () => {

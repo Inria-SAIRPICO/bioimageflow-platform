@@ -143,8 +143,8 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
 It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
 
-**Known package catalog:** The bundled default includes the published Common, I/O, Measurement, Restoration, SAIRPICO, Segmentation, Spot, and Tracking tool packages.
-Phasor and OMERO tools are excluded until their first PyPI releases; source-repository presence alone does not establish installable availability.
+**Known package catalog:** The bundled default includes the published Common, I/O, Measurement, OMERO, Restoration, SAIRPICO, Segmentation, Spot, and Tracking tool packages.
+Phasor tools are excluded until their first PyPI release; source-repository presence alone does not establish installable availability.
 `known_packages.txt` in the configured BioImageFlow home replaces the bundled list when present; installed packages remain visible independently of that list.
 Catalog inclusion does not provision or certify a tool's execution environment, external binaries, models, or services.
 
@@ -1710,6 +1710,11 @@ OMERO data access is supplied by dedicated tool packages; the platform UI manage
 
 The OMERO tab lists named server instances with host, port, username, password status, and Add, Save, Duplicate, and Remove actions. The display name defaults to `{host}:{username}` and must be unique. Passwords are submitted only when explicitly saved, stored through the operating-system keyring under service `bioimageflow-omero` and username `{host}:{port}:{username}`, omitted from settings JSON, and represented by `password_stored` in API responses. Named instances with the same normalized host, port and username share one credential; the last explicitly submitted password wins.
 Removing an instance asks for confirmation and deletes that shared credential only when no retained instance still references it.
+Each saved instance card also offers **Download** and **Upload**, which add ordinary `OmeroDownloadDataset` and `OmeroUploadImage` nodes from the installed `bioimageflow_omero_tools` package to the active writable canvas.
+The actions copy only the saved host, port and username and capture the installed package version, module `bioimageflow_omero_tools.omero` and exact class; later settings or catalog changes do not retarget existing nodes.
+Unsaved connection or password edits, no writable canvas, or missing matching package tools disable these actions; missing tools direct users to normal Tools installation.
+Dataset and image parameters remain ordinary editable node fields, while managed workers read the saved password directly from the OS keyring without placing it in graph parameters or task payloads.
+
 
 ### 3.13 Drag and Drop (File Import)
 

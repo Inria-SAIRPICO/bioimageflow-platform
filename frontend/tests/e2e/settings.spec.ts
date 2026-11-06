@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { OmeroInstanceResponse, ToolMetadata, ToolNodeState, WorkflowFile } from '../../src/api/types'
+import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
 
@@ -433,6 +435,178 @@ test.describe('Settings Panel', () => {
     await expect(dialog).toContainText('Secrets are never saved')
     await expect(dialog.getByRole('button', { name: 'Slurm example' })).toBeVisible()
     await expect(dialog).not.toContainText('Trusted Parsl configuration factories')
+  })
+
+  test('saved OMERO actions capture installed tools and preserve node targets after settings edits and reload', async ({ page }, testInfo) => {
+    // This acceptance is executed only after the candidate is published and
+    // adopted. The public installer/catalog are real; OS keyring is the
+    // explicitly deterministic E2E Settings boundary, not a live transfer.
+    test.setTimeout(180_000)
+    const version = /^BIOIMAGEFLOW_OMERO_TOOLS_VERSION=([^\s#]+)$/m.exec(
+      readFileSync(join('..', 'scripts', 'ci', 'test_versions.env'), 'utf8'),
+    )?.[1]
+    expect(version, 'The reviewed published OMERO acceptance version is required.').toBeTruthy()
+    const packageName = 'bioimageflow_omero_tools'
+    const classes = ['OmeroDownloadDataset', 'OmeroUploadImage']
+    const before = await currentSettings(page)
+    const previousInstances = before.omero_instances as OmeroInstanceResponse[]
+    const previousPatch = previousInstances.map(instance => ({
+      name: instance.name, host: instance.host, port: instance.port, username: instance.username,
+    }))
+    const root = process.env.BIOIMAGEFLOW_E2E_ROOT
+    expect(root, 'Playwright must supply an isolated settings root.').toBeTruthy()
+    const settingsPath = join(root!, 'settings.json')
+    const beforeDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
+    const suffix = `${testInfo.project.name}_${Date.now()}`
+    const name = `omero_card_${suffix}`
+    const draftTraffic: unknown[] = []
+    page.on('request', request => {
+      if (request.method() === 'PUT' && new URL(request.url()).pathname.endsWith(`/${name}`)) {
+        draftTraffic.push({ kind: 'request', url: request.url(), body: request.postDataJSON() })
+      }
+    })
+    page.on('response', async response => {
+      if (response.request().method() === 'PUT' && new URL(response.url()).pathname.endsWith(`/${name}`)) {
+        draftTraffic.push({ kind: 'response', url: response.url(), body: await response.json().catch(() => null) })
+      }
+    })
+    const label = `OMERO card ${suffix}`
+    const connection = { host: `omero-${suffix}.invalid`, port: 4064, username: 'e2e_user' }
+    const replacement = { host: `changed-${suffix}.invalid`, port: 4065, username: 'changed_user' }
+    let created = false
+    let mainFailed = false
+    let cleanupFailures: unknown[] = []
+    const catalog = async () => {
+      const response = await page.request.get(`${API}/tools`)
+      expect(response.ok(), await response.text()).toBeTruthy()
+      return await response.json() as ToolMetadata[]
+    }
+    const openOwnedWorkflow = async () => {
+      await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
+      await page.getByTestId('workflow-search').fill(name)
+      const request = page.waitForRequest(item => item.method() === 'GET'
+        && new URL(item.url()).pathname === `/api/v1/workflow-drafts/${name}`)
+      const [response] = await Promise.all([
+        page.waitForResponse(async item => item.request() === await request),
+        page.getByTestId(`workflow-row-${name}`).dblclick(),
+      ])
+      expect(response.ok(), await response.text()).toBeTruthy()
+      await expect(page.getByTestId('workflow-title')).toHaveText(label)
+      return await response.json() as WorkflowDraftResponse
+    }
+    const expectCapturedNodes = (nodes: ToolNodeState[]) => {
+      expect(nodes).toHaveLength(2)
+      for (const className of classes) {
+        const node = nodes.find(item => item.tool_class === className)
+        expect(node).toMatchObject({
+          type: 'tool', tool_name: className, tool_class: className,
+          tool_module: 'bioimageflow_omero_tools.omero',
+          tool_package: packageName, tool_package_version: version,
+          parameters: connection,
+        })
+        expect(node?.parameters).not.toHaveProperty('password')
+        expect(JSON.stringify(node)).not.toContain('staged-not-a-credential')
+      }
+    }
+    try {
+      const initial = (await catalog()).filter(tool => tool.package === packageName)
+      for (const tool of initial) expect(tool.package_version).toBe(version)
+      const installed = await page.request.post(`${API}/tools/packages/${packageName}/install`, {
+        data: { version }, timeout: 120_000,
+      })
+      expect(installed.ok(), await installed.text()).toBeTruthy()
+      for (const className of classes) {
+        expect((await catalog()).find(tool => tool.name === className)).toMatchObject({
+          name: className, package: packageName, package_version: version, source_kind: 'package',
+        })
+      }
+      const creation = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+      expect(creation.status(), await creation.text()).toBe(201)
+      created = true
+      await page.goto('/')
+      await expect(page.locator('#bioimageflow-app')).toBeVisible()
+      await openOwnedWorkflow()
+      await openSettings(page)
+      const dialog = page.getByTestId('settings-panel')
+      await dialog.getByText('OMERO', { exact: true }).click()
+      await dialog.getByTestId('omero-add-button').click()
+      const card = dialog.getByTestId(`omero-card-${previousInstances.length}`)
+      await card.getByLabel('Name', { exact: true }).fill(label)
+      await card.getByLabel('Host', { exact: true }).fill(connection.host)
+      await card.getByLabel('Username', { exact: true }).fill(connection.username)
+      await expect(card.getByRole('button', { name: 'Add OMERO download tool' })).toBeDisabled()
+      const savedConnection = page.waitForResponse(response => response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname === '/api/v1/settings')
+      await card.getByRole('button', { name: 'Save OMERO instance' }).click()
+      expect((await savedConnection).status()).toBe(200)
+      await expect(card.getByRole('button', { name: 'Add OMERO download tool' })).toBeEnabled()
+      await card.getByLabel('Password', { exact: true }).fill('staged-not-a-credential')
+      await expect(card.getByRole('button', { name: 'Add OMERO upload tool' })).toBeDisabled()
+      await card.getByLabel('Password', { exact: true }).fill('')
+      await card.getByRole('button', { name: 'Add OMERO download tool' }).click()
+      await card.getByRole('button', { name: 'Add OMERO upload tool' }).click()
+      await dialog.getByTestId('settings-close').click()
+      await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+      const saved = page.waitForResponse(response => response.request().method() === 'PUT'
+        && new URL(response.url()).pathname === `/api/v1/workflows/${name}`)
+      const promotedDraft = page.waitForResponse(async response => {
+        if (response.request().method() !== 'PUT'
+          || new URL(response.url()).pathname !== `/api/v1/workflow-drafts/${name}`) return false
+        const draft = await response.json() as WorkflowDraftResponse
+        return draft.graph.nodes.length === 2 && !draft.dirty_against_saved
+      })
+      await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+      expect((await saved).status()).toBe(200)
+      expect((await promotedDraft).status()).toBe(200)
+      await expect(page.getByTestId('workflow-title')).toHaveText(label)
+      const savedResponse = await page.request.get(`${API}/workflows/${name}`)
+      expect(savedResponse.ok(), await savedResponse.text()).toBeTruthy()
+      const savedFile = await savedResponse.json() as WorkflowFile
+      expectCapturedNodes(savedFile.graph.nodes as ToolNodeState[])
+      await openSettings(page)
+      await dialog.getByText('OMERO', { exact: true }).click()
+      await card.getByLabel('Host', { exact: true }).fill(replacement.host)
+      await card.getByLabel('Port', { exact: true }).fill(String(replacement.port))
+      await card.getByLabel('Username', { exact: true }).fill(replacement.username)
+      const updated = page.waitForResponse(response => response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname === '/api/v1/settings')
+      await card.getByRole('button', { name: 'Save OMERO instance' }).click()
+      expect((await updated).status()).toBe(200)
+      expect((await currentSettings(page)).omero_instances).toEqual([
+        ...previousInstances, { name: label, ...replacement, password_stored: false },
+      ])
+      await dialog.getByTestId('settings-close').click()
+      await page.reload()
+      const reopened = await openOwnedWorkflow()
+      expectCapturedNodes(reopened.graph.nodes as ToolNodeState[])
+      expect(reopened.graph).toEqual(savedFile.graph)
+      await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+    } catch (error) {
+      mainFailed = true
+      await testInfo.attach('omero-draft-traffic', { body: JSON.stringify(draftTraffic, null, 2), contentType: 'application/json' })
+      throw error
+    } finally {
+      cleanupFailures = await settleSettingsTest([
+        () => page.goto('about:blank'),
+        async () => {
+          if (created) {
+            const deleted = await page.request.delete(`${API}/workflows/${name}`)
+            expect(deleted.status()).toBe(200)
+          }
+        },
+        async () => {
+          const restored = await page.request.patch(`${API}/settings`, { data: { omero_instances: previousPatch } })
+          expect(restored.status()).toBe(200)
+          expect(await currentSettings(page)).toEqual(before)
+          expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual(beforeDisk)
+        },
+      ])
+      if (cleanupFailures.length) await settleSettingsTest([() => testInfo.attach('omero-card-cleanup-errors', {
+        body: cleanupFailures.map(String).join('\n'), contentType: 'text/plain',
+      })])
+    }
+    if (!mainFailed && cleanupFailures.length) throw cleanupFailures[0]
   })
 
   test('OMERO instance cards keep fields and actions visible without horizontal scrolling', async ({

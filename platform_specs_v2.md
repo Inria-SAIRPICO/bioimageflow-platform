@@ -38,6 +38,7 @@ The portable BioImageFlow grammar does not carry GUI coordinates.
 When the platform first materializes a portable or Python-authored graph, it recursively assigns deterministic left-to-right dependency layers, vertically separates parallel branches, and stacks disconnected components.
 Those generated positions immediately become ordinary canonical `GraphState` content; reopening, validating, executing, importing an already materialized platform document, and ordinary graph mutation do not automatically re-layout them.
 Processing-tool resources are typed portable per-node overrides for CPU, GPU, memory, GPU memory, and maximum concurrency.
+Canvas serialization emits explicit nulls for inherited processing-resource fields at every graph depth, matching backend responses so a persistence roundtrip does not create a newer edit or keep a successfully saved canvas dirty.
 They describe worker requirements rather than guaranteed limits, inherit the tool declaration when absent, and do not affect cache identity.
 Missing or null fields both mean inheritance; Reset all clears explicit overrides and is disabled when there are none, while numeric zero remains an explicit override subject to normal declaration validation.
 `GraphState.config.execution` owns sequential or parallel scheduling; application settings only choose the default for a new workflow.
@@ -565,6 +566,10 @@ Resolved secrets are never stored or returned.
 OMERO remains a platform-owned integration consumed by dedicated tool packages.
 The OMERO settings UI renders each named server instance as a separate responsive form card with individually labelled fields and card-local Save, Duplicate, and Remove actions.
 Cards use multiple field columns when space permits, collapse to one column in narrow windows, and do not require horizontal scrolling to reach fields or actions.
+Saved cards offer **Download** and **Upload** from the independent `bioimageflow_omero_tools` package through the active canvas command facade.
+Each action captures the saved non-secret connection fields and exact installed package/version/module/class binding; changing settings or the catalog does not alter existing node targets.
+Unsaved connection or password edits, a missing writable canvas, and unavailable matching package tools disable these actions; package installation remains the normal Tools flow.
+
 
 Fiji is also a platform-owned desktop integration, but the Fiji application remains user-installed and user-managed. The platform stores and validates the selected installation directory, resolves result images from their workflow-scoped identities, and never exposes this local-launch capability in webapp mode.
 

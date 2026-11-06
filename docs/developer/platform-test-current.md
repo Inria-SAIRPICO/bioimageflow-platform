@@ -4,6 +4,30 @@ orphan: true
 
 # Campaign current checkpoint
 
+## OMERO standalone release — November 6, 2026
+
+The user retained the independent `bioimageflow-omero-tools` package and abandoned the Common Tools migration; its independent migration clone was moved to macOS Trash.
+[OMERO Tools 0.2.0](https://pypi.org/project/bioimageflow-omero-tools/0.2.0/) is published from library tag `bioimageflow-omero-tools-v0.2.0` at `800d396437fe2222f707e9be9b4ec47c89c5b91b`, following successful ordinary [exact-source CI](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/42255108926).
+The [release workflow](https://github.com/Inria-SAIRPICO/bioimageflow/actions/runs/42255471294) uploaded the wheel/source distribution successfully; its first visibility poll timed out, and the failed job passed on retry using the same artifacts.
+The public wheel SHA256 is `833b28607a5d7143c23524c7060a3c4cffa53fbc09fe4526f6f0eb18f608d9bb`, identical to the candidate tested in a real separate Wetlands worker with published Core 0.6.0.
+That 45.091s callback-level test round-tripped TCZYX uint16 TIFF and RGBA PNG pixels, map annotations and owned OME-TIFF outputs, using only RAM credentials; deletion of all acknowledged test objects was verified.
+A subsequent normal published-wheel `Workflow.compute` → Wetlands ProcessingTask upload/download check passed in 12.246s, retained exact TCZYX uint16 pixels in the owned output file, and verified deletion of the acknowledged test image and dataset.
+Its first fixture attempt refused a pre-created pool timeout that differed from the workflow default before tool dispatch; cleanup was verified, and the corrected fixture retained the normal default.
+These checks do not certify OS-keyring integration or native desktop behavior.
+The standalone publisher/registry blocker described below is historical and resolved; future platform acceptance must use the published standalone identity and retain the existing local/distributed and native-M5 boundaries.
+
+Platform adoption validation uses the `81b3c1f` baseline plus this task's catalog, saved-card binding and resource-wire completion changes, with unchanged normal published SDK 0.10.0/Core 0.6.0 dependencies.
+The local `scripts/test full` attempt passed 2,075 backend cases (89 distributed cases deselected, 330.04s test time / 381s phase), frontend lint/types/build and 1,453 frontend cases (43 distributed cases skipped, 40s coverage phase), plus seven logging-order cases (9s phase).
+Its initial Chromium phase stopped on an existing viewer-guidance assertion expecting outdated unconditional copy: 67 passed, one failed and 84 did not run (264s); the exact case reproduced, and its two unknown-metadata message assertions were aligned with the existing conditional UI warning while retaining actual execution/result assertions.
+The corrected exact Chromium case passed (12s), the changed test file passed ESLint, and the complete `scripts/test check browser` rerun passed all 152 Chromium cases (779s).
+The complete Firefox phase of the original run also passed its local collection; `frontend/test-results/firefox/.last-run.json` retained `status: passed` with no failed cases.
+A focused Playwright invocation cleared the shared artifact directory containing the original aggregate stdout log; captured phase summaries and the Firefox terminal status were retained, and subsequent logs were written outside that directory.
+No monolithic successful `full` run is claimed: the final result assembles causally unchanged non-browser/Firefox successes with the completed Chromium rerun after a browser-test-only correction.
+The 20 package catalog tests passed (3s), as did the exact published-package OMERO Chromium install→saved-card→Save→settings-change→reload journey (12s) and inherited-resource serialization regression (1s).
+The standard `scripts/test check docs` failed solely on the pre-existing untracked `docs/developer/# Improve documentation.md` toctree warning (3s); the file was preserved unchanged, campaign checks passed (8s), and strict Sphinx passed with that one draft excluded.
+Distributed features and native desktop acceptance remain outside this local release/adoption validation.
+
+
 This is the operational resume pointer, not a diary.
 Read [AGENTS.md](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/AGENTS.md), [PLATFORM_CONTEXT.md](https://github.com/Inria-SAIRPICO/bioimageflow-platform/blob/main/PLATFORM_CONTEXT.md), then only the relevant task/specification and directly available evidence.
 The [plan](platform-test-plan.md) defines the campaign outcomes; the [dashboard](platform-test-dashboard.md) is the historical obligation ledger, not current-revision certification.

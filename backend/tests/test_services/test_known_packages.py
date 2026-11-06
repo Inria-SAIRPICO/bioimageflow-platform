@@ -29,6 +29,7 @@ def test_bundled_default_ships_with_backend():
         "bioimageflow_common_tools",
         "bioimageflow_io_tools",
         "bioimageflow_measurement_tools",
+        "bioimageflow_omero_tools",
         "bioimageflow_restoration_tools",
         "bioimageflow_sairpico_tools",
         "bioimageflow_segmentation_tools",

@@ -113,7 +113,10 @@ BioImageFlow stores the password in the operating system credential service and 
 
 Connections with the same host, port and username share a password.
 After confirmation, removing a connection deletes that password only when no remaining connection uses it.
-Tools that support OMERO let you choose one of these named connections in their own parameters.
+Install **OMERO Tools** from Manage Tools, open an editable workflow, then use **Download** or **Upload** on a saved connection card to add its tool to the workflow.
+Save connection edits before adding a transfer; then fill in the dataset ID and, for uploads, the image input in the node's parameters.
+Existing nodes retain their connection details when you edit Settings.
+The tools read the stored password when they run.
 
 ## Launcher version and updates
 

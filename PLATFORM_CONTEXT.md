@@ -148,6 +148,7 @@ Repeated workflow compilation and planning reuse those installed facts rather th
 Editable and workflow-owned sources retain fresh capture for each operation, independently of watcher delivery; invocation declarations, parameters, inputs, runtime readiness and selected result-record integrity remain current checks.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 Missing or null resource fields inherit the declaration; the resource form enables Reset all only for explicit overrides, including numeric zero subject to normal validation.
+Canvas serialization completes inherited processing-resource fields as explicit nulls recursively, preserving numeric zero and other authored overrides and keeping Save comparisons stable across backend roundtrips.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
 Saved-workflow dependency diagnostics capture exact owned source bytes without changing the canonical graph or compiling it; explicit flat workflow-local module bindings resolve their contained file before catalog lookup, and present invalid source stays available to Open for repair.
 Saved-workflow dependency diagnostics resolve that same carried executable identity through the public class loader without compiling, planning or provisioning; an unavailable explicit binding cannot borrow a same-named catalog entry.
@@ -171,8 +172,8 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
-The bundled known-package catalog includes the eight published first-party tool packages: Common, I/O, Measurement, Restoration, SAIRPICO, Segmentation, Spot, and Tracking.
-Phasor and OMERO await first PyPI publication; catalog inclusion establishes discoverability, independently of execution-environment readiness or certification.
+The bundled known-package catalog includes the nine published first-party tool packages: Common, I/O, Measurement, OMERO, Restoration, SAIRPICO, Segmentation, Spot, and Tracking.
+OMERO 0.2.0 is published separately from Common Tools, while Phasor awaits first PyPI publication; catalog inclusion establishes discoverability, independently of execution-environment readiness or certification.
 A `known_packages.txt` file in the configured BioImageFlow home replaces the bundled list, while installed packages remain discoverable independently.
 Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
 An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
@@ -214,6 +215,9 @@ In the main tool catalog, single-click toggles the bottom documentation panel an
 Catalog search derives a reactive index from names, display names, tags, categories and documentation words, splitting identifier word boundaries before normalization.
 It preserves all-token exact partial matching and stable catalog order, and permits one conservative whole-word edit for otherwise unmatched tokens of 4–64 characters without new wire metadata or stored search state.
 The Manage Tools inventory is independent of the catalog search query, and its tool information and actions expose each declared managed environment's location and explicit create/recreate operation.
+Saved OMERO connection cards create ordinary Upload/Download nodes through the active writable canvas, capturing only saved non-secret connection fields and exact standalone OMERO package/version/module/class bindings.
+Unsaved connection/password edits or missing package/canvas capabilities disable those actions; existing nodes keep their captured targets when Settings changes.
+
 Tool metadata resolves all declared environment locations from one fresh public inventory per request, off the event loop, without provisioning or retaining that inventory between requests.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 

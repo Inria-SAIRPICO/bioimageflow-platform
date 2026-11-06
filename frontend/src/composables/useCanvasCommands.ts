@@ -4,10 +4,17 @@ import type {
   DisposableCanvasResource,
 } from '@/sessions/canvasSessionRegistry'
 import { graphSyncCanvasSessions } from './useGraphSync'
+import type { ToolNodeState } from '@/api/types'
 
 const CANVAS_COMMAND_RESOURCE = 'canvas-commands'
 
 export type CanvasSaveRoute = 'root' | 'nested' | 'unavailable'
+
+export type CanvasToolBinding = {
+  [Key in keyof Pick<ToolNodeState,
+    'tool_module' | 'tool_class' | 'tool_package' | 'tool_package_version'
+  >]-?: NonNullable<ToolNodeState[Key]>
+}
 
 export type CanvasInterfaceRejectionReason =
   | 'duplicate_name'
@@ -29,7 +36,8 @@ export type CanvasInterfaceCommandResult =
 export interface CanvasScopedCommandsOptions {
   descriptor: CanvasSessionDescriptor
   save?: () => void | Promise<void>
-  addToolNode?: (toolName: string, parameters?: Record<string, unknown>) => string | null
+  addToolNode?: (toolName: string, parameters?: Record<string, unknown>, binding?: CanvasToolBinding) => string | null
+  canAddToolNode?: () => boolean
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
   setNodesEnabled?: (nodeIds: string[], enabled: boolean) => boolean
@@ -69,7 +77,8 @@ export interface CanvasScopedCommandsOptions {
 
 export interface CanvasCommandsApi {
   routeSave(): Promise<CanvasSaveRoute>
-  addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
+  addToolNode(toolName: string, parameters?: Record<string, unknown>, binding?: CanvasToolBinding): string | null
+  canAddToolNode(): boolean
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
@@ -101,7 +110,8 @@ export interface CanvasCommandsApi {
 
 interface CanvasCommandResource extends DisposableCanvasResource {
   save?: () => Promise<void>
-  addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
+  addToolNode(toolName: string, parameters?: Record<string, unknown>, binding?: CanvasToolBinding): string | null
+  canAddToolNode(): boolean
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setNodesEnabled(nodeIds: string[], enabled: boolean): boolean
@@ -160,7 +170,8 @@ export function useCanvasCommands(
       await resource.save!()
       return 'nested'
     },
-    addToolNode: (toolName, parameters) => resource.addToolNode(toolName, parameters),
+    addToolNode: (toolName, parameters, binding) => resource.addToolNode(toolName, parameters, binding),
+    canAddToolNode: () => resource.canAddToolNode(),
     renameNode: (nodeId, name) => resource.renameNode(nodeId, name),
     setNodeEnabled: (nodeId, enabled) => (
       resource.setNodeEnabled(nodeId, enabled)
@@ -237,10 +248,13 @@ function createCommandResource(
           },
         }
       : {}),
-    addToolNode: (toolName, parameters) => {
+    addToolNode: (toolName, parameters, binding) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
-      return options.addToolNode?.(toolName, parameters) ?? null
+      if (options.canAddToolNode?.() === false) return null
+      return options.addToolNode?.(toolName, parameters, binding) ?? null
     },
+    canAddToolNode: () => !disposed && options.addToolNode !== undefined
+      && (options.canAddToolNode?.() ?? true),
     renameNode: (nodeId, name) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.renameNode(nodeId, name)
@@ -340,9 +354,10 @@ function createActiveFacade(): CanvasCommandsApi {
       await resource.save()
       return 'nested'
     },
-    addToolNode: (toolName, parameters) => (
-      activeCommandResource()?.addToolNode(toolName, parameters) ?? null
+    addToolNode: (toolName, parameters, binding) => (
+      activeCommandResource()?.addToolNode(toolName, parameters, binding) ?? null
     ),
+    canAddToolNode: () => activeCommandResource()?.canAddToolNode() ?? false,
     renameNode: (nodeId, name) => (
       activeCommandResource()?.renameNode(nodeId, name) ?? false
     ),

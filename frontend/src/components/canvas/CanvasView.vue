@@ -32,6 +32,7 @@ import {
 } from '@/composables/useCanvasPersistence'
 import {
   useCanvasCommands,
+  type CanvasToolBinding,
   type CanvasInterfaceCommandResult,
   type CanvasInterfaceRejectionReason,
 } from '@/composables/useCanvasCommands'
@@ -290,11 +291,13 @@ const graphSync = useGraphSync({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isNestedWorkflowEditor ? () => saveNestedWorkflowSession() : undefined,
-  addToolNode: (toolName, parameters) => onAddNode({
+  addToolNode: (toolName, parameters, binding) => onAddNode({
     toolName,
     parameters,
+    binding,
     position: canvasCenterPosition(),
   }),
+  canAddToolNode: () => !isLocked.value,
   renameNode,
   setNodeEnabled,
   setNodesEnabled,
@@ -2593,13 +2596,21 @@ function onAddNode({
   toolName,
   position,
   parameters: parameterOverrides,
+  binding,
 }: {
   toolName: string
   position?: { x: number; y: number }
   parameters?: Record<string, unknown>
+  binding?: CanvasToolBinding
 }): string | null {
   if (isLocked.value) return null
-  const tool = toolRegistryStore.getToolByName(toolName)
+  const tool = binding
+    ? toolRegistryStore.tools.find(candidate => candidate.name === toolName
+      && candidate.name === binding.tool_class
+      && candidate.package === binding.tool_package
+      && candidate.package_version === binding.tool_package_version
+      && candidate.source_kind === 'package')
+    : toolRegistryStore.getToolByName(toolName)
   if (!tool) return null
 
   const existingIds = getNodes.value.map((n: any) => n.id)
@@ -2638,6 +2649,12 @@ function onAddNode({
       name,
       toolName,
       tool,
+      ...(binding ? {
+        toolModule: binding.tool_module,
+        toolClass: binding.tool_class,
+        toolPackage: binding.tool_package,
+        toolPackageVersion: binding.tool_package_version,
+      } : {}),
       status: 'unexecuted',
       parameters,
       collapsed: false,
