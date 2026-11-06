@@ -25,7 +25,16 @@ def test_bundled_default_ships_with_backend():
         for line in text.splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    assert "bioimageflow_common_tools" in non_comment_lines
+    assert set(non_comment_lines) == {
+        "bioimageflow_common_tools",
+        "bioimageflow_io_tools",
+        "bioimageflow_measurement_tools",
+        "bioimageflow_restoration_tools",
+        "bioimageflow_sairpico_tools",
+        "bioimageflow_segmentation_tools",
+        "bioimageflow_spot_tools",
+        "bioimageflow_tracking_tools",
+    }
 
 
 # ---------------------------------------------------------------------------

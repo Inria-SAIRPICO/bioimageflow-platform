@@ -143,6 +143,11 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
 It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
 
+**Known package catalog:** The bundled default includes the published Common, I/O, Measurement, Restoration, SAIRPICO, Segmentation, Spot, and Tracking tool packages.
+Phasor and OMERO tools are excluded until their first PyPI releases; source-repository presence alone does not establish installable availability.
+`known_packages.txt` in the configured BioImageFlow home replaces the bundled list when present; installed packages remain visible independently of that list.
+Catalog inclusion does not provision or certify a tool's execution environment, external binaries, models, or services.
+
 **Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
 Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
 A configuration-level root symlink is supported; package/version symlinks, non-directory entries, traversal and unsafe selectors return HTTP 400 `bad_request`, while a safe absent selection returns 404.

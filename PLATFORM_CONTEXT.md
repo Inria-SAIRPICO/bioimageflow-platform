@@ -171,6 +171,9 @@ The canvas derives column-edge strands reactively from the target tool metadata 
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
+The bundled known-package catalog includes the eight published first-party tool packages: Common, I/O, Measurement, Restoration, SAIRPICO, Segmentation, Spot, and Tracking.
+Phasor and OMERO await first PyPI publication; catalog inclusion establishes discoverability, independently of execution-environment readiness or certification.
+A `known_packages.txt` file in the configured BioImageFlow home replaces the bundled list, while installed packages remain discoverable independently.
 Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
 An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
 Retirement follows path admission and precedes physical removal; supported versions are selected from the stored directories even when catalog discovery failed, while safe unsupported legacy names remain removable without SDK admission.

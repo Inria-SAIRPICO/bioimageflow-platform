@@ -3,6 +3,13 @@
 # Trailing inline comments (after a "  #") are also stripped.
 #
 # This file is used only when ~/.bioimageflow/known_packages.txt does not exist.
+# Include published first-party tool packages compatible with the platform.
+# Phasor and OMERO tools await their first PyPI releases.
 bioimageflow_common_tools
+bioimageflow_io_tools
+bioimageflow_measurement_tools
+bioimageflow_restoration_tools
+bioimageflow_sairpico_tools
 bioimageflow_segmentation_tools
 bioimageflow_spot_tools
+bioimageflow_tracking_tools
