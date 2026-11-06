@@ -448,6 +448,8 @@ For an API change, trace the backend model and service, router, generated type, 
 
 ### Other important areas
 
+- [Typed DataFrame transformations](docs/developer/dataframe-output-contracts.md) explains the proposed output-contract API, partial schemas, runtime completion and implementation impact; [DataFrame metadata and asset references](docs/developer/df_metadata.md) owns its proposed storage safeguards.
+  Both are design proposals, not implemented runtime contracts or replacements for the normative specifications.
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines local/distributed feature suites and focused, quick, scoped completion, browser, full, and certification lanes.
   The Release validation workflow runs the local full lane and documentation check for exact `release/**` candidates before promotion to main; native desktop acceptance remains separate.

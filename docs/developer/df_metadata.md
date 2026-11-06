@@ -8,6 +8,9 @@ Status: proposed design, not implemented behavior or a replacement for the norma
 This document proposes a bounded mechanism for preserving typed image columns through ordinary table operations.
 Implementation would require coordinated public library contracts and platform integration; this documentation task changes neither runtime behavior nor existing specifications.
 
+For a standalone introduction, proposed tool APIs, runtime schema completion and platform change estimates, read [Typed DataFrame transformations](dataframe-output-contracts.md).
+That guide owns the author-facing API; this proposal owns the asset propagation and storage safeguards.
+
 ## Problem and motivating example
 
 In the Synthetic Cells feature-test workflow, the raw segmentation branch produces a `labels` column declared as `ImageFile`, with label-image semantics and a usable asset reference.
@@ -227,7 +230,8 @@ Automatic preservation cannot be safe for arbitrary Python code that can replace
 Custom dataframe tools need a small opt-in contract: identify preserved columns and their row mapping, provide a rename map, or declare new output columns and their metadata.
 A tool that changes an existing column's meaning must replace or invalidate its old description.
 For dynamically generated columns, a supported metadata callback may derive descriptions from input descriptions and parameters without scientific execution or arbitrary image inspection.
-Reuse or extend `resolve_outputs` and `resolve_merge_schema` rather than introduce a competing schema callback family; any added callback must retain their pure, deterministic, no-I/O contract and be covered by executable/output-contract versioning.
+Normalize existing `resolve_outputs` and `resolve_merge_schema` contracts through the unified schema adapter described in the companion guide.
+A new `resolve_schema` opt-in must reject competing declarations rather than create a second authority; callbacks retain the pure, deterministic, no-I/O contract and participate in executable/output-contract versioning.
 
 A tool without such a declaration may continue to execute under the existing dynamic-output contract, but unsupported metadata remains explicitly unknown.
 Do not claim to infer arbitrary transformations, and do not automatically preserve metadata solely because an output column happens to keep an input column's name.
