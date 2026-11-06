@@ -1580,9 +1580,10 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 - **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
-- **Import / Export:** Uses the BioImageFlow library import/export API. The
-  platform does not reimplement the library archive format. Export saves/promotes
-  a dirty draft first so the archive matches the current editable graph.
+- **Import / Export:** Uses the BioImageFlow library import/export API.
+  The platform does not reimplement the library archive format.
+  Workflow-containing exports save/promote a dirty draft first so the archive matches the current editable graph.
+  Results-only exports do not save the draft and distinguish per-node latest results (possibly mixed runs) from one pinned latest successful run, as specified in v2 §12.
   After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
   Pending-only checks remain silent so a covered result never flashes a temporary banner.
   Saved inspection uses the normal graph compiler and source/store authority, without planning, provisioning or execution; unresolved metadata preserves its loading diagnostics.

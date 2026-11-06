@@ -423,9 +423,14 @@ Preferences reports the effective publication mode and warning, if any, but does
 Workflow export uses one dialog with these platform-owned choices:
 
 - **Workflow only** saves an unsaved addressed root workflow when necessary and downloads the BioImageFlow recursive workflow archive, including owned workflow-local sources but no results.
-- **Latest results** downloads materialized copies of the current per-node latest projection; its files may come from different runs.
-- **Workflow with results** saves when necessary and downloads a platform results bundle containing the workflow archive plus copied outputs and provenance from exactly one pinned latest successful run.
-- **Export latest results to folder** is desktop-only and materializes the current per-node latest projection as ordinary files in a generated child directory of the selected parent.
+- **Workflow with results from the latest successful run** saves when necessary and downloads a platform results bundle containing the current workflow archive plus copied outputs and provenance from exactly one pinned latest successful run.
+- **Latest result from each node** downloads materialized copies of the current per-node latest projection; its files may come from different runs.
+- **Results from the latest successful run** downloads copied outputs and provenance from exactly one pinned latest successful run, without compiling, saving, or archiving the workflow definition.
+- **Latest result from each node → folder** is an additional desktop-only destination action and materializes the per-node latest projection as ordinary files in a generated child directory of the selected parent.
+
+The first four choices appear in this order and download ZIP archives.
+Descriptions distinguish per-node mixed-run results from a single successful run; a successful selected-node run is eligible and does not imply whole-workflow coverage.
+A workflow-containing bundle carries the current saved definition, which may have changed since the selected run.
 
 Results-only exports do not save or mutate the workflow definition and remain available while graph mutation is locked.
 Workflow-containing exports use the normal save and mutation barriers.
@@ -440,6 +445,7 @@ The workflow-and-results bundle writes the top-level manifest `bioimageflow-resu
 The manifest identifies the workflow, nested workflow archive and its SHA-256 digest, pinned successful run ID, and copied run-results path.
 It is a self-contained export artifact, not a portable workflow archive, and workflow import rejects it with an explicit unsupported-media response.
 Only the nested workflow archive inside the bundle is importable.
+The successful-run results-only bundle uses the same manifest schema with `kind: "results-only"`, omits the `workflow` member and archive directory, and retains workflow ID, pinned run ID, and result path.
 
 A workspace-document backup, when provided, remains a separate platform artifact and is not accepted as a BioImageFlow workflow archive.
 
@@ -524,6 +530,7 @@ The export routes are:
 - `POST /api/v1/workflows/{name}/export` for the portable workflow-only archive;
 - `POST /api/v1/workflows/{name}/exports/latest-results` for the copied latest-results ZIP;
 - `POST /api/v1/workflows/{name}/exports/latest-results-folder` for the desktop copied-folder export;
+- `POST /api/v1/workflows/{name}/exports/successful-run-results` for the pinned successful-run results without a workflow archive;
 - `POST /api/v1/workflows/{name}/exports/workflow-run-bundle` for the workflow and pinned successful-run bundle.
 
 Download routes complete their temporary materialization before returning a streamed file response and remove temporary state after the response.

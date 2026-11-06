@@ -13,7 +13,7 @@ With BioImageFlow, you can:
 - **Visualize Complex Data:** Explore multidimensional images such as 3D+t data through the built-in Napari integration.
 - **Manage Data Effectively:** Use Pandas data tables throughout your workflows and connect directly to OMERO repositories.
 - **Boost Performance:** Speed up analyses with automatic parallel processing of independent workflow steps and configured distributed targets.
-- **Work with Coding Agents:** Connect Codex, OpenCode, or Claude Code through MCP so an agent can inspect, edit, validate, and run the active workflow while you review its changes in BioImageFlow.
+- **Work with Coding Agents:** Use Codex, Claude Code, oh-my-pi, or OpenCode to create and edit workflows, with changes shown in real time on the canvas.
 - **Get Started Instantly:** Install BioImageFlow with the launcher and receive verified application updates without managing the environment yourself.
 
 BioImageFlow lets you focus on scientific discovery by making powerful bioimage analysis accessible, manageable, and reproducible.

@@ -370,7 +370,9 @@ The read fences the accepted draft, workflow generation, and storage path agains
 A corrupt selected cache record projects the affected node as failed with `cache_corrupt` while leaving the draft readable and saveable; execution remains strict and rejects that branch.
 When execution is idle, that accepted failed status takes badge precedence over a matching retained execution status for the affected node or a failed aggregate workflow ancestor; semantic edits, active progress, and ordinary terminal execution status keep their existing precedence.
 Clearing the affected node removes its current selection, quarantines a safely identified corrupt immutable record, and refreshes the cleared and downstream status projection.
-A workflow-and-results bundle instead pins one successful run.
+Successful-run exports instead pin one successful run, either with the current saved workflow or as results only.
+The export dialog distinguishes the latest result from each node (possibly mixed runs) from the latest successful run; a successful selected-node run remains eligible.
+Results-only exports never compile or save the workflow definition.
 These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.
 
 ### APIs, events, and agent control

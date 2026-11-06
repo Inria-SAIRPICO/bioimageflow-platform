@@ -851,7 +851,10 @@ describe('workflow store', () => {
     expect(click).toHaveBeenCalled()
   })
 
-  it('downloads latest results without saving the workflow', async () => {
+  it.each([
+    ['exportLatestResults', 'latest-results'],
+    ['exportSuccessfulRunResults', 'successful-run-results'],
+  ] as const)('downloads %s without saving the workflow', async (method, endpoint) => {
     const blob = new Blob(['results'], { type: 'application/zip' })
     vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:results')
     vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
@@ -865,10 +868,10 @@ describe('workflow store', () => {
     })
     const store = useWorkflowStore()
 
-    await store.exportLatestResults('folder/wf', controller.signal)
+    await store[method]('folder/wf', controller.signal)
 
     expect(api.post).toHaveBeenCalledWith(
-      '/api/v1/workflows/folder/wf/exports/latest-results',
+      `/api/v1/workflows/folder/wf/exports/${endpoint}`,
       undefined,
       { responseType: 'blob', signal: controller.signal },
     )

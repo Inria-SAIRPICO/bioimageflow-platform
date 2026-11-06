@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Workflow loading performance
 
 BioImageFlow 0.10.0 and Core 0.6.0 retain admitted installation facts so workflow opening, compilation and planning do not repeatedly rediscover the Python environment or prove unchanged installed source.

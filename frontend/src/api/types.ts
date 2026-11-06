@@ -1250,6 +1250,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/{name}/exports/successful-run-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Successful Run Results */
+        post: operations["export_successful_run_results_api_v1_workflows__name__exports_successful_run_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/{name}/exports/latest-results-folder": {
         parameters: {
             query?: never;
@@ -8947,6 +8964,37 @@ export interface operations {
         };
     };
     export_latest_workflow_results_api_v1_workflows__name__exports_latest_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_successful_run_results_api_v1_workflows__name__exports_successful_run_results_post: {
         parameters: {
             query?: never;
             header?: never;

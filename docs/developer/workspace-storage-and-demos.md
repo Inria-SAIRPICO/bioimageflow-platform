@@ -79,9 +79,10 @@ The **Open latest outputs** action opens this per-workflow directory.
 Exports create independent copies when portability matters:
 
 - **Workflow only** contains the reusable workflow and its local tools.
-- **Latest results** copies the latest successful result of each node.
-- **Workflow with results** combines the workflow with copied outputs and provenance from one successful run.
-- **Export latest results to folder** writes copied latest results to a chosen destination.
+- **Latest result from each node** copies the latest successful result of each node.
+- **Workflow with results from the latest successful run** combines the workflow with copied outputs and provenance from one successful run.
+- **Results from the latest successful run** copies one pinned successful run without compiling or saving the workflow.
+- **Latest result from each node → folder** writes copied latest results to a chosen destination.
 
 A workflow-and-results bundle is an export artifact, not a directly importable workflow archive.
 The workflow archive inside its `workflow/` directory can be imported separately.
