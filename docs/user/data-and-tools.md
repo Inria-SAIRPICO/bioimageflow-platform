@@ -46,6 +46,7 @@ BioImageFlow keeps those nodes visible and marks the missing tools, but it block
 - Click **Install all missing packages** to install every requested version.
 - Open **Manage tools** to install versions one at a time.
 - Use **Use installed alternatives...** only when the versions already installed are acceptable replacements.
+  Confirm the listed replacements, review the updated draft, then **Save** to keep the new dependency versions.
 
 Review replacements carefully because a different package version can change workflow behavior or outputs.
 

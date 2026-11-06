@@ -1038,6 +1038,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-drafts/{workflow_id}/rebind-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebind Workflow Draft Versions */
+        post: operations["rebind_workflow_draft_versions_api_v1_workflow_drafts__workflow_id__rebind_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -5399,6 +5416,20 @@ export interface components {
             validate: boolean;
         };
         /**
+         * WorkflowDraftRebindRequest
+         * @description Replace package versions in the accepted draft at an expected revision.
+         */
+        WorkflowDraftRebindRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Updated By
+             * @default frontend
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
+        };
+        /**
          * WorkflowDraftResetRequest
          * @description Request an atomic reset of the accepted draft to the saved artifact.
          */
@@ -6101,6 +6132,7 @@ export type WorkflowDraftOperationScope = components['schemas']['WorkflowDraftOp
 export type WorkflowDraftOperationValidationResponse = components['schemas']['WorkflowDraftOperationValidationResponse'];
 export type WorkflowDraftOperationsRequest = components['schemas']['WorkflowDraftOperationsRequest'];
 export type WorkflowDraftPutRequest = components['schemas']['WorkflowDraftPutRequest'];
+export type WorkflowDraftRebindRequest = components['schemas']['WorkflowDraftRebindRequest'];
 export type WorkflowDraftResetRequest = components['schemas']['WorkflowDraftResetRequest'];
 export type WorkflowDraftResponse = components['schemas']['WorkflowDraftResponse'];
 export type WorkflowEmbeddingRequest = components['schemas']['WorkflowEmbeddingRequest'];
@@ -8362,6 +8394,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["WorkflowDraftResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftLockedResponse"];
+                };
+            };
+        };
+    };
+    rebind_workflow_draft_versions_api_v1_workflow_drafts__workflow_id__rebind_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftRebindRequest"];
             };
         };
         responses: {

@@ -61,3 +61,14 @@ export async function resetWorkflowDraftToSaved(
   )
   return data
 }
+
+export async function rebindWorkflowDraftVersions(
+  workflowId: string,
+  expectedRevision: number,
+): Promise<WorkflowDraftResponse> {
+  const { data } = await api.post<WorkflowDraftResponse>(
+    `/api/v1/workflow-drafts/${workflowUrl(workflowId)}/rebind-versions`,
+    { expected_revision: expectedRevision, updated_by: 'frontend' },
+  )
+  return data
+}

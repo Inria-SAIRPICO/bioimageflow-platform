@@ -1903,7 +1903,14 @@ The node is rendered with a red "Tool not found" badge and cannot be executed un
 
 A workflow requires a tool package version that is not in the tool store (e.g., workflow saved with `bioimageflow-cellpose==1.2.0` but only `1.3.0` is installed).
 
-On load, the server reports missing package versions and tool classes in the workflow response. The dependency dialog displays required and installed versions plus affected nodes. **Use installed versions** is enabled when package alternatives exist; it calls `POST /workflows/{id}/rebind-versions`, updates the saved workflow references, and marks affected nodes for revalidation. Installing an absent required version remains a separate Tools Panel action.
+On load, the server reports missing package versions and tool classes in the workflow response.
+The dependency dialog displays required and installed versions plus affected nodes.
+**Use installed alternatives…** is enabled when package alternatives exist and opens a PrimeVue confirmation listing the proposed replacements.
+After the canvas freshness barrier, `POST /workflow-drafts/{id}/rebind-versions` accepts an expected draft revision and writer, replaces package identities recursively in that accepted draft, validates it, and returns the new draft revision and node-scoped metadata.
+It preserves all other canonical graph fields, including edges, layout, source provenance, parameters and templates; Save explicitly promotes the replacement to the saved workflow.
+The frontend binds confirmation and acceptance to the captured workflow identity and canvas registration, and invalidates viewing guidance belonging to the previous bindings.
+Revision conflicts and execution locks refuse replacement without changing the draft.
+Installing an absent required version remains a separate Tools Panel action.
 
 ---
 
@@ -1956,6 +1963,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
 | 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
 | 19a | `POST` | `/api/v1/workflows/{id}/rebind-versions` | Use currently active installed package versions and refresh dependency metadata |
+| 19b | `POST` | `/api/v1/workflow-drafts/{id}/rebind-versions` | Replace accepted draft package versions with revision checking and refreshed validation; saved artifact unchanged |
 | 19b | `POST` | `/api/v1/workflows/{id}/activate` | Update external active-workflow context without selecting graph authority |
 | 20 | `GET` | `/api/v1/workflow-drafts/{id}` | Workflow open/startup draft load; agent graph inspection |
 | 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Per-root-canvas full-graph persistence and validation with `expected_revision` |

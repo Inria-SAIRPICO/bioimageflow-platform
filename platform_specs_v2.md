@@ -226,6 +226,8 @@ A complete carried module/class binding, including its package/version when pres
 Explicit owned-source or custom-package bindings own locality, explicit package references own dependency requirements, and module/class-only references do not acquire a package from unrelated catalog metadata.
 Only genuinely unbound nodes use catalog discovery; explicit version rebind changes package versions recursively while preserving graph presentation and other bindings.
 Rebind uses the carried package's own active version, or metadata from that same package; absent either authority, it preserves the carried version rather than borrowing an unrelated same-named tool's version.
+The dependency-dialog action confirms through PrimeVue and transforms the accepted root draft directly under its expected revision, preserving every field other than the selected package identity.
+Its response carries validation and bound node metadata for the same new revision; it remains a draft edit until explicit Save and invalidates prior-binding viewing guidance.
 Serialization preserves accepted root and child configuration without loading carried packages.
 Compilation resolves enabled recursive capabilities, supplies one derived root engine to one public materialization, and does not install missing dependencies.
 Bound resource overrides survive serialization; actual Processing declarations enforce floors/caps, while actual DataFrame overrides are refused through the public node resource setter, including before actual archive export can publish content.

@@ -22,7 +22,8 @@ const unknown = computed(() => (props.report?.outputs ?? []).filter(output => ou
         <p v-if="pending">Checking viewing requirements…</p>
         <p v-else-if="error">Viewing requirements not checked: {{ error }}. Reopen this saved workflow to check again.</p>
         <p v-else-if="report">{{ report.summary.message }}</p>
-        <p>Workflow execution is unaffected.</p>
+        <p v-if="unknown.length">Viewing setup does not block execution. Resolve missing tools or workflow validation errors before running.</p>
+        <p v-else>Workflow execution is unaffected.</p>
       </div>
       <button type="button" aria-label="Dismiss viewing guidance" @click="$emit('dismiss')">Continue configuring later</button>
     </div>

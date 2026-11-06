@@ -440,6 +440,45 @@ class WorkflowDraftService:
             )
         )
 
+    async def rebind_versions_async(
+        self,
+        workflow_id: str,
+        *,
+        expected_revision: int,
+        updated_by: DraftWriter = "frontend",
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """Rebind the accepted draft with revision and identity fences intact."""
+        from bioimageflow_server.services.graph_translator import rebind_graph_versions
+
+        def rebind() -> WorkflowDraftResponse:
+            while True:
+                store = self._store()
+                with store.workflow_mutation(workflow_id):
+                    current = self._read_current_for_mutation_locked(store, workflow_id)
+                    self._ensure_expected_revision(current, expected_revision)
+                    graph = rebind_graph_versions(current.graph, store.tool_registry)
+                    prepared = self._prepare_draft_write(
+                        workflow_id, graph=graph, expected_revision=expected_revision,
+                    )
+                try:
+                    validation = self._validate(store, workflow_id, graph)
+                except Exception:
+                    try:
+                        self._ensure_draft_preparation_current(prepared)
+                    except _SavedWorkflowChanged:
+                        continue
+                    raise
+                try:
+                    return self._commit_draft_write(
+                        prepared, validation=validation, updated_by=updated_by,
+                        api_base_url=api_base_url,
+                    )
+                except _SavedWorkflowChanged:
+                    continue
+
+        return await run_graph_work(rebind)
+
     def reset_draft_to_saved(
         self,
         workflow_id: str,

@@ -154,6 +154,8 @@ Saved-workflow dependency diagnostics resolve that same carried executable ident
 Canvas hydration uses node-addressed metadata from the same accepted graph and root workflow or nested session before reconciling input/template presentation; unavailable metadata cannot erase authored parameters or output templates.
 Pending validation or a global compilation failure may retain the bound node’s prior captured presentation metadata, without borrowing a same-named catalog class or treating that metadata as execution authority.
 Installed bindings retain their package/version and read-only provenance; owned sources retain their editable custom provenance.
+Dependency replacement confirms through PrimeVue, changes package identities directly in the revision-checked accepted root draft, and returns its matching validation/metadata without a portable-format round trip.
+Edges, authored values, presentation and source provenance remain intact; explicit Save promotes the replacement, and prior-binding viewing guidance is invalidated.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful editable code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain prior presentation metadata for repair without authorizing execution of stale code.
 Installed file events, including staging writes, do not trigger automatic reload.

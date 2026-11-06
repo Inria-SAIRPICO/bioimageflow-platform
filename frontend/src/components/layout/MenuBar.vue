@@ -35,7 +35,7 @@ import {
   applyWorkflowSourceOperation,
   previewPythonWorkflowSource,
 } from '@/api/workflowSources'
-import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
+import { rebindWorkflowDraftVersions, resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 import ExecutionTargetSelector from '@/components/execution/ExecutionTargetSelector.vue'
@@ -738,27 +738,46 @@ async function confirmImportRename(): Promise<void> {
   }
 }
 
+const dependencyRebindConfirmation = ref<{ canvasId: CanvasId; workflowName: string; identityGeneration: number; registrationToken: number; substitutions: string[] } | null>(null)
+
 async function rebindImportedDependencies(): Promise<void> {
   if (executionStore.isMutationLocked) return
-  const target = currentSaveTarget()
+  const captured = dependencyRebindConfirmation.value
+  const target = captured ?? currentSaveTarget()
+  dependencyRebindConfirmation.value = null
   if (!target.workflowName || target.canvasId === null) return
   const workflowName = target.workflowName
+  const identityGeneration = captured?.identityGeneration ?? workflowStore.captureWorkflowIdentity(workflowName)
+  const resource = getRootCanvasPersistenceResource(target.canvasId)
+  const session = canvasSessionRegistry.get(target.canvasId)
+  const registrationToken = captured?.registrationToken ?? session?.registrationToken
+  const current = () => canvasSessionRegistry.activeCanvasId.value === target.canvasId
+    && canvasSessionRegistry.get(target.canvasId!)?.registrationToken === registrationToken
+    && uiStore.canvasWorkflowId(target.canvasId!) === workflowName
+    && workflowStore.isWorkflowIdentityCurrent(workflowName, identityGeneration)
+  if (!resource || resource.workflowId.value !== workflowName || !current()) return
   try {
-    const graph = await workflowStore.rebindVersions({
-      canvasId: target.canvasId,
-      workflowName,
-    })
-    if (
-      canvasSessionRegistry.activeCanvasId.value !== target.canvasId
-      || uiStore.canvasWorkflowId(target.canvasId) !== workflowName
-    ) return
+    if (!await resource.ensureFreshForCriticalOperation() || !current()) return
+    const revision = resource.acceptedDraftRevision.value
+    if (revision === null) throw new Error('The active root workflow draft is unavailable')
+    const initiatingGraph = JSON.stringify(resource.currentGraph.value)
+    const accepted = await rebindWorkflowDraftVersions(workflowName, revision)
+    workflowStore.assertWorkflowIdentityCurrent(workflowName, identityGeneration)
+    if (!current()) return
+    if (JSON.stringify(resource.currentGraph.value) !== initiatingGraph) {
+      throw new Error('The canvas changed during dependency replacement. Reload the accepted draft to review the replacement.')
+    }
+    resource.resolveFromDraft(accepted, 'local')
     dependencyDialogVisible.value = false
+    // The old saved-workflow viewer report describes the previous bindings.
+    beginViewingIntent()
     const workflow = workflowStore.workflows.find(item => workflowId(item) === workflowName)
-    applyGraph(graph, false, {
+    applyGraph(accepted.graph, accepted.dirty_against_saved, {
       workflowName,
       workflowDisplayName: workflow?.display_name ?? workflowName,
-      missingTools: [...workflowStore.missingTools],
-      identityGeneration: workflowStore.workflowIdentityGeneration(workflowName),
+      missingTools: [],
+      draft: accepted,
+      identityGeneration,
       serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
     })
   } catch (err: unknown) {
@@ -768,20 +787,25 @@ async function rebindImportedDependencies(): Promise<void> {
 
 function requestDependencyRebind(): void {
   if (!canRebindDependencies.value) return
+  const target = currentSaveTarget()
+  if (!target.workflowName || !target.canvasId) return
+  const session = canvasSessionRegistry.get(target.canvasId)
+  if (!session) return
   const substitutions = installableMissingPackages.value.map((item) => {
-    const installed = toolRegistryStore.packages.find(
-      pkg => pkg.name === item.package_name,
-    )
+    const installed = toolRegistryStore.packages.find(pkg => pkg.name === item.package_name)
     const alternatives = item.installed_versions ?? []
     const replacement = installed?.active_version
       ?? alternatives[alternatives.length - 1]
       ?? 'installed version'
     return `${item.package_name}: ${item.required_version} → ${replacement}`
   })
-  const confirmed = window.confirm(
-    `Replace the workflow's required package versions?\n\n${substitutions.join('\n')}`,
-  )
-  if (confirmed) void rebindImportedDependencies()
+  dependencyRebindConfirmation.value = {
+    canvasId: target.canvasId,
+    workflowName: target.workflowName,
+    identityGeneration: workflowStore.captureWorkflowIdentity(target.workflowName),
+    registrationToken: session.registrationToken,
+    substitutions,
+  }
 }
 
 async function installMissingDependencies(): Promise<void> {
@@ -1368,6 +1392,24 @@ defineExpose({
     @install-all="installMissingDependencies"
     @rebind="requestDependencyRebind"
   />
+
+  <Dialog
+    :visible="dependencyRebindConfirmation !== null"
+    modal
+    header="Replace workflow dependencies?"
+    :style="{ width: '520px' }"
+    data-testid="dependency-rebind-confirmation"
+    @update:visible="visible => { if (!visible) dependencyRebindConfirmation = null }"
+  >
+    <p>Replace the workflow's required package versions in the current draft? Review the workflow before saving.</p>
+    <ul>
+      <li v-for="substitution in dependencyRebindConfirmation?.substitutions" :key="substitution">{{ substitution }}</li>
+    </ul>
+    <template #footer>
+      <Button label="Cancel" text @click="dependencyRebindConfirmation = null" />
+      <Button label="Replace versions" @click="rebindImportedDependencies" />
+    </template>
+  </Dialog>
 
   <WorkflowExportDialog
     v-model:visible="exportDialogVisible"
