@@ -1239,6 +1239,26 @@ class WorkflowStoreService:
             self._existing_path_for(relative)
             return WorkflowDocument.model_validate(self._read_raw(relative))
 
+    def write_workflow_document(
+        self,
+        workflow_id: str,
+        document: WorkflowDocument,
+        *,
+        expected_directory: Path | None = None,
+    ) -> None:
+        """Replace one UUID-owned envelope without accepting a path as identity."""
+
+        with self.workflow_mutation(workflow_id):
+            self.ensure_workflow_mutations_available()
+            self.ensure_workflow_format_current(workflow_id)
+            if document.workflow_id != workflow_id:
+                raise WorkflowIdentityConflictError("The document belongs to another workflow")
+            relative_path = self.relative_path_for_workflow(workflow_id)
+            directory = self._workflow_dir(relative_path)
+            if expected_directory is not None and directory != expected_directory:
+                raise WorkflowIdentityConflictError("Workflow storage moved before publication")
+            self._write_raw(relative_path, document.model_dump(mode="json", by_alias=True))
+
     def _ensure_workflow_layout(self, name: str) -> None:
         self._ensure_directory_durable(self._workflow_tools_dir(name))
 
