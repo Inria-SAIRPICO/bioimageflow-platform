@@ -29,6 +29,7 @@ const filteredWorkflows = computed(() => {
   if (!q) return props.workflows
   return props.workflows.filter((workflow) => (
     workflowRelativePath(workflow).toLowerCase().includes(q)
+    || workflowId(workflow).toLowerCase().includes(q)
     || workflow.display_name.toLowerCase().includes(q)
     || (workflow.description ?? '').toLowerCase().includes(q)
   ))

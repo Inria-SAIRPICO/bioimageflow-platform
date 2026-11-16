@@ -66,14 +66,19 @@ test('portable recursive layout materializes once and keeps graph identities sep
   const source = `layout_source_${suffix}`
   const imported = `layout_imported_${suffix}`
   const other = `layout_other_${suffix}`
+  let sourceId = ''
+  let importedId = ''
+  let otherId = ''
   let bodySucceeded = false
   try {
     expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
-    expect((await page.request.post(`${API}/workflows`, { data: { name: source } })).status()).toBe(201)
+    const created = await page.request.post(`${API}/workflows`, { data: { name: source } })
+    expect(created.status()).toBe(201)
+    sourceId = (await created.json()).id
     const original = graph(source)
-    const seeded = await page.request.put(`${API}/workflows/${source}`, { data: { graph: original } })
+    const seeded = await page.request.put(`${API}/workflows/${sourceId}`, { data: { graph: original } })
     expect(seeded.ok(), await seeded.text()).toBeTruthy()
-    const exportResponse = await page.request.post(`${API}/workflows/${source}/export`)
+    const exportResponse = await page.request.post(`${API}/workflows/${sourceId}/export`)
     expect(exportResponse.ok(), await exportResponse.text()).toBeTruthy()
     const archive = await exportResponse.body()
     for (const name of [imported, other]) {
@@ -82,9 +87,12 @@ test('portable recursive layout materializes once and keeps graph identities sep
         file: { name: `${source}.bioimageflow.zip`, mimeType: 'application/zip', buffer: archive },
       } })
       expect(response.status(), await response.text()).toBe(201)
+      const id: string = (await response.json()).info.id
+      if (name === imported) importedId = id
+      else otherId = id
     }
-    const first = (await saved(page, imported)).graph
-    const untouched = (await saved(page, other)).graph
+    const first = (await saved(page, importedId)).graph
+    const untouched = (await saved(page, otherId)).graph
     expect(positions(first)).toEqual(positions(untouched))
     expect(positions(first)).toEqual({
       root: { branch_b: [320, 0], source: [0, 110], branch_a: [320, 220], nested: [0, 660] },
@@ -96,7 +104,7 @@ test('portable recursive layout materializes once and keeps graph identities sep
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
     await page.getByTestId('workflow-search').fill(imported)
-    await page.getByTestId(`workflow-row-${imported}`).dblclick()
+    await page.getByTestId(`workflow-row-${importedId}`).dblclick()
     await expect(page.getByTestId('workflow-title')).toContainText(imported)
     await expectVisibleNodesSeparated(page, 4)
     await expect(page.locator('.vue-flow__edge:visible')).toHaveCount(2)
@@ -105,19 +113,19 @@ test('portable recursive layout materializes once and keeps graph identities sep
     const box = await branch.boundingBox()
     expect(box).not.toBeNull()
     const start = { x: box!.x + box!.width / 2, y: box!.y + Math.min(24, box!.height / 2) }
-    const accepted = page.waitForResponse(response => response.url().endsWith(`/workflow-drafts/${imported}`)
+    const accepted = page.waitForResponse(response => response.url().endsWith(`/workflow-drafts/${importedId}`)
       && response.request().method() === 'PUT' && response.ok())
     await page.mouse.move(start.x, start.y)
     await page.mouse.down()
     await page.mouse.move(start.x + 55, start.y + 35, { steps: 8 })
     await page.mouse.up()
     await accepted
-    const draftResponse = await page.request.get(`${API}/workflow-drafts/${imported}`)
+    const draftResponse = await page.request.get(`${API}/workflow-drafts/${importedId}`)
     expect(draftResponse.ok()).toBeTruthy()
     const edited = (await draftResponse.json()).graph
     expect(edited.nodes.find((node: { id: string }) => node.id === 'branch_b').position).not.toEqual([320, 0])
     expect(positions(edited).child).toEqual(positions(first).child)
-    expect(positions((await saved(page, other)).graph)).toEqual(positions(untouched))
+    expect(positions((await saved(page, otherId)).graph)).toEqual(positions(untouched))
 
     // Selection opens docks; fit the current canvas before the nested gesture.
     await page.locator('.vue-flow__controls-fitview').click()
@@ -126,26 +134,26 @@ test('portable recursive layout materializes once and keeps graph identities sep
     await expectVisibleNodesSeparated(page, 3)
     await expect(page.locator('.vue-flow__edge:visible')).toHaveCount(1)
     await page.getByTestId('canvas-tab').filter({ hasText: imported }).click()
-    const save = page.waitForResponse(response => response.url().endsWith(`/workflows/${imported}`)
+    const save = page.waitForResponse(response => response.url().endsWith(`/workflows/${importedId}`)
       && response.request().method() === 'PUT' && response.ok())
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
     await save
-    expect(positions((await saved(page, imported)).graph)).toEqual(positions(edited))
+    expect(positions((await saved(page, importedId)).graph)).toEqual(positions(edited))
 
     await page.reload()
     await expect(page.getByTestId('workflow-title')).toContainText(imported)
     await expect(page.locator('.vue-flow__node')).toHaveCount(4)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(2)
-    const reopened = await page.request.get(`${API}/workflow-drafts/${imported}`)
+    const reopened = await page.request.get(`${API}/workflow-drafts/${importedId}`)
     expect(reopened.ok()).toBeTruthy()
     expect(positions((await reopened.json()).graph)).toEqual(positions(edited))
-    expect(positions((await saved(page, other)).graph)).toEqual(positions(untouched))
+    expect(positions((await saved(page, otherId)).graph)).toEqual(positions(untouched))
     bodySucceeded = true
   } finally {
     // Detach autosave even after timeout; cleanup must not mask the body failure.
     await page.close().catch(() => undefined)
-    const cleanup = await Promise.allSettled([imported, other, source].map(name => request.delete(`${API}/workflows/${name}`)))
+    const cleanup = await Promise.allSettled([importedId, otherId, sourceId].filter(Boolean).map(name => request.delete(`${API}/workflows/${name}`)))
     if (bodySucceeded) {
       for (const outcome of cleanup) {
         expect(outcome.status).toBe('fulfilled')

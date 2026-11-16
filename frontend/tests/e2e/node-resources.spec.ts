@@ -50,7 +50,7 @@ async function openResources(page: Page, name: string, label: string): Promise<v
     await catalogGroup.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   }
   await expect(panel).toBeVisible()
-  await panel.getByTestId('workflow-search').fill(name)
+  await panel.getByTestId('workflow-search').fill(label)
   await panel.getByTestId(`workflow-row-${name}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toHaveText(label)
   await page.locator('.vue-flow__node[data-id="write"]').click()
@@ -110,6 +110,7 @@ test('processing resources persist, reset and recover from a refused capacity wi
     },
     config: { engine: 'wetlands', execution: 'sequential' },
   }
+  let workflowId = ''
   let primaryOccurred = false
   const cleanupErrors: unknown[] = []
   const runRequests: string[] = []
@@ -123,9 +124,10 @@ test('processing resources persist, reset and recover from a refused capacity wi
     const created = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
     expect(created.status(), await created.text()).toBe(201)
     const info = await created.json() as WorkflowInfo
-    const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
+    workflowId = info.id
+    const installed = await page.request.put(`${API}/workflows/${workflowId}`, { data: { graph } })
     expect(installed.status(), await installed.text()).toBe(200)
-    const initial = await draft(page, name)
+    const initial = await draft(page, workflowId)
     expect(initial.validation).toMatchObject({ valid: true, errors: [] })
     expect(initial.validation.node_tools?.write).toMatchObject({
       name: 'TemplateReport', tool_type: 'ProcessingTool', outputs: { result: { type: 'Path' } },
@@ -135,75 +137,75 @@ test('processing resources persist, reset and recover from a refused capacity wi
     })
     const unaffected = withoutWriteResources(initial.graph)
     const seedMetadata = initial.validation.node_tools?.seed
-    await openResources(page, name, label)
+    await openResources(page, workflowId, label)
     const cpu = page.getByTestId('resource-override-cpu').locator('input')
     const memory = page.getByTestId('resource-override-memory')
     await expect(cpu).toHaveValue('')
     await expect(memory).toHaveValue('')
     await expect(page.getByTestId('resource-reset-all')).toBeDisabled()
 
-    const cpuAccepted = draftResponse(page, name, 200)
+    const cpuAccepted = draftResponse(page, workflowId, 200)
     await cpu.fill('2')
     await cpu.press('Tab')
     await cpuAccepted
-    const memoryAccepted = draftResponse(page, name, 200)
+    const memoryAccepted = draftResponse(page, workflowId, 200)
     await memory.fill('16GB')
     await memoryAccepted
-    const edited = await draft(page, name)
+    const edited = await draft(page, workflowId)
     expect(resourceValues(edited.graph)).toEqual({ cpu: 2, memory: '16GB' })
     expect(withoutWriteResources(edited.graph)).toEqual(unaffected)
     expect(edited.validation.node_tools?.seed).toEqual(seedMetadata)
-    await save(page, name)
-    const savedEdited = await saved(page, name)
+    await save(page, workflowId)
+    const savedEdited = await saved(page, workflowId)
     expect(resourceValues(savedEdited.graph)).toEqual({ cpu: 2, memory: '16GB' })
-    await openResources(page, name, label)
+    await openResources(page, workflowId, label)
     await expect(cpu).toHaveValue('2')
     await expect(memory).toHaveValue('16GB')
-    expect((await draft(page, name)).graph).toEqual(savedEdited.graph)
+    expect((await draft(page, workflowId)).graph).toEqual(savedEdited.graph)
 
-    const resetAccepted = draftResponse(page, name, 200)
+    const resetAccepted = draftResponse(page, workflowId, 200)
     await page.getByTestId('resource-reset-all').click()
     await resetAccepted
-    expect(resourceValues((await draft(page, name)).graph)).toEqual({})
-    await save(page, name)
-    await openResources(page, name, label)
+    expect(resourceValues((await draft(page, workflowId)).graph)).toEqual({})
+    await save(page, workflowId)
+    await openResources(page, workflowId, label)
     await expect(cpu).toHaveValue('')
     await expect(memory).toHaveValue('')
     await expect(page.getByTestId('resource-reset-all')).toBeDisabled()
-    const beforeRefusal = await draft(page, name)
-    const savedBeforeRefusal = await saved(page, name)
+    const beforeRefusal = await draft(page, workflowId)
+    const savedBeforeRefusal = await saved(page, workflowId)
     const fileBeforeRefusal = readFileSync(info.path)
     expect(withoutWriteResources(beforeRefusal.graph)).toEqual(unaffected)
 
-    const refused = draftResponse(page, name, 422)
+    const refused = draftResponse(page, workflowId, 422)
     await memory.fill('invalid')
     const refusal = await refused
     expect(await refusal.text()).toContain('integral capacity')
     await expect(page.getByTestId('canvas-persistence-issue')).toBeVisible()
-    expect(await draft(page, name)).toEqual(beforeRefusal)
-    expect(await saved(page, name)).toEqual(savedBeforeRefusal)
+    expect(await draft(page, workflowId)).toEqual(beforeRefusal)
+    expect(await saved(page, workflowId)).toEqual(savedBeforeRefusal)
     expect(readFileSync(info.path)).toEqual(fileBeforeRefusal)
     // The visible invalid edit is unsaved. Repair it instead of invoking Run
     // against the still-valid accepted draft or assuming an implicit rollback.
-    const repaired = draftResponse(page, name, 200)
+    const repaired = draftResponse(page, workflowId, 200)
     await memory.fill('8GiB')
     await repaired
     await expect(page.getByTestId('canvas-persistence-issue')).not.toBeVisible()
-    const acceptedRepair = await draft(page, name)
+    const acceptedRepair = await draft(page, workflowId)
     expect(resourceValues(acceptedRepair.graph)).toEqual({ memory: '8GiB' })
     expect(withoutWriteResources(acceptedRepair.graph)).toEqual(unaffected)
     expect(acceptedRepair.validation.node_tools?.seed).toEqual(seedMetadata)
-    await save(page, name)
-    await openResources(page, name, label)
+    await save(page, workflowId)
+    await openResources(page, workflowId, label)
     await expect(memory).toHaveValue('8GiB')
     await expect(cpu).toHaveValue('')
-    expect((await draft(page, name)).graph).toEqual((await saved(page, name)).graph)
+    expect((await draft(page, workflowId)).graph).toEqual((await saved(page, workflowId)).graph)
 
     await page.locator('.vue-flow__node[data-id="seed"]').click()
     await page.getByTestId('node-tab-resources').click()
     await expect(page.getByTestId('node-resources-unavailable')).toHaveText('Worker resource overrides apply only to processing tools.')
     await expect(page.getByTestId('node-resources-tab')).toHaveCount(0)
-    expect(withoutWriteResources((await saved(page, name)).graph)).toEqual(unaffected)
+    expect(withoutWriteResources((await saved(page, workflowId)).graph)).toEqual(unaffected)
     const status = await page.request.get(`${API}/execution/status`)
     expect(status.ok(), await status.text()).toBeTruthy()
     expect((await status.json()).state).toBe('idle')
@@ -216,7 +218,7 @@ test('processing resources persist, reset and recover from a refused capacity wi
     let detail = ''
     try {
       await expect.poll(async () => {
-        const response = await page.request.delete(`${API}/workflows/${name}`)
+        const response = await page.request.delete(`${API}/workflows/${workflowId}`)
         detail = await response.text()
         if ([200, 204, 404].includes(response.status())) return true
         if (response.status() !== 423) throw new Error(`Workflow cleanup ${response.status()}: ${detail}`)

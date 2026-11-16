@@ -175,6 +175,7 @@ function workflowMatchesQuery(workflow: WorkflowInfo, query: string): boolean {
   return (
     workflow.display_name.toLowerCase().includes(query)
     || workflowRelativePath(workflow).toLowerCase().includes(query)
+    || workflowId(workflow).toLowerCase().includes(query)
   )
 }
 

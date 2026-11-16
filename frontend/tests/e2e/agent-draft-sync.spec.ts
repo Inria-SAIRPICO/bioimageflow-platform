@@ -42,11 +42,13 @@ async function createServerWorkflow(page: Page, name: string, graph: GraphState)
   const create = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name, display_name: name },
   })
-  expect([201, 409]).toContain(create.status())
-  const save = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  expect(create.status()).toBe(201)
+  const info = await create.json()
+  const save = await page.request.put(`${API_BASE}/api/v1/workflows/${info.id}`, {
     data: { graph },
   })
   expect(save.ok()).toBeTruthy()
+  return info.id as string
 }
 
 function ownedNumbersSource(toolName: string, offset: number): string {
@@ -84,7 +86,8 @@ async function importOwnedWorkflow(
     },
   })
   expect(imported.ok(), await imported.text()).toBeTruthy()
-  return (await page.request.get(`${API_BASE}/api/v1/workflows/${destinationName}`)).json()
+  const id: string = (await imported.json()).info.id
+  return (await page.request.get(`${API_BASE}/api/v1/workflows/${id}`)).json()
 }
 
 function ownedSourcePath(workflow: Record<string, any>, sourceId: string): string {
@@ -156,20 +159,21 @@ async function installDraftWebSocketProbe(page: Page) {
 test.describe('agent draft sync', () => {
   test('backend operation edits appear on the active clean canvas through WebSocket', async ({ page }) => {
     test.setTimeout(60_000)
-    const workflowName = uniqueName('agent_sync')
+    let workflowName = uniqueName('agent_sync')
+    const workflowLabel = workflowName
     await installDraftWebSocketProbe(page)
     await deleteWorkflowIfExists(page, workflowName)
 
     const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
     expect(seed.ok()).toBeTruthy()
-    await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
+    workflowName = await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
 
     try {
       await page.goto('/')
       await expect(page.locator('#bioimageflow-app')).toBeVisible()
       await rememberLastOpenedWorkflow(page, workflowName)
       await page.reload()
-      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(workflowName)
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(workflowLabel)
       await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
       await expect.poll(
         () => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0),
@@ -246,11 +250,11 @@ test.describe('agent draft sync', () => {
       expect((await savedResponse).status()).toBe(200)
       const cleanDraft = await (await cleanResponse).json() as { dirty_against_saved: boolean }
       expect(cleanDraft.dirty_against_saved).toBe(false)
-      await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+      await expect(page.getByTestId('workflow-title')).toHaveText(workflowLabel)
       await page.reload()
       await expect(page.locator('.vue-flow__node[data-id="agent_increment_1"]'))
         .toContainText('MCP accepted increment')
-      await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+      await expect(page.getByTestId('workflow-title')).toHaveText(workflowLabel)
       const reopened = driveMCP('read')
       expect(reopened.final.graph).toEqual(edited.final.graph)
       expect(reopened.final.dirty_against_saved).toBe(false)
@@ -269,7 +273,7 @@ test.describe('agent draft sync', () => {
 
 for (const keepCanvasFirst of [false, true]) {
   test(`saves the agent snapshot as a copy (keep canvas first: ${keepCanvasFirst})`, async ({ page }, testInfo) => {
-    const name = uniqueName('agent_copy')
+    let name = uniqueName('agent_copy')
     let copyName: string | null = null
     let releaseWrite: (() => void) | undefined
     let mainFailed = false
@@ -284,7 +288,7 @@ for (const keepCanvasFirst of [false, true]) {
         { type: 'tool', id: 'increment', name: 'Increment Numbers', tool_name: 'IncrementNumbers', position: [520, 180], parameters: { number: 1 } },
       ]
       graph.edges = [{ type: 'dataframe', id: 'seed-increment', source_node: 'seed', target_node: 'increment', target_position: 0 }]
-      await createServerWorkflow(page, name, graph)
+      name = await createServerWorkflow(page, name, graph)
       const savedResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)
       expect(savedResponse.ok()).toBeTruthy()
       const saved = await savedResponse.json()
@@ -381,7 +385,7 @@ for (const keepCanvasFirst of [false, true]) {
       copyName = info.id
       await expect(page.locator('.workflow-draft-conflict__success')).toContainText(info.id)
       const copy = await (await page.request.get(`${API_BASE}/api/v1/workflows/${info.id}`)).json()
-      expect(copy.graph).toEqual({ ...agent.graph, name: info.id, display_name: info.id })
+      expect(copy.graph).toEqual({ ...agent.graph, name: info.relative_path.split('/').at(-1), display_name: info.display_name })
       const original = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
       expect(original.draft_revision).toBe(agent.draft_revision)
       expect(original.graph).toEqual(agent.graph)
@@ -420,14 +424,15 @@ for (const keepCanvasFirst of [false, true]) {
 
 test('copies an agent graph with recursively owned unsaved sources without aliasing', async ({ page }) => {
   test.setTimeout(120_000)
-  const name = uniqueName('agent_recursive_copy')
-  const builderName = uniqueName('agent_source_builder')
-  const childName = uniqueName('agent_source_child')
+  let name = uniqueName('agent_recursive_copy')
+  let builderName = uniqueName('agent_source_builder')
+  const builderDefinitionName = builderName
+  let childName = uniqueName('agent_source_child')
   const toolName = `AgentOwnedNumbers${Date.now()}`
   let copyName: string | null = null
 
   try {
-    await createServerWorkflow(page, builderName, emptyGraph(builderName))
+    builderName = await createServerWorkflow(page, builderName, emptyGraph(builderName))
     const created = await page.request.post(`${API_BASE}/api/v1/tools`, {
       params: { workflow_name: builderName },
       data: { name: toolName, tool_type: 'DataFrameTool' },
@@ -438,7 +443,7 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     const childBytes = ownedNumbersSource(toolName, 20)
     writeFileSync(builderSourcePath, rootBytes)
 
-    const builderGraph = emptyGraph(builderName)
+    const builderGraph = emptyGraph(builderDefinitionName)
     builderGraph.config.execution = 'sequential'
     builderGraph.nodes = [{
       type: 'tool', id: 'owned_numbers', name: 'Owned numbers', tool_name: toolName,
@@ -449,9 +454,11 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     })
     expect(builderSave.ok(), await builderSave.text()).toBeTruthy()
     const savedRoot = await importOwnedWorkflow(page, builderName, name)
+    name = savedRoot.info.id
 
     writeFileSync(builderSourcePath, childBytes)
     const savedChild = await importOwnedWorkflow(page, builderName, childName)
+    childName = savedChild.info.id
     const rootSourceId = savedRoot.graph.nodes[0].source_module as string
     const childSourceIdBeforeEmbedding = savedChild.graph.nodes[0].source_module as string
     expect(childSourceIdBeforeEmbedding).not.toBe(rootSourceId)
@@ -563,12 +570,12 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     expect(copyResponse.ok(), await copyResponse.text()).toBeTruthy()
     const copyInfo = await copyResponse.json()
     copyName = copyInfo.id
-    await expect(page.locator('.workflow-draft-conflict__success')).toContainText(copyName!)
+    await expect(page.locator('.workflow-draft-conflict__success')).toContainText(copyInfo.display_name)
 
     const copy = await (
       await page.request.get(`${API_BASE}/api/v1/workflows/${copyName}`)
     ).json()
-    expect(copy.graph).toEqual({ ...agent.graph, name: copyName, display_name: copyName })
+    expect(copy.graph).toEqual({ ...agent.graph, name: copyInfo.relative_path.split('/').at(-1), display_name: copyInfo.display_name })
     expect(copy.graph.nodes[1].workflow).toEqual(embeddedGraph)
     expect(copy.graph.nodes[1].workflow.name).toBe(savedChild.graph.name)
     const copyDocument = JSON.parse(readFileSync(
@@ -602,23 +609,24 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     expect(readFileSync(copyChildPath, 'utf8')).toContain('n + 40')
     expect(readFileSync(originalChildPath, 'utf8')).toBe(childBytes)
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(copyName!)
+    await page.getByTestId('workflow-search').fill(copyInfo.display_name)
     await page.getByTestId(`workflow-row-${copyName}`).dblclick()
-    await expect(page.getByTestId('workflow-title')).toContainText(copyName!)
+    await expect(page.getByTestId('workflow-title')).toContainText(copyInfo.display_name)
     await expect.poll(() => page.evaluate(async () => {
       const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
       return useAutoSave().getLastOpenedWorkflow()
     })).toBe(copyName)
-    await page.evaluate(async ({ originalName, graph }) => {
+    await page.evaluate(async ({ originalName, graph, owner }) => {
       const { writeAutoSaveEntry } = await import('/src/composables/useAutoSave.ts')
       await writeAutoSaveEntry({
         name: originalName,
         graph: graph as Parameters<typeof writeAutoSaveEntry>[0]['graph'],
         timestamp: Date.now() + 60_000,
+        ...owner,
       })
-    }, { originalName: name, graph: agent.graph })
+    }, { originalName: name, graph: agent.graph, owner: { workspace_path: savedRoot.info.workspace_path, identity_generation: savedRoot.info.identity_generation } })
     await page.reload()
-    await expect(page.getByTestId('workflow-title')).toContainText(copyName!)
+    await expect(page.getByTestId('workflow-title')).toContainText(copyInfo.display_name)
 
     const runResponse = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run')
