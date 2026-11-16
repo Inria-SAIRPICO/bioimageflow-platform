@@ -11,6 +11,7 @@ import {
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
 import { clearRecoveryPersistenceKeyStrict } from '@/sessions/recoveryPersistenceCoordinator'
+import { recoveryOwnerKey, type AutoSaveOwner } from '@/sessions/recoveryIdentity'
 import type {
   GraphState,
   MissingPackage,
@@ -198,6 +199,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   const uiStore = useUIStore()
   const autoSave = useAutoSave()
+
+  function captureRecoveryOwner(name: string): AutoSaveOwner | undefined {
+    const info = workflowByName.value.get(name)
+    const workspace = info?.workspace_path
+    const generation = info?.identity_generation ?? workflowServerIdentityGeneration(name)
+    return workspace && generation !== null && generation !== undefined
+      ? { workspace_path: workspace, identity_generation: generation }
+      : undefined
+  }
+
+  function clearOwnedRecovery(name: string, owner: AutoSaveOwner | undefined): Promise<void> {
+    return clearRecoveryPersistenceKeyStrict(
+      owner ? recoveryOwnerKey(name, owner) : JSON.stringify(['unresolved', name]),
+      () => autoSave.clearAutoSaveStrict(name, ...(owner ? [owner] : [])),
+    )
+  }
 
   const currentName = computed(() => current.value ? workflowId(current.value) : null)
   const hasWorkflow = computed(() => current.value !== null)
@@ -656,7 +673,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     options: { rememberAsLastOpened?: boolean; canUpdatePresentation?: () => boolean; presentationCause?: WorkflowPresentationCause } = {},
   ): Promise<GraphState> {
     const identityGeneration = captureWorkflowIdentity(name)
-    const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`)
+    const workspaceSelection = useSettingsStore().workspaceSelectionRevision
+    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`,
+      ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []))
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new WorkflowIdentityChangedError(name)
     assertWorkflowIdentityCurrent(name, identityGeneration)
     if (workflowId(data.info) !== name) {
       throw new WorkflowIdentityChangedError(name)
@@ -671,6 +692,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (options.rememberAsLastOpened !== false) {
       await autoSave.setLastOpenedWorkflow(name)
     }
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new WorkflowIdentityChangedError(name)
     assertWorkflowIdentityCurrent(name, identityGeneration)
     return data.graph
   }
@@ -701,16 +723,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
       throw new Error('No active workflow to save')
     }
     const identityGeneration = captureWorkflowIdentity(targetWorkflowName)
+    const workspaceSelection = useSettingsStore().workspaceSelectionRevision
+    const owner = captureRecoveryOwner(targetWorkflowName)
+    const ownerWorkspace = owner?.workspace_path ?? useSettingsStore().settings?.workspace_path
     const { data } = await api.put<WorkflowInfo>(
       `/api/v1/workflows/${workflowUrl(targetWorkflowName)}`,
       { graph },
+      ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
     )
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new WorkflowIdentityChangedError(targetWorkflowName)
     assertWorkflowIdentityCurrent(targetWorkflowName, identityGeneration)
     if (workflowId(data) !== targetWorkflowName) {
       throw new WorkflowIdentityChangedError(targetWorkflowName)
     }
     upsertWorkflow(data)
-    await autoSave.clearAutoSave(workflowId(data))
+    await autoSave.clearAutoSave(workflowId(data), ...(owner ? [owner] : []))
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new WorkflowIdentityChangedError(targetWorkflowName)
     assertWorkflowIdentityCurrent(targetWorkflowName, identityGeneration)
     if (target === undefined) {
       setCurrent(data)
@@ -793,6 +821,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function forgetDeletedWorkflow(name: string): Promise<void> {
     const existing = workflowRemovalPromises.get(name)
     if (existing) return existing
+    const recoveryOwner = captureRecoveryOwner(name)
 
     const ownsDeletionFence = !workflowDeletionsInFlight.has(name)
     if (ownsDeletionFence) workflowDeletionsInFlight.add(name)
@@ -812,10 +841,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const cleanup = (async () => {
       const cleanupErrors: string[] = []
       try {
-        await clearRecoveryPersistenceKeyStrict(
-          name,
-          () => autoSave.clearAutoSaveStrict(name),
-        )
+        await clearOwnedRecovery(name, recoveryOwner)
       } catch (cleanupError) {
         cleanupErrors.push(
           cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
@@ -846,6 +872,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function resetWorkflowPresentationGeneration(name: string): Promise<void> {
     const existing = workflowPresentationResetPromises.get(name)
     if (existing) return existing
+    const recoveryOwner = captureRecoveryOwner(name)
 
     const ownsDeletionFence = !workflowDeletionsInFlight.has(name)
     if (ownsDeletionFence) workflowDeletionsInFlight.add(name)
@@ -862,10 +889,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const cleanup = (async () => {
       const cleanupErrors: string[] = []
       try {
-        await clearRecoveryPersistenceKeyStrict(
-          name,
-          () => autoSave.clearAutoSaveStrict(name),
-        )
+        await clearOwnedRecovery(name, recoveryOwner)
       } catch (cleanupError) {
         cleanupErrors.push(
           cleanupError instanceof Error ? cleanupError.message : String(cleanupError),

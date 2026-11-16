@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAutoSave, type AutoSaveEntry } from '@/composables/useAutoSave'
+import { recoveryEntryId } from '@/sessions/recoveryIdentity'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUIStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
@@ -25,6 +26,7 @@ export const useWorkflowRecoveryStore = defineStore('workflow-recovery', () => {
       const generation = workflows.captureWorkflowIdentity(workflowId)
       const workspaceSelection = useSettingsStore().workspaceSelectionRevision
       const workspace = workflows.workflows.find(info => info.id === workflowId)?.workspace_path ?? useSettingsStore().settings?.workspace_path
+      if (!workspace) throw new Error('The recovery destination workspace is unavailable. The browser snapshot is retained.')
       const assertWorkspace = () => {
         if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new Error('The workspace changed. Review the recovery destination again.')
       }
@@ -62,12 +64,17 @@ export const useWorkflowRecoveryStore = defineStore('workflow-recovery', () => {
           && mapping.workflow_id === workflowId
           && (entry.identity_generation === undefined || mapping.identity_generation === entry.identity_generation)) ?? []
         if (receipt?.identity_migration_id && entries.length) {
-          status.value = await acknowledgeWorkflowIdentityMigrations({ migration_id: receipt.identity_migration_id, entries })
+          const acknowledged = await acknowledgeWorkflowIdentityMigrations({ migration_id: receipt.identity_migration_id, entries }, workspace)
+          assertWorkspace()
+          if (acknowledged.workspace_path !== workspace) throw new Error('The workspace changed. The original recovery is retained.')
+          status.value = acknowledged
         }
+        assertWorkspace()
         const autoSave = useAutoSave()
-        await autoSave.clearAutoSaveStrict(entry.name)
+        await autoSave.clearAutoSaveEntryStrict(entry)
+        assertWorkspace()
         await autoSave.setLastOpenedWorkflow(workflowId)
-        conflicts.value = conflicts.value.filter(candidate => candidate.name !== entry.name)
+        conflicts.value = conflicts.value.filter(candidate => recoveryEntryId(candidate) !== recoveryEntryId(entry))
       })
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
@@ -85,7 +92,7 @@ export const useWorkflowRecoveryStore = defineStore('workflow-recovery', () => {
     conflicts.value = []
     for (const entry of entries) {
       const mappings = (next.identity_migrations ?? []).filter((mapping: WorkflowIdentityMigration) => mapping.old_path === entry.name)
-      if (knownIds.has(entry.name) && entry.workspace_path === next.workspace_path
+      if (entry.recovery_key && knownIds.has(entry.name) && entry.workspace_path === next.workspace_path
         && entry.identity_generation === useWorkflowStore().workflowServerIdentityGeneration(entry.name)) continue
       const matching = mappings.filter(mapping => entry.workspace_path === next.workspace_path
         && entry.identity_generation === mapping.identity_generation)

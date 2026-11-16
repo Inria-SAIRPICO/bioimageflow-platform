@@ -2,7 +2,7 @@
  * End-to-end test for workflow-scoped auto-save recovery.
  *
  * Regression coverage for the old global IndexedDB key (`bioimageflow/current`):
- * recovery now uses `bioimageflow-autosave`, keyed by workflow name, after the
+ * recovery now uses `bioimageflow-autosave`, keyed by canonical workspace, workflow UUID and generation, after the
  * server workflow is loaded.
  */
 import { test, expect } from '@playwright/test'
@@ -103,38 +103,18 @@ async function createServerWorkflow(page: Page, name: string, graph: GraphState)
   expect(save.ok()).toBeTruthy()
 }
 
-async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState) {
-  await page.evaluate(
-    ({ workflowName, workflowGraph }) => new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open('bioimageflow-autosave', 1)
-      req.onupgradeneeded = () => {
-        const db = req.result
-        if (!db.objectStoreNames.contains('workflows')) {
-          db.createObjectStore('workflows', { keyPath: 'name' })
-        }
-        if (!db.objectStoreNames.contains('preferences')) {
-          db.createObjectStore('preferences')
-        }
-      }
-      req.onsuccess = () => {
-        const db = req.result
-        const tx = db.transaction(['workflows', 'preferences'], 'readwrite')
-        tx.objectStore('workflows').put({
-          name: workflowName,
-          graph: workflowGraph,
-          timestamp: Date.now(),
-        })
-        tx.objectStore('preferences').put(workflowName, 'last_opened_workflow')
-        tx.oncomplete = () => {
-          db.close()
-          resolve()
-        }
-        tx.onerror = () => reject(tx.error)
-      }
-      req.onerror = () => reject(req.error)
-    }),
-    { workflowName: name, workflowGraph: graph },
-  )
+async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState, owner?: { workspace_path: string; identity_generation: number }) {
+  await page.evaluate(async ({ workflowName, workflowGraph, owner }) => {
+    const { useAutoSave, writeAutoSaveEntry } = await import('/src/composables/useAutoSave.ts')
+    if (!owner) {
+      const response = await fetch(`/api/v1/workflows/${encodeURIComponent(workflowName)}`)
+      if (!response.ok) throw new Error('Recovery owner is unavailable')
+      const { info } = await response.json()
+      owner = { workspace_path: info.workspace_path, identity_generation: info.identity_generation }
+    }
+    await writeAutoSaveEntry({ name: workflowName, graph: workflowGraph, timestamp: Date.now(), ...owner })
+    await useAutoSave().setLastOpenedWorkflow(workflowName)
+  }, { workflowName: name, workflowGraph: graph, owner })
 }
 
 function recoveryGraph(

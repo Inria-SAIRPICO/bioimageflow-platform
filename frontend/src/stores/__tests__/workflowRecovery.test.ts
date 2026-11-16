@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('@/composables/useAutoSave', () => ({
   writeAutoSaveEntry: vi.fn(),
-  useAutoSave: () => ({ loadAutoSaves: async () => mocks.entries, clearAutoSaveStrict: mocks.clear, setLastOpenedWorkflow: mocks.last }),
+  useAutoSave: () => ({ loadAutoSaves: async () => mocks.entries, clearAutoSaveEntryStrict: mocks.clear, setLastOpenedWorkflow: mocks.last }),
 }))
 vi.mock('@/api/workflowDrafts', () => ({
   fetchWorkflowDraft: mocks.fetch, putWorkflowDraft: mocks.put,
@@ -70,8 +70,8 @@ describe('workflow browser identity recovery', () => {
     const store = useWorkflowRecoveryStore()
     await store.reconcile(receipt())
     expect(mocks.put).toHaveBeenCalledWith(id, { graph: makeGraph({ name: 'nuclei' }), expected_revision: 7, updated_by: 'frontend' }, '/workspace')
-    expect(mocks.ack).toHaveBeenCalledWith({ migration_id: receipt().identity_migration_id, entries: receipt().identity_migrations })
-    expect(mocks.clear).toHaveBeenCalledWith('Analysis/nuclei')
+    expect(mocks.ack).toHaveBeenCalledWith({ migration_id: receipt().identity_migration_id, entries: receipt().identity_migrations }, '/workspace')
+    expect(mocks.clear).toHaveBeenCalledWith(mocks.entries[0])
     expect(store.conflicts).toEqual([])
   })
 
@@ -148,5 +148,31 @@ describe('workflow browser identity recovery', () => {
     expect(mocks.put).not.toHaveBeenCalled()
     expect(mocks.clear).not.toHaveBeenCalled()
     expect(store.conflicts).toEqual([source])
+  })
+
+  it('retains recovery when workspace selection changes while its acknowledgment is pending', async () => {
+    let resolve!: (value: WorkflowFormatStatus) => void
+    mocks.ack.mockReturnValueOnce(new Promise<WorkflowFormatStatus>(accept => { resolve = accept }))
+    const source = { ...entry(), workspace_path: '/workspace', identity_generation: 3 }
+    const store = useWorkflowRecoveryStore()
+    await store.reconcile(receipt())
+    store.conflicts = [source]
+    const restoring = store.restore(source, id)
+    await vi.waitFor(() => expect(mocks.ack).toHaveBeenCalledOnce())
+    useSettingsStore().workspaceSelectionRevision += 1
+    resolve({ notices: [], workspace_path: '/workspace', identity_migrations: [] })
+    await expect(restoring).rejects.toThrow('workspace changed')
+    expect(mocks.clear).not.toHaveBeenCalled()
+    expect(store.conflicts).toEqual([source])
+  })
+
+  it('removes only the accepted source when copied workspaces share a workflow UUID', async () => {
+    const first = { ...entry(), name: id, workspace_path: '/first', identity_generation: 0, recovery_key: '["/first","uuid",0]' }
+    const second = { ...first, workspace_path: '/second', recovery_key: '["/second","uuid",0]' }
+    const store = useWorkflowRecoveryStore()
+    store.conflicts = [first, second]
+    await store.restore(first, id)
+    expect(mocks.clear).toHaveBeenCalledWith(first)
+    expect(store.conflicts).toEqual([second])
   })
 })

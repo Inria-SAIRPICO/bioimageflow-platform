@@ -214,21 +214,15 @@ async function selectNumberField(page: Page, nodeId: string) {
 }
 
 async function clearWorkflowRecovery(page: Page, workflowName: string): Promise<void> {
-  await page.evaluate((name) => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('bioimageflow-autosave', 1)
-    request.onsuccess = () => {
-      const db = request.result
-      const transaction = db.transaction('workflows', 'readwrite')
-      transaction.objectStore('workflows').delete(name)
-      transaction.oncomplete = () => {
-        db.close()
-        resolve()
-      }
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    }
-    request.onerror = () => reject(request.error)
-  }), workflowName)
+  await page.evaluate(async (name) => {
+    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+    const response = await fetch(`/api/v1/workflows/${encodeURIComponent(name)}`)
+    if (!response.ok) throw new Error('Recovery owner is unavailable')
+    const { info } = await response.json()
+    await useAutoSave().clearAutoSaveStrict(name, {
+      workspace_path: info.workspace_path, identity_generation: info.identity_generation,
+    })
+  }, workflowName)
 }
 
 async function readWorkflowRecovery(page: Page, workflowName: string): Promise<{
@@ -236,18 +230,15 @@ async function readWorkflowRecovery(page: Page, workflowName: string): Promise<{
   graph: GraphState
   timestamp: number
 } | null> {
-  return page.evaluate((name) => new Promise((resolve, reject) => {
-    const request = indexedDB.open('bioimageflow-autosave', 1)
-    request.onsuccess = () => {
-      const db = request.result
-      const transaction = db.transaction('workflows', 'readonly')
-      const entry = transaction.objectStore('workflows').get(name)
-      entry.onsuccess = () => resolve(entry.result ?? null)
-      entry.onerror = () => reject(entry.error)
-      transaction.oncomplete = () => db.close()
-    }
-    request.onerror = () => reject(request.error)
-  }), workflowName)
+  return page.evaluate(async (name) => {
+    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+    const response = await fetch(`/api/v1/workflows/${encodeURIComponent(name)}`)
+    if (!response.ok) throw new Error('Recovery owner is unavailable')
+    const { info } = await response.json()
+    return useAutoSave().loadAutoSave(name, {
+      workspace_path: info.workspace_path, identity_generation: info.identity_generation,
+    })
+  }, workflowName)
 }
 
 async function fetchDraft(page: Page, workflowName: string): Promise<WorkflowDraft> {
