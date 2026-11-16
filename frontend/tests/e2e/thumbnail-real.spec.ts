@@ -38,7 +38,7 @@ async function openData(page: Page, name: string, label: string): Promise<void> 
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(label)
   // A startup read can already be in flight. Bind acceptance to the GET
   // dispatched after this explicit Open, rather than an older same-URL reply.
   const openedRequest = page.waitForRequest(request => request.method() === 'GET'
@@ -96,11 +96,13 @@ assert image.dtype == expected.dtype
 `, source, configuredTiff ? 'existing' : 'create'], { encoding: 'utf8', timeout: 30_000 })
   const sourceBytes = readFileSync(source)
   const sourceHash = createHash('sha256').update(sourceBytes).digest('hex')
-  const name = `real_thumbnail_${testInfo.project.name}_${Date.now()}`
-  const formatsName = `${name}_formats`
-  const label = `Real TIFF ${name}`
+  const relativePath = `real_thumbnail_${testInfo.project.name}_${Date.now()}`
+  const formatsPath = `${relativePath}_formats`
+  let name = ''
+  let formatsName = ''
+  const label = `Real TIFF ${relativePath}`
   const graph: GraphState = {
-    schema_version: 2, name, display_name: label,
+    schema_version: 2, name: relativePath, display_name: label,
     nodes: [{
       type: 'tool', id: NODE, name: 'Published Files', tool_name: 'Files',
       tool_module: 'bioimageflow_common_tools.files', tool_class: 'Files',
@@ -171,8 +173,9 @@ if code:
     })
     expect(installation.ok(), await installation.text()).toBeTruthy()
     await restoreCatalog()
-    const creation = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+    const creation = await page.request.post(`${API}/workflows`, { data: { name: relativePath, display_name: label } })
     expect(creation.status(), await creation.text()).toBe(201)
+    name = (await creation.json()).id
     created = true
     const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
     expect(installed.ok(), await installed.text()).toBeTruthy()
@@ -322,12 +325,13 @@ for t in range(3):
         (array / f"{t}.0.{z}.0.0").write_bytes(stack[t, 0, z].astype("<u2").tobytes())
 `, formatRoot], { encoding: 'utf8', timeout: 30_000 })
     const formatSources = ['color.png', 'color.jpg', 'stack.ome.tif', 'image.ome.zarr'].map(file => resolve(formatRoot, file))
-    const formatsLabel = `BioIO formats ${formatsName}`
+    const formatsLabel = `BioIO formats ${formatsPath}`
     const formatsGraph = structuredClone(graph)
-    formatsGraph.name = formatsName
+    formatsGraph.name = formatsPath
     formatsGraph.display_name = formatsLabel
-    const formatCreation = await page.request.post(`${API}/workflows`, { data: { name: formatsName, display_name: formatsLabel } })
+    const formatCreation = await page.request.post(`${API}/workflows`, { data: { name: formatsPath, display_name: formatsLabel } })
     expect(formatCreation.status(), await formatCreation.text()).toBe(201)
+    formatsName = (await formatCreation.json()).id
     formatsCreated = true
     const filesNode = formatsGraph.nodes[0]
     if (filesNode?.type !== 'tool') throw new Error('The Files fixture lost its tool node')

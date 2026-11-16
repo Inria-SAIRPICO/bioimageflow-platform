@@ -30,8 +30,8 @@ def test_imported_qa_workflow_runs_after_reopening(tmp_path: Path, nested: bool)
     if nested:
         archive = (root / "imports" / "qa-nested-parent.bioimageflow.zip").read_bytes()
     else:
-        _, archive = store.export_workflow_archive("QA/Reference Workflow")
-    store.import_workflow_archive(archive, name_override="imported")
+        _, archive = store.export_workflow_archive(store.workflow_id_at_path("QA/Reference Workflow"))
+    imported = store.import_workflow_archive(archive, name_override="imported")
 
     # Use a fresh process to prove restart independence and keep execution-engine
     # initialization out of the parent test process's global state.
@@ -45,13 +45,14 @@ from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 registry = ToolRegistryService()
 store = WorkflowStoreService(Path(sys.argv[1]), registry)
-graph = store.get_workflow("imported").graph
+workflow_id = sys.argv[3]
+graph = store.get_workflow(workflow_id).graph
 validated = GraphValidationService(registry).validate_with_compilation(
-    graph, storage_path=store.get_storage_path("imported"),
+    graph, storage_path=store.get_storage_path(workflow_id),
 )
 assert validated.validation.valid, validated.validation.errors
 assert validated.compilation.workflow.compute()[sys.argv[2]].tolist() == [2, 3, 4]
-""", str(workflows), "Nested result" if nested else "Incremented number"],
+""", str(workflows), "Nested result" if nested else "Incremented number", imported.info.id],
         capture_output=True,
         text=True,
         timeout=60,
@@ -105,24 +106,24 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
         root / "workspace" / "workflows" / "QA" / "Reference Workflow" / "tools"
     )
     store = WorkflowStoreService(root / "workspace" / "workflows", registry)
-    reference = store.get_workflow("QA/Reference Workflow")
+    reference = store.get_workflow(store.workflow_id_at_path("QA/Reference Workflow"))
     reference_edge = reference.graph.edges[0]
     assert isinstance(reference_edge, DataFrameEdge)
     assert reference_edge.target_position == 0
 
-    child = store.get_workflow("QA/Nested Child")
+    child = store.get_workflow(store.workflow_id_at_path("QA/Nested Child"))
     child_input = child.graph.interface.inputs[0]
     assert child_input.id == "numbers-dataframe-input"
     assert child_input.kind == "dataframe"
     assert isinstance(child_input.targets[0].port, PositionalInputPort)
     assert child_input.targets[0].port.index == 0
 
-    parent = store.get_workflow("QA/Nested Parent")
+    parent = store.get_workflow(store.workflow_id_at_path("QA/Nested Parent"))
     parent_edge = parent.graph.edges[0]
     assert isinstance(parent_edge, DataFrameEdge)
     assert parent_edge.target_input == "numbers-dataframe-input"
 
-    controlled_failure = store.get_workflow("QA/Controlled Failure")
+    controlled_failure = store.get_workflow(store.workflow_id_at_path("QA/Controlled Failure"))
     failure_edge = controlled_failure.graph.edges[0]
     assert isinstance(failure_edge, DataFrameEdge)
     assert failure_edge.target_position == 0
@@ -133,11 +134,11 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
         "QA/Nested Parent",
         "QA/Controlled Failure",
     ):
-        workflow = store.get_workflow(workflow_id)
+        workflow = store.get_workflow(store.workflow_id_at_path(workflow_id))
         built = build_workflow(
             workflow.graph,
             registry,
-            storage_path=store.get_storage_path(workflow_id),
+            storage_path=store.get_storage_path(store.workflow_id_at_path(workflow_id)),
         )
         assert built.errors == []
 
@@ -145,11 +146,11 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
         ("QA/Reference Workflow", "Incremented number"),
         ("QA/Nested Parent", "Nested result"),
     ):
-        workflow = store.get_workflow(workflow_id)
+        workflow = store.get_workflow(store.workflow_id_at_path(workflow_id))
         built = build_workflow(
             workflow.graph,
             registry,
-            storage_path=store.get_storage_path(workflow_id),
+            storage_path=store.get_storage_path(store.workflow_id_at_path(workflow_id)),
         )
         result = built.workflow.compute()
         assert result[output_name].tolist() == [2, 3, 4]
@@ -157,7 +158,7 @@ def test_prepare_builds_verified_reusable_qa_root(tmp_path: Path) -> None:
     built_failure = build_workflow(
         controlled_failure.graph,
         registry,
-        storage_path=store.get_storage_path("QA/Controlled Failure"),
+        storage_path=store.get_storage_path(store.workflow_id_at_path("QA/Controlled Failure")),
     )
     with pytest.raises(RuntimeError, match="Intentional manual QA failure"):
         built_failure.workflow.compute()

@@ -13,7 +13,7 @@ test.afterEach(async ({ page }) => {
   await page.goto('about:blank')
   for (const name of ownedWorkflows.splice(0)) {
     const response = await page.request.delete(`${API}/workflows/${name}`)
-    expect([200, 204, 404]).toContain(response.status())
+    expect([200, 204, 404], await response.text()).toContain(response.status())
   }
 })
 
@@ -112,6 +112,11 @@ async function runImported(page: Page, name: string, imported: WorkflowImportRes
   expect(identities[0]).toBe(identities[1])
   const status = await (await page.request.get(`${API}/execution/status`)).json()
   expect(status).toMatchObject({ workflow_id: name, execution_id: execution.execution_id, draft_revision: execution.draft_revision, state: 'idle', last_result: { success: true } })
+  await expect.poll(async () => {
+    const snapshot = await page.request.get(`${API}/executions/${execution.execution_id}`)
+    expect(snapshot.ok(), await snapshot.text()).toBeTruthy()
+    return (await snapshot.json()).state
+  }).toBe('succeeded')
   const accepted = await (await page.request.get(`${API}/workflows/${name}`)).json()
   expect(accepted.info.identity_generation).toBe(imported.info.identity_generation)
   expect(accepted.graph.config).toMatchObject({ engine: 'direct', execution: 'sequential' })

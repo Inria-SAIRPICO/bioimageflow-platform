@@ -15,11 +15,12 @@ const resultIdentity = {
 }
 
 async function openNodeData(page: Page, workflowName: string): Promise<void> {
+  const info = (await (await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)).json()).info
   await page.goto('/')
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-  await page.getByTestId('workflow-search').fill(workflowName)
+  await page.getByTestId('workflow-search').fill(info.relative_path)
   await page.getByTestId(`workflow-row-${workflowName}`).click()
-  await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(workflowName)
+  await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(info.display_name)
   // Pair this explicit Open's draft request with its response; an earlier
   // startup read of the same workflow is not the acceptance boundary.
   const openedRequest = page.waitForRequest(request => request.method() === 'GET'
@@ -30,9 +31,9 @@ async function openNodeData(page: Page, workflowName: string): Promise<void> {
   ])
   expect(opened.ok(), await opened.text()).toBeTruthy()
   const accepted = await opened.json() as WorkflowDraftResponse
-  expect(accepted.graph.display_name).toBe(workflowName)
+  expect(accepted.graph.display_name).toBe(info.display_name)
   expect(accepted.graph.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'seed' })]))
-  await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+  await expect(page.getByTestId('workflow-title')).toContainText(info.display_name)
   const seed = page.locator('.vue-flow__node[data-id="seed"]')
   await expect(seed).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
@@ -41,15 +42,17 @@ async function openNodeData(page: Page, workflowName: string): Promise<void> {
 }
 
 async function fixture(page: Page) {
-  const workflowName = `napari_chooser_${test.info().project.name}_${Date.now()}`
+  const relativePath = `napari_chooser_${test.info().project.name}_${Date.now()}`
   expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-    data: { name: workflowName, display_name: workflowName },
-  })).ok()).toBeTruthy()
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    data: { name: relativePath, display_name: relativePath },
+  })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const workflowName = (await created.json()).id as string
   expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, { data: { graph: {
     schema_version: 2,
-    name: workflowName,
-    display_name: workflowName,
+    name: relativePath,
+    display_name: relativePath,
     nodes: [{
       type: 'tool', id: 'seed', name: 'Seed', tool_name: 'SeedNumbers',
       position: [180, 160], parameters: {}, viewer_additions: {},

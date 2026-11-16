@@ -89,7 +89,13 @@ async function acceptedDraft(page: Page, name: string) {
 }
 
 async function openWorkflowFromDialog(page: Page, name: string, displayName: string) {
+  const listed = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/workflows'
+    && response.request().method() === 'GET',
+  )
   await chooseWorkflowItem(page, 'Open')
+  const response = await listed
+  expect(response.ok(), await response.text()).toBeTruthy()
   await expect(page.getByTestId('open-workflow-dialog')).toBeVisible()
   await page.getByTestId('workflow-open-search').fill(displayName)
   await page.getByTestId(`workflow-open-option-${name}`).click()
@@ -340,7 +346,7 @@ test.describe('workflow CRUD dialogs', () => {
       const chooserPromise = page.waitForEvent('filechooser')
       await chooseWorkflowItem(page, 'Import')
       await (await chooserPromise).setFiles({
-        name: `${original}.bioimageflow.zip`,
+        name: `${deriveWorkflowId(originalLabel)}.bioimageflow.zip`,
         mimeType: 'application/zip',
         buffer: await exported.body(),
       })
