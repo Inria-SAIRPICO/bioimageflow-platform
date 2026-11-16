@@ -458,7 +458,8 @@ test.describe('Settings Panel', () => {
     const settingsPath = join(root!, 'settings.json')
     const beforeDisk = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
     const suffix = `${testInfo.project.name}_${Date.now()}`
-    const name = `omero_card_${suffix}`
+    const relativePath = `omero_card_${suffix}`
+    let name = ''
     const draftTraffic: unknown[] = []
     page.on('request', request => {
       if (request.method() === 'PUT' && new URL(request.url()).pathname.endsWith(`/${name}`)) {
@@ -484,10 +485,9 @@ test.describe('Settings Panel', () => {
     const openOwnedWorkflow = async () => {
       await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
       await page.getByTestId('workflow-search').fill(name)
-      const request = page.waitForRequest(item => item.method() === 'GET'
-        && new URL(item.url()).pathname === `/api/v1/workflow-drafts/${name}`)
       const [response] = await Promise.all([
-        page.waitForResponse(async item => item.request() === await request),
+        page.waitForResponse(item => item.request().method() === 'GET'
+          && new URL(item.url()).pathname === `/api/v1/workflow-drafts/${name}`),
         page.getByTestId(`workflow-row-${name}`).dblclick(),
       ])
       expect(response.ok(), await response.text()).toBeTruthy()
@@ -520,8 +520,9 @@ test.describe('Settings Panel', () => {
           name: className, package: packageName, package_version: version, source_kind: 'package',
         })
       }
-      const creation = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+      const creation = await page.request.post(`${API}/workflows`, { data: { name: relativePath, display_name: label } })
       expect(creation.status(), await creation.text()).toBe(201)
+      name = (await creation.json()).id as string
       created = true
       await page.goto('/')
       await expect(page.locator('#bioimageflow-app')).toBeVisible()
