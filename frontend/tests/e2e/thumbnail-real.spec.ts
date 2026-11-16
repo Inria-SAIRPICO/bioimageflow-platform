@@ -388,7 +388,9 @@ class ${className}(DataFrameTool):
       // Wait for the new result row before scrolling: the virtual table
       // replaces its loading rows when the completed result arrives.
       await expect(row.getByTestId('path-display')).toHaveAttribute('title', formatSources[index]!)
-      await row.scrollIntoViewIfNeeded()
+      // Thumbnail completion can replace a virtual row during Playwright's
+      // stability wait. Resolve and scroll it in one synchronous DOM action.
+      await row.evaluate(element => element.scrollIntoView({ block: 'nearest' }))
       // The pending thumbnail element is replaced by an image on completion.
       const cell = row.locator('.image-cell')
       await expect(cell).toBeInViewport()
