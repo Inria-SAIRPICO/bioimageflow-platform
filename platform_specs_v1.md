@@ -1858,7 +1858,8 @@ App starts
 
 **Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion.
 When newer browser recovery incorrectly uses its slash-containing workspace ID as the graph definition name, startup and explicit Open restore the accepted backend definition name while preserving the recovered edits and accepted draft revision.
-At desktop window widths, long workflow titles shrink with an ellipsis and expose their full text on hover instead of wrapping the menu bar and moving the application content during startup or canvas activation.
+At desktop window widths, the workflow title and all controls following it form a compact group aligned to the right edge of the menu bar.
+Long workflow titles shrink with an ellipsis and expose their full text on hover instead of wrapping the menu bar and moving the application content during startup or canvas activation.
 
 Closing a clean root canvas closes it immediately. Closing a dirty root canvas presents **Save**, **Discard**, and **Cancel**, bound to the initiating canonical canvas even if activation changes while the action is pending. Save uses the exact-snapshot ordinary save path and closes only if no newer edit remains. Discard fences older draft and recovery writes, CAS-resets the accepted backend draft to the saved `workflow.json` graph, resets the initiating canvas state, and then closes; a conflict or failure leaves the tab open. Cancel changes nothing. Nested-snapshot close and discard remain separate and never reset a root draft.
 
