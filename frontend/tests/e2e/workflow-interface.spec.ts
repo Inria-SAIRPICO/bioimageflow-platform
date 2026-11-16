@@ -1768,8 +1768,16 @@ test.describe('workflow interface and grouping', () => {
     expect(childInputName(resolved.graph)).toBe('Chosen local name')
     expect(childInputName(childNode(await draftGraph(page, name)).workflow)).toBe('Source table')
 
+    const parentApply = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+    ))
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    const parentAccepted = await parentApply
+    expect(parentAccepted.ok(), await parentAccepted.text()).toBeTruthy()
+    const appliedDraft = await parentAccepted.json() as WorkflowDraftResponse
+    expect(childInputName(childNode(appliedDraft.graph).workflow)).toBe('Chosen local name')
     await expect.poll(async () => childInputName(childNode(await draftGraph(page, name)).workflow))
       .toBe('Chosen local name')
     await page.locator('.dv-tab').filter({ hasText: displayName }).click()
