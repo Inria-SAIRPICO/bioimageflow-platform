@@ -100,7 +100,7 @@ async function openWorkflowFromDialog(page: Page, name: string, displayName: str
   await page.getByTestId('workflow-open-search').fill(displayName)
   await page.getByTestId(`workflow-open-option-${name}`).click()
   await page.getByTestId('workflow-open-submit').click()
-  await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+  await expect(page.getByTestId('workflow-title').locator('.workflow-title__label')).toHaveText(displayName)
 }
 
 async function showWorkflowsPanel(page: Page) {
@@ -124,7 +124,9 @@ async function openWorkflowFromPanel(page: Page, name: string, displayName: stri
   const row = panel.getByTestId(`workflow-row-${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`)
   await expect(row).toBeVisible()
   await row.dblclick()
-  await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+  // A copy's title includes its source's name. A substring match can accept
+  // that old canvas before this Open completes, letting the next Open win.
+  await expect(page.getByTestId('workflow-title').locator('.workflow-title__label')).toHaveText(displayName)
 }
 
 test.describe('workflow CRUD dialogs', () => {
@@ -557,6 +559,9 @@ test.describe('workflow CRUD dialogs', () => {
       await page.goto('/')
       await openWorkflowFromPanel(page, oldBase, baseDisplayName)
       await openWorkflowFromPanel(page, oldCopy, copyDisplayName)
+      for (const label of [baseDisplayName, copyDisplayName]) {
+        await expect(page.getByTestId('canvas-tab').filter({ has: page.getByText(label, { exact: true }) })).toHaveCount(1)
+      }
       const nestedOpening = page.waitForResponse(response => response.request().method() === 'POST'
         && new URL(response.url()).pathname === '/api/v1/nested-workflow-snapshots/open')
       await page.locator('.vue-flow__node[data-id="moved-child"]:visible').dblclick()
