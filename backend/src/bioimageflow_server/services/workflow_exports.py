@@ -215,9 +215,9 @@ class WorkflowExportService:
 
     def prepare_latest_results(self, workflow_id: str) -> PreparedDownload:
         cleanup_root = _temporary_root()
-        stem = safe_workflow_export_stem(workflow_id)
         try:
             with self.store.workflow_mutation(workflow_id):
+                stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
                 storage_path = self.store.get_storage_path(workflow_id)
                 try:
                     exported = export_outputs(
@@ -257,7 +257,8 @@ class WorkflowExportService:
                 workflow_dir=workflow_dir,
                 results_dir=storage_path,
             )
-            destination = parent / f"{safe_workflow_export_stem(workflow_id)}-latest-results"
+            stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
+            destination = parent / f"{stem}-latest-results"
             if destination.is_symlink():
                 _raise(
                     "unsafe_export_destination",
@@ -335,10 +336,10 @@ class WorkflowExportService:
         self, workflow_id: str, *, include_workflow: bool
     ) -> PreparedDownload:
         cleanup_root = _temporary_root()
-        stem = safe_workflow_export_stem(workflow_id)
         bundle_root = cleanup_root / "bundle"
         try:
             with self.store.workflow_mutation(workflow_id):
+                stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
                 storage_path = self.store.get_storage_path(workflow_id)
                 try:
                     run_id = Storage(storage_path).latest_success_run_id()
