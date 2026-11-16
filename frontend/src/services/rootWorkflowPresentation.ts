@@ -3,6 +3,7 @@ import { fetchWorkflowDraft, type WorkflowDraftResponse } from '@/api/workflowDr
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 import { useWorkflowStore, type WorkflowPresentationCause } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useSettingsStore } from '@/stores/settings'
 import { workflowPanelId } from '@/utils/canvasPanels'
 
 export interface RootWorkflowPresentation {
@@ -19,6 +20,7 @@ export interface RootWorkflowPresentation {
 const graphPresentationIdentities = new WeakMap<object, {
   workflowName: string
   identityGeneration: number
+  workspaceSelection: number
 }>()
 
 export function workflowInfoId(workflow: WorkflowInfo): string {
@@ -31,6 +33,12 @@ export async function loadRootWorkflowPresentation(
 ): Promise<RootWorkflowPresentation> {
   const workflowStore = useWorkflowStore()
   const identityGeneration = workflowStore.captureWorkflowIdentity(workflowName)
+  const workspaceSelection = useSettingsStore().workspaceSelectionRevision
+  const assertWorkspace = () => {
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) {
+      throw new Error('The workspace changed while the workflow was loading.')
+    }
+  }
   const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
   // Startup can update the loading presentation only while App still owns it.
   const savedGraph = await workflowStore.loadWorkflow(
@@ -42,6 +50,7 @@ export async function loadRootWorkflowPresentation(
       ...(options.background ? { canUpdatePresentation: options.canPresent ?? (() => false) } : {}),
     },
   )
+  assertWorkspace()
   const info = workflowStore.workflows.find(
     workflow => workflowInfoId(workflow) === workflowName,
   )
@@ -53,10 +62,12 @@ export async function loadRootWorkflowPresentation(
     serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
   }
   let result: RootWorkflowPresentation
+  const workspacePath = info?.workspace_path ?? useSettingsStore().settings?.workspace_path ?? undefined
   try {
     const draft = options.background
-      ? await fetchWorkflowDraft(workflowName)
-      : await useWorkflowDraftStore().loadDraft(workflowName)
+      ? await fetchWorkflowDraft(workflowName, ...(workspacePath ? [workspacePath] : []))
+      : await useWorkflowDraftStore().loadDraft(workflowName, ...(workspacePath ? [workspacePath] : []))
+    assertWorkspace()
     result = {
       graph: draft.graph,
       dirty: draft.dirty_against_saved,
@@ -70,8 +81,9 @@ export async function loadRootWorkflowPresentation(
       ...presentation,
     }
   }
+  assertWorkspace()
   workflowStore.assertWorkflowIdentityCurrent(workflowName, identityGeneration)
-  graphPresentationIdentities.set(result.graph, { workflowName, identityGeneration })
+  graphPresentationIdentities.set(result.graph, { workflowName, identityGeneration, workspaceSelection })
   return result
 }
 
@@ -89,6 +101,7 @@ export function isRootWorkflowPresentationCurrent(
     && (
       tracked.workflowName !== workflowName
       || tracked.identityGeneration !== identityGeneration
+      || tracked.workspaceSelection !== useSettingsStore().workspaceSelectionRevision
     )
   ) return false
   return workflowStore.isWorkflowIdentityCurrent(workflowName, identityGeneration)
