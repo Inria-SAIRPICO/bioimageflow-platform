@@ -114,7 +114,11 @@ Saving updates `workflow.json`; custom tool code lives in `tools/` and is includ
 Moving a workflow in the panel carries its tools and results with it.
 Each workflow retains its own identity when moved or renamed; making a copy or importing creates a separate workflow identity.
 Duplicating copies its definition and custom tools, but starts without results.
-If files are moved outside BioImageFlow, refresh the tree before continuing; missing or duplicated workflow identities require resolution rather than writing to an old location.
+If files are moved outside BioImageFlow, refresh the tree before continuing.
+Missing workflows remain unavailable until their files are restored or moved back.
+If you copied a workflow directory in your file browser, use **Review copies**, close the affected workflow and nested tabs, and select the copied directory to make independent.
+That directory keeps its graph, tools, drafts and results while receiving its own identity; the original stays unchanged.
+Use **Duplicate workflow** when you want a new reusable workflow without copying results.
 
 Installed tool packages and their execution environments are shared across workflows and stored separately from this folder; see [installation locations](index.md#install-the-desktop-application).
 Back up the workspace to preserve your saved analyses and local tools, and back up original input datasets stored elsewhere too.

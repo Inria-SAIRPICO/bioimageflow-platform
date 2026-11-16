@@ -389,15 +389,22 @@ Submission captures workspace and parent path through completion and conflict re
 The confirmed, byte-backed-up format migration assigns UUIDs once and remaps mutable saved, draft, nested, preference and registry references using captured old-path/generation ownership.
 A migration-only receipt supports browser recovery reconciliation; unattributable or reused-path recovery remains an explicit conflict and is never attached by current path alone.
 The receipt is retired after reconciliation and never enables path-addressed workflow requests.
+Browser recovery storage uses canonical workspace path, workflow UUID and generation as its durable key; legacy unscoped records remain unresolved until ownership is proven or the user explicitly selects a destination.
+Acknowledgment and cleanup retain the captured workspace and exact recovery owner across asynchronous waits.
 UUIDs do not enter portable archives or scientific identity, and immutable run artifacts are not rewritten.
 Catalog read freshness also includes accepted same-ID metadata updates such as Save and dependency refresh; these are not identity-generation changes.
 Backend listing and format scans discover current workspace folders without descending into a workflow directory after its workflow.json boundary; workflow-owned results and sources are not catalog folders.
 Any shared path snapshot expires with that operation rather than hiding subsequent external filesystem changes.
-Pending tree reuse is limited to that current catalog authority, and a caller retries a stale catalog read at most once without joining its own expired request.
+Pending tree reuse is limited to that current catalog authority and captured workspace-selection revision, and a caller retries a stale catalog read at most once without joining its own expired request.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves coordinate physical locations and path metadata under the mutation gate and recovery journal.
 Idle affected canvases flush root drafts and private nested snapshots without Save or apply and retain their registrations, unsaved state and undo history.
 Writes recheck UUID and storage independently of Refresh, reject duplicate or missing identities, and never recreate an old directory after an external move.
+The optional `X-BioImageFlow-Workspace` owner header binds pending canvas, editor and agent requests to their captured canonical workspace and refuses a same-UUID workflow in a newly selected workspace; asynchronous request work retains the selected store.
+Catalog and structural responses from a previously selected workspace cannot update the new workspace's workflow metadata, folder selection or active canvas, including copies sharing UUIDs and generations.
+Duplicate UUIDs remain unavailable until explicit copy resolution selects an exact relative path, UUID and saved-document digest.
+That operation uses synchronized backups and a forward-recoverable journal to assign the selected directory a fresh UUID, preserving its content, results and root draft revision/baseline; other copies remain unchanged.
+The Review copies UI requires affected editors to close, and backend active-run guards remain authoritative.
 Moves are refused while affected local or managed execution owns storage; external movement during an active run reports unavailable storage without retargeting the engine.
 
 The platform keeps an atomic, revisioned execution registry under the active workspace, separate from graphs and cache storage.

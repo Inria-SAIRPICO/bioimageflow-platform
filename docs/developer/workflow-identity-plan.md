@@ -6,12 +6,12 @@ orphan: true
 
 Keep real folders and per-workflow directories containing definitions, owned tools, drafts and results.
 Separate identity from location to preserve references and open canvases during reorganization.
-This proposal does not supersede current path-based specifications until implemented.
+The implementation is reflected in the workflow lifecycle sections of the platform specifications.
 
 ## Scope and decisions
 
 - Store an immutable UUID in the platform workflow document envelope, outside the portable graph and artifact hash.
-- Use that UUID for workflow references and canvas ownership; expose workspace-relative `path` separately for browsing and filesystem operations.
+- Use that UUID for workflow references and canvas ownership; expose workspace-relative `relative_path` separately for browsing and filesystem operations.
 - Preserve display name and portable definition name independently of location; moving a workflow changes neither.
 - Keep folder identities as relative paths.
 - Keep existing single-item drag-and-drop and folder rename interactions.

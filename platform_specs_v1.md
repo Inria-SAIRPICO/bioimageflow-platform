@@ -446,6 +446,12 @@ Renaming or moving a workflow or containing folder changes physical locations an
 Idle open root and nested canvases flush their private persistence without Save or apply, then retain their registrations, dirty baselines and undo histories after the accepted move.
 A move is refused while affected local or managed execution owns storage.
 Named reads and writes resolve UUIDs freshly and refuse missing or duplicate identities; an external move never authorizes silently recreating the former directory or retargeting an active run.
+External duplicate UUIDs are exposed as exact directory/digest choices by the format-status response.
+`POST /workflows/identity-copies/resolve` accepts `relative_path`, `expected_workflow_id` and `expected_document_hash`, rechecks the selected directory under storage and mutation guards, backs up changed authorities and assigns that selected copy a fresh UUID through a restart-safe journal.
+It preserves graph content, tools and results, root draft revisions and baselines; the other directories retain their identities and bytes.
+The Workflows panel's **Review copies** action requires affected root and nested tabs to close and lets the user select one directory to make independent; active storage owners refuse resolution.
+Canvas-owned requests carry their captured canonical workspace through `X-BioImageFlow-Workspace`; a mismatch returns HTTP 409 before mutation, and the selected store remains bound to that request across asynchronous waits.
+Create additionally accepts `expected_workspace_path` and `expected_parent_path` assertions, with an empty parent selecting the workflows root.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -731,7 +737,7 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 | `planned_node_names` | `dict[str, str]` | Display names keyed by the planned scoped tool-node paths. |
 | `node_statuses` | `dict[str, NodeStatus]` | Current or final statuses for the retained execution context |
 | `execution_id` | `str \| null` | Unique accepted execution identity |
-| `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
+| `workflow_id` | `str \| null` | Persistent workflow UUID compiled for that execution; null for unresolved legacy ownership |
 | `draft_revision` | `int \| null` | Accepted root draft revision for the retained execution; null only before any run has been accepted |
 
 The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose server wire context `{execution_id, workflow_id, draft_revision}` matches the locally captured originating canvas. Canvas ID is frontend-local correlation and is not a WebSocket field. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
@@ -1584,7 +1590,7 @@ Startup initializes selection only when no newer Browse or deliberate presentati
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a workflow node containing an executable snapshot. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
 
 **Actions:**
-- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative while retaining the entered display name; editing that name clears the suggestion and derives a new id.
+- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the destination relative path, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; destination paths remain API capabilities. On path conflict, the server suggests an alternative while retaining the entered display name; editing that name clears the suggestion and derives a new destination path.
   All New-workflow entry points use shared panel selection: a folder selects itself, a workflow selects its containing folder, and no selection means the workflows root. The dialog follows selection until Create submission, then freezes workspace and parent path through the request and conflict retry. Creation checks those captured assertions and refuses an absent parent instead of recreating it or falling back to the root. The canvas loads the backend's accepted draft or saved graph, preserving its slash-free definition name and configuration.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow in its canonical `workflow:<id>` root canvas tab or activates that existing tab. Startup resolution uses this same creation, persistence, activation, placement, and close lifecycle after its temporary non-canvas loading placeholder resolves.
@@ -1834,6 +1840,11 @@ An accepted `cache_corrupt` diagnostic with a failed node status takes badge pre
 ### 4.3 Auto-Save and Startup Recovery
 
 The frontend auto-saves meaningful graph changes to the backend workflow draft (debounced at 500ms). IndexedDB remains a fallback for cases where the backend is unavailable, the browser crashes before a draft write completes, or a local recovery path is needed.
+
+Browser recovery records are keyed by the captured canonical workspace path, workflow UUID and identity generation.
+Save, delete and recovery cleanup remove only that exact owner's entry; copied workspaces and later generations retain independent recovery.
+Older unscoped entries remain intact and require explicit recovery when ownership cannot be proven.
+Migration acknowledgment carries the captured workspace, and a workspace switch prevents late acknowledgment or restore completion from clearing another owner's recovery or changing its presentation.
 
 **Startup recovery flow:**
 
