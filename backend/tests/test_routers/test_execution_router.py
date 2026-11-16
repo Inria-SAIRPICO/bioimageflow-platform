@@ -620,46 +620,47 @@ async def test_run_cannot_accept_same_id_replacement(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
-    original_generation = workflow_store.workflow_generation("wf")
+    workflow_id = workflow_store.create_workflow(WorkflowCreate(name="wf")).id
+    original_generation = workflow_store.workflow_generation(workflow_id)
     persisted_drafts = WorkflowDraftService(lambda: workflow_store)
     snapshots = NestedWorkflowSnapshotService(lambda: workflow_store)
     private_ids = {}
 
     def seed_retained_authority(workflow_id: str, label: str) -> None:
+        identity = workflow_store.workflow_id_at_path(workflow_id)
         graph = GraphState.model_validate(graph_document(
             name=f"{workflow_id}-definition", display_name=label,
         ))
-        workflow_store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
+        workflow_store.save_workflow(identity, WorkflowSaveBody(graph=graph))
         persisted_drafts.put_draft(
-            workflow_id,
+            identity,
             graph=graph.model_copy(update={"display_name": f"Pending {label}"}),
             expected_revision=0,
             should_validate=False,
         )
         private = snapshots.open_snapshot(
             NestedSnapshotOwner(
-                kind="root", canvas_id=f"canvas:{workflow_id}", workflow_id=workflow_id,
+                kind="root", canvas_id=f"canvas:{identity}", workflow_id=identity,
             ),
             "child",
             GraphState.model_validate(graph_document(name=f"{workflow_id}-private")),
         )
         private_ids[workflow_id] = private.session_id
         # Inert sentinels establish file retention, not scientific/source records.
-        tools = workflow_store.workflow_dir(workflow_id) / "tools"
+        tools = workflow_store.workflow_dir(identity) / "tools"
         tools.mkdir(exist_ok=True)
         (tools / "retained.txt").write_bytes(f"source sentinel: {workflow_id}".encode())
-        results = workflow_store.get_storage_path(workflow_id)
+        results = workflow_store.get_storage_path(identity)
         results.mkdir(exist_ok=True)
         (results / "retained.bin").write_bytes(f"result sentinel: {workflow_id}".encode())
 
     def authority(current_store, current_drafts, current_snapshots):
         return {
             workflow_id: (
-                current_store.read_workflow_document(workflow_id).model_dump(mode="json"),
-                current_store.get_workflow(workflow_id).model_dump(mode="json"),
-                current_drafts.get_draft_authority_snapshot(workflow_id).model_dump(mode="json"),
-                current_store.workflow_generation(workflow_id),
+                current_store.read_workflow_document(current_store.workflow_id_at_path(workflow_id)).model_dump(mode="json"),
+                current_store.get_workflow(current_store.workflow_id_at_path(workflow_id)).model_dump(mode="json"),
+                current_drafts.get_draft_authority_snapshot(current_store.workflow_id_at_path(workflow_id)).model_dump(mode="json"),
+                current_store.workflow_generation(current_store.workflow_id_at_path(workflow_id)),
                 current_snapshots.get_snapshot(private_ids[workflow_id]).model_dump(mode="json"),
             )
             for workflow_id in ("wf", "unrelated")
@@ -674,11 +675,11 @@ async def test_run_cannot_accept_same_id_replacement(
     workflow_store.create_workflow(WorkflowCreate(name="unrelated"))
     seed_retained_authority("unrelated", "Unrelated")
     (tmp_path / "unmanaged.bin").write_bytes(b"unmanaged sentinel")
-    accepted = _accepted_draft(revision=7)
+    accepted = _accepted_draft(revision=7).model_copy(update={"workflow_id": workflow_id})
     draft_service = MagicMock(spec=WorkflowDraftService)
     draft_service.get_draft_authority_async = AsyncMock(
         return_value=_authority(
-            accepted, workflow_store.get_storage_path("wf"),
+            accepted, workflow_store.get_storage_path(workflow_id),
             identity_generation=original_generation,
         )
     )
@@ -690,10 +691,10 @@ async def test_run_cannot_accept_same_id_replacement(
 
     async def replace_before_accepting(*_args: Any, **kwargs: Any) -> ExecutionContext:
         nonlocal retained, retained_files
-        workflow_store.delete_workflow("wf")
+        workflow_store.delete_workflow(workflow_id)
         workflow_store.create_workflow(WorkflowCreate(name="wf", display_name="Replacement"))
         seed_retained_authority("wf", "Replacement")
-        assert workflow_store.workflow_generation("wf") > original_generation
+        assert workflow_store.workflow_generation(workflow_id) > original_generation
         retained = authority(workflow_store, persisted_drafts, snapshots)
         retained_files = files()
         monkeypatch.setattr(workflow_store, "get_storage_path", storage_reads)
@@ -712,7 +713,7 @@ async def test_run_cannot_accept_same_id_replacement(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 7,
             },
         )
@@ -722,7 +723,7 @@ async def test_run_cannot_accept_same_id_replacement(
     assert files() == retained_files
     storage_reads.assert_not_called()
     draft_service.get_draft_authority_snapshot.assert_not_called()
-    draft_service.get_draft_authority_async.assert_awaited_once_with("wf")
+    draft_service.get_draft_authority_async.assert_awaited_once_with(workflow_id)
     assert em.start.await_count == 1
     assert em.get_status().model_dump(mode="json") == retained_status
     em.stop.assert_not_called()
@@ -735,7 +736,7 @@ async def test_run_cannot_accept_same_id_replacement(
     reopened_drafts = WorkflowDraftService(lambda: reopened)
     reopened_snapshots = NestedWorkflowSnapshotService(lambda: reopened)
     assert authority(reopened, reopened_drafts, reopened_snapshots) == retained
-    assert reopened.get_workflow("wf").info.display_name == "Replacement"
+    assert reopened.get_workflow(reopened.workflow_id_at_path("wf")).info.display_name == "Replacement"
     assert files() == retained_files
 
 
@@ -826,9 +827,9 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
-    saved_graph = workflow_store.get_workflow("wf").graph.model_dump(mode="json", by_alias=True)
-    draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+    workflow_id = workflow_store.create_workflow(WorkflowCreate(name="wf")).id
+    saved_graph = workflow_store.get_workflow(workflow_id).graph.model_dump(mode="json", by_alias=True)
+    draft_path = workflow_store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
     assert not draft_path.exists()
     client = await _make_client(
         tmp_path,
@@ -840,7 +841,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 0,
             },
         )
@@ -860,8 +861,8 @@ async def test_run_rejects_inline_revision_zero_without_materializing_draft(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
-    draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+    workflow_id = workflow_store.create_workflow(WorkflowCreate(name="wf")).id
+    draft_path = workflow_store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
     client = await _make_client(
         tmp_path,
         execution_manager=em,
@@ -872,7 +873,7 @@ async def test_run_rejects_inline_revision_zero_without_materializing_draft(
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 0,
                 "graph": _minimal_graph(),
             },
@@ -893,7 +894,7 @@ async def test_run_returns_not_found_when_workflow_disappears_before_start(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = workflow_store.create_workflow(WorkflowCreate(name="wf")).id
     client = await _make_client(
         tmp_path,
         execution_manager=em,
@@ -902,24 +903,31 @@ async def test_run_returns_not_found_when_workflow_disappears_before_start(
     if race == "moved":
         _patch_workflow(
             workflow_store,
-            "wf",
+            workflow_id,
             WorkflowUpdate(action="update", new_id="archive/wf"),
         )
     else:
-        workflow_store.delete_workflow("wf")
+        workflow_store.delete_workflow(workflow_id)
 
     async with client:
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 7,
             },
         )
 
-    assert response.status_code == 404
-    assert response.json()["error"] == "not_found"
+    assert response.status_code == (409 if race == "moved" else 404)
+    assert response.json()["error"] == ("draft_revision_conflict" if race == "moved" else "not_found")
     em.start.assert_not_awaited()
+
+    if race == "moved":
+        em.start.return_value = ExecutionContext(execution_id="moved-run", workflow_id=workflow_id, draft_revision=0)
+        async with await _make_client(tmp_path, execution_manager=em, workflow_store=workflow_store) as moved_client:
+            started = await moved_client.post("/api/v1/execution/run", json={"workflow_id": workflow_id, "draft_revision": 0})
+        assert started.status_code == 202, started.text
+        assert em.start.await_args.kwargs["storage_path"] == workflow_store.root_dir / "archive/wf/results"
 
 
 async def test_run_selected_defers_invalid_full_draft_validation_to_execution_scope(
@@ -1138,6 +1146,7 @@ async def test_run_resolves_workflow_storage_path(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     workflow_store = MagicMock()
     workflow_storage = tmp_path / "workflows" / "wf_a"
+    workflow_storage.parent.mkdir(parents=True, exist_ok=True)
     workflow_store.get_storage_path.return_value = workflow_storage
     c = await _make_client(
         tmp_path,
@@ -1438,6 +1447,7 @@ async def test_clear_resolves_workflow_storage_path(
     em = _FakeExecutionManager(running=False)
     workflow_store = MagicMock()
     workflow_storage = tmp_path / "workflows" / "wf_a"
+    workflow_storage.parent.mkdir(parents=True, exist_ok=True)
     workflow_store.get_storage_path.return_value = workflow_storage
     seen: dict[str, Path | None] = {}
 
@@ -1488,7 +1498,7 @@ async def test_clear_cannot_commit_against_same_id_replacement(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = workflow_store.create_workflow(WorkflowCreate(name="wf")).id
     prepare_entered = threading.Event()
     release_prepare = threading.Event()
     commit_called = False
@@ -1524,7 +1534,7 @@ async def test_clear_cannot_commit_against_same_id_replacement(
                 "/api/v1/execution/clear",
                 json={
                     "nodes": ["n1"],
-                    "workflow_id": "wf",
+                    "workflow_id": workflow_id,
                     "draft_revision": 0,
                 },
             )
@@ -1533,7 +1543,7 @@ async def test_clear_cannot_commit_against_same_id_replacement(
             async with asyncio.timeout(2):
                 while not prepare_entered.is_set():
                     await asyncio.sleep(0)
-            await asyncio.to_thread(workflow_store.delete_workflow, "wf")
+            await asyncio.to_thread(workflow_store.delete_workflow, workflow_id)
             await asyncio.to_thread(
                 workflow_store.create_workflow,
                 WorkflowCreate(name="wf", display_name="Replacement"),
@@ -1544,7 +1554,7 @@ async def test_clear_cannot_commit_against_same_id_replacement(
 
     assert response.status_code == 404
     assert commit_called is False
-    assert workflow_store.get_workflow("wf").info.display_name == "Replacement"
+    assert workflow_store.get_workflow(workflow_store.workflow_id_at_path("wf")).info.display_name == "Replacement"
 
 
 # ---- GET /execution/status --------------------------------------------------
