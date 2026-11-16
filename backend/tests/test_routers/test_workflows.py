@@ -468,6 +468,49 @@ async def test_identity_copy_resolution_fences_workspace_and_publishes_new_uuid(
     assert store.get_workflow(created.id).info.relative_path == "original"
 
 
+async def test_pending_copy_resolution_keeps_its_workspace_registry_after_switch(tmp_path: Path) -> None:
+    from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+    from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.services.execution_registry import ExecutionRegistry
+
+    workspace_a, workspace_b = tmp_path / "a", tmp_path / "b"
+    store = WorkflowStoreService(workspace_a / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    shutil.copytree(workspace_a, workspace_b)
+    copied = next(item for item in store.workflow_format_status().identity_conflicts[0].copies
+                  if item.relative_path == "copy")
+    ExecutionRegistry(workspace_a).save(ExecutionSnapshot(
+        execution_id="held-owner-a", workflow_id=created.id,
+        backend="direct", target_id="local", state="running",
+    ))
+    settings = Settings(deployment_mode="desktop", workspace_path=str(workspace_a))
+    app = create_app(AppConfig(
+        settings=settings, tool_registry=ToolRegistryService(), disable_hot_reload=True,
+        execution_profile_store=MagicMock(),
+    ))
+    actual_registry = app.dependency_overrides[get_execution_registry]()
+
+    async def switch_after_request_binding() -> Any:
+        assert actual_registry.root == workspace_a / ".bioimageflow" / "executions"
+        settings.workspace_path = str(workspace_b)
+        return actual_registry
+
+    app.dependency_overrides[get_execution_registry] = switch_after_request_binding
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/workflows/identity-copies/resolve", json={
+            "relative_path": "copy", "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash,
+        }, headers={"X-BioImageFlow-Workspace": str(workspace_a)})
+    assert settings.workspace_path == str(workspace_b)
+    assert response.status_code == 423, response.text
+    assert response.json()["error"] == "workflow_storage_locked"
+    assert response.json()["details"]["execution_ids"] == ["held-owner-a"]
+    assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+    assert (workspace_b / "workflows" / "copy" / "workflow.json").read_bytes() == before
+
+
 @pytest.mark.parametrize("missing", ["manifest", "python", "legacy"])
 @pytest.mark.parametrize("nested", [False, True])
 async def test_open_workflow_reports_missing_owned_source(

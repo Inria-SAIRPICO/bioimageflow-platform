@@ -478,7 +478,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
         def managed_execution_results() -> Path:
             return (
-                _current_workspace_service().workspace_path()
+                _current_workflow_store().workspace_dir
                 / ".bioimageflow"
                 / "execution_exports"
             )
@@ -491,7 +491,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
         distributed_tokens = PreparedSubmissionTokenManager()
         distributed_registry = ExecutionRegistry(
-            lambda: _current_workspace_service().workspace_path()
+            lambda: _current_workflow_store().workspace_dir
         )
         execution_profile_store.set_reference_checker(
             lambda profile_id: any(
