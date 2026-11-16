@@ -381,6 +381,9 @@ The destination becomes visible only after its graph and sources are prepared su
 The copy request carries the captured source identity generation to reject a deleted and recreated source.
 
 Workflow identities are path-derived and carry durable identity generations.
+New workflow creation opens the backend's accepted draft or saved graph through the ordinary root presentation loader, preserving its definition name and configuration.
+The workspace workflow ID may contain folder separators; the graph definition name cannot contain `/` and is initialized by the backend from the destination leaf.
+Startup and explicit Open retain newer browser recovery edits and the accepted draft revision while restoring the backend definition name if the recovered definition name incorrectly equals the slash-containing workspace ID.
 Catalog read freshness also includes accepted same-ID metadata updates such as Save and dependency refresh; these are not identity-generation changes.
 Backend listing and format scans discover current workspace folders without descending into a workflow directory after its workflow.json boundary; workflow-owned results and sources are not catalog folders.
 Any shared path snapshot expires with that operation rather than hiding subsequent external filesystem changes.

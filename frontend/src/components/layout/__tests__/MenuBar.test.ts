@@ -1278,6 +1278,19 @@ describe('MenuBar', () => {
     })
 
     it('creates a workflow under the folder selected in the workflows panel', async () => {
+      const createdGraph = makeGraph({
+        name: 'nuclei',
+        display_name: 'Nuclei',
+        config: { engine: 'wetlands', execution: 'sequential' },
+      })
+      apiMocks.get.mockResolvedValueOnce({
+        data: {
+          info: { id: 'Analysis Results/nuclei', name: 'Analysis Results/nuclei', display_name: 'Nuclei', identity_generation: 8 },
+          graph: createdGraph,
+          artifact_hash: 'sha256:created',
+        },
+      })
+      workflowDraftMocks.loadDraft.mockRejectedValueOnce(new Error('no draft fixture'))
       apiMocks.post.mockResolvedValueOnce({
         data: {
           id: 'Analysis Results/nuclei',
@@ -1315,6 +1328,8 @@ describe('MenuBar', () => {
         description: null,
       })
       expect(applied[applied.length - 1]).toMatchObject({
+        graph: createdGraph,
+        dirty: false,
         workflowName: 'Analysis Results/nuclei',
         identityGeneration: 1,
         serverIdentityGeneration: 8,

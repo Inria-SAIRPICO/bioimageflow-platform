@@ -1579,6 +1579,7 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 
 **Actions:**
 - **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative while retaining the entered display name; editing that name clears the suggestion and derives a new id.
+  After creation, the canvas loads the backend's accepted draft or saved graph, preserving its definition name and configuration; the slash-separated workspace ID remains separate from the graph's slash-free definition name.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow in its canonical `workflow:<id>` root canvas tab or activates that existing tab. Startup resolution uses this same creation, persistence, activation, placement, and close lifecycle after its temporary non-canvas loading placeholder resolves.
   An accepted named Open supersedes pending startup presentation before loading begins; late startup reads cannot mount or reactivate a competing root, change the selected workflow, clear its dirty state, or replace its accepted draft projection.
@@ -1857,6 +1858,7 @@ App starts
 ```
 
 **Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion.
+When newer browser recovery incorrectly uses its slash-containing workspace ID as the graph definition name, startup and explicit Open restore the accepted backend definition name while preserving the recovered edits and accepted draft revision.
 At desktop window widths, long workflow titles shrink with an ellipsis and expose their full text on hover instead of wrapping the menu bar and moving the application content during startup or canvas activation.
 
 Closing a clean root canvas closes it immediately. Closing a dirty root canvas presents **Save**, **Discard**, and **Cancel**, bound to the initiating canonical canvas even if activation changes while the action is pending. Save uses the exact-snapshot ordinary save path and closes only if no newer edit remains. Discard fences older draft and recovery writes, CAS-resets the accepted backend draft to the saved `workflow.json` graph, resets the initiating canvas state, and then closes; a conflict or failure leaves the tab open. Cancel changes nothing. Nested-snapshot close and discard remain separate and never reset a root draft.

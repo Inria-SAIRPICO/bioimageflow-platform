@@ -106,6 +106,8 @@ They remain byte-for-byte unchanged and unavailable until the user confirms the 
 Confirmation first synchronizes exact backups under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, then replaces all planned authorities through one forward-recoverable journal whose already-confirmed work is completed after restart.
 
 Workflow IDs are workspace-relative paths and carry identity generations.
+New workflow canvases load the backend's accepted draft or saved graph; path-derived IDs stay separate from slash-free graph definition names and backend-initialized configuration.
+Startup and explicit Open repair a newer recovery snapshot whose definition name equals its slash-containing workspace ID by restoring the accepted backend definition name while retaining queued graph edits and the accepted draft revision.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
 Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
 

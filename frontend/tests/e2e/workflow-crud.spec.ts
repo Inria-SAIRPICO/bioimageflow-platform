@@ -119,6 +119,80 @@ test.describe('workflow CRUD dialogs', () => {
     await expect(page.locator('[data-testid="workflow-title"]')).toBeVisible()
   })
 
+  test('creates and saves edits to a workflow inside a folder', { tag: '@critical' }, async ({ page }) => {
+    const folder = uniqueName('Analysis Results', page)
+    const displayName = uniqueName('Folder workflow', page)
+    const leaf = deriveWorkflowId(displayName)
+    const name = `${folder}/${leaf}`
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows/folders`, { data: { path: folder } })
+    expect(created.status(), await created.text()).toBe(201)
+    try {
+      await seedDevelopmentTools(page)
+      await page.reload()
+      const panel = await showWorkflowsPanel(page)
+      await panel.getByTestId(`workflow-folder-${folder.replace(/[^a-zA-Z0-9_-]/g, '_')}`).click()
+      await panel.getByTestId('workflow-new-btn').click()
+      await page.getByTestId('workflow-display-name-input').fill(displayName)
+      await page.getByTestId('workflow-dialog-submit').click()
+      await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+      const initial = await savedWorkflow(page, name) as WorkflowFile
+      expect(initial.graph.name).toBe(leaf)
+
+      await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+      await page.getByTestId('tool-search').fill('SeedNumbers')
+      const accepted = page.waitForResponse(response =>
+        response.url().endsWith(`/api/v1/workflow-drafts/${encodeURI(name)}`)
+        && response.request().method() === 'PUT',
+      )
+      await page.getByTestId('tool-item-SeedNumbers').dblclick()
+      const response = await accepted
+      expect(response.status(), await response.text()).toBe(200)
+      const draft = await response.json()
+      expect(draft.workflow_id).toBe(name)
+      expect(draft.graph).toMatchObject({
+        name: leaf, display_name: displayName, config: initial.graph.config,
+        nodes: [{ tool_name: 'SeedNumbers' }],
+      })
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+
+      const saved = page.waitForResponse(response =>
+        response.url().endsWith(`/api/v1/workflows/${encodeURI(name)}`)
+        && response.request().method() === 'PUT',
+      )
+      await chooseWorkflowItem(page, 'Save')
+      expect((await saved).status()).toBe(200)
+      expect((await savedWorkflow(page, name)).graph).toEqual(draft.graph)
+      await page.reload()
+      await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+      await expect(page.locator('.vue-flow__node')).toHaveCount(1)
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+
+      // Reproduce a queued browser snapshot left by the former creation bug.
+      const recoveryGraph = structuredClone(draft.graph) as GraphState
+      recoveryGraph.name = name
+      recoveryGraph.nodes[0]!.name = 'Recovered queued edit'
+      await page.evaluate(async ({ name, graph }) => {
+        const { useAutoSave, writeAutoSaveEntry } = await import('/src/composables/useAutoSave.ts')
+        await writeAutoSaveEntry({ name, graph, timestamp: Date.now() + 1000 })
+        await useAutoSave().setLastOpenedWorkflow(name)
+      }, { name, graph: recoveryGraph })
+      const recovered = page.waitForResponse(response =>
+        response.url().endsWith(`/api/v1/workflow-drafts/${encodeURI(name)}`)
+        && response.request().method() === 'PUT',
+      )
+      await page.reload()
+      const recoveredResponse = await recovered
+      expect(recoveredResponse.status(), await recoveredResponse.text()).toBe(200)
+      expect((await recoveredResponse.json()).graph).toEqual({ ...recoveryGraph, name: leaf })
+      expect((await savedWorkflow(page, name)).graph).toEqual(draft.graph)
+      await expect(page.locator('.vue-flow__node')).toContainText('Recovered queued edit')
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+    } finally {
+      await deleteWorkflowIfExists(page, name)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/folders/${folder}`, { data: { policy: 'empty' } })
+    }
+  })
+
   test('creates a workflow from the polished dialog', { tag: '@critical' }, async ({ page }) => {
     const displayName = uniqueName('Dialog Create', page)
     const name = deriveWorkflowId(displayName)
