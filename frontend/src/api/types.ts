@@ -4743,7 +4743,7 @@ export interface components {
          * SettingsResponse
          * @description ``GET``/``PATCH`` /settings response wrapper.
          *
-         *     Adds the resolved tool-store path and effective latest-output view.
+         *     Adds resolved workspace/tool-store paths and the effective latest-output view.
          */
         SettingsResponse: {
             /**
@@ -4830,6 +4830,8 @@ export interface components {
             workspaces_root?: string | null;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
+            /** Resolved Workspace Path */
+            resolved_workspace_path?: string | null;
             /**
              * Latest Output Effective Mode
              * @enum {string}

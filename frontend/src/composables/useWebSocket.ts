@@ -96,7 +96,7 @@ function cancelAllPending(reason: Error) {
 }
 
 function workflowEventOwnsSelectedWorkspace(msg: Record<string, unknown>): boolean {
-  const selected = useSettingsStore().settings?.workspace_path
+  const selected = useSettingsStore().settings?.resolved_workspace_path
   return typeof selected === 'string' && msg.workspace_path === selected
 }
 

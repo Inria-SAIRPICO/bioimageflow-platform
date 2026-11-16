@@ -52,7 +52,7 @@ describe('useWebSocket workflow draft dispatch', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    useSettingsStore().settings = { workspace_path: '/workspace' } as WorkspaceSettings
+    useSettingsStore().settings = { workspace_path: null, resolved_workspace_path: '/workspace' } as WorkspaceSettings
     FakeWebSocket.instances = []
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
     __resetForTests()
@@ -514,6 +514,25 @@ describe('useWebSocket workflow draft dispatch', () => {
       }
     },
   )
+
+  it('withdraws the resolved workspace while a workspace change is pending', async () => {
+    const settings = useSettingsStore()
+    const response = deferred<{ data: WorkspaceSettings }>()
+    vi.spyOn(api, 'patch').mockReturnValueOnce(response.promise)
+    const fetch = vi.spyOn(useWorkflowStore(), 'fetchWorkflowTree').mockResolvedValue([])
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+    const update = settings.updateSettings({ workspace_path: '/selected-b' })
+    await Promise.resolve()
+    expect(settings.settings?.resolved_workspace_path).toBeNull()
+    FakeWebSocket.instances[0]!.onmessage?.({ data: JSON.stringify({
+      type: 'workflow_tree_changed', workspace_path: '/workspace', action: 'workflow_deleted', workflow_id: 'same-uuid',
+    }) } as MessageEvent)
+    expect(fetch).not.toHaveBeenCalled()
+    response.resolve({ data: { workspace_path: '/selected-b', resolved_workspace_path: '/canonical-b' } as WorkspaceSettings })
+    await update
+    expect(settings.settings?.resolved_workspace_path).toBe('/canonical-b')
+  })
 
   it.each(['workspace switch', 'failed refresh'])(
     'does not open an active workflow after %s while refreshing', async (outcome) => {

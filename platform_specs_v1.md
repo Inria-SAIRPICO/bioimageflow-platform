@@ -792,7 +792,8 @@ The settings owner refuses the whole update before candidate validation, credent
 A webapp administrator root may come from explicit deployment configuration or the trusted settings file loaded at startup; request-time workspace, workflow and dataset resolution preserves that authority rather than accepting generic client retargeting.
 Explicit deployment roots retain precedence, desktop workspace editing and ordinary live preferences remain supported, and this policy does not change new-workflow scheduling seeds or file-only unsafe-webapp debugging.
 
-`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
+`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path` and the read-only canonical `resolved_workspace_path` from the active workspace service, including when the saved workspace preference is null.
+A workspace-changing PATCH computes this resolved path after the change; clients withdraw the previous resolved owner while the request is pending and ignore older settings hydration after selection changes. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
 Before any attempted password write, the settings owner validates all planned writes and captures one original string-or-absent value for every distinct planned write key.
 Submitted writes retain their order: an omitted or null password requests no write, while an explicit empty string is a stored value.
