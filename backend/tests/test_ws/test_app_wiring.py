@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 
@@ -141,3 +143,38 @@ def test_execution_manager_uses_connection_manager_as_event_bus() -> None:
     app_default = create_app()
     em_default = app_default.dependency_overrides[graph_get_execution_manager]()
     assert em_default.event_bus is app_default.state.connection_manager
+
+
+@pytest.mark.anyio
+async def test_workflow_event_owner_uses_request_store_after_live_workspace_switch(tmp_path, monkeypatch) -> None:
+    import httpx
+    from bioimageflow_server.app import create_app
+    from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.models.tools import AppConfig
+    from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    settings = Settings(deployment_mode="desktop", workspace_path=str(tmp_path / "a"))
+    manager = ConnectionManager()
+    pending, published = [], []
+    monkeypatch.setattr(manager, "_schedule", lambda coroutine, _kind: pending.append(coroutine))
+    monkeypatch.setattr(manager, "_enqueue_all", published.append)
+    publish = manager.publish_workflow_tree_changed
+
+    def switch_before_publish(**payload):
+        settings.workspace_path = str(tmp_path / "b")
+        publish(**payload)
+
+    monkeypatch.setattr(manager, "publish_workflow_tree_changed", switch_before_publish)
+    app = create_app(AppConfig(settings=settings, connection_manager=manager,
+                               tool_registry=ToolRegistryService(), disable_hot_reload=True))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/workflows", json={"name": "created-in-a"},
+                                     headers={"X-BioImageFlow-Workspace": str(tmp_path / "a")})
+    assert response.status_code == 201, response.text
+    [delivery] = pending
+    await delivery
+    assert published[0]["workspace_path"] == str((tmp_path / "a").resolve())
+    assert published[0]["workflow_id"] == response.json()["id"]
+    assert (tmp_path / "a" / "workflows" / "created-in-a" / "workflow.json").is_file()
+    assert not (tmp_path / "b" / "workflows").exists()
