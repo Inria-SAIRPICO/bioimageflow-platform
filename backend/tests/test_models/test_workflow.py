@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from pydantic import ValidationError
 
@@ -57,6 +59,7 @@ def test_update_actions_are_strict() -> None:
 
 def test_canonical_document_round_trip() -> None:
     document = WorkflowDocument(
+        workflow_id=str(uuid4()),
         graph=_graph(),
         metadata=WorkspaceWorkflowMetadata(
             description="Description"
@@ -77,6 +80,7 @@ def test_canonical_document_round_trip() -> None:
 
 def test_canonical_document_rejects_competing_sections() -> None:
     payload = WorkflowDocument(
+        workflow_id=str(uuid4()),
         graph=_graph(),
         metadata=WorkspaceWorkflowMetadata(),
         artifact_hash="sha256:" + "b" * 64,
@@ -88,8 +92,11 @@ def test_canonical_document_rejects_competing_sections() -> None:
 
 
 def test_workflow_file_projects_graph_and_artifact_identity() -> None:
+    workflow_id = str(uuid4())
     info = WorkflowInfo(
-        name="workflow",
+        id=workflow_id,
+        name=workflow_id,
+        relative_path="workflow",
         display_name="Workflow",
         path="/workflows/workflow/workflow.json",
         results_path="/workflows/workflow/results",

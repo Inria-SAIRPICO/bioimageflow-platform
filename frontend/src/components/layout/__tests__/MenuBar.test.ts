@@ -175,9 +175,12 @@ function registerActiveRootWorkflow(options: {
   const displayName = options.displayName ?? 'Workflow A'
   const canvasId = canvasIdFromPanelId(`workflow:${name}`)
   const workflow = {
+    id: name,
+    relative_path: name,
     name,
     display_name: displayName,
     description: options.description ?? null,
+    workspace_path: '/tmp/workspace',
     results_path: `/tmp/workflows/${name}/results`,
     path: `/tmp/workflows/${name}.json`,
     last_modified: '2026-01-01T00:00:00Z',
@@ -382,6 +385,8 @@ describe('MenuBar', () => {
   describe('Workflow menu', () => {
     it('does not expose the global workflow when no registered canvas is active', () => {
       useWorkflowStore().current = {
+        id: 'wf_a',
+        relative_path: 'wf_a',
         name: 'wf_a',
         folder: '',
         display_name: 'Workflow A',
@@ -624,6 +629,28 @@ describe('MenuBar', () => {
       expect(vm.deleteCanvasTarget).toBeNull()
       stopObserving()
       window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('captures the root resource workspace for deletion before later metadata or selection changes', async () => {
+      const { persistence } = registerActiveRootWorkflow({ name: 'a' })
+      vi.spyOn(persistence, 'workspacePath', 'get').mockReturnValue('/original-owner')
+      const store = useWorkflowStore()
+      store.workflows[0]!.workspace_path = '/later-metadata'
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      expect(vm.deleteCanvasTarget).toMatchObject({
+        workspacePath: '/original-owner', workspaceSelectionRevision: useSettingsStore().workspaceSelectionRevision,
+      })
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stop = observeWorkflowDeletion(detail => { deletionRequest = detail })
+      useSettingsStore().workspaceSelectionRevision += 1
+      await vm.confirmDeleteWorkflow()
+      expect(deletionRequest).toBeNull()
+      expect(vm.deleteDialogVisible).toBe(false)
+      stop()
       wrapper.unmount()
     })
 
@@ -937,6 +964,7 @@ describe('MenuBar', () => {
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/cell_segmentation',
         { graph: makeGraph() },
+        { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } },
       )
       expect(apiMocks.post).not.toHaveBeenCalled()
     })
@@ -1278,6 +1306,7 @@ describe('MenuBar', () => {
     })
 
     it('creates a workflow under the folder selected in the workflows panel', async () => {
+      apiMocks.get.mockResolvedValueOnce({ data: { workspace_path: '/tmp/workspace' } })
       const createdGraph = makeGraph({
         name: 'nuclei',
         display_name: 'Nuclei',
@@ -1326,6 +1355,8 @@ describe('MenuBar', () => {
         name: 'Analysis Results/nuclei',
         display_name: 'Nuclei',
         description: null,
+        expected_workspace_path: '/tmp/workspace',
+        expected_parent_path: 'Analysis Results',
       })
       expect(applied[applied.length - 1]).toMatchObject({
         graph: createdGraph,
@@ -1337,7 +1368,66 @@ describe('MenuBar', () => {
       window.removeEventListener('bioimageflow:apply-graph', onApply)
     })
 
+    it.each(['menu', 'panel', 'empty'])('%s New follows folder selection until submission and then freezes its destination', async entryPoint => {
+      const id = '8851bdb9-bc35-4725-a14a-a98a75d4bf28'
+      const info = { id, name: id, relative_path: 'B/workflow', folder: 'B', display_name: 'Workflow', identity_generation: 0 }
+      const request = deferred<{ data: typeof info }>()
+      apiMocks.get.mockResolvedValueOnce({ data: { workspace_path: '/workspace' } })
+      apiMocks.get.mockResolvedValueOnce({ data: { info, graph: makeGraph({ name: 'workflow' }) } })
+      apiMocks.post.mockReturnValueOnce(request.promise)
+      workflowDraftMocks.loadDraft.mockRejectedValueOnce(new Error('no draft fixture'))
+      const store = useWorkflowStore()
+      store.selectedFolderId = 'A'
+      store.workflowFolders = [{ id: 'A', name: 'A', parentId: null }, { id: 'B', name: 'B', parentId: null }]
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      if (entryPoint === 'menu') vm.menuItems.find((item: any) => item.label === 'Workflow').items.find((item: any) => item.label === 'New').command()
+      else window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', { detail: { action: 'new', ...(entryPoint === 'panel' ? { folderId: 'A' } : {}) } }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="workflow-creation-destination"]')?.textContent).toContain('A')
+      store.selectedFolderId = 'B'
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="workflow-creation-destination"]')?.textContent).toContain('B')
+
+      const submission = vm.onWorkflowDialogSubmit({ name: 'workflow', display_name: 'Workflow', description: null })
+      await vi.waitFor(() => expect(apiMocks.post).toHaveBeenCalledOnce())
+      store.selectedFolderId = 'A'
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/workflows', {
+        name: 'B/workflow', display_name: 'Workflow', description: null,
+        expected_workspace_path: '/workspace', expected_parent_path: 'B',
+      })
+      // Initial settings hydration is not an explicit workspace switch, and
+      // its saved default may differ from an explicitly configured root.
+      useSettingsStore().settings = { workspace_path: '/saved/default' } as any
+      request.resolve({ data: info })
+      await submission
+      expect(store.currentName).toBe(id)
+    })
+
+    it('supersedes startup before awaiting the Create request', async () => {
+      apiMocks.get.mockResolvedValueOnce({ data: { workspace_path: '/workspace' } })
+      const created = deferred<any>()
+      apiMocks.post.mockReturnValueOnce(created.promise)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      vm.menuItems.find((item: any) => item.label === 'Workflow').items.find((item: any) => item.label === 'New').command()
+      await flushPromises()
+      const events: unknown[] = []
+      const onStarted = (event: Event) => events.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:root-workflow-open-started', onStarted)
+      try {
+        const submission = vm.onWorkflowDialogSubmit({ name: 'workflow', display_name: 'Workflow', description: null })
+        await vi.waitFor(() => expect(apiMocks.post).toHaveBeenCalledOnce())
+        expect(events).toEqual([{ cause: 'create' }])
+        created.reject(new Error('Controlled creation refusal'))
+        await submission
+      } finally {
+        window.removeEventListener('bioimageflow:root-workflow-open-started', onStarted)
+      }
+    })
+
     it('does not apply a workflow whose delayed creation finishes after execution starts', async () => {
+      apiMocks.get.mockResolvedValueOnce({ data: { workspace_path: '/tmp/workspace' } })
       let resolveCreate!: (value: { data: Record<string, unknown> }) => void
       apiMocks.post.mockReturnValueOnce(new Promise((resolve) => {
         resolveCreate = resolve
@@ -1346,6 +1436,7 @@ describe('MenuBar', () => {
       const vm = wrapper.vm as any
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflow.items.find((item: any) => item.label === 'New').command()
+      await flushPromises()
       const applied: unknown[] = []
       const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
       window.addEventListener('bioimageflow:apply-graph', onApply)
@@ -1675,6 +1766,7 @@ describe('MenuBar', () => {
       useSettingsStore().settings = { deployment_mode: 'desktop' } as any
       if (accepted) acceptViewingCanvasApplications()
       const info = {
+        relative_path: 'imported',
         id: 'imported', name: 'imported', display_name: 'Imported',
         path: '/tmp/imported/workflow.json', results_path: '/tmp/imported/results',
         last_modified: '2026-09-15T00:00:00Z', identity_generation: 0,
@@ -1740,6 +1832,7 @@ describe('MenuBar', () => {
       useSettingsStore().settings = { deployment_mode: 'desktop' } as any
       acceptViewingCanvasApplications()
       const info = {
+        relative_path: 'saved',
         id: 'saved', name: 'saved', display_name: 'Saved',
         path: '/tmp/saved/workflow.json', results_path: '/tmp/saved/results',
         last_modified: '2026-09-15T00:00:00Z', identity_generation: 0,
@@ -1822,10 +1915,12 @@ describe('MenuBar', () => {
       const confirmSpy = vi.spyOn(window, 'confirm')
       const workflow = useWorkflowStore()
       workflow.workflows = [{
+        relative_path: 'Analysis/beta',
         id: 'Analysis/beta',
         name: 'beta',
         folder: 'Analysis',
         display_name: 'Beta',
+        workspace_path: '/tmp/workspace',
         path: '/tmp/Analysis/beta/workflow.json',
         results_path: '/tmp/Analysis/beta/results',
         last_modified: '2026-05-22T08:00:00Z',
@@ -1903,6 +1998,7 @@ describe('MenuBar', () => {
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/new_workflow',
         { graph: makeGraph() },
+        { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } },
       )
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
         summary: 'Workflow saved',
@@ -2388,7 +2484,7 @@ describe('MenuBar', () => {
 
       expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
         graph: makeGraph(),
-      })
+      }, { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } })
       expect(persistenceA.queueDraft).toHaveBeenCalledWith(makeGraph())
       expect(persistenceA.flush).toHaveBeenCalledOnce()
       expect(persistenceB.ensureFreshForCriticalOperation).not.toHaveBeenCalled()

@@ -143,14 +143,15 @@ async def test_open_replace_get_and_revision_checked_delete(
         ViewerPreferenceStore,
     ],
 ) -> None:
-    client, _, _, _ = client_and_manager
+    client, _, store, _ = client_and_manager
+    workflow_ids = {path: store.workflow_id_at_path(path) for path in ("root-a", "root-b")}
     opened = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-a",
-                "workflow_id": "root-a",
+                "canvas_id": f"workflow:{workflow_ids['root-a']}",
+                "workflow_id": workflow_ids["root-a"],
             },
             "parent_node_id": "child_1",
             "graph": _graph("inner"),
@@ -197,13 +198,14 @@ async def test_mutations_return_423_without_changing_the_record(
     ],
 ) -> None:
     client, manager, store, _ = client_and_manager
+    workflow_ids = {path: store.workflow_id_at_path(path) for path in ("root-a", "root-b")}
     opened = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-a",
-                "workflow_id": "root-a",
+                "canvas_id": f"workflow:{workflow_ids['root-a']}",
+                "workflow_id": workflow_ids["root-a"],
             },
             "parent_node_id": "child_1",
             "graph": _graph("inner"),
@@ -232,8 +234,8 @@ async def test_mutations_return_423_without_changing_the_record(
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-b",
-                "workflow_id": "root-b",
+                "canvas_id": f"workflow:{workflow_ids['root-b']}",
+                "workflow_id": workflow_ids["root-b"],
             },
             "parent_node_id": "child_1",
             "graph": _graph("other"),
@@ -253,14 +255,15 @@ async def test_delete_rejects_orphaning_a_nested_snapshot(
         ViewerPreferenceStore,
     ],
 ) -> None:
-    client, _, _, _ = client_and_manager
+    client, _, store, _ = client_and_manager
+    workflow_ids = {path: store.workflow_id_at_path(path) for path in ("root-a", "root-b")}
     parent_response = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-a",
-                "workflow_id": "root-a",
+                "canvas_id": f"workflow:{workflow_ids['root-a']}",
+                "workflow_id": workflow_ids["root-a"],
             },
             "parent_node_id": "child_1",
             "graph": _graph("inner"),
@@ -319,14 +322,15 @@ async def test_finalize_root_preferences_requires_accepted_graph_and_is_retryabl
     ],
 ) -> None:
     client, _, store, preferences = client_and_manager
+    workflow_ids = {path: store.workflow_id_at_path(path) for path in ("root-a", "root-b")}
     child_graph = _graph_with_output("inner")
     opened = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-a",
-                "workflow_id": "root-a",
+                "canvas_id": f"workflow:{workflow_ids['root-a']}",
+                "workflow_id": workflow_ids["root-a"],
             },
             "parent_node_id": "child_1",
             "graph": child_graph,
@@ -354,9 +358,9 @@ async def test_finalize_root_preferences_requires_accepted_graph_and_is_retryabl
     assert mismatch.status_code == 409
     assert "has not accepted" in mismatch.json()["detail"]
 
-    current = await client.get("/api/v1/workflow-drafts/root-a")
+    current = await client.get(f"/api/v1/workflow-drafts/{workflow_ids['root-a']}")
     accepted = await client.put(
-        "/api/v1/workflow-drafts/root-a",
+        f"/api/v1/workflow-drafts/{workflow_ids['root-a']}",
         json={
             "expected_revision": current.json()["draft_revision"],
             "graph": _parent_graph("child_1", child_graph),
@@ -375,8 +379,8 @@ async def test_finalize_root_preferences_requires_accepted_graph_and_is_retryabl
     assert favorite["key"] == {
         "kind": "persistent",
         "workspace_id": str(workspace_id),
-        "workflow_id": "root-a",
-        "identity_generation": store.workflow_generation("root-a"),
+        "workflow_id": workflow_ids["root-a"],
+        "identity_generation": store.workflow_generation(workflow_ids["root-a"]),
         "node_path": ["child_1", "inner"],
         "output_key": "image",
     }
@@ -395,14 +399,15 @@ async def test_finalize_nested_preferences_targets_parent_session(
     ],
 ) -> None:
     client, _, store, preferences = client_and_manager
+    workflow_ids = {path: store.workflow_id_at_path(path) for path in ("root-a", "root-b")}
     child_graph = _graph_with_output("inner")
     parent_response = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:root-a",
-                "workflow_id": "root-a",
+                "canvas_id": f"workflow:{workflow_ids['root-a']}",
+                "workflow_id": workflow_ids["root-a"],
             },
             "parent_node_id": "child_1",
             "graph": _parent_graph("child_2", child_graph),

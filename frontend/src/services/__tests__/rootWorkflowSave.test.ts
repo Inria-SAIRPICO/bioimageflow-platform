@@ -52,6 +52,7 @@ function registerPersistence(
     workflowId: workflowName,
   })
   const resource = {
+    workspacePath: undefined,
     canvasId,
     workflowId: ref<string | null>(workflowName),
     acceptedDraftRevision: ref<number | null>(1),

@@ -1,8 +1,11 @@
 import type { GraphState } from '@/api/types'
+import { recoveryOwnerKey, type AutoSaveOwner } from '@/sessions/recoveryIdentity'
+export { recoveryEntryId, recoveryOwnerKey, type AutoSaveOwner } from '@/sessions/recoveryIdentity'
 
 const DB_NAME = 'bioimageflow-autosave'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const WORKFLOW_STORE = 'workflows'
+const OWNED_WORKFLOW_STORE = 'owned-workflows'
 const PREFERENCES_STORE = 'preferences'
 const LAST_OPENED_KEY = 'last_opened_workflow'
 
@@ -10,6 +13,17 @@ export interface AutoSaveEntry {
   name: string
   graph: GraphState
   timestamp: number
+  workspace_path?: string
+  identity_generation?: number
+  /** Opaque storage identity; absent on retained version-one recovery records. */
+  recovery_key?: string
+}
+
+function ownedEntryKey(entry: AutoSaveEntry): string | null {
+  if (!entry.workspace_path || !Number.isInteger(entry.identity_generation)
+    || entry.identity_generation! < 0
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(entry.name)) return null
+  return recoveryOwnerKey(entry.name, entry as AutoSaveEntry & AutoSaveOwner)
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -23,6 +37,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(PREFERENCES_STORE)) {
         db.createObjectStore(PREFERENCES_STORE)
+      }
+      if (!db.objectStoreNames.contains(OWNED_WORKFLOW_STORE)) {
+        db.createObjectStore(OWNED_WORKFLOW_STORE, { keyPath: 'recovery_key' })
       }
     }
 
@@ -64,22 +81,34 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 export async function writeAutoSaveEntry(entry: AutoSaveEntry): Promise<void> {
-  await withStore(WORKFLOW_STORE, 'readwrite', (store) => {
-    store.put(JSON.parse(JSON.stringify(entry)))
+  const recoveryKey = ownedEntryKey(entry)
+  if (recoveryKey === null) throw new Error('Browser recovery requires a workflow UUID, workspace and identity generation.')
+  await withStore(OWNED_WORKFLOW_STORE, 'readwrite', (store) => {
+    store.put(JSON.parse(JSON.stringify({ ...entry, recovery_key: recoveryKey })))
   })
 }
 
-async function deleteAutoSaveEntry(name: string): Promise<void> {
-  await withStore(WORKFLOW_STORE, 'readwrite', (store) => {
-    store.delete(name)
+async function deleteAutoSaveEntry(name: string, owner?: AutoSaveOwner): Promise<void> {
+  // A name alone is never authority to erase another workspace or legacy owner.
+  if (!owner) return
+  await withStore(OWNED_WORKFLOW_STORE, 'readwrite', (store) => {
+    store.delete(recoveryOwnerKey(name, owner))
   })
 }
 
 export function useAutoSave() {
-  async function loadAutoSave(name: string): Promise<AutoSaveEntry | null> {
+  async function loadAutoSaves(): Promise<AutoSaveEntry[]> {
+    const [legacy, owned] = await Promise.all([
+      withStore(WORKFLOW_STORE, 'readonly', store => requestResult<AutoSaveEntry[]>(store.getAll())),
+      withStore(OWNED_WORKFLOW_STORE, 'readonly', store => requestResult<AutoSaveEntry[]>(store.getAll())),
+    ])
+    return [...legacy, ...owned]
+  }
+  async function loadAutoSave(name: string, owner?: AutoSaveOwner): Promise<AutoSaveEntry | null> {
+    if (!owner) return null
     try {
-      return await withStore(WORKFLOW_STORE, 'readonly', (store) => (
-        requestResult<AutoSaveEntry | undefined>(store.get(name))
+      return await withStore(OWNED_WORKFLOW_STORE, 'readonly', (store) => (
+        requestResult<AutoSaveEntry | undefined>(store.get(recoveryOwnerKey(name, owner)))
       )).then((entry) => entry ?? null)
     } catch (err) {
       console.warn('[useAutoSave] Failed to load workflow auto-save:', err)
@@ -89,9 +118,7 @@ export function useAutoSave() {
 
   async function loadMostRecentAutoSave(): Promise<AutoSaveEntry | null> {
     try {
-      const entries = await withStore(WORKFLOW_STORE, 'readonly', (store) => (
-        requestResult<AutoSaveEntry[]>(store.getAll())
-      ))
+      const entries = await loadAutoSaves()
       return entries.sort((a, b) => b.timestamp - a.timestamp)[0] ?? null
     } catch (err) {
       console.warn('[useAutoSave] Failed to load workflow auto-saves:', err)
@@ -99,36 +126,29 @@ export function useAutoSave() {
     }
   }
 
-  async function clearAutoSave(name: string): Promise<void> {
+  async function clearAutoSave(name: string, owner?: AutoSaveOwner): Promise<void> {
     try {
-      await deleteAutoSaveEntry(name)
+      await deleteAutoSaveEntry(name, owner)
     } catch (err) {
       console.warn('[useAutoSave] Failed to clear workflow auto-save:', err)
     }
   }
 
-  async function clearAutoSaveStrict(name: string): Promise<void> {
-    await deleteAutoSaveEntry(name)
+  async function clearAutoSaveStrict(name: string, owner?: AutoSaveOwner): Promise<void> {
+    await deleteAutoSaveEntry(name, owner)
   }
 
-  async function renameWorkflow(oldName: string, newName: string): Promise<void> {
-    if (oldName === newName) return
-    const entry = await loadAutoSave(oldName)
-    let moved = entry === null
-    if (entry !== null) {
-      try {
-        await writeAutoSaveEntry({ ...entry, name: newName })
-        moved = true
-      } catch (err) {
-        console.warn('[useAutoSave] Failed to move workflow auto-save:', err)
+  async function clearAutoSaveEntryStrict(entry: AutoSaveEntry): Promise<void> {
+    const storeName = entry.recovery_key ? OWNED_WORKFLOW_STORE : WORKFLOW_STORE
+    const key = entry.recovery_key ?? entry.name
+    await withStore(storeName, 'readwrite', async (store) => {
+      const current = await requestResult<AutoSaveEntry | undefined>(store.get(key))
+      if (current === undefined) return
+      if (JSON.stringify(current) !== JSON.stringify(entry)) {
+        throw new Error('The browser recovery changed while it was being restored. Its newer edits are retained.')
       }
-    }
-    if (moved) {
-      await clearAutoSave(oldName)
-    }
-    if (await getLastOpenedWorkflow() === oldName) {
-      await setLastOpenedWorkflow(newName)
-    }
+      store.delete(key)
+    })
   }
 
   async function setLastOpenedWorkflow(name: string | null): Promise<void> {
@@ -157,11 +177,12 @@ export function useAutoSave() {
   }
 
   return {
+    loadAutoSaves,
     loadAutoSave,
     loadMostRecentAutoSave,
     clearAutoSave,
     clearAutoSaveStrict,
-    renameWorkflow,
+    clearAutoSaveEntryStrict,
     setLastOpenedWorkflow,
     getLastOpenedWorkflow,
   }

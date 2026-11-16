@@ -278,6 +278,7 @@ const graphSync = useGraphSync({
   getWorkflowId: owningWorkflowId,
   nestedSnapshot: initialNestedSession && props.nestedWorkflowSessionId
     ? {
+        workspacePath: workflowStore.workflows.find(info => (info.id ?? info.name) === ownedWorkflowName.value)?.workspace_path ?? undefined,
         initialSnapshot: nestedWorkflowSessionsStore.snapshotForSession(
           props.nestedWorkflowSessionId,
         ),
@@ -985,6 +986,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   const detail = (event as CustomEvent<{
     canvasId?: string
     draft?: WorkflowDraftResponse
+    dirty?: boolean
     handled?: boolean
     resolve?: () => void
     reject?: (error: unknown) => void
@@ -993,7 +995,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   detail.handled = true
   try {
     await applyGraphState(
-      detail.draft.graph, workflowStore.missingTools, false, true,
+      detail.draft.graph, workflowStore.missingTools, detail.dirty ?? false, true,
       rootMetadataAuthority(detail.draft),
     )
     detail.resolve?.()
@@ -1133,8 +1135,7 @@ async function keepCurrentCanvasDraft(): Promise<void> {
 }
 
 function nextAgentCopyWorkflowName(baseName: string): string {
-  const existing = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
-  if (workflowStore.currentName) existing.add(workflowStore.currentName)
+  const existing = new Set(workflowStore.workflows.map(workflow => workflow.relative_path))
   let suffix = 2
   let name = `${baseName}_agent_${suffix}`
   while (existing.has(name)) {
@@ -1158,25 +1159,30 @@ async function saveAgentDraftAsCopy(): Promise<void> {
   remoteDraftActionError.value = null
   remoteDraftResolutionMessage.value = null
   try {
-    const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName)
-    const copyName = nextAgentCopyWorkflowName(workflowName)
+    const source = workflowStore.workflows.find(workflow => workflowInfoId(workflow) === workflowName)
+    if (!source) throw new Error('The source workflow is unavailable. Refresh the workflow list before saving a copy.')
+    const workspacePath = canvasPersistence.workspacePath
+    const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName, workspacePath)
+    const copyName = nextAgentCopyWorkflowName(source.relative_path)
+    const displayName = `${remoteDraft.graph.display_name} (agent copy)`
     const { data } = await api.patch<WorkflowInfo>(
       `/api/v1/workflows/${workflowUrl(workflowName)}`,
       {
         action: 'duplicate',
         new_name: copyName,
-        display_name: copyName,
+        display_name: displayName,
         graph: remoteDraft.graph,
         expected_identity_generation: sourceGeneration,
       },
+      ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
     )
     rememberCreatedWorkflow(data)
     if (isCanvasUnmounted || currentWorkflowName() !== workflowName) return
-    remoteDraftResolutionMessage.value = `Agent version saved as ${workflowInfoId(data)}.`
+    remoteDraftResolutionMessage.value = `Agent version saved as ${data.display_name}.`
     clipboardToast?.add({
       severity: 'success',
       summary: 'Agent version saved',
-      detail: workflowInfoId(data),
+      detail: data.display_name,
       life: 5000,
     })
   } catch (err) {
@@ -2786,6 +2792,7 @@ function deleteNodes(nodeIds: string[]): boolean {
 async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   if (isLocked.value || isNestedWorkflowEditor || nodeIds.length === 0) return false
   const workflowName = currentWorkflowName()
+  const ownerWorkspace = canvasPersistence.workspacePath
   if (workflowName === null) return false
   const accepted = await flushNow()
   if (accepted === null || isLocked.value) return false
@@ -2794,7 +2801,9 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  const cleared = await executionStore.clear(requestedIds, workflowName, draftRevision)
+  const cleared = await executionStore.clear(
+    requestedIds, workflowName, draftRevision, ...(ownerWorkspace ? [ownerWorkspace] : []),
+  )
   if (validationResult.value !== null) {
     validationResult.value = validationAfterCacheClear(
       validationResult.value,
@@ -4306,7 +4315,9 @@ defineExpose({
         ? 'Saving workflow…'
         : lifecycleOperation === 'discarding'
           ? 'Restoring saved workflow…'
-          : 'Deleting workflow…' }}
+          : lifecycleOperation === 'moving'
+            ? 'Moving workflow…'
+            : 'Deleting workflow…' }}
     </div>
     <CanvasErrorBanner :validation-result="validationResult" />
     <CanvasPersistenceFeedback

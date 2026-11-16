@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from bioimageflow_server.models.workflow import validate_workflow_id
+from bioimageflow_server.models.workflow import validate_workflow_id, validate_workflow_identity
 
 WorkflowMoveKind = Literal[
     "direct_workflow_move",
@@ -41,27 +41,46 @@ class WorkflowArtifactMove(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    source_workflow_id: str = Field(min_length=1)
-    destination_workflow_id: str = Field(min_length=1)
+    workflow_id: str = Field(min_length=1)
+    legacy_path_identity: bool = False
+    source_relative_path: str = Field(min_length=1)
+    destination_relative_path: str = Field(min_length=1)
     source_generation_before: int = Field(ge=0)
-    source_generation_after: int = Field(ge=1)
+    source_generation_after: int = Field(ge=0)
     destination_generation_before: int = Field(ge=0)
-    destination_generation_after: int = Field(ge=1)
+    destination_generation_after: int = Field(ge=0)
     target_metadata: dict[str, Any]
     target_display_name: str
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_confirmed_legacy_move(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "source_workflow_id" in value:
+            converted = dict(value)
+            converted["source_relative_path"] = converted.pop("source_workflow_id")
+            converted["destination_relative_path"] = converted.pop("destination_workflow_id")
+            converted["workflow_id"] = converted["source_relative_path"]
+            converted["legacy_path_identity"] = True
+            return converted
+        return value
+
     @model_validator(mode="after")
     def validate_identity_transition(self) -> WorkflowArtifactMove:
-        if validate_workflow_id(self.source_workflow_id) != self.source_workflow_id:
+        if validate_workflow_id(self.source_relative_path) != self.source_relative_path:
             raise ValueError("Source workflow id must be canonical")
-        if validate_workflow_id(self.destination_workflow_id) != self.destination_workflow_id:
+        if validate_workflow_id(self.destination_relative_path) != self.destination_relative_path:
             raise ValueError("Destination workflow id must be canonical")
-        if self.source_workflow_id == self.destination_workflow_id:
+        if self.source_relative_path == self.destination_relative_path:
             raise ValueError("Workflow move identities must be distinct")
-        if self.source_generation_after != self.source_generation_before + 1:
-            raise ValueError("Source workflow generation must advance exactly once")
-        if self.destination_generation_after != self.destination_generation_before + 1:
-            raise ValueError("Destination workflow generation must advance exactly once")
+        increment = 1 if self.legacy_path_identity else 0
+        if self.source_generation_after != self.source_generation_before + increment:
+            raise ValueError("Source workflow generation must remain unchanged")
+        if self.destination_generation_after != self.destination_generation_before + increment:
+            raise ValueError("Destination workflow generation must remain unchanged")
+        if not self.legacy_path_identity:
+            validate_workflow_identity(self.workflow_id)
+            if self.destination_generation_before != self.source_generation_before:
+                raise ValueError("A physical move must preserve one identity generation")
         return self
 
 
@@ -87,7 +106,7 @@ class WorkflowMoveJournal(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    journal_version: Literal[1] = 1
+    journal_version: Literal[1, 2] = 2
     operation_id: UUID
     operation_kind: WorkflowMoveKind
     phase: WorkflowMovePhase = "prepared"
@@ -98,6 +117,10 @@ class WorkflowMoveJournal(BaseModel):
 
     @model_validator(mode="after")
     def validate_operation_shape(self) -> WorkflowMoveJournal:
+        if any(move.legacy_path_identity != (self.journal_version == 1) for move in self.moves):
+            raise ValueError("Move journal version does not match its identity authority")
+        if len({move.workflow_id for move in self.moves}) != len(self.moves):
+            raise ValueError("Move journal persistent workflow identities must be unique")
         _validate_relative_path(self.source_path)
         _validate_relative_path(
             self.destination_path,
@@ -110,8 +133,8 @@ class WorkflowMoveJournal(BaseModel):
         ):
             raise ValueError("Move journal destination path must be canonical")
 
-        source_ids = [move.source_workflow_id for move in self.moves]
-        destination_ids = [move.destination_workflow_id for move in self.moves]
+        source_ids = [move.source_relative_path for move in self.moves]
+        destination_ids = [move.destination_relative_path for move in self.moves]
         affected_ids = [*source_ids, *destination_ids]
         if len(set(affected_ids)) != len(affected_ids):
             raise ValueError("Move journal workflow identities must be unique")
@@ -121,8 +144,8 @@ class WorkflowMoveJournal(BaseModel):
                 raise ValueError("Direct workflow move requires exactly one workflow mapping")
             move = self.moves[0]
             if (
-                self.source_path != move.source_workflow_id
-                or self.destination_path != move.destination_workflow_id
+                self.source_path != move.source_relative_path
+                or self.destination_path != move.destination_relative_path
             ):
                 raise ValueError("Direct workflow paths must match its identity mapping")
         elif self.operation_kind == "folder_rename":

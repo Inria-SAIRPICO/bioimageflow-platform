@@ -5,17 +5,6 @@ import type { WorkflowDraftResponse } from '../../src/api/workflowDrafts'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
-function deriveWorkflowId(value: string): string {
-  return value
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-}
-
 async function seedTools(page: Page) {
   const response = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
   expect(response.ok()).toBeTruthy()
@@ -34,8 +23,12 @@ async function createWorkflow(page: Page, displayName: string) {
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New', exact: true }).click()
   await page.getByTestId('workflow-display-name-input').fill(displayName)
+  const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/workflows')
   await page.getByTestId('workflow-dialog-submit').click()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+  const response = await created
+  expect(response.status()).toBe(201)
+  return (await response.json()).id as string
 }
 
 async function openWorkflowMenuItem(page: Page, label: string) {
@@ -98,9 +91,9 @@ test('typed parameter controls refuse invalid lists, recover, reset, connect, an
   await waitForToolsRequest(page)
 
   const displayName = `Parameter Controls ${Date.now()} ${Math.floor(Math.random() * 10000)}`
-  const workflowName = deriveWorkflowId(displayName)
+  let workflowName = ''
   const otherDisplayName = `Parameter Switch ${Date.now()} ${Math.floor(Math.random() * 10000)}`
-  const otherWorkflowName = deriveWorkflowId(otherDisplayName)
+  let otherWorkflowName = ''
 
   try {
     const toolsResponse = await page.request.get(`${API_BASE}/api/v1/tools`)
@@ -121,7 +114,7 @@ test('typed parameter controls refuse invalid lists, recover, reset, connect, an
       outputs: { configured_number: { type: 'int' } },
     })
 
-    await createWorkflow(page, displayName)
+    workflowName = await createWorkflow(page, displayName)
     const sourceNode = await addToolNode(page, 'SeedNumbers', { x: 80, y: 180 })
     const parameterNode = await addToolNode(page, 'ParameterControls', { x: 340, y: 180 })
     const sourceId = await sourceNode.getAttribute('data-id')
@@ -243,9 +236,9 @@ test('typed parameter controls refuse invalid lists, recover, reset, connect, an
     expect(savedResponse.ok()).toBeTruthy()
     const saved = await savedResponse.json()
 
-    await createWorkflow(page, otherDisplayName)
+    otherWorkflowName = await createWorkflow(page, otherDisplayName)
     await openWorkflowMenuItem(page, 'Open')
-    await page.getByTestId('workflow-open-search').fill(workflowName)
+    await page.getByTestId('workflow-open-search').fill(displayName)
     await page.getByTestId(`workflow-open-option-${workflowName}`).click()
     await page.getByTestId('workflow-open-submit').click()
     await expect(page.getByTestId('workflow-title')).toContainText(saved.graph.display_name)

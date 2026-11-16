@@ -61,25 +61,17 @@ async function waitForToolsRequest(page: Page) {
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
 }
 
-function deriveWorkflowId(value: string): string {
-  return value
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-}
-
 async function createEditableWorkflow(page: Page): Promise<string> {
   const displayName = `Canvas Interactions ${Date.now()} ${Math.floor(Math.random() * 10000)}`
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New', exact: true }).click()
   await page.getByTestId('workflow-display-name-input').fill(displayName)
+  const created = page.waitForResponse(response =>
+    response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST',
+  )
   await page.getByTestId('workflow-dialog-submit').click()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
-  return deriveWorkflowId(displayName)
+  return (await (await created).json()).id
 }
 
 async function seedNumbersRow(page: Page) {
@@ -635,15 +627,19 @@ test.describe('Canvas interactions', () => {
     })
 
     const otherDisplayName = `Journey Switch ${Date.now()} ${Math.floor(Math.random() * 10000)}`
-    const otherWorkflowName = deriveWorkflowId(otherDisplayName)
+    let otherWorkflowName = ''
     try {
       await openWorkflowMenuItem(page, 'New')
       await page.getByTestId('workflow-display-name-input').fill(otherDisplayName)
+      const created = page.waitForResponse(response =>
+        response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST',
+      )
       await page.getByTestId('workflow-dialog-submit').click()
+      otherWorkflowName = (await (await created).json()).id
       await expect(page.getByTestId('workflow-title')).toContainText(otherDisplayName)
 
       await openWorkflowMenuItem(page, 'Open')
-      await page.getByTestId('workflow-open-search').fill(workflowName)
+      await page.getByTestId('workflow-open-search').fill(saved.graph.display_name)
       await page.getByTestId(`workflow-open-option-${workflowName}`).click()
       await page.getByTestId('workflow-open-submit').click()
       await expect(page.getByTestId('workflow-title')).toContainText(saved.graph.display_name)
@@ -1189,6 +1185,7 @@ test.describe('Canvas interactions', () => {
   test('keeps result filters, sorting, and manual widths on exact workflow and source identities', async ({ page }) => {
     test.setTimeout(120_000)
     const firstWorkflow = workflowName
+    const firstTitle = (await currentDraft(page, firstWorkflow)).graph.display_name
     const seed = await addToolNode(page, 'SeedNumbers', { x: 120, y: 160 })
     const increment = await addToolNode(page, 'IncrementNumbers', { x: 440, y: 160 })
     await increment.click()
@@ -1236,11 +1233,15 @@ test.describe('Canvas interactions', () => {
     await openWorkflowMenuItem(page, 'Save')
     await expect(page.getByTestId('workflow-title')).not.toContainText('*')
     const secondDisplay = `Result Identity ${Date.now()} ${Math.floor(Math.random() * 10000)}`
-    const secondWorkflow = deriveWorkflowId(secondDisplay)
+    let secondWorkflow = ''
     try {
       await openWorkflowMenuItem(page, 'New')
       await page.getByTestId('workflow-display-name-input').fill(secondDisplay)
+      const created = page.waitForResponse(response =>
+        response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST',
+      )
       await page.getByTestId('workflow-dialog-submit').click()
+      secondWorkflow = (await (await created).json()).id
       await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
       await addToolNode(page, 'ResultTableFixture', { x: 250, y: 180 })
       await expect.poll(async () => (await currentDraft(page, secondWorkflow)).graph.nodes.length).toBe(1)
@@ -1301,7 +1302,7 @@ test.describe('Canvas interactions', () => {
       expect(secondWidthKey).not.toBe(firstWidthKey)
 
       await openWorkflowMenuItem(page, 'Open')
-      await page.getByTestId('workflow-open-search').fill(firstWorkflow)
+      await page.getByTestId('workflow-open-search').fill(firstTitle)
       await page.getByTestId(`workflow-open-option-${firstWorkflow}`).click()
       await page.getByTestId('workflow-open-submit').click()
       await page.locator(`.vue-flow__node[data-id="${seedId}"]`).click()
@@ -1321,7 +1322,7 @@ test.describe('Canvas interactions', () => {
       await page.reload()
       await expect(page.getByTestId('workflow-title')).toBeVisible()
       await openWorkflowMenuItem(page, 'Open')
-      await page.getByTestId('workflow-open-search').fill(secondWorkflow)
+      await page.getByTestId('workflow-open-search').fill(secondDisplay)
       await page.getByTestId(`workflow-open-option-${secondWorkflow}`).click()
       await page.getByTestId('workflow-open-submit').click()
       await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)

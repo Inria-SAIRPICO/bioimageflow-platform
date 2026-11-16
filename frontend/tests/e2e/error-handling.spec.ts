@@ -15,7 +15,8 @@ async function createAndOpenWorkflow(page: Page): Promise<string> {
     data: { name, display_name: displayName },
   })
   expect(created.status()).toBe(201)
-  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  const workflowId = (await created.json()).id as string
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph: {
       schema_version: 1,
       name,
@@ -32,10 +33,10 @@ async function createAndOpenWorkflow(page: Page): Promise<string> {
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(displayName)
-  await expect(page.getByTestId(`workflow-row-${name}`)).toBeVisible({ timeout: 5000 })
-  await page.getByTestId(`workflow-row-${name}`).dblclick()
+  await expect(page.getByTestId(`workflow-row-${workflowId}`)).toBeVisible({ timeout: 5000 })
+  await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
-  return name
+  return workflowId
 }
 
 async function installWebSocketProbe(page: Page): Promise<void> {

@@ -81,8 +81,9 @@ test.describe('workflow creation', () => {
       data: { name, display_name: displayName },
     })
     expect(created.status()).toBe(201)
+    const id: string = (await created.json()).id
     try {
-      await rememberLastOpenedWorkflow(page, name)
+      await rememberLastOpenedWorkflow(page, id)
       await page.reload()
       await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
 
@@ -102,7 +103,7 @@ test.describe('workflow creation', () => {
       )
       expect(minimapExists).toBe(false)
     } finally {
-      await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)
     }
   })
 
@@ -144,16 +145,21 @@ test.describe('workflow creation', () => {
 
     const displayName = `First Workflow ${Date.now()}`
     const name = displayName.toLowerCase().replaceAll(' ', '_')
+    let id: string | null = null
     try {
       await page.getByTestId('canvas-placeholder').getByRole('button', { name: 'New workflow' }).click()
       await page.getByTestId('workflow-display-name-input').fill(displayName)
       await expect(page.getByTestId('workflow-generated-name')).toContainText(name)
+      const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/workflows')
       await page.getByTestId('workflow-dialog-submit').click()
+      const response = await created
+      expect(response.status()).toBe(201)
+      id = (await response.json()).id
       await expect(page.getByTestId('workflow-title')).toContainText(displayName)
       await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
       expect(workflowPosts).toHaveLength(1)
-      const workflows = await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json() as Array<{ id: string; display_name: string }>
-      expect(workflows).toMatchObject([{ id: name, display_name: displayName }])
+      const workflows = await (await page.request.get(`${API_BASE}/api/v1/workflows`)).json() as Array<{ id: string; relative_path: string; display_name: string }>
+      expect(workflows).toMatchObject([{ id, relative_path: name, display_name: displayName }])
 
       await page.reload()
       await expect(page.getByTestId('workflow-title')).toContainText(displayName)
@@ -161,7 +167,7 @@ test.describe('workflow creation', () => {
       await expect(page.getByTestId('canvas-placeholder')).toHaveCount(0)
       expect(workflowPosts).toHaveLength(1)
     } finally {
-      await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+      if (id) await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)
     }
   })
 
@@ -176,20 +182,25 @@ test.describe('workflow creation', () => {
     let held = false
     let consumed = false
     const openedRequests: string[] = []
+    let startupId = ''
+    let browseId = ''
     let cleanup: PromiseSettledResult<APIResponse>[] = []
     try {
       for (const [name, displayName] of [[startupName, startupLabel], [browseName, browseLabel]]) {
         const response = await request.post(`${API_BASE}/api/v1/workflows`, { data: { name, display_name: displayName } })
         expect(response.status()).toBe(201)
+        const id: string = (await response.json()).id
+        if (name === startupName) startupId = id
+        else browseId = id
       }
-      const saved = await request.get(`${API_BASE}/api/v1/workflows/${startupName}`)
-      const draft = await request.get(`${API_BASE}/api/v1/workflow-drafts/${startupName}`)
+      const saved = await request.get(`${API_BASE}/api/v1/workflows/${startupId}`)
+      const draft = await request.get(`${API_BASE}/api/v1/workflow-drafts/${startupId}`)
       expect(saved.ok()).toBeTruthy()
       expect(draft.ok()).toBeTruthy()
       const savedBody = await saved.json()
       const draftBody = await draft.json()
-      expect(savedBody.info.id ?? savedBody.info.name).toBe(startupName)
-      expect(draftBody.workflow_id).toBe(startupName)
+      expect(savedBody.info.id ?? savedBody.info.name).toBe(startupId)
+      expect(draftBody.workflow_id).toBe(startupId)
       expect(draftBody.base_saved_revision).toBe(savedBody.artifact_hash)
       expect(draftBody.dirty_against_saved).toBe(false)
       expect(savedBody.graph.nodes).toEqual([])
@@ -197,13 +208,13 @@ test.describe('workflow creation', () => {
       await page.evaluate(async name => {
         const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
         await useAutoSave().clearAutoSave(name)
-      }, startupName)
-      await rememberLastOpenedWorkflow(page, startupName)
+      }, startupId)
+      await rememberLastOpenedWorkflow(page, startupId)
       expect(await page.evaluate(async () => {
         const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
         return useAutoSave().getLastOpenedWorkflow()
-      })).toBe(startupName)
-      await page.route(`**/api/v1/workflows/${startupName}`, async route => {
+      })).toBe(startupId)
+      await page.route(`**/api/v1/workflows/${startupId}`, async route => {
         if (route.request().method() !== 'GET' || consumed) return route.continue()
         consumed = true
         held = true
@@ -214,7 +225,7 @@ test.describe('workflow creation', () => {
       await page.reload()
       await expect.poll(() => held).toBe(true)
       await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-      await page.getByTestId(`workflow-row-${browseName}`).click()
+      await page.getByTestId(`workflow-row-${browseId}`).click()
       await expect(page.getByTestId('workflow-detail-api-name')).toHaveText(browseName)
       release()
       // Prove the saved GET and canonical startup activation actually completed.
@@ -226,12 +237,12 @@ test.describe('workflow creation', () => {
       })
       await page.getByTestId('workflow-open-btn').click()
       await expect(page.getByTestId('workflow-title')).toContainText(browseLabel)
-      expect(openedRequests).toContain(`/api/v1/workflows/${browseName}`)
-      expect(openedRequests).toContain(`/api/v1/workflow-drafts/${browseName}`)
-      expect(openedRequests).not.toContain(`/api/v1/workflows/${startupName}`)
+      expect(openedRequests).toContain(`/api/v1/workflows/${browseId}`)
+      expect(openedRequests).toContain(`/api/v1/workflow-drafts/${browseId}`)
+      expect(openedRequests).not.toContain(`/api/v1/workflows/${startupId}`)
     } finally {
       release()
-      cleanup = await Promise.allSettled([startupName, browseName].map(name => request.delete(`${API_BASE}/api/v1/workflows/${name}`)))
+      cleanup = await Promise.allSettled([startupId, browseId].filter(Boolean).map(name => request.delete(`${API_BASE}/api/v1/workflows/${name}`)))
     }
     // A body failure propagates through finally and skips cleanup validation.
     for (const outcome of cleanup) {
@@ -274,6 +285,7 @@ test.describe('workflow creation', () => {
       }
     })
     let created = false
+    let workflowId = ''
     let primaryFailed = false
     const cleanupErrors: unknown[] = []
     try {
@@ -286,11 +298,11 @@ test.describe('workflow creation', () => {
       expect(seed).toBeDefined()
       expect(seed!.tags).toContain('source')
       expect(seed!.categories).toContain('Utilities')
-      expect((await request.post(`${API_BASE}/api/v1/workflows`, {
-        data: { name, display_name: name },
-      })).status()).toBe(201)
+      const creation = await request.post(`${API_BASE}/api/v1/workflows`, { data: { name, display_name: name } })
+      expect(creation.status()).toBe(201)
+      workflowId = (await creation.json()).id
       created = true
-      const saved = await request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+      const saved = await request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
         data: { graph: {
           schema_version: 2, name, display_name: name,
           nodes: [
@@ -308,15 +320,15 @@ test.describe('workflow creation', () => {
         } },
       })
       expect(saved.ok(), await saved.text()).toBeTruthy()
-      const before = await (await request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()
+      const before = await (await request.get(`${API_BASE}/api/v1/workflows/${workflowId}`)).json()
       await page.reload()
       await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
       await page.getByTestId('workflow-search').fill(name)
       const opened = page.waitForResponse(response =>
-        new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`
+        new URL(response.url()).pathname === `/api/v1/workflow-drafts/${workflowId}`
         && response.request().method() === 'GET' && response.status() === 200,
       )
-      await page.getByTestId(`workflow-row-${name}`).dblclick()
+      await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
       await opened
       await expect(page.getByTestId('workflow-title')).toContainText(name)
       await expect(page.locator('.vue-flow__node')).toHaveCount(3)
@@ -393,7 +405,7 @@ test.describe('workflow creation', () => {
       await expect(nested).toHaveClass(/selected/)
       await expect(list.locator('.tool-list-item--selected')).toHaveCount(0)
       await expect(page.locator('.vue-flow__node')).toHaveCount(3)
-      expect((await (await request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()).graph).toEqual(before.graph)
+      expect((await (await request.get(`${API_BASE}/api/v1/workflows/${workflowId}`)).json()).graph).toEqual(before.graph)
       expect(executionPosts).toEqual([])
     } catch (error) {
       primaryFailed = true
@@ -402,7 +414,7 @@ test.describe('workflow creation', () => {
       try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
       if (created) {
         try {
-          const deleted = await request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+          const deleted = await request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`)
           if (!deleted.ok()) cleanupErrors.push(new Error(`Owned workflow cleanup refused ${deleted.status()}`))
         } catch (error) { cleanupErrors.push(error) }
       }

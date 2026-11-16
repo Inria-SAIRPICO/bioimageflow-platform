@@ -23,7 +23,6 @@ from bioimageflow_server.models.graph import (
 )
 from bioimageflow_server.models.workflow import (
     PythonAuthoringProvenance,
-    WorkflowDocument,
     WorkflowFile,
 )
 from bioimageflow_server.models.workflow_sources import (
@@ -284,16 +283,21 @@ class WorkflowSourceService:
         authoring_source: PythonAuthoringProvenance | None,
     ) -> WorkflowSourceApplyResponse:
         store.validate_containment(workflow_id, graph)
-        owned = OwnedWorkflowSources(store.workflow_dir(workflow_id))
+        directory = store.workflow_dir(workflow_id)
+        owned = OwnedWorkflowSources(directory)
+        if store.workflow_tools_dir(workflow_id) != owned.root:
+            raise WorkflowSourceConflict("Workflow storage moved before staging sources")
         staged = owned.stage(source_records)
         published: list[Path] = []
         try:
             for temporary, final in staged:
+                if store.workflow_tools_dir(workflow_id) != owned.root:
+                    raise WorkflowSourceConflict("Workflow storage moved before publishing sources")
                 final.parent.mkdir(parents=True, exist_ok=True)
                 temporary.replace(final)
                 published.append(final)
             all_records = owned.collect_for_graph(graph)
-            current = WorkflowDocument.model_validate(store._read_raw(workflow_id))
+            current = store.read_workflow_document(workflow_id)
             document = current.model_copy(
                 update={
                     "graph": graph,
@@ -302,9 +306,10 @@ class WorkflowSourceService:
                     "artifact_hash": artifact_hash(graph, all_records),
                 }
             )
-            store._write_raw(
+            store.write_workflow_document(
                 workflow_id,
-                document.model_dump(mode="json", by_alias=True, exclude_none=True),
+                document,
+                expected_directory=directory,
             )
         except Exception:
             OwnedWorkflowSources.discard(staged)

@@ -41,6 +41,7 @@ export interface CreateRecoveryPersistenceCoordinatorOptions {
   canvasId: CanvasId
   transport: RecoveryPersistenceTransport
   debounceMs?: number
+  ownershipKey?: (recoveryKey: string) => string
   now?: () => number
   onOperationalError?: (
     error: unknown,
@@ -51,6 +52,7 @@ export interface CreateRecoveryPersistenceCoordinatorOptions {
 interface QueuedRecovery {
   canvasId: CanvasId
   recoveryKey: string
+  ownershipKey: string
   queueRevision: number
   timestamp: number
   graph: GraphState
@@ -218,17 +220,18 @@ export function createRecoveryPersistenceCoordinator(
       existing
       && inflight?.snapshot.ownershipToken !== existing.ownershipToken
     ) {
-      abandonOwnership(existing.recoveryKey, existing.ownershipToken)
+      abandonOwnership(existing.ownershipKey, existing.ownershipToken)
     }
 
     const nextRevision = queueRevision.value + 1
     const snapshot: QueuedRecovery = {
       canvasId: options.canvasId,
       recoveryKey,
+      ownershipKey: options.ownershipKey?.(recoveryKey) ?? recoveryKey,
       queueRevision: nextRevision,
       timestamp: now(),
       graph: cloneJson(graph),
-      ownershipToken: registerOwnership(recoveryKey),
+      ownershipToken: registerOwnership(options.ownershipKey?.(recoveryKey) ?? recoveryKey),
     }
     latestByKey.delete(recoveryKey)
     latestByKey.set(recoveryKey, snapshot)
@@ -269,24 +272,24 @@ export function createRecoveryPersistenceCoordinator(
       graph: cloneJson(snapshot.graph),
       signal: controller.signal,
     }
-    const rawWrite = serializeRecoveryKeyWrite(snapshot.recoveryKey, async () => {
+    const rawWrite = serializeRecoveryKeyWrite(snapshot.ownershipKey, async () => {
       if (isDisposed.value || !isLatestOwner(
-        snapshot.recoveryKey,
+        snapshot.ownershipKey,
         snapshot.ownershipToken,
       )) {
-        completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, false)
+        completeOwnership(snapshot.ownershipKey, snapshot.ownershipToken, false)
         return false
       }
       try {
         await options.transport(request)
       } catch (error) {
-        if (!isLatestOwner(snapshot.recoveryKey, snapshot.ownershipToken)) {
-          completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, false)
+        if (!isLatestOwner(snapshot.ownershipKey, snapshot.ownershipToken)) {
+          completeOwnership(snapshot.ownershipKey, snapshot.ownershipToken, false)
           return false
         }
         throw error
       }
-      completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, true)
+      completeOwnership(snapshot.ownershipKey, snapshot.ownershipToken, true)
       return true
     })
     const promise = Promise.race([rawWrite, disposedPromise])
@@ -368,7 +371,7 @@ export function createRecoveryPersistenceCoordinator(
           && newer.queueRevision > activeWrite.snapshot.queueRevision
         ) {
           abandonOwnership(
-            activeWrite.snapshot.recoveryKey,
+            activeWrite.snapshot.ownershipKey,
             activeWrite.snapshot.ownershipToken,
           )
           continue
@@ -383,11 +386,11 @@ export function createRecoveryPersistenceCoordinator(
     isDisposed.value = true
     clearTimer()
     for (const snapshot of latestByKey.values()) {
-      abandonOwnership(snapshot.recoveryKey, snapshot.ownershipToken)
+      abandonOwnership(snapshot.ownershipKey, snapshot.ownershipToken)
     }
     if (inflight !== null) {
       abandonOwnership(
-        inflight.snapshot.recoveryKey,
+        inflight.snapshot.ownershipKey,
         inflight.snapshot.ownershipToken,
       )
     }

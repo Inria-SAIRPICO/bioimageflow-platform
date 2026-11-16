@@ -459,7 +459,7 @@ async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -
             },
         )
         created = await client.post("/api/v1/workflows", json={"name": "draft-output"})
-        current = await client.get("/api/v1/workflow-drafts/draft-output")
+        current = await client.get(f"/api/v1/workflow-drafts/{created.json()['id']}")
         graph = graph_document(
             nodes=[
                 {
@@ -474,7 +474,7 @@ async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -
             ]
         )
         updated = await client.put(
-            "/api/v1/workflow-drafts/draft-output",
+            f"/api/v1/workflow-drafts/{created.json()['id']}",
             json={
                 "expected_revision": current.json()["draft_revision"],
                 "graph": graph,
@@ -488,7 +488,7 @@ async def test_favorite_structural_identity_uses_current_draft(tmp_path: Path) -
                     "workspace_id": str(
                         ensure_workspace_identity(tmp_path)
                     ),
-                    "workflow_id": "draft-output",
+                    "workflow_id": created.json()["id"],
                     "identity_generation": created.json()["identity_generation"],
                     "node_path": ["new-node"],
                     "output_key": "image",
@@ -529,7 +529,7 @@ def _inventory(*distributions: tuple[str, str]) -> str:
 
 async def _favorite_key(client: httpx.AsyncClient, tmp_path: Path, viewer: dict) -> dict:
     created = await client.post("/api/v1/workflows", json={"name": "draft-output"})
-    current = await client.get("/api/v1/workflow-drafts/draft-output")
+    current = await client.get(f"/api/v1/workflow-drafts/{created.json()['id']}")
     graph = graph_document(
         nodes=[
             {
@@ -544,7 +544,7 @@ async def _favorite_key(client: httpx.AsyncClient, tmp_path: Path, viewer: dict)
         ]
     )
     updated = await client.put(
-        "/api/v1/workflow-drafts/draft-output",
+        f"/api/v1/workflow-drafts/{created.json()['id']}",
         json={
             "expected_revision": current.json()["draft_revision"],
             "graph": graph,
@@ -554,7 +554,7 @@ async def _favorite_key(client: httpx.AsyncClient, tmp_path: Path, viewer: dict)
     return {
         "kind": "persistent",
         "workspace_id": str(ensure_workspace_identity(tmp_path)),
-        "workflow_id": "draft-output",
+        "workflow_id": created.json()["id"],
         "identity_generation": created.json()["identity_generation"],
         "node_path": ["new-node"],
         "output_key": "image",

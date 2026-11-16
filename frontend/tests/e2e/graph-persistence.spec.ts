@@ -2,7 +2,7 @@
  * End-to-end test for workflow-scoped auto-save recovery.
  *
  * Regression coverage for the old global IndexedDB key (`bioimageflow/current`):
- * recovery now uses `bioimageflow-autosave`, keyed by workflow name, after the
+ * recovery now uses `bioimageflow-autosave`, keyed by canonical workspace, workflow UUID and generation, after the
  * server workflow is loaded.
  */
 import { test, expect } from '@playwright/test'
@@ -96,45 +96,27 @@ async function createServerWorkflow(page: Page, name: string, graph: GraphState)
   const create = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name, display_name: name },
   })
-  expect([201, 409]).toContain(create.status())
-  const save = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  expect(create.status()).toBe(201)
+  const info = await create.json()
+  const save = await page.request.put(`${API_BASE}/api/v1/workflows/${info.id}`, {
     data: { graph },
   })
   expect(save.ok()).toBeTruthy()
+  return info
 }
 
-async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState) {
-  await page.evaluate(
-    ({ workflowName, workflowGraph }) => new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open('bioimageflow-autosave', 1)
-      req.onupgradeneeded = () => {
-        const db = req.result
-        if (!db.objectStoreNames.contains('workflows')) {
-          db.createObjectStore('workflows', { keyPath: 'name' })
-        }
-        if (!db.objectStoreNames.contains('preferences')) {
-          db.createObjectStore('preferences')
-        }
-      }
-      req.onsuccess = () => {
-        const db = req.result
-        const tx = db.transaction(['workflows', 'preferences'], 'readwrite')
-        tx.objectStore('workflows').put({
-          name: workflowName,
-          graph: workflowGraph,
-          timestamp: Date.now(),
-        })
-        tx.objectStore('preferences').put(workflowName, 'last_opened_workflow')
-        tx.oncomplete = () => {
-          db.close()
-          resolve()
-        }
-        tx.onerror = () => reject(tx.error)
-      }
-      req.onerror = () => reject(req.error)
-    }),
-    { workflowName: name, workflowGraph: graph },
-  )
+async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState, owner?: { workspace_path: string; identity_generation: number }) {
+  await page.evaluate(async ({ workflowName, workflowGraph, owner }) => {
+    const { useAutoSave, writeAutoSaveEntry } = await import('/src/composables/useAutoSave.ts')
+    if (!owner) {
+      const response = await fetch(`/api/v1/workflows/${encodeURIComponent(workflowName)}`)
+      if (!response.ok) throw new Error('Recovery owner is unavailable')
+      const { info } = await response.json()
+      owner = { workspace_path: info.workspace_path, identity_generation: info.identity_generation }
+    }
+    await writeAutoSaveEntry({ name: workflowName, graph: workflowGraph, timestamp: Date.now(), ...owner })
+    await useAutoSave().setLastOpenedWorkflow(workflowName)
+  }, { workflowName: name, workflowGraph: graph, owner })
 }
 
 function recoveryGraph(
@@ -180,28 +162,28 @@ function recoveryGraph(
 
 test.describe('workflow-scoped graph recovery', () => {
   test('auto-saved graph restores nodes and edges after reload', async ({ page }) => {
-    const workflowName = uniqueName('autosave_graph')
-    await deleteWorkflowIfExists(page, workflowName)
+    const workflowLabel = uniqueName('autosave_graph')
 
     const { source, target } = await fetchRecoveryTools(page)
-    const recovered = recoveryGraph(workflowName, source, target)
+    const recovered = recoveryGraph(workflowLabel, source, target)
     const validation = await page.request.put(`${API_BASE}/api/v1/graph`, {
       data: recovered,
     })
     expect(validation.ok()).toBeTruthy()
     expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
-    await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
+    const info = await createServerWorkflow(page, workflowLabel, emptyGraph(workflowLabel))
+    const workflowName: string = info.id
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await seedWorkflowAutoSave(page, workflowName, recovered)
+    await seedWorkflowAutoSave(page, workflowName, recovered, { workspace_path: info.workspace_path, identity_generation: info.identity_generation })
     const toolsReady = page.waitForResponse(
       response => response.url().includes('/api/v1/tools') && response.status() === 200,
     )
     await page.reload()
     await toolsReady
 
-    await expect(page.locator('[data-testid="workflow-title"]')).toHaveText(`${workflowName} *`)
+    await expect(page.locator('[data-testid="workflow-title"]')).toHaveText(`${workflowLabel} *`)
     await expect(page.locator('.vue-flow__node')).toHaveCount(2)
     await expect(page.locator('.vue-flow__node[data-id="src_node"] .node-name')).toHaveText('Seed Numbers')
     await expect(page.locator('.vue-flow__node[data-id="tgt_node"] .node-name')).toHaveText('Increment Numbers')

@@ -20,17 +20,6 @@ function uniqueDisplayName(): string {
   return `Managed Execution ${project} ${Date.now()} ${Math.floor(Math.random() * 10000)}`
 }
 
-function deriveWorkflowId(value: string): string {
-  return value
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-}
-
 async function seedSourceTool(page: Page): Promise<ToolMetadata> {
   const seeded = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
   expect(seeded.ok()).toBeTruthy()
@@ -42,12 +31,17 @@ async function seedSourceTool(page: Page): Promise<ToolMetadata> {
   return source!
 }
 
-async function createWorkflow(page: Page, displayName: string): Promise<void> {
+async function createWorkflow(page: Page, displayName: string): Promise<string> {
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New', exact: true }).click()
   await page.locator('[data-testid="workflow-display-name-input"]').fill(displayName)
+  const created = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/v1/workflows')
   await page.locator('[data-testid="workflow-dialog-submit"]').click()
   await expect(page.locator('[data-testid="workflow-dialog"]')).not.toBeVisible()
+  const response = await created
+  expect(response.status(), await response.text()).toBe(201)
+  return (await response.json()).id as string
 }
 
 async function addSourceNode(
@@ -147,7 +141,6 @@ test('managed execution resolves paths, retains its run, downloads results, and 
 }, async ({ page }) => {
 
   const displayName = uniqueDisplayName()
-  const workflowId = deriveWorkflowId(displayName)
   const source = await seedSourceTool(page)
   let preflightCount = 0
   let submitCount = 0
@@ -182,6 +175,9 @@ test('managed execution resolves paths, retains its run, downloads results, and 
       },
     ],
   }))
+  await page.goto('/')
+  const workflowId = await createWorkflow(page, displayName)
+
   await page.route('**/api/v1/execution/preflight', async route => {
     preflightCount += 1
     const request = route.request().postDataJSON()
@@ -286,8 +282,6 @@ test('managed execution resolves paths, retains its run, downloads results, and 
     })
   })
 
-  await page.goto('/')
-  await createWorkflow(page, displayName)
   await addSourceNode(page, source, workflowId)
 
   const targetSelector = page.locator('[data-testid="execution-target-selector"]')

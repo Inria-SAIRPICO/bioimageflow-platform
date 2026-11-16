@@ -5,15 +5,19 @@ Use **Workflows** to organize, copy, import, export, and delete saved workflows.
 ## Organize workflows
 
 Select a folder before clicking **New workflow** to create the workflow there.
+The toolbar, Workflow menu and empty-canvas New actions all use the folder selected when you submit **Create**.
+Selecting a workflow chooses its containing folder; with no selection, creation uses the workflows root.
 Use **New folder** to add another level.
 The search field filters the tree.
 
-A workflow name such as `Segmentation/Nuclei` determines its folder location.
+A relative path such as `Segmentation/Nuclei` describes its folder location.
 Its display name is the readable title shown in BioImageFlow.
 Changing the display name does not move the workflow.
 
 Drag a workflow or folder onto another folder to move it.
 Use **Edit selected item** to rename a folder or edit a workflow's display name.
+Moving an idle workflow or its containing folder keeps open root and nested tabs, unsaved edits and undo history.
+Moves are unavailable while an affected execution owns its storage.
 
 ## Open and save
 
@@ -108,7 +112,13 @@ workspace/
 The **Workflows** panel follows the folders beneath `workflows/`.
 Saving updates `workflow.json`; custom tool code lives in `tools/` and is included in workflow exports.
 Moving a workflow in the panel carries its tools and results with it.
+Each workflow retains its own identity when moved or renamed; making a copy or importing creates a separate workflow identity.
 Duplicating copies its definition and custom tools, but starts without results.
+If files are moved outside BioImageFlow, refresh the tree before continuing.
+Missing workflows remain unavailable until their files are restored or moved back.
+If you copied a workflow directory in your file browser, use **Review copies**, close the affected workflow and nested tabs, and select the copied directory to make independent.
+That directory keeps its graph, tools, drafts and results while receiving its own identity; the original stays unchanged.
+Use **Duplicate workflow** when you want a new reusable workflow without copying results.
 
 Installed tool packages and their execution environments are shared across workflows and stored separately from this folder; see [installation locations](index.md#install-the-desktop-application).
 Back up the workspace to preserve your saved analyses and local tools, and back up original input datasets stored elsewhere too.

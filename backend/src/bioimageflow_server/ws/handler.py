@@ -90,6 +90,15 @@ class ConnectionManager:
         self._loop = loop
         self._max_queue_size = max_queue_size
         self._states: dict[Any, _ConnectionState] = {}
+        self._workflow_workspace_provider: Callable[[], str] | None = None
+
+    def set_workflow_workspace_provider(self, provider: Callable[[], str]) -> None:
+        """Bind workflow events to their request owner before async delivery."""
+        self._workflow_workspace_provider = provider
+
+    def _workflow_workspace_path(self) -> str | None:
+        provider = self._workflow_workspace_provider
+        return provider() if provider is not None else None
 
     # ---- introspection --------------------------------------------------
 
@@ -358,8 +367,9 @@ class ConnectionManager:
         updated_by: str,
         updated_at: str,
         dirty_against_saved: bool,
+        workspace_path: str | None = None,
     ) -> None:
-        payload = {
+        payload: dict[str, Any] = {
             "type": "workflow_draft_changed",
             "workflow_id": workflow_id,
             "draft_revision": draft_revision,
@@ -367,6 +377,8 @@ class ConnectionManager:
             "updated_at": updated_at,
             "dirty_against_saved": dirty_against_saved,
         }
+        if workspace_path is not None:
+            payload["workspace_path"] = workspace_path
         self._enqueue_all(payload)
 
     async def broadcast_workflow_tree_changed(
@@ -374,6 +386,8 @@ class ConnectionManager:
         action: str,
         workflow_id: str | None = None,
         identity_generation: int | None = None,
+        relative_path: str | None = None,
+        workspace_path: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "type": "workflow_tree_changed",
@@ -382,18 +396,25 @@ class ConnectionManager:
         }
         if identity_generation is not None:
             payload["identity_generation"] = identity_generation
+        if relative_path is not None:
+            payload["relative_path"] = relative_path
+        if workspace_path is not None:
+            payload["workspace_path"] = workspace_path
         self._enqueue_all(payload)
 
     async def broadcast_active_workflow_changed(
         self,
         workflow_id: str,
         updated_by: str,
+        workspace_path: str | None = None,
     ) -> None:
-        payload = {
+        payload: dict[str, Any] = {
             "type": "active_workflow_changed",
             "workflow_id": workflow_id,
             "updated_by": updated_by,
         }
+        if workspace_path is not None:
+            payload["workspace_path"] = workspace_path
         self._enqueue_all(payload)
 
     async def send_ack(self, websocket: Any, ref: str) -> None:
@@ -550,8 +571,10 @@ class ConnectionManager:
         updated_at: str,
         dirty_against_saved: bool,
     ) -> None:
+        workspace_path = self._workflow_workspace_path()
         self._schedule(
             self.broadcast_workflow_draft_changed(
+                workspace_path=workspace_path,
                 workflow_id=workflow_id,
                 draft_revision=draft_revision,
                 updated_by=updated_by,
@@ -566,12 +589,16 @@ class ConnectionManager:
         action: str,
         workflow_id: str | None = None,
         identity_generation: int | None = None,
+        relative_path: str | None = None,
     ) -> None:
+        workspace_path = self._workflow_workspace_path()
         self._schedule(
             self.broadcast_workflow_tree_changed(
+                workspace_path=workspace_path,
                 action=action,
                 workflow_id=workflow_id,
                 identity_generation=identity_generation,
+                relative_path=relative_path,
             ),
             "workflow_tree_changed",
         )
@@ -581,8 +608,10 @@ class ConnectionManager:
         workflow_id: str,
         updated_by: str,
     ) -> None:
+        workspace_path = self._workflow_workspace_path()
         self._schedule(
             self.broadcast_active_workflow_changed(
+                workspace_path=workspace_path,
                 workflow_id=workflow_id,
                 updated_by=updated_by,
             ),

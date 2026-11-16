@@ -889,6 +889,62 @@ def test_cleanup_interruption_preserves_primary_and_independent_cleanup(primary:
 
 
 class TestExecutionManagerLifecycle:
+    async def test_external_move_reports_unavailable_storage_without_recreating_old_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from functools import partial
+
+        from bioimageflow_server.models.workflow import WorkflowCreate
+        from bioimageflow_server.routers.execution import (
+            _WorkflowRuntimeContext,
+            _ensure_run_storage_context,
+            _runtime_directory_identity,
+        )
+        from bioimageflow_server.services.tool_registry import ToolRegistryService
+        from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+        class HeldWorkflow(_FakeWorkflow):
+            def __init__(self) -> None:
+                super().__init__()
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def compute(self, *targets: Any, engine: Any = None, run_context: Any = None) -> dict:
+                self.entered.set()
+                self.release.wait(timeout=3)
+                return {}
+
+        store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+        info = store.create_workflow(WorkflowCreate(name="original"))
+        original = store.workflow_dir(info.id)
+        storage = store.get_storage_path(info.id)
+        context = _WorkflowRuntimeContext(info.identity_generation, storage)
+        guard = partial(_ensure_run_storage_context, store, info.id, context, _runtime_directory_identity(storage))
+        workflow = HeldWorkflow()
+        _install_fake_builder(monkeypatch, workflow)
+        manager = ExecutionManager(RecordingEventBus(), MagicMock())
+        try:
+            await manager.start(
+                _graph_with([("n1", True)]), storage_path=storage,
+                workflow_id=info.id, draft_revision=0,
+                ensure_storage_current=guard,
+            )
+            assert await asyncio.to_thread(workflow.entered.wait, 2)
+            moved = original.with_name("moved")
+            original.rename(moved)
+            status = manager.get_status()
+            assert status.state == "running"
+            assert "storage moved" in status.storage_error
+            assert not original.exists()
+        finally:
+            workflow.release.set()
+            await _drain(manager, timeout=3)
+
+        assert manager.last_result is not None and not manager.last_result.success
+        assert manager.last_result.errors[0]["type"] == "WorkflowStorageUnavailableError"
+        assert store.workflow_dir(info.id) == moved
+        assert not original.exists()
+
     async def test_cache_clear_updates_matching_live_status_without_rewriting_run_history(
         self,
     ) -> None:

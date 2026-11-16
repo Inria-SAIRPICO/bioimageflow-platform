@@ -785,7 +785,7 @@ async def test_fallback_mode_mutation_cannot_change_process_admission(
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.post("/api/v1/workflows/missing/outputs/latest/reveal")
+        response = await client.post("/api/v1/workflows/25729110-157a-4bc7-bfef-381cd500cb0e/outputs/latest/reveal")
     assert response.status_code == 403
     reveal.assert_not_called()
     effective = app.dependency_overrides[workflows.get_settings]()

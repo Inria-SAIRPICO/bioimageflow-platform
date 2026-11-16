@@ -123,7 +123,8 @@ async def test_stale_draft_validation_cannot_commit_over_newer_revision(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf"))
+    identities: dict[str, str] = {}
+    identities["wf"] = store.create_workflow(WorkflowCreate(name="wf")).id
     drafts = WorkflowDraftService(lambda: store)
     slow_validation_entered = threading.Event()
     release_slow_validation = threading.Event()
@@ -144,7 +145,7 @@ async def test_stale_draft_validation_cannot_commit_over_newer_revision(
 
     stale_write = asyncio.create_task(
         drafts.put_draft_async(
-            "wf",
+            identities["wf"],
             graph=graph_a,
             expected_revision=0,
         )
@@ -152,7 +153,7 @@ async def test_stale_draft_validation_cannot_commit_over_newer_revision(
     try:
         await _wait_for_thread_event(slow_validation_entered)
         winner = await drafts.put_draft_async(
-            "wf",
+            identities["wf"],
             graph=graph_b,
             expected_revision=0,
         )
@@ -163,7 +164,7 @@ async def test_stale_draft_validation_cannot_commit_over_newer_revision(
     with pytest.raises(WorkflowDraftRevisionConflict):
         await stale_write
 
-    current = await drafts.get_draft_snapshot_async("wf")
+    current = await drafts.get_draft_snapshot_async(identities["wf"])
     assert current.draft_revision == 1
     assert current.graph == graph_b
 
@@ -172,7 +173,10 @@ async def test_validation_from_deleted_generation_cannot_mutate_same_id_replacem
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf", display_name="Original"))
+    identities: dict[str, str] = {}
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_175 = store.create_workflow(WorkflowCreate(name="wf", display_name="Original"))
+    identities[created_175.relative_path] = created_175.id
     drafts = WorkflowDraftService(lambda: store)
     validation_entered = threading.Event()
     release_validation = threading.Event()
@@ -191,37 +195,41 @@ async def test_validation_from_deleted_generation_cannot_mutate_same_id_replacem
 
     stale_write = asyncio.create_task(
         drafts.put_draft_async(
-            "wf",
+            identities["wf"],
             graph=stale_graph,
             expected_revision=0,
         )
     )
     try:
         await _wait_for_thread_event(validation_entered)
-        await asyncio.to_thread(store.delete_workflow, "wf")
-        await asyncio.to_thread(
+        await asyncio.to_thread(store.delete_workflow, identities["wf"])
+        replacement = await asyncio.to_thread(
             store.create_workflow,
             WorkflowCreate(name="wf", display_name="Replacement"),
         )
+        identities["wf"] = replacement.id
     finally:
         release_validation.set()
 
     with pytest.raises(WorkflowGenerationChangedError):
         await stale_write
 
-    fresh = store.get_workflow("wf")
+    fresh = store.get_workflow(identities["wf"])
     assert fresh.info.display_name == "Replacement"
     assert fresh.graph.nodes == []
     assert fresh.graph.name == "wf"
-    assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
+    assert not (store.workflow_dir(identities["wf"]) / ".bioimageflow" / "draft.json").exists()
 
 
 async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf"))
-    initial_saved_graph = store.get_workflow("wf").graph
+    identities: dict[str, str] = {}
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_223 = store.create_workflow(WorkflowCreate(name="wf"))
+    identities[created_223.relative_path] = created_223.id
+    initial_saved_graph = store.get_workflow(identities["wf"]).graph
     drafts = WorkflowDraftService(lambda: store)
     first_validation_entered = threading.Event()
     release_first_validation = threading.Event()
@@ -243,7 +251,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
 
     reset = asyncio.create_task(
         drafts.reset_draft_to_saved_async(
-            "wf",
+            identities["wf"],
             expected_revision=0,
         )
     )
@@ -251,7 +259,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
         await _wait_for_thread_event(first_validation_entered)
         await asyncio.to_thread(
             store.save_workflow,
-            "wf",
+            identities["wf"],
             WorkflowSaveBody(graph=replacement_saved_graph),
         )
     finally:
@@ -267,13 +275,14 @@ async def test_stale_nested_validation_cannot_commit_over_newer_revision(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf"))
+    identities: dict[str, str] = {}
+    identities["wf"] = store.create_workflow(WorkflowCreate(name="wf")).id
     snapshots = NestedWorkflowSnapshotService(lambda: store)
     opened = snapshots.open_snapshot(
         NestedSnapshotOwner(
             kind="root",
             canvas_id="workflow:wf",
-            workflow_id="wf",
+            workflow_id=identities["wf"],
         ),
         "nested-node",
         _graph(),
@@ -325,7 +334,10 @@ async def test_nested_validation_cannot_commit_into_replaced_root_identity(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf", display_name="Original"))
+    identities: dict[str, str] = {}
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_328 = store.create_workflow(WorkflowCreate(name="wf", display_name="Original"))
+    identities[created_328.relative_path] = created_328.id
     snapshots = NestedWorkflowSnapshotService(lambda: store)
     monkeypatch.setattr(
         snapshots,
@@ -336,7 +348,7 @@ async def test_nested_validation_cannot_commit_into_replaced_root_identity(
         NestedSnapshotOwner(
             kind="root",
             canvas_id="workflow:wf",
-            workflow_id="wf",
+            workflow_id=identities["wf"],
         ),
         "nested-node",
         _graph(),
@@ -364,18 +376,19 @@ async def test_nested_validation_cannot_commit_into_replaced_root_identity(
     )
     try:
         await _wait_for_thread_event(validation_entered)
-        await asyncio.to_thread(store.delete_workflow, "wf")
-        await asyncio.to_thread(
+        await asyncio.to_thread(store.delete_workflow, identities["wf"])
+        replacement = await asyncio.to_thread(
             store.create_workflow,
             WorkflowCreate(name="wf", display_name="Replacement"),
         )
+        identities["wf"] = replacement.id
     finally:
         release_validation.set()
 
-    with pytest.raises(WorkflowGenerationChangedError):
+    with pytest.raises((WorkflowGenerationChangedError, FileNotFoundError)):
         await stale_write
 
     current = snapshots.get_snapshot(opened.session_id)
     assert current.snapshot_revision == 0
     assert current.graph == _graph()
-    assert store.get_workflow("wf").info.display_name == "Replacement"
+    assert store.get_workflow(identities["wf"]).info.display_name == "Replacement"

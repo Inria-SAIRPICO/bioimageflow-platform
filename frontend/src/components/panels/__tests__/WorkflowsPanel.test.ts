@@ -33,6 +33,7 @@ vi.mock('@/api/workflowFormats', () => ({
 
 const workflows: WorkflowInfo[] = [
   {
+    relative_path: 'alpha_api',
     id: 'alpha_api',
     name: 'alpha_api',
     folder: '',
@@ -44,6 +45,7 @@ const workflows: WorkflowInfo[] = [
       identity_generation: 0,
   },
   {
+    relative_path: 'beta_api',
     id: 'beta_api',
     name: 'beta_api',
     folder: '',
@@ -476,6 +478,7 @@ describe('WorkflowsPanel', () => {
   it('selects full workflow ids when duplicate leaf names live in different folders', async () => {
     const duplicateWorkflows: WorkflowInfo[] = [
       {
+        relative_path: 'A/nuclei',
         id: 'A/nuclei',
         name: 'nuclei',
         folder: 'A',
@@ -487,6 +490,7 @@ describe('WorkflowsPanel', () => {
       identity_generation: 0,
       },
       {
+        relative_path: 'B/nuclei',
         id: 'B/nuclei',
         name: 'nuclei',
         folder: 'B',
@@ -574,6 +578,7 @@ describe('WorkflowsPanel', () => {
 
   it('keeps workflow toolbar actions targeted at a workflow inside a folder', async () => {
     const nestedWorkflow: WorkflowInfo = {
+      relative_path: 'Analysis Results/beta_api',
       id: 'Analysis Results/beta_api',
       name: 'beta_api',
       folder: 'Analysis Results',
@@ -677,8 +682,9 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
+        relative_path: 'Analysis/beta_api',
         name: 'beta_api',
-        id: 'Analysis/beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -692,7 +698,7 @@ describe('WorkflowsPanel', () => {
 
     await wrapper.find('[data-testid="workflow-new-folder-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Analysis')
-    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await (wrapper.vm as any).submitFolderDialog()
     await flushPromises()
     const store = useWorkflowStore()
     const folder = store.workflowFolders[0]
@@ -705,7 +711,7 @@ describe('WorkflowsPanel', () => {
 
     await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
-    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await (wrapper.vm as any).submitFolderDialog()
     await flushPromises()
     expect(store.workflowFolders[0].name).toBe('Published')
 
@@ -727,6 +733,7 @@ describe('WorkflowsPanel', () => {
   it('renames the selected workflow from the shared rename button', async () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
+        relative_path: 'alpha_api',
         id: 'alpha_api',
         name: 'alpha_api',
         folder: '',
@@ -748,7 +755,7 @@ describe('WorkflowsPanel', () => {
     expect(dialog.attributes('header')).toBe('Edit workflow display name')
     expect(dialog.text()).toContain('Display name')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Alpha renamed')
-    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await (wrapper.vm as any).submitFolderDialog()
     await flushPromises()
 
     expect(wrapper.emitted('rename-workflow')?.[0]).toEqual(['alpha_api'])
@@ -759,10 +766,12 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find('[data-testid="workflow-row-alpha_api"]').text()).toContain('Alpha renamed')
   })
 
-  it('shows and dismisses the close-tabs guard when a folder rename is blocked', async () => {
+  it('shows and dismisses a storage-owner refusal when a folder rename is blocked', async () => {
+    vi.mocked(api.patch).mockRejectedValueOnce(new Error('Workflow storage is owned by an active run'))
     const nestedWorkflow: WorkflowInfo = {
       ...workflows[0],
       id: 'Analysis/alpha_api',
+      relative_path: 'Analysis/alpha_api',
       folder: 'Analysis',
     }
     const wrapper = mountPanel([nestedWorkflow])
@@ -781,19 +790,20 @@ describe('WorkflowsPanel', () => {
     ;(wrapper.vm as any).selectFolder('Analysis')
     await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
-    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await (wrapper.vm as any).submitFolderDialog()
     await flushPromises()
 
     const error = wrapper.find('[data-testid="workflow-action-error"]')
     expect(error.attributes('role')).toBe('alert')
-    expect(error.text()).toMatch(/close.*workflow.*nested-workflow.*tab/is)
-    expect(api.patch).not.toHaveBeenCalled()
+    expect(error.text()).toMatch(/storage.*active run/is)
+    expect(api.patch).toHaveBeenCalledOnce()
 
     await wrapper.find('[data-testid="workflow-action-error-dismiss"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-action-error"]').exists()).toBe(false)
   })
 
   it('clears a blocked workflow move error when the next panel action succeeds', async () => {
+    vi.mocked(api.patch).mockRejectedValueOnce(new Error('Workflow storage is owned by an active run'))
     const wrapper = mountPanel()
     const store = useWorkflowStore()
     store.workflowFolders = [{ id: 'Analysis', name: 'Analysis', parentId: null }]
@@ -811,9 +821,9 @@ describe('WorkflowsPanel', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="workflow-action-error"]').text()).toMatch(
-      /close.*workflow.*nested-workflow.*tab/is,
+      /storage.*active run/is,
     )
-    expect(api.patch).not.toHaveBeenCalled()
+    expect(api.patch).toHaveBeenCalledOnce()
 
     vi.mocked(api.post).mockResolvedValueOnce({ data: { revealed: true } })
     await (wrapper.vm as any).revealSelectedWorkflowFolder()
@@ -837,8 +847,9 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
+        relative_path: 'Analysis/beta_api',
         name: 'beta_api',
-        id: 'Analysis/beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -890,8 +901,9 @@ describe('WorkflowsPanel', () => {
     })
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
+        relative_path: 'Analysis/beta_api',
         name: 'beta_api',
-        id: 'Analysis/beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -911,14 +923,14 @@ describe('WorkflowsPanel', () => {
     })
     await flushPromises()
 
-    expect(store.workflowFolderIds['Analysis/beta_api']).toBe(folder.id)
+    expect(store.workflowFolderIds.beta_api).toBe(folder.id)
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
       'alpha_api',
       'beta_api',
     ])
-    await wrapper.find('[data-testid="workflow-row-Analysis_beta_api"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
     const emitted = wrapper.emitted('select-workflow') ?? []
-    expect(emitted[emitted.length - 1]).toEqual(['Analysis/beta_api'])
+    expect(emitted[emitted.length - 1]).toEqual(['beta_api'])
   })
 
   it('moves a dragged folder into another folder', async () => {

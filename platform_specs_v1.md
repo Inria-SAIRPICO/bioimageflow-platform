@@ -142,7 +142,7 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `POST` | `/tools/environments/{env_name}/recreate` | Create or replace a tool's managed Wetlands environment |
 
 Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
-It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
+It resolves and returns persistent workflow UUIDs and lists each affected workflow once; relative paths are presentation metadata, never workflow identities.
 
 **Known package catalog:** The bundled default includes the published Common, I/O, Measurement, OMERO, Restoration, SAIRPICO, Segmentation, Spot, and Tracking tool packages.
 Phasor tools are excluded until their first PyPI release; source-repository presence alone does not establish installable availability.
@@ -418,7 +418,7 @@ Every user has exactly one active BioImageFlow workspace. In desktop mode this i
 ```text
 workspace/
   workflows/                          # saved workflow tree
-    <workflow-id>/
+    <relative-path>/
       workflow.json
       tools/                           # custom tools owned by this workflow
       results/                         # BioImageFlow runtime storage
@@ -430,16 +430,30 @@ In webapp mode the workspace root is administrator-managed; the generic settings
 
 Saved workflows are organized under `workspace/workflows/` as folders. Each workflow is a directory that contains `workflow.json` and optional workflow-local files such as `tools/`.
 
-Workflow identifiers are derived from their slash-separated directory paths relative to `workspace/workflows/`, for example `segmentation/nuclei`; they are not independent metadata. `WorkflowInfo.name` remains the required compatibility field and `WorkflowInfo.id` is an optional preferred path-derived identity, so clients fall back to `name` when `id` is absent. `WorkflowInfo.identity_generation` is a non-negative, workspace-durable incarnation counter that advances before an identity is created, deleted, duplicated into, imported into, or moved. The atomic workspace ledger retains tombstones for removed and moved-away IDs, so clients compare generations across WebSocket reconnects and backend restarts and replace a mounted presentation only when that durable generation actually changes. Each folder or workflow path segment may contain letters, numbers, spaces, underscores, and hyphens. Empty segments, path traversal, and leading/trailing whitespace are rejected.
+Workflow identifiers are immutable UUIDs stored as `workflow_id` in the platform document envelope, independently of filesystem location and portable graph content.
+`WorkflowInfo.id` and `WorkflowInfo.name` carry that UUID; `relative_path` carries the slash-separated location below `workspace/workflows/`, while `path` remains the absolute workflow.json filename.
+Creation, import and duplication allocate fresh UUIDs; workflow and containing-folder moves preserve UUIDs, identity generations, graph hashes and accepted draft/snapshot revisions.
+`identity_generation` remains a durable ownership fence; delayed actions for a deleted workflow cannot affect another workflow created at its former path.
+Folder paths remain workspace-relative strings, with letters, numbers, spaces, underscores and hyphens in each segment; empty segments, traversal and leading/trailing whitespace are rejected.
 
 Opening an existing saved workflow with a missing referenced custom-source manifest or Python file returns HTTP 409 with `workflow_source_missing`, rather than reporting that the workflow does not exist.
 The detail names the source identity and missing workflow-relative file, identifies an older `.bioimageflow/dependencies/<source-id>/source.json` record when present, and provides recovery guidance.
 Opening an absent workflow retains HTTP 404.
 
-An explicit `name_override` on workflow archive import sets the destination workflow ID to the override and the root graph's `name` and `display_name` to its leaf name, so the import rename dialog changes the name shown in the tree and canvas tabs.
+An explicit `name_override` on workflow archive import sets the destination relative path to the override and the root graph's `name` and `display_name` to its leaf name, so the import rename dialog changes the name shown in the tree and canvas tabs.
 Without an override, import preserves the archive's graph names; nested workflow names are preserved in either case.
 
-Renaming or moving a workflow or containing folder changes every affected path-derived workflow id. If an affected workflow already has a draft, the backend validates it before the move and atomically rewrites only its embedded `workflow_id` after the move; workflows without drafts do not gain one. A defensive draft read repairs a valid legacy identity mismatch to the requested route without discarding unknown JSON fields.
+Renaming or moving a workflow or containing folder changes physical locations and path metadata, preserving workflow UUIDs and source provenance.
+Idle open root and nested canvases flush their private persistence without Save or apply, then retain their registrations, dirty baselines and undo histories after the accepted move.
+A move is refused while affected local or managed execution owns storage.
+Named reads and writes resolve UUIDs freshly and refuse missing or duplicate identities; an external move never authorizes silently recreating the former directory or retargeting an active run.
+External duplicate UUIDs are exposed as exact directory/digest choices by the format-status response.
+`POST /workflows/identity-copies/resolve` accepts `relative_path`, `expected_workflow_id` and `expected_document_hash`, rechecks the selected directory under storage and mutation guards, backs up changed authorities and assigns that selected copy a fresh UUID through a restart-safe journal.
+It preserves graph content, tools and results, root draft revisions and baselines; the other directories retain their identities and bytes.
+The Workflows panel's **Review copies** action requires affected root and nested tabs to close and lets the user select one directory to make independent; active storage owners refuse resolution.
+Delete confirmations, including demo removal, capture the canonical workspace and workspace-selection revision when opened; changing workspace before or during persistence barriers refuses the action, and a late success cannot dispose another workspace's canvases or clear its recovery.
+Canvas-owned requests carry their captured canonical workspace through `X-BioImageFlow-Workspace`; a mismatch returns HTTP 409 before mutation, and the selected store remains bound to that request across asynchronous waits.
+Create additionally accepts `expected_workspace_path` and `expected_parent_path` assertions, with an empty parent selecting the workflows root.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -452,7 +466,7 @@ Renaming or moving a workflow or containing folder changes every affected path-d
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
 | `GET` | `/workflows/format-status` | Scan saved workflows, root drafts, and nested snapshots without writing them; return pending/error notices and a content-derived `pending_plan_id`. |
 | `POST` | `/workflows/format-migrations/apply` | Confirm and apply the exact previewed format plan. A changed source makes the plan stale and returns HTTP 409. |
-| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same path-derived name already exists, with a suggested alternative. |
+| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str}`). Returns **409 Conflict** if the destination path already exists, with a suggested alternative; returns the new workflow UUID and relative path. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
 | `PUT` | `/workflows/{id}` | Save workflow from the current graph/draft path. UI save flows flush/promote the backend draft first. Always succeeds even if graph validation errors exist. |
 | `DELETE` | `/workflows/{id}` | Delete a workflow directory, including its workflow-local results, and its retained nested snapshots. An optional `expected_identity_generation` query parameter atomically rejects a stale same-ID confirmation with **409 Conflict** before mutation. Returns `{deleted: true, identity_generation}` for the removed incarnation. |
@@ -466,7 +480,7 @@ The frontend initially offers **Update workflows** and **Not now**, and a deferr
 Confirmation rechecks the content-derived plan, preserves every original byte under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/...`, synchronizes all backups before replacing any authority, and updates saved workflows, root drafts, and nested snapshots through one forward-recoverable journal.
 The result lists every exact backup path; a stale plan or a migration error does not claim that an update or backup succeeded.
 
-Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow ids use the same slash-separated path rules as workflow endpoints.
+Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow IDs on draft and workflow endpoints are UUIDs; folder routes and creation/move destinations use relative paths.
 `PATCH /workflows/{id}` with `action: "duplicate"` optionally accepts `graph` to copy a captured draft instead of the saved graph, and `expected_identity_generation` to reject a recreated source identity.
 The backend copies all sources referenced by that graph plus editable local tools, stages the complete destination, and publishes it atomically without copying runtime results or mutating the original draft.
 The conflict action **Save agent version as copy** uses this operation; it does not create an empty workflow followed by a graph-only save.
@@ -674,7 +688,7 @@ Normal root-canvas runs address the accepted draft revision:
 
 ```json
 {
-  "workflow_id": "segmentation/nuclei",
+  "workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b",
   "draft_revision": 12,
   "nodes": null
 }
@@ -698,7 +712,7 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 {
   "state": "idle",
   "execution_id": "4af78551-23af-4f07-b41f-a18d857d8197",
-  "workflow_id": "segmentation/nuclei",
+  "workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b",
   "draft_revision": 12,
   "last_result": {
     "success": true,
@@ -725,7 +739,7 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 | `planned_node_names` | `dict[str, str]` | Display names keyed by the planned scoped tool-node paths. |
 | `node_statuses` | `dict[str, NodeStatus]` | Current or final statuses for the retained execution context |
 | `execution_id` | `str \| null` | Unique accepted execution identity |
-| `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
+| `workflow_id` | `str \| null` | Persistent workflow UUID compiled for that execution; null for unresolved legacy ownership |
 | `draft_revision` | `int \| null` | Accepted root draft revision for the retained execution; null only before any run has been accepted |
 
 The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose server wire context `{execution_id, workflow_id, draft_revision}` matches the locally captured originating canvas. Canvas ID is frontend-local correlation and is not a WebSocket field. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
@@ -779,7 +793,8 @@ The settings owner refuses the whole update before candidate validation, credent
 A webapp administrator root may come from explicit deployment configuration or the trusted settings file loaded at startup; request-time workspace, workflow and dataset resolution preserves that authority rather than accepting generic client retargeting.
 Explicit deployment roots retain precedence, desktop workspace editing and ordinary live preferences remain supported, and this policy does not change new-workflow scheduling seeds or file-only unsafe-webapp debugging.
 
-`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
+`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path` and the read-only canonical `resolved_workspace_path` from the active workspace service, including when the saved workspace preference is null.
+A workspace-changing PATCH computes this resolved path after the change; clients withdraw the previous resolved owner while the request is pending and ignore older settings hydration after selection changes. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
 Before any attempted password write, the settings owner validates all planned writes and captures one original string-or-absent value for every distinct planned write key.
 Submitted writes retain their order: an omitted or null password requests no write, while an explicit empty string is a stored value.
@@ -961,13 +976,13 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `log` | `{level, message, node_id?, timestamp, execution_id?, workflow_id?, draft_revision?}` | BioImageFlow and Wetlands records attributable to an execution carry that execution's immutable context; non-execution tool, environment, thumbnail, and platform logs omit it and remain global |
 | `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
-| `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
+| `workflow_draft_changed` | `{workspace_path, workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one persistent workflow UUID |
 | `tool_reload` | `{tool_name, tool_metadata}` | An editable tool reloaded or a controlled package operation updated its registry metadata. Includes the full updated tool schema. |
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
 | `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "ready" | "running" | "failed"}` | Environment state change; ready content is separate from worker startup, and canceled manual requests still publish their physical operation's final state |
-| `workflow_tree_changed` | `{action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
+| `workflow_tree_changed` | `{workspace_path, action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
@@ -977,6 +992,8 @@ Progress, node-state, and completion messages always carry `execution_id`, `work
 
 There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
 
+Workflow draft, catalog and active-workflow notifications capture the canonical workspace when published, before asynchronous delivery.
+The frontend ignores notifications for another selected workspace; an active-workflow request also requires a successful catalog refresh and unchanged workspace selection before opening its canvas.
 The frontend retains `workflow_draft_changed` notices by `workflow_id` instead of projecting every notice onto the active canvas. A matching root canvas without local semantic edits or pending draft writes auto-loads and applies the newer draft, including a strictly newer notice received during an earlier fetch or install. Accepted external graphs may remain dirty against the saved artifact, and recovery-only pending writes do not create a local conflict. A matching canvas with local semantic edits or pending draft writes keeps its graph and presents conflict resolution; inactive workflows retain their notice until tracked. Nested canvases do not auto-apply root-draft notices.
 
 **Client-to-server messages:**
@@ -1579,13 +1596,13 @@ Startup initializes selection only when no newer Browse or deliberate presentati
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a workflow node containing an executable snapshot. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
 
 **Actions:**
-- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative while retaining the entered display name; editing that name clears the suggestion and derives a new id.
-  After creation, the canvas loads the backend's accepted draft or saved graph, preserving its definition name and configuration; the slash-separated workspace ID remains separate from the graph's slash-free definition name.
+- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the destination relative path, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; destination paths remain API capabilities. On path conflict, the server suggests an alternative while retaining the entered display name; editing that name clears the suggestion and derives a new destination path.
+  All New-workflow entry points use shared panel selection: a folder selects itself, a workflow selects its containing folder, and no selection means the workflows root. The dialog follows selection until Create submission, then freezes workspace and parent path through the request and conflict retry. Creation checks those captured assertions and refuses an absent parent instead of recreating it or falling back to the root. The canvas loads the backend's accepted draft or saved graph, preserving its slash-free definition name and configuration.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow in its canonical `workflow:<id>` root canvas tab or activates that existing tab. Startup resolution uses this same creation, persistence, activation, placement, and close lifecycle after its temporary non-canvas loading placeholder resolves.
   An accepted named Open supersedes pending startup presentation before loading begins; late startup reads cannot mount or reactivate a competing root, change the selected workflow, clear its dirty state, or replace its accepted draft projection.
   The winning Open retains newer recovery for its own workflow with the durable draft revision as its CAS base; unrelated recovery remains separate, and a deliberate later Open still activates an existing root tab.
-- **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
+- **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the workflow UUID and directory location. Dragging a workflow row to a folder moves its directory and updates `relative_path`, preserving its UUID, definition name, open canvases and private unsaved edits. Renaming a directory remains distinct from changing its display title.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
 - **Import / Export:** Uses the BioImageFlow library import/export API.
@@ -1830,6 +1847,11 @@ An accepted `cache_corrupt` diagnostic with a failed node status takes badge pre
 
 The frontend auto-saves meaningful graph changes to the backend workflow draft (debounced at 500ms). IndexedDB remains a fallback for cases where the backend is unavailable, the browser crashes before a draft write completes, or a local recovery path is needed.
 
+Browser recovery records are keyed by the captured canonical workspace path, workflow UUID and identity generation.
+Save, delete and recovery cleanup remove only that exact owner's entry; copied workspaces and later generations retain independent recovery.
+Older unscoped entries remain intact and require explicit recovery when ownership cannot be proven.
+Migration acknowledgment carries the captured workspace, and a workspace switch prevents late acknowledgment or restore completion from clearing another owner's recovery or changing its presentation.
+
 **Startup recovery flow:**
 
 ```
@@ -1881,7 +1903,7 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 
 ### 4.5 Workflow Persistence
 
-A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`models/workflow.py`](backend/src/bioimageflow_server/models/workflow.py), containing `platform_document_version`, `graph`, `metadata`, `authoring_source`, `owned_source_ids`, and `artifact_hash`.
+A saved `workflow.json` is the strict `WorkflowDocument` envelope defined in [`models/workflow.py`](backend/src/bioimageflow_server/models/workflow.py), containing `platform_document_version: 2`, persistent UUID `workflow_id`, `graph`, `metadata`, `authoring_source`, `owned_source_ids`, and `artifact_hash`.
 Its `graph` is the sole recursive editable definition, including layout and node presentation state; there is no separate persisted `workflow` payload or `gui` graph.
 Saved-workflow dependency inspection captures workflow-local source bindings from their exact owned files without changing the saved graph or compiling the workflow.
 An explicit flat `tools.<module>` binding resolves the contained workflow-relative module before catalog lookup; missing files retain the typed source-missing refusal, while syntax-invalid bytes remain available for editing and are rejected by validation.

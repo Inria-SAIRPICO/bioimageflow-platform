@@ -20,10 +20,10 @@ async function draft(page: Page, name: string) {
 
 test('explains an output collision, cancels unchanged and explicitly updates the draft before a cached restart', async ({ page }) => {
   test.setTimeout(300_000)
-  const name = `output_collision_${test.info().project.name}_${Date.now()}`
+  const relativePath = `output_collision_${test.info().project.name}_${Date.now()}`
   expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
   const graph: GraphState = {
-    schema_version: 2, name, display_name: name,
+    schema_version: 2, name: relativePath, display_name: relativePath,
     nodes: [
       { type: 'tool', id: 'numbers', name: 'Numbers', tool_name: 'SeedNumbers', position: [100, 180], parameters: {}, output_templates: {}, resources: {}, enabled: true, collapsed: false },
       { type: 'tool', id: 'writer', name: 'Write number file', tool_name: 'WriteNumberFile', position: [450, 180], parameters: {}, output_templates: { report: 'result.txt' }, resources: {}, enabled: true, collapsed: false },
@@ -31,12 +31,14 @@ test('explains an output collision, cancels unchanged and explicitly updates the
     edges: [{ type: 'column', id: 'numbers-to-writer', source_node: 'numbers', source_output: 'number', target_node: 'writer', target_input: 'number' }],
     interface: { inputs: [], outputs: [] }, config: { engine: 'wetlands', execution: 'sequential' },
   }
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, { data: { name, display_name: name } })).status()).toBe(201)
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, { data: { name: relativePath, display_name: relativePath } })
+  expect(created.status()).toBe(201)
+  const name = (await created.json()).id as string
   expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph } })).ok()).toBeTruthy()
   await page.goto('/')
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(relativePath)
   await page.getByTestId(`workflow-row-${name}`).dblclick()
-  await expect(page.getByTestId('workflow-title')).toContainText(name)
+  await expect(page.getByTestId('workflow-title')).toContainText(relativePath)
   await expect(page.locator('.vue-flow__node')).toHaveCount(2)
   await page.getByTestId('run-workflow-button').click()
   const dialog = page.getByTestId('output-planning-dialog')
@@ -62,7 +64,7 @@ test('explains an output collision, cancels unchanged and explicitly updates the
   await expect(dialog).not.toBeVisible()
   expect((await draft(page, name)).draft_revision).toBe(failedDraft.draft_revision)
   await page.reload()
-  await expect(page.getByTestId('workflow-title')).toContainText(name)
+  await expect(page.getByTestId('workflow-title')).toContainText(relativePath)
   await expect(dialog).not.toBeVisible()
 
   await page.getByTestId('run-workflow-button').click()

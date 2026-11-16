@@ -6,10 +6,13 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 import json
+import shutil
 from pathlib import Path
 import threading
 from typing import Any
 import zipfile
+from uuid import uuid4
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -25,6 +28,7 @@ from bioimageflow_server.routers.execution import (
 from bioimageflow_server.routers.workflow_drafts import (
     get_workflow_draft_service as drafts_get_workflow_draft_service,
 )
+from bioimageflow_server.routers.workflows import get_execution_registry
 from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.services.nested_workflow_snapshot import (
@@ -101,6 +105,7 @@ def _library_graph(*, nodes: list[dict[str, Any]] | None = None) -> dict[str, An
 class _ConnectionManager:
     def __init__(self) -> None:
         self.workflow_tree_events: list[dict[str, str | int | None]] = []
+        self.workflow_tree_paths: list[str | None] = []
         self.active_workflow_events: list[dict[str, str]] = []
         self.workflow_draft_events: list[dict[str, str | int | bool]] = []
 
@@ -126,7 +131,9 @@ class _ConnectionManager:
         action: str,
         workflow_id: str | None = None,
         identity_generation: int | None = None,
+        relative_path: str | None = None,
     ) -> None:
+        self.workflow_tree_paths.append(relative_path)
         self.workflow_tree_events.append(
             {
                 "action": action,
@@ -151,6 +158,7 @@ async def _client(
     archive_adapter: _FakeArchiveAdapter | None = None,
     connection_manager: _ConnectionManager | None = None,
     deployment_mode: str = "desktop",
+    execution_registry: Any | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(
@@ -168,6 +176,8 @@ async def _client(
             deployment_mode=deployment_mode,
         )
     )
+    if execution_registry is not None:
+        app.dependency_overrides[get_execution_registry] = lambda: execution_registry
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -185,19 +195,30 @@ async def locked_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         yield ac
 
 
+async def _create_workflow(
+    client: httpx.AsyncClient,
+    identities: dict[str, str],
+    *,
+    body: dict[str, Any],
+) -> httpx.Response:
+    response = await client.post("/api/v1/workflows", json=body)
+    if response.status_code == 201:
+        identities[body["name"]] = response.json()["id"]
+    return response
+
+
 async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
-    create = await client.post(
-        "/api/v1/workflows",
-        json={"name": "wf", "display_name": "Workflow"},
-    )
+    workflow_ids: dict[str, str] = {}
+    create = await _create_workflow(client, workflow_ids, body={"name": "wf", "display_name": "Workflow"})
     assert create.status_code == 201
-    assert create.json()["name"] == "wf"
+    assert create.json()["name"] == workflow_ids["wf"]
+    assert create.json()["relative_path"] == "wf"
     assert create.json()["results_path"].endswith("/workflows/wf/results")
     assert create.json()["identity_generation"] == 1
 
     listing = await client.get("/api/v1/workflows")
     assert listing.status_code == 200
-    assert [item["name"] for item in listing.json()] == ["wf"]
+    assert [item["name"] for item in listing.json()] == [workflow_ids["wf"]]
     assert listing.json()[0]["identity_generation"] == 1
 
     graph = graph_document(
@@ -214,12 +235,12 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
             }
         ],
     )
-    save = await client.put("/api/v1/workflows/wf", json={"graph": graph})
+    save = await client.put(f"/api/v1/workflows/{workflow_ids['wf']}", json={"graph": graph})
     assert save.status_code == 200
 
-    loaded = await client.get("/api/v1/workflows/wf")
+    loaded = await client.get(f"/api/v1/workflows/{workflow_ids['wf']}")
     assert loaded.status_code == 200
-    assert loaded.json()["info"]["name"] == "wf"
+    assert loaded.json()["info"]["name"] == workflow_ids["wf"]
     assert loaded.json()["graph"]["nodes"][0]["id"] == "bad"
     assert loaded.json()["graph"]["nodes"][0]["tool_name"] == "MissingTool"
     assert loaded.json()["graph"]["nodes"][0]["position"] == [1.0, 2.0]
@@ -227,9 +248,267 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert loaded.json()["missing_packages"] == []
     assert [item["node_id"] for item in loaded.json()["missing_tools"]] == ["bad"]
 
-    deleted = await client.delete("/api/v1/workflows/wf")
+    deleted = await client.delete(f"/api/v1/workflows/{workflow_ids['wf']}")
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True, "identity_generation": 2}
+
+
+async def test_creation_rejects_changed_workspace_or_missing_selected_folder(
+    client: httpx.AsyncClient, tmp_path: Path,
+) -> None:
+    switched = await client.post("/api/v1/workflows", json={
+        "name": "wrong-workspace", "expected_workspace_path": str(tmp_path / "elsewhere"),
+    })
+    assert switched.status_code == 409
+    assert switched.json()["error"] == "workflow_destination_changed"
+    missing = await client.post("/api/v1/workflows", json={
+        "name": "missing/child", "expected_workspace_path": str(tmp_path),
+        "expected_parent_path": "missing",
+    })
+    assert missing.status_code == 409
+    assert missing.json()["error"] == "workflow_destination_changed"
+    assert not (tmp_path / "workflows" / "wrong-workspace").exists()
+    assert not (tmp_path / "workflows" / "missing").exists()
+
+
+async def test_created_workflow_reports_the_canonical_workspace_owner(tmp_path: Path) -> None:
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    alias = tmp_path / "workspace-alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(alias / "workflows", registry)
+    store.root_dir.mkdir()
+    app = create_app(AppConfig(
+        workflow_store=store, tool_registry=registry,
+        execution_manager=_ExecutionManager(), disable_hot_reload=True,
+    ))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        workspace = (await client.get("/api/v1/workspace")).json()["workspace_path"]
+        created = await client.post("/api/v1/workflows", json={
+            "name": "workflow", "expected_workspace_path": workspace, "expected_parent_path": "",
+        })
+        assert created.status_code == 201
+        assert created.json()["workspace_path"] == workspace == str(actual.resolve())
+        status = (await client.get("/api/v1/workflows/format-status")).json()
+        assert status["workspace_path"] == workspace
+
+
+async def test_workspace_header_rejects_a_cloned_uuid_from_another_owner(
+    client: httpx.AsyncClient, tmp_path: Path,
+) -> None:
+    created = await client.post("/api/v1/workflows", json={"name": "workflow"})
+    workflow_id = created.json()["id"]
+    before = (await client.get(f"/api/v1/workflows/{workflow_id}")).json()
+    refused = await client.put(
+        f"/api/v1/workflows/{workflow_id}",
+        headers={"X-BioImageFlow-Workspace": str(tmp_path / "cloned-workspace")},
+        json={"graph": {**before["graph"], "display_name": "Wrong owner"}},
+    )
+    assert refused.status_code == 409
+    assert refused.json()["error"] == "workflow_workspace_conflict"
+    assert (await client.get(f"/api/v1/workflows/{workflow_id}")).json() == before
+
+
+async def test_pending_draft_keeps_its_request_workspace_across_a_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, second = tmp_path / "first", tmp_path / "second"
+    registry = ToolRegistryService()
+    app = create_app(AppConfig(
+        workspace_path=first, tool_registry=registry,
+        execution_manager=_ExecutionManager(), disable_hot_reload=True,
+    ))
+    entered, release = threading.Event(), threading.Event()
+    original_validate = workflow_draft_service.WorkflowDraftService._validate
+
+    def held_validate(service, store, workflow_id, graph):
+        if graph.display_name == "Queued in first workspace":
+            entered.set()
+            assert release.wait(timeout=3)
+        return original_validate(service, store, workflow_id, graph)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/workflows", json={"name": "workflow"})
+        workflow_id = created.json()["id"]
+        saved = (await client.get(f"/api/v1/workflows/{workflow_id}")).json()
+        clone = second / "workflows" / "workflow" / "workflow.json"
+        clone.parent.mkdir(parents=True)
+        clone.write_bytes((first / "workflows" / "workflow" / "workflow.json").read_bytes())
+        monkeypatch.setattr(workflow_draft_service.WorkflowDraftService, "_validate", held_validate)
+        pending = asyncio.create_task(client.put(
+            f"/api/v1/workflow-drafts/{workflow_id}",
+            headers={"X-BioImageFlow-Workspace": str(first)},
+            json={"expected_revision": 0, "graph": {**saved["graph"], "display_name": "Queued in first workspace"}},
+        ))
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            switched = await client.patch("/api/v1/workspace", json={"workspace_path": str(second)})
+            assert switched.status_code == 200
+        finally:
+            release.set()
+            response = await asyncio.wait_for(pending, timeout=3)
+        assert response.status_code == 200, response.text
+        assert response.json()["graph"]["display_name"] == "Queued in first workspace"
+        assert json.loads((first / "workflows/workflow/.bioimageflow/draft.json").read_text())["graph"]["display_name"] == "Queued in first workspace"
+        assert not (clone.parent / ".bioimageflow/draft.json").exists()
+        stale = await client.put(
+            f"/api/v1/workflow-drafts/{workflow_id}",
+            headers={"X-BioImageFlow-Workspace": str(first)},
+            json={"expected_revision": 0, "graph": saved["graph"]},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "workflow_workspace_conflict"
+
+
+async def test_folder_move_preserves_dirty_draft_and_private_editor_revisions(
+    client: httpx.AsyncClient,
+) -> None:
+    created = await client.post("/api/v1/workflows", json={"name": "project/workflow"})
+    workflow_id = created.json()["id"]
+    saved = (await client.get(f"/api/v1/workflows/{workflow_id}")).json()
+    pending = await client.put(f"/api/v1/workflow-drafts/{workflow_id}", json={
+        "expected_revision": 0,
+        "graph": {**saved["graph"], "display_name": "Unsaved root"},
+    })
+    assert pending.status_code == 200
+    private = await client.post("/api/v1/nested-workflow-snapshots/open", json={
+        "owner": {"kind": "root", "canvas_id": f"workflow:{workflow_id}", "workflow_id": workflow_id},
+        "parent_node_id": "child", "graph": graph_document(name="private"),
+    })
+    assert private.status_code == 201
+    session_id = private.json()["session_id"]
+    changed = await client.put(f"/api/v1/nested-workflow-snapshots/{session_id}", json={
+        "expected_revision": private.json()["snapshot_revision"],
+        "graph": graph_document(name="private", display_name="Unsaved private edit"),
+    })
+    assert changed.status_code == 200
+
+    moved = await client.patch("/api/v1/workflows/folders/project", json={"new_path": "archive"})
+
+    assert moved.status_code == 200, moved.text
+    reopened = (await client.get(f"/api/v1/workflows/{workflow_id}")).json()
+    assert reopened["info"]["id"] == workflow_id
+    assert reopened["info"]["relative_path"] == "archive/workflow"
+    assert reopened["info"]["identity_generation"] == created.json()["identity_generation"]
+    assert reopened["graph"] == saved["graph"]
+    assert reopened["artifact_hash"] == saved["artifact_hash"]
+    assert (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json() == pending.json()
+    assert (await client.get(f"/api/v1/nested-workflow-snapshots/{session_id}")).json() == changed.json()
+
+
+async def test_active_managed_run_prevents_directory_moves_and_deletion(tmp_path: Path) -> None:
+    owners: list[Any] = []
+    registry = SimpleNamespace(non_terminal=lambda: owners)
+    async for client in _client(tmp_path, execution_registry=registry):
+        created = await client.post("/api/v1/workflows", json={"name": "project/workflow"})
+        workflow_id = created.json()["id"]
+        owners.append(SimpleNamespace(execution_id="held-managed-run", workflow_id=workflow_id))
+        move = await client.patch(f"/api/v1/workflows/{workflow_id}", json={"action": "update", "folder": "archive"})
+        folder = await client.patch("/api/v1/workflows/folders/project", json={"new_path": "archive"})
+        delete = await client.delete(f"/api/v1/workflows/{workflow_id}")
+        assert move.status_code == folder.status_code == delete.status_code == 423
+        assert move.json()["error"] == "workflow_storage_locked"
+        assert (await client.get(f"/api/v1/workflows/{workflow_id}")).json()["info"]["relative_path"] == "project/workflow"
+        assert (tmp_path / "workflows/project/workflow/workflow.json").is_file()
+        assert not (tmp_path / "workflows/archive").exists()
+
+
+@pytest.mark.parametrize("active_owner", ["local", "managed"])
+async def test_identity_copy_resolution_refuses_active_storage_owner(
+    tmp_path: Path, active_owner: str,
+) -> None:
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    conflict = store.workflow_format_status().identity_conflicts[0]
+    copied = next(item for item in conflict.copies if item.relative_path == "copy")
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    owners = ([SimpleNamespace(execution_id="held-managed", workflow_id=created.id)]
+              if active_owner == "managed" else [])
+    async for client in _client(
+        tmp_path, is_running=active_owner == "local",
+        execution_registry=SimpleNamespace(non_terminal=lambda: owners),
+    ):
+        response = await client.post("/api/v1/workflows/identity-copies/resolve", json={
+            "relative_path": copied.relative_path, "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash,
+        })
+    assert response.status_code == 423
+    assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+    assert store.workflow_format_status().identity_conflicts
+
+
+async def test_identity_copy_resolution_fences_workspace_and_publishes_new_uuid(tmp_path: Path) -> None:
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    copied = next(item for item in store.workflow_format_status().identity_conflicts[0].copies
+                  if item.relative_path == "copy")
+    body = {"relative_path": copied.relative_path, "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash}
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    manager = _ConnectionManager()
+    async for client in _client(tmp_path, connection_manager=manager):
+        refused = await client.post("/api/v1/workflows/identity-copies/resolve", json=body,
+                                   headers={"X-BioImageFlow-Workspace": str(tmp_path / "other")})
+        assert refused.status_code == 409
+        assert refused.json()["error"] == "workflow_workspace_conflict"
+        stale = await client.post("/api/v1/workflows/identity-copies/resolve",
+                                  json={**body, "expected_document_hash": "sha256:" + "0" * 64})
+        assert stale.status_code == 409
+        assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+        resolved = await client.post("/api/v1/workflows/identity-copies/resolve", json=body,
+                                    headers={"X-BioImageFlow-Workspace": str(tmp_path.resolve())})
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["id"] != created.id
+    assert resolved.json()["relative_path"] == "copy"
+    assert manager.workflow_tree_events[-1]["workflow_id"] == resolved.json()["id"]
+    assert manager.workflow_tree_paths[-1] == "copy"
+    assert store.get_workflow(created.id).info.relative_path == "original"
+
+
+async def test_pending_copy_resolution_keeps_its_workspace_registry_after_switch(tmp_path: Path) -> None:
+    from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+    from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.services.execution_registry import ExecutionRegistry
+
+    workspace_a, workspace_b = tmp_path / "a", tmp_path / "b"
+    store = WorkflowStoreService(workspace_a / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    shutil.copytree(workspace_a, workspace_b)
+    copied = next(item for item in store.workflow_format_status().identity_conflicts[0].copies
+                  if item.relative_path == "copy")
+    ExecutionRegistry(workspace_a).save(ExecutionSnapshot(
+        execution_id="held-owner-a", workflow_id=created.id,
+        backend="direct", target_id="local", state="running",
+    ))
+    settings = Settings(deployment_mode="desktop", workspace_path=str(workspace_a))
+    app = create_app(AppConfig(
+        settings=settings, tool_registry=ToolRegistryService(), disable_hot_reload=True,
+        execution_profile_store=MagicMock(),
+    ))
+    actual_registry = app.dependency_overrides[get_execution_registry]()
+
+    async def switch_after_request_binding() -> Any:
+        assert actual_registry.root == workspace_a / ".bioimageflow" / "executions"
+        settings.workspace_path = str(workspace_b)
+        return actual_registry
+
+    app.dependency_overrides[get_execution_registry] = switch_after_request_binding
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/workflows/identity-copies/resolve", json={
+            "relative_path": "copy", "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash,
+        }, headers={"X-BioImageFlow-Workspace": str(workspace_a)})
+    assert settings.workspace_path == str(workspace_b)
+    assert response.status_code == 423, response.text
+    assert response.json()["error"] == "workflow_storage_locked"
+    assert response.json()["details"]["execution_ids"] == ["held-owner-a"]
+    assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+    assert (workspace_b / "workflows" / "copy" / "workflow.json").read_bytes() == before
 
 
 @pytest.mark.parametrize("missing", ["manifest", "python", "legacy"])
@@ -240,7 +519,8 @@ async def test_open_workflow_reports_missing_owned_source(
     missing: str,
     nested: bool,
 ) -> None:
-    created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
+    workflow_ids: dict[str, str] = {}
+    created = await _create_workflow(client, workflow_ids, body={"name": "folder/wf"})
     assert created.status_code == 201
     workflow_dir = tmp_path / "workflows/folder/wf"
     document_path = workflow_dir / "workflow.json"
@@ -288,8 +568,8 @@ async def test_open_workflow_reports_missing_owned_source(
 
     listing = await client.get("/api/v1/workflows")
     assert listing.status_code == 200
-    assert listing.json()[0]["id"] == "folder/wf"
-    response = await client.get("/api/v1/workflows/folder/wf")
+    assert listing.json()[0]["id"] == workflow_ids["folder/wf"]
+    response = await client.get(f"/api/v1/workflows/{workflow_ids['folder/wf']}")
 
     assert response.status_code == 409
     body = response.json()
@@ -310,13 +590,13 @@ async def test_open_workflow_reports_missing_owned_source(
         source_dir.mkdir()
         (source_dir / record["filename"]).write_text(record.pop("source"))
         (source_dir / "module.json").write_text(json.dumps(record))
-        reopened = await client.get("/api/v1/workflows/folder/wf")
+        reopened = await client.get(f"/api/v1/workflows/{workflow_ids['folder/wf']}")
         assert reopened.status_code == 200
         assert reopened.json()["graph"] == graph
 
 
 async def test_open_unknown_workflow_remains_not_found(client: httpx.AsyncClient) -> None:
-    response = await client.get("/api/v1/workflows/unknown")
+    response = await client.get(f"/api/v1/workflows/{uuid4()}")
     assert response.status_code == 404
     assert response.json()["error"] == "not_found"
     assert response.json()["detail"] == "Workflow not found"
@@ -327,15 +607,16 @@ async def test_reveal_latest_outputs_opens_the_workflow_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     reveal = MagicMock()
     monkeypatch.setattr(
         "bioimageflow_server.routers.workflows.reveal_in_file_browser",
         reveal,
     )
-    created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
+    created = await _create_workflow(client, workflow_ids, body={"name": "folder/wf"})
     assert created.status_code == 201
 
-    response = await client.post("/api/v1/workflows/folder/wf/outputs/latest/reveal")
+    response = await client.post(f"/api/v1/workflows/{workflow_ids['folder/wf']}/outputs/latest/reveal")
 
     assert response.status_code == 200, response.text
     expected = tmp_path / "workflows" / "folder" / "wf" / "results" / "outputs" / "latest"
@@ -362,12 +643,13 @@ async def test_format_preview_defers_without_writes_then_confirmation_updates(
     client: httpx.AsyncClient,
     tmp_path: Path,
 ) -> None:
-    created = await client.post("/api/v1/workflows", json={"name": "pending"})
+    workflow_ids: dict[str, str] = {}
+    created = await _create_workflow(client, workflow_ids, body={"name": "pending"})
     assert created.status_code == 201
     workflow_path = tmp_path / "workflows/pending/workflow.json"
-    draft = (await client.get("/api/v1/workflow-drafts/pending")).json()
+    draft = (await client.get(f"/api/v1/workflow-drafts/{workflow_ids['pending']}")).json()
     saved_draft = await client.put(
-        "/api/v1/workflow-drafts/pending",
+        f"/api/v1/workflow-drafts/{workflow_ids['pending']}",
         json={
             "graph": draft["graph"],
             "expected_revision": draft["draft_revision"],
@@ -395,14 +677,14 @@ async def test_format_preview_defers_without_writes_then_confirmation_updates(
     assert preview.json()["notices"][0]["status"] == "pending"
     assert {path: path.read_bytes() for path in originals} == originals
     assert (await client.get("/api/v1/workflows")).json() == []
-    unavailable = await client.get("/api/v1/workflows/pending")
+    unavailable = await client.get(f"/api/v1/workflows/{workflow_ids['pending']}")
     assert unavailable.status_code == 409
     assert unavailable.json()["error"] == "workflow_format_update_required"
-    unavailable_draft = await client.get("/api/v1/workflow-drafts/pending")
+    unavailable_draft = await client.get(f"/api/v1/workflow-drafts/{workflow_ids['pending']}")
     assert unavailable_draft.status_code == 409
     assert unavailable_draft.json()["error"] == "workflow_format_update_required"
     blocked_draft_save = await client.put(
-        "/api/v1/workflow-drafts/pending",
+        f"/api/v1/workflow-drafts/{workflow_ids['pending']}",
         json={
             "graph": raw_draft["graph"],
             "expected_revision": raw_draft["draft_revision"],
@@ -411,7 +693,7 @@ async def test_format_preview_defers_without_writes_then_confirmation_updates(
     )
     assert blocked_draft_save.status_code == 409
     blocked_saved_save = await client.put(
-        "/api/v1/workflows/pending",
+        f"/api/v1/workflows/{workflow_ids['pending']}",
         json={"graph": raw["graph"]},
     )
     assert blocked_saved_save.status_code == 409
@@ -430,7 +712,7 @@ async def test_format_preview_defers_without_writes_then_confirmation_updates(
     assert json.loads(workflow_path.read_text())["graph"]["schema_version"] == 2
     assert json.loads(draft_path.read_text())["graph"]["schema_version"] == 2
     assert [workflow["id"] for workflow in (await client.get("/api/v1/workflows")).json()] == [
-        "pending"
+        workflow_ids["pending"]
     ]
 
 
@@ -438,7 +720,8 @@ async def test_format_apply_rejects_stale_preview(
     client: httpx.AsyncClient,
     tmp_path: Path,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "pending"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "pending"})).status_code == 201
     workflow_path = tmp_path / "workflows/pending/workflow.json"
     raw = json.loads(workflow_path.read_text())
     raw["graph"]["schema_version"] = 1
@@ -484,18 +767,16 @@ async def test_empty_folder_promotion_needs_no_move_journal(
 async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
     client: httpx.AsyncClient,
 ) -> None:
-    created = await client.post(
-        "/api/v1/workflows",
-        json={"name": "wf", "display_name": "Workflow"},
-    )
+    workflow_ids: dict[str, str] = {}
+    created = await _create_workflow(client, workflow_ids, body={"name": "wf", "display_name": "Workflow"})
     assert created.status_code == 201
     parent = await client.post(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {
                 "kind": "root",
-                "canvas_id": "workflow:wf",
-                "workflow_id": "wf",
+                "canvas_id": f"workflow:{workflow_ids['wf']}",
+                "workflow_id": workflow_ids["wf"],
             },
             "parent_node_id": "child_1",
             "graph": graph_document(name="child", display_name="Child"),
@@ -515,7 +796,7 @@ async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
     )
     assert child.status_code == 201
 
-    deleted = await client.delete("/api/v1/workflows/wf")
+    deleted = await client.delete(f"/api/v1/workflows/{workflow_ids['wf']}")
 
     assert deleted.status_code == 200
     for session_id in (parent.json()["session_id"], child.json()["session_id"]):
@@ -526,20 +807,18 @@ async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
 async def test_delete_folder_children_removes_each_retained_snapshot_tree(
     client: httpx.AsyncClient,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     session_ids: list[str] = []
     for workflow_id in ("project/a", "project/sub/b"):
-        created = await client.post(
-            "/api/v1/workflows",
-            json={"name": workflow_id, "display_name": workflow_id.split("/")[-1]},
-        )
+        created = await _create_workflow(client, workflow_ids, body={"name": workflow_id, "display_name": workflow_id.split("/")[-1]})
         assert created.status_code == 201
         opened = await client.post(
             "/api/v1/nested-workflow-snapshots/open",
             json={
                 "owner": {
                     "kind": "root",
-                    "canvas_id": f"workflow:{workflow_id}",
-                    "workflow_id": workflow_id,
+                    "canvas_id": f"workflow:{workflow_ids[workflow_id]}",
+                    "workflow_id": workflow_ids[workflow_id],
                 },
                 "parent_node_id": "child_1",
                 "graph": graph_document(name="child", display_name="Child"),
@@ -560,10 +839,11 @@ async def test_delete_folder_children_removes_each_retained_snapshot_tree(
         assert response.status_code == 404
 
 
-async def test_direct_workflow_move_rewrites_snapshot_generation_mapping(
+async def test_direct_workflow_move_preserves_snapshot_identity_and_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     move_calls: list[list[RootWorkflowSnapshotMove]] = []
     original_move = NestedWorkflowSnapshotService.move_root_workflows
 
@@ -576,9 +856,9 @@ async def test_direct_workflow_move_rewrites_snapshot_generation_mapping(
 
     monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
     async for client in _client(tmp_path):
-        created = await client.post("/api/v1/workflows", json={"name": "project/wf"})
+        created = await _create_workflow(client, workflow_ids, body={"name": "project/wf"})
         moved = await client.patch(
-            "/api/v1/workflows/project/wf",
+            f"/api/v1/workflows/{workflow_ids['project/wf']}",
             json={"action": "update", "new_id": "archive/wf"},
         )
 
@@ -586,19 +866,20 @@ async def test_direct_workflow_move_rewrites_snapshot_generation_mapping(
     assert move_calls == [
         [
             RootWorkflowSnapshotMove(
-                old_workflow_id="project/wf",
+                old_workflow_id=workflow_ids["project/wf"],
                 old_identity_generation=created.json()["identity_generation"],
-                new_workflow_id="archive/wf",
+                new_workflow_id=workflow_ids["project/wf"],
                 new_identity_generation=moved.json()["identity_generation"],
             )
         ]
     ]
 
 
-async def test_folder_rename_rewrites_each_snapshot_generation_mapping(
+async def test_folder_rename_preserves_each_snapshot_identity_and_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     move_calls: list[list[RootWorkflowSnapshotMove]] = []
     original_move = NestedWorkflowSnapshotService.move_root_workflows
 
@@ -611,38 +892,39 @@ async def test_folder_rename_rewrites_each_snapshot_generation_mapping(
 
     monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
     async for client in _client(tmp_path):
-        first = await client.post("/api/v1/workflows", json={"name": "project/a"})
-        second = await client.post("/api/v1/workflows", json={"name": "project/nested/b"})
+        first = await _create_workflow(client, workflow_ids, body={"name": "project/a"})
+        second = await _create_workflow(client, workflow_ids, body={"name": "project/nested/b"})
         renamed = await client.patch(
             "/api/v1/workflows/folders/project",
             json={"new_path": "archive"},
         )
-        moved_first = await client.get("/api/v1/workflows/archive/a")
-        moved_second = await client.get("/api/v1/workflows/archive/nested/b")
+        moved_first = await client.get(f"/api/v1/workflows/{workflow_ids['project/a']}")
+        moved_second = await client.get(f"/api/v1/workflows/{workflow_ids['project/nested/b']}")
 
     assert renamed.status_code == 200
     assert move_calls == [
         [
             RootWorkflowSnapshotMove(
-                old_workflow_id="project/a",
+                old_workflow_id=workflow_ids["project/a"],
                 old_identity_generation=first.json()["identity_generation"],
-                new_workflow_id="archive/a",
+                new_workflow_id=workflow_ids["project/a"],
                 new_identity_generation=moved_first.json()["info"]["identity_generation"],
             ),
             RootWorkflowSnapshotMove(
-                old_workflow_id="project/nested/b",
+                old_workflow_id=workflow_ids["project/nested/b"],
                 old_identity_generation=second.json()["identity_generation"],
-                new_workflow_id="archive/nested/b",
+                new_workflow_id=workflow_ids["project/nested/b"],
                 new_identity_generation=moved_second.json()["info"]["identity_generation"],
             ),
         ]
     ]
 
 
-async def test_folder_promotion_rewrites_each_snapshot_generation_mapping(
+async def test_folder_promotion_preserves_each_snapshot_identity_and_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     move_calls: list[list[RootWorkflowSnapshotMove]] = []
     original_move = NestedWorkflowSnapshotService.move_root_workflows
 
@@ -655,29 +937,29 @@ async def test_folder_promotion_rewrites_each_snapshot_generation_mapping(
 
     monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
     async for client in _client(tmp_path):
-        first = await client.post("/api/v1/workflows", json={"name": "project/a"})
-        second = await client.post("/api/v1/workflows", json={"name": "project/nested/b"})
+        first = await _create_workflow(client, workflow_ids, body={"name": "project/a"})
+        second = await _create_workflow(client, workflow_ids, body={"name": "project/nested/b"})
         deleted = await client.request(
             "DELETE",
             "/api/v1/workflows/folders/project",
             json={"policy": "move_children_up"},
         )
-        moved_first = await client.get("/api/v1/workflows/a")
-        moved_second = await client.get("/api/v1/workflows/nested/b")
+        moved_first = await client.get(f"/api/v1/workflows/{workflow_ids['project/a']}")
+        moved_second = await client.get(f"/api/v1/workflows/{workflow_ids['project/nested/b']}")
 
     assert deleted.status_code == 200
     assert move_calls == [
         [
             RootWorkflowSnapshotMove(
-                old_workflow_id="project/a",
+                old_workflow_id=workflow_ids["project/a"],
                 old_identity_generation=first.json()["identity_generation"],
-                new_workflow_id="a",
+                new_workflow_id=workflow_ids["project/a"],
                 new_identity_generation=moved_first.json()["info"]["identity_generation"],
             ),
             RootWorkflowSnapshotMove(
-                old_workflow_id="project/nested/b",
+                old_workflow_id=workflow_ids["project/nested/b"],
                 old_identity_generation=second.json()["identity_generation"],
-                new_workflow_id="nested/b",
+                new_workflow_id=workflow_ids["project/nested/b"],
                 new_identity_generation=moved_second.json()["info"]["identity_generation"],
             ),
         ]
@@ -688,6 +970,7 @@ async def test_non_identity_workflow_updates_do_not_move_snapshots(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     move_calls: list[list[RootWorkflowSnapshotMove]] = []
 
     def observed_move(
@@ -699,13 +982,13 @@ async def test_non_identity_workflow_updates_do_not_move_snapshots(
 
     monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
     async for client in _client(tmp_path):
-        assert (await client.post("/api/v1/workflows", json={"name": "source"})).status_code == 201
+        assert (await _create_workflow(client, workflow_ids, body={"name": "source"})).status_code == 201
         display = await client.patch(
-            "/api/v1/workflows/source",
+            f"/api/v1/workflows/{workflow_ids['source']}",
             json={"action": "update", "display_name": "Renamed"},
         )
         duplicate = await client.patch(
-            "/api/v1/workflows/source",
+            f"/api/v1/workflows/{workflow_ids['source']}",
             json={"action": "duplicate", "new_name": "copy"},
         )
 
@@ -718,6 +1001,7 @@ async def test_workflow_move_holds_snapshot_then_structure_boundaries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     snapshot_depth = 0
     structure_depth = 0
     preflight_complete = False
@@ -779,7 +1063,7 @@ async def test_workflow_move_holds_snapshot_then_structure_boundaries(
         return []
 
     async for client in _client(tmp_path):
-        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        assert (await _create_workflow(client, workflow_ids, body={"name": "old"})).status_code == 201
         monkeypatch.setattr(
             NestedWorkflowSnapshotService,
             "snapshot_mutation",
@@ -799,7 +1083,7 @@ async def test_workflow_move_holds_snapshot_then_structure_boundaries(
         monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
 
         moved = await client.patch(
-            "/api/v1/workflows/old",
+            f"/api/v1/workflows/{workflow_ids['old']}",
             json={"action": "update", "new_id": "new"},
         )
 
@@ -809,16 +1093,14 @@ async def test_workflow_move_holds_snapshot_then_structure_boundaries(
 
 
 async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post(
-            "/api/v1/workflows",
-            json={"name": "wf", "display_name": "Workflow"},
-        )
+        create = await _create_workflow(client, workflow_ids, body={"name": "wf", "display_name": "Workflow"})
         assert create.status_code == 201
 
         patch = await client.patch(
-            "/api/v1/workflows/wf",
+            f"/api/v1/workflows/{workflow_ids['wf']}",
             json={"action": "update", "display_name": "Renamed"},
         )
         assert patch.status_code == 200
@@ -827,16 +1109,13 @@ async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> 
         delete = await client.delete(f"/api/v1/workflows/{patched_id}")
         assert delete.status_code == 200
 
-        recreate = await client.post(
-            "/api/v1/workflows",
-            json={"name": patched_id, "display_name": "Recreated"},
-        )
+        recreate = await _create_workflow(client, workflow_ids, body={"name": "wf", "display_name": "Recreated"})
         assert recreate.status_code == 201
 
     assert connection_manager.workflow_tree_events == [
         {
             "action": "workflow_created",
-            "workflow_id": "wf",
+            "workflow_id": create.json()["id"],
             "identity_generation": 1,
         },
         {
@@ -851,10 +1130,12 @@ async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> 
         },
         {
             "action": "workflow_created",
-            "workflow_id": patched_id,
-            "identity_generation": 3,
+            "workflow_id": recreate.json()["id"],
+            "identity_generation": 1,
         },
     ]
+    assert recreate.json()["id"] != create.json()["id"]
+    assert connection_manager.workflow_tree_paths == ["wf", "wf", None, "wf"]
 
 
 async def test_committed_move_ignores_tree_change_publish_failure(
@@ -862,6 +1143,7 @@ async def test_committed_move_ignores_tree_change_publish_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
     original_publish = connection_manager.publish_workflow_tree_changed
 
@@ -881,10 +1163,10 @@ async def test_committed_move_ignores_tree_change_publish_failure(
 
     monkeypatch.setattr(connection_manager, "publish_workflow_tree_changed", fail_update_publish)
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        assert (await _create_workflow(client, workflow_ids, body={"name": "old"})).status_code == 201
         with caplog.at_level("ERROR", logger="bioimageflow_server.routers.workflows"):
             moved = await client.patch(
-                "/api/v1/workflows/old",
+                f"/api/v1/workflows/{workflow_ids['old']}",
                 json={"action": "update", "new_id": "new"},
             )
 
@@ -898,6 +1180,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     def fail_snapshot_move(
         _service: NestedWorkflowSnapshotService,
         _moves: list[RootWorkflowSnapshotMove],
@@ -906,9 +1189,9 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
 
     monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", fail_snapshot_move)
     async for client in _client(tmp_path):
-        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        assert (await _create_workflow(client, workflow_ids, body={"name": "old"})).status_code == 201
         interrupted = await client.patch(
-            "/api/v1/workflows/old",
+            f"/api/v1/workflows/{workflow_ids['old']}",
             json={"action": "update", "new_id": "new"},
         )
         blocked = await client.patch(
@@ -920,10 +1203,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
             json={"graph": graph_document()},
         )
         blocked_delete = await client.delete("/api/v1/workflows/new")
-        blocked_create = await client.post(
-            "/api/v1/workflows",
-            json={"name": "other"},
-        )
+        blocked_create = await _create_workflow(client, workflow_ids, body={"name": "other"})
         blocked_tool_create = await client.post(
             "/api/v1/tools",
             params={"workflow_name": "old"},
@@ -969,6 +1249,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
 async def test_delete_rejects_stale_expected_identity_generation_without_event(
     tmp_path: Path,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     from datetime import datetime
     from uuid import UUID
 
@@ -976,34 +1257,35 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
 
     connection_manager = _ConnectionManager()
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        create = await _create_workflow(client, workflow_ids, body={"name": "wf"})
         assert create.status_code == 201
         original_generation = create.json()["identity_generation"]
         removed = await client.delete(
-            "/api/v1/workflows/wf",
+            f"/api/v1/workflows/{workflow_ids['wf']}",
             params={"expected_identity_generation": original_generation},
         )
         assert removed.status_code == 200
-        recreated = await client.post("/api/v1/workflows", json={"name": "wf"})
+        recreated = await _create_workflow(client, workflow_ids, body={"name": "wf"})
         assert recreated.status_code == 201
         generation = recreated.json()["identity_generation"]
-        assert generation > original_generation
-        assert (await client.post("/api/v1/workflows", json={"name": "unrelated"})).status_code == 201
+        assert generation == original_generation
+        assert recreated.json()["id"] != create.json()["id"]
+        assert (await _create_workflow(client, workflow_ids, body={"name": "unrelated"})).status_code == 201
         private_ids = {}
         for workflow_id in ("wf", "unrelated"):
             graph = graph_document(name=f"{workflow_id}-definition", display_name=f"Saved {workflow_id}")
-            saved = await client.put(f"/api/v1/workflows/{workflow_id}", json={"graph": graph})
+            saved = await client.put(f"/api/v1/workflows/{workflow_ids[workflow_id]}", json={"graph": graph})
             assert saved.status_code == 200
             pending = {**graph, "display_name": f"Pending {workflow_id}"}
             draft = await client.put(
-                f"/api/v1/workflow-drafts/{workflow_id}",
+                f"/api/v1/workflow-drafts/{workflow_ids[workflow_id]}",
                 json={"graph": pending, "expected_revision": 0, "validate": False},
             )
             assert draft.status_code == 200
             private = await client.post(
                 "/api/v1/nested-workflow-snapshots/open",
                 json={
-                    "owner": {"kind": "root", "canvas_id": f"canvas:{workflow_id}", "workflow_id": workflow_id},
+                    "owner": {"kind": "root", "canvas_id": f"canvas:{workflow_id}", "workflow_id": workflow_ids[workflow_id]},
                     "parent_node_id": "child",
                     "graph": graph_document(name=f"{workflow_id}-private"),
                 },
@@ -1021,8 +1303,8 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
         async def authority(current_client):
             captured = {}
             for workflow_id in ("wf", "unrelated"):
-                saved = await current_client.get(f"/api/v1/workflows/{workflow_id}")
-                draft = await current_client.get(f"/api/v1/workflow-drafts/{workflow_id}")
+                saved = await current_client.get(f"/api/v1/workflows/{workflow_ids[workflow_id]}")
+                draft = await current_client.get(f"/api/v1/workflow-drafts/{workflow_ids[workflow_id]}")
                 private = await current_client.get(
                     f"/api/v1/nested-workflow-snapshots/{private_ids[workflow_id]}",
                 )
@@ -1064,7 +1346,7 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
                 "generated_at": observed_state["generated_at"],
                 "server_boot_id": boot_id,
             }
-            assert observed_state["active_workflow_id"] == "unrelated"
+            assert observed_state["active_workflow_id"] == workflow_ids["unrelated"]
             assert observed_state["current_draft_revision"] == retained["unrelated"][1]["draft_revision"]
 
         retained_events = list(connection_manager.workflow_tree_events)
@@ -1077,14 +1359,19 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
         ]
         assert connection_manager.workflow_draft_events == retained_draft_events
 
-        stale = await client.delete(
-            "/api/v1/workflows/wf",
+        orphaned = await client.delete(
+            f"/api/v1/workflows/{create.json()['id']}",
             params={"expected_identity_generation": original_generation},
+        )
+        assert orphaned.status_code == 404
+        stale = await client.delete(
+            f"/api/v1/workflows/{workflow_ids['wf']}",
+            params={"expected_identity_generation": generation - 1},
         )
         assert stale.status_code == 409
         assert stale.json() == {
             "error": "workflow_identity_generation_conflict",
-            "detail": f"Workflow 'wf' generation is {generation}, not expected {original_generation}",
+            "detail": f"Workflow '{workflow_ids['wf']}' generation is {generation}, not expected {generation - 1}",
             "field": None,
         }
         # Check the refusal's complete byte authority before public draft GET
@@ -1100,32 +1387,32 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
         reopened = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
         reopened_drafts = WorkflowDraftService(lambda: reopened)
         for workflow_id, (saved, draft, _private) in retained.items():
-            assert reopened.read_workflow_document(workflow_id).model_dump(mode="json")["graph"] == saved["graph"]
-            assert reopened.workflow_generation(workflow_id) == saved["info"]["identity_generation"]
-            assert reopened_drafts.get_draft_authority_snapshot(workflow_id).model_dump(mode="json") == draft
+            assert reopened.read_workflow_document(workflow_ids[workflow_id]).model_dump(mode="json")["graph"] == saved["graph"]
+            assert reopened.workflow_generation(workflow_ids[workflow_id]) == saved["info"]["identity_generation"]
+            assert reopened_drafts.get_draft_authority_snapshot(workflow_ids[workflow_id]).model_dump(mode="json") == draft
         async for fresh_client in _client(tmp_path):
             assert await authority(fresh_client) == retained
         assert_public_read_effects(new_server_owner=True)
 
         deleted = await client.delete(
-            "/api/v1/workflows/wf",
+            f"/api/v1/workflows/{workflow_ids['wf']}",
             params={"expected_identity_generation": generation},
         )
         assert deleted.status_code == 200
         assert deleted.json()["identity_generation"] > generation
-        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
-        assert (await client.get("/api/v1/workflow-drafts/wf")).status_code == 404
+        assert (await client.get(f"/api/v1/workflows/{workflow_ids['wf']}")).status_code == 404
+        assert (await client.get(f"/api/v1/workflow-drafts/{workflow_ids['wf']}")).status_code == 404
         assert (await client.get(
             f"/api/v1/nested-workflow-snapshots/{private_ids['wf']}",
         )).status_code == 404
         assert connection_manager.workflow_tree_events == [
             *retained_events,
-            {"action": "workflow_deleted", "workflow_id": "wf", "identity_generation": deleted.json()["identity_generation"]},
+            {"action": "workflow_deleted", "workflow_id": workflow_ids["wf"], "identity_generation": deleted.json()["identity_generation"]},
         ]
         assert connection_manager.workflow_draft_events == retained_draft_events
-        unrelated = await client.get("/api/v1/workflows/unrelated")
+        unrelated = await client.get(f"/api/v1/workflows/{workflow_ids['unrelated']}")
         assert unrelated.json() == retained["unrelated"][0]
-        unrelated_draft = await client.get("/api/v1/workflow-drafts/unrelated")
+        unrelated_draft = await client.get(f"/api/v1/workflow-drafts/{workflow_ids['unrelated']}")
         assert unrelated_draft.json() == retained["unrelated"][1]
         unrelated_private = await client.get(
             f"/api/v1/nested-workflow-snapshots/{private_ids['unrelated']}",
@@ -1142,23 +1429,24 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
 async def test_delete_removes_workflow_local_results(
     tmp_path: Path,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        create = await _create_workflow(client, workflow_ids, body={"name": "wf"})
         assert create.status_code == 201
         results_path = Path(create.json()["results_path"])
         results_path.mkdir(parents=True)
         (results_path / "result.txt").write_text("result", encoding="utf-8")
 
-        deleted = await client.delete("/api/v1/workflows/wf")
+        deleted = await client.delete(f"/api/v1/workflows/{workflow_ids['wf']}")
 
         assert deleted.status_code == 200
-        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
+        assert (await client.get(f"/api/v1/workflows/{workflow_ids['wf']}")).status_code == 404
         assert not results_path.exists()
 
     assert connection_manager.workflow_tree_events[-1] == {
         "action": "workflow_deleted",
-        "workflow_id": "wf",
+        "workflow_id": workflow_ids["wf"],
         "identity_generation": 2,
     }
 
@@ -1168,6 +1456,7 @@ async def test_committed_delete_ignores_nested_snapshot_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
 
     def fail_snapshot_cleanup(
@@ -1182,21 +1471,21 @@ async def test_committed_delete_ignores_nested_snapshot_cleanup_failure(
         fail_snapshot_cleanup,
     )
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        create = await _create_workflow(client, workflow_ids, body={"name": "wf"})
         assert create.status_code == 201
 
         with caplog.at_level(
             "ERROR",
             logger="bioimageflow_server.routers.workflows",
         ):
-            deleted = await client.delete("/api/v1/workflows/wf")
+            deleted = await client.delete(f"/api/v1/workflows/{workflow_ids['wf']}")
 
         assert deleted.status_code == 200
-        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
+        assert (await client.get(f"/api/v1/workflows/{workflow_ids['wf']}")).status_code == 404
 
     assert connection_manager.workflow_tree_events[-1] == {
         "action": "workflow_deleted",
-        "workflow_id": "wf",
+        "workflow_id": workflow_ids["wf"],
         "identity_generation": 2,
     }
     assert "retained nested snapshot cleanup failed" in caplog.text
@@ -1207,6 +1496,7 @@ async def test_committed_folder_delete_ignores_nested_snapshot_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
 
     def fail_snapshot_cleanup(
@@ -1221,10 +1511,7 @@ async def test_committed_folder_delete_ignores_nested_snapshot_cleanup_failure(
         fail_snapshot_cleanup,
     )
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post(
-            "/api/v1/workflows",
-            json={"name": "project/wf"},
-        )
+        create = await _create_workflow(client, workflow_ids, body={"name": "project/wf"})
         assert create.status_code == 201
 
         with caplog.at_level(
@@ -1238,7 +1525,7 @@ async def test_committed_folder_delete_ignores_nested_snapshot_cleanup_failure(
             )
 
         assert deleted.status_code == 200
-        assert (await client.get("/api/v1/workflows/project/wf")).status_code == 404
+        assert (await client.get(f"/api/v1/workflows/{workflow_ids['project/wf']}")).status_code == 404
 
     assert connection_manager.workflow_tree_events[-1] == {
         "action": "folder_deleted",
@@ -1249,33 +1536,29 @@ async def test_committed_folder_delete_ignores_nested_snapshot_cleanup_failure(
 
 
 async def test_activate_workflow_publishes_active_workflow_event(tmp_path: Path) -> None:
+    workflow_ids: dict[str, str] = {}
     connection_manager = _ConnectionManager()
     async for client in _client(tmp_path, connection_manager=connection_manager):
-        create = await client.post(
-            "/api/v1/workflows",
-            json={"name": "folder/wf", "display_name": "Workflow"},
-        )
+        create = await _create_workflow(client, workflow_ids, body={"name": "folder/wf", "display_name": "Workflow"})
         assert create.status_code == 201
 
-        response = await client.post("/api/v1/workflows/folder/wf/activate")
+        response = await client.post(f"/api/v1/workflows/{workflow_ids['folder/wf']}/activate")
         assert response.status_code == 200
 
     assert connection_manager.active_workflow_events == [
-        {"workflow_id": "folder/wf", "updated_by": "agent"}
+        {"workflow_id": workflow_ids["folder/wf"], "updated_by": "agent"}
     ]
 
 
 async def test_export_workflow_download_response(tmp_path: Path) -> None:
+    workflow_ids: dict[str, str] = {}
     archive_adapter = _FakeArchiveAdapter()
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
         assert (
-            await client.post(
-                "/api/v1/workflows",
-                json={"name": "wf", "display_name": "Workflow"},
-            )
+            await _create_workflow(client, workflow_ids, body={"name": "wf", "display_name": "Workflow"})
         ).status_code == 201
 
-        response = await client.post("/api/v1/workflows/wf/export")
+        response = await client.post(f"/api/v1/workflows/{workflow_ids['wf']}/export")
 
     assert archive_adapter.export_calls[0][0]["name"] == "wf"
     assert archive_adapter.export_calls[0][1].name == "wf.bioimageflow.zip"
@@ -1288,22 +1571,20 @@ async def test_export_workflow_download_response(tmp_path: Path) -> None:
 async def test_export_unknown_workflow_returns_404(
     client: httpx.AsyncClient,
 ) -> None:
-    response = await client.post("/api/v1/workflows/missing/export")
+    response = await client.post(f"/api/v1/workflows/{uuid4()}/export")
 
     assert response.status_code == 404
 
 
 async def test_export_nested_workflow_uses_safe_flat_filename(tmp_path: Path) -> None:
+    workflow_ids: dict[str, str] = {}
     archive_adapter = _FakeArchiveAdapter()
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
         assert (
-            await client.post(
-                "/api/v1/workflows",
-                json={"name": "folder/wf", "display_name": "Workflow"},
-            )
+            await _create_workflow(client, workflow_ids, body={"name": "folder/wf", "display_name": "Workflow"})
         ).status_code == 201
 
-        response = await client.post("/api/v1/workflows/folder/wf/export")
+        response = await client.post(f"/api/v1/workflows/{workflow_ids['folder/wf']}/export")
 
     assert response.status_code == 200
     disposition = response.headers["content-disposition"]
@@ -1340,6 +1621,7 @@ async def test_results_download_streams_and_cleans_temporary_archive(
     service_method: str,
     filename: str,
 ) -> None:
+    expected_workflow_id = str(uuid4())
     cleanup_root = tmp_path / f"temporary-{endpoint}"
     cleanup_root.mkdir()
     archive_path = cleanup_root / filename
@@ -1347,7 +1629,7 @@ async def test_results_download_streams_and_cleans_temporary_archive(
 
     def prepare(service: Any, workflow_id: str) -> PreparedDownload:
         del service
-        assert workflow_id == "wf"
+        assert workflow_id == expected_workflow_id
         return PreparedDownload(
             path=archive_path,
             filename=filename,
@@ -1359,7 +1641,7 @@ async def test_results_download_streams_and_cleans_temporary_archive(
         prepare,
     )
     async for client in _client(tmp_path):
-        response = await client.post(f"/api/v1/workflows/wf/exports/{endpoint}")
+        response = await client.post(f"/api/v1/workflows/{expected_workflow_id}/exports/{endpoint}")
 
     assert response.status_code == 200
     assert response.content == b"download"
@@ -1371,7 +1653,7 @@ async def test_results_download_streams_and_cleans_temporary_archive(
 async def test_results_download_unknown_workflow_returns_stable_404(
     client: httpx.AsyncClient,
 ) -> None:
-    response = await client.post("/api/v1/workflows/missing/exports/latest-results")
+    response = await client.post(f"/api/v1/workflows/{uuid4()}/exports/latest-results")
 
     assert response.status_code == 404
     assert response.json()["error"] == "workflow_not_found"
@@ -1381,6 +1663,7 @@ async def test_results_download_maps_stable_export_conflict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workflow_id = str(uuid4())
     def unavailable(service: Any, workflow_id: str) -> PreparedDownload:
         del service, workflow_id
         raise WorkflowExportError(
@@ -1394,7 +1677,7 @@ async def test_results_download_maps_stable_export_conflict(
         unavailable,
     )
     async for client in _client(tmp_path):
-        response = await client.post("/api/v1/workflows/wf/exports/latest-results")
+        response = await client.post(f"/api/v1/workflows/{expected_workflow_id}/exports/latest-results")
 
     assert response.status_code == 409
     assert response.json() == {
@@ -1408,6 +1691,7 @@ async def test_desktop_results_folder_export_response(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workflow_id = str(uuid4())
     destination = tmp_path / "chosen" / "wf-latest-results"
 
     def export(
@@ -1418,7 +1702,7 @@ async def test_desktop_results_folder_export_response(
         replace: bool,
     ) -> FolderExport:
         del service
-        assert workflow_id == "wf"
+        assert workflow_id == expected_workflow_id
         assert destination_parent == str(destination.parent)
         assert replace is True
         return FolderExport(destination=destination, exported_items=5)
@@ -1429,7 +1713,7 @@ async def test_desktop_results_folder_export_response(
     )
     async for client in _client(tmp_path):
         response = await client.post(
-            "/api/v1/workflows/wf/exports/latest-results-folder",
+            f"/api/v1/workflows/{expected_workflow_id}/exports/latest-results-folder",
             json={
                 "destination_parent": str(destination.parent),
                 "replace": True,
@@ -1447,6 +1731,7 @@ async def test_results_folder_export_is_always_forbidden_in_webapp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_workflow_id = str(uuid4())
     export = MagicMock()
     monkeypatch.setattr(
         "bioimageflow_server.routers.workflows.WorkflowExportService.export_latest_results_folder",
@@ -1454,7 +1739,7 @@ async def test_results_folder_export_is_always_forbidden_in_webapp(
     )
     async for client in _client(tmp_path, deployment_mode="webapp"):
         response = await client.post(
-            "/api/v1/workflows/wf/exports/latest-results-folder",
+            f"/api/v1/workflows/{expected_workflow_id}/exports/latest-results-folder",
             json={"destination_parent": str(tmp_path), "replace": False},
         )
 
@@ -1493,7 +1778,8 @@ async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
 
     assert response.status_code == 201
     body = response.json()
-    assert body["info"]["name"] == "imported"
+    assert body["info"]["name"] == body["info"]["id"]
+    assert body["info"]["relative_path"] == "imported"
     assert archive_adapter.import_payload == b"fake zip"
     assert archive_adapter.extract_to is None
 
@@ -1542,6 +1828,7 @@ async def test_import_workflow_archive_conflict_and_name_override(
     tmp_path: Path,
     new_id: str,
 ) -> None:
+    workflow_ids: dict[str, str] = {}
     child = {**_library_graph(), "name": "child", "display_name": "Nested Child"}
     archive_adapter = _FakeArchiveAdapter(
         library=_library_graph(
@@ -1556,7 +1843,7 @@ async def test_import_workflow_archive_conflict_and_name_override(
         )
     )
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
-        assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+        assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
         conflict = await client.post(
             "/api/v1/workflows/import",
             files={"file": ("wf.bioimageflow.zip", b"fake zip", "application/zip")},
@@ -1572,9 +1859,10 @@ async def test_import_workflow_archive_conflict_and_name_override(
         )
 
         assert renamed.status_code == 201
-        assert renamed.json()["info"]["id"] == new_id
+        assert renamed.json()["info"]["relative_path"] == new_id
+        assert renamed.json()["info"]["id"] != workflow_ids["wf"]
         assert renamed.json()["info"]["display_name"] == "Renamed Workflow"
-        reopened = await client.get(f"/api/v1/workflows/{new_id}")
+        reopened = await client.get(f"/api/v1/workflows/{renamed.json()['info']['id']}")
         assert reopened.status_code == 200
         assert reopened.json()["graph"]["name"] == "Renamed Workflow"
         assert reopened.json()["graph"]["display_name"] == "Renamed Workflow"
@@ -1582,7 +1870,7 @@ async def test_import_workflow_archive_conflict_and_name_override(
         nested = reopened.json()["graph"]["nodes"][0]["workflow"]
         assert nested["name"] == "child"
         assert nested["display_name"] == "Nested Child"
-        original = await client.get("/api/v1/workflows/wf")
+        original = await client.get(f"/api/v1/workflows/{workflow_ids['wf']}")
         assert original.json()["info"]["display_name"] == "wf"
         # The portable archive remains the authority when no rename is requested.
         unchanged = await client.post(
@@ -1606,8 +1894,9 @@ async def test_import_workflow_invalid_archive_payload(
 async def test_create_conflict_preserves_suggested_name(
     client: httpx.AsyncClient,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
-    conflict = await client.post("/api/v1/workflows", json={"name": "wf"})
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
+    conflict = await _create_workflow(client, workflow_ids, body={"name": "wf"})
     assert conflict.status_code == 409
     assert conflict.json()["error"] == "conflict"
     assert conflict.json()["suggested_name"] == "wf_2"
@@ -1616,11 +1905,12 @@ async def test_create_conflict_preserves_suggested_name(
 async def test_patch_duplicate_conflict_preserves_suggested_name(
     client: httpx.AsyncClient,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
-    assert (await client.post("/api/v1/workflows", json={"name": "copy"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
+    assert (await _create_workflow(client, workflow_ids, body={"name": "copy"})).status_code == 201
 
     conflict = await client.patch(
-        "/api/v1/workflows/wf",
+        f"/api/v1/workflows/{workflow_ids['wf']}",
         json={"action": "duplicate", "new_name": "copy"},
     )
 
@@ -1631,31 +1921,33 @@ async def test_patch_duplicate_conflict_preserves_suggested_name(
 async def test_patch_display_name_keeps_identity_when_canonical_slug_exists(
     client: httpx.AsyncClient,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
     assert (
-        await client.post("/api/v1/workflows", json={"name": "new_workflow"})
+        await _create_workflow(client, workflow_ids, body={"name": "new_workflow"})
     ).status_code == 201
 
     response = await client.patch(
-        "/api/v1/workflows/wf",
+        f"/api/v1/workflows/{workflow_ids['wf']}",
         json={"action": "update", "display_name": "New workflow"},
     )
 
     assert response.status_code == 200
-    assert response.json()["id"] == "wf"
+    assert response.json()["id"] == workflow_ids["wf"]
     assert response.json()["display_name"] == "New workflow"
 
 
 async def test_patch_explicit_rename_conflict_suggests_alternative(
     client: httpx.AsyncClient,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
     assert (
-        await client.post("/api/v1/workflows", json={"name": "new_workflow"})
+        await _create_workflow(client, workflow_ids, body={"name": "new_workflow"})
     ).status_code == 201
 
     conflict = await client.patch(
-        "/api/v1/workflows/wf",
+        f"/api/v1/workflows/{workflow_ids['wf']}",
         json={"action": "update", "new_name": "new_workflow"},
     )
 
@@ -1666,10 +1958,11 @@ async def test_patch_explicit_rename_conflict_suggests_alternative(
 async def test_patch_invalid_explicit_new_name_returns_400(
     client: httpx.AsyncClient,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(client, workflow_ids, body={"name": "wf"})).status_code == 201
 
     response = await client.patch(
-        "/api/v1/workflows/wf",
+        f"/api/v1/workflows/{workflow_ids['wf']}",
         json={"action": "update", "new_name": "bad name!"},
     )
 
@@ -1690,8 +1983,10 @@ async def test_mutations_return_423_while_execution_running(
     method: str,
     path: str,
 ) -> None:
-    assert (await locked_client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    workflow_ids: dict[str, str] = {}
+    assert (await _create_workflow(locked_client, workflow_ids, body={"name": "wf"})).status_code == 201
 
+    path = path.replace("/wf", f"/{workflow_ids['wf']}")
     if method == "put":
         response = await locked_client.put(path, json={"graph": graph_document()})
     elif method == "patch":
@@ -1711,7 +2006,8 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
     )
-    store.create_workflow(WorkflowCreate(name="wf"))
+    created = store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_ids = {"wf": created.id}
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     manager = ExecutionManager(
         NullEventBus(),
@@ -1749,7 +2045,7 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         draft_write = asyncio.create_task(
             client.put(
-                "/api/v1/workflow-drafts/wf",
+                f"/api/v1/workflow-drafts/{workflow_ids['wf']}",
                 json={
                     "graph": draft_graph.model_dump(mode="json"),
                     "expected_revision": 0,
@@ -1763,13 +2059,13 @@ async def test_save_waits_for_admitted_draft_validation_then_succeeds(
                     await asyncio.sleep(0)
 
             save = asyncio.create_task(
-                client.put("/api/v1/workflows/wf", json={"graph": saved_graph})
+                client.put(f"/api/v1/workflows/{workflow_ids['wf']}", json={"graph": saved_graph})
             )
             await asyncio.sleep(0)
             run = await client.post(
                 "/api/v1/execution/run",
                 json={
-                    "workflow_id": "wf",
+                    "workflow_id": workflow_ids["wf"],
                     "draft_revision": 0,
                 },
             )

@@ -21,20 +21,22 @@ async function togglePanel(page: Page, title: string) {
 test('workflow title and actions stay right aligned without changing menu height', { tag: '@critical' }, async ({ page }) => {
   const api = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
   const suffix = `${test.info().project.name}_${Date.now()}`
-  const names = [`menu_short_${suffix}`, `menu_long_${suffix}`]
+  const paths = [`menu_short_${suffix}`, `menu_long_${suffix}`]
+  const names: string[] = []
   const labels = ['Short title', `Long workflow ${'descriptive analysis name '.repeat(12)}${suffix}`]
-  for (const [index, name] of names.entries()) {
+  for (const [index, name] of paths.entries()) {
     const created = await page.request.post(`${api}/workflows`, {
       data: { name, display_name: labels[index] },
     })
     expect(created.status()).toBe(201)
+    names.push((await created.json()).id)
   }
   try {
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     const open = async (index: number) => {
       await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-      await page.getByTestId('workflow-search').fill(names[index]!)
+      await page.getByTestId('workflow-search').fill(labels[index]!)
       await page.getByTestId(`workflow-row-${names[index]}`).click()
       await page.getByTestId('workflow-open-btn').click()
       await expect(page.getByTestId('workflow-title')).toHaveText(labels[index]!)

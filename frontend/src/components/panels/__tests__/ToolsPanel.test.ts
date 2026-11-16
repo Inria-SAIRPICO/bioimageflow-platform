@@ -1070,6 +1070,8 @@ describe('ToolsPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
     useWorkflowStore().current = {
+      id: 'tools-panel-workflow',
+      relative_path: 'tools-panel-workflow',
       name: 'tools-panel-workflow', folder: '', display_name: 'Tools panel workflow',
       path: '/workspace', results_path: '/workspace/results',
       last_modified: '', identity_generation: 0,

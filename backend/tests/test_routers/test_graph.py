@@ -597,8 +597,8 @@ async def test_output_schema_uses_owned_sources_or_returns_unresolved(
 
     registry = _test_registry()
     store = WorkflowStoreService(tmp_path / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="owned"))
-    tools = store.workflow_dir("owned") / "tools"
+    workflow_id = store.create_workflow(WorkflowCreate(name="owned")).id
+    tools = store.workflow_dir(workflow_id) / "tools"
     tools.mkdir(exist_ok=True)
     (tools / "local_numbers.py").write_text('''from bioimageflow import DataFrameTool
 from bioimageflow_core import IOModel
@@ -616,7 +616,7 @@ class LocalNumbers(DataFrameTool):
         "tool_module": "tools.local_numbers", "tool_class": "LocalNumbers",
         "position": [0, 0], "parameters": {},
     }], "edges": []})
-    body = {"graph": graph, "workflow_name": "owned"} if named else graph
+    body = {"graph": graph, "workflow_name": workflow_id} if named else graph
     config = AppConfig(tool_registry=registry, workflow_store=store, storage_path=tmp_path / "generic")
     async with httpx.AsyncClient(transport=ASGITransport(app=create_app(config)), base_url="http://test") as c:
         response = await c.post("/api/v1/graph/nodes/local/output_schema", json=body)

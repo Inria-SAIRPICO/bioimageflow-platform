@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -10,6 +10,12 @@ import type { RootWorkflowPresentation } from '@/services/rootWorkflowPresentati
 import { makeGraph } from '@/test-utils/graphFixtures'
 import { canvasIdFromPanelId, canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { useUIStore } from '@/stores/ui'
+import { useSettingsStore } from '@/stores/settings'
+import { api } from '@/api/client'
+import { ROOT_PERSISTENCE_RESOURCE } from '@/composables/useCanvasPersistence'
+import { useAutoSave, writeAutoSaveEntry } from '@/composables/useAutoSave'
+import { requestWorkflowDeletion } from '@/services/workflowDeletion'
+import type { WorkflowInfo } from '@/api/types'
 
 const startup = vi.hoisted(() => ({ resolve: vi.fn() }))
 vi.mock('@/services/startupWorkflow', () => ({ resolveStartupWorkflow: startup.resolve }))
@@ -106,6 +112,7 @@ describe('application shell startup ownership', () => {
   afterEach(() => {
     wrappers.splice(0).forEach(wrapper => wrapper.unmount())
     canvasSessionRegistry.dispose()
+    vi.restoreAllMocks()
   })
 
   it('mounts startup normally when there is no accepted Open', async () => {
@@ -172,6 +179,24 @@ describe('application shell startup ownership', () => {
     expect(dock.addPanel.mock.calls.filter(([options]) => options.id === 'workflow:analysis')).toHaveLength(1)
   })
 
+  it('preserves accepted Create presentation when an older startup finishes before its graph loads', async () => {
+    const loading = deferred<RootWorkflowPresentation>()
+    startup.resolve.mockReturnValueOnce(loading.promise)
+    const { dock } = mountShell()
+    window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', { detail: { cause: 'create' } }))
+    loading.resolve(presentation())
+    await flushPromises()
+    expect(dock.panels.has('workflow:analysis')).toBe(false)
+    const id = '8851bdb9-bc35-4725-a14a-a98a75d4bf28'
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail: {
+      ...presentation(), graph: makeGraph({ name: 'created' }), workflowName: id, workflowDisplayName: 'Created workflow',
+    } }))
+    await flushPromises()
+    expect(dock.panels.has(`workflow:${id}`)).toBe(true)
+    expect(dock.active()?.id).toBe(`workflow:${id}`)
+    expect(dock.panels.has('workflow:analysis')).toBe(false)
+  })
+
   it('does not reactivate a root after explicit Open and child/dock activation', async () => {
     const loading = deferred<RootWorkflowPresentation>()
     startup.resolve.mockReturnValueOnce(loading.promise)
@@ -220,5 +245,102 @@ describe('application shell startup ownership', () => {
     await flushPromises()
     expect(dock.addPanel).toHaveBeenCalledTimes(calls)
     expect(dock.dispose).toHaveBeenCalled()
+  })
+})
+
+
+describe('workflow deletion workspace ownership', () => {
+  async function mountedOwner(freshness: Promise<boolean>) {
+    startup.resolve.mockResolvedValueOnce({ ...presentation(), workflowName: '3a93e0eb-5681-48c4-83c7-145e90335786' })
+    const { dock } = mountShell()
+    await flushPromises()
+    const store = useWorkflowStore()
+    const info = {
+      id: '3a93e0eb-5681-48c4-83c7-145e90335786', name: '3a93e0eb-5681-48c4-83c7-145e90335786', relative_path: '3a93e0eb-5681-48c4-83c7-145e90335786', display_name: 'Workspace A workflow',
+      workspace_path: '/workspace-a', identity_generation: 0,
+      path: '/workspace-a/workflows/analysis/workflow.json', results_path: '/workspace-a/workflows/analysis/results', last_modified: '',
+    } as WorkflowInfo
+    store.workflows = [info]
+    store.current = info
+    store.observeWorkflowServerIdentityGeneration(info.id, 0)
+    const canvasId = canvasIdFromPanelId('workflow:3a93e0eb-5681-48c4-83c7-145e90335786')
+    const fresh = vi.fn().mockReturnValue(freshness)
+    canvasSessionRegistry.getOrCreateResource(canvasId, ROOT_PERSISTENCE_RESOURCE, () => ({
+      workflowId: ref(info.id), workspacePath: info.workspace_path,
+      ensureFreshForCriticalOperation: fresh, dispose: vi.fn(),
+    }))
+    const request = {
+      workflowName: info.id, workspacePath: info.workspace_path!,
+      workspaceSelectionRevision: useSettingsStore().workspaceSelectionRevision,
+      canvasId, localIdentityGeneration: store.workflowIdentityGeneration(info.id),
+      serverIdentityGeneration: 0, sessionRegistrationToken: canvasSessionRegistry.get(canvasId)!.registrationToken,
+    }
+    return { dock, store, info, canvasId, fresh, request }
+  }
+
+  async function switchToClone(info: WorkflowInfo, canvasId: ReturnType<typeof canvasIdFromPanelId>) {
+    useSettingsStore().workspaceSelectionRevision += 1
+    const clone = { ...info, workspace_path: '/workspace-b', display_name: 'Workspace B clone' }
+    useWorkflowStore().workflows = [clone]
+    useWorkflowStore().current = clone
+    useUIStore().setCanvasWorkflow(canvasId, clone.id, clone.display_name)
+    useUIStore().markCanvasDirty(canvasId)
+    const snapshot = { name: clone.id, graph: makeGraph({ display_name: 'B unsaved edits' }), timestamp: Date.now(), workspace_path: '/workspace-b', identity_generation: 0 }
+    await writeAutoSaveEntry(snapshot)
+    return { clone, snapshot }
+  }
+
+  beforeEach(() => {
+    canvasSessionRegistry.dispose()
+    setActivePinia(createPinia())
+    startup.resolve.mockReset()
+    window.localStorage.clear()
+  })
+  afterEach(() => {
+    wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    canvasSessionRegistry.dispose()
+    vi.restoreAllMocks()
+  })
+
+  it('refuses DELETE after a cloned workspace replaces the owner during its persistence barrier', async () => {
+    const barrier = deferred<boolean>()
+    const { dock, store, info, canvasId, fresh, request } = await mountedOwner(barrier.promise)
+    const deleteTransport = vi.spyOn(api, 'delete')
+    const deletion = requestWorkflowDeletion(request)
+    const rejected = expect(deletion).rejects.toThrow(/replaced after this delete confirmation opened/)
+    await flushPromises()
+    expect(fresh).toHaveBeenCalledOnce()
+    const { clone, snapshot } = await switchToClone(info, canvasId)
+    barrier.resolve(true)
+    await rejected
+    expect(deleteTransport).not.toHaveBeenCalled()
+    expect(dock.panels.has('workflow:3a93e0eb-5681-48c4-83c7-145e90335786')).toBe(true)
+    expect(store.current).toEqual(clone)
+    expect(store.workflows).toEqual([clone])
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+    expect(await useAutoSave().loadAutoSave(info.id, snapshot)).toMatchObject(snapshot)
+  })
+
+  it('fences the DELETE transport to A and ignores a late A success after switching to the same UUID in B', async () => {
+    const response = deferred<{ data: { deleted: boolean; identity_generation: number } }>()
+    const { dock, store, info, canvasId, request } = await mountedOwner(Promise.resolve(true))
+    const panel = dock.panels.get('workflow:3a93e0eb-5681-48c4-83c7-145e90335786')
+    const deleteTransport = vi.spyOn(api, 'delete').mockReturnValue(response.promise)
+    const deletion = requestWorkflowDeletion(request)
+    const rejected = expect(deletion).rejects.toThrow(/workspace changed/)
+    await flushPromises()
+    expect(deleteTransport).toHaveBeenCalledWith('/api/v1/workflows/3a93e0eb-5681-48c4-83c7-145e90335786', {
+      params: { expected_identity_generation: 0 }, headers: { 'X-BioImageFlow-Workspace': '/workspace-a' },
+    })
+    const { clone, snapshot } = await switchToClone(info, canvasId)
+    response.resolve({ data: { deleted: true, identity_generation: 1 } })
+    await rejected
+    expect(dock.panels.get('workflow:3a93e0eb-5681-48c4-83c7-145e90335786')).toBe(panel)
+    expect(canvasSessionRegistry.get(canvasId)?.registrationToken).toBe(request.sessionRegistrationToken)
+    expect(store.current).toEqual(clone)
+    expect(store.workflows).toEqual([clone])
+    expect(store.workflowServerIdentityGeneration(info.id)).toBe(0)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+    expect(await useAutoSave().loadAutoSave(info.id, snapshot)).toMatchObject(snapshot)
   })
 })

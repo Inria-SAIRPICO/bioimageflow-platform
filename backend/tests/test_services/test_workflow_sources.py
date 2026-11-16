@@ -44,7 +44,7 @@ def _graph(name: str, display_name: str | None = None) -> GraphState:
     )
 
 
-def _parent_graph(source_graph: GraphState, source_hash: str) -> GraphState:
+def _parent_graph(source_graph: GraphState, source_hash: str, source_id: str) -> GraphState:
     return GraphState.model_validate(
         {
             **_graph("parent").model_dump(mode="json", by_alias=True),
@@ -58,7 +58,7 @@ def _parent_graph(source_graph: GraphState, source_hash: str) -> GraphState:
                     "position": [0, 0],
                     "source": {
                         "kind": "workspace",
-                        "workflow_id": "child",
+                        "workflow_id": source_id,
                         "artifact_hash": source_hash,
                     },
                 }
@@ -68,25 +68,29 @@ def _parent_graph(source_graph: GraphState, source_hash: str) -> GraphState:
 
 
 def test_source_refresh_is_previewed_and_applied_explicitly(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="child"))
-    child = store.get_workflow("child")
-    store.create_workflow(WorkflowCreate(name="parent"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_72 = store.create_workflow(WorkflowCreate(name="child"))
+    identities[created_72.relative_path] = created_72.id
+    child = store.get_workflow(identities["child"])
+    created_74 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_74.relative_path] = created_74.id
     store.save_workflow(
-        "parent", WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash))
+        identities["parent"], WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash, identities["child"]))
     )
     store.save_workflow(
-        "child", WorkflowSaveBody(graph=_graph("child", "Updated child"))
+        identities["child"], WorkflowSaveBody(graph=_graph("child", "Updated child"))
     )
-    parent = store.get_workflow("parent")
+    parent = store.get_workflow(identities["parent"])
     service = WorkflowSourceService(lambda: store)
 
     preview = service.preview_source_update(
-        "parent", ["child"], expected_artifact_hash=parent.artifact_hash
+        identities["parent"], ["child"], expected_artifact_hash=parent.artifact_hash
     )
 
     assert preview.replacement.display_name == "Updated child"
-    assert store.get_workflow("parent").graph.nodes[0].workflow.display_name == "child"  # type: ignore[union-attr]
+    assert store.get_workflow(identities["parent"]).graph.nodes[0].workflow.display_name == "child"  # type: ignore[union-attr]
 
     result = service.apply(
         WorkflowSourceApplyRequest(
@@ -95,28 +99,32 @@ def test_source_refresh_is_previewed_and_applied_explicitly(tmp_path: Path) -> N
         )
     )
 
-    updated = store.get_workflow("parent")
+    updated = store.get_workflow(identities["parent"])
     assert result.artifact_hash == updated.artifact_hash
     assert updated.graph.nodes[0].workflow.display_name == "Updated child"  # type: ignore[union-attr]
     assert updated.graph.nodes[0].source.artifact_hash == store.get_workflow(  # type: ignore[union-attr]
-        "child"
+        identities["child"]
     ).artifact_hash
 
 
 def test_source_refresh_conflicts_when_parent_changes_after_preview(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="child"))
-    child = store.get_workflow("child")
-    store.create_workflow(WorkflowCreate(name="parent"))
-    parent_graph = _parent_graph(child.graph, child.artifact_hash)
-    store.save_workflow("parent", WorkflowSaveBody(graph=parent_graph))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_108 = store.create_workflow(WorkflowCreate(name="child"))
+    identities[created_108.relative_path] = created_108.id
+    child = store.get_workflow(identities["child"])
+    created_110 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_110.relative_path] = created_110.id
+    parent_graph = _parent_graph(child.graph, child.artifact_hash, identities["child"])
+    store.save_workflow(identities["parent"], WorkflowSaveBody(graph=parent_graph))
     service = WorkflowSourceService(lambda: store)
-    parent = store.get_workflow("parent")
+    parent = store.get_workflow(identities["parent"])
     preview = service.preview_source_update(
-        "parent", ["child"], expected_artifact_hash=parent.artifact_hash
+        identities["parent"], ["child"], expected_artifact_hash=parent.artifact_hash
     )
     store.save_workflow(
-        "parent",
+        identities["parent"],
         WorkflowSaveBody(
             graph=parent_graph.model_copy(update={"display_name": "Changed parent"})
         ),
@@ -134,26 +142,32 @@ def test_source_refresh_conflicts_when_parent_changes_after_preview(tmp_path: Pa
 def test_source_refresh_conflicts_when_destination_is_recreated_with_same_artifact(
     tmp_path: Path,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="child"))
-    child = store.get_workflow("child")
-    store.create_workflow(WorkflowCreate(name="parent"))
-    parent_graph = _parent_graph(child.graph, child.artifact_hash)
-    store.save_workflow("parent", WorkflowSaveBody(graph=parent_graph))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_138 = store.create_workflow(WorkflowCreate(name="child"))
+    identities[created_138.relative_path] = created_138.id
+    child = store.get_workflow(identities["child"])
+    created_140 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_140.relative_path] = created_140.id
+    parent_graph = _parent_graph(child.graph, child.artifact_hash, identities["child"])
+    store.save_workflow(identities["parent"], WorkflowSaveBody(graph=parent_graph))
     service = WorkflowSourceService(lambda: store)
-    original = store.get_workflow("parent")
+    original = store.get_workflow(identities["parent"])
     preview = service.preview_source_update(
-        "parent", ["child"], expected_artifact_hash=original.artifact_hash
+        identities["parent"], ["child"], expected_artifact_hash=original.artifact_hash
     )
 
-    store.delete_workflow("parent")
+    store.delete_workflow(identities["parent"])
     recreated = store.create_workflow(WorkflowCreate(name="parent"))
-    assert recreated.identity_generation == 3
-    store.save_workflow("parent", WorkflowSaveBody(graph=parent_graph))
-    before = store.get_workflow("parent")
+    identities[recreated.relative_path] = recreated.id
+    assert recreated.id != original.info.id
+    assert recreated.identity_generation == 1
+    store.save_workflow(identities["parent"], WorkflowSaveBody(graph=parent_graph))
+    before = store.get_workflow(identities["parent"])
     before_files = {
-        path.relative_to(store.workflow_dir("parent")).as_posix(): path.read_bytes()
-        for path in store.workflow_dir("parent").rglob("*")
+        path.relative_to(store.workflow_dir(identities["parent"])).as_posix(): path.read_bytes()
+        for path in store.workflow_dir(identities["parent"]).rglob("*")
         if path.is_file()
     }
     assert before.artifact_hash == original.artifact_hash
@@ -166,29 +180,33 @@ def test_source_refresh_conflicts_when_destination_is_recreated_with_same_artifa
             )
         )
 
-    after = store.get_workflow("parent")
+    after = store.get_workflow(identities["parent"])
     after_files = {
-        path.relative_to(store.workflow_dir("parent")).as_posix(): path.read_bytes()
-        for path in store.workflow_dir("parent").rglob("*")
+        path.relative_to(store.workflow_dir(identities["parent"])).as_posix(): path.read_bytes()
+        for path in store.workflow_dir(identities["parent"]).rglob("*")
         if path.is_file()
     }
     assert after.graph == before.graph
     assert after.artifact_hash == before.artifact_hash
-    assert store.workflow_generation("parent") == recreated.identity_generation
+    assert store.workflow_generation(identities["parent"]) == recreated.identity_generation
     assert after_files == before_files
 
 
 def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="child"))
-    child = store.get_workflow("child")
-    store.create_workflow(WorkflowCreate(name="parent"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_185 = store.create_workflow(WorkflowCreate(name="child"))
+    identities[created_185.relative_path] = created_185.id
+    child = store.get_workflow(identities["child"])
+    created_187 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_187.relative_path] = created_187.id
     store.save_workflow(
-        "parent", WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash))
+        identities["parent"], WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash, identities["child"]))
     )
-    parent = store.get_workflow("parent")
+    parent = store.get_workflow(identities["parent"])
     service = WorkflowSourceService(lambda: store)
     parent_read = threading.Event()
     allow_preview_to_continue = threading.Event()
@@ -196,7 +214,7 @@ def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
 
     def paused_get_workflow(workflow_id: str):
         result = original_get_workflow(workflow_id)
-        if workflow_id == "parent" and not parent_read.is_set():
+        if workflow_id == identities["parent"] and not parent_read.is_set():
             parent_read.set()
             assert allow_preview_to_continue.wait(timeout=5)
         return result
@@ -205,20 +223,21 @@ def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
     with ThreadPoolExecutor(max_workers=2) as pool:
         preview_future = pool.submit(
             service.preview_source_update,
-            "parent",
+            identities["parent"],
             ["child"],
             expected_artifact_hash=parent.artifact_hash,
         )
         assert parent_read.wait(timeout=5)
-        delete_future = pool.submit(store.delete_workflow, "parent")
+        delete_future = pool.submit(store.delete_workflow, identities["parent"])
         assert not delete_future.done()
         allow_preview_to_continue.set()
         preview = preview_future.result(timeout=5)
         assert delete_future.result(timeout=5) == 2
 
-    store.create_workflow(WorkflowCreate(name="parent"))
+    created_219 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_219.relative_path] = created_219.id
     store.save_workflow(
-        "parent", WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash))
+        identities["parent"], WorkflowSaveBody(graph=_parent_graph(child.graph, child.artifact_hash, identities["child"]))
     )
     with pytest.raises(WorkflowSourceConflict, match="Destination workflow identity changed"):
         service.apply(
@@ -232,9 +251,12 @@ def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
 def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     tmp_path: Path,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="python-authored"))
-    workflow_dir = store.workflow_dir("python-authored")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_236 = store.create_workflow(WorkflowCreate(name="python-authored"))
+    identities[created_236.relative_path] = created_236.id
+    workflow_dir = store.workflow_dir(identities["python-authored"])
     helper = workflow_dir / "helper.py"
     entry = workflow_dir / "workflow.py"
     # A non-Python log records factory calls without changing the captured
@@ -266,17 +288,17 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
         }
 
     service = WorkflowSourceService(lambda: store)
-    current = store.get_workflow("python-authored")
-    original_document = store.read_workflow_document("python-authored")
-    generation = store.workflow_generation("python-authored")
+    current = store.get_workflow(identities["python-authored"])
+    original_document = store.read_workflow_document(identities["python-authored"])
+    generation = store.workflow_generation(identities["python-authored"])
     original_sources = python_bytes()
     assert not call_log.exists()
     first = service.preview_python_rebuild(
-        "python-authored", expected_artifact_hash=current.artifact_hash
+        identities["python-authored"], expected_artifact_hash=current.artifact_hash
     )
     assert call_log.read_text(encoding="utf-8").splitlines() == ["First"]
-    assert store.read_workflow_document("python-authored") == original_document
-    assert store.workflow_generation("python-authored") == generation
+    assert store.read_workflow_document(identities["python-authored"]) == original_document
+    assert store.workflow_generation(identities["python-authored"]) == generation
     assert python_bytes() == original_sources
     service.apply(
         WorkflowSourceApplyRequest(
@@ -284,7 +306,7 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
             confirm_effects=first.destructive_effects,
         )
     )
-    saved = store.get_workflow("python-authored")
+    saved = store.get_workflow(identities["python-authored"])
 
     assert saved.graph.name == "python_definition"
     assert saved.graph.display_name == "First"
@@ -293,18 +315,18 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     assert saved.authoring_source.source_hash == first.source_artifact_hash
     assert call_log.read_text(encoding="utf-8").splitlines() == ["First"]
     assert python_bytes() == original_sources
-    assert store.workflow_generation("python-authored") == generation
-    saved_document = store.read_workflow_document("python-authored")
+    assert store.workflow_generation(identities["python-authored"]) == generation
+    saved_document = store.read_workflow_document(identities["python-authored"])
 
     helper.write_text('LABEL = "Second"\n', encoding="utf-8")
     second = service.preview_python_rebuild(
-        "python-authored", expected_artifact_hash=saved.artifact_hash
+        identities["python-authored"], expected_artifact_hash=saved.artifact_hash
     )
 
     assert second.source_artifact_hash != first.source_artifact_hash
     assert second.replacement.display_name == "Second"
     assert call_log.read_text(encoding="utf-8").splitlines() == ["First", "Second"]
-    assert store.read_workflow_document("python-authored") == saved_document
+    assert store.read_workflow_document(identities["python-authored"]) == saved_document
 
     helper.write_text('LABEL = "Third"\n', encoding="utf-8")
     changed_sources = python_bytes()
@@ -317,18 +339,18 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
                 confirm_effects=second.destructive_effects,
             )
         )
-    assert store.read_workflow_document("python-authored") == saved_document
-    assert store.get_workflow("python-authored") == saved
-    assert store.workflow_generation("python-authored") == generation
+    assert store.read_workflow_document(identities["python-authored"]) == saved_document
+    assert store.get_workflow(identities["python-authored"]) == saved
+    assert store.workflow_generation(identities["python-authored"]) == generation
     assert python_bytes() == changed_sources
     assert call_log.read_text(encoding="utf-8").splitlines() == ["First", "Second"]
 
     fresh = service.preview_python_rebuild(
-        "python-authored", expected_artifact_hash=saved.artifact_hash
+        identities["python-authored"], expected_artifact_hash=saved.artifact_hash
     )
     assert fresh.source_artifact_hash != second.source_artifact_hash
     assert fresh.replacement.display_name == "Third"
-    assert store.read_workflow_document("python-authored") == saved_document
+    assert store.read_workflow_document(identities["python-authored"]) == saved_document
     assert python_bytes() == changed_sources
     expected_calls = ["First", "Second", "Third"]
     assert call_log.read_text(encoding="utf-8").splitlines() == expected_calls
@@ -342,8 +364,8 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     assert applied.artifact_hash != saved.artifact_hash
     assert call_log.read_text(encoding="utf-8").splitlines() == expected_calls
     assert python_bytes() == changed_sources
-    assert store.workflow_generation("python-authored") == generation
-    accepted_document = store.read_workflow_document("python-authored")
+    assert store.workflow_generation(identities["python-authored"]) == generation
+    accepted_document = store.read_workflow_document(identities["python-authored"])
     assert accepted_document.graph.display_name == "Third"
     assert accepted_document.authoring_source is not None
     assert accepted_document.authoring_source.source_hash == fresh.source_artifact_hash
@@ -352,14 +374,14 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     # Ordinary graph loading and empty Direct execution must never import the
     # authoring entry again. This is a control-plane check, without science.
     entry.write_text("raise AssertionError('authoring entry was imported by Run')\n", encoding="utf-8")
-    reopened = store.get_workflow("python-authored")
+    reopened = store.get_workflow(identities["python-authored"])
     assert reopened.graph == applied.graph
     assert reopened.artifact_hash == applied.artifact_hash
     assert reopened.authoring_source == accepted_document.authoring_source
     compiled = build_workflow(
         reopened.graph,
         store.tool_registry,
-        storage_path=store.get_storage_path("python-authored"),
+        storage_path=store.get_storage_path(identities["python-authored"]),
     )
     assert compiled.errors == []
     assert compiled.workflow is not None
@@ -371,12 +393,15 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     assert result.empty
     assert list(result.columns) == []
     assert call_log.read_text(encoding="utf-8").splitlines() == expected_calls
-    assert store.read_workflow_document("python-authored") == accepted_document
+    assert store.read_workflow_document(identities["python-authored"]) == accepted_document
 
 
 def test_python_materialization_is_disabled_in_webapp_mode(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="python-authored"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_379 = store.create_workflow(WorkflowCreate(name="python-authored"))
+    identities[created_379.relative_path] = created_379.id
     service = WorkflowSourceService(
         lambda: store,
         deployment_mode_provider=lambda: "webapp",
@@ -385,8 +410,8 @@ def test_python_materialization_is_disabled_in_webapp_mode(tmp_path: Path) -> No
 
     with pytest.raises(PermissionError):
         service.preview_python_rebuild(
-            "python-authored",
-            expected_artifact_hash=store.get_workflow("python-authored").artifact_hash,
+            identities["python-authored"],
+            expected_artifact_hash=store.get_workflow(identities["python-authored"]).artifact_hash,
         )
 
 
@@ -394,6 +419,7 @@ def test_python_materialization_apply_preserves_captured_tool_sources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    identities: dict[str, str] = {}
     from bioimageflow import Workflow
     from bioimageflow_dev_tools.tools import SeedNumbers
 
@@ -408,8 +434,10 @@ def test_python_materialization_apply_preserves_captured_tool_sources(
     monkeypatch.setattr(Workflow, "compute", refuse_execution)
     monkeypatch.setattr(Workflow, "create_engine", refuse_execution)
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="python-tool-sources"))
-    workflow_dir = store.workflow_dir("python-tool-sources")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_411 = store.create_workflow(WorkflowCreate(name="python-tool-sources"))
+    identities[created_411.relative_path] = created_411.id
+    workflow_dir = store.workflow_dir(identities["python-tool-sources"])
     entry = workflow_dir / "workflow.py"
     entry.write_text(
         "from bioimageflow import Workflow\n"
@@ -424,14 +452,14 @@ def test_python_materialization_apply_preserves_captured_tool_sources(
         encoding="utf-8",
     )
     entry_bytes = entry.read_bytes()
-    original_document = store.read_workflow_document("python-tool-sources")
-    generation = store.workflow_generation("python-tool-sources")
+    original_document = store.read_workflow_document(identities["python-tool-sources"])
+    generation = store.workflow_generation(identities["python-tool-sources"])
     service = WorkflowSourceService(lambda: store)
     preview = service.preview_python_rebuild(
-        "python-tool-sources",
-        expected_artifact_hash=store.get_workflow("python-tool-sources").artifact_hash,
+        identities["python-tool-sources"],
+        expected_artifact_hash=store.get_workflow(identities["python-tool-sources"]).artifact_hash,
     )
-    assert store.read_workflow_document("python-tool-sources") == original_document
+    assert store.read_workflow_document(identities["python-tool-sources"]) == original_document
     assert len(preview.replacement.nodes) == 1
     node = preview.replacement.nodes[0]
     assert isinstance(node, ToolNodeState)
@@ -449,14 +477,14 @@ def test_python_materialization_apply_preserves_captured_tool_sources(
     )
 
     assert applied.graph == preview.replacement
-    saved = store.get_workflow("python-tool-sources")
-    document = store.read_workflow_document("python-tool-sources")
+    saved = store.get_workflow(identities["python-tool-sources"])
+    document = store.read_workflow_document(identities["python-tool-sources"])
     assert saved.graph == applied.graph
     assert saved.artifact_hash == applied.artifact_hash
     assert document.owned_source_ids == preview.custom_source_ids_added
     assert document.authoring_source is not None
     assert document.authoring_source.source_hash == preview.source_artifact_hash
-    assert store.workflow_generation("python-tool-sources") == generation
+    assert store.workflow_generation(identities["python-tool-sources"]) == generation
     owned = OwnedWorkflowSources(workflow_dir)
     records = owned.collect_for_graph(saved.graph)
     assert [record["id"] for record in records] == preview.custom_source_ids_added
@@ -472,9 +500,12 @@ def test_python_materialization_apply_preserves_captured_tool_sources(
 def test_python_materialization_refuses_symlink_helper_before_execution(
     tmp_path: Path,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="symlink-authored"))
-    workflow_dir = store.workflow_dir("symlink-authored")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_476 = store.create_workflow(WorkflowCreate(name="symlink-authored"))
+    identities[created_476.relative_path] = created_476.id
+    workflow_dir = store.workflow_dir(identities["symlink-authored"])
     foreign_root = tmp_path / "foreign-authoring"
     foreign_root.mkdir()
     foreign_helper = foreign_root / "helper.py"
@@ -501,9 +532,9 @@ def test_python_materialization_refuses_symlink_helper_before_execution(
         "                    execution='sequential')\n",
         encoding="utf-8",
     )
-    saved = store.get_workflow("symlink-authored")
-    document = store.read_workflow_document("symlink-authored")
-    generation = store.workflow_generation("symlink-authored")
+    saved = store.get_workflow(identities["symlink-authored"])
+    document = store.read_workflow_document(identities["symlink-authored"])
+    generation = store.workflow_generation(identities["symlink-authored"])
     entry_bytes = entry.read_bytes()
     foreign_bytes = foreign_helper.read_bytes()
     assert helper.is_symlink()
@@ -514,12 +545,12 @@ def test_python_materialization_refuses_symlink_helper_before_execution(
     service = WorkflowSourceService(lambda: store)
     with pytest.raises(ValueError, match="Python authoring source cannot use symlinks"):
         service.preview_python_rebuild(
-            "symlink-authored", expected_artifact_hash=saved.artifact_hash
+            identities["symlink-authored"], expected_artifact_hash=saved.artifact_hash
         )
 
-    assert store.get_workflow("symlink-authored") == saved
-    assert store.read_workflow_document("symlink-authored") == document
-    assert store.workflow_generation("symlink-authored") == generation
+    assert store.get_workflow(identities["symlink-authored"]) == saved
+    assert store.read_workflow_document(identities["symlink-authored"]) == document
+    assert store.workflow_generation(identities["symlink-authored"]) == generation
     assert entry.read_bytes() == entry_bytes
     assert helper.is_symlink()
     assert helper.readlink() == foreign_helper

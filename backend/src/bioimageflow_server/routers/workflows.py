@@ -8,11 +8,12 @@ import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
-from typing import Any, Never
+from typing import Annotated, Any, Never
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse, Response
+from pydantic import AfterValidator
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
@@ -26,11 +27,14 @@ from bioimageflow_server.models.workflow import (
     WorkflowFolderUpdate,
     WorkflowFormatStatus,
     WorkflowFormatMigrationApply,
+    WorkflowIdentityMigrationAck,
+    WorkflowIdentityCopyResolve,
     WorkflowInfo,
     WorkflowImportResponse,
     ViewingRequirementsManifest,
     WorkflowSaveBody,
     WorkflowUpdate,
+    validate_workflow_identity,
 )
 from bioimageflow_server.models.workflow_export import (
     WorkflowResultsFolderExportRequest,
@@ -55,6 +59,8 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowGenerationChangedError,
     WorkflowIdentityGenerationConflictError,
     WorkflowIdentityMovePlan,
+    WorkflowIdentityConflictError,
+    WorkflowCreationDestinationChangedError,
     WorkflowMoveRecoveryError,
     WorkflowFormatPlanStaleError,
     WorkflowFormatUpdateRequiredError,
@@ -76,9 +82,11 @@ from bioimageflow_server.services.viewer_preferences import (
     ensure_workspace_identity,
 )
 from bioimageflow_server.services.execution import ExecutionConflictError
+from bioimageflow_server.services.execution_registry import ExecutionRegistry
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 logger = logging.getLogger(__name__)
+WorkflowIdentity = Annotated[str, AfterValidator(validate_workflow_identity)]
 
 
 def get_workflow_store() -> WorkflowStoreService:  # pragma: no cover
@@ -86,6 +94,10 @@ def get_workflow_store() -> WorkflowStoreService:  # pragma: no cover
 
 
 def get_execution_manager() -> Any | None:
+    return None
+
+
+def get_execution_registry() -> ExecutionRegistry | None:
     return None
 
 
@@ -119,6 +131,27 @@ def _ensure_unlocked(execution_manager: Any | None) -> None:
         )
 
 
+def _ensure_workflow_storage_unowned(
+    registry: ExecutionRegistry | None,
+    workflow_ids: list[str],
+) -> None:
+    """Keep captured local/managed run storage fixed until the run settles."""
+
+    if registry is None or not workflow_ids or not callable(getattr(registry, "non_terminal", None)):
+        return
+    affected = set(workflow_ids)
+    owners = [item.execution_id for item in registry.non_terminal() if item.workflow_id in affected]
+    if owners:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "error": "workflow_storage_locked",
+                "detail": "Workflow storage is owned by an active execution.",
+                "details": {"execution_ids": owners},
+            },
+        )
+
+
 @asynccontextmanager
 async def _idle_mutation_lease(
     execution_manager: Any | None,
@@ -133,8 +166,14 @@ async def _idle_mutation_lease(
         _ensure_unlocked(execution_manager)
         yield
         return
-    async with lease():
-        yield
+    try:
+        async with lease():
+            yield
+    except ExecutionConflictError as exc:
+        raise HTTPException(
+            status_code=423,
+            detail="Workflow editing is locked while execution is in progress",
+        ) from exc
 
 
 def _publish_workflow_tree_changed(
@@ -143,6 +182,7 @@ def _publish_workflow_tree_changed(
     action: str,
     workflow_id: str | None = None,
     identity_generation: int | None = None,
+    relative_path: str | None = None,
 ) -> None:
     if connection_manager is None:
         return
@@ -151,6 +191,7 @@ def _publish_workflow_tree_changed(
             action=action,
             workflow_id=workflow_id,
             identity_generation=identity_generation,
+            relative_path=relative_path,
         )
     except Exception:
         logger.exception(
@@ -265,9 +306,9 @@ def _finish_workflow_move(
             for move in journal.moves:
                 viewer_preferences.move_workflow_generation(
                     workspace_id=workspace_id,
-                    source_workflow_id=move.source_workflow_id,
+                    source_workflow_id=move.workflow_id,
                     source_generation=move.source_generation_before,
-                    destination_workflow_id=move.destination_workflow_id,
+                    destination_workflow_id=move.workflow_id,
                     destination_generation=move.destination_generation_after,
                 )
         store.mark_workflow_move_phase(operation_id, "preferences_rewritten")
@@ -344,6 +385,49 @@ async def workflow_format_status(
     return store.workflow_format_status()
 
 
+@router.post("/identity-migrations/ack", response_model=WorkflowFormatStatus)
+async def acknowledge_workflow_identity_migrations(
+    body: WorkflowIdentityMigrationAck,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> WorkflowFormatStatus:
+    try:
+        return store.acknowledge_identity_migrations(body.migration_id, body.entries)
+    except (WorkflowFormatPlanStaleError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "workflow_identity_migration_conflict", "detail": str(exc)},
+        ) from exc
+
+
+@router.post("/identity-copies/resolve", response_model=WorkflowInfo)
+async def resolve_workflow_identity_copy(
+    body: WorkflowIdentityCopyResolve,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowInfo:
+    async with _idle_mutation_lease(execution_manager):
+        _ensure_workflow_storage_unowned(execution_registry, [body.expected_workflow_id])
+        try:
+            result = store.resolve_identity_copy(
+                body.relative_path, body.expected_workflow_id, body.expected_document_hash,
+            )
+        except (WorkflowIdentityConflictError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "workflow_identity_conflict", "detail": str(exc)},
+            ) from exc
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_created",
+            workflow_id=result.id,
+            identity_generation=result.identity_generation,
+            relative_path=result.relative_path,
+        )
+        return result
+
+
 @router.post("/format-migrations/apply", response_model=WorkflowFormatStatus)
 async def apply_workflow_format_migrations(
     body: WorkflowFormatMigrationApply,
@@ -390,6 +474,8 @@ async def create_folder(
             status_code=409,
             content={"error": "conflict", "detail": f"Folder '{body.path}' already exists"},
         )
+    except WorkflowIdentityConflictError as exc:
+        raise HTTPException(status_code=409, detail={"error": "workflow_identity_conflict", "detail": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -405,56 +491,63 @@ async def rename_folder(
         get_nested_workflow_snapshot_service
     ),
     viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
 ) -> WorkflowFolderInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
-    try:
-        snapshot_mutation = (
-            nested_snapshot_service.snapshot_mutation()
-            if nested_snapshot_service is not None
-            else nullcontext()
-        )
-        with snapshot_mutation, store.workflow_structure_mutation():
-            move_plans = store.plan_folder_rename_moves(path, body.new_path)
-            _preflight_root_workflow_snapshot_moves(
-                nested_snapshot_service,
-                move_plans,
+    async with _idle_mutation_lease(execution_manager):
+        try:
+            snapshot_mutation = (
+                nested_snapshot_service.snapshot_mutation()
+                if nested_snapshot_service is not None
+                else nullcontext()
             )
-            operation_id = store.prepare_folder_rename_move(path, body.new_path)
-            try:
-                folder = store.rename_folder(
-                    path,
-                    body.new_path,
-                    move_operation_id=operation_id,
+            with snapshot_mutation, store.workflow_structure_mutation():
+                move_plans = store.plan_folder_rename_moves(path, body.new_path)
+                _ensure_workflow_storage_unowned(
+                    execution_registry, [plan.old_workflow_id for plan in move_plans]
                 )
-                _finish_workflow_move(
-                    store,
+                _preflight_root_workflow_snapshot_moves(
                     nested_snapshot_service,
                     move_plans,
-                    operation_id,
-                    viewer_preferences,
                 )
-            except Exception as exc:
-                if not _discard_unstarted_workflow_move(store, operation_id):
-                    raise WorkflowMoveRecoveryError(
-                        f"Workflow move {operation_id} must recover before further moves"
-                    ) from exc
-                raise
-        _publish_workflow_tree_changed(
-            connection_manager,
-            action="folder_updated",
-        )
-        return folder
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Folder not found") from exc
-    except FileExistsError:
-        return JSONResponse(
-            status_code=409,
-            content={"error": "conflict", "detail": f"Folder '{body.new_path}' already exists"},
-        )
-    except WorkflowMoveRecoveryError as exc:
-        _raise_move_recovery_required(exc)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+                operation_id = store.prepare_folder_rename_move(path, body.new_path)
+                try:
+                    folder = store.rename_folder(
+                        path,
+                        body.new_path,
+                        move_operation_id=operation_id,
+                    )
+                    _finish_workflow_move(
+                        store,
+                        nested_snapshot_service,
+                        move_plans,
+                        operation_id,
+                        viewer_preferences,
+                    )
+                except Exception as exc:
+                    if not _discard_unstarted_workflow_move(store, operation_id):
+                        raise WorkflowMoveRecoveryError(
+                            f"Workflow move {operation_id} must recover before further moves"
+                        ) from exc
+                    raise
+            _publish_workflow_tree_changed(
+                connection_manager,
+                action="folder_updated",
+            )
+            return folder
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Folder not found") from exc
+        except FileExistsError:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "conflict", "detail": f"Folder '{body.new_path}' already exists"},
+            )
+        except WorkflowMoveRecoveryError as exc:
+            _raise_move_recovery_required(exc)
+        except WorkflowIdentityConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "workflow_identity_conflict", "detail": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/folders/{path:path}")
@@ -468,91 +561,99 @@ async def delete_folder(
         get_nested_workflow_snapshot_service
     ),
     viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
 ) -> Any:
     _ensure_unlocked(execution_manager)
-    try:
-        snapshot_mutation = (
-            nested_snapshot_service.snapshot_mutation()
-            if nested_snapshot_service is not None
-            else nullcontext()
-        )
-        with snapshot_mutation:
-            with store.workflow_structure_mutation():
-                removed_workflow_ids = (
-                    store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
-                )
-                removed_generations = {
-                    workflow_id: store.workflow_generation(workflow_id)
-                    for workflow_id in removed_workflow_ids
-                }
-                move_plans = store.plan_folder_delete_moves(path, body)
-                _preflight_root_workflow_snapshot_moves(
-                    nested_snapshot_service,
-                    move_plans,
-                )
-                operation_id = (
-                    store.prepare_folder_promotion_move(path)
-                    if body.policy == "move_children_up"
-                    else None
-                )
-                with store.workflow_mutations(removed_workflow_ids):
-                    try:
-                        store.delete_folder(
-                            path,
-                            body,
-                            move_operation_id=operation_id,
-                        )
-                        if nested_snapshot_service is not None:
-                            try:
-                                nested_snapshot_service.delete_for_root_workflows(
-                                    removed_workflow_ids
-                                )
-                            except Exception:
-                                logger.exception(
-                                    "Folder '%s' was deleted but retained nested snapshot "
-                                    "cleanup failed",
-                                    path,
-                                )
-                        if viewer_preferences is not None:
-                            workspace_id = ensure_workspace_identity(store.workspace_dir)
-                            for workflow_id, generation in removed_generations.items():
-                                viewer_preferences.clear_workflow_generation(
-                                    workspace_id=workspace_id,
-                                    workflow_id=workflow_id,
-                                    identity_generation=generation,
-                                )
-                        _finish_workflow_move(
-                            store,
-                            nested_snapshot_service,
-                            move_plans,
-                            operation_id,
-                            viewer_preferences,
-                        )
-                    except Exception as exc:
-                        if not _discard_unstarted_workflow_move(store, operation_id):
-                            raise WorkflowMoveRecoveryError(
-                                f"Workflow move {operation_id} must recover before further moves"
-                            ) from exc
-                        raise
-        _publish_workflow_tree_changed(
-            connection_manager,
-            action="folder_deleted",
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Folder not found") from exc
-    except FileExistsError:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "error": "folder_delete_conflict",
-                "detail": "Folder is not empty or contains colliding child names",
-            },
-        )
-    except WorkflowMoveRecoveryError as exc:
-        _raise_move_recovery_required(exc)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"deleted": True}
+    async with _idle_mutation_lease(execution_manager):
+        try:
+            snapshot_mutation = (
+                nested_snapshot_service.snapshot_mutation()
+                if nested_snapshot_service is not None
+                else nullcontext()
+            )
+            with snapshot_mutation:
+                with store.workflow_structure_mutation():
+                    removed_workflow_ids = (
+                        store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
+                    )
+                    removed_generations = {
+                        workflow_id: store.workflow_generation(workflow_id)
+                        for workflow_id in removed_workflow_ids
+                    }
+                    move_plans = store.plan_folder_delete_moves(path, body)
+                    _ensure_workflow_storage_unowned(
+                        execution_registry,
+                        removed_workflow_ids + [plan.old_workflow_id for plan in move_plans],
+                    )
+                    _preflight_root_workflow_snapshot_moves(
+                        nested_snapshot_service,
+                        move_plans,
+                    )
+                    operation_id = (
+                        store.prepare_folder_promotion_move(path)
+                        if body.policy == "move_children_up"
+                        else None
+                    )
+                    with store.workflow_mutations(removed_workflow_ids):
+                        try:
+                            store.delete_folder(
+                                path,
+                                body,
+                                move_operation_id=operation_id,
+                            )
+                            if nested_snapshot_service is not None:
+                                try:
+                                    nested_snapshot_service.delete_for_root_workflows(
+                                        removed_workflow_ids
+                                    )
+                                except Exception:
+                                    logger.exception(
+                                        "Folder '%s' was deleted but retained nested snapshot "
+                                        "cleanup failed",
+                                        path,
+                                    )
+                            if viewer_preferences is not None:
+                                workspace_id = ensure_workspace_identity(store.workspace_dir)
+                                for workflow_id, generation in removed_generations.items():
+                                    viewer_preferences.clear_workflow_generation(
+                                        workspace_id=workspace_id,
+                                        workflow_id=workflow_id,
+                                        identity_generation=generation,
+                                    )
+                            _finish_workflow_move(
+                                store,
+                                nested_snapshot_service,
+                                move_plans,
+                                operation_id,
+                                viewer_preferences,
+                            )
+                        except Exception as exc:
+                            if not _discard_unstarted_workflow_move(store, operation_id):
+                                raise WorkflowMoveRecoveryError(
+                                    f"Workflow move {operation_id} must recover before further moves"
+                                ) from exc
+                            raise
+            _publish_workflow_tree_changed(
+                connection_manager,
+                action="folder_deleted",
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Folder not found") from exc
+        except FileExistsError:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "folder_delete_conflict",
+                    "detail": "Folder is not empty or contains colliding child names",
+                },
+            )
+        except WorkflowMoveRecoveryError as exc:
+            _raise_move_recovery_required(exc)
+        except WorkflowIdentityConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "workflow_identity_conflict", "detail": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"deleted": True}
 
 
 @router.post("", response_model=WorkflowInfo, status_code=status.HTTP_201_CREATED)
@@ -562,12 +663,22 @@ async def create_workflow(
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowInfo | JSONResponse:
     try:
+        if (
+            body.expected_workspace_path is not None
+            and Path(body.expected_workspace_path).expanduser().resolve(strict=False)
+            != store.workspace_dir.resolve(strict=False)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "workflow_destination_changed", "detail": "The selected workspace changed before workflow creation."},
+            )
         info = store.create_workflow(body)
         _publish_workflow_tree_changed(
             connection_manager,
             action="workflow_created",
             workflow_id=info.id,
             identity_generation=info.identity_generation,
+            relative_path=info.relative_path,
         )
         return info
     except FileExistsError:
@@ -579,11 +690,16 @@ async def create_workflow(
                 "suggested_name": store.suggest_name(body.name),
             },
         )
+    except (FileNotFoundError, WorkflowCreationDestinationChangedError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "workflow_destination_changed", "detail": "The selected workflow folder no longer exists."},
+        ) from exc
 
 
 @router.post("/{name:path}/outputs/latest/reveal")
 async def reveal_latest_workflow_outputs(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
     settings: Settings | None = Depends(get_settings),
 ) -> dict[str, str]:
@@ -611,7 +727,7 @@ async def reveal_latest_workflow_outputs(
     response_model=ViewingRequirementsManifest,
 )
 async def workflow_viewing_readiness(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> ViewingRequirementsManifest:
     try:
@@ -622,7 +738,7 @@ async def workflow_viewing_readiness(
 
 @router.get("/{name:path}", response_model=WorkflowFile)
 async def get_workflow(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> WorkflowFile:
     try:
@@ -647,7 +763,7 @@ async def get_workflow(
 
 @router.post("/{name:path}/export")
 async def export_workflow(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> Response:
     try:
@@ -667,7 +783,7 @@ async def export_workflow(
 
 @router.post("/{name:path}/exports/latest-results")
 async def export_latest_workflow_results(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> FileResponse:
     try:
@@ -690,7 +806,7 @@ async def export_latest_workflow_results(
 
 @router.post("/{name:path}/exports/successful-run-results")
 async def export_successful_run_results(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> FileResponse:
     try:
@@ -716,7 +832,7 @@ async def export_successful_run_results(
     response_model=WorkflowResultsFolderExportResponse,
 )
 async def export_latest_workflow_results_folder(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowResultsFolderExportRequest,
     store: WorkflowStoreService = Depends(get_workflow_store),
     settings: Settings | None = Depends(get_settings),
@@ -754,7 +870,7 @@ async def export_latest_workflow_results_folder(
 
 @router.post("/{name:path}/exports/workflow-run-bundle")
 async def export_workflow_run_bundle(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> FileResponse:
     try:
@@ -782,7 +898,7 @@ async def export_workflow_run_bundle(
     response_model=WorkflowFile,
 )
 async def prepare_workflow_embedding(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowEmbeddingRequest,
     service: WorkflowSourceService = Depends(get_workflow_source_service),
 ) -> WorkflowFile:
@@ -808,7 +924,7 @@ async def prepare_workflow_embedding(
     response_model=WorkflowSourcePreview,
 )
 async def preview_workflow_source_update(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowSourceUpdatePreviewRequest,
     service: WorkflowSourceService = Depends(get_workflow_source_service),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -831,7 +947,7 @@ async def preview_workflow_source_update(
     response_model=WorkflowSourcePreview,
 )
 async def preview_python_source(
-    name: str,
+    name: WorkflowIdentity,
     body: PythonSourcePreviewRequest,
     service: WorkflowSourceService = Depends(get_workflow_source_service),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -855,7 +971,7 @@ async def preview_python_source(
     response_model=WorkflowSourceApplyResponse,
 )
 async def apply_workflow_source_operation(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowSourceApplyRequest,
     service: WorkflowSourceService = Depends(get_workflow_source_service),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -902,6 +1018,7 @@ async def import_workflow(
             action="workflow_imported",
             workflow_id=response.info.id,
             identity_generation=response.info.identity_generation,
+            relative_path=response.info.relative_path,
         )
         return response
     except WorkflowResultsBundleImportError as exc:
@@ -928,7 +1045,7 @@ async def import_workflow(
 
 @router.put("/{name:path}", response_model=WorkflowInfo)
 async def save_workflow(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowSaveBody,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -956,7 +1073,7 @@ async def save_workflow(
 
 @router.delete("/{name:path}", response_model=WorkflowDeleteResponse)
 async def delete_workflow(
-    name: str,
+    name: WorkflowIdentity,
     expected_identity_generation: int | None = Query(default=None, ge=0),
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -965,54 +1082,57 @@ async def delete_workflow(
         get_nested_workflow_snapshot_service
     ),
     viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
 ) -> WorkflowDeleteResponse:
     _ensure_unlocked(execution_manager)
-    try:
-        identity_generation = _delete_workflow_with_snapshots(
-            store,
-            nested_snapshot_service,
-            name,
-            expected_identity_generation,
-            viewer_preferences,
-        )
-        _publish_workflow_tree_changed(
-            connection_manager,
-            action="workflow_deleted",
-            workflow_id=name,
-            identity_generation=identity_generation,
-        )
-    except WorkflowIdentityGenerationConflictError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "workflow_identity_generation_conflict",
-                "detail": str(exc),
-            },
-        ) from exc
-    except WorkflowGenerationChangedError as exc:
-        if expected_identity_generation is not None:
+    async with _idle_mutation_lease(execution_manager):
+        try:
+            _ensure_workflow_storage_unowned(execution_registry, [name])
+            identity_generation = _delete_workflow_with_snapshots(
+                store,
+                nested_snapshot_service,
+                name,
+                expected_identity_generation,
+                viewer_preferences,
+            )
+            _publish_workflow_tree_changed(
+                connection_manager,
+                action="workflow_deleted",
+                workflow_id=name,
+                identity_generation=identity_generation,
+            )
+        except WorkflowIdentityGenerationConflictError as exc:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "error": "workflow_identity_generation_conflict",
-                    "detail": (
-                        f"Workflow '{name}' generation is "
-                        f"{store.workflow_generation(name)}, not expected "
-                        f"{expected_identity_generation}"
-                    ),
+                    "detail": str(exc),
                 },
             ) from exc
-        raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    return WorkflowDeleteResponse(
-        identity_generation=identity_generation,
-    )
+        except WorkflowGenerationChangedError as exc:
+            if expected_identity_generation is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "workflow_identity_generation_conflict",
+                        "detail": (
+                            f"Workflow '{name}' generation is "
+                            f"{store.workflow_generation(name)}, not expected "
+                            f"{expected_identity_generation}"
+                        ),
+                    },
+                ) from exc
+            raise HTTPException(status_code=404, detail="Workflow not found") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Workflow not found") from exc
+        return WorkflowDeleteResponse(
+            identity_generation=identity_generation,
+        )
 
 
 @router.patch("/{name:path}", response_model=WorkflowInfo)
 async def patch_workflow(
-    name: str,
+    name: WorkflowIdentity,
     body: WorkflowUpdate,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
@@ -1021,70 +1141,78 @@ async def patch_workflow(
         get_nested_workflow_snapshot_service
     ),
     viewer_preferences: ViewerPreferenceStore | None = Depends(get_viewer_preference_store),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
 ) -> WorkflowInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
-    try:
-        snapshot_mutation = (
-            nested_snapshot_service.snapshot_mutation()
-            if nested_snapshot_service is not None
-            else nullcontext()
-        )
-        with snapshot_mutation, store.workflow_structure_mutation():
-            move_plans = store.plan_workflow_update_moves(name, body)
-            _preflight_root_workflow_snapshot_moves(
-                nested_snapshot_service,
-                move_plans,
+    async with _idle_mutation_lease(execution_manager):
+        try:
+            snapshot_mutation = (
+                nested_snapshot_service.snapshot_mutation()
+                if nested_snapshot_service is not None
+                else nullcontext()
             )
-            operation_id = store.prepare_workflow_patch_move(name, body)
-            try:
-                info = store.patch_workflow(
-                    name,
-                    body,
-                    move_operation_id=operation_id,
+            with snapshot_mutation, store.workflow_structure_mutation():
+                move_plans = store.plan_workflow_update_moves(name, body)
+                _ensure_workflow_storage_unowned(
+                    execution_registry, [plan.old_workflow_id for plan in move_plans]
                 )
-                _finish_workflow_move(
-                    store,
+                _preflight_root_workflow_snapshot_moves(
                     nested_snapshot_service,
                     move_plans,
-                    operation_id,
-                    viewer_preferences,
                 )
-            except Exception as exc:
-                if not _discard_unstarted_workflow_move(store, operation_id):
-                    raise WorkflowMoveRecoveryError(
-                        f"Workflow move {operation_id} must recover before further moves"
-                    ) from exc
-                raise
-        _publish_workflow_tree_changed(
-            connection_manager,
-            action="workflow_updated",
-            workflow_id=info.id,
-            identity_generation=info.identity_generation,
-        )
-        return info
-    except WorkflowIdentityGenerationConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    except FileExistsError as exc:
-        new_name = str(exc.args[0]) if exc.args else body.new_name or name
-        return JSONResponse(
-            status_code=409,
-            content={
-                "error": "conflict",
-                "detail": f"Workflow '{new_name}' already exists",
-                "suggested_name": store.suggest_name(new_name),
-            },
-        )
-    except WorkflowMoveRecoveryError as exc:
-        _raise_move_recovery_required(exc)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+                operation_id = store.prepare_workflow_patch_move(name, body)
+                try:
+                    info = store.patch_workflow(
+                        name,
+                        body,
+                        move_operation_id=operation_id,
+                    )
+                    _finish_workflow_move(
+                        store,
+                        nested_snapshot_service,
+                        move_plans,
+                        operation_id,
+                        viewer_preferences,
+                    )
+                except Exception as exc:
+                    if not _discard_unstarted_workflow_move(store, operation_id):
+                        raise WorkflowMoveRecoveryError(
+                            f"Workflow move {operation_id} must recover before further moves"
+                        ) from exc
+                    raise
+            _publish_workflow_tree_changed(
+                connection_manager,
+                action="workflow_updated",
+                workflow_id=info.id,
+                identity_generation=info.identity_generation,
+                relative_path=info.relative_path,
+            )
+            return info
+        except WorkflowIdentityGenerationConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Workflow not found") from exc
+        except FileExistsError as exc:
+            new_name = str(exc.args[0]) if exc.args else body.new_name or name
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "conflict",
+                    "detail": f"Workflow '{new_name}' already exists",
+                    "suggested_name": store.suggest_name(new_name),
+                },
+            )
+        except WorkflowMoveRecoveryError as exc:
+            _raise_move_recovery_required(exc)
+        except WorkflowIdentityConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "workflow_identity_conflict", "detail": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{name:path}/rebind-versions", response_model=WorkflowFile)
 async def rebind_workflow_versions(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> WorkflowFile:
     try:
@@ -1095,7 +1223,7 @@ async def rebind_workflow_versions(
 
 @router.post("/{name:path}/activate", response_model=WorkflowFile)
 async def activate_workflow(
-    name: str,
+    name: WorkflowIdentity,
     store: WorkflowStoreService = Depends(get_workflow_store),
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowFile:

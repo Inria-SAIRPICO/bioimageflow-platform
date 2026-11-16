@@ -3,9 +3,9 @@ import { expect, test, type Page } from '@playwright/test'
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const labels = ['A very long numerical measurement column', 'Flag', 'Description']
 
-async function openData(page: Page, name: string) {
+async function openData(page: Page, name: string, relativePath: string) {
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(relativePath)
   await page.getByTestId(`workflow-row-${name}`).dblclick()
   await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
   // A restored canvas can finish replacing its initial nodes after the tab appears.
@@ -17,11 +17,13 @@ async function openData(page: Page, name: string) {
 
 for (const mode of ['stacked', 'merged'] as const) {
   test(`${mode} Node Data sizes, resizes and restores columns without overlapping controls`, async ({ page }) => {
-    const name = `widths_${mode}_${test.info().project.name}_${Date.now()}`
+    const relativePath = `widths_${mode}_${test.info().project.name}_${Date.now()}`
     expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, { data: { name, display_name: name } })).ok()).toBeTruthy()
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows`, { data: { name: relativePath, display_name: relativePath } })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    const name = (await created.json()).id as string
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: {
-      schema_version: 1, name, display_name: name,
+      schema_version: 1, name: relativePath, display_name: relativePath,
       nodes: [{ type: 'tool', id: 'seed', name: 'Seed', tool_name: 'SeedNumbers', position: [180, 160], parameters: {} }],
       edges: [], interface: { inputs: [], outputs: [] }, config: { engine: 'direct', execution: 'parallel' },
     } } })).ok()).toBeTruthy()
@@ -42,7 +44,7 @@ for (const mode of ['stacked', 'merged'] as const) {
       absolute_rows: [0], total_rows: 1, unfiltered_total_rows: 1, page: 0, page_size: 250,
     } }))
     await page.goto('/')
-    await openData(page, name)
+    await openData(page, name, relativePath)
     const grid = page.locator('.node-data-sized-grid:visible')
     const headers = grid.locator('thead th')
     const first = headers.nth(0)
@@ -82,7 +84,7 @@ for (const mode of ['stacked', 'merged'] as const) {
     expect(darkColor).not.toBe(color)
     await page.screenshot({ path: test.info().outputPath('columns-dark.png') })
     await page.reload()
-    await openData(page, name)
+    await openData(page, name, relativePath)
     await expect.poll(async () => Math.round((await first.boundingBox())!.width)).toBe(120)
     await separator.focus()
     await separator.press('ArrowRight')

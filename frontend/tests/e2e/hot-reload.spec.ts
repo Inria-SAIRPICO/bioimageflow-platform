@@ -26,12 +26,14 @@ test.describe('hot-reload', () => {
     }))
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    const workflowName = `custom_reload_${Date.now()}`
+    const relativePath = `custom_reload_${Date.now()}`
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'New', exact: true }).click()
-    await page.getByTestId('workflow-display-name-input').fill(workflowName)
+    await page.getByTestId('workflow-display-name-input').fill(relativePath)
+    const workflowCreated = page.waitForResponse(response => response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST')
     await page.getByTestId('workflow-dialog-submit').click()
-    await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+    const workflowName = (await (await workflowCreated).json()).id as string
+    await expect(page.getByTestId('workflow-title')).toContainText(relativePath)
     await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
     await page.getByTestId('create-tool-btn').click()
     await page.getByTestId('tool-name-input').fill('QaManualEdit')
@@ -108,12 +110,14 @@ test.describe('hot-reload', () => {
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    const workflowName = `hot_reload_${Date.now()}`
+    const relativePath = `hot_reload_${Date.now()}`
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'New', exact: true }).click()
-    await page.getByTestId('workflow-display-name-input').fill(workflowName)
+    await page.getByTestId('workflow-display-name-input').fill(relativePath)
+    const workflowCreated = page.waitForResponse(response => response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST')
     await page.getByTestId('workflow-dialog-submit').click()
-    await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
+    const workflowName = (await (await workflowCreated).json()).id as string
+    await expect(page.getByTestId('workflow-title')).toContainText(relativePath)
 
     async function catalogFiles(): Promise<ToolMetadata> {
       const response = await page.request.get(`${API_BASE}/api/v1/tools`)

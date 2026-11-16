@@ -24,17 +24,20 @@ export interface NestedSnapshotPutRequest {
   expectedRevision: number
   graph: GraphState
   signal: AbortSignal
+  workspacePath?: string
 }
 
 export interface NestedSnapshotDeleteRequest {
   sessionId: string
   expectedRevision: number
   signal: AbortSignal
+  workspacePath?: string
 }
 
 export interface NestedSnapshotGetRequest {
   sessionId: string
   signal: AbortSignal
+  workspacePath?: string
 }
 
 export interface NestedSnapshotPersistenceTransport {
@@ -61,19 +64,20 @@ export interface CreateNestedSnapshotPersistenceOptions {
   initialSnapshot: NestedWorkflowSnapshotResponse
   transport?: NestedSnapshotPersistenceTransport
   debounceMs?: number
+  workspacePath?: string
   onAccepted?: (snapshot: NestedWorkflowSnapshotResponse) => void
 }
 
 const defaultTransport: NestedSnapshotPersistenceTransport = {
-  get: ({ sessionId, signal }) => getNestedWorkflowSnapshot(sessionId, signal),
-  put: ({ sessionId, expectedRevision, graph, signal }) => (
+  get: ({ sessionId, signal, workspacePath }) => getNestedWorkflowSnapshot(sessionId, signal, ...(workspacePath ? [workspacePath] : [])),
+  put: ({ sessionId, expectedRevision, graph, signal, workspacePath }) => (
     putNestedWorkflowSnapshot(sessionId, {
       expected_revision: expectedRevision,
       graph,
-    }, signal)
+    }, signal, ...(workspacePath ? [workspacePath] : []))
   ),
-  delete: ({ sessionId, expectedRevision, signal }) => (
-    deleteNestedWorkflowSnapshot(sessionId, expectedRevision, signal)
+  delete: ({ sessionId, expectedRevision, signal, workspacePath }) => (
+    deleteNestedWorkflowSnapshot(sessionId, expectedRevision, signal, ...(workspacePath ? [workspacePath] : []))
   ),
 }
 
@@ -167,6 +171,7 @@ export function createNestedSnapshotPersistence(
           expectedRevision,
           graph,
           signal,
+          ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}),
         })
       } catch (error) {
         const conflict = conflictResponse(error)
@@ -213,7 +218,7 @@ export function createNestedSnapshotPersistence(
     const sessionId = latestAccepted.session_id
     const controller = new AbortController()
     const promise = (async () => {
-      const remote = await transport.get({ sessionId, signal: controller.signal })
+      const remote = await transport.get({ sessionId, signal: controller.signal, ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}) })
       if (remote.session_id !== sessionId) {
         throw new Error('Nested snapshot conflict resolution changed session identity')
       }
@@ -279,6 +284,7 @@ export function createNestedSnapshotPersistence(
       sessionId: latestAccepted.session_id,
       expectedRevision: accepted.snapshotRevision,
       signal: controller.signal,
+      ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}),
     })
   }
 

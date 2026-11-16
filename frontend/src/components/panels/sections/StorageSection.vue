@@ -12,6 +12,8 @@ import {
 } from '@/api/demoWorkflows'
 import { getWorkspaceInfo, revealFilesystemPath } from '@/api/workspace'
 import { useWorkflowStore } from '@/stores/workflow'
+import { getRootCanvasPersistenceResource } from '@/composables/useCanvasPersistence'
+import { useSettingsStore } from '@/stores/settings'
 import { requestWorkflowDeletion } from '@/services/workflowDeletion'
 import { workflowPanelId } from '@/utils/canvasPanels'
 import {
@@ -99,7 +101,15 @@ async function refreshWorkspaceInfo(): Promise<void> {
 
 defineExpose({ refreshDemoStatus, refreshWorkspaceInfo })
 
-function captureDeletionRequest(workflowName: string) {
+type DeletionWorkspace = { workspacePath: string | undefined; workspaceSelectionRevision: number }
+
+function assertDeletionWorkspace(owner: DeletionWorkspace): void {
+  if (!owner.workspacePath || owner.workspaceSelectionRevision !== useSettingsStore().workspaceSelectionRevision) {
+    throw new Error('The workspace changed. Review the examples before removing them.')
+  }
+}
+
+function captureDeletionRequest(workflowName: string, owner: DeletionWorkspace) {
   const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
   const session = canvasSessionRegistry.get(canvasId)
   const mountedRoot = session?.descriptor.kind === 'root'
@@ -109,6 +119,10 @@ function captureDeletionRequest(workflowName: string) {
   return {
     canvasId: mountedRoot ? canvasId : null,
     workflowName,
+    workspacePath: (mountedRoot ? getRootCanvasPersistenceResource(canvasId)?.workspacePath : undefined)
+      ?? workflowStore.workflows.find(info => (info.id ?? info.name) === workflowName)?.workspace_path
+      ?? owner.workspacePath,
+    workspaceSelectionRevision: owner.workspaceSelectionRevision,
     localIdentityGeneration: workflowStore.workflowIdentityGeneration(workflowName),
     serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
     sessionRegistrationToken: mountedRoot?.registrationToken ?? null,
@@ -142,15 +156,18 @@ async function installDemos(): Promise<void> {
   }
 }
 
-async function removeInstalledDemos(): Promise<void> {
+async function removeInstalledDemos(owner: DeletionWorkspace): Promise<void> {
   demoBusy.value = true
   try {
+    assertDeletionWorkspace(owner)
     await refreshDemoStatus()
+    assertDeletionWorkspace(owner)
     const workflowIds = demoStatus.value?.workflows
       .filter(item => item.status === 'installed')
       .map(item => item.workflow_id) ?? []
     for (const workflowId of workflowIds) {
-      await requestWorkflowDeletion(captureDeletionRequest(workflowId))
+      assertDeletionWorkspace(owner)
+      await requestWorkflowDeletion(captureDeletionRequest(workflowId, owner))
     }
     await workflowStore.fetchWorkflowTree({ fresh: true })
     const demoHasWorkflows = workflowStore.workflows.some(
@@ -187,7 +204,11 @@ async function removeInstalledDemos(): Promise<void> {
 }
 
 function confirmRemoveDemos(): void {
-  const remove = () => void removeInstalledDemos()
+  const owner = {
+    workspacePath: workspaceInfo.value?.workspace_path ?? props.modelValue.resolved_workspace_path ?? undefined,
+    workspaceSelectionRevision: useSettingsStore().workspaceSelectionRevision,
+  }
+  const remove = () => void removeInstalledDemos(owner)
   if (!confirm) {
     remove()
     return

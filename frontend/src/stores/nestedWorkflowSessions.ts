@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useWorkflowStore } from '@/stores/workflow'
 import { nestedWorkflowApplyCoordinator } from '@/sessions/nestedWorkflowApplyCoordinator'
 import {
   deleteNestedWorkflowSnapshot,
@@ -129,12 +130,16 @@ export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSession
     ))
     if (existing) return { session: existing, created: false }
 
+    const workspacePath = useWorkflowStore().workflows.find(info => info.id === options.parentWorkflowName)?.workspace_path ?? undefined
     const parentBaseline = completeGraph(options.graph)
-    const snapshot = await openNestedWorkflowSnapshot({
+    const request = {
       owner: options.owner,
       parent_node_id: options.parentNodeId,
       graph: parentBaseline,
-    })
+    }
+    const snapshot = workspacePath
+      ? await openNestedWorkflowSnapshot(request, undefined, workspacePath)
+      : await openNestedWorkflowSnapshot(request)
     const concurrentlyOpened = sessionById(snapshot.session_id)
     if (concurrentlyOpened) {
       return { session: concurrentlyOpened, created: false }

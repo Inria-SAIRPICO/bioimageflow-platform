@@ -8,6 +8,7 @@ import type { WorkflowInfo, WorkflowFile } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useSettingsStore } from '@/stores/settings'
 import {
   isRootWorkflowPresentationCurrent,
   loadRootWorkflowPresentation,
@@ -146,5 +147,34 @@ describe('loadRootWorkflowPresentation identity fencing', () => {
       presentation.graph,
       presentation.identityGeneration,
     )).toBe(false)
+  })
+
+  it.each([true, false])('binds %s background draft loading to its saved workspace and rejects a switched response', async background => {
+    const workflow = useWorkflowStore()
+    const draft = deferred<{ data: WorkflowDraftResponse }>()
+    const info = { id: 'race', name: 'race', display_name: 'Race', workspace_path: '/workspace/A', identity_generation: 0 } as WorkflowInfo
+    workflow.workflows = [info]
+    useSettingsStore().settings = { workspace_path: '/workspace/A' } as any
+    const get = vi.spyOn(api, 'get').mockImplementation(async url => url.includes('workflow-drafts')
+      ? await draft.promise
+      : { data: { info, graph: makeGraph(), missing_tools: [], missing_packages: [] } })
+    const opening = loadRootWorkflowPresentation('race', { background })
+    await vi.waitFor(() => expect(get).toHaveBeenCalledWith('/api/v1/workflow-drafts/race', {
+      headers: { 'X-BioImageFlow-Workspace': '/workspace/A' },
+    }))
+    useSettingsStore().workspaceSelectionRevision += 1
+    useSettingsStore().settings = { workspace_path: '/workspace/B' } as any
+    draft.resolve({ data: draftResponse() })
+    await expect(opening).rejects.toThrow('workspace changed')
+    expect(useWorkflowDraftStore().appliedDraftRevision).toBeNull()
+  })
+
+  it('marks an accepted presentation stale after selecting a copied workspace', async () => {
+    const workflow = useWorkflowStore()
+    vi.spyOn(workflow, 'loadWorkflow').mockResolvedValue(makeGraph())
+    vi.spyOn(useWorkflowDraftStore(), 'loadDraft').mockResolvedValueOnce(draftResponse())
+    const accepted = await loadRootWorkflowPresentation('race')
+    useSettingsStore().workspaceSelectionRevision += 1
+    expect(isRootWorkflowPresentationCurrent('race', accepted.graph, accepted.identityGeneration)).toBe(false)
   })
 })

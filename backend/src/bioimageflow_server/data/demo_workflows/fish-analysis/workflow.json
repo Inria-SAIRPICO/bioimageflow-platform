@@ -1018,5 +1018,6 @@
     "description": "Analyze FISH marker spots per segmented nucleus."
   },
   "owned_source_ids": [],
-  "platform_document_version": 1
+  "platform_document_version": 2,
+  "workflow_id": "4d20c483-47aa-5078-9a03-150afe996933"
 }

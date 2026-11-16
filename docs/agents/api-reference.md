@@ -1,5 +1,10 @@
 # Agent MCP Reference
 
+Workflow addresses are persistent UUIDs, distinct from the `relative_path` shown in listings.
+Use the UUID returned by creation or listing in later calls; UUIDs in the examples are illustrative.
+Creation takes `path`, while duplication and directory renaming take `new_path`; these destinations are workspace-relative filesystem paths.
+
+
 This page describes the BioImageFlow MCP contract for agents.
 Use these tools for workflow inspection, editing, validation, and execution.
 
@@ -112,7 +117,7 @@ Returns compact metadata for all workflows in the workspace.
 `get_workflow_info`
 
 ```json
-{"tool": "get_workflow_info", "arguments": {"workflow_id": "segmentation-demo", "include_graph": false}}
+{"tool": "get_workflow_info", "arguments": {"workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b", "include_graph": false}}
 ```
 
 Returns metadata, missing package/tool diagnostics, and a graph summary for one workflow.
@@ -124,7 +129,7 @@ Set `include_graph: true` only when the saved graph is required.
 {
   "tool": "create_workflow",
   "arguments": {
-    "workflow_id": "segmentation-demo",
+    "path": "segmentation-demo",
     "display_name": "Segmentation Demo",
     "set_active": true
   }
@@ -140,15 +145,15 @@ Optional arguments are `display_name`, `description`, and `set_active`.
 {
   "tool": "duplicate_workflow",
   "arguments": {
-    "source_workflow_id": "segmentation-demo",
-    "new_workflow_id": "segmentation-demo-copy",
+    "source_workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b",
+    "new_path": "segmentation-demo-copy",
     "display_name": "Segmentation Demo Copy",
     "set_active": true
   }
 }
 ```
 
-Copies an existing workflow to a new workflow id.
+Copies an existing workflow to a new path with a fresh workflow UUID.
 Optional arguments are `display_name`, `description`, and `set_active`.
 This copies the saved workflow and workflow-local tools, not unsaved active draft edits.
 
@@ -158,8 +163,8 @@ This copies the saved workflow and workflow-local tools, not unsaved active draf
 {
   "tool": "rename_workflow",
   "arguments": {
-    "workflow_id": "segmentation-demo-copy",
-    "new_workflow_id": "examples/segmentation-demo-copy",
+    "workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893",
+    "new_path": "examples/segmentation-demo-copy",
     "display_name": "Segmentation Demo Copy"
   }
 }
@@ -174,8 +179,8 @@ Optional arguments are `display_name` and `description`.
 {
   "tool": "delete_workflow",
   "arguments": {
-    "workflow_id": "examples/segmentation-demo-copy",
-    "confirm_workflow_id": "examples/segmentation-demo-copy"
+    "workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893",
+    "confirm_workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893"
   }
 }
 ```
@@ -187,7 +192,7 @@ The active workflow cannot be deleted; call `set_active_workflow` with another w
 `set_active_workflow`
 
 ```json
-{"tool": "set_active_workflow", "arguments": {"workflow_id": "segmentation-demo"}}
+{"tool": "set_active_workflow", "arguments": {"workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b"}}
 ```
 
 Sets the active workflow for subsequent MCP calls by refreshing the workflow draft context.

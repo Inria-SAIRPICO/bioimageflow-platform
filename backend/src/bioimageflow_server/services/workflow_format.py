@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, cast
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
 
@@ -19,33 +18,11 @@ from bioimageflow_server.models.workflow import (
     WorkspaceWorkflowMetadata,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
-from bioimageflow_server.services.filesystem_durability import fsync_directory
 from bioimageflow_server.services.workflow_artifacts import artifact_hash
 
 
 class LegacyWorkflowMigrationError(ValueError):
     """Raised when an old document cannot be converted without guessing."""
-
-
-def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, path)
-        fsync_directory(path.parent)
-    except Exception:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
 
 
 def _read_object(path: Path) -> dict[str, Any]:
@@ -54,36 +31,6 @@ def _read_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("the file must contain a JSON object")
     return value
-
-
-def _backup(path: Path, label: str) -> Path:
-    content = path.read_bytes()
-    digest = hashlib.sha256(content).hexdigest()[:12]
-    metadata_dir = (
-        path.parent if path.parent.name == ".bioimageflow" else path.parent / ".bioimageflow"
-    )
-    backup = metadata_dir / "backups" / f"{label}.{digest}.json"
-    if backup.exists():
-        if backup.read_bytes() != content:
-            raise OSError(f"backup collision at {backup}")
-        return backup
-    backup.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=str(backup.parent), prefix=f".{backup.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_name, backup)
-    except Exception:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
-    return backup
 
 
 def _legacy_tool_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -245,10 +192,18 @@ def _legacy_document(raw: dict[str, Any], workflow_id: str) -> WorkflowDocument:
         tool_metadata=_legacy_tool_metadata(raw),
     )
     return WorkflowDocument(
+        workflow_id=migrated_workflow_identity(raw, workflow_id),
         graph=converted,
         metadata=WorkspaceWorkflowMetadata(description=metadata.get("description")),
         artifact_hash=artifact_hash(converted, []),
     )
+
+
+def migrated_workflow_identity(raw: dict[str, Any], relative_path: str) -> str:
+    """Derive one repeatable preview identity from the exact old document."""
+    material = json.dumps(raw, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(material.encode()).hexdigest()
+    return str(uuid5(NAMESPACE_URL, f"bioimageflow:workflow:{relative_path}:{digest}"))
 
 
 def normalize_legacy_workflow_document(
@@ -259,6 +214,13 @@ def normalize_legacy_workflow_document(
     try:
         document = WorkflowDocument.model_validate(raw)
     except ValidationError:
+        if raw.get("platform_document_version") == 1:
+            document = WorkflowDocument.model_validate({
+                **raw,
+                "platform_document_version": 2,
+                "workflow_id": migrated_workflow_identity(raw, workflow_id),
+            })
+            return document, _document_tool_metadata(document)
         return _legacy_document(raw, workflow_id), _legacy_tool_metadata(raw)
     return document, _document_tool_metadata(document)
 
@@ -298,78 +260,6 @@ def normalize_legacy_workflow_draft(
         ).model_dump(mode="json"),
     }
     return WorkflowDraftResponse.model_validate(migrated)
-
-
-def _migrate_draft(
-    draft_path: Path,
-    *,
-    workflow_id: str,
-    document: WorkflowDocument,
-    tool_metadata: dict[str, dict[str, Any]],
-) -> Path | None:
-    if not draft_path.exists():
-        return None
-    raw = _read_object(draft_path)
-    migrated = normalize_legacy_workflow_draft(
-        raw,
-        workflow_id=workflow_id,
-        document=document,
-        tool_metadata=tool_metadata,
-    )
-    normalized = migrated.model_dump(mode="json", by_alias=True, exclude_none=True)
-    if normalized == raw:
-        return None
-    backup = _backup(draft_path, "draft.pre-recursive-format")
-    _atomic_write_json(draft_path, normalized)
-    return backup
-
-
-def migrate_legacy_workflow(path: Path, workflow_id: str) -> WorkflowFormatNotice | None:
-    """Migrate one recognized legacy workflow and its draft, preserving backups."""
-
-    raw = _read_object(path)
-    try:
-        current_document = WorkflowDocument.model_validate(raw)
-    except ValidationError:
-        pass
-    else:
-        draft_backup = _migrate_draft(
-            path.parent / ".bioimageflow" / "draft.json",
-            workflow_id=workflow_id,
-            document=current_document,
-            tool_metadata=_document_tool_metadata(current_document),
-        )
-        if draft_backup is None:
-            return None
-        return WorkflowFormatNotice(
-            status="migrated",
-            workflow_id=workflow_id,
-            path=str(path),
-            detail="Updated a live draft saved by an earlier platform version.",
-            backup_paths=[str(draft_backup)],
-        )
-    document = _legacy_document(raw, workflow_id)
-    workflow_backup = _backup(path, "workflow.pre-recursive-format")
-    draft_backup = _migrate_draft(
-        path.parent / ".bioimageflow" / "draft.json",
-        workflow_id=workflow_id,
-        document=document,
-        tool_metadata=_legacy_tool_metadata(raw),
-    )
-    _atomic_write_json(
-        path,
-        document.model_dump(mode="json", by_alias=True, exclude_none=True),
-    )
-    backups = [str(workflow_backup)]
-    if draft_backup is not None:
-        backups.append(str(draft_backup))
-    return WorkflowFormatNotice(
-        status="migrated",
-        workflow_id=workflow_id,
-        path=str(path),
-        detail="Updated a workflow saved by an earlier platform version.",
-        backup_paths=backups,
-    )
 
 
 def workflow_format_error(path: Path, workflow_id: str) -> WorkflowFormatNotice | None:

@@ -16,6 +16,7 @@ pytestmark = pytest.mark.anyio
 
 async def test_open_node_targets_imported_source_and_saved_edit_executes(tmp_path: Path):
     store = imported_store(tmp_path)
+    workflow_id = store.list_workflows()[0].id
     unrelated = tmp_path / "qa_increment.py"
     unrelated.write_text(SOURCE.replace("n + 1", "n + 100"))
     store.tool_registry.register_custom_tool_file(unrelated, "QaIncrement")
@@ -33,28 +34,29 @@ async def test_open_node_targets_imported_source_and_saved_edit_executes(tmp_pat
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        draft = (await client.get("/api/v1/workflow-drafts/reference")).json()
+        draft = (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json()
         response = await client.post(
             "/api/v1/editor/open-node",
             json={
-                "workflow_id": "reference",
-                "identity_generation": store.workflow_generation("reference"),
+                "workflow_id": workflow_id,
+                "identity_generation": store.workflow_generation(workflow_id),
                 "node_id": "increment",
                 "expected_revision": draft["draft_revision"],
             },
         )
         assert response.status_code == 200, response.text
         path = Path(response.json()["path"])
-        assert path == OwnedWorkflowSources(store.workflow_dir("reference")).source_path(
+        assert path == OwnedWorkflowSources(store.workflow_dir(workflow_id)).source_path(
             "increment"
         )
         path.write_text(SOURCE.replace("n + 1", "n + 20"))
-        assert run(store) == [21, 22, 23]
+        assert run(store, workflow_id) == [21, 22, 23]
         assert "n + 100" in unrelated.read_text()
 
 
 async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path):
     store = imported_store(tmp_path)
+    workflow_id = store.list_workflows()[0].id
     app = create_app(
         config=AppConfig(
             workspace_path=tmp_path,
@@ -65,8 +67,8 @@ async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path
             disable_hot_reload=True,
         )
     )
-    generation = store.workflow_generation("reference")
-    graph = store.get_workflow("reference").graph
+    generation = store.workflow_generation(workflow_id)
+    graph = store.get_workflow(workflow_id).graph
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -76,7 +78,7 @@ async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path
                 "owner": {
                     "kind": "root",
                     "canvas_id": "workflow:reference",
-                    "workflow_id": "reference",
+                    "workflow_id": workflow_id,
                     "identity_generation": generation,
                 },
                 "parent_node_id": "child",
@@ -88,7 +90,7 @@ async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path
         response = await client.post(
             "/api/v1/editor/open-node",
             json={
-                "workflow_id": "reference",
+                "workflow_id": workflow_id,
                 "identity_generation": generation,
                 "node_id": "increment",
                 "session_id": snapshot["session_id"],
@@ -98,22 +100,22 @@ async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path
         assert response.status_code == 200, response.text
         result = response.json()
         path = Path(result["path"])
-        assert path != OwnedWorkflowSources(store.workflow_dir("reference")).source_path(
+        assert path != OwnedWorkflowSources(store.workflow_dir(workflow_id)).source_path(
             "increment"
         )
         path.write_text(SOURCE.replace("n + 1", "n + 20"))
         from bioimageflow_server.models.graph import GraphState
 
-        assert run(store, graph=GraphState.model_validate(result["snapshot"]["graph"])) == [
+        assert run(store, workflow_id, graph=GraphState.model_validate(result["snapshot"]["graph"])) == [
             21,
             22,
             23,
         ]
-        assert run(store) == [2, 3, 4]
+        assert run(store, workflow_id) == [2, 3, 4]
         repeated = await client.post(
             "/api/v1/editor/open-node",
             json={
-                "workflow_id": "reference",
+                "workflow_id": workflow_id,
                 "identity_generation": generation,
                 "node_id": "increment",
                 "session_id": snapshot["session_id"],
@@ -129,6 +131,7 @@ async def test_nested_script_edit_forks_only_the_private_snapshot(tmp_path: Path
 )
 async def test_open_node_rejects_stale_or_missing_identity(tmp_path: Path, change: dict):
     store = imported_store(tmp_path)
+    workflow_id = store.list_workflows()[0].id
     editor = _EditorStub()
     app = create_app(
         config=AppConfig(
@@ -143,12 +146,12 @@ async def test_open_node_rejects_stale_or_missing_identity(tmp_path: Path, chang
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        draft = (await client.get("/api/v1/workflow-drafts/reference")).json()
+        draft = (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json()
         response = await client.post(
             "/api/v1/editor/open-node",
             json={
-                "workflow_id": "reference",
-                "identity_generation": store.workflow_generation("reference"),
+                "workflow_id": workflow_id,
+                "identity_generation": store.workflow_generation(workflow_id),
                 "node_id": "increment",
                 "expected_revision": draft["draft_revision"],
                 **change,

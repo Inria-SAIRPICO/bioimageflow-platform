@@ -174,4 +174,5 @@ class TestExecutionStatus:
             "retry_of_execution_id": None,
             "planned_node_ids": [],
             "planned_node_names": {},
+            "storage_error": None,
         }

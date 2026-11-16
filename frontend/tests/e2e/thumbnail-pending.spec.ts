@@ -4,9 +4,11 @@ const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '80
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
 
 test('cold thumbnail setup stays visible beyond the former deadline and completes automatically', async ({ page }) => {
-  const name = `pending_thumbnail_${test.info().project.name}_${Date.now()}`
+  const relativePath = `pending_thumbnail_${test.info().project.name}_${Date.now()}`
   expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+  const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const name = (await created.json()).id as string
   let ready = false
   let requests = 0
   try {
@@ -32,9 +34,9 @@ test('cold thumbnail setup stays visible beyond the former deadline and complete
     })
     await page.goto('/')
     await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId('workflow-search').fill(relativePath)
     await page.getByTestId(`workflow-row-${name}`).dblclick()
-    await expect(page.getByTestId('workflow-title')).toHaveText(name)
+    await expect(page.getByTestId('workflow-title')).toHaveText(relativePath)
     await page.locator('.vue-flow__node[data-id="seed"]').click()
     await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
     const notice = page.getByTestId('thumbnail-installation-status')

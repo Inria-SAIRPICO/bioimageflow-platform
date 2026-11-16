@@ -1,5 +1,10 @@
 # Workflow Editing Cookbook
 
+Workflow addresses are persistent UUIDs, distinct from the `relative_path` shown in listings.
+Use the UUID returned by creation or listing in later calls; UUIDs in the examples are illustrative.
+Creation takes `path`, while duplication and directory renaming take `new_path`; these destinations are workspace-relative filesystem paths.
+
+
 Read root `AGENTS.md` first.
 All workflow inspection and mutation in this guide uses BioImageFlow MCP tools.
 
@@ -217,7 +222,7 @@ List available workflows before changing the active workflow:
 Inspect one workflow:
 
 ```json
-{"tool": "get_workflow_info", "arguments": {"workflow_id": "segmentation-demo", "include_graph": false}}
+{"tool": "get_workflow_info", "arguments": {"workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b", "include_graph": false}}
 ```
 
 Create a new workflow and make it active:
@@ -226,7 +231,7 @@ Create a new workflow and make it active:
 {
   "tool": "create_workflow",
   "arguments": {
-    "workflow_id": "segmentation-demo",
+    "path": "segmentation-demo",
     "display_name": "Segmentation Demo",
     "set_active": true
   }
@@ -239,8 +244,8 @@ Duplicate an existing workflow and continue editing the copy:
 {
   "tool": "duplicate_workflow",
   "arguments": {
-    "source_workflow_id": "segmentation-demo",
-    "new_workflow_id": "segmentation-demo-copy",
+    "source_workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b",
+    "new_path": "segmentation-demo-copy",
     "display_name": "Segmentation Demo Copy",
     "set_active": true
   }
@@ -252,13 +257,13 @@ This copies the saved workflow and workflow-local tools, not unsaved active draf
 Rename or move a workflow:
 
 ```json
-{"tool": "rename_workflow", "arguments": {"workflow_id": "segmentation-demo-copy", "new_workflow_id": "examples/segmentation-demo-copy"}}
+{"tool": "rename_workflow", "arguments": {"workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893", "new_path": "examples/segmentation-demo-copy"}}
 ```
 
 Delete a workflow only when the request is explicit:
 
 ```json
-{"tool": "delete_workflow", "arguments": {"workflow_id": "examples/segmentation-demo-copy", "confirm_workflow_id": "examples/segmentation-demo-copy"}}
+{"tool": "delete_workflow", "arguments": {"workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893", "confirm_workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893"}}
 ```
 
 The active workflow cannot be deleted; call `set_active_workflow` with another workflow before deleting the current active workflow.
@@ -266,7 +271,7 @@ The active workflow cannot be deleted; call `set_active_workflow` with another w
 Switch the active workflow:
 
 ```json
-{"tool": "set_active_workflow", "arguments": {"workflow_id": "segmentation-demo"}}
+{"tool": "set_active_workflow", "arguments": {"workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b"}}
 ```
 
 ## Workflow Inputs And Outputs

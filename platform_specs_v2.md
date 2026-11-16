@@ -44,7 +44,7 @@ Missing or null fields both mean inheritance; Reset all clears explicit override
 `GraphState.config.execution` owns sequential or parallel scheduling; application settings only choose the default for a new workflow.
 Execution target profiles and durable remote-run state never enter `GraphState`.
 
-The workspace `workflow.json` is a `WorkflowDocument` envelope containing a platform document version, the canonical graph, workspace metadata, the artifact hash, optional Python authoring provenance, and owned workflow-local source identifiers.
+The workspace `workflow.json` is a version-2 `WorkflowDocument` envelope containing an immutable platform workflow UUID outside the portable graph and artifact hash, the canonical graph, workspace metadata, the artifact hash, optional Python authoring provenance, and owned workflow-local source identifiers.
 Runtime translation to the BioImageFlow library happens in memory from the accepted graph snapshot.
 Canonical platform output is schema version 2 at every recursive depth.
 Schema-version-1 input is accepted only through explicit recursive normalization that adds no viewer declarations; schema-v1 input carrying schema-v2 viewer fields and every unknown field are rejected instead of dropped.
@@ -316,7 +316,7 @@ Workspace provenance has exactly this shape:
 ```json
 {
   "kind": "workspace",
-  "workflow_id": "analysis/segment",
+  "workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b",
   "artifact_hash": "sha256:..."
 }
 ```
@@ -334,7 +334,8 @@ A conflict changes nothing.
 An open editor at or below the replacement target blocks update or detach until it is applied or discarded.
 Detach checks the exact invoking canvas owner and target node before changing provenance or queuing a draft write; an unrelated editor with the same node ID does not block it.
 The refusal keeps the parent graph and private snapshot unchanged and explains that the editor must be applied or discarded and closed first.
-Workspace moves update provenance IDs atomically without changing embedded content or artifact hashes.
+Moves preserve workflow UUIDs and therefore retain source provenance without rewriting its identity or changing embedded content and artifact hashes.
+Confirmed migration preserves ambiguous legacy provenance as unresolved rather than redirecting a source reference to a different workflow that reused its path.
 
 The artifact hash is a deterministic digest of canonical recursive graph content and referenced owned sources.
 It excludes timestamps, workspace paths, runtime state, provenance labels, and Python authoring provenance.
@@ -380,16 +381,34 @@ It copies editable `tools/` files, excludes results and draft/runtime state, and
 The destination becomes visible only after its graph and sources are prepared successfully; failures do not leave an empty workflow.
 The copy request carries the captured source identity generation to reject a deleted and recreated source.
 
-Workflow identities are path-derived and carry durable identity generations.
-New workflow creation opens the backend's accepted draft or saved graph through the ordinary root presentation loader, preserving its definition name and configuration.
-The workspace workflow ID may contain folder separators; the graph definition name cannot contain `/` and is initialized by the backend from the destination leaf.
-Startup and explicit Open retain newer browser recovery edits and the accepted draft revision while restoring the backend definition name if the recovered definition name incorrectly equals the slash-containing workspace ID.
+Workflow identities are persistent UUIDs stored outside portable graphs; paths are mutable locations exposed separately as `relative_path`.
+Creation, import and duplication allocate fresh UUIDs; moves preserve UUIDs, identity generations, draft/snapshot revisions and dirty baselines.
+New workflow creation loads the accepted backend graph, retaining its slash-free definition name and configuration.
+Every New entry point follows the Workflows panel selection until Create submission; a workflow row selects its parent and no selection selects the root.
+Submission captures workspace and parent path through completion and conflict retry; an absent or changed destination is refused rather than recreated or silently replaced with the root.
+The confirmed, byte-backed-up format migration assigns UUIDs once and remaps mutable saved, draft, nested, preference and registry references using captured old-path/generation ownership.
+A migration-only receipt supports browser recovery reconciliation; unattributable or reused-path recovery remains an explicit conflict and is never attached by current path alone.
+The receipt is retired after reconciliation and never enables path-addressed workflow requests.
+Browser recovery storage uses canonical workspace path, workflow UUID and generation as its durable key; legacy unscoped records remain unresolved until ownership is proven or the user explicitly selects a destination.
+Acknowledgment and cleanup retain the captured workspace and exact recovery owner across asynchronous waits.
+UUIDs do not enter portable archives or scientific identity, and immutable run artifacts are not rewritten.
 Catalog read freshness also includes accepted same-ID metadata updates such as Save and dependency refresh; these are not identity-generation changes.
 Backend listing and format scans discover current workspace folders without descending into a workflow directory after its workflow.json boundary; workflow-owned results and sources are not catalog folders.
 Any shared path snapshot expires with that operation rather than hiding subsequent external filesystem changes.
-Pending tree reuse is limited to that current catalog authority, and a caller retries a stale catalog read at most once without joining its own expired request.
+Pending tree reuse is limited to that current catalog authority and captured workspace-selection revision, and a caller retries a stale catalog read at most once without joining its own expired request.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
-Moves update drafts, retained snapshots, and provenance references atomically.
+Delete confirmation captures canonical workspace and selection revision before any freshness barrier, including demo removal; workspace changes withdraw the request and late responses cannot dispose a new owner or erase its scoped recovery.
+Moves coordinate physical locations and path metadata under the mutation gate and recovery journal.
+Idle affected canvases flush root drafts and private nested snapshots without Save or apply and retain their registrations, unsaved state and undo history.
+Writes recheck UUID and storage independently of Refresh, reject duplicate or missing identities, and never recreate an old directory after an external move.
+The optional `X-BioImageFlow-Workspace` owner header binds pending canvas, editor and agent requests to their captured canonical workspace and refuses a same-UUID workflow in a newly selected workspace; asynchronous request work retains the selected store.
+Workflow draft, tree and active-workflow notifications carry their workspace captured before scheduling; clients compare against the backend-resolved workspace reported by Settings, reject a different selected owner and guard active-workflow completion after catalog refresh.
+The resolved workspace is independent of the nullable configured preference; a pending workspace selection withdraws the prior resolved owner, and delayed settings hydration cannot restore it.
+Catalog and structural responses from a previously selected workspace cannot update the new workspace's workflow metadata, folder selection or active canvas, including copies sharing UUIDs and generations.
+Duplicate UUIDs remain unavailable until explicit copy resolution selects an exact relative path, UUID and saved-document digest.
+That operation uses synchronized backups and a forward-recoverable journal to assign the selected directory a fresh UUID, preserving its content, results and root draft revision/baseline; other copies remain unchanged.
+The Review copies UI requires affected editors to close, and backend active-run guards remain authoritative.
+Moves are refused while affected local or managed execution owns storage; external movement during an active run reports unavailable storage without retargeting the engine.
 
 The platform keeps an atomic, revisioned execution registry under the active workspace, separate from graphs and cache storage.
 The registry is an index and presentation cache rather than authority for managed run state.
@@ -415,7 +434,7 @@ Effective viewer requirements for retained output come from that run-node result
 
 Per-output napari favorites are local state in the separate atomic `viewer-preferences.json` authority described by `platform_specs_napari_environments.md`.
 They use a durable workspace UUID plus workflow generation, structural node path, and output key; they never enter graph/archive bytes, execution dependencies, or cache identity.
-The workflow move journal advances through artifact, nested-snapshot, and preference rewrite phases before deletion, and preference remapping uses the journaled destination generation.
+Workflow UUIDs and generations remain unchanged by moves, so persistent viewer preference keys survive relocation; deletion and duplication retain their distinct lifecycle rules.
 Stateless graph services use the private workspace fallback `<workspace>/.bioimageflow/runtime`.
 
 The platform publishes a disposable, human-facing view at `<workflow-directory>/results/outputs/latest`.

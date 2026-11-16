@@ -8,9 +8,12 @@ const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '80
 
 test('imported node opens its own script and immediately executes saved edits', { tag: '@critical' }, async ({ page }) => {
   const suffix = `${Date.now()}`
-  const original = `source_${suffix}`
-  const imported = `imported_${suffix}`
-  const parent = `parent_${suffix}`
+  const originalPathName = `source_${suffix}`
+  const importedPathName = `imported_${suffix}`
+  const parentPathName = `parent_${suffix}`
+  let original = ''
+  let imported = ''
+  let parent = ''
   const toolName = `EditableImport${suffix}`
   const settings = await (await page.request.get(`${API}/settings`)).json()
   const oldEditor = (settings.settings ?? settings).external_editor
@@ -38,7 +41,9 @@ class ${toolName}(DataFrameTool):
   page.on('response', observeNestedWrite)
   try {
     expect((await page.request.patch(`${API}/settings`, { data: { external_editor: 'true' } })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API}/workflows`, { data: { name: original } })).ok()).toBeTruthy()
+    const originalCreated = await page.request.post(`${API}/workflows`, { data: { name: originalPathName } })
+    expect(originalCreated.ok(), await originalCreated.text()).toBeTruthy()
+    original = (await originalCreated.json()).id
     const created = await page.request.post(`${API}/tools`, {
       params: { workflow_name: original }, data: { name: toolName, tool_type: 'DataFrameTool' },
     })
@@ -52,10 +57,11 @@ class ${toolName}(DataFrameTool):
     const exported = await page.request.post(`${API}/workflows/${original}/export`)
     expect(exported.ok(), await exported.text()).toBeTruthy()
     const response = await page.request.post(`${API}/workflows/import`, { multipart: {
-      name_override: imported,
+      name_override: importedPathName,
       file: { name: 'reference.bioimageflow.zip', mimeType: 'application/zip', buffer: await exported.body() },
     } })
     expect(response.ok(), await response.text()).toBeTruthy()
+    imported = (await response.json()).info.id
     const catalogResponse = await page.request.get(`${API}/tools/${toolName}/source`)
     expect(catalogResponse.ok(), await catalogResponse.text()).toBeTruthy()
     expect(await catalogResponse.json()).toMatchObject({ path: originalPath, source_kind: 'custom' })
@@ -68,7 +74,7 @@ class ${toolName}(DataFrameTool):
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(imported)
+    await page.getByTestId('workflow-search').fill(importedPathName)
     await page.getByTestId(`workflow-row-${imported}`).dblclick()
     const node = page.locator('.vue-flow__node[data-id="increment"]')
     await expect(node).toBeVisible()
@@ -100,7 +106,7 @@ class ${toolName}(DataFrameTool):
     expect(realpathSync(openedRoot.project_path)).toBe(realpathSync(dirname(dirname(dirname(importedFile.info.path)))))
     const path = openedRoot.path
     expect(realpathSync(path)).not.toBe(realpathSync(originalPath))
-    expect(path).toContain(imported)
+    expect(path).toContain(importedPathName)
     expect(readFileSync(path)).toEqual(originalBytes)
     const importedSourceRoot = join(dirname(importedFile.info.results_path), 'tools', importedNode.source_module)
     const importedManifest = JSON.parse(readFileSync(join(importedSourceRoot, 'module.json'), 'utf8'))
@@ -279,16 +285,17 @@ class ${toolName}(DataFrameTool):
     expect(readFileSync(originalPath, 'utf8')).toContain('n + 1')
 
     await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
-    const parentResponse = await page.request.post(`${API}/workflows`, { data: { name: parent } })
+    const parentResponse = await page.request.post(`${API}/workflows`, { data: { name: parentPathName } })
     expect(parentResponse.ok()).toBeTruthy()
     const parentInfo = await parentResponse.json()
+    parent = parentInfo.id
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(parent)
+    await page.getByTestId('workflow-search').fill(parentPathName)
     await page.getByTestId(`workflow-row-${parent}`).dblclick()
-    await expect(page.getByTestId('workflow-title')).toContainText(parent)
+    await expect(page.getByTestId('workflow-title')).toContainText(parentPathName)
     await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
     await expect(page.locator('.vue-flow')).toBeVisible()
-    await page.getByTestId('workflow-search').fill(imported)
+    await page.getByTestId('workflow-search').fill(importedPathName)
     const embedding = page.waitForResponse(response => response.url().endsWith('/prepare-embedding'), { timeout: 10_000 })
     const transfer = await page.evaluateHandle((id) => {
       const transfer = new DataTransfer()

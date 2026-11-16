@@ -16,7 +16,8 @@ from pydantic import BaseModel, ValidationError
 
 class AgentState(BaseModel):
     api_base_url: str
-    active_workflow_id: str
+    active_workflow_id: str | None
+    identity_generation: int | None = None
     current_draft_revision: int | None = None
     workspace_path: str | None = None
     workflows_root: str | None = None
@@ -121,7 +122,7 @@ class BioImageFlowMCPGateway:
         draft = await self._draft(state)
         payload: dict[str, Any] = {
             "ok": not _is_error(draft),
-            "mcp_contract_version": 2,
+            "mcp_contract_version": 3,
             "active_workflow_id": state.active_workflow_id,
             "current_draft_revision": state.current_draft_revision,
             "supported_tools": SUPPORTED_MCP_TOOLS,
@@ -175,7 +176,7 @@ class BioImageFlowMCPGateway:
             "workspace_path": state.workspace_path,
             "workflows_root": state.workflows_root,
             "agent_state_path": state.agent_state_path or str(default_state_path()),
-            "mcp_contract_version": 2,
+            "mcp_contract_version": 3,
         }
         if _is_error(workflows):
             payload["backend_error"] = workflows
@@ -219,7 +220,7 @@ class BioImageFlowMCPGateway:
 
     async def create_workflow(
         self,
-        workflow_id: str,
+        path: str,
         display_name: str | None = None,
         description: str | None = None,
         set_active: bool = False,
@@ -229,7 +230,7 @@ class BioImageFlowMCPGateway:
             "/workflows",
             json=_without_none(
                 {
-                    "name": workflow_id,
+                    "name": path,
                     "display_name": display_name,
                     "description": description,
                 }
@@ -239,7 +240,7 @@ class BioImageFlowMCPGateway:
             return result
         payload: dict[str, Any] = {"ok": True, "workflow": _compact_workflow_info(result)}
         if set_active:
-            active = await self.set_active_workflow(workflow_id)
+            active = await self.set_active_workflow(result["id"])
             payload["active_workflow"] = active
             payload["ok"] = not _is_error(active)
         return payload
@@ -247,7 +248,7 @@ class BioImageFlowMCPGateway:
     async def duplicate_workflow(
         self,
         source_workflow_id: str,
-        new_workflow_id: str,
+        new_path: str,
         display_name: str | None = None,
         description: str | None = None,
         set_active: bool = False,
@@ -258,7 +259,7 @@ class BioImageFlowMCPGateway:
             json=_without_none(
                 {
                     "action": "duplicate",
-                    "new_name": new_workflow_id,
+                    "new_name": new_path,
                     "display_name": display_name,
                     "description": description,
                 }
@@ -272,7 +273,7 @@ class BioImageFlowMCPGateway:
             "workflow": _compact_workflow_info(result),
         }
         if set_active:
-            active = await self.set_active_workflow(new_workflow_id)
+            active = await self.set_active_workflow(result["id"])
             payload["active_workflow"] = active
             payload["ok"] = not _is_error(active)
         return payload
@@ -280,7 +281,7 @@ class BioImageFlowMCPGateway:
     async def rename_workflow(
         self,
         workflow_id: str,
-        new_workflow_id: str,
+        new_path: str,
         display_name: str | None = None,
         description: str | None = None,
     ) -> dict[str, Any]:
@@ -293,7 +294,7 @@ class BioImageFlowMCPGateway:
             json=_without_none(
                 {
                     "action": "update",
-                    "new_id": new_workflow_id,
+                    "new_id": new_path,
                     "display_name": display_name,
                     "description": description,
                 }
@@ -307,7 +308,7 @@ class BioImageFlowMCPGateway:
             "workflow": _compact_workflow_info(result),
         }
         if workflow_id == state.active_workflow_id:
-            active = await self.set_active_workflow(new_workflow_id)
+            active = await self.set_active_workflow(result["id"])
             payload["active_workflow"] = active
             payload["ok"] = not _is_error(active)
         return payload
@@ -780,6 +781,12 @@ class BioImageFlowMCPGateway:
         return _operation_result(result)
 
     async def _draft(self, state: AgentState) -> dict[str, Any]:
+        if state.active_workflow_id is None:
+            return {
+                "ok": False,
+                "error": "workflow_identity_unresolved",
+                "detail": "Select an active workflow by UUID before editing or executing.",
+            }
         return await self._request(
             "GET",
             f"/workflow-drafts/{_workflow_url(state.active_workflow_id)}",
@@ -798,7 +805,10 @@ class BioImageFlowMCPGateway:
         url = f"{state.api_base_url.rstrip('/')}{path}"
         try:
             async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
-                response = await client.request(method, url, json=json)
+                response = await client.request(
+                    method, url, json=json,
+                    headers={"X-BioImageFlow-Workspace": state.workspace_path} if state.workspace_path else None,
+                )
         except httpx.TimeoutException as exc:
             return {
                 "ok": False,
@@ -870,14 +880,14 @@ def create_mcp_server(
 
     @server.tool()
     async def create_workflow(
-        workflow_id: str,
+        path: str,
         display_name: str | None = None,
         description: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
-        """Create an empty workflow in the workspace."""
+        """Create an empty workflow at a workspace-relative directory path."""
         return await gateway.create_workflow(
-            workflow_id=workflow_id,
+            path=path,
             display_name=display_name,
             description=description,
             set_active=set_active,
@@ -886,15 +896,15 @@ def create_mcp_server(
     @server.tool()
     async def duplicate_workflow(
         source_workflow_id: str,
-        new_workflow_id: str,
+        new_path: str,
         display_name: str | None = None,
         description: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
-        """Duplicate one workflow to a new workflow id."""
+        """Duplicate a UUID-addressed workflow into a new relative path."""
         return await gateway.duplicate_workflow(
             source_workflow_id=source_workflow_id,
-            new_workflow_id=new_workflow_id,
+            new_path=new_path,
             display_name=display_name,
             description=description,
             set_active=set_active,
@@ -903,14 +913,14 @@ def create_mcp_server(
     @server.tool()
     async def rename_workflow(
         workflow_id: str,
-        new_workflow_id: str,
+        new_path: str,
         display_name: str | None = None,
         description: str | None = None,
     ) -> dict[str, Any]:
-        """Rename or move a workflow to a new workflow id."""
+        """Rename or move a workflow directory while preserving its UUID."""
         return await gateway.rename_workflow(
             workflow_id=workflow_id,
-            new_workflow_id=new_workflow_id,
+            new_path=new_path,
             display_name=display_name,
             description=description,
         )
@@ -1395,6 +1405,7 @@ def _compact_workflow_info(workflow: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "id",
             "name",
+            "relative_path",
             "folder",
             "display_name",
             "description",

@@ -38,7 +38,7 @@ async function open(page: Page, name: string, label: string): Promise<void> {
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(label)
   await page.getByTestId(`workflow-row-${name}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(label)
   await expect(page.locator('.vue-flow__node[data-id="write"]')).toBeVisible()
@@ -56,10 +56,11 @@ test('output template edits persist and publish distinct files without replacing
   // Public ProcessingTool execution uses the real managed provider. Match the
   // existing two-run worker journeys' provisioning and completion budgets.
   test.setTimeout(180_000)
-  const name = `output_templates_${test.info().project.name}_${Date.now()}`
-  const label = `Output templates ${name}`
+  const relativePath = `output_templates_${test.info().project.name}_${Date.now()}`
+  let name = ''
+  const label = `Output templates ${relativePath}`
   const graph: GraphState = {
-    schema_version: 2, name, display_name: label,
+    schema_version: 2, name: relativePath, display_name: label,
     nodes: [{
       type: 'tool', id: 'write', name: 'Write report', tool_name: 'TemplateReport',
       tool_module: MODULE, tool_class: 'TemplateReport',
@@ -76,9 +77,10 @@ test('output template edits persist and publish distinct files without replacing
   let cleanupFailed = false
   let cleanupFailure: unknown
   try {
-    const created = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+    const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath, display_name: label } })
     expect(created.status(), await created.text()).toBe(201)
     const info = await created.json() as WorkflowInfo
+    name = info.id
     const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
     expect(installed.ok(), await installed.text()).toBeTruthy()
     const initial = await draft(page, name)
@@ -239,10 +241,11 @@ test('output template edits persist and publish distinct files without replacing
 })
 
 test('invalid output templates remain saveable, refuse execution and recover through a visible repair', async ({ page }) => {
-  const name = `invalid_template_${test.info().project.name}_${Date.now()}`
-  const label = `Invalid template ${name}`
+  const relativePath = `invalid_template_${test.info().project.name}_${Date.now()}`
+  let name = ''
+  const label = `Invalid template ${relativePath}`
   const graph: GraphState = {
-    schema_version: 2, name, display_name: label,
+    schema_version: 2, name: relativePath, display_name: label,
     nodes: [{
       type: 'tool', id: 'write', name: 'Write report', tool_name: 'TemplateReport',
       tool_module: MODULE, tool_class: 'TemplateReport',
@@ -264,9 +267,10 @@ test('invalid output templates remain saveable, refuse execution and recover thr
   let cleanupFailed = false
   let cleanupFailure: unknown
   try {
-    const created = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+    const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath, display_name: label } })
     expect(created.status(), await created.text()).toBe(201)
     info = await created.json() as WorkflowInfo
+    name = info.id
     const ownedInfo = info
     const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
     expect(installed.status(), await installed.text()).toBe(200)

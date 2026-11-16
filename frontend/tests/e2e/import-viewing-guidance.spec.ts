@@ -13,18 +13,20 @@ test.afterEach(async ({ page }) => {
   await page.goto('about:blank')
   for (const name of ownedWorkflows.splice(0)) {
     const response = await page.request.delete(`${API}/workflows/${name}`)
-    expect([200, 204, 404]).toContain(response.status())
+    expect([200, 204, 404], await response.text()).toContain(response.status())
   }
 })
 
 async function archiveFixture(page: Page, reader = 'unavailable-reader', unknownOnly = false) {
-  const name = `viewing_import_${test.info().project.name}_${Date.now()}`
+  const relativePath = `viewing_import_${test.info().project.name}_${Date.now()}`
   expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+  const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const name = (await created.json()).id as string
   ownedWorkflows.push(name)
   const requirement = { napari: { required_packages: [{ distribution: reader, normalized_name: reader, version: '>=2,<3' }] } }
   const graph = {
-    schema_version: 2, name, display_name: name,
+    schema_version: 2, name: relativePath, display_name: relativePath,
     nodes: ['first', 'second'].map((id, index) => ({
       type: 'tool', id, name: id, tool_name: 'SeedNumbers', position: [100 + index * 240, 120],
       parameters: {}, viewer_additions: { number: requirement },
@@ -58,7 +60,7 @@ with zipfile.ZipFile(result, 'w') as archive:
 sys.stdout.buffer.write(result.getvalue())
 `, unknownOnly ? '1' : '0'], { input: await exported.body() })
   expect((await page.request.delete(`${API}/workflows/${name}`)).ok()).toBeTruthy()
-  return { name, buffer, reader }
+  return { name: relativePath, id: name, buffer, reader }
 }
 
 async function importInGui(page: Page, archive: Awaited<ReturnType<typeof archiveFixture>>) {
@@ -70,7 +72,10 @@ async function importInGui(page: Page, archive: Awaited<ReturnType<typeof archiv
   const response = await upload
   expect(response.status(), await response.text()).toBe(201)
   const imported = await response.json() as WorkflowImportResponse
-  expect(imported.info.id ?? imported.info.name).toBe(archive.name)
+  expect(imported.info.relative_path).toBe(archive.name)
+  expect(imported.info.id).not.toBe(archive.id)
+  archive.id = imported.info.id
+  ownedWorkflows.push(archive.id)
   expect(imported.missing_packages).toEqual([])
   expect(imported.missing_tools).toEqual([])
   await expect(page.getByTestId('workflow-title')).toHaveText(archive.name)
@@ -107,6 +112,11 @@ async function runImported(page: Page, name: string, imported: WorkflowImportRes
   expect(identities[0]).toBe(identities[1])
   const status = await (await page.request.get(`${API}/execution/status`)).json()
   expect(status).toMatchObject({ workflow_id: name, execution_id: execution.execution_id, draft_revision: execution.draft_revision, state: 'idle', last_result: { success: true } })
+  await expect.poll(async () => {
+    const snapshot = await page.request.get(`${API}/executions/${execution.execution_id}`)
+    expect(snapshot.ok(), await snapshot.text()).toBeTruthy()
+    return (await snapshot.json()).state
+  }).toBe('succeeded')
   const accepted = await (await page.request.get(`${API}/workflows/${name}`)).json()
   expect(accepted.info.identity_generation).toBe(imported.info.identity_generation)
   expect(accepted.graph.config).toMatchObject({ engine: 'direct', execution: 'sequential' })
@@ -121,17 +131,20 @@ function observeViewerMutations(page: Page) {
 }
 
 async function reopenInGui(page: Page, name: string) {
+  const info = (await (await page.request.get(`${API}/workflows/${name}`)).json()).info
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Open', exact: true }).click()
-  await page.getByTestId('workflow-open-search').fill(name)
+  await page.getByTestId('workflow-open-search').fill(info.relative_path)
   await page.getByTestId(`workflow-open-option-${name}`).click()
   await page.getByTestId('workflow-open-submit').click()
-  await expect(page.getByTestId('workflow-title')).toHaveText(name)
+  await expect(page.getByTestId('workflow-title')).toHaveText(info.display_name)
 }
 
 test('opening a covered workflow never flashes pending viewing guidance', async ({ page }) => {
-  const name = `silent_viewing_${test.info().project.name}_${Date.now()}`
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+  const relativePath = `silent_viewing_${test.info().project.name}_${Date.now()}`
+  const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const name = (await created.json()).id as string
   ownedWorkflows.push(name)
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
@@ -194,7 +207,7 @@ test('import viewing guidance groups actual missing and unknown requirements whi
   await page.getByTestId('settings-close').click()
   await guidance.getByRole('button', { name: 'Dismiss viewing guidance', exact: true }).click()
   await expect(guidance).toHaveCount(0)
-  await runImported(page, archive.name, imported)
+  await runImported(page, archive.id, imported)
   expect(mutations).toEqual([])
 })
 
@@ -215,7 +228,7 @@ test('import with only unknown metadata shows source diagnostics without viewer 
   await expect(guidance).toContainText('Check the tool/source diagnostics')
   await expect(guidance.getByRole('button', { name: 'Manage/attach environments' })).toHaveCount(0)
   await expect(guidance.getByRole('button', { name: 'Create environment for this set' })).toHaveCount(0)
-  await runImported(page, archive.name, imported)
+  await runImported(page, archive.id, imported)
   expect(mutations).toEqual([])
 })
 
@@ -236,10 +249,10 @@ test('import viewing check failure preserves execution and explicit saved Open r
   await expect(guidance).toContainText('Viewing requirements not checked')
   await expect(guidance).toContainText('Workflow execution is unaffected.')
   expect(checks).toEqual([imported.viewing_requirements])
-  await runImported(page, archive.name, imported)
-  const saved = page.waitForResponse(response => response.url().endsWith(`/workflows/${archive.name}/viewing-readiness`))
+  await runImported(page, archive.id, imported)
+  const saved = page.waitForResponse(response => response.url().endsWith(`/workflows/${archive.id}/viewing-readiness`))
   const refreshed = page.waitForResponse(response => response.url().endsWith('/napari/viewing-readiness') && response.ok())
-  await reopenInGui(page, archive.name)
+  await reopenInGui(page, archive.id)
   const manifest = await (await saved).json()
   const report = await (await refreshed).json() as NapariViewingReadinessResponse
   expect(manifest.complete).toBe(true)
@@ -295,7 +308,7 @@ test('delayed sibling import viewing result cannot replace the accepted workflow
   await page.getByTestId('settings-close').click()
   await expect(page.getByTestId('workflow-title')).toHaveText(second.name)
   await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
-  const accepted = await (await page.request.get(`${API}/workflows/${second.name}`)).json()
+  const accepted = await (await page.request.get(`${API}/workflows/${second.id}`)).json()
   expect(accepted.info.identity_generation).toBe(imported.info.identity_generation)
   expect(mutations).toEqual([])
 })

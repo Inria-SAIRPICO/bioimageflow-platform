@@ -112,14 +112,22 @@ function groupingBoundaryGraph(name: string, displayName: string): GraphState {
   }
 }
 
-async function createWorkflow(page: Page, name: string, displayName: string): Promise<void> {
-  await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+async function createEmptyWorkflow(page: Page, path: string, displayName: string): Promise<string> {
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, { data: { name: path, display_name: displayName } })
+  expect(created.status(), await created.text()).toBe(201)
+  return (await created.json()).id as string
+}
+
+async function createWorkflow(page: Page, name: string, displayName: string): Promise<string> {
+  const response = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name, display_name: displayName },
-  })).status()).toBe(201)
-  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  })
+  expect(response.status()).toBe(201)
+  const workflowId = (await response.json()).id as string
+  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph: graph(name, displayName) },
   })).ok()).toBeTruthy()
+  return workflowId
 }
 
 async function openWorkflow(page: Page, name: string, displayName: string): Promise<void> {
@@ -320,9 +328,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('edits a workflow node field binding in the Nodes panel', async ({ page }) => {
-    const name = workflowName('workflow_binding')
-    const displayName = `Workflow binding ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('workflow_binding')
+    const displayName = `Workflow binding ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const response = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: nestedInterfaceGraph(name, displayName) },
     })
@@ -342,9 +350,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('exposes and renames stable interface ports', async ({ page }) => {
-    const name = workflowName('interface')
-    const displayName = `Interface ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('interface')
+    const displayName = `Interface ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     await page.goto('/')
     await openWorkflow(page, name, displayName)
     await page.locator('.vue-flow__node[data-id="blur_1"]').click()
@@ -376,9 +384,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('groups a selected tool into an ordinary workflow node', async ({ page }) => {
-    const name = workflowName('group')
-    const displayName = `Group ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('group')
+    const displayName = `Group ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     await page.goto('/')
     await openWorkflow(page, name, displayName)
 
@@ -396,9 +404,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('groups connected nodes with stable ports as one durable undo transition @critical', async ({ page }) => {
-    const name = workflowName('group_routes')
-    const displayName = `Group routes ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('group_routes')
+    const displayName = `Group routes ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const fixture = groupingBoundaryGraph(name, displayName)
     const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: fixture },
@@ -533,9 +541,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('publishes multiple DataFrames and compacts slots without changing surviving IDs or edges', async ({ page }) => {
-    const name = workflowName('dataframe_interface')
-    const displayName = `DataFrames ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('dataframe_interface')
+    const displayName = `DataFrames ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const initial = graph(name, displayName)
     initial.nodes = [{
       type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers',
@@ -668,9 +676,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('publishes an existing child DataFrame port through the parent interface', async ({ page }) => {
-    const name = workflowName('forward_dataframe')
-    const displayName = `Forward ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('forward_dataframe')
+    const displayName = `Forward ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const child = graph('child', 'Child')
     child.nodes = [{ type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers', position: [180, 160], parameters: { number: 1 } }]
     child.interface.inputs.push({
@@ -793,16 +801,16 @@ test.describe('workflow interface and grouping', () => {
     const detachWrites: Array<{ request: Request; response?: Response }> = []
     let stopDetachObservation: (() => void) | undefined
     const ownedName = workflowName('nested_private')
+    const ownedWorkflowIds: string[] = []
     try {
-      const name = ownedName
+      let name = ownedName
       const displayName = `Nested private ${name}`
-      const sourceName = `${name}_source`
-      const unrelatedName = `${name}_unrelated`
+      let sourceName = `${name}_source`
+      let unrelatedName = `${name}_unrelated`
       const initial = nestedInterfaceGraph(name, displayName)
       const sourceGraph = structuredClone(childNode(initial).workflow)
-      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-        data: { name: sourceName, display_name: `Source ${name}` },
-      })).status()).toBe(201)
+      sourceName = await createEmptyWorkflow(page, sourceName, `Source ${name}`)
+      ownedWorkflowIds.push(sourceName)
       const sourceSetup = await page.request.put(`${API_BASE}/api/v1/workflows/${sourceName}`, {
         data: { graph: sourceGraph },
       })
@@ -836,9 +844,8 @@ test.describe('workflow interface and grouping', () => {
       childNode(initial).source = {
         kind: 'workspace', workflow_id: sourceName, artifact_hash: sourceBefore.artifact_hash,
       }
-      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-        data: { name: unrelatedName, display_name: `Unrelated ${name}` },
-      })).status()).toBe(201)
+      unrelatedName = await createEmptyWorkflow(page, unrelatedName, `Unrelated ${name}`)
+      ownedWorkflowIds.push(unrelatedName)
       const unrelatedBefore = await readSaved(unrelatedName)
       const sourceBytes = readFileSync(sourceBefore.info.path)
       const unrelatedBytes = readFileSync(unrelatedBefore.info.path)
@@ -848,9 +855,8 @@ test.describe('workflow interface and grouping', () => {
         valid: true,
         errors: [],
       })
-      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-        data: { name, display_name: displayName },
-      })).status()).toBe(201)
+      name = await createEmptyWorkflow(page, name, displayName)
+      ownedWorkflowIds.push(name)
       const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
       expect(setup.ok(), await setup.text()).toBeTruthy()
 
@@ -1058,7 +1064,7 @@ test.describe('workflow interface and grouping', () => {
     } finally {
       stopDetachObservation?.()
       try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
-      for (const id of [ownedName, `${ownedName}_source`, `${ownedName}_unrelated`]) {
+      for (const id of ownedWorkflowIds) {
         let lastDetail = ''
         try {
           await expect.poll(async () => {
@@ -1080,12 +1086,10 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('retries a failed private interface rename without changing stable parent routes', async ({ page }) => {
-    const name = workflowName('nested_port_retry')
+    let name = workflowName('nested_port_retry')
     const displayName = `Nested port retry ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
     expect(setup.ok(), await setup.text()).toBeTruthy()
 
@@ -1180,7 +1184,7 @@ test.describe('workflow interface and grouping', () => {
 
   test('closes depth-two nested snapshots child-first after refusal and failed delete', async ({ page }) => {
     test.setTimeout(60_000)
-    const name = workflowName('nested_depth_two')
+    let name = workflowName('nested_depth_two')
     const displayName = `Nested depth two ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
     const child = childNode(initial).workflow
@@ -1188,16 +1192,12 @@ test.describe('workflow interface and grouping', () => {
       type: 'workflow', id: 'grandchild', name: 'Grandchild', position: [600, 180],
       workflow: graph('grandchild_graph', 'Grandchild graph'), bindings: {},
     })
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, { data: { graph: initial } })
     expect(setup.ok(), await setup.text()).toBeTruthy()
 
-    const otherName = workflowName('nested_depth_other')
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name: otherName, display_name: `Other ${otherName}` },
-    })).status()).toBe(201)
+    let otherName = workflowName('nested_depth_other')
+    otherName = await createEmptyWorkflow(page, otherName, `Other ${otherName}`)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${otherName}`, {
       data: { graph: nestedInterfaceGraph(otherName, `Other ${otherName}`) },
     })).ok()).toBeTruthy()
@@ -1366,12 +1366,10 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('isolates nested keyboard history from the parent and saves only the active context', async ({ page }) => {
-    const name = workflowName('nested_shortcut_history')
+    let name = workflowName('nested_shortcut_history')
     const displayName = `Nested shortcut history ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -1470,13 +1468,11 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('refuses a stale-parent nested save without mutating either graph', async ({ page }) => {
-    const name = workflowName('nested_parent_conflict')
+    let name = workflowName('nested_parent_conflict')
     const displayName = `Nested parent conflict ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -1597,12 +1593,10 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('refuses nested Save after its root owner closes without changing either durable state', async ({ page }) => {
-    const name = workflowName('nested_missing_parent')
+    let name = workflowName('nested_missing_parent')
     const displayName = `Nested missing parent ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -1672,12 +1666,10 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('waits for an explicit nested snapshot conflict choice without replacing newer private state', async ({ page }) => {
-    const name = workflowName('nested_snapshot_conflict')
+    let name = workflowName('nested_snapshot_conflict')
     const displayName = `Nested snapshot conflict ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -1776,8 +1768,16 @@ test.describe('workflow interface and grouping', () => {
     expect(childInputName(resolved.graph)).toBe('Chosen local name')
     expect(childInputName(childNode(await draftGraph(page, name)).workflow)).toBe('Source table')
 
+    const parentApply = page.waitForResponse(response => (
+      response.url().endsWith(`/api/v1/workflow-drafts/${name}`)
+      && response.request().method() === 'PUT'
+    ))
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    const parentAccepted = await parentApply
+    expect(parentAccepted.ok(), await parentAccepted.text()).toBeTruthy()
+    const appliedDraft = await parentAccepted.json() as WorkflowDraftResponse
+    expect(childInputName(childNode(appliedDraft.graph).workflow)).toBe('Chosen local name')
     await expect.poll(async () => childInputName(childNode(await draftGraph(page, name)).workflow))
       .toBe('Chosen local name')
     await page.locator('.dv-tab').filter({ hasText: displayName }).click()
@@ -1789,7 +1789,7 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('confirms before atomically removing connected nested ports from the parent', async ({ page }) => {
-    const name = workflowName('nested_destructive_ports')
+    let name = workflowName('nested_destructive_ports')
     const displayName = `Nested destructive ports ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
     const initialChild = childNode(initial)
@@ -1829,9 +1829,7 @@ test.describe('workflow interface and grouping', () => {
       source: { node: 'child', column: 'child-image-output' },
     })
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -2011,7 +2009,7 @@ test.describe('workflow interface and grouping', () => {
 
   test('applies destructive grandchild ports only through each explicit owner', async ({ page }) => {
     test.setTimeout(90_000)
-    const name = workflowName('nested_apply_depth_two')
+    let name = workflowName('nested_apply_depth_two')
     const displayName = `Nested apply depth two ${name}`
     const grandchild = graph('grandchild_graph', 'Grandchild graph')
     grandchild.interface.inputs = [{
@@ -2070,9 +2068,7 @@ test.describe('workflow interface and grouping', () => {
       source: { node: 'child', column: 'parent-image-output' },
     })
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -2194,7 +2190,7 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('preserves nested dirtiness when remounted during a coalesced parent apply', async ({ page }) => {
-    const name = workflowName('nested_apply_remount')
+    let name = workflowName('nested_apply_remount')
     const displayName = `Nested apply remount ${name}`
     const initial = nestedInterfaceGraph(name, displayName)
     const initialChild = childNode(initial)
@@ -2207,9 +2203,7 @@ test.describe('workflow interface and grouping', () => {
     scalarInput.targets = [{ node: 'child_blur', port: { kind: 'field', name: 'sigma' } }]
     initialChild.bindings = { 'child-number-input': { __type__: 'float', value: 7.5 } }
     expect((await page.request.put(`${API_BASE}/api/v1/graph`, { data: initial })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-      data: { name, display_name: displayName },
-    })).status()).toBe(201)
+    name = await createEmptyWorkflow(page, name, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: initial },
     })).ok()).toBeTruthy()
@@ -2292,9 +2286,9 @@ test.describe('workflow interface and grouping', () => {
   test('deleting an exposed node removes its interface references before autosave', async ({
     page,
   }) => {
-    const name = workflowName('delete_exposed')
-    const displayName = `Delete exposed ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('delete_exposed')
+    const displayName = `Delete exposed ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: graphWithExposedOutput(name, displayName) },
     })).ok()).toBeTruthy()

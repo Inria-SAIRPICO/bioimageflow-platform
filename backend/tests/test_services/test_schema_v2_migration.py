@@ -101,15 +101,16 @@ def _write_draft(store, workflow_id, graph, base, *, dirty) -> None:
 
 
 def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
     for workflow_id in ("clean", "dirty"):
-        store.create_workflow(WorkflowCreate(name=workflow_id))
+        identities[workflow_id] = store.create_workflow(WorkflowCreate(name=workflow_id)).id
         store.save_workflow(
-            workflow_id,
-            WorkflowSaveBody(graph=_recursive_graph(store.get_workflow(workflow_id).graph)),
+            identities[workflow_id],
+            WorkflowSaveBody(graph=_recursive_graph(store.get_workflow(identities[workflow_id]).graph)),
         )
 
-    clean_graph = store.get_workflow("clean").graph
+    clean_graph = store.get_workflow(identities["clean"]).graph
     clean_child = clean_graph.nodes[0].workflow
     private_child = clean_child.model_dump(mode="json", by_alias=True, exclude_none=True)
     private_child["nodes"][0]["workflow"]["display_name"] = "Private grandchild"
@@ -119,8 +120,8 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
         NestedSnapshotOwner(
             kind="root",
             canvas_id="workflow:clean",
-            workflow_id="clean",
-            identity_generation=store.workflow_generation("clean"),
+            workflow_id=identities["clean"],
+            identity_generation=store.workflow_generation(identities["clean"]),
         ),
         "child",
         clean_child,
@@ -133,14 +134,14 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
     )
     assert opened.snapshot_revision == 1
     assert opened.validation.valid is True
-    assert store.get_workflow("clean").graph == clean_graph
+    assert store.get_workflow(identities["clean"]).graph == clean_graph
     snapshot_path = (
         store.workspace_dir
         / ".bioimageflow/nested-workflow-snapshots"
         / f"{opened.session_id}.json"
     )
     generation_before = {
-        workflow_id: store.workflow_generation(workflow_id) for workflow_id in ("clean", "dirty")
+        workflow_id: store.workflow_generation(identities[workflow_id]) for workflow_id in ("clean", "dirty")
     }
     snapshot_identity_before = (
         opened.session_id,
@@ -149,7 +150,7 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
         opened.snapshot_revision,
     )
     saved_graphs = {
-        workflow_id: store.get_workflow(workflow_id).graph.model_dump(
+        workflow_id: store.get_workflow(identities[workflow_id]).graph.model_dump(
             mode="json", by_alias=True, exclude_none=True
         )
         for workflow_id in ("clean", "dirty")
@@ -160,7 +161,7 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
     ] = "Draft grandchild"
 
     for workflow_id in ("clean", "dirty"):
-        path = store.workflow_dir(workflow_id) / "workflow.json"
+        path = store.workflow_dir(identities[workflow_id]) / "workflow.json"
         raw = json.loads(path.read_text())
         raw["graph"] = _downgrade(raw["graph"])
         raw["artifact_hash"] = "sha256:" + ("1" if workflow_id == "clean" else "2") * 64
@@ -168,7 +169,7 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
         draft_graph = _downgrade(expected_draft_graphs[workflow_id])
         _write_draft(
             store,
-            workflow_id,
+            identities[workflow_id],
             draft_graph,
             raw["artifact_hash"],
             dirty=workflow_id == "dirty",
@@ -179,9 +180,9 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
     snapshot_path.write_text(json.dumps(raw_snapshot))
 
     migration_sources = [
-        *(store.workflow_dir(workflow_id) / "workflow.json" for workflow_id in ("clean", "dirty")),
+        *(store.workflow_dir(identities[workflow_id]) / "workflow.json" for workflow_id in ("clean", "dirty")),
         *(
-            store.workflow_dir(workflow_id) / ".bioimageflow/draft.json"
+            store.workflow_dir(identities[workflow_id]) / ".bioimageflow/draft.json"
             for workflow_id in ("clean", "dirty")
         ),
         snapshot_path,
@@ -212,9 +213,9 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
 
     restarted = _store(tmp_path)
     for workflow_id, expected_dirty in (("clean", False), ("dirty", True)):
-        document = json.loads((store.workflow_dir(workflow_id) / "workflow.json").read_text())
+        document = json.loads((store.workflow_dir(identities[workflow_id]) / "workflow.json").read_text())
         draft = json.loads(
-            (store.workflow_dir(workflow_id) / ".bioimageflow/draft.json").read_text()
+            (store.workflow_dir(identities[workflow_id]) / ".bioimageflow/draft.json").read_text()
         )
         _assert_recursive_schema_v2(document["graph"])
         _assert_recursive_schema_v2(draft["graph"])
@@ -226,11 +227,11 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
         assert document["artifact_hash"] == artifact_hash(
             GraphState.model_validate(saved_graphs[workflow_id]), []
         )
-        assert restarted.workflow_generation(workflow_id) == generation_before[workflow_id]
-        reopened_document = restarted.get_workflow(workflow_id)
+        assert restarted.workflow_generation(identities[workflow_id]) == generation_before[workflow_id]
+        reopened_document = restarted.get_workflow(identities[workflow_id])
         assert reopened_document.artifact_hash == document["artifact_hash"]
         reopened_draft = json.loads(
-            (restarted.workflow_dir(workflow_id) / ".bioimageflow/draft.json").read_text()
+            (restarted.workflow_dir(identities[workflow_id]) / ".bioimageflow/draft.json").read_text()
         )
         assert reopened_draft == draft
         draft_hash = artifact_hash(GraphState.model_validate(draft["graph"]), [])
@@ -258,18 +259,19 @@ def test_migrates_recursive_saved_clean_dirty_and_nested_snapshot_truth(tmp_path
 def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
     tmp_path, monkeypatch
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="wf"))
+    identities["wf"] = store.create_workflow(WorkflowCreate(name="wf")).id
     store.save_workflow(
-        "wf", WorkflowSaveBody(graph=_recursive_graph(store.get_workflow("wf").graph))
+        identities["wf"], WorkflowSaveBody(graph=_recursive_graph(store.get_workflow(identities["wf"]).graph))
     )
-    generation = store.workflow_generation("wf")
-    graph = store.get_workflow("wf").graph
+    generation = store.workflow_generation(identities["wf"])
+    graph = store.get_workflow(identities["wf"]).graph
     opened = NestedWorkflowSnapshotService(lambda: store).open_snapshot(
         NestedSnapshotOwner(
             kind="root",
             canvas_id="workflow:wf",
-            workflow_id="wf",
+            workflow_id=identities["wf"],
             identity_generation=generation,
         ),
         "child",
@@ -280,12 +282,12 @@ def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
         / ".bioimageflow/nested-workflow-snapshots"
         / f"{opened.session_id}.json"
     )
-    path = store.workflow_dir("wf") / "workflow.json"
+    path = store.workflow_dir(identities["wf"]) / "workflow.json"
     raw = json.loads(path.read_text())
     raw["graph"] = _downgrade(raw["graph"])
     path.write_text(json.dumps(raw))
-    draft_path = store.workflow_dir("wf") / ".bioimageflow/draft.json"
-    _write_draft(store, "wf", raw["graph"], raw["artifact_hash"], dirty=False)
+    draft_path = store.workflow_dir(identities["wf"]) / ".bioimageflow/draft.json"
+    _write_draft(store, identities["wf"], raw["graph"], raw["artifact_hash"], dirty=False)
     raw_snapshot = json.loads(snapshot_path.read_text())
     raw_snapshot["graph"] = _downgrade(raw_snapshot["graph"])
     snapshot_path.write_text(json.dumps(raw_snapshot))
@@ -332,8 +334,8 @@ def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
     assert draft["base_saved_revision"] == document["artifact_hash"]
     assert draft["dirty_against_saved"] is False
     assert draft["draft_revision"] == 4
-    assert restarted.workflow_generation("wf") == generation
-    assert restarted.get_workflow("wf").artifact_hash == document["artifact_hash"]
+    assert restarted.workflow_generation(identities["wf"]) == generation
+    assert restarted.get_workflow(identities["wf"]).artifact_hash == document["artifact_hash"]
     assert (snapshot.session_id, snapshot.owner, snapshot.snapshot_revision) == (
         opened.session_id,
         opened.owner,
@@ -361,16 +363,17 @@ def test_interrupted_migration_forward_recovers_and_rejects_forged_target(
 
 
 def test_changed_draft_refuses_preview_without_replacing_any_authority(tmp_path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="pending"))
-    store.create_workflow(WorkflowCreate(name="current"))
-    pending_path = store.workflow_dir("pending") / "workflow.json"
-    current_path = store.workflow_dir("current") / "workflow.json"
+    identities["pending"] = store.create_workflow(WorkflowCreate(name="pending")).id
+    identities["current"] = store.create_workflow(WorkflowCreate(name="current")).id
+    pending_path = store.workflow_dir(identities["pending"]) / "workflow.json"
+    current_path = store.workflow_dir(identities["current"]) / "workflow.json"
     raw = json.loads(pending_path.read_text())
     raw["graph"] = _downgrade(raw["graph"])
     pending_path.write_text(json.dumps(raw))
-    _write_draft(store, "pending", raw["graph"], raw["artifact_hash"], dirty=False)
-    draft_path = store.workflow_dir("pending") / ".bioimageflow/draft.json"
+    _write_draft(store, identities["pending"], raw["graph"], raw["artifact_hash"], dirty=False)
+    draft_path = store.workflow_dir(identities["pending"]) / ".bioimageflow/draft.json"
     plan_id = store.workflow_format_status().pending_plan_id
     assert plan_id is not None
     current_bytes = current_path.read_bytes()
@@ -386,7 +389,7 @@ def test_changed_draft_refuses_preview_without_replacing_any_authority(tmp_path)
     assert pending_path.read_bytes() == pending_bytes
     assert draft_path.read_bytes() == draft_bytes
     assert current_path.read_bytes() == current_bytes
-    assert store.get_workflow("current").info.id == "current"
+    assert store.get_workflow(identities["current"]).info.id == identities["current"]
     assert store.workflow_format_status().pending_plan_id != plan_id
     assert not (store.workspace_dir / ".bioimageflow/backups/workflow-format").exists()
 
@@ -394,14 +397,15 @@ def test_changed_draft_refuses_preview_without_replacing_any_authority(tmp_path)
 def test_invalid_editing_artifact_is_reported_separately_from_pending_updates(
     tmp_path,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="pending"))
-    store.create_workflow(WorkflowCreate(name="bad-draft"))
-    pending_path = store.workflow_dir("pending") / "workflow.json"
+    identities["pending"] = store.create_workflow(WorkflowCreate(name="pending")).id
+    identities["bad-draft"] = store.create_workflow(WorkflowCreate(name="bad-draft")).id
+    pending_path = store.workflow_dir(identities["pending"]) / "workflow.json"
     raw_pending = json.loads(pending_path.read_text())
     raw_pending["graph"] = _downgrade(raw_pending["graph"])
     pending_path.write_text(json.dumps(raw_pending))
-    bad_draft_path = store.workflow_dir("bad-draft") / ".bioimageflow/draft.json"
+    bad_draft_path = store.workflow_dir(identities["bad-draft"]) / ".bioimageflow/draft.json"
     bad_draft_path.parent.mkdir()
     bad_draft_path.write_text("{not json")
 

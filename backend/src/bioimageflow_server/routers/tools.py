@@ -621,38 +621,36 @@ async def uninstall_package(
 async def _settle_environment_operation(operation: Callable[[], Awaitable[str]]) -> str:
     """Preserve request cancellation only after the physical operation settles."""
 
-    async def run() -> str:
-        # The child owns the complete service operation, including final status
-        # publication. Request cancellation must not abandon its worker thread.
+    async def run() -> str | BaseException:
+        # Keep failure as an observed outcome: Python 3.14 reports a failed
+        # shielded future to the loop when its request waiter was cancelled,
+        # even though this owner later drains that future.
         with anyio.CancelScope(shield=True):
-            return await operation()
+            try:
+                return await operation()
+            except BaseException as exc:
+                return exc
 
     task = asyncio.create_task(run(), name="manual-tool-environment-operation")
     try:
-        # Waiting does not transfer request cancellation to the child. Unlike
-        # shield(), it also leaves failure reporting solely to this owner when
-        # the request is canceled before the child finishes (Python 3.14+).
-        await asyncio.wait({task})
-        return task.result()
+        result = await asyncio.shield(task)
+        if isinstance(result, BaseException):
+            raise result
+        return result
     except asyncio.CancelledError as primary:
         with anyio.CancelScope(shield=True):
             while not task.done():
                 try:
-                    # Observe completion without raising the child's failure
-                    # into the original cancellation's exception context.
-                    await asyncio.wait({task})
+                    await asyncio.shield(task)
                 except asyncio.CancelledError:
                     # Repeated raw Task.cancel() can interrupt this awaiter
                     # even inside an AnyIO shield; the child still owns work.
                     continue
-            try:
-                operation_error = task.exception()
-            except BaseException as child_cancellation:
-                operation_error = child_cancellation
-            if operation_error is not None:
+            result = task.result()
+            if isinstance(result, BaseException):
                 _logger.error(
                     "Manual environment operation failed after request cancellation",
-                    exc_info=(type(operation_error), operation_error, operation_error.__traceback__),
+                    exc_info=(type(result), result, result.__traceback__),
                 )
         raise primary
 

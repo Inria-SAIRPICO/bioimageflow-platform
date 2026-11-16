@@ -23,6 +23,7 @@ export interface LockForExecutionOptions {
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
   isTargetActive?: () => boolean
+  workspacePath?: string
 }
 
 export function useExecutionLock() {
@@ -70,6 +71,7 @@ export function useExecutionLock() {
     await exec.run(graph, nodes, workflowName, {
       canvasId: options.canvasId ?? null,
       draftRevision: options.acceptedDraftRevision,
+      ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}),
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.retryOfExecutionId
         ? { retryOfExecutionId: options.retryOfExecutionId }

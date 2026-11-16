@@ -7,6 +7,7 @@ import logging
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -276,7 +277,7 @@ class TestPatchSettings:
             root_dir=workspace / "workflows",
             tool_registry=ToolRegistryService(),
         )
-        store_b.create_workflow(WorkflowCreate(name="retargeted", display_name="Retargeted"))
+        workflow_b_id = store_b.create_workflow(WorkflowCreate(name="retargeted", display_name="Retargeted")).id
         workflow_file = workspace / "workflows" / "retargeted" / "workflow.json"
 
         def workflow_bytes(root: Path) -> dict[str, bytes]:
@@ -296,6 +297,7 @@ class TestPatchSettings:
                     "name": "retargeted", "display_name": "Workspace A saved",
                 })
                 assert created.status_code == 201, created.text
+                workflow_a_id = created.json()["id"]
                 graph_a = {
                     "schema_version": 2, "name": "retargeted",
                     "display_name": "Workspace A saved",
@@ -306,16 +308,16 @@ class TestPatchSettings:
                     "edges": [], "interface": {"inputs": [], "outputs": []},
                     "config": {"engine": "direct", "execution": "sequential"},
                 }
-                saved = await client.put("/api/v1/workflows/retargeted", json={"graph": graph_a})
+                saved = await client.put(f"/api/v1/workflows/{workflow_a_id}", json={"graph": graph_a})
                 assert saved.status_code == 200, saved.text
                 draft_a_graph = {**graph_a, "display_name": "Workspace A draft"}
-                draft = await client.put("/api/v1/workflow-drafts/retargeted", json={
+                draft = await client.put(f"/api/v1/workflow-drafts/{workflow_a_id}", json={
                     "graph": draft_a_graph, "expected_revision": 0, "updated_by": "frontend",
                 })
                 assert draft.status_code == 200, draft.text
                 accepted_a = draft.json()
                 run = await client.post("/api/v1/execution/run", json={
-                    "workflow_id": "retargeted", "draft_revision": accepted_a["draft_revision"],
+                    "workflow_id": workflow_a_id, "draft_revision": accepted_a["draft_revision"],
                 })
                 assert run.status_code == 202, run.text
                 execution_id = run.json()["execution_id"]
@@ -331,7 +333,7 @@ class TestPatchSettings:
                 assert finished["execution_id"] == execution_id
                 assert finished["last_result"]["success"] is True, finished
                 latest = await client.post("/api/v1/nodes/seed/data/query", json={
-                    "workflow_name": "retargeted",
+                    "workflow_name": workflow_a_id,
                 })
                 assert latest.status_code == 200, latest.text
                 data_a = latest.json()
@@ -343,12 +345,12 @@ class TestPatchSettings:
                 identity_a = data_a["source_identity"]
                 assert identity_a["node_key"] == "seed"
                 assert all(identity_a[key] for key in ("run_id", "result_key", "record_id"))
-                pinned_query = {"workflow_name": "retargeted", "result_identity": identity_a}
+                pinned_query = {"workflow_name": workflow_a_id, "result_identity": identity_a}
                 pinned = await client.post("/api/v1/nodes/seed/data/query", json=pinned_query)
                 assert pinned.status_code == 200, pinned.text
                 assert pinned.json() == data_a
-                saved_a = (await client.get("/api/v1/workflows/retargeted")).json()
-                accepted_a = (await client.get("/api/v1/workflow-drafts/retargeted")).json()
+                saved_a = (await client.get(f"/api/v1/workflows/{workflow_a_id}")).json()
+                accepted_a = (await client.get(f"/api/v1/workflow-drafts/{workflow_a_id}")).json()
                 bytes_a = workflow_bytes(workspace_a)
                 assert "workflow.json" in bytes_a
                 assert ".bioimageflow/draft.json" in bytes_a
@@ -358,23 +360,24 @@ class TestPatchSettings:
                 assert response.status_code == 200, response.text
                 workflows = await client.get("/api/v1/workflows")
                 assert workflows.status_code == 200
-                assert [item["id"] for item in workflows.json()] == ["retargeted"]
+                assert [item["id"] for item in workflows.json()] == [workflow_b_id]
                 assert workflow_file.exists()
                 assert workflows.json()[0]["display_name"] == "Retargeted"
-                b_initial = await client.get("/api/v1/workflow-drafts/retargeted")
+                b_initial = await client.get(f"/api/v1/workflow-drafts/{workflow_b_id}")
                 assert b_initial.status_code == 200, b_initial.text
                 assert b_initial.json()["draft_revision"] == 0
                 assert b_initial.json()["graph"]["display_name"] == "Retargeted"
                 for query, expected_status in (
-                    ({"workflow_name": "retargeted"}, 404), (pinned_query, 409),
+                    ({"workflow_name": workflow_b_id}, 404), (pinned_query, 404),
+                    ({**pinned_query, "workflow_name": workflow_b_id}, 409),
                 ):
                     missing = await client.post("/api/v1/nodes/seed/data/query", json=query)
                     assert missing.status_code == expected_status, missing.text
                 graph_b = {**graph_a, "display_name": "Workspace B saved"}
-                saved = await client.put("/api/v1/workflows/retargeted", json={"graph": graph_b})
+                saved = await client.put(f"/api/v1/workflows/{workflow_b_id}", json={"graph": graph_b})
                 assert saved.status_code == 200, saved.text
                 draft_b_graph = {**graph_b, "display_name": "Workspace B draft"}
-                changed = await client.put("/api/v1/workflow-drafts/retargeted", json={
+                changed = await client.put(f"/api/v1/workflow-drafts/{workflow_b_id}", json={
                     "graph": draft_b_graph, "expected_revision": 0, "updated_by": "frontend",
                 })
                 assert changed.status_code == 200, changed.text
@@ -386,11 +389,11 @@ class TestPatchSettings:
 
                 response = await client.patch("/api/v1/settings", json={"workspace_path": str(workspace_a)})
                 assert response.status_code == 200, response.text
-                assert (await client.get("/api/v1/workflows/retargeted")).json() == saved_a
-                restored = await client.get("/api/v1/workflow-drafts/retargeted")
+                assert (await client.get(f"/api/v1/workflows/{workflow_a_id}")).json() == saved_a
+                restored = await client.get(f"/api/v1/workflow-drafts/{workflow_a_id}")
                 assert restored.status_code == 200, restored.text
                 assert restored.json() == accepted_a
-                for query in ({"workflow_name": "retargeted"}, pinned_query):
+                for query in ({"workflow_name": workflow_a_id}, pinned_query):
                     restored_result = await client.post("/api/v1/nodes/seed/data/query", json=query)
                     assert restored_result.status_code == 200, restored_result.text
                     assert restored_result.json() == data_a
@@ -522,11 +525,11 @@ class TestPatchSettings:
                     await client.patch("/api/v1/settings", json={"node_data_page_size": 50})
                 ).status_code == 200
                 assert (
-                    await client.post("/api/v1/workflows/missing/outputs/latest/reveal")
+                    await client.post(f"/api/v1/workflows/{uuid4()}/outputs/latest/reveal")
                 ).status_code == 403
                 assert (
                     await client.post(
-                        "/api/v1/workflows/missing/exports/latest-results-folder",
+                        f"/api/v1/workflows/{uuid4()}/exports/latest-results-folder",
                         json={"destination_parent": str(tmp_path), "replace": False},
                     )
                 ).status_code == 403
@@ -683,3 +686,69 @@ class TestPatchSettings:
         assert all(
             '"password"' not in text for text in [followup.text, response.text, path.read_text()]
         )
+
+
+@pytest.mark.parametrize("configured_owner", ["default", "workspace", "workflow_root", "workflow_store"])
+async def test_settings_reports_actual_canonical_workspace_without_persisting_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured_owner: str,
+) -> None:
+    home = tmp_path / "profile"
+    monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(home))
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "workspace-alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"deployment_mode": "desktop", "workspace_path": None}))
+    settings_store = SettingsStore(path=path, omero_credentials=FakeOmeroCredentials())
+    await settings_store.load()
+    registry = ToolRegistryService()
+    overrides = {}
+    if configured_owner == "workspace":
+        overrides["workspace_path"] = alias
+    elif configured_owner == "workflow_root":
+        overrides["workflow_root"] = alias / "workflows"
+    elif configured_owner == "workflow_store":
+        overrides["workflow_store"] = WorkflowStoreService(alias / "workflows", registry)
+    app = create_app(AppConfig(settings_store=settings_store, tool_registry=registry,
+                               disable_hot_reload=True, **overrides))
+    expected = (home / "workspace" if configured_owner == "default" else physical).resolve()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/settings")
+        assert response.status_code == 200, response.text
+        assert response.json()["workspace_path"] is None
+        assert response.json()["resolved_workspace_path"] == str(expected)
+        assert (await client.get("/api/v1/workspace")).json()["workspace_path"] == str(expected)
+        patched = await client.patch("/api/v1/settings", json={"node_data_page_size": 50})
+        assert patched.status_code == 200
+        assert patched.json()["resolved_workspace_path"] == str(expected)
+        before = path.read_bytes()
+        rejected = await client.patch("/api/v1/settings", json={"resolved_workspace_path": str(tmp_path / "spoofed")})
+        assert rejected.status_code == 422
+        assert path.read_bytes() == before
+    assert "resolved_workspace_path" not in json.loads(path.read_text())
+    assert "resolved_workspace_path" not in settings_store.get().model_dump()
+
+
+async def test_patch_settings_resolves_new_workspace_after_mutation_in_same_response(tmp_path: Path) -> None:
+    physical_a, physical_b = tmp_path / "a", tmp_path / "b"
+    physical_a.mkdir()
+    physical_b.mkdir()
+    alias_a, alias_b = tmp_path / "alias-a", tmp_path / "alias-b"
+    alias_a.symlink_to(physical_a, target_is_directory=True)
+    alias_b.symlink_to(physical_b, target_is_directory=True)
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"deployment_mode": "desktop", "workspace_path": str(alias_a)}))
+    store = SettingsStore(path=path, omero_credentials=FakeOmeroCredentials())
+    await store.load()
+    app = create_app(AppConfig(settings_store=store, tool_registry=ToolRegistryService(), disable_hot_reload=True))
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        initial = await client.get("/api/v1/settings")
+        assert initial.json()["resolved_workspace_path"] == str(physical_a.resolve())
+        response = await client.patch("/api/v1/settings", json={"workspace_path": str(alias_b)})
+        assert response.status_code == 200, response.text
+        assert response.json()["workspace_path"] == str(alias_b)
+        assert response.json()["resolved_workspace_path"] == str(physical_b.resolve())
+        assert (await client.get("/api/v1/workspace")).json()["workspace_path"] == str(physical_b.resolve())
+    assert json.loads(path.read_text())["workspace_path"] == str(alias_b)
+    assert "resolved_workspace_path" not in json.loads(path.read_text())

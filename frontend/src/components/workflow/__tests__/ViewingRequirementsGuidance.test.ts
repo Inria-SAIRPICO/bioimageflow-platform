@@ -22,7 +22,7 @@ const declared: NapariViewingReadinessOutput = {
 
 function mountGuidance(report: NapariViewingReadinessResponse) {
   return mount(ViewingRequirementsGuidance, {
-    props: { workflowName: 'Analysis', report, pending: false, error: null },
+    props: { workflowLabel: 'Analysis', report, pending: false, error: null },
   })
 }
 

@@ -160,6 +160,23 @@ class WorkflowDraftChangedMessage(_MessageBase):
     updated_by: DraftWriter
     updated_at: str
     dirty_against_saved: bool
+    workspace_path: str | None = None
+
+
+class WorkflowTreeChangedMessage(_MessageBase):
+    type: Literal["workflow_tree_changed"] = "workflow_tree_changed"
+    action: str
+    workflow_id: str | None = None
+    identity_generation: int | None = None
+    relative_path: str | None = None
+    workspace_path: str | None = None
+
+
+class ActiveWorkflowChangedMessage(_MessageBase):
+    type: Literal["active_workflow_changed"] = "active_workflow_changed"
+    workflow_id: str
+    updated_by: str
+    workspace_path: str | None = None
 
 
 class AckMessage(_MessageBase):
@@ -199,6 +216,8 @@ ServerMessage = Annotated[
         PackageInstallMessage,
         EnvironmentStatusMessage,
         WorkflowDraftChangedMessage,
+        WorkflowTreeChangedMessage,
+        ActiveWorkflowChangedMessage,
         AckMessage,
         ErrorMessage,
     ],
@@ -228,4 +247,6 @@ __all__ = [
     "ToolReloadMessage",
     "ToolRemovedMessage",
     "WorkflowDraftChangedMessage",
+    "WorkflowTreeChangedMessage",
+    "ActiveWorkflowChangedMessage",
 ]

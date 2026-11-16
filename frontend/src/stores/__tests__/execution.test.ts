@@ -861,6 +861,24 @@ describe('execution store', () => {
     })
   })
 
+  it('sends the captured workspace for Run and cache clearing', async () => {
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: { status: 'started', execution_id: 'owner-run', workflow_id: 'wf_a', draft_revision: 7 } })
+      .mockResolvedValueOnce({ data: { node_statuses: {} } })
+    const execution = useExecutionStore()
+    const owner = '/captured/workspace'
+
+    await execution.run(makeGraph(), undefined, 'wf_a', { canvasId: null, draftRevision: 7, workspacePath: owner })
+    await execution.clear(['n1'], 'wf_a', 7, owner)
+
+    expect(api.post).toHaveBeenNthCalledWith(1, '/api/v1/execution/run', expect.objectContaining({ workflow_id: 'wf_a' }), {
+      headers: { 'X-BioImageFlow-Workspace': owner },
+    })
+    expect(api.post).toHaveBeenNthCalledWith(2, '/api/v1/execution/clear', expect.objectContaining({ workflow_id: 'wf_a' }), {
+      headers: { 'X-BioImageFlow-Workspace': owner },
+    })
+  })
+
   it('retains failed execution intent and posts a server-targeted retry', async () => {
     const execution = useExecutionStore()
     execution.applyStatusSnapshot({

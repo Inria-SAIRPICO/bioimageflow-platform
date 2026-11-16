@@ -281,7 +281,8 @@ test.describe('logger panel', () => {
 
 test('reconnects with an acknowledged unfiltered subscription while preserving local logger filters', async ({ page }) => {
   const api = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
-  const name = `logger_reconnect_${test.info().project.name}_${Date.now()}`
+  const relativePath = `logger_reconnect_${test.info().project.name}_${Date.now()}`
+  let name = ''
   const nodeId = 'logger_source'
   const nodeLabel = 'Logger reconnect source'
   const marker = `logger-reconnect-${Date.now()}`
@@ -319,7 +320,7 @@ test('reconnects with an acknowledged unfiltered subscription while preserving l
       ? subscription : null
   }
   const graph: GraphState = {
-    schema_version: 2, name, display_name: name,
+    schema_version: 2, name: relativePath, display_name: relativePath,
     nodes: [{ type: 'tool', id: nodeId, name: nodeLabel, tool_name: 'SeedNumbers', parameters: {}, position: [200, 160] }],
     edges: [], interface: { inputs: [], outputs: [] },
     config: { engine: 'direct', execution: 'sequential' },
@@ -330,17 +331,18 @@ test('reconnects with an acknowledged unfiltered subscription while preserving l
   let cleanupFailure: unknown
   try {
     expect((await page.request.post(`${api}/dev/seed`)).ok()).toBe(true)
-    const created = await page.request.post(`${api}/workflows`, { data: { name, display_name: name } })
+    const created = await page.request.post(`${api}/workflows`, { data: { name: relativePath, display_name: relativePath } })
     expect(created.status(), await created.text()).toBe(201)
     info = await created.json() as WorkflowInfo
+    name = info.id
     const saved = await page.request.put(`${api}/workflows/${name}`, { data: { graph } })
     expect(saved.ok(), await saved.text()).toBe(true)
 
     await page.goto('/')
     await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId('workflow-search').fill(relativePath)
     await page.getByTestId(`workflow-row-${name}`).click()
-    await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(name)
+    await expect(page.getByRole('region', { name: 'Selected workflow details' }).getByRole('heading')).toHaveText(relativePath)
     const openedRequest = page.waitForRequest(request => request.method() === 'GET'
       && new URL(request.url()).pathname === `/api/v1/workflow-drafts/${name}`)
     const [opened] = await Promise.all([
@@ -350,7 +352,7 @@ test('reconnects with an acknowledged unfiltered subscription while preserving l
     expect(opened.ok(), await opened.text()).toBe(true)
     const accepted = await opened.json() as WorkflowDraftResponse
     expect(accepted.workflow_id).toBe(name)
-    await expect(page.getByTestId('workflow-title')).toHaveText(name)
+    await expect(page.getByTestId('workflow-title')).toHaveText(relativePath)
     await page.locator('.dv-tab').filter({ hasText: /^Logger$/ }).click()
     await expect(page.getByTestId('panel-logger')).toBeVisible()
     await expect.poll(() => transports.length).toBe(1)

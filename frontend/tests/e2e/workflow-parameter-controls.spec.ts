@@ -43,8 +43,10 @@ async function save(page: Page, expectedTitle: string): Promise<void> {
 test('workflow controls retain defaults, pins and private depth-two edits through save and reopen', async ({ page }) => {
   expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
   const name = `workflow_controls_${Date.now()}`
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
-  const setup = await page.request.put(`${API}/workflows/${name}`, { data: { graph: fixture(name) } })
+  const created = await page.request.post(`${API}/workflows`, { data: { name } })
+  expect(created.status()).toBe(201)
+  const id: string = (await created.json()).id
+  const setup = await page.request.put(`${API}/workflows/${id}`, { data: { graph: fixture(name) } })
   expect(setup.ok(), await setup.text()).toBeTruthy()
   const requests: string[] = []
   page.on('request', request => {
@@ -53,7 +55,7 @@ test('workflow controls retain defaults, pins and private depth-two edits throug
   const open = async () => {
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
     await page.getByTestId('workflow-search').fill(name)
-    await page.getByTestId(`workflow-row-${name}`).dblclick()
+    await page.getByTestId(`workflow-row-${id}`).dblclick()
     await expect(page.getByTestId('workflow-title')).toContainText(name)
   }
   const select = async () => {
@@ -104,10 +106,10 @@ test('workflow controls retain defaults, pins and private depth-two edits throug
   await page.locator('.dv-tab').filter({ hasText: new RegExp(`^${name} child$`) }).click()
   await save(page, `${name} child`)
   await page.locator('.dv-tab').filter({ hasText: new RegExp(`^${name}$`) }).click()
-  const saved = page.waitForResponse(response => response.url().endsWith(`/workflows/${name}`) && response.request().method() === 'PUT')
+  const saved = page.waitForResponse(response => response.url().endsWith(`/workflows/${id}`) && response.request().method() === 'PUT')
   await save(page, name)
   expect((await saved).ok()).toBeTruthy()
-  const persisted = (await (await page.request.get(`${API}/workflows/${name}`)).json()).graph as GraphState
+  const persisted = (await (await page.request.get(`${API}/workflows/${id}`)).json()).graph as GraphState
   expect(child(persisted).bindings.amount).toEqual({ __type__: 'int', value: 71 })
   expect(child(child(child(persisted).workflow).workflow).bindings.amount).toEqual({ __type__: 'int', value: 83 })
   expect(JSON.stringify(persisted)).not.toContain('pinnedInputs')
@@ -121,16 +123,18 @@ test('workflow controls retain defaults, pins and private depth-two edits throug
 test('connected workflow parameters retain their source and protect the connected pin', async ({ page }) => {
   expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
   const name = `workflow_connected_controls_${Date.now()}`
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+  const created = await page.request.post(`${API}/workflows`, { data: { name } })
+  expect(created.status()).toBe(201)
+  const id: string = (await created.json()).id
   const graph = fixture(name)
   graph.nodes.push({ type: 'tool', id: 'seed', name: 'Number source', tool_name: 'SeedNumbers', position: [0, 180], parameters: {} })
   graph.edges.push({ type: 'column', id: 'connected-number', source_node: 'seed', source_output: 'number', target_node: 'child', target_input: 'amount' })
-  const setup = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
+  const setup = await page.request.put(`${API}/workflows/${id}`, { data: { graph } })
   expect(setup.ok(), await setup.text()).toBeTruthy()
   await page.goto('/')
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
   await page.getByTestId('workflow-search').fill(name)
-  await page.getByTestId(`workflow-row-${name}`).dblclick()
+  await page.getByTestId(`workflow-row-${id}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(name)
   await page.locator('.vue-flow__node[data-id="child"]').click()
   await page.locator('.dv-tab').filter({ hasText: /^Nodes$/ }).click()

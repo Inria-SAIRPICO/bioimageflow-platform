@@ -6,17 +6,6 @@ import type { Page } from '@playwright/test'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
-function deriveWorkflowId(value: string): string {
-  return value
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-}
-
 function zipEntries(archive: Buffer): Map<string, Buffer> {
   const endSignature = Buffer.from([0x50, 0x4b, 0x05, 0x06])
   const end = archive.lastIndexOf(endSignature)
@@ -51,13 +40,15 @@ function zipEntries(archive: Buffer): Map<string, Buffer> {
 }
 
 async function createWorkflow(page: Page, displayName: string): Promise<string> {
-  const workflowName = deriveWorkflowId(displayName)
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New', exact: true }).click()
   await page.getByTestId('workflow-display-name-input').fill(displayName)
+  const created = page.waitForResponse(response =>
+    response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST',
+  )
   await page.getByTestId('workflow-dialog-submit').click()
   await expect(page.getByTestId('workflow-title')).toContainText(displayName)
-  return workflowName
+  return (await (await created).json()).id
 }
 
 async function installExportGraph(page: Page, workflowName: string, marker = 1): Promise<void> {
@@ -134,12 +125,11 @@ test.describe('result exports', () => {
   test('keeps latest exports workflow-bound and retries a failed pinned bundle without wrong bytes', async ({ page }) => {
     test.setTimeout(90_000)
     const displayName = `Result export ${test.info().project.name} ${Date.now()}`
-    const workflowName = deriveWorkflowId(displayName)
     expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
 
-    await createWorkflow(page, displayName)
+    const workflowName = await createWorkflow(page, displayName)
     await installExportGraph(page, workflowName)
     const generateNode = page.locator('.vue-flow__node[data-id="generate_result"]')
     const seedNode = page.locator('.vue-flow__node[data-id="seed_result"]')

@@ -5,9 +5,11 @@ import { basename } from 'node:path'
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
 
 test('owned dynamic output schemas resolve on Open, parameter edits and reload without execution', async ({ page }) => {
-  const name = `owned_schema_${test.info().project.name}_${Date.now()}`
+  const relativePath = `owned_schema_${test.info().project.name}_${Date.now()}`
   const className = `OwnedSchema${Date.now()}`
-  expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+  const workflowCreated = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
+  expect(workflowCreated.ok(), await workflowCreated.text()).toBeTruthy()
+  const name = (await workflowCreated.json()).id as string
   try {
     const created = await page.request.post(`${API}/tools`, {
       params: { workflow_name: name }, data: { name: className, tool_type: 'DataFrameTool' },
@@ -41,7 +43,7 @@ class ${className}(DataFrameTool):
     const schemaResponse = page.waitForResponse(response => response.url().endsWith('/nodes/values/output_schema'))
     await page.goto('/')
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(name)
+    await page.getByTestId('workflow-search').fill(relativePath)
     await page.getByTestId(`workflow-row-${name}`).dblclick()
     const schema = await schemaResponse
     expect(schema.status()).toBe(200)

@@ -28,9 +28,10 @@ function workflowUrl(id: string): string {
   return id.split('/').map(encodeURIComponent).join('/')
 }
 
-export async function fetchWorkflowDraft(workflowId: string): Promise<WorkflowDraftResponse> {
+export async function fetchWorkflowDraft(workflowId: string, workspacePath?: string): Promise<WorkflowDraftResponse> {
   const { data } = await api.get<WorkflowDraftResponse>(
     `/api/v1/workflow-drafts/${workflowUrl(workflowId)}`,
+    ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
   )
   return data
 }
@@ -43,10 +44,12 @@ export async function putWorkflowDraft(
     updated_by?: DraftWriter
     validate?: boolean
   },
+  workspacePath?: string,
 ): Promise<WorkflowDraftResponse> {
   const { data } = await api.put<WorkflowDraftResponse>(
     `/api/v1/workflow-drafts/${workflowUrl(workflowId)}`,
     body,
+    ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
   )
   return data
 }
@@ -54,10 +57,12 @@ export async function putWorkflowDraft(
 export async function resetWorkflowDraftToSaved(
   workflowId: string,
   expectedRevision: number,
+  workspacePath?: string,
 ): Promise<WorkflowDraftResponse> {
   const { data } = await api.post<WorkflowDraftResponse>(
     `/api/v1/workflow-drafts/${workflowUrl(workflowId)}/reset-to-saved`,
     { expected_revision: expectedRevision, updated_by: 'frontend' },
+    ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
   )
   return data
 }

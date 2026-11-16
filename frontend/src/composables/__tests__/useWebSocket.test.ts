@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useWebSocket, __resetForTests } from '@/composables/useWebSocket'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useSettingsStore, type WorkspaceSettings } from '@/stores/settings'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
@@ -51,6 +52,7 @@ describe('useWebSocket workflow draft dispatch', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    useSettingsStore().settings = { workspace_path: null, resolved_workspace_path: '/workspace' } as WorkspaceSettings
     FakeWebSocket.instances = []
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
     __resetForTests()
@@ -72,6 +74,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_draft_changed',
+        workspace_path: '/workspace',
         workflow_id: 'wf',
         draft_revision: 8,
         updated_by: 'agent',
@@ -95,6 +98,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_draft_changed',
+        workspace_path: '/workspace',
         workflow_id: 'workflow-b',
         draft_revision: 9,
         updated_by: 'agent',
@@ -307,6 +311,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_tree_changed',
+        workspace_path: '/workspace',
         action: 'workflow_created',
         workflow_id: 'wf',
       }),
@@ -342,6 +347,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_tree_changed',
+        workspace_path: '/workspace',
         action: 'folder_moved',
       }),
     } as MessageEvent)
@@ -374,6 +380,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_tree_changed',
+        workspace_path: '/workspace',
         action: 'workflow_deleted',
         workflow_id: 'folder/wf',
         identity_generation: 7,
@@ -401,6 +408,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_tree_changed',
+        workspace_path: '/workspace',
         action: 'workflow_created',
         workflow_id: 'wf',
         identity_generation: 12,
@@ -409,6 +417,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'workflow_tree_changed',
+        workspace_path: '/workspace',
         action: 'workflow_deleted',
         workflow_id: 'wf',
         identity_generation: 11,
@@ -471,6 +480,92 @@ describe('useWebSocket workflow draft dispatch', () => {
     vi.useRealTimers()
   })
 
+  it.each(['workflow_draft_changed', 'workflow_tree_changed', 'active_workflow_changed'])(
+    'ignores %s from another workspace sharing the same UUID', async (type) => {
+      const id = 'a9acec57-a374-44d4-a2af-929e773b9efa'
+      const workflow = useWorkflowStore()
+      workflow.observeWorkflowServerIdentityGeneration(id, 2)
+      const fetch = vi.spyOn(workflow, 'fetchWorkflowTree').mockResolvedValue([])
+      const draft = useWorkflowDraftStore()
+      draft.reset(id)
+      const note = vi.spyOn(draft, 'noteRemoteChange')
+      const removed = vi.fn()
+      const command = vi.fn()
+      window.addEventListener('bioimageflow:workflow-removed', removed)
+      window.addEventListener('bioimageflow:workflow-command', command)
+      const ws = useWebSocket()
+      ws.connect('ws://example.test/ws')
+      try {
+        FakeWebSocket.instances[0]!.onmessage?.({ data: JSON.stringify({
+          type, workspace_path: '/another-workspace', workflow_id: id,
+          action: 'workflow_deleted', identity_generation: 9, draft_revision: 9,
+          updated_by: 'agent', updated_at: '2026-11-16T10:00:00Z', dirty_against_saved: true,
+        }) } as MessageEvent)
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(fetch).not.toHaveBeenCalled()
+        expect(note).not.toHaveBeenCalled()
+        expect(removed).not.toHaveBeenCalled()
+        expect(command).not.toHaveBeenCalled()
+        expect(workflow.workflowServerIdentityGeneration(id)).toBe(2)
+      } finally {
+        window.removeEventListener('bioimageflow:workflow-removed', removed)
+        window.removeEventListener('bioimageflow:workflow-command', command)
+      }
+    },
+  )
+
+  it('withdraws the resolved workspace while a workspace change is pending', async () => {
+    const settings = useSettingsStore()
+    const response = deferred<{ data: WorkspaceSettings }>()
+    vi.spyOn(api, 'patch').mockReturnValueOnce(response.promise)
+    const fetch = vi.spyOn(useWorkflowStore(), 'fetchWorkflowTree').mockResolvedValue([])
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+    const update = settings.updateSettings({ workspace_path: '/selected-b' })
+    await Promise.resolve()
+    expect(settings.settings?.resolved_workspace_path).toBeNull()
+    FakeWebSocket.instances[0]!.onmessage?.({ data: JSON.stringify({
+      type: 'workflow_tree_changed', workspace_path: '/workspace', action: 'workflow_deleted', workflow_id: 'same-uuid',
+    }) } as MessageEvent)
+    expect(fetch).not.toHaveBeenCalled()
+    response.resolve({ data: { workspace_path: '/selected-b', resolved_workspace_path: '/canonical-b' } as WorkspaceSettings })
+    await update
+    expect(settings.settings?.resolved_workspace_path).toBe('/canonical-b')
+  })
+
+  it.each(['workspace switch', 'failed refresh'])(
+    'does not open an active workflow after %s while refreshing', async (outcome) => {
+      const response = deferred<[]>()
+      const workflow = useWorkflowStore()
+      vi.spyOn(workflow, 'fetchWorkflowTree').mockImplementation(() => outcome === 'failed refresh'
+        ? Promise.reject(new Error('Unavailable workspace')) : response.promise)
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const command = vi.fn()
+      const refreshed = vi.fn()
+      window.addEventListener('bioimageflow:workflow-command', command)
+      window.addEventListener('bioimageflow:workflow-identities-refreshed', refreshed)
+      const ws = useWebSocket()
+      ws.connect('ws://example.test/ws')
+      try {
+        FakeWebSocket.instances[0]!.onmessage?.({ data: JSON.stringify({
+          type: 'active_workflow_changed', workspace_path: '/workspace', workflow_id: 'same-uuid',
+        }) } as MessageEvent)
+        // Even leaving and returning to the same workspace invalidates old intent.
+        if (outcome === 'workspace switch') useSettingsStore().workspaceSelectionRevision += 2
+        response.resolve([])
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(command).not.toHaveBeenCalled()
+        expect(refreshed).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('bioimageflow:workflow-command', command)
+        window.removeEventListener('bioimageflow:workflow-identities-refreshed', refreshed)
+      }
+    },
+  )
+
   it('refreshes workflows and requests existing open behavior for active workflow changes', async () => {
     const workflow = useWorkflowStore()
     const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
@@ -483,6 +578,7 @@ describe('useWebSocket workflow draft dispatch', () => {
     FakeWebSocket.instances[0]!.onmessage?.({
       data: JSON.stringify({
         type: 'active_workflow_changed',
+        workspace_path: '/workspace',
         workflow_id: 'folder/wf',
         updated_by: 'agent',
       }),

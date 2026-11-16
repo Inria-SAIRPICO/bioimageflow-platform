@@ -5,6 +5,8 @@ import type {
 
 export interface WorkflowDeletionRequest {
   workflowName: string
+  workspacePath: string | undefined
+  workspaceSelectionRevision: number
   canvasId: CanvasId | null
   localIdentityGeneration: number
   serverIdentityGeneration: number | null
