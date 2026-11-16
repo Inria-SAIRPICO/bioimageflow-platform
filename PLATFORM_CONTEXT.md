@@ -478,6 +478,7 @@ For an API change, trace the backend model and service, router, generated type, 
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines local/distributed feature suites and focused, quick, scoped completion, browser, full, and certification lanes.
   The Release validation workflow runs the local full lane and documentation check for exact `release/**` candidates before promotion to main; native desktop acceptance remains separate.
+  Browser CI and full release certification use Ubuntu 24.04 for the pinned Playwright browser dependencies; non-browser jobs keep their existing runner selection.
 - Tests default to local features in every runner; `scripts/test --suite distributed|all ...` opts into distributed features.
   Native distributed markers/tags replace campaign-specific selectors and duplicate exclusion inventories.
   Required PR/push CI and Monday weekly validation run local features; `.github/workflows/distributed.yml` is a separate manual-only optional workflow.
