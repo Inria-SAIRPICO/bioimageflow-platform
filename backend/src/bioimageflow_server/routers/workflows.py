@@ -28,6 +28,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowFormatStatus,
     WorkflowFormatMigrationApply,
     WorkflowIdentityMigrationAck,
+    WorkflowIdentityCopyResolve,
     WorkflowInfo,
     WorkflowImportResponse,
     ViewingRequirementsManifest,
@@ -396,6 +397,35 @@ async def acknowledge_workflow_identity_migrations(
             status_code=409,
             detail={"error": "workflow_identity_migration_conflict", "detail": str(exc)},
         ) from exc
+
+
+@router.post("/identity-copies/resolve", response_model=WorkflowInfo)
+async def resolve_workflow_identity_copy(
+    body: WorkflowIdentityCopyResolve,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    execution_registry: ExecutionRegistry | None = Depends(get_execution_registry),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowInfo:
+    async with _idle_mutation_lease(execution_manager):
+        _ensure_workflow_storage_unowned(execution_registry, [body.expected_workflow_id])
+        try:
+            result = store.resolve_identity_copy(
+                body.relative_path, body.expected_workflow_id, body.expected_document_hash,
+            )
+        except (WorkflowIdentityConflictError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "workflow_identity_conflict", "detail": str(exc)},
+            ) from exc
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_created",
+            workflow_id=result.id,
+            identity_generation=result.identity_generation,
+            relative_path=result.relative_path,
+        )
+        return result
 
 
 @router.post("/format-migrations/apply", response_model=WorkflowFormatStatus)
