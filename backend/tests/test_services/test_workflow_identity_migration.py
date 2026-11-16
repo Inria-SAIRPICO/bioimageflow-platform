@@ -211,3 +211,119 @@ def test_result_download_filename_uses_relative_path_without_leaking_uuid(
         assert prepared.path.is_file()
     finally:
         shutil.rmtree(prepared.cleanup_root)
+
+
+@pytest.mark.parametrize("generation", [1, 3])
+def test_legacy_local_execution_is_normalized_without_guessing_reused_ownership(
+    tmp_path: Path, generation: int,
+) -> None:
+    path, raw = _execution(tmp_path)
+    raw.update(schema_version=1, backend="wetlands", actions={"obsolete": "old wire shape"})
+    raw.pop("diagnostics")
+    path.write_text(json.dumps(raw))
+    original = path.read_bytes()
+    identity = str(uuid4())
+
+    [(target, payload, kind)] = workflow_identity_reference_artifacts(
+        tmp_path, {"Analysis/nuclei": (identity, generation)},
+    )
+
+    assert target == path and kind == "execution_registry"
+    assert payload["schema_version"] == 2
+    assert payload["revision"] == raw["revision"]
+    assert payload["draft_revision"] == raw["draft_revision"]
+    assert payload["backend_metadata"]["storage_path"] == "/captured/storage"
+    assert payload["workflow_id"] == (identity if generation == 1 else None)
+    if generation == 3:
+        assert payload["backend_metadata"]["workflow_identity_resolution"]["legacy_path"] == "Analysis/nuclei"
+    assert path.read_bytes() == original
+    validate_identity_reference_payload(kind, payload)
+
+
+def test_active_legacy_local_execution_blocks_confirmed_identity_migration(tmp_path: Path) -> None:
+    path, raw = _execution(tmp_path, state="running")
+    raw.update(schema_version=1, backend="direct")
+    path.write_text(json.dumps(raw))
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="blocked by active execution retained-run"):
+        workflow_identity_reference_artifacts(tmp_path, {"Analysis/nuclei": (str(uuid4()), 1)})
+    assert path.read_bytes() == before
+
+
+def test_legacy_distributed_history_remains_outside_local_migration(tmp_path: Path) -> None:
+    path, raw = _execution(tmp_path, state="running")
+    raw.update(schema_version=1)
+    path.write_text(json.dumps(raw))
+    before = path.read_bytes()
+    assert workflow_identity_reference_artifacts(tmp_path, {"Analysis/nuclei": (str(uuid4()), 1)}) == []
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("has_current_workflow", [True, False])
+def test_missing_execution_and_agent_owners_become_unresolved_in_reference_only_confirmed_plan(
+    tmp_path: Path, has_current_workflow: bool,
+) -> None:
+    from bioimageflow_server.models.workflow import WorkflowCreate
+    from bioimageflow_server.services.execution_registry import ExecutionRegistry
+    from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    current = store.create_workflow(WorkflowCreate(name="current")) if has_current_workflow else None
+    path, raw = _execution(tmp_path)
+    before = path.read_bytes()
+    agent_path = tmp_path / ".bioimageflow" / "agent-state.json"
+    agent_raw = {"api_base_url": "http://test/api/v1", "active_workflow_id": "deleted/workflow",
+                 "identity_generation": 4, "current_draft_revision": 7}
+    agent_path.write_text(json.dumps(agent_raw))
+    agent_before = agent_path.read_bytes()
+    store.configure_identity_migration_artifacts(
+        lambda identities: workflow_identity_reference_artifacts(tmp_path, identities), {},
+    )
+    status = store.workflow_format_status()
+    assert status.pending_plan_id is not None
+    assert path.read_bytes() == before
+    assert agent_path.read_bytes() == agent_before
+    if current is not None:
+        assert store.get_workflow(current.id).info.id == current.id
+
+    result = store.apply_workflow_format_migrations(status.pending_plan_id)
+
+    assert result.pending_plan_id is None
+    history = ExecutionRegistry(tmp_path).get("retained-run")
+    assert history.workflow_id is None
+    assert history.revision == raw["revision"]
+    assert history.backend_metadata["storage_path"] == "/captured/storage"
+    assert history.backend_metadata["workflow_identity_resolution"]["legacy_path"] == "Analysis/nuclei"
+    agent = json.loads(agent_path.read_text())
+    assert agent["active_workflow_id"] is None
+    assert agent["current_draft_revision"] == 7
+    assert agent["workflow_identity_resolution"]["legacy_path"] == "deleted/workflow"
+    backups = list((tmp_path / ".bioimageflow" / "backups" / "workflow-format").glob("**/retained-run.json"))
+    assert len(backups) == 1 and backups[0].read_bytes() == before
+
+
+def test_agent_generation_mismatch_retains_unresolved_context(tmp_path: Path) -> None:
+    path = tmp_path / ".bioimageflow" / "agent-state.json"
+    path.parent.mkdir()
+    raw = {"api_base_url": "http://test/api/v1", "active_workflow_id": "Analysis/nuclei",
+           "identity_generation": 1, "current_draft_revision": 9}
+    path.write_text(json.dumps(raw))
+    [(_target, payload, kind)] = workflow_identity_reference_artifacts(
+        tmp_path, {"Analysis/nuclei": (str(uuid4()), 2)},
+    )
+    assert payload["active_workflow_id"] is None
+    assert payload["current_draft_revision"] == 9
+    assert payload["workflow_identity_resolution"]["legacy_path"] == raw["active_workflow_id"]
+    assert json.loads(path.read_text()) == raw
+    validate_identity_reference_payload(kind, payload)
+
+
+def test_current_uuid_and_already_unresolved_references_are_not_rewritten(tmp_path: Path) -> None:
+    path, raw = _execution(tmp_path)
+    raw["workflow_id"] = str(uuid4())
+    path.write_text(json.dumps(raw))
+    assert workflow_identity_reference_artifacts(tmp_path, {}) == []
+    raw["workflow_id"] = None
+    path.write_text(json.dumps(raw))
+    assert workflow_identity_reference_artifacts(tmp_path, {}) == []

@@ -9,6 +9,8 @@ from uuid import UUID
 
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 from bioimageflow_server.models.viewer_preferences import ViewerPreferencesSnapshot
+from bioimageflow_server.models.workflow import validate_workflow_identity
+from bioimageflow_server.services.execution_registry import ExecutionRegistry
 
 IdentityMigrationMap = dict[str, tuple[str, int]]
 IdentityMigrationArtifact = tuple[Path, dict[str, Any], str]
@@ -32,17 +34,20 @@ def workflow_identity_reference_artifacts(
     agent_path = workspace_dir / ".bioimageflow" / "agent-state.json"
     if agent_path.is_file():
         raw_agent = _read_object(agent_path)
-        identity = identities.get(str(raw_agent.get("active_workflow_id")))
-        if identity is not None:
+        owner = raw_agent.get("active_workflow_id")
+        identity = identities.get(str(owner))
+        if identity is not None or _is_legacy_owner(owner):
             generation = raw_agent.get("identity_generation")
-            if generation == identity[1] or (generation is None and identity[1] in (0, 1)):
+            if identity is not None and (
+                generation == identity[1] or (generation is None and identity[1] in (0, 1))
+            ):
                 agent = {**raw_agent, "active_workflow_id": identity[0], "identity_generation": identity[1]}
             else:
                 agent = {
                     **raw_agent,
                     "active_workflow_id": None,
                     "workflow_identity_resolution": {
-                        "legacy_path": raw_agent["active_workflow_id"],
+                        "legacy_path": owner,
                         "reason": "Select an active workflow by UUID to resolve legacy ownership",
                     },
                 }
@@ -53,30 +58,41 @@ def workflow_identity_reference_artifacts(
             if path.is_symlink() or not path.is_file():
                 continue
             raw = _read_object(path)
-            # Legacy execution-format migration remains its own contract.
-            if raw.get("schema_version") != 2:
+            if raw.get("schema_version") not in (1, 2):
                 continue
-            snapshot = ExecutionSnapshot.model_validate(raw)
-            identity = identities.get(str(raw.get("workflow_id")))
-            if identity is None:
+            # Reuse the registry's supported historical-reader contract. Its
+            # obsolete distributed v1 records remain outside local migration.
+            snapshot = ExecutionRegistry._decode_snapshot(raw)
+            if snapshot is None:
+                continue
+            owner = snapshot.workflow_id
+            identity = identities.get(str(owner))
+            if identity is None and not _is_legacy_owner(owner):
                 continue
             if not snapshot.terminal:
                 raise ValueError(
                     "Workflow identity migration is blocked by active execution "
                     f"{snapshot.execution_id}"
                 )
-            if identity[1] in (0, 1):
-                payload = {**raw, "workflow_id": identity[0]}
+            normalized = dict(raw)
+            if raw["schema_version"] == 1:
+                normalized["schema_version"] = 2
+                normalized.pop("actions", None)
+                normalized.setdefault("diagnostics", [])
+            if identity is not None and identity[1] in (0, 1):
+                payload = {**normalized, "workflow_id": identity[0]}
             else:
+                reason = (
+                    "Legacy execution has no incarnation for a reused path"
+                    if identity is not None
+                    else "Legacy execution workflow is missing; select an owner explicitly"
+                )
                 payload = {
-                    **raw,
+                    **normalized,
                     "workflow_id": None,
                     "backend_metadata": {
-                        **raw.get("backend_metadata", {}),
-                        "workflow_identity_resolution": {
-                            "legacy_path": raw["workflow_id"],
-                            "reason": "Legacy execution has no incarnation for a reused path",
-                        },
+                        **normalized.get("backend_metadata", {}),
+                        "workflow_identity_resolution": {"legacy_path": owner, "reason": reason},
                     },
                 }
             if payload != raw:
@@ -125,6 +141,18 @@ def validate_identity_reference_payload(kind: str, payload: dict[str, Any]) -> N
         AgentState.model_validate(payload)
     else:
         raise ValueError(f"Unsupported workflow identity reference kind: {kind}")
+
+
+def _is_legacy_owner(value: object) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, str):
+        return True
+    try:
+        validate_workflow_identity(value)
+    except ValueError:
+        return True
+    return False
 
 
 def _read_object(path: Path) -> dict[str, Any]:

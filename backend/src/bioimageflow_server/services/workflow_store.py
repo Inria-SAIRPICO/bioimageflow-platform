@@ -1989,7 +1989,7 @@ class WorkflowStoreService:
                 for node in nodes
             )
 
-        if not self.root_dir.exists():
+        if not self.root_dir.exists() and self._identity_migration_artifacts is None:
             return None, [], set(), []
 
         paths = (
@@ -2224,17 +2224,17 @@ class WorkflowStoreService:
             for identity, generation in identity_migrations.values():
                 ledger[identity] = generation
             targets.append(self._schema_v2_target(self._workflow_generation_ledger_path, {"version": 1, "generations": ledger}))
-            if self._identity_migration_artifacts is not None:
-                try:
-                    related = self._identity_migration_artifacts(identity_migrations)
-                    for path, payload, kind in related:
-                        targets.append(self._schema_v2_target(path, payload, kind=kind))
-                except (ValueError, OSError) as exc:
-                    migration_blocked = True
-                    scan_errors.append(WorkflowFormatNotice(
-                        status="error", workflow_id="workspace", path=str(self.workspace_dir),
-                        detail=f"Workflow identity migration is blocked: {exc}",
-                    ))
+        if self._identity_migration_artifacts is not None:
+            try:
+                related = self._identity_migration_artifacts(identity_migrations)
+                for path, payload, kind in related:
+                    targets.append(self._schema_v2_target(path, payload, kind=kind))
+            except (ValueError, OSError) as exc:
+                migration_blocked = True
+                scan_errors.append(WorkflowFormatNotice(
+                    status="error", workflow_id="workspace", path=str(self.workspace_dir),
+                    detail=f"Workflow identity migration is blocked: {exc}",
+                ))
 
         if migration_blocked:
             return None, [], migrated_ids, scan_errors
