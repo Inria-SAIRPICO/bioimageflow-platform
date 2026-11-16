@@ -250,6 +250,9 @@ Use per-case markers in mixed files; module-wide markers are appropriate only wh
 
 ## CI workflows
 
+Browser jobs and full release certification use Ubuntu 24.04, matching the operating-system dependencies supported by the pinned Playwright release.
+Non-browser jobs retain their existing runner selection.
+
 Pushes to `release/**` and explicit **Release validation** dispatches run the authoritative local `full` lane followed by `check docs` on one exact candidate commit. The retained artifact includes command logs, browser evidence and coverage for 30 days. This is the automated release gate for machines that cannot run the Unix-oriented full runner locally; native desktop acceptance remains separate.
 
 | Workflow | Trigger | Feature suite | Purpose |

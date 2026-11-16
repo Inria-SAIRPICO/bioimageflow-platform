@@ -142,7 +142,7 @@ jobs:
 
   chromium:
     name: Chromium
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Check out repository
@@ -179,7 +179,7 @@ jobs:
 
   firefox:
     name: Firefox
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Check out repository
