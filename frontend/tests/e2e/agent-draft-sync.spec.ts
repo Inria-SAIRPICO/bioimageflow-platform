@@ -274,6 +274,7 @@ test.describe('agent draft sync', () => {
 for (const keepCanvasFirst of [false, true]) {
   test(`saves the agent snapshot as a copy (keep canvas first: ${keepCanvasFirst})`, async ({ page }, testInfo) => {
     let name = uniqueName('agent_copy')
+    const displayName = name
     let copyName: string | null = null
     let releaseWrite: (() => void) | undefined
     let mainFailed = false
@@ -298,7 +299,7 @@ for (const keepCanvasFirst of [false, true]) {
       await expect(page.locator('#bioimageflow-app')).toBeVisible()
       await rememberLastOpenedWorkflow(page, name)
       await page.reload()
-      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
       await expect.poll(() => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0)).toBeGreaterThan(0)
       await page.locator('.vue-flow__node[data-id="increment"]').click()
       await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
@@ -383,7 +384,7 @@ for (const keepCanvasFirst of [false, true]) {
       expect(response.ok()).toBeTruthy()
       const info = await response.json()
       copyName = info.id
-      await expect(page.locator('.workflow-draft-conflict__success')).toContainText(info.id)
+      await expect(page.locator('.workflow-draft-conflict__success')).toContainText(info.display_name)
       const copy = await (await page.request.get(`${API_BASE}/api/v1/workflows/${info.id}`)).json()
       expect(copy.graph).toEqual({ ...agent.graph, name: info.relative_path.split('/').at(-1), display_name: info.display_name })
       const original = await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${name}`)).json()
@@ -396,7 +397,7 @@ for (const keepCanvasFirst of [false, true]) {
       const originalSaved = await (await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)).json()
       expect(originalSaved.graph).toEqual(saved.graph)
       expect(readFileSync(saved.info.path)).toEqual(savedBytes)
-      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
     } catch (error) {
       mainFailed = true
       throw error
@@ -425,6 +426,7 @@ for (const keepCanvasFirst of [false, true]) {
 test('copies an agent graph with recursively owned unsaved sources without aliasing', async ({ page }) => {
   test.setTimeout(120_000)
   let name = uniqueName('agent_recursive_copy')
+  const displayName = name
   let builderName = uniqueName('agent_source_builder')
   const builderDefinitionName = builderName
   let childName = uniqueName('agent_source_child')
@@ -498,7 +500,7 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
     await page.getByTestId('workflow-search').fill(name)
     await page.getByTestId(`workflow-row-${name}`).dblclick()
-    await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+    await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
     await expect.poll(() => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0)).toBeGreaterThan(0)
     const ownedNode = page.locator('.vue-flow__node[data-id="owned_numbers"]')
     await expect(ownedNode).toBeVisible()
@@ -603,7 +605,7 @@ test('copies an agent graph with recursively owned unsaved sources without alias
     expect(readFileSync(originalDocumentPath)).toEqual(originalDocumentBytes)
     expect(originalDraftAfter.draft_revision).toBe(agent.draft_revision)
     expect(originalDraftAfter.graph).toEqual(agent.graph)
-    await expect(page.locator('[data-testid="workflow-title"]')).toContainText(name)
+    await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
 
     writeFileSync(copyChildPath, childBytes.replace('n + 20', 'n + 40'))
     expect(readFileSync(copyChildPath, 'utf8')).toContain('n + 40')

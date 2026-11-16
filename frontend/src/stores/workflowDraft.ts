@@ -137,8 +137,8 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     return response
   }
 
-  async function fetchLatestDraft(id: string): Promise<WorkflowDraftResponse> {
-    return fetchWorkflowDraft(id)
+  async function fetchLatestDraft(id: string, workspacePath?: string): Promise<WorkflowDraftResponse> {
+    return fetchWorkflowDraft(id, ...(workspacePath ? [workspacePath] : []))
   }
 
   async function overwriteDraftWithGraph(
