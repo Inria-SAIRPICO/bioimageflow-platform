@@ -189,6 +189,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   let pendingTreeRead: {
     generation: number
     epoch: number
+    workspaceSelection: number
     promise: Promise<CatalogReadResult<WorkflowTreeNode[]>>
   } | null = null
 
@@ -198,6 +199,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   const uiStore = useUIStore()
   const autoSave = useAutoSave()
+
+  function captureWorkspaceSelection(): number {
+    return useSettingsStore().workspaceSelectionRevision
+  }
+
+  function assertWorkspaceSelectionCurrent(selection: number): void {
+    if (selection !== captureWorkspaceSelection()) {
+      throw new Error('The workspace changed while the operation was pending. Refresh the selected workspace to see its workflows.')
+    }
+  }
 
   const currentName = computed(() => current.value ? workflowId(current.value) : null)
   const hasWorkflow = computed(() => current.value !== null)
@@ -545,13 +556,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
   ): Promise<CatalogReadResult<V>> {
     const generation = workflowCollectionGeneration
     const epoch = catalogAuthorityEpoch
+    const workspaceSelection = captureWorkspaceSelection()
+    const ownerWorkspace = useSettingsStore().settings?.workspace_path
     const owner = ++catalogMessageOwner
     pendingCatalogReads.add(owner)
     isLoading.value = true
     const isCurrent = () => generation === workflowCollectionGeneration
       && epoch === catalogAuthorityEpoch
+      && workspaceSelection === captureWorkspaceSelection()
     try {
-      const { data } = await api.get<T>(url)
+      const { data } = await api.get<T>(url,
+        ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
+      )
       if (!isCurrent()) return { current: false }
       const value = apply(data)
       noteCatalogAuthorityChange()
@@ -569,6 +585,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   async function fetchWorkflows(): Promise<WorkflowInfo[]> {
+    const workspaceSelection = captureWorkspaceSelection()
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await readWorkflowCatalog<WorkflowInfo[], WorkflowInfo[]>(
         '/api/v1/workflows',
@@ -577,6 +594,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
           return data
         },
       )
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       if (result.current) return result.value
     }
     throw new Error('Workflow identities changed while refreshing the workflow list.')
@@ -584,12 +602,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function pendingWorkflowTreeRead(): Promise<CatalogReadResult<WorkflowTreeNode[]>> {
     if (pendingTreeRead?.epoch === catalogAuthorityEpoch
-      && pendingTreeRead.generation === workflowCollectionGeneration) {
+      && pendingTreeRead.generation === workflowCollectionGeneration
+      && pendingTreeRead.workspaceSelection === captureWorkspaceSelection()) {
       return pendingTreeRead.promise
     }
     const entry = {
       generation: workflowCollectionGeneration,
       epoch: catalogAuthorityEpoch,
+      workspaceSelection: captureWorkspaceSelection(),
       promise: readWorkflowCatalog<WorkflowFolderResponse, WorkflowTreeNode[]>(
         '/api/v1/workflows/tree',
         (data) => {
@@ -609,10 +629,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function fetchWorkflowTree(
     options: { fresh?: boolean } = {},
   ): Promise<WorkflowTreeNode[]> {
+    const workspaceSelection = captureWorkspaceSelection()
     if (options.fresh) noteCatalogAuthorityChange()
     // Retry belongs to each caller; a shared flight never resets this budget.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await pendingWorkflowTreeRead()
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       if (result.current) return result.value
     }
     throw new Error('Workflow identities changed while refreshing the workflow tree.')
@@ -1001,15 +1023,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
     patch: WorkflowUpdate,
     target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
+    const workspaceSelection = captureWorkspaceSelection()
     const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.workspace_path
     const requestIdentities = captureWorkflowIdentities([name])
     const issuedAt = identityMutationSequence
     const apply = async () => {
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         patch,
         ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
       )
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       assertWorkflowIdentitiesCurrent(requestIdentities)
       const dataId = workflowId(data)
       if (patch.action === 'update') assertWorkflowInfoIdentity(data, name)
@@ -1098,10 +1123,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!folderExists(parentId)) {
       throw new Error('Parent folder does not exist')
     }
+    const workspaceSelection = captureWorkspaceSelection()
+    const ownerWorkspace = useSettingsStore().settings?.workspace_path
     const path = childFolderPath(parentId, trimmed)
     const { data } = await api.post<WorkflowFolderResponse>('/api/v1/workflows/folders', {
       path,
-    })
+    }, ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []))
+    assertWorkspaceSelectionCurrent(workspaceSelection)
     const folder: WorkflowFolder = {
       id: data.path,
       name: data.display_name,
@@ -1117,20 +1145,24 @@ export const useWorkflowStore = defineStore('workflow', () => {
     nextPath: string,
     previousWorkflowIds: string[],
   ): Promise<void> {
+    const workspaceSelection = captureWorkspaceSelection()
     const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
     const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
     const { withWorkflowMove } = await import('@/services/workflowMove')
     await withWorkflowMove(previousWorkflowIds, async () => {
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       const { data } = await api.patch<WorkflowFolderResponse>(
         `/api/v1/workflows/folders/${workflowUrl(id)}`,
         { new_path: nextPath },
         ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
       )
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       assertWorkflowIdentitiesCurrent(requestIdentities)
       if (data.path !== nextPath) throw new Error('The folder move returned a different destination.')
       if (selectedFolderId.value) selectedFolderId.value = remapWorkflowIdPrefix(selectedFolderId.value, id, nextPath)
       await fetchWorkflowTree({ fresh: true })
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       if (previousCurrent) activateWorkflow(previousCurrent, undefined, 'passive')
     })
   }
@@ -1157,11 +1189,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!folder) return
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     if (policy === 'delete_children') assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
+    const workspaceSelection = captureWorkspaceSelection()
     const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
     const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
     const apply = async () => {
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, { data: { policy }, ...(ownerWorkspace ? { headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } } : {}) })
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       assertWorkflowIdentitiesCurrent(requestIdentities)
       if (policy === 'delete_children') {
         for (const workflowId of previousWorkflowIds) invalidateWorkflowIdentity(workflowId)
@@ -1169,8 +1204,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
         for (const workflowId of previousWorkflowIds) drafts.forgetWorkflow(workflowId)
         await Promise.all(previousWorkflowIds.map(forgetDeletedWorkflow))
       }
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       if (selectedFolderId.value) selectedFolderId.value = remapWorkflowIdPrefix(selectedFolderId.value, id, folder.parentId)
       await fetchWorkflowTree({ fresh: true })
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       if (previousCurrent && policy !== 'delete_children') activateWorkflow(previousCurrent, undefined, 'passive')
     }
     if (policy === 'move_children_up') {
@@ -1217,9 +1254,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!folderExists(folderId)) {
       throw new Error('Folder does not exist')
     }
+    const workspaceSelection = captureWorkspaceSelection()
     const previousFolderId = workflowFolderId(name)
     if (previousFolderId !== folderId) {
       name = await applyWorkflowIdentityMove(name, folderId)
+      assertWorkspaceSelectionCurrent(workspaceSelection)
     }
     workflowFolderIds.value = {
       ...workflowFolderIds.value,
@@ -1247,9 +1286,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
       throw new Error('Workflow does not exist')
     }
     const folderId = workflowFolderId(beforeName)
+    const workspaceSelection = captureWorkspaceSelection()
     const previousFolderId = workflowFolderId(name)
     if (previousFolderId !== folderId) {
       name = await applyWorkflowIdentityMove(name, folderId)
+      assertWorkspaceSelectionCurrent(workspaceSelection)
     }
     workflowFolderIds.value = {
       ...workflowFolderIds.value,
