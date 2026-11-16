@@ -31,6 +31,10 @@ class WorkflowDraftResetRequest(BaseModel):
     updated_by: DraftWriter = "frontend"
 
 
+class WorkflowDraftRebindRequest(WorkflowDraftResetRequest):
+    """Replace package versions in the accepted draft at an expected revision."""
+
+
 class WorkflowDraftResponse(BaseModel):
     """Live workflow draft returned by the draft API."""
 

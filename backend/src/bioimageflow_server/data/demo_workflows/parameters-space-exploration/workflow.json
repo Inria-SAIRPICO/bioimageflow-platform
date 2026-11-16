@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:c3c9e4ebc72e4dc62668e497eaf36a932e70e8c07b26c0aebc33fabf54c88b33",
+  "artifact_hash": "sha256:d8354cca05d024d6ae8964f524dc7650f570994a3fe45a41eec9447425650838",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -117,7 +117,10 @@
           "name": "marker_channel",
           "schema": {
             "image_spec": null,
-            "type": "int"
+            "type": "int",
+            "type_spec": {
+              "kind": "int"
+            }
           },
           "targets": [
             {
@@ -135,8 +138,14 @@
           "id": "output-sensitivity",
           "name": "sensitivity",
           "schema": {
+            "default": null,
             "image_spec": null,
-            "type": "float"
+            "nullable": false,
+            "required": true,
+            "type": "float",
+            "type_spec": {
+              "kind": "float"
+            }
           },
           "source": {
             "column": "sensitivity",
@@ -147,8 +156,14 @@
           "id": "output-size",
           "name": "size",
           "schema": {
+            "default": null,
             "image_spec": null,
-            "type": "int"
+            "nullable": false,
+            "required": true,
+            "type": "int",
+            "type_spec": {
+              "kind": "int"
+            }
           },
           "source": {
             "column": "size",
@@ -159,8 +174,14 @@
           "id": "output-label-count",
           "name": "label_count",
           "schema": {
+            "default": null,
             "image_spec": null,
-            "type": "int"
+            "nullable": false,
+            "required": true,
+            "type": "int",
+            "type_spec": {
+              "kind": "int"
+            }
           },
           "source": {
             "column": "label_count",
@@ -171,8 +192,14 @@
           "id": "output-mosaic-path",
           "name": "mosaic_path",
           "schema": {
+            "default": null,
             "image_spec": null,
-            "type": "str"
+            "nullable": false,
+            "required": true,
+            "type": "str",
+            "type_spec": {
+              "kind": "str"
+            }
           },
           "source": {
             "column": "mosaic_path",
@@ -225,7 +252,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -252,7 +279,7 @@
         "tool_module": "bioimageflow_common_tools.generate",
         "tool_name": "Generate",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -272,7 +299,7 @@
         "tool_module": "bioimageflow_common_tools.merge",
         "tool_name": "CrossJoin",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -294,7 +321,7 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -316,7 +343,7 @@
         "tool_module": "bioimageflow_spot_tools.atlas",
         "tool_name": "AtlasSpotDetection",
         "tool_package": "bioimageflow_spot_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -356,7 +383,7 @@
         "tool_module": "bioimageflow_common_tools.mosaic",
         "tool_name": "Mosaic",
         "tool_package": "bioimageflow_common_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -384,7 +411,7 @@
   "metadata": {
     "bundled_template": {
       "id": "parameters-space-exploration",
-      "version": 6
+      "version": 7
     },
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },

@@ -48,6 +48,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
+import OutputPlanningRecovery from './components/execution/OutputPlanningRecovery.vue'
 import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetsStore } from './stores/datasets'
@@ -1581,6 +1582,7 @@ defineExpose({ dockviewApi })
       {{ nestedCloseError }}
     </p>
     <ExecutionBanner />
+    <OutputPlanningRecovery />
     <NapariProgressBanner />
     <div class="dockview-wrapper">
       <DockviewVue

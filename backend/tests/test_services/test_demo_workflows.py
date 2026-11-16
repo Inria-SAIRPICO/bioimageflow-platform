@@ -37,7 +37,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 6
+    assert service.bundle_version == 7
     assert {path.name for path in service.resource_root.iterdir()} == {
         "manifest.json",
         "fish-analysis",
@@ -51,10 +51,10 @@ def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
                 assert_schema_v2(node["workflow"])
             elif node.get("tool_package"):
                 assert node["tool_package_version"] == {
-                    "bioimageflow_common_tools": "0.2.2",
-                    "bioimageflow_io_tools": "0.2.2",
-                    "bioimageflow_segmentation_tools": "0.3.2",
-                    "bioimageflow_spot_tools": "0.2.2",
+                    "bioimageflow_common_tools": "0.3.0",
+                    "bioimageflow_io_tools": "0.3.0",
+                    "bioimageflow_segmentation_tools": "0.4.0",
+                    "bioimageflow_spot_tools": "0.3.0",
                 }[node["tool_package"]]
 
     for template in service.templates:
@@ -333,10 +333,10 @@ async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versi
 
     service, store = _service(tmp_path)
     service.registry.register_package("bioimageflow_common_tools", PackageInfo(
-        name="bioimageflow_common_tools", installed_versions=["0.2.2", "9.0.0"], active_version="9.0.0",
+        name="bioimageflow_common_tools", installed_versions=["0.3.0", "9.0.0"], active_version="9.0.0",
     ))
     service.registry.register_package("bioimageflow_io_tools", PackageInfo(
-        name="bioimageflow_io_tools", installed_versions=["0.2.2"], load_errors={"0.2.2": "broken"},
+        name="bioimageflow_io_tools", installed_versions=["0.3.0"], load_errors={"0.3.0": "broken"},
     ))
     installer = AsyncMock(spec=PackageInstallerService)
 
@@ -350,9 +350,9 @@ async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versi
 
     assert result.status == "installed"
     assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
-        ("bioimageflow_io_tools", "0.2.2"),
-        ("bioimageflow_segmentation_tools", "0.3.2"),
-        ("bioimageflow_spot_tools", "0.2.2"),
+        ("bioimageflow_io_tools", "0.3.0"),
+        ("bioimageflow_segmentation_tools", "0.4.0"),
+        ("bioimageflow_spot_tools", "0.3.0"),
     ]
     assert service.registry.get_package("bioimageflow_common_tools").active_version == "9.0.0"
     assert store.get_workflow("Demo/Fish Analysis").missing_packages == []
@@ -387,8 +387,8 @@ async def test_package_failure_keeps_demos_absent_and_retry_reuses_partial_insta
     installer.install.reset_mock(side_effect=True)
     assert (await service.install_with_packages(installer)).status == "installed"
     assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
-        ("bioimageflow_segmentation_tools", "0.3.2"),
-        ("bioimageflow_spot_tools", "0.2.2"),
+        ("bioimageflow_segmentation_tools", "0.4.0"),
+        ("bioimageflow_spot_tools", "0.3.0"),
     ]
 
 

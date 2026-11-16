@@ -140,18 +140,23 @@ Tool metadata describes tool type, inputs, outputs, parameters, packages, versio
 Output metadata preserves each field's required and nullable facts from the library schema.
 Tool-store scanning and explicit package lifecycle operations admit package/version selectors through the library, ignore unsupported directory names including private installer staging, and keep genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
 Installed tools use an admitted generation selected by the exact canonical store root, package and version; installation metadata, selected controller dependency compatibility, source content and installed inherited owners are captured once and reused while that selection remains immutable.
-The normal dependency manifest and lock select published BioImageFlow 0.9.7/Core 0.5.2 with this workflow-loading lifecycle. Core 0.5.2 captures Python 3.14 compiler-generated slice constants as closed executable evidence, retaining cycle rejection and immutable global/closure restrictions.
+The normal dependency manifest and lock select published BioImageFlow 0.10.0/Core 0.6.0 with this workflow-loading lifecycle and explicit output-file ownership.
+Core 0.6 retains Python 3.14 compiler-generated slice evidence, cycle rejection, and immutable global/closure restrictions.
+Output-ownership release and normal-runtime validation are tracked in the [implementation plan](docs/developer/output-template-collision-plan.md); candidate-source checks do not establish published compatibility.
 See [Workflow Loading Performance](docs/developer/workflow-loading.md) for the admission lifetime, fixture isolation and cold/warm measurement protocol.
 Repeated workflow compilation and planning reuse those installed facts rather than walking host distributions, RECORD files or installed sources again.
 Editable and workflow-owned sources retain fresh capture for each operation, independently of watcher delivery; invocation declarations, parameters, inputs, runtime readiness and selected result-record integrity remain current checks.
 Portable CPU/GPU/memory/GPU-memory resources are worker requirements with author-declared floors, while maximum concurrency is a submission cap; actual capacity, allocation, and enforcement are backend/site-owned and resources do not affect cache identity.
 Missing or null resource fields inherit the declaration; the resource form enables Reset all only for explicit overrides, including numeric zero subject to normal validation.
+Canvas serialization completes inherited processing-resource fields as explicit nulls recursively, preserving numeric zero and other authored overrides and keeping Save comparisons stable across backend roundtrips.
 The registry describes catalog tools; validation returns node-scoped metadata from the actual compiled class for source-bound and explicitly bound portable tools, without replacing same-named registry entries.
 Saved-workflow dependency diagnostics capture exact owned source bytes without changing the canonical graph or compiling it; explicit flat workflow-local module bindings resolve their contained file before catalog lookup, and present invalid source stays available to Open for repair.
 Saved-workflow dependency diagnostics resolve that same carried executable identity through the public class loader without compiling, planning or provisioning; an unavailable explicit binding cannot borrow a same-named catalog entry.
 Canvas hydration uses node-addressed metadata from the same accepted graph and root workflow or nested session before reconciling input/template presentation; unavailable metadata cannot erase authored parameters or output templates.
 Pending validation or a global compilation failure may retain the bound node’s prior captured presentation metadata, without borrowing a same-named catalog class or treating that metadata as execution authority.
 Installed bindings retain their package/version and read-only provenance; owned sources retain their editable custom provenance.
+Dependency replacement confirms through PrimeVue, changes package identities directly in the revision-checked accepted root draft, and returns its matching validation/metadata without a portable-format round trip.
+Edges, authored values, presentation and source provenance remain intact; explicit Save promotes the replacement, and prior-binding viewing guidance is invalidated.
 Custom-tool hot reload supplements native filesystem events with content checks limited to registered editable source directories, so missed editor-save events cannot leave metadata stale.
 Successful editable code-only reloads also notify canvases for validation and cache-status refresh; failed edits retain prior presentation metadata for repair without authorizing execution of stale code.
 Installed file events, including staging writes, do not trigger automatic reload.
@@ -160,10 +165,16 @@ All affected generations are preflighted together before uninstall or an actual 
 Uninstall reserves retired package/version namespaces through physical removal and registry update, so concurrent workflow reads cannot re-admit the still-present directory.
 Selecting the same global store for another workspace does not retire its generations, and replacing controller dependencies requires a process restart.
 Every processing tool declares `row_consumption` as `mapped` for independently consumed rows or `collective` for a batch that may combine aligned rows; DataFrame tools expose `null`.
+Local exact file ownership is separately declared by `Template(..., group=FileGroup.per_row()/once()/by(...))`; a bare Path output is a returned reference, while `PathBase(...)` identifies a generated naming family.
+Mapped exact templates default to per-row owners; collective templates declare ownership explicitly, and shared owners require one whole-node batch callback under either row-consumption mode.
+Output metadata exposes `output_role` and read-only `file_group` descriptions, so template controls do not infer writable intent from a Path annotation or let user naming edits change ownership.
 The canvas derives column-edge strands reactively from the target tool metadata and does not persist this presentation state in the graph.
 Do not infer structural names from UI labels or filenames.
 
 Installed package tools are versioned dependencies resolved through the tool store.
+The bundled known-package catalog includes the nine published first-party tool packages: Common, I/O, Measurement, OMERO, Restoration, SAIRPICO, Segmentation, Spot, and Tracking.
+OMERO 0.2.0 is published separately from Common Tools, while Phasor awaits first PyPI publication; catalog inclusion establishes discoverability, independently of execution-environment readiness or certification.
+A `known_packages.txt` file in the configured BioImageFlow home replaces the bundled list, while installed packages remain discoverable independently.
 Package uninstall uses the exact optional query version and contained stored directory identity, independently of successful imports or registry membership; it rejects unsafe selectors, links below the configured root and observed root/package/version substitutions before removal or failed-trash fallback.
 An omitted version selects the whole package, while an empty explicit version is invalid; successful selected removal preserves other packages/versions and does not own Wetlands environments.
 Retirement follows path admission and precedes physical removal; supported versions are selected from the stored directories even when catalog discovery failed, while safe unsupported legacy names remain removable without SDK admission.
@@ -204,6 +215,9 @@ In the main tool catalog, single-click toggles the bottom documentation panel an
 Catalog search derives a reactive index from names, display names, tags, categories and documentation words, splitting identifier word boundaries before normalization.
 It preserves all-token exact partial matching and stable catalog order, and permits one conservative whole-word edit for otherwise unmatched tokens of 4–64 characters without new wire metadata or stored search state.
 The Manage Tools inventory is independent of the catalog search query, and its tool information and actions expose each declared managed environment's location and explicit create/recreate operation.
+Saved OMERO connection cards create ordinary Upload/Download nodes through the active writable canvas, capturing only saved non-secret connection fields and exact standalone OMERO package/version/module/class bindings.
+Unsaved connection/password edits or missing package/canvas capabilities disable those actions; existing nodes keep their captured targets when Settings changes.
+
 Tool metadata resolves all declared environment locations from one fresh public inventory per request, off the event loop, without provisioning or retaining that inventory between requests.
 Validation returns source-specific node metadata without registering imported classes in the global tool catalog.
 
@@ -252,6 +266,11 @@ The Logger retains its in-memory buffer and local level, node and search filters
 Disconnected log messages are not replayed, and the GUI buffer has no default reload-retention guarantee; backend disk logs and retained run diagnostics are separate authorities.
 
 Local execution and cache clearing load one exact accepted root draft by workflow ID and revision after the canvas freshness barrier.
+The library resolves admitted exact file owners before affected science, distinguishing different owners sharing one destination from one group requesting different destinations; `{group_index}` distinguishes keyed owners without splitting their members.
+Typed planning reports retain effective patterns and bounded expansion evidence across completion/status, while bounded lightweight correction evidence is separately fenced to the captured run, graph, inputs and source authority.
+After run settlement, the GUI checks custom templates through that same public library API, applies an ordinary durable draft edit without automatic Save, and starts a new run with the original full/selected intent and valid cache reuse.
+Stale or conflicting nested ownership refuses correction, accepted edits survive later start failure, and proven editing warnings remain separate from blocking graph validation; unknown cases stay silent.
+Returned references and naming bases retain their explicit scope; arbitrary internal writes are not made safe by declaration checks alone, and the final no-overwrite guard remains independent.
 Progress callbacks retain that run's immutable identity and are ignored after it stops owning the active running context.
 The execution banner's single overall bar uses the run's retained scoped executable leaf-node plan, including cached and selected dependencies, rather than the active canvas node count. Its text distinguishes completed nodes, current row position or completed rows, and per-row task progress; a successful run reaches 100%.
 Graph mutation is locked where required while an attached execution owns the mutable platform context.
@@ -320,7 +339,8 @@ Actual PyPI wheel/sdist hashes and source bytes match the admitted release cohor
 Wetlands 2.6.1 is also published and verified; platform dependency/API adoption, actual returned-array export/lifetime, T1 deterministic/real-provider/force-GUI and scoped client recovery/reopen, and I1 two-browser imported-viewer guidance are accepted with the distinct evidence limits in the current checkpoint.
 Published common-tools 0.2.2 discovery/schema certification passes on normal BioImageFlow 0.9.3, Core 0.5.0 and Wetlands 2.6.1 (eight selected cases); actual worker/science, supported OMERO, native desktop and final audited campaign certification remain separate gates.
 Arbitrary trusted Python state/dependency closure, whole merged-input provenance, external filesystem tampering and automatic pressure scheduling are explicit accepted boundaries; the campaign milestone and named remaining tasks remain open; the [current checkpoint](docs/developer/platform-test-current.md) holds source-bound proof and the remaining queue.
-The backend dependency manifest resolves published `bioimageflow[parsl,psij]==0.9.7`, Core 0.5.2 and Wetlands 2.6.1 or newer from the registry; ordinary development and CI do not require a sibling source checkout. BioImageFlow 0.9.7 verifies local result storage bindings using canonical native paths, including Windows paths, while retaining strict POSIX bindings for remote downloads.
+The backend dependency manifest and lock select `bioimageflow[parsl,psij]==0.10.0`, Core 0.6.0 and Wetlands 2.6.1 from the registry; ordinary development and CI do not require a sibling source checkout.
+The selected line retains canonical native local-storage bindings, including Windows paths, and strict POSIX bindings for remote downloads.
 The explicit scheduler groups replace a dependency-free `cluster` selection; installed package availability does not certify excluded distributed features.
 The Python debug launch profiles use that backend environment.
 Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
@@ -357,7 +377,9 @@ The read fences the accepted draft, workflow generation, and storage path agains
 A corrupt selected cache record projects the affected node as failed with `cache_corrupt` while leaving the draft readable and saveable; execution remains strict and rejects that branch.
 When execution is idle, that accepted failed status takes badge precedence over a matching retained execution status for the affected node or a failed aggregate workflow ancestor; semantic edits, active progress, and ordinary terminal execution status keep their existing precedence.
 Clearing the affected node removes its current selection, quarantines a safely identified corrupt immutable record, and refreshes the cleared and downstream status projection.
-A workflow-and-results bundle instead pins one successful run.
+Successful-run exports instead pin one successful run, either with the current saved workflow or as results only.
+The export dialog distinguishes the latest result from each node (possibly mixed runs) from the latest successful run; a successful selected-node run remains eligible.
+Results-only exports never compile or save the workflow definition.
 These artifacts have different import, export, mutation, and availability semantics and must not be treated as interchangeable archives.
 
 ### APIs, events, and agent control
@@ -437,6 +459,8 @@ For an API change, trace the backend model and service, router, generated type, 
 
 ### Other important areas
 
+- [Typed DataFrame transformations](docs/developer/dataframe-output-contracts.md) explains the proposed output-contract API, partial schemas, runtime completion and implementation impact; [DataFrame metadata and asset references](docs/developer/df_metadata.md) owns its proposed storage safeguards.
+  Both are design proposals, not implemented runtime contracts or replacements for the normative specifications.
 - `scripts/test` is the authoritative validation entry point.
 - `docs/testing.md` defines local/distributed feature suites and focused, quick, scoped completion, browser, full, and certification lanes.
   The Release validation workflow runs the local full lane and documentation check for exact `release/**` candidates before promotion to main; native desktop acceptance remains separate.
@@ -448,7 +472,7 @@ For an API change, trace the backend model and service, router, generated type, 
 - [Campaign start](docs/developer/platform-test-start.md) resumes from that checkpoint and the task-relevant specification/source; the historical progress diary is optional lookup evidence, never required restart context.
 - [Specification intent](docs/developer/library-specification-intent-review.md), [test quality](docs/developer/library-test-quality-review.md) and [causal architecture review](docs/developer/library-causal-architecture-review.md) retain the accepted library findings and finite dispositions.
 - [Platform architecture audit](docs/developer/platform-test-architecture-audit.md) and [supplemental review](docs/developer/platform-supplemental-architecture-review.md) retain source coverage, cross-layer ownership and qualified candidates; their ledgers are evidence rather than application certification.
-- The current candidate's Task4/Result4 portable declaration and row/group contexts are checked before science and controller publication; normal Processing returns require a pinned selected record, while explicit public Storage/launcher transient workspaces remain separate.
+- The output-ownership contract uses Task5/Result5, declaration contract v2 and execution contract v3; complete file-owner projection and row/group contexts are checked before science and controller publication, while normal Processing returns require a pinned selected record and explicit public Storage/launcher transient workspaces remain separate.
 - Canonical records preserve finite container kind, ordered primitive keys, exact scalar dtype/bytes, precision, nonfinite values and signed zero; Path/native/SharedArray leaves require exact manifest role/cell authority before hydration.
   Collective consumed-row groups and record relation/domain metadata preserve association independently of positional DataFrame merging and Processing column-pin alignment.
 - Native values capture independent accepted bytes and mutable SharedArrays receive independent sealed backings; numeric NPY2 views retain explicit controller scope ownership.
@@ -469,7 +493,12 @@ For an API change, trace the backend model and service, router, generated type, 
 The selected local-library Phase 3 milestone is technically accepted, with source selectors, normal artifact/cohort checks, actual WorkerPool results and Core OS/Python floor receipts qualified separately in the checkpoint.
 Its finite MAIN and SECONDARY obligations are complete within that scope; arbitrary trusted Python/dependency closure, external filesystem tampering, conservative merged-input provenance and automatic quota scheduling remain explicit limitations.
 These accepted library contracts do not prove platform T1/I1, published tool compatibility or desktop acceptance.
-The backend's actual lock selects normal published `bioimageflow[parsl,psij]==0.9.7`, Core 0.5.2 and Wetlands 2.6.1; the coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
+The output-ownership adoption selects normal published `bioimageflow[parsl,psij]==0.10.0`, Core 0.6.0 and Wetlands 2.6.1 in the normal lock and backend environment.
+Its ten existing-project releases at library revision `66067b0` match ordinary-CI wheel and source-distribution bytes; the canonical Core wheel passed the four Linux/Windows Python-floor combinations and the actual public-index worker gate.
+Normal published validation retains the original full run's successful backend/external-worker/logging phases and combines them with final frontend, coverage and complete two-browser checks under the documented scoped phase-reuse rules.
+The original full attempt failed two browser tests that did not await completed Save/apply; their assertions are preserved with observable completion waits and passing timing repetitions, without claiming a monolithic rerun passed.
+Phasor/OMERO first publication and distributed certification remain outside this release.
+The coherent prior platform source adoption removes retired `dev_mode` and `get_source_hash` callers without aliases or parallel formats and is committed at `1ca0d1f` through scoped phase assembly.
 The subsequent 0.9.2 pin and bundle-only export adoption has its own exact export/tamper, mapped local completion and actual returned-array acceptance, with causally unchanged frontend/schema/browser phases retained; prior failed invocations remain failed and no monolithic app/full success is inferred.
 The v1 application-owned scope release contract requires physical reader/grant drain and truthful pending/error reporting at that adoption boundary.
 
@@ -496,7 +525,7 @@ Inspect obvious repeated reads/hashes/copies and unnecessary dispatch on changed
 ### Remaining repository areas
 
 - `docs/user/` is public user documentation and should describe released user-facing behavior without exposing this internal orientation file.
-- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 6 with deterministic workflow artifacts pinned to published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2.
+- `backend/src/bioimageflow_server/data/demo_workflows/` contains bundle version 7 with deterministic workflow artifacts pinned to the Core 0.6 output-ownership cohort: common/I/O/spot tools 0.3.0 and segmentation tools 0.4.0.
   The exporter retains these explicit release pins independently of the example source checkout’s package versions.
   New-root initialization and explicit demo installation install the missing templates' exact recursive tool-package pins before publishing workflows, reusing healthy installed versions without changing active selections or existing demos.
   An awaited setup gate also covers reads after workspace switching; automatic failure leaves a usable empty root and logs explicit Storage retry guidance without repeating downloads on restart.

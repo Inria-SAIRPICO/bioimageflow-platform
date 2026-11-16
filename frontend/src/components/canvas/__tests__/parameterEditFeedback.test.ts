@@ -69,6 +69,7 @@ const WORKFLOW_ID = 'parameter-feedback'
 const NODE_ID = 'files'
 
 const tool: ToolMetadata = {
+  output_file_declarations: {},
   name: 'files',
   display_name: 'Files',
   package: 'bioimageflow-core',

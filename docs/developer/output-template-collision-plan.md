@@ -8,13 +8,26 @@ Prevent declared processing outputs from overwriting one another, explain how co
 The library reports an actionable error; the platform offers **Cancel execution** or **Update template and continue**.
 There is no silent renaming or overwrite option.
 
-This is a proposed implementation, not a description of released behavior.
+This document records the implemented design, published library releases and normal platform adoption.
 It covers the BioImageFlow library and the platform's local Direct/Wetlands execution path, including nested workflows and Run Selected.
 Managed distributed execution is a separate follow-up: preserve its existing contracts and do not imply that changing a local draft changes an immutable remote submission.
 
+The library and platform code, migrated first-party declarations, specifications, documentation and regression tests for Phases 1–4 are implemented in the output-template feature work.
+Source-cohort worker and browser checks have passed, and the candidate Core, SDK and tool wheels have been built without workspace sources.
+The authorized Phase 5 release published ten existing projects from library revision `66067b0`: Core 0.6.0, SDK 0.10.0, common/I/O/measurement/restoration/SAIRPICO/spot tools 0.3.0, and segmentation/tracking tools 0.4.0.
+Every actual PyPI wheel and source distribution matches the canonical ordinary-CI artifact; the same Core wheel passed all nine contract/lifetime families on Linux and Windows with Python 3.9 and 3.12, and the public-index worker gate passed without a source override.
+Phasor and OMERO remain unpublished and were excluded from this release selection.
+The normal platform manifest, registry lock and installed environment now select SDK 0.10.0/Core 0.6.0; the external certification pin is common tools 0.3.0.
+Published-cohort validation uses the scoped phase-reuse rules in [Test lanes](../testing.md): the original `scripts/test full` passed 2,070 backend tests, external compatibility and real workers, logging-order checks, and the frontend product phases, but failed two browser tests that advanced before Save/apply finished.
+Those tests now wait for observable Save completion without weakening their saved-graph or clean-title assertions, and each repaired case passed five timing repetitions.
+Final frontend completion includes the union-template preservation fix, and `scripts/test check browser-all` passed all 151 selected tests in each browser without skips or retries.
+The final frontend completion and coverage checks passed 1,441 tests with 43 selected-suite skips; documentation validation also passed.
+The original full attempt remains recorded as failed; successful unchanged backend/logging phases are retained alongside the final frontend, coverage, browser and documentation checks rather than described as a new monolithic full run.
+Candidate-environment checks remain separate source evidence.
+
 ## Agreed user experience
 
-At execution time, stop before dispatching a node whose declared writable output destinations collide.
+At execution time, stop before dispatching a node whose declared writable output destinations collide or whose template assigns different destinations to rows contributing to one file.
 After the run has settled, show the node, conflicting filename, number of affected rows or fields, effective template, and a short breakdown of template parts and their resolved values.
 Show representative differing expansions when rows reach the same filename through different values; do not claim all token values are identical unless they are.
 Keep large collision sets bounded in the dialog, with accurate totals and expandable examples.
@@ -47,8 +60,11 @@ For the reported ATLAS case, use this copy and layout:
 
 Prefill a simple deterministic suggestion when adding `{row_index}` resolves a collision between rows.
 Do not use an AI suggestion service or infer arbitrary filename conventions.
+For collisions between keyed file groups, suggest a verified `{group_index}` suffix instead: all rows contributing to one file receive the same group index.
+For example, `{label_image.stem}_tracks_{group_index}.tif` distinguishes source-image groups without splitting their contributing rows.
 For conflicts between fields within one row, show editable templates for the affected fields and explain that those fields need distinct destinations.
 Do not present a row suffix as a verified solution in that case.
+When members of one file group request different paths, explain the declared grouping and suggest removing within-group variation; adding a row suffix would make that problem worse.
 Preserve recognized compound extensions when constructing a suggestion; if a safe insertion point is not established, keep the original template for manual correction.
 
 Do not implement a live preview in the first version.
@@ -62,8 +78,107 @@ Warnings do not block editing or saving.
 
 Add this short description to the Nodes panel OUTPUTS section for processing tools:
 
-> Output templates should produce a unique path for each result.
-> Use `{row_index}` or other distinguishing values to avoid collisions.
+> Each file written by a tool needs its own destination.
+> Some tools combine several rows into one file.
+> Use the values shown below to distinguish separate files.
+
+Each field also has a read-only description: **One file per input row**, **One file for the whole batch**, or **One file per source image**, using the relevant input display name for keyed groups.
+Grouping is declared by the tool author; GUI users edit filename patterns without configuring groups.
+Naming bases are labelled **Base name; this tool generates the individual filenames** and do not claim complete collision detection.
+
+## File grouping contract
+
+Keep `RowConsumption.MAPPED` and `RowConsumption.COLLECTIVE` for input independence and returned-record lineage.
+They cannot be inferred from the grouping of files or output records: normalizing one scalar per row against the whole-batch mean produces per-row records whose values depend on every input.
+Moving that dependency into output annotations would restate the same computation contract.
+Do not change DataFrame indices, consumed-row relations, scalar interpretation, mapped explosion, or collective return conventions as part of file grouping.
+
+Add an immutable worker-safe `FileGroup` declaration to each exact writable `Template`:
+
+```python
+# ATLAS: one independently written file per input observation.
+detections: Path = Template(
+    "{input_image.stem}_detections{ext}",
+    group=FileGroup.per_row(),
+)
+
+# Mosaic: all tiles contribute to one file.
+mosaic: Path = Template(
+    "{node_name}_mosaic.png",
+    group=FileGroup.once(),
+)
+
+# TracksToLabels: all tracks for a source contribute to one file.
+labels: Path = Template(
+    "{label_image.stem}_tracks.tif",
+    group=FileGroup.by("label_image"),
+)
+```
+
+`FileGroup.by(...)` accepts one or more named tool inputs, such as `by("image", "channel")`.
+Grouping uses complete admitted typed values, including full paths rather than filename stems, with an explicitly defined scalar/path equality contract.
+Do not hash file contents or run callbacks to establish a group.
+Initially reject unsupported container keys and ambiguous nonfinite numeric keys rather than inventing equality semantics.
+
+On a mapped tool, an omitted `group` defaults to `per_row()` so ordinary exact-output declarations remain concise.
+On a collective tool, each exact `Template` must declare its group.
+A `process_row` callback supports only `per_row()` files.
+A single whole-node `process_batch` supports all three group forms under either row-consumption mode; shared groups prohibit dispatching independently writing chunks of that batch.
+A mapped batch can write independent row results plus a shared constant manifest without acquiring collective scientific lineage solely because the file is shared.
+The author remains responsible for correctly declaring any computation that actually depends on all rows as collective.
+
+An intended file owner is `(invocation, output field, group identity)`.
+For `per_row()`, the identity is the actual observation position/identity, not its display index string.
+For `once()`, there is one potential owner for the invocation.
+For `by(...)`, there is one potential owner for each distinct admitted key tuple.
+Fields can use different group forms in the same tool, for example per-row prediction images and one batch report.
+A destination is reserved as a potential output; its presence in the plan does not require a tool to write a file or return a sentinel row.
+Several returned records may legitimately reference the same planned file.
+
+Two invariants define validation:
+
+1. Every member of one owner resolves to the same destination.
+2. Different owners, including different output fields, resolve to different destinations within their shared assets namespace.
+
+The first invariant distinguishes an inconsistent grouped template from a collision between independently written files.
+Mosaic accepts repeated references to its single destination.
+TracksToLabels accepts repeated references within one source group, but rejects distinct source groups that resolve to one filename.
+
+Add `{group_index}` as a filename-safe deterministic ordinal within a field's grouping for the invocation.
+For `per_row()`, use admitted observation order; for `by(...)`, use first occurrence in ordered observations followed by previously unseen eligible reference groups; for `once()`, use `0`.
+Every member of one group receives the same value.
+It is not a permanent source identity and may change when input selection or order changes.
+Preserve `{row_index}` semantics; if a row-index suggestion still collides because indices repeat, test a group-index suggestion instead.
+Template syntax describes names only; do not embed grouping directives in user-editable patterns or infer ownership from the variables a pattern happens to contain.
+
+Make writable intent explicit:
+
+```python
+source_image: Path                         # Returned reference; no implicit destination.
+result_image: Path = Template("result_{row_index}.tif") # Exact writable destination.
+tile: Path = PathBase("{input_image.stem}_tile.tif")
+```
+
+A bare `Path` output becomes a returned path value rather than automatically acquiring a writable template.
+Node overrides replace patterns only on declared `Template` or `PathBase` fields; they cannot convert a plain reference into a write destination or alter file grouping.
+`Template` means the exact destination the tool receives and may return.
+`PathBase` preserves an explicit customizable naming base for existing tools that derive additional filenames, such as tilers, without promising complete pre-write collision detection.
+Repeated bases alone neither prove nor disprove a collision among the filenames generated later.
+Do not infer exact versus derived output behavior from output record cardinality: many object records can reference one exact image file.
+
+Expose the library's admitted destination groups to batch callbacks through `context.output_files[field]`.
+Each immutable planned-file entry carries its resolved path, group index, named key values, and observation/reference positions.
+Continue providing applicable resolved paths in row arguments; a `once()` destination is also available in batch arguments.
+Do not invent a representative batch destination for a keyed field with several owners.
+Migrate TracksToLabels to consume these planned groups rather than independently reimplement the same grouping and destination checks.
+Do not reuse the existing public `OutputGroup` name, which already describes returned records and consumed-row associations.
+
+Preserve the selected release's actual local empty-input callback rules; declaring a file does not independently request a callback.
+An empty mapped observation set has no per-row owners, while the existing constant-only mapped invocation keeps its configuration row.
+For a dispatched collective invocation, `once()` has one potential owner even without observations; `per_row()` has none.
+Keyed owners include real selected reference-only sources under the existing auxiliary-input contract, allowing TracksToLabels to render a blank source image with no observed tracks.
+Composite reference keys must come from genuinely associated admitted tuples; do not manufacture observation rows or a Cartesian product from separate inputs.
+Missing required key values and unresolved input-dependent tokens are explicit planning errors; do not fabricate a source identity for an empty batch.
 
 ## Ownership and detection boundaries
 
@@ -72,22 +187,26 @@ The backend adapts public library diagnostics to typed API models and owns draft
 The frontend renders diagnostics and applies accepted corrections through existing canvas commands and persistence coordination.
 It must not parse error strings or implement a second template resolver.
 
-The initial guaranteed check covers actual declared writable destinations, including output defaults and node overrides, across independent mapped rows and output fields sharing an invocation's assets root.
+The initial guaranteed check covers all exact `Template` destinations, including defaults and node overrides, across declared file owners in mapped and collective tools sharing an invocation's assets root.
 Compare normalized destinations under the library's existing containment and filesystem naming rules; include case equivalence on supported case-insensitive filesystems.
 Identical basenames in separate invocation roots are not collisions.
-Repeated input paths, untemplated read-only output aliases, and DataFrameTool path-valued columns are not writable destinations.
+Repeated input paths, bare returned-path references, and DataFrameTool path-valued columns are not writable destinations.
 Retain existing path-containment checks and the final no-overwrite guard for unexpectedly occupied paths and competing external writers.
 The correction dialog does not authorize overwriting unrelated files.
 
-Respect `RowConsumption.MAPPED` versus `RowConsumption.COLLECTIVE`, synthetic empty-batch anchors, and reference-row semantics.
-A mapped `process_batch` still represents independent row writes.
-Collective tools can write one aggregate file or several files grouped by a source input; row-consumption metadata alone does not identify their independent writers.
-For example, Mosaic intentionally shares one destination across rows, while TracksToLabels can write one file per source image, including reference-only sources.
-Check collective destinations only when an existing public contract identifies distinct writer groups; otherwise leave them unknown and retain their existing execution safeguards.
-Do not deduplicate all collective paths, which would hide collisions between distinct source groups, or reject intentionally shared aggregate paths.
-Extending the public grouping contract to cover remaining collective tools is a follow-up, not a new prerequisite for the mapped-write feature.
+Implement the three file-group forms in the first version, covering ATLAS, Mosaic and TracksToLabels without a mapped-only limitation.
+Group ownership does not introduce output rows, change a collective result's consumed-row relation, or reinterpret scalar fields as global metadata.
+Preserve existing manifest-only artifacts and zero-row scalar metadata behavior.
 Detect equal declared destinations in the initial scope; directory/descendant overlap is an error only where declared artifact semantics prove incompatible writes.
-Do not claim complete prediction of arbitrary internal file writes or filenames invented by 1-to-N tools.
+At result admission, exact-template paths must belong to an admitted owner for that field and applicable row scope; repeated references to the admitted file remain valid.
+This is a cooperative execution contract, not a filesystem sandbox for arbitrary Python.
+`PathBase` families and undeclared internal writes remain outside the complete prediction guarantee.
+A general dynamic output enumerator, exclusive-directory API, and universal safe-writer migration are optional follow-ups rather than prerequisites for this feature.
+
+The current external-command helper detects occupied paths before launching and uses atomic no-replace publication after completion; this is not a general workflow collision checker.
+Ordinary direct writers such as `imageio.imwrite` do not universally use that helper.
+The new planner therefore checks declared destinations before any affected callback, independently of the writer library.
+Do not misclassify an unexpected occupied-path error from a lower-level writer as a proven template collision without matching planned-owner evidence.
 
 Use a single pass over already resolved destinations, with bounded diagnostic examples rather than copying all argument values into API payloads.
 Expansion evidence contains only template-referenced values needed to explain the path, not arbitrary tool arguments or credentials.
@@ -95,9 +214,9 @@ Preserve exact destination comparison separately from abbreviated display text.
 
 ## Source baseline and specification work
 
-The platform source baseline is `0db9a8c`, with unrelated working-tree changes that must remain untouched.
-The backend selects published BioImageFlow 0.9.6 and Core 0.5.1.
-The sibling `bioimageflow/` link currently points to older source at `8ba6ef6`; its `bioimageflow-v0.9.6` tag is available locally.
+The plan-update source baseline is platform revision `dbdae39`; inspect and preserve unrelated working-tree changes when implementation starts.
+Implementation began from published BioImageFlow 0.9.7/Core 0.5.2; normal adoption now selects SDK 0.10.0/Core 0.6.0.
+At implementation start, the sibling `bioimageflow/` link pointed to older source at `8ba6ef6`; the `bioimageflow-v0.9.6` tag used for the initial design investigation was not the runtime baseline.
 Select the published release lineage or a reviewed descendant before implementing library changes, read that checkout's AGENTS and testing instructions, and verify source/artifact correspondence.
 Do not patch installed `.venv` files or use the old sibling working tree as the runtime authority.
 Create any task worktrees under their repository's `.worktrees/` and keep dependencies and runtime state separate.
@@ -105,12 +224,20 @@ Create any task worktrees under their repository's `.worktrees/` and keep depend
 Implementation must update the library specifications for execution, validation, templating, cache compatibility, and errors, plus its public API reference.
 Update affected platform v1 execution, Node Panel, error-handling, and API sections; v2 validation, execution, nested-editing, and storage sections; and `PLATFORM_CONTEXT.md` when implementing the corresponding behavior.
 Add concise public user guidance for template corrections.
-This planning-only task leaves implemented specifications unchanged.
+The implemented specifications are updated with their corresponding feature code.
 
 ## Phase 1 Define the public library contract
 
-Introduce a dedicated domain exception, provisionally `OutputPathCollisionError`, with a stable structured report and a self-contained Python error message.
-Its report includes scoped node identity, output field identities, effective templates, conflicting relative destinations, total conflict/member counts, representative row positions and row-index strings, and template expansion parts.
+Define and capture `FileGroup`, exact templates, naming bases, the group-index token, and the compact destination-group projection in the public library/Core contract.
+Audit every affected first-party processing tool, including inherited declarations, and classify its path outputs as exact destinations, naming bases or returned references before changing the implicit-Path default.
+Convert existing implicit writable defaults into explicit `Template` declarations, and migrate actual path-deriving tools to `PathBase` without losing customizable naming.
+Declare Mosaic's single file and TracksToLabels' source-keyed files explicitly; do not infer groups from existing patterns.
+Inventory saved overrides and pinned package compatibility: provide an actionable incompatible-tool/override diagnostic rather than silently discarding overrides, rebinding package versions, or treating a legacy declaration as newly checked.
+Coordinate compatible tool-package releases and demo bindings before platform dependency adoption; retain current user workflow documents and make any needed dependency change explicit.
+
+Introduce a domain-error family with stable codes `output_path_collision` and `output_group_destination_mismatch`, provisionally exposed through `OutputPathCollisionError` and `OutputGroupDestinationMismatchError`.
+Reports include scoped node identity, output field identities, group descriptions and keys, effective templates, conflicting relative destinations, total owner/member counts, representative row positions and row-index strings, and template expansion parts.
+Missing grouping keys, unsupported key types, invalid declarations and unavailable sources remain tool/input errors rather than automatically opening a filename-correction dialog.
 Distinguish a row position from an authored index; do not assume row-index strings are unique or safe filename fragments.
 Use the existing resolver to generate ordered literal/token expansion evidence so substitutions retain exactly the same semantics as execution.
 Keep complete evidence for selected representative paths and explicitly identify truncated examples.
@@ -130,30 +257,35 @@ It must not execute upstream DataFrameTools, scientific callbacks, environment p
 Changed bindings, source generations or templates invalidate prior evidence; unrelated latest results are not proof.
 If these conditions leave row values or cardinality unknown, return no collision warning.
 
-**Exit:** reviewed report schema, writer-enumeration rules, expansion evidence, context lifetime, and a finite set of proven editing-warning cases.
+**Exit:** reviewed declaration/migration contract, deterministic owner enumeration, both diagnostic schemas, expansion evidence, correction-evidence lifetime, and a finite set of proven editing-warning cases.
 
 ## Phase 2 Enforce the contract in execution and cache selection
 
-Integrate checking after complete row/batch destination resolution and before the affected node's first Direct callback or Wetlands task submission.
-Cover constant-bound and column-bound mapped processing, row and vectorized batch paths, nested scoped nodes, and mapped synthetic empty-batch inputs without running callbacks twice.
-Collective controls must retain intentional shared destinations and report no unsupported claim of collision freedom.
-Raise the dedicated error in the orchestrator and terminalize the owned attempt through the existing failure path.
+Implement one destination planner that captures the effective declarations and timestamp, establishes observation/reference file owners, resolves member destinations with expansion evidence, checks within-owner agreement, then checks collisions across owners.
+Integrate it before the affected node's first Direct callback or Wetlands task submission.
+Cover constant-bound and column-bound inputs, row and whole-node batch paths under either row-consumption mode, nested scoped nodes, and actual empty/reference-only cases without running callbacks twice.
+Reuse the admitted plan in worker contexts rather than grouping or expanding templates again with different values or a new timestamp.
+Extend the strict public task/context protocol and worker validation for the destination-group projection; reject malformed or declaration-incompatible groups before scientific callbacks.
+Preserve existing record-lineage and result-cardinality validation independently of file ownership.
+Raise a structured planning error in the orchestrator and terminalize any owned attempt through the existing failure path.
 No partial result or current-selection pointer may be published for the refused node.
 Successful upstream records remain usable, and independent concurrent branches settle through the scheduler's existing failure/cleanup behavior before graph mutation is allowed.
 
 Verify old cache compatibility explicitly.
 An older successful record may contain several rows referencing the same file because earlier tools silently overwrote it.
 Do not let a warm cache hit bypass the new guarantee or relabel those files as repaired results.
-Prefer a documented execution/output contract version change scoped to the affected processing semantics, unless equivalent public validation can safely establish old-record eligibility.
+Version the processing-output contract and include exact/base/reference roles, ordered grouping keys and effective templates in declaration capture, worker admission and reusable identity.
+The version change prevents an old warm record from bypassing checks that previously allowed silent overwrites; do not relabel historical records as validated by the new planner.
 Preserve existing records and export/read access; do not mass-delete caches or automatically clear upstream results.
+Keep unaffected DataFrame cache eligibility where the identity contract permits, and document any one-time processing-cache misses at adoption.
 Template edits already participate in processing identity; confirm changed descendants recompute while causally unchanged valid upstream results can be reused.
 
-**Exit:** a six-row ATLAS-equivalent fixture raises an explained collision before any affected scientific callback, and corrected templates complete without overwrites.
+**Exit:** ATLAS-equivalent collisions and inconsistent group templates refuse before any affected callback; Mosaic shares one owner correctly; TracksToLabels separates source owners and reference-only groups; corrected templates complete without overwrites.
 
 ## Phase 3 Transport diagnostics and apply corrections safely
 
-Extend strict backend execution and validation response models with typed collision reports and nonblocking warning diagnostics where needed.
-Adapt the public exception at `services/execution.py`, propagate it through completion events, status snapshots and retained local-run diagnostics, and preserve it across reconnect without treating ordinary failure strings as collision reports.
+Extend strict backend execution and validation response models with typed file-planning reports, exact/base/reference output metadata, read-only group descriptions, and nonblocking warning diagnostics where needed.
+Adapt the public exceptions at `services/execution.py`, propagate both report kinds through completion events, status snapshots and retained local-run diagnostics, and preserve them across reconnect without treating ordinary failure strings as planning reports.
 Review `models/execution.py`, `models/validation.py`, event-bus schemas, `services/execution_runtime.py` local retention, and the corresponding routers together.
 Use the existing failed-run lifecycle; do not add a paused worker or change a failed run into a successful run after editing.
 
@@ -190,11 +322,14 @@ Render literal/token expansion as escaped text, with representative row labels, 
 After correction submission, disable both actions and Escape/backdrop dismissal while checking, persisting or starting, and restore controls only when the operation settles.
 If checking or persistence refuses, no accepted edit occurred and cancellation remains unchanged; if the edit succeeded but start failed, explicitly report that the template change remains applied.
 The initial version has no per-keystroke preview request.
-If submission finds remaining collisions, update the explanation and retain the user's input without mutating the draft.
+If submission finds remaining collisions or group destination disagreement, update the explanation and retain the user's input without mutating the draft.
 
-Integrate inline proven-collision warnings and the agreed OUTPUTS description in `components/panels/NodePanel.vue`.
+Integrate inline proven-collision/group-disagreement warnings, read-only grouping descriptions, and the agreed OUTPUTS description in `components/panels/NodePanel.vue`.
 Warnings are separate from blocking graph errors, follow node/scoped-field identities, disappear when their evidence is no longer current, and stay absent for unknown cases.
 Use the selected bound tool's metadata and effective default template rather than a same-named catalog tool.
+Only exact destinations and declared naming bases receive template editors; returned references do not receive implicit template controls.
+The declared role governs controls and template preservation even for union annotations; a displayed type name is not a second writable-output authority.
+Keep naming-base limitations visible without treating unknown generated-file collisions as errors or routine warnings.
 
 **Exit:** users can cancel unchanged or submit a valid custom template, understand its expansion, and continue from the accepted updated draft without automatic Save.
 
@@ -202,35 +337,44 @@ Use the selected bound tool's metadata and effective default template rather tha
 
 Use ordinary imported processing fixtures with small files; do not use scientific models or downloads for routine coverage.
 Follow the selected library checkout's authoritative focused and completion commands and record its exact source/artifact revisions.
-Platform adoption must use a published compatible dependency in its manifest and lock, rather than depend on an ignored sibling checkout.
-The plan does not authorize publishing packages or modifying the user's actual demo workflow; those actions require their own explicit implementation/release scope.
+Platform adoption uses the authorized SDK 0.10.0/Core 0.6.0 release cohort and common-tools certification pin 0.3.0, with compatible dependencies resolved from the registry in its normal manifest and lock.
+The user has explicitly authorized publication and normal platform adoption; this does not authorize modifying the user's actual saved demo workflow.
+Wait for verified registry visibility of the selected packages before regenerating `backend/uv.lock`, then synchronize the normal environment without editable sources and run the normal local full lane plus documentation check.
+Retain the earlier source-cohort receipts as source evidence rather than relabelling them as normal published compatibility results.
 
 | Area | Required evidence |
 | --- | --- |
-| Destinations | Six mapped rows for one image; two fields within one row; non-unique index strings; distinct paths without `{row_index}`; case-equivalent names where applicable; no confusion with shared read-only references or isolated node roots. |
-| Dispatch | No affected callback/task submission before refusal under Direct or Wetlands; mapped row and batch controls; collective shared-output and grouped-source controls without false collision claims; empty-batch controls; a corrected small-file fixture actually completes in a Wetlands worker. |
-| Explanation | Exact token/literal expansion, defaults and overrides, different token values yielding one final name, compound extensions, bounded examples and accurate totals. |
-| Cache and lifecycle | Unsafe old warm records cannot evade enforcement; upstream reuse after correction; no failed-node publication; concurrent branch settlement; missing/expired correction context does not advertise full validation. |
+| Declarations | Mapped group defaults; explicit collective groups; bare `Path` references; retained implicit-write templates after migration; `PathBase` families; mixed per-row and once outputs; forbidden grouping/role overrides; existing pinned-package and saved-override diagnostics. |
+| Destinations | Six mapped rows for one image; two fields within one row; non-unique index strings; distinct paths without `{row_index}`; distinct source paths with equal stems; intentional sharing within one owner; case-equivalent names where applicable; no confusion with read-only references or isolated node roots. |
+| Grouping | Full typed scalar/path keys and multiple key fields; unsupported/ambiguous keys; deterministic group indices; inconsistent destinations within one group; real reference-only groups without fabricated tuples; empty batches; one exact file referenced by many returned records. |
+| Dispatch | No affected callback/task submission before refusal under Direct or Wetlands; mapped row/batch and collective controls; shared files force one whole-node batch call; admitted worker plan matches controller evidence; unchanged record lineage; corrected small-file fixture completes in an actual Wetlands worker. |
+| Explanation | Both diagnostic codes; exact token/literal expansion; defaults and overrides; different token values yielding one final name; row-index versus group-index suggestions; compound extensions; bounded examples and accurate owner/member totals. |
+| Cache and lifecycle | Unsafe old warm records cannot evade the new contract version; grouping and exact/base/reference declaration changes affect identity; valid upstream reuse after correction; no failed-node publication; concurrent branch settlement; missing/expired correction context does not advertise full validation. |
 | Mutation and restart | Cancel/dismiss unchanged before submission; dismissal disabled during submission; custom correction remains invalid; accepted edit marks draft dirty; persistence refusal prevents restart; start failure preserves edit; duplicate submission; graph/workspace/new-run races; Run Selected and nested ownership. |
-| Editing | A proven collision warns; unique or unknown cases stay silent; warning clears on correction and evidence invalidation; unavailable bound-tool metadata cannot produce a catalog-derived warning. |
-| Browser | Clear dialog copy and expansion table; keyboard cancellation; successful correction, accepted draft, new run ID and actual distinct files; reload recovers diagnostics without reopening an already dismissed dialog in a loop. |
+| Editing | Proven collisions or group disagreements warn; unique or unknown cases stay silent; warning clears on correction and evidence invalidation; unavailable bound-tool metadata cannot produce a catalog-derived warning; group descriptions are read-only and path references have no template editor. |
+| Browser | Clear dialog copy and expansion table; keyboard cancellation; mapped row correction and keyed group correction; rejection of a row suffix that splits one owner; accepted draft, new run ID and actual distinct files; reload recovers diagnostics without reopening a dismissed dialog in a loop. |
 
 During platform implementation, use `scripts/test focus backend ...`, `scripts/test focus unit ...` and exact Chromium E2E selectors for the changed paths.
 Add focused coverage near execution-manager/router tests, NodePanel and execution store/component tests, and `frontend/tests/e2e/execution-failure-rerun.spec.ts` or a dedicated collision spec.
 Use `scripts/test quick` only at an intermediate coherent increment when development will continue.
-At cross-stack completion run `scripts/test check app`, plus the focused noncritical collision browser scenario if it is not covered by the smoke selection.
+At a platform cross-stack implementation milestone run `scripts/test check app`, plus the focused noncritical collision browser scenario if it is not covered by the smoke selection.
 Run `scripts/test check cross-browser-smoke` for localized browser compatibility and the exact new scenario in Firefox where appropriate; do not stack broader lanes without a new coverage reason.
 Run `scripts/test check docs` for documentation completion.
-Run the full lane only if the selected release/adoption's package-loading or external-compatibility changes require it under `docs/testing.md`; keep distributed validation explicitly separate.
+The final dependency/tool-package adoption changes public output declarations and external compatibility, so validate the actual published cohort with `scripts/test full` under `docs/testing.md`.
+That final full lane subsumes the app/product/browser scopes: retain earlier unaffected milestones and do not repeat `check app` or cross-browser smoke immediately before it.
+Keep distributed validation explicitly separate; this local feature must not imply remote grouping support or silently change immutable remote submissions.
 Report each completion command, result, duration and source revision, including exclusions or externally blocked phases.
 
 ## Acceptance criteria
 
 - The reported parameter sweep cannot dispatch six writes to the same declared destination.
-- The library error explains the node, template, conflicting destinations and representative expansions without relying on a worker traceback.
+- The library explains both collisions between file owners and disagreement within one owner using the node, group description, template, destinations and representative expansions without relying on a worker traceback.
 - GUI users can cancel unchanged or explicitly change templates in their workflow and start a new run using valid cached results where available.
 - The dialog explains filename-dependent downstream behavior and preserves accepted edits if restart fails.
 - Proven editing-time collisions warn; unknown cases stay silent.
-- Independent mapped writes are covered; collective tools without an explicit writer-group contract remain outside the complete detection guarantee and must not gain false warnings.
+- The first implementation includes per-row, once and keyed groups: ATLAS's independent rows, Mosaic's single file, and TracksToLabels' source files, including reference-only groups, receive the same exact-destination guarantee.
+- Grouping remains a tool-author declaration independent of `RowConsumption`; workflow users edit ordinary patterns and receive grouping-aware suggestions without configuring ownership.
+- Bare paths are references; writable destinations and generated naming bases are explicit; legacy declarations, saved overrides and pinned tool packages receive a coordinated migration rather than silent reinterpretation.
+- Naming bases and undeclared internal writes remain outside the complete prediction guarantee; returned records and consumed-row lineage retain their existing semantics.
 - No silent rename, overwrite authorization, automatic Save, private-snapshot overwrite, user-data deletion, or change to remote submission semantics is introduced.
 - Every affected implemented specification is updated with the implementation, and the published library dependency plus platform checks certify the actual adopted behavior.

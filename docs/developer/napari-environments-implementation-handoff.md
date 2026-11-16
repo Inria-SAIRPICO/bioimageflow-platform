@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Multiple napari environments implementation handoff
 
 ## Purpose

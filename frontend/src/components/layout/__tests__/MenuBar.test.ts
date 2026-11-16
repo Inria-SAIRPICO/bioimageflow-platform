@@ -1361,7 +1361,8 @@ describe('MenuBar', () => {
     })
 
     it('does not apply a delayed dependency rebind after remote workflow deletion', async () => {
-      const { workflow } = registerActiveRootWorkflow()
+      const { workflow, persistence } = registerActiveRootWorkflow()
+      persistence.acceptedDraftRevision.value = 3
       const response = deferred<any>()
       apiMocks.post.mockReturnValueOnce(response.promise)
       const wrapper = mountMenuBar()
@@ -1373,7 +1374,8 @@ describe('MenuBar', () => {
 
       const rebinding = vm.rebindImportedDependencies()
       await vi.waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
-        '/api/v1/workflows/wf_a/rebind-versions',
+        '/api/v1/workflow-drafts/wf_a/rebind-versions',
+        { expected_revision: 3, updated_by: 'frontend' },
       ))
       await useWorkflowStore().forgetDeletedWorkflow('wf_a')
       response.resolve({
@@ -1544,6 +1546,39 @@ describe('MenuBar', () => {
         summary: 'Some packages could not be installed',
         detail: expect.stringContaining('network unavailable'),
       }))
+    })
+
+    it('confirms replacement with PrimeVue and applies the accepted draft with validation', async () => {
+      const { persistence } = registerActiveRootWorkflow()
+      persistence.acceptedDraftRevision.value = 7
+      const workflow = useWorkflowStore()
+      workflow.missingPackages = [{ package_name: 'common', required_version: '1.0', installed_versions: ['2.0'], affected_nodes: ['one'] }]
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const resolveDraft = vi.spyOn(persistence, 'resolveFromDraft')
+      const browserConfirm = vi.spyOn(window, 'confirm')
+      vm.requestDependencyRebind()
+      await wrapper.vm.$nextTick()
+      expect(vm.dependencyRebindConfirmation.substitutions).toEqual(['common: 1.0 → 2.0'])
+      expect(browserConfirm).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalled()
+      const accepted = {
+        draft_version: 1, workflow_id: 'wf_a', base_saved_revision: 'saved', draft_revision: 8,
+        updated_at: '2026-11-06T00:00:00Z', updated_by: 'frontend', dirty_against_saved: true,
+        graph: makeGraph(), validation: { valid: true, errors: [], node_statuses: {}, node_tools: {} },
+      }
+      apiMocks.post.mockResolvedValueOnce({ data: accepted })
+      const applied: any[] = []
+      const listener = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', listener)
+      await vm.rebindImportedDependencies()
+      window.removeEventListener('bioimageflow:apply-graph', listener)
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf_a/rebind-versions', { expected_revision: 7, updated_by: 'frontend' })
+      expect(resolveDraft).toHaveBeenCalledWith(accepted, 'local')
+      expect(persistence.acceptedDraftRevision.value).toBe(8)
+      expect(applied).toHaveLength(1)
+      expect(applied[0]).toMatchObject({ graph: accepted.graph, draft: accepted, dirty: true })
+      expect(vm.dependencyRebindConfirmation).toBeNull()
     })
 
     it('only offers dependency rebinding when every package has an alternative', async () => {

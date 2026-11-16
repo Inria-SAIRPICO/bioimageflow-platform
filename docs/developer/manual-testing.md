@@ -162,9 +162,9 @@ Pass when source reload works, agent changes synchronize visibly, validation suc
 1. Open **Edit → Preferences... → Storage**, click **Reveal** next to **Workspace path**, and confirm the file manager reveals the generated `workspace/` folder.
 2. Select the original `QA Reference Workflow` in **Workflows**, click **Open latest outputs** beside **Latest outputs** in its details, and confirm the file manager reveals `workspace/workflows/QA/Reference Workflow/results/outputs/latest`.
    Inspect the latest successful per-node outputs; this view can combine different runs and is not an independent backup.
-3. With that workflow's root tab active, choose **Workflow → Export → Export latest results to folder**, select the generated `exports/` directory as the parent, and wait for **Latest results exported**.
+3. With that workflow's root tab active, choose **Workflow → Export → Latest result from each node → folder**, select the generated `exports/` directory as the parent, and wait for **Latest results exported**.
    Click **Show in folder** and inspect the reported child directory: it must contain copied files outside the workspace.
-4. Click **Export latest results to folder** again and cancel the native chooser; confirm no error or new partial export appears and the previous export remains intact.
+4. Click **Latest result from each node → folder** again and cancel the native chooser; confirm no error or new partial export appears and the previous export remains intact.
 5. On a disposable workflow, pan by dragging empty canvas space, zoom with the mouse wheel, disconnect and reconnect the DataFrame edge, and resize panels.
    Use the theme button beside the run controls to choose **Light**, **Dark**, and **System**.
 6. Confirm labels, dialogs, validation messages, and graph connections remain readable.
@@ -373,12 +373,12 @@ If installing the local package is blocked by build-environment downloads, recor
 
 - Choose **Workflow → Export → Workflow only**, import the archive with **Workflow → Import**, resolve a name collision if prompted, and compare graph, interfaces, nested content, metadata, and local source.
 - On a disposable workflow with two independent branches, complete a run, change one branch and use **Run Selected**, then make that branch fail on another attempt.
-  Choose **Workflow → Export → Latest results** and confirm it contains each node's latest successful output, including successful values from different runs; these runs occur sequentially, not concurrently.
-- Choose **Workflow → Export → Workflow with results**, unzip it, and inspect `bioimageflow-results-bundle.json`.
+  Choose **Workflow → Export → Latest result from each node** and confirm it contains each node's latest successful output, including successful values from different runs; these runs occur sequentially, not concurrently.
+- Choose **Workflow → Export → Workflow with results from the latest successful run**, unzip it, and inspect `bioimageflow-results-bundle.json`.
   Confirm `results.run_id` identifies one successful run and `results.path` identifies its copied outputs; compute the SHA-256 of the nested archive at `workflow.archive` and compare it with `workflow.sha256`.
   This is the archive file's checksum, not a graph artifact hash.
 - Attempt direct import of that bundle and confirm rejection, then extract and import the archive under `workflow/`.
-- Choose **Export latest results to folder**, select `exports/` as the parent, and use **Show in folder** to inspect the reported child directory and `.bioimageflow-output-export.json` marker.
+- Choose **Latest result from each node → folder**, select `exports/` as the parent, and use **Show in folder** to inspect the reported child directory and `.bioimageflow-output-export.json` marker.
   Confirm output files are independent regular copies.
   Export the same workflow to the same parent again, cancel the native replacement confirmation, and verify the previous export is intact; repeat and accept replacement.
 - In the folder chooser, select the workspace, a workflow directory, its results directory, the home folder, and the filesystem root in separate attempts; confirm rejection without an export.
@@ -394,7 +394,7 @@ If installing the local package is blocked by build-environment downloads, recor
 
 - Use **Edit → Preferences... → Storage → Reveal**, open the workspace folder in VS Code, and show hidden files.
   Confirm `.codex/config.toml`, `opencode.json`, `.mcp.json`, `AGENTS.md`, and `.bioimageflow/agent-state.json` are present; keep BioImageFlow running with the intended saved workflow active.
-- Follow [Choose a coding client](../user/coding-agent.md#choose-a-coding-client) to start one supported client from the workspace root.
+- Follow [Choose a coding client](../user/coding-agent.md#install-and-start-an-agent) to start one supported client from the workspace root.
 - Ask it to inspect the active workflow through BioImageFlow MCP without changes and judge the accuracy and scientific usefulness of its explanation.
 - Ask it to list and describe tools before adding a node, then create, configure, connect, rename, move, enable, disable, and remove disposable nodes.
 - Expose and remove workflow inputs and outputs and confirm stable IDs preserve compatible connections.
@@ -416,7 +416,7 @@ If installing the local package is blocked by build-environment downloads, recor
   Verify saved secrets are absent from settings, workflow files, logs, and exports; credential-store behavior is also covered by automated integration tests.
 - With a disposable real OMERO account and a supporting tool package, choose the saved connection in that tool and run it; there is no standalone OMERO login/test button in Preferences.
   Otherwise record the live portion as **BLOCKED**.
-- Test native single-file and multi-file selection from **Nodes**, folder selection from **Directory**, workspace selection from **Storage → Browse...**, and export-parent selection from **Export latest results to folder**, including cancellation of each chooser.
+- Test native single-file and multi-file selection from **Nodes**, folder selection from **Directory**, workspace selection from **Storage → Browse...**, and export-parent selection from **Latest result from each node → folder**, including cancellation of each chooser.
 - Repeat physical filesystem drag-and-drop, the workspace **Reveal** and workflow **Open latest outputs** actions, result **Copy path**, external links, and **Open tool script** with the external editor configured.
 - Test **Open in Napari** startup, reuse, failure recovery, and application shutdown.
 - Test **Configure Fiji** / **Open in Fiji** with missing, invalid, and corrected configuration.

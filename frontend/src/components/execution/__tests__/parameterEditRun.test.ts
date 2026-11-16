@@ -66,6 +66,7 @@ const graph = makeGraph({
 })
 
 const tool = {
+  output_file_declarations: {},
   name: 'files',
   folder: '',
   display_name: 'Files',

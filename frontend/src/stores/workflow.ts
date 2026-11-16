@@ -972,6 +972,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     )
   }
 
+  async function exportSuccessfulRunResults(name: string, signal?: AbortSignal): Promise<void> {
+    await downloadWorkflowExport(
+      name,
+      `/api/v1/workflows/${workflowUrl(name)}/exports/successful-run-results`,
+      workflowExportFilename(name, '.successful-run-results.zip'),
+      signal,
+    )
+  }
+
   async function exportWorkflowRunBundle(name: string, signal?: AbortSignal): Promise<void> {
     await downloadWorkflowExport(
       name,
@@ -1406,6 +1415,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     exportWorkflow,
     exportLatestResults,
     exportWorkflowRunBundle,
+    exportSuccessfulRunResults,
     exportLatestResultsToFolder,
     importWorkflow,
     patchWorkflow,

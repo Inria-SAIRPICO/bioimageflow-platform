@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow import validate_workflow_id
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 
 
 class ExecutionRequest(BaseModel):
@@ -84,6 +85,7 @@ class ExecutionResult(BaseModel):
     success: bool
     errors: list[dict[str, Any]] = []
     node_statuses: dict[str, NodeStatus] = {}
+    output_planning_reports: list[OutputPlanningReport] = Field(default_factory=list)
 
 
 class ExecutionStatus(BaseModel):

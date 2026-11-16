@@ -418,7 +418,9 @@ def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_sourc
     } == source_files
 
 
+@pytest.mark.parametrize("method", ["prepare_workflow_run_bundle", "prepare_successful_run_results"])
 def test_bundle_without_successful_run_is_unavailable(
+    method: str,
     store: _Store,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -436,7 +438,7 @@ def test_bundle_without_successful_run_is_unavailable(
     )
 
     with pytest.raises(WorkflowExportError) as caught:
-        WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+        getattr(WorkflowExportService(store), method)("folder/wf")  # type: ignore[arg-type]
 
     assert caught.value.code == "results_not_available"
     assert not cleanup.exists()
@@ -677,3 +679,36 @@ def test_folder_export_rejects_unsafe_parent(
         "invalid_export_destination",
         "unsafe_export_destination",
     }
+
+
+def test_successful_run_results_are_independent_of_workflow_and_latest_projection(
+    store: _Store,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_path = store.workflow_dir("folder/wf") / "results"
+    node_id, run_id = _seed_canonical_results(storage_path)
+    # A newer failed execution cannot redirect
+    # a successful-run export. Broken/current tool source cannot block it either.
+    storage = Storage(storage_path)
+    storage.write_run_metadata(
+        "newer-failure", workflow_identity="folder/wf", engine="direct:parallel",
+        status="failed", target_nodes=[node_id],
+    )
+    monkeypatch.setattr(store, "export_workflow_archive", Mock(side_effect=AssertionError("compiled workflow")))
+    definition = store.workflow_dir("folder/wf") / "workflow.json"
+    before = definition.read_bytes()
+    prepared = WorkflowExportService(store).prepare_successful_run_results("folder/wf")  # type: ignore[arg-type]
+    try:
+        with zipfile.ZipFile(prepared.path) as archive:
+            assert not any(name.startswith("workflow/") for name in archive.namelist())
+            manifest = json.loads(archive.read(RESULTS_BUNDLE_MANIFEST))
+            assert manifest["kind"] == "results-only"
+            assert "workflow" not in manifest
+            assert manifest["results"]["run_id"] == run_id
+            prefix = f"results/runs/{run_id}/nodes/{node_id}/outputs/"
+            assert archive.read(f"{prefix}assets/mask.txt") == b"canonical asset"
+            assert json.loads(archive.read(f"{prefix}provenance.json"))["run"]["run_id"] == run_id
+        assert definition.read_bytes() == before
+        assert prepared.filename.endswith("successful-run-results.zip")
+    finally:
+        shutil.rmtree(prepared.cleanup_root)

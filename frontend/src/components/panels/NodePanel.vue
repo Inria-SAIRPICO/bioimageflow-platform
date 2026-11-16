@@ -44,12 +44,13 @@ import { IMAGE_PATH_GLOBS } from '@/utils/imagePaths'
 import { dataframePositions, nextDataframePosition } from '@/utils/dataframeInputs'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
 import { apiGraphValidationErrors } from '@/utils/apiError'
+import { isWritableOutputTemplate, outputFileDescription, outputFileMetadata, type OutputFileMetadata } from '@/utils/outputTemplates'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
 // `{"_passthrough": true}` Passthrough marker for DataFrame tools). Mirror
 // the library's wire shape here.
-interface OutputFieldSchema {
+interface OutputFieldSchema extends OutputFileMetadata {
   type: string
   default: unknown
   image_spec: Record<string, string[]> | null
@@ -83,7 +84,7 @@ const executionStore = useExecutionStore()
 const statusProjection = useCanvasStatusProjection()
 const loggerStore = useLoggerStore()
 const nestedWorkflowSessionsStore = useNestedWorkflowSessionsStore()
-const { validationResult } = useGraphSync()
+const { validationResult, isPending: validationPending } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 const fieldFocusTracker = useFieldFocusTracker()
@@ -496,10 +497,6 @@ function updateOutputTemplate(key: string, value: string) {
   canvasCommands.setOutputTemplate(nodeId, key, value)
 }
 
-function isPathType(type: string): boolean {
-  return ['Path', 'ImageFile', 'MaskPath'].includes(type)
-}
-
 type PathPickerMode = 'file' | 'folder' | 'both'
 
 function pathPickerMode(field: InputFieldSchema): PathPickerMode {
@@ -515,11 +512,25 @@ function showsFolderPicker(field: InputFieldSchema): boolean {
   return isDesktop() && ['folder', 'both'].includes(pathPickerMode(field))
 }
 
-function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {
+function isOutputTemplateApplicable(key: string, field: OutputFieldSchema): boolean {
   // Path-template editing only applies to ProcessingTool outputs. DataFrameTool
   // Outputs are column declarations, not files written to disk.
   if (nodeData.value?.tool?.tool_type === 'DataFrameTool') return false
-  return isPathType(field.type)
+  return isWritableOutputTemplate(outputFileMetadata(nodeData.value?.tool, key, field))
+}
+
+function fileDescription(key: string, field: OutputFieldSchema): string | null {
+  return outputFileDescription(outputFileMetadata(nodeData.value?.tool, key, field))
+}
+
+function outputWarningsFor(field: string) {
+  if (validationPending.value) return []
+  const nodeId = selectedNode.value?.id
+  const scopedId = selectedNodeLogTarget.value?.nodeId
+  return (validationResult.value?.output_planning_warnings ?? []).filter(warning => (
+    (warning.node_id === nodeId || warning.node_id === scopedId)
+    && warning.fields.some(output => output.field === field)
+  ))
 }
 
 const workflowInterfaceContext = computed(() => (
@@ -916,6 +927,10 @@ async function pickFiles(key: string) {
       <!-- Outputs section (Fix 19: output template editing) -->
       <div v-if="nodeData.tool?.outputs" class="outputs-section">
         <h4>Outputs</h4>
+        <p v-if="nodeData.tool.tool_type !== 'DataFrameTool'" class="output-template-guidance" data-testid="output-template-guidance">
+          Each file written by a tool needs its own destination. Some tools combine several rows into one file.
+          Use the values shown below to distinguish separate files.
+        </p>
         <div
           v-for="[key, field] in Object.entries(nodeData.tool.outputs)"
           :key="key"
@@ -935,6 +950,9 @@ async function pickFiles(key: string) {
             <span class="output-name">{{ fieldDisplayName(key, field as OutputFieldSchema) }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
+          <small v-if="fileDescription(key, field as OutputFieldSchema)" class="output-file-description" :data-testid="`output-group-${key}`">
+            {{ fileDescription(key, field as OutputFieldSchema) }}
+          </small>
           <InputText
             v-if="workflowInterfaceContext && isWorkflowOutputExposed(key)"
             :model-value="workflowInterfaceContext.outputs[workflowOutputIndex(key)].name"
@@ -946,7 +964,7 @@ async function pickFiles(key: string) {
           <!-- Editable path template — ProcessingTool outputs only.
                DataFrameTool Outputs are column declarations, not file paths. -->
           <InputText
-            v-if="isOutputTemplateApplicable(field as OutputFieldSchema)"
+            v-if="isOutputTemplateApplicable(key, field as OutputFieldSchema)"
             :model-value="nodeData.output_templates?.[key] ?? ''"
             :disabled="isNodeEditingDisabled"
             @update:model-value="updateOutputTemplate(key, $event as string)"
@@ -954,6 +972,10 @@ async function pickFiles(key: string) {
             class="output-template-input"
             data-testid="output-template"
           />
+          <small v-for="(warning, index) in outputWarningsFor(key)" :key="index" role="status"
+            class="output-template-warning" :data-testid="`output-template-warning-${key}`">
+            {{ warning.detail }}
+          </small>
         </div>
       </div>
       </div>
@@ -1090,6 +1112,9 @@ async function pickFiles(key: string) {
 </template>
 
 <style scoped>
+.output-template-guidance { margin: 0 0 .75rem; font-size: .85rem; color: var(--p-text-muted-color); }
+.output-file-description { display: block; margin: .3rem 0; color: var(--p-text-muted-color); }
+.output-template-warning { display: block; margin-top: .35rem; color: var(--p-orange-700); }
 .node-panel {
   padding: 12px;
   font-size: 13px;

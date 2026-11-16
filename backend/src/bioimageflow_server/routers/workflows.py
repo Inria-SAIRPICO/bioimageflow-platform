@@ -688,6 +688,29 @@ async def export_latest_workflow_results(
     return _download_response(prepared)
 
 
+@router.post("/{name:path}/exports/successful-run-results")
+async def export_successful_run_results(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> FileResponse:
+    try:
+        prepared = await asyncio.to_thread(
+            WorkflowExportService(store).prepare_successful_run_results,
+            name,
+        )
+    except FileNotFoundError as exc:
+        _export_not_found(exc)
+    except WorkflowExportError as exc:
+        _raise_export_error(exc)
+    except OSError as exc:
+        logger.error("Could not export successful-run results for %s", name, exc_info=exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "results_export_failed", "detail": str(exc)},
+        ) from exc
+    return _download_response(prepared)
+
+
 @router.post(
     "/{name:path}/exports/latest-results-folder",
     response_model=WorkflowResultsFolderExportResponse,

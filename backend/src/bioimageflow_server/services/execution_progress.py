@@ -13,6 +13,7 @@ from bioimageflow_server.models.execution_runtime import (
     JobState,
     utc_now,
 )
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 
 _PUBLIC_STATES: dict[str, JobState] = {
     "started": "running",
@@ -60,7 +61,22 @@ def reduce_progress_events(
             cursor = sequence
             changed = True
             continue
-        if kind == "diagnostic":
+        if kind == "output_planning":
+            report = OutputPlanningReport.model_validate(payload)
+            existing = jobs.get(report.node_id) or JobSnapshot(scoped_node_path=report.node_id)
+            jobs[report.node_id] = existing.model_copy(update={
+                "state": "failed",
+                "diagnostic": FailureDiagnosticSnapshot(
+                    scoped_node_path=report.node_id,
+                    category=report.code,
+                    exception_type="OutputPlanningError",
+                    message=report.detail,
+                    output_planning_report=report,
+                ),
+                "finished_at": utc_now(),
+                "updated_at": utc_now(),
+            })
+        elif kind == "diagnostic":
             diagnostic = _diagnostic(payload)
             existing = jobs.get(diagnostic.scoped_node_path) or JobSnapshot(
                 scoped_node_path=diagnostic.scoped_node_path

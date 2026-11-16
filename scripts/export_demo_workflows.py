@@ -31,7 +31,7 @@ from bioimageflow_server.services.workflow_artifacts import artifact_hash  # noq
 from bioimageflow_server.models.graph import GraphState  # noqa: E402
 
 
-BUNDLE_VERSION = 6
+BUNDLE_VERSION = 7
 OUTPUT_DIR = (
     ROOT
     / "backend"
@@ -68,13 +68,13 @@ DEFINITIONS = (
     ),
 )
 
-# Published releases compatible with the platform's Core 0.5 runtime.
+# Output-ownership release cohort compatible with the platform's Core 0.6 runtime.
 # Keep template requirements independent of an example checkout's package versions.
 PACKAGE_REQUIREMENTS = {
-    "bioimageflow_common_tools": "0.2.2",
-    "bioimageflow_io_tools": "0.2.2",
-    "bioimageflow_segmentation_tools": "0.3.2",
-    "bioimageflow_spot_tools": "0.2.2",
+    "bioimageflow_common_tools": "0.3.0",
+    "bioimageflow_io_tools": "0.3.0",
+    "bioimageflow_segmentation_tools": "0.4.0",
+    "bioimageflow_spot_tools": "0.3.0",
 }
 
 

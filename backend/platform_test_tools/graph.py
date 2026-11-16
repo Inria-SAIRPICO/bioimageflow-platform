@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption
+from bioimageflow_core.tool import IOModel, ProcessingTool, RowConsumption, Template
 from bioimageflow_core.types import ImageSpec, Semantic
 
 
@@ -19,7 +19,7 @@ class ProcInputs(IOModel):
 
 
 class ProcOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})] = Template("{node_name}_{row_index}{ext}")
 
 
 class MockProcessingTool(ProcessingTool):
@@ -46,7 +46,7 @@ class CompatInputs(IOModel):
 
 
 class CompatOutputs(IOModel):
-    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})] = Template("{node_name}_{row_index}{ext}")
 
 
 class CompatTool(ProcessingTool):
@@ -65,7 +65,7 @@ class IncompatInputs(IOModel):
 
 
 class IncompatOutputs(IOModel):
-    out: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    out: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})] = Template("{node_name}_{row_index}{ext}")
 
 
 class IncompatTool(ProcessingTool):
@@ -104,7 +104,7 @@ class MockDataFrameTool(DataFrameTool):
 
 
 class TemplateOutputs(IOModel):
-    result: Path
+    result: Path = Template("{node_name}_{row_index}")
 
 
 class TemplateTool(ProcessingTool):
@@ -134,7 +134,7 @@ class _SrcInputs(IOModel):
 
 
 class _SrcOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})] = Template("{node_name}_{row_index}{ext}")
 
 
 class SrcTool(ProcessingTool):
@@ -152,7 +152,7 @@ class _DstInputs(IOModel):
 
 
 class _DstOutputs(IOModel):
-    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})] = Template("{node_name}_{row_index}{ext}")
 
 
 class DstTool(ProcessingTool):

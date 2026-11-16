@@ -38,6 +38,7 @@ The portable BioImageFlow grammar does not carry GUI coordinates.
 When the platform first materializes a portable or Python-authored graph, it recursively assigns deterministic left-to-right dependency layers, vertically separates parallel branches, and stacks disconnected components.
 Those generated positions immediately become ordinary canonical `GraphState` content; reopening, validating, executing, importing an already materialized platform document, and ordinary graph mutation do not automatically re-layout them.
 Processing-tool resources are typed portable per-node overrides for CPU, GPU, memory, GPU memory, and maximum concurrency.
+Canvas serialization emits explicit nulls for inherited processing-resource fields at every graph depth, matching backend responses so a persistence roundtrip does not create a newer edit or keep a successfully saved canvas dirty.
 They describe worker requirements rather than guaranteed limits, inherit the tool declaration when absent, and do not affect cache identity.
 Missing or null fields both mean inheritance; Reset all clears explicit overrides and is disabled when there are none, while numeric zero remains an explicit override subject to normal declaration validation.
 `GraphState.config.execution` owns sequential or parallel scheduling; application settings only choose the default for a new workflow.
@@ -226,6 +227,8 @@ A complete carried module/class binding, including its package/version when pres
 Explicit owned-source or custom-package bindings own locality, explicit package references own dependency requirements, and module/class-only references do not acquire a package from unrelated catalog metadata.
 Only genuinely unbound nodes use catalog discovery; explicit version rebind changes package versions recursively while preserving graph presentation and other bindings.
 Rebind uses the carried package's own active version, or metadata from that same package; absent either authority, it preserves the carried version rather than borrowing an unrelated same-named tool's version.
+The dependency-dialog action confirms through PrimeVue and transforms the accepted root draft directly under its expected revision, preserving every field other than the selected package identity.
+Its response carries validation and bound node metadata for the same new revision; it remains a draft edit until explicit Save and invalidates prior-binding viewing guidance.
 Serialization preserves accepted root and child configuration without loading carried packages.
 Compilation resolves enabled recursive capabilities, supplies one derived root engine to one public materialization, and does not install missing dependencies.
 Bound resource overrides survive serialization; actual Processing declarations enforce floors/caps, while actual DataFrame overrides are refused through the public node resource setter, including before actual archive export can publish content.
@@ -239,6 +242,19 @@ Saved root and nested canvases send their originating root workflow name with th
 The backend resolves workflow-owned sources in that named storage context and rechecks its identity and storage after compilation; missing workflows return 404, while failed materialization or an unavailable target returns resolved: false with empty columns, including when the builder returns no workflow.
 
 ## 9. Execution And Status
+
+Local processing exact-output planning uses the public library's `FileGroup` ownership contract before affected scientific callbacks.
+`Template` declares an exact destination, `PathBase` a generated naming base, and bare Path outputs returned references; template edits cannot change those roles or owner groups.
+Template controls and reconciliation follow the library's declared role, including outputs with a Path/array union annotation, rather than matching a displayed type name.
+Authored overrides on returned references remain available for an explicit backend compatibility diagnostic instead of being silently erased.
+Per-row, once and keyed file ownership remain independent of mapped/collective record consumption and DataFrame lineage.
+Reports distinguish `output_path_collision` from `output_group_destination_mismatch` and retain effective patterns, group identity, accurate counts, bounded expansion examples and verified correction suggestions.
+Completion events, status snapshots and retained local diagnostics preserve the typed report without parsing exception strings; incomplete or expired correction evidence retains explanation without claiming full revalidation.
+The correction flow waits for ordinary run settlement, checks exact current draft/run/source authority, applies a normal accepted graph edit without automatic Save, and starts a new run with the original full/selected targets.
+Nested corrections address the embedded graph's scoped node and respect private snapshot ownership rather than modifying saved-source provenance or silently overwriting an open editor.
+Proven editing warnings use the same public checker; unknown cases remain silent.
+Unexpected occupied files and dynamic generated file families retain their separate lower-level safeguards and are not automatically labelled template collisions.
+The versioned output/declaration contract prevents reuse of previously unsafe processing cache selections without deleting historical records or changing their read/export authority.
 
 Execution compiles the accepted recursive graph to one flat plan.
 Attached progress callbacks are fenced to the active running execution context; a delayed event from an earlier run cannot change a later run's status or emitted progress.
@@ -408,9 +424,14 @@ Preferences reports the effective publication mode and warning, if any, but does
 Workflow export uses one dialog with these platform-owned choices:
 
 - **Workflow only** saves an unsaved addressed root workflow when necessary and downloads the BioImageFlow recursive workflow archive, including owned workflow-local sources but no results.
-- **Latest results** downloads materialized copies of the current per-node latest projection; its files may come from different runs.
-- **Workflow with results** saves when necessary and downloads a platform results bundle containing the workflow archive plus copied outputs and provenance from exactly one pinned latest successful run.
-- **Export latest results to folder** is desktop-only and materializes the current per-node latest projection as ordinary files in a generated child directory of the selected parent.
+- **Workflow with results from the latest successful run** saves when necessary and downloads a platform results bundle containing the current workflow archive plus copied outputs and provenance from exactly one pinned latest successful run.
+- **Latest result from each node** downloads materialized copies of the current per-node latest projection; its files may come from different runs.
+- **Results from the latest successful run** downloads copied outputs and provenance from exactly one pinned latest successful run, without compiling, saving, or archiving the workflow definition.
+- **Latest result from each node → folder** is an additional desktop-only destination action and materializes the per-node latest projection as ordinary files in a generated child directory of the selected parent.
+
+The first four choices appear in this order and download ZIP archives.
+Descriptions distinguish per-node mixed-run results from a single successful run; a successful selected-node run is eligible and does not imply whole-workflow coverage.
+A workflow-containing bundle carries the current saved definition, which may have changed since the selected run.
 
 Results-only exports do not save or mutate the workflow definition and remain available while graph mutation is locked.
 Workflow-containing exports use the normal save and mutation barriers.
@@ -425,13 +446,14 @@ The workflow-and-results bundle writes the top-level manifest `bioimageflow-resu
 The manifest identifies the workflow, nested workflow archive and its SHA-256 digest, pinned successful run ID, and copied run-results path.
 It is a self-contained export artifact, not a portable workflow archive, and workflow import rejects it with an explicit unsupported-media response.
 Only the nested workflow archive inside the bundle is importable.
+The successful-run results-only bundle uses the same manifest schema with `kind: "results-only"`, omits the `workflow` member and archive directory, and retains workflow ID, pinned run ID, and result path.
 
 A workspace-document backup, when provided, remains a separate platform artifact and is not accepted as a BioImageFlow workflow archive.
 
 ### Bundled demo workflows
 
-The application loads demo bundle version 6 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
-All packaged-tool bindings pin published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2; the maintainer exporter retains those release pins independently of source-checkout package versions.
+The application loads demo bundle version 7 from a single unversioned `demo_workflows/` directory, whose root graph and every recursively embedded graph use canonical schema version 2.
+All packaged-tool bindings pin the Core 0.6 output-ownership cohort: common/I/O/spot tools 0.3.0 and segmentation tools 0.4.0; the maintainer exporter retains those release pins independently of source-checkout package versions.
 New Fish Analysis installations label the two embedded instances FOLS2 Marker Spot Analysis and CSF1R Marker Spot Analysis; existing installed copies are not replaced.
 The Fish Analysis overlap tables carry the source image filename on every row. Its final statistics table contains one row per image and a final Global average row, with aggregate spot counts divided by the total number of nuclei across images.
 The bundled Fish Analysis marker branches use distinct internal node IDs and parallel execution with the locked published BioImageFlow runtime, whose parallel branch workers retain scoped names and result views. The final tool groups mapped overlap rows by their immediate parent image row index, yielding one row per input image and a weighted Global average row.
@@ -509,6 +531,7 @@ The export routes are:
 - `POST /api/v1/workflows/{name}/export` for the portable workflow-only archive;
 - `POST /api/v1/workflows/{name}/exports/latest-results` for the copied latest-results ZIP;
 - `POST /api/v1/workflows/{name}/exports/latest-results-folder` for the desktop copied-folder export;
+- `POST /api/v1/workflows/{name}/exports/successful-run-results` for the pinned successful-run results without a workflow archive;
 - `POST /api/v1/workflows/{name}/exports/workflow-run-bundle` for the workflow and pinned successful-run bundle.
 
 Download routes complete their temporary materialization before returning a streamed file response and remove temporary state after the response.
@@ -543,6 +566,10 @@ Resolved secrets are never stored or returned.
 OMERO remains a platform-owned integration consumed by dedicated tool packages.
 The OMERO settings UI renders each named server instance as a separate responsive form card with individually labelled fields and card-local Save, Duplicate, and Remove actions.
 Cards use multiple field columns when space permits, collapse to one column in narrow windows, and do not require horizontal scrolling to reach fields or actions.
+Saved cards offer **Download** and **Upload** from the independent `bioimageflow_omero_tools` package through the active canvas command facade.
+Each action captures the saved non-secret connection fields and exact installed package/version/module/class binding; changing settings or the catalog does not alter existing node targets.
+Unsaved connection or password edits, a missing writable canvas, and unavailable matching package tools disable these actions; package installation remains the normal Tools flow.
+
 
 Fiji is also a platform-owned desktop integration, but the Fiji application remains user-installed and user-managed. The platform stores and validates the selected installation directory, resolves result images from their workflow-scoped identities, and never exposes this local-launch capability in webapp mode.
 

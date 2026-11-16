@@ -796,6 +796,28 @@ def _detect_missing_tools(
     return missing
 
 
+def rebind_graph_versions(graph: GraphState, registry: ToolRegistryService) -> GraphState:
+    """Replace only package identities in the canonical graph, including children."""
+    nodes = []
+    for node in graph.nodes:
+        if isinstance(node, WorkflowNodeState):
+            node = node.model_copy(update={"workflow": rebind_graph_versions(node.workflow, registry)})
+        else:
+            metadata = registry.get_tool(node.tool_name)
+            if not _is_local_tool_reference(node.model_dump(mode="json"), metadata):
+                package_name = node.tool_package or (metadata.package if metadata else None)
+                package = registry.get_package(package_name) if package_name else None
+                version = package.active_version if package else None
+                if version is None and metadata and metadata.package == package_name:
+                    version = metadata.package_version
+                if package_name and version:
+                    node = node.model_copy(update={
+                        "tool_package": package_name, "tool_package_version": version,
+                    })
+        nodes.append(node)
+    return graph.model_copy(update={"nodes": nodes})
+
+
 def rebind_lib_dict_versions(
     workflow_data: dict[str, Any], registry: ToolRegistryService
 ) -> dict[str, Any]:

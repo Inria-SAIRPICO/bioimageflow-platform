@@ -81,7 +81,7 @@ Clean selected graphs reuse their complete-graph compilation.
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
 
-The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.5.2 or newer in the 0.5.x line resolves lazily evaluated class annotations and captures compiler-generated slice constants on Python 3.14 so installed tools retain their schemas and executable identity.
+The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.6.0 or newer in the 0.6.x line supplies explicit output-file ownership and Task5/Result5, retaining lazily evaluated annotation resolution and compiler-generated slice evidence on Python 3.14 so installed tools preserve their schemas and executable identity.
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
 Store scanning and explicit package lifecycle operations use the library's public installation-selector admission to ignore unrelated directories and private installer staging before loading or unloading a version.
@@ -91,7 +91,7 @@ Installed code is held as an immutable admitted generation selected by canonical
 Its first admission captures installation metadata, selected controller dependency compatibility, source content and installed inherited implementation owners; subsequent loads and plans reuse those facts without repeating distribution inventories, installation-record walks or installed-source checks.
 Editable and workflow-local sources retain fresh capture for each operation, while parameters, bindings, runtime readiness and selected immutable result records retain their normal checks.
 Generation counters and store paths govern selection and lifetime, not scientific cache identity.
-The normal platform dependency manifest and lock select published BioImageFlow 0.9.7/Core 0.5.2 with this lifecycle integration.
+The normal platform dependency set is published BioImageFlow 0.10.0/Core 0.6.0 with this lifecycle integration and explicit output-file ownership.
 
 Installed file edits do not trigger hot reload or change the admitted generation.
 A controlled refresh or uninstall must retire the exact selected generation before replacement or removal, and a real store-root change preflights all affected published selections together, including packages loaded only through carried workflow bindings.
@@ -142,6 +142,11 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 
 Custom-tool usage inspects tool nodes at every graph depth without reading tool-only fields from workflow nodes.
 It resolves and returns workspace-relative workflow IDs, including folder segments, and lists each affected workflow once.
+
+**Known package catalog:** The bundled default includes the published Common, I/O, Measurement, OMERO, Restoration, SAIRPICO, Segmentation, Spot, and Tracking tool packages.
+Phasor tools are excluded until their first PyPI release; source-repository presence alone does not establish installable availability.
+`known_packages.txt` in the configured BioImageFlow home replaces the bundled list when present; installed packages remain visible independently of that list.
+Catalog inclusion does not provision or certify a tool's execution environment, external binaries, models, or services.
 
 **Package uninstall ownership:** Package and explicit version selectors must be exact safe stored path components; an empty explicit version is invalid, not an all-versions request.
 Uninstall admits only the selected physical directory below the configured tool-store root, without importing its code or requiring registry membership, distribution metadata, or version normalization.
@@ -1387,12 +1392,14 @@ Parameter focus, local parse errors and delayed file-picker results belong to th
 
 #### 3.5.4 Output Fields
 
-Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
+Each output field from `Outputs` is displayed with editable path templates for explicitly declared exact destinations and naming bases **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImageFile, int, etc.)
-- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImageFile`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the [library's output templating engine](bioimageflow/docs/source/specs.md#71-output-templating-engine). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Path template editor:** *Only for `ProcessingTool` nodes.* Outputs with a declared `exact` or `base` role show a text input containing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The library role is authoritative even when the output has a union annotation such as Path or array; the displayed type name must not hide its editor or erase its authored template. The user can edit this to customize output file naming. The template syntax follows the [library's output templating engine](bioimageflow/docs/source/specs.md#71-output-templating-engine). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
+- **File ownership:** Public `output_role` metadata distinguishes `exact`, `base` and `reference`; bare returned Path references have no template editor. Exact destinations expose immutable `file_group` metadata and a read-only description: one file per input row, one for the whole batch, or one per named input group. Grouping belongs to the tool declaration and cannot be changed through a workflow template. The OUTPUTS description explains that each file needs its own destination and some tools combine several rows into one file. Naming bases explain that the tool generates the final filenames and complete collision prediction is unavailable.
+- **Proven warnings:** Current authoritative input evidence may produce a nonblocking inline collision or group-destination disagreement warning. Unknown values, absence of `{row_index}`, and unavailable bound-tool metadata do not produce speculative warnings. The library owns resolution and ownership checking; the frontend does not reproduce it.
 - **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImageFile` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept; [library Section 3.5](bioimageflow/docs/source/specs.md#35-dataframetool) defines `DataFrameTool` as returning DataFrames directly. The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
@@ -1578,9 +1585,10 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 - **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
-- **Import / Export:** Uses the BioImageFlow library import/export API. The
-  platform does not reimplement the library archive format. Export saves/promotes
-  a dirty draft first so the archive matches the current editable graph.
+- **Import / Export:** Uses the BioImageFlow library import/export API.
+  The platform does not reimplement the library archive format.
+  Workflow-containing exports save/promote a dirty draft first so the archive matches the current editable graph.
+  Results-only exports do not save the draft and distinguish per-node latest results (possibly mixed runs) from one pinned latest successful run, as specified in v2 §12.
   After an imported or explicitly opened saved workflow is accepted in its root canvas, desktop mode presents persistent, dismissible viewing guidance for unmet requirements, unknown metadata, and check failures without blocking Run or installing anything.
   Pending-only checks remain silent so a covered result never flashes a temporary banner.
   Saved inspection uses the normal graph compiler and source/store authority, without planning, provisioning or execution; unresolved metadata preserves its loading diagnostics.
@@ -1606,6 +1614,14 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 - **Stop button:** Cancels execution. The banner updates to "Execution stopped" and disappears after 3 seconds (or on click).
 - **On completion:** The banner shows "Execution complete" (green) or "Execution failed" (red, with error summary) and disappears after 5 seconds (or on click). On failure, the failed node is auto-selected so its error is visible in the Node Panel.
 - **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation, draft mutations, workflow mutations, and cache clearing while an execution is starting or running with HTTP 423 Locked. Ordinary admitted mutations serialize with one another and exclude Run; they are not themselves reported as a running execution.
+
+Local exact-output planning errors have a dedicated correction dialog after the original run's submitted work settles and mutation admission is available.
+It explains the scoped node, file group, effective template and bounded literal/token expansion examples; different owners sharing one destination and one owner requesting different destinations have distinct messages.
+The user may cancel unchanged or submit custom templates, with a verified row-index or group-index suggestion where appropriate and no live preview.
+The backend checks the proposal against exact failed-run evidence and current workflow authority before the ordinary canvas/durable-draft edit.
+After durable acceptance, Continue starts a new run preserving the original full/selected intent and normal cache reuse; it does not mutate the original failed run or automatically Save the workflow.
+Submission disables dismissal until settlement; a refused edit prevents restart, and an accepted edit remains applied if restart fails.
+Run, workspace, workflow generation, draft revision, scoped node and nested-editor ownership fence delayed actions and duplicate completion events.
 
 ### 3.10 Image Viewer
 
@@ -1694,6 +1710,11 @@ OMERO data access is supplied by dedicated tool packages; the platform UI manage
 
 The OMERO tab lists named server instances with host, port, username, password status, and Add, Save, Duplicate, and Remove actions. The display name defaults to `{host}:{username}` and must be unique. Passwords are submitted only when explicitly saved, stored through the operating-system keyring under service `bioimageflow-omero` and username `{host}:{port}:{username}`, omitted from settings JSON, and represented by `password_stored` in API responses. Named instances with the same normalized host, port and username share one credential; the last explicitly submitted password wins.
 Removing an instance asks for confirmation and deletes that shared credential only when no retained instance still references it.
+Each saved instance card also offers **Download** and **Upload**, which add ordinary `OmeroDownloadDataset` and `OmeroUploadImage` nodes from the installed `bioimageflow_omero_tools` package to the active writable canvas.
+The actions copy only the saved host, port and username and capture the installed package version, module `bioimageflow_omero_tools.omero` and exact class; later settings or catalog changes do not retarget existing nodes.
+Unsaved connection or password edits, no writable canvas, or missing matching package tools disable these actions; missing tools direct users to normal Tools installation.
+Dataset and image parameters remain ordinary editable node fields, while managed workers read the saved password directly from the OS keyring without placing it in graph parameters or task payloads.
+
 
 ### 3.13 Drag and Drop (File Import)
 
@@ -1893,7 +1914,14 @@ The node is rendered with a red "Tool not found" badge and cannot be executed un
 
 A workflow requires a tool package version that is not in the tool store (e.g., workflow saved with `bioimageflow-cellpose==1.2.0` but only `1.3.0` is installed).
 
-On load, the server reports missing package versions and tool classes in the workflow response. The dependency dialog displays required and installed versions plus affected nodes. **Use installed versions** is enabled when package alternatives exist; it calls `POST /workflows/{id}/rebind-versions`, updates the saved workflow references, and marks affected nodes for revalidation. Installing an absent required version remains a separate Tools Panel action.
+On load, the server reports missing package versions and tool classes in the workflow response.
+The dependency dialog displays required and installed versions plus affected nodes.
+**Use installed alternatives…** is enabled when package alternatives exist and opens a PrimeVue confirmation listing the proposed replacements.
+After the canvas freshness barrier, `POST /workflow-drafts/{id}/rebind-versions` accepts an expected draft revision and writer, replaces package identities recursively in that accepted draft, validates it, and returns the new draft revision and node-scoped metadata.
+It preserves all other canonical graph fields, including edges, layout, source provenance, parameters and templates; Save explicitly promotes the replacement to the saved workflow.
+The frontend binds confirmation and acceptance to the captured workflow identity and canvas registration, and invalidates viewing guidance belonging to the previous bindings.
+Revision conflicts and execution locks refuse replacement without changing the draft.
+Installing an absent required version remains a separate Tools Panel action.
 
 ---
 
@@ -1946,6 +1974,7 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
 | 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
 | 19a | `POST` | `/api/v1/workflows/{id}/rebind-versions` | Use currently active installed package versions and refresh dependency metadata |
+| 19b | `POST` | `/api/v1/workflow-drafts/{id}/rebind-versions` | Replace accepted draft package versions with revision checking and refreshed validation; saved artifact unchanged |
 | 19b | `POST` | `/api/v1/workflows/{id}/activate` | Update external active-workflow context without selecting graph authority |
 | 20 | `GET` | `/api/v1/workflow-drafts/{id}` | Workflow open/startup draft load; agent graph inspection |
 | 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Per-root-canvas full-graph persistence and validation with `expected_revision` |

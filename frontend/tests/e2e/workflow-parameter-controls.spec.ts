@@ -30,9 +30,14 @@ function child(graph: GraphState): WorkflowNodeState {
   return node
 }
 
-async function save(page: Page): Promise<void> {
+async function save(page: Page, expectedTitle: string): Promise<void> {
+  const title = page.getByTestId('workflow-title')
+  await expect.poll(async () => (await title.getAttribute('title') ?? '').replace(/ \*$/, '')).toBe(expectedTitle)
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+  // A private snapshot PUT can precede Apply and parent persistence.
+  // The clean title is acknowledged only after the complete Save operation.
+  await expect(title).toHaveText(expectedTitle)
 }
 
 test('workflow controls retain defaults, pins and private depth-two edits through save and reopen', async ({ page }) => {
@@ -94,13 +99,13 @@ test('workflow controls retain defaults, pins and private depth-two edits throug
   await amount().fill('83')
   await amount().blur()
   const appliedInner = page.waitForResponse(response => response.url().includes('/nested-workflow-snapshots/') && response.request().method() === 'PUT' && response.ok())
-  await save(page)
+  await save(page, 'middle child')
   await appliedInner
   await page.locator('.dv-tab').filter({ hasText: new RegExp(`^${name} child$`) }).click()
-  await save(page)
+  await save(page, `${name} child`)
   await page.locator('.dv-tab').filter({ hasText: new RegExp(`^${name}$`) }).click()
   const saved = page.waitForResponse(response => response.url().endsWith(`/workflows/${name}`) && response.request().method() === 'PUT')
-  await save(page)
+  await save(page, name)
   expect((await saved).ok()).toBeTruthy()
   const persisted = (await (await page.request.get(`${API}/workflows/${name}`)).json()).graph as GraphState
   expect(child(persisted).bindings.amount).toEqual({ __type__: 'int', value: 71 })

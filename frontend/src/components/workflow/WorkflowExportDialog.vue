@@ -7,7 +7,7 @@ import { useToast } from 'primevue/usetoast'
 import { useWorkflowStore } from '@/stores/workflow'
 import { revealPath, selectFolder } from '@/utils/nativeDialogs'
 
-type ExportAction = 'workflow' | 'latest-results' | 'workflow-results' | 'folder'
+type ExportAction = 'workflow' | 'latest-results' | 'workflow-results' | 'successful-run-results' | 'folder'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -45,6 +45,7 @@ const isBusy = computed(() => activeAction.value !== null)
 const progressMessage = computed(() => {
   if (activeAction.value === 'folder') return 'Copying the latest results to a portable folder…'
   if (activeAction.value === 'workflow-results') return 'Preparing the workflow and successful-run bundle…'
+  if (activeAction.value === 'successful-run-results') return 'Preparing results from the latest successful run…'
   if (activeAction.value === 'workflow') return 'Preparing the workflow archive…'
   if (activeAction.value === 'latest-results') return 'Preparing the latest-results archive…'
   return null
@@ -185,6 +186,13 @@ function exportLatestResults(): void {
   })
 }
 
+function exportSuccessfulRunResults(): void {
+  void runAction('successful-run-results', async (signal) => {
+    await workflowStore.exportSuccessfulRunResults(props.workflowName!, signal)
+    if (!signal.aborted) setVisible(false)
+  })
+}
+
 function exportWorkflowWithResults(): void {
   void runAction('workflow-results', async (signal) => {
     const name = await preparedWorkflowName()
@@ -263,7 +271,7 @@ async function revealExport(): Promise<void> {
     @update:visible="setVisible"
   >
     <p class="workflow-export-dialog__intro">
-      Choose what you want to take out of BioImageFlow.
+      Choose what to export. Result files are copied so they can be moved or shared.
     </p>
 
     <div class="workflow-export-dialog__choices">
@@ -285,14 +293,29 @@ async function revealExport(): Promise<void> {
       <button
         type="button"
         class="workflow-export-dialog__choice"
+        :disabled="isBusy || workflowExportsDisabled"
+        data-testid="export-workflow-with-results"
+        @click="exportWorkflowWithResults"
+      >
+        <i class="pi pi-box" aria-hidden="true" />
+        <span>
+          <strong>Workflow with results from the latest successful run</strong>
+          <small>Saves current workflow changes, then downloads the workflow and results from one successful run.</small>
+        </span>
+        <i v-if="activeAction === 'workflow-results'" class="pi pi-spinner pi-spin" aria-hidden="true" />
+      </button>
+
+      <button
+        type="button"
+        class="workflow-export-dialog__choice"
         :disabled="isBusy"
         data-testid="export-latest-results"
         @click="exportLatestResults"
       >
         <i class="pi pi-images" aria-hidden="true" />
         <span>
-          <strong>Latest results</strong>
-          <small>Downloads the human-friendly latest output from each node. These outputs may come from different workflow runs.</small>
+          <strong>Latest result from each node</strong>
+          <small>Downloads a ZIP with each node’s latest successful result. Results may come from different runs.</small>
         </span>
         <i v-if="activeAction === 'latest-results'" class="pi pi-spinner pi-spin" aria-hidden="true" />
       </button>
@@ -300,16 +323,16 @@ async function revealExport(): Promise<void> {
       <button
         type="button"
         class="workflow-export-dialog__choice"
-        :disabled="isBusy || workflowExportsDisabled"
-        data-testid="export-workflow-with-results"
-        @click="exportWorkflowWithResults"
+        :disabled="isBusy"
+        data-testid="export-successful-run-results"
+        @click="exportSuccessfulRunResults"
       >
-        <i class="pi pi-box" aria-hidden="true" />
+        <i class="pi pi-images" aria-hidden="true" />
         <span>
-          <strong>Workflow with results</strong>
-          <small>Saves any unsaved workflow changes, then downloads the workflow with outputs and provenance from one latest successful run.</small>
+          <strong>Results from the latest successful run</strong>
+          <small>Downloads a ZIP of outputs and provenance from one successful run, without the workflow.</small>
         </span>
-        <i v-if="activeAction === 'workflow-results'" class="pi pi-spinner pi-spin" aria-hidden="true" />
+        <i v-if="activeAction === 'successful-run-results'" class="pi pi-spinner pi-spin" aria-hidden="true" />
       </button>
 
       <button
@@ -322,8 +345,8 @@ async function revealExport(): Promise<void> {
       >
         <i class="pi pi-folder-open" aria-hidden="true" />
         <span>
-          <strong>Export latest results to folder</strong>
-          <small>Choose a parent folder. BioImageFlow creates a named child folder containing real, portable files.</small>
+          <strong>Latest result from each node → folder</strong>
+          <small>Same per-node results as above, copied into a new folder instead of a ZIP. Results may come from different runs.</small>
         </span>
         <i v-if="activeAction === 'folder'" class="pi pi-spinner pi-spin" aria-hidden="true" />
       </button>

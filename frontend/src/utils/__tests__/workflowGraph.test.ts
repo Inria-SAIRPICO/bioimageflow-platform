@@ -8,6 +8,7 @@ import {
 } from '../workflowGraph'
 
 const tool: ToolMetadata = {
+  output_file_declarations: {},
   name: 'threshold',
   display_name: 'Threshold',
   package: 'example',

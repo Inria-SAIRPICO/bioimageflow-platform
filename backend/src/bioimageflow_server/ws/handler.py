@@ -265,6 +265,13 @@ class ConnectionManager:
             "planned_node_names": context.planned_node_names,
             **_context_payload(context),
         }
+        reports = [
+            error["output_planning_report"]
+            for error in errors
+            if isinstance(error, dict) and "output_planning_report" in error
+        ]
+        if reports:
+            payload["output_planning_reports"] = reports
         self._enqueue_all(payload)
 
     async def publish_execution_snapshot(self, snapshot: Any, *, initial: bool) -> None:

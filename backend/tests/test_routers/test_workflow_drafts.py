@@ -1140,3 +1140,67 @@ async def test_revision_zero_get_observes_other_owner_during_initial_validation(
     if authority == "saved":
         assert len(captured_graphs) == 2
         assert captured_graphs[1] == changed.model_dump(mode="json")
+
+
+async def test_rebind_versions_updates_accepted_recursive_draft_preserving_saved_and_edges(
+    client: httpx.AsyncClient, tmp_path: Path,
+) -> None:
+    from bioimageflow_server.models.tools import PackageInfo
+    from bioimageflow_server.routers.tools import get_tool_registry
+
+    registry = client._transport.app.dependency_overrides[get_tool_registry]()
+    registry.register_package('example_tools', PackageInfo(
+        name='example_tools', installed_versions=['1.0.0', '2.0.0'], active_version='2.0.0',
+    ))
+    await _create_workflow(client)
+    path = tmp_path / 'workspace/workflows/wf/workflow.json'
+    saved_bytes = path.read_bytes()
+    graph = _graph('edited')
+    graph['nodes'][0].update({
+        'tool_module': 'example_tools.main', 'tool_class': 'MissingTool',
+        'tool_package': 'example_tools', 'tool_package_version': '1.0.0',
+        'collapsed': True, 'output_templates': {'output': '{row_index}.tif'},
+    })
+    child = json.loads(json.dumps(graph))
+    graph['nodes'].append({
+        'type': 'workflow', 'id': 'nested', 'name': 'Nested label',
+        'position': [800, 400], 'workflow': child, 'bindings': {},
+        'source': {'kind': 'workspace', 'workflow_id': 'source', 'artifact_hash': 'sha256:' + 'a' * 64},
+    })
+    graph['nodes'].append({**graph['nodes'][0], 'id': 'second', 'position': [900, 600]})
+    # Preserve authored edge identities and positions even when metadata is unavailable.
+    graph['edges'] = [{'type': 'dataframe', 'id': 'retained-edge',
+                      'source_node': 'edited', 'target_node': 'second', 'target_position': 0}]
+    put = await client.put('/api/v1/workflow-drafts/wf', json={
+        'graph': graph, 'expected_revision': 0,
+    })
+    assert put.status_code == 200, put.text
+    original = put.json()['graph']
+    response = await client.post('/api/v1/workflow-drafts/wf/rebind-versions', json={
+        'expected_revision': 1,
+    })
+    assert response.status_code == 200, response.text
+    accepted = response.json()
+    assert accepted['draft_revision'] == 2
+    assert accepted['dirty_against_saved'] is True
+    expected = json.loads(json.dumps(original))
+    expected['nodes'][0]['tool_package_version'] = '2.0.0'
+    expected['nodes'][2]['tool_package_version'] = '2.0.0'
+    expected['nodes'][1]['workflow']['nodes'][0]['tool_package_version'] = '2.0.0'
+    assert accepted['graph'] == expected
+    assert path.read_bytes() == saved_bytes
+    reopened = await client.get('/api/v1/workflow-drafts/wf')
+    assert reopened.json()['graph'] == expected
+    stale = await client.post('/api/v1/workflow-drafts/wf/rebind-versions', json={
+        'expected_revision': 1,
+    })
+    assert stale.status_code == 409
+    assert stale.json()['error'] == 'draft_revision_conflict'
+    assert (await client.get('/api/v1/workflow-drafts/wf')).json()['graph'] == expected
+
+
+async def test_rebind_versions_refuses_execution_lock(locked_client: httpx.AsyncClient) -> None:
+    response = await locked_client.post('/api/v1/workflow-drafts/wf/rebind-versions', json={
+        'expected_revision': 0,
+    })
+    assert response.status_code == 423

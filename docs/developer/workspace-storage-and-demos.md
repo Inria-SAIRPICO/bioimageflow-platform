@@ -79,9 +79,10 @@ The **Open latest outputs** action opens this per-workflow directory.
 Exports create independent copies when portability matters:
 
 - **Workflow only** contains the reusable workflow and its local tools.
-- **Latest results** copies the latest successful result of each node.
-- **Workflow with results** combines the workflow with copied outputs and provenance from one successful run.
-- **Export latest results to folder** writes copied latest results to a chosen destination.
+- **Latest result from each node** copies the latest successful result of each node.
+- **Workflow with results from the latest successful run** combines the workflow with copied outputs and provenance from one successful run.
+- **Results from the latest successful run** copies one pinned successful run without compiling or saving the workflow.
+- **Latest result from each node → folder** writes copied latest results to a chosen destination.
 
 A workflow-and-results bundle is an export artifact, not a directly importable workflow archive.
 The workflow archive inside its `workflow/` directory can be imported separately.
@@ -106,7 +107,7 @@ The **Storage** preferences report whether the recognized demos are installed an
 Removing demos preserves unrelated workflows under `Demo/`.
 Switching to another existing workspace does not copy demos into it automatically.
 
-The runtime bundle is version 6, stored under one `demo_workflows/` directory, and every root and recursively embedded graph is canonical schema v2.
+The runtime bundle is version 7, stored under one `demo_workflows/` directory, and every root and recursively embedded graph is canonical schema v2.
 New Fish Analysis installations give the FOLS2 and CSF1R embedded instances distinct display names; existing installed demos remain unchanged.
 Their overlap tables include the source image filename on each row, and the final statistics table includes per-image rows followed by a weighted Global average row.
 The Fish Analysis marker branches use distinct internal node IDs and parallel execution with the editable sibling BioImageFlow source, which retains nested result identities and Node Data views across worker threads. Its final tool groups overlap rows by their immediate parent image row index before adding the weighted Global average.
@@ -119,7 +120,7 @@ scripts/export_demo_workflows.py --bioimageflow-source /path/to/bioimageflow
 
 This maintainer command explicitly consumes a BioImageFlow source checkout.
 Generation fails if any graph in the bundle is not recursively schema v2.
-The exporter pins published Core 0.5-compatible common/I/O/spot tools 0.2.2 and segmentation tools 0.3.2 independently of the example checkout’s package versions; update these explicit release pins when maintaining the bundle.
+The exporter pins the Core 0.6 output-ownership cohort: common/I/O/spot tools 0.3.0 and segmentation tools 0.4.0 independently of the example checkout’s package versions; update these explicit release pins when maintaining the bundle.
 Because portable BioImageFlow definitions have no GUI coordinates, export assigns the same deterministic dependency-layered platform layout recursively before calculating each demo's artifact hash.
 Ordinary platform development and CI use registry packages instead.
 Installing missing demos first installs their recursively declared exact tool-package versions through the normal package installer, then publishes the workflow files only after every package succeeds.

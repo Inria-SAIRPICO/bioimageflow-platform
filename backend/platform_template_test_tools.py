@@ -9,7 +9,7 @@ class TemplateReport(ProcessingTool):
     row_consumption = RowConsumption.MAPPED
     environment = EnvironmentSpec(
         name="platform-template-report",
-        dependencies={"python": "3.12", "pip": ["bioimageflow-core>=0.5,<0.6"]},
+        dependencies={"python": "3.12", "pip": ["bioimageflow-core>=0.6,<0.7"]},
         allow_flexible_versions=True,
     )
 

@@ -43,7 +43,7 @@ Open an entry for details or use **Go to node** when it is available.
 ## Inspect tables
 
 1. Select one or more completed nodes.
-2. Open **View → Node Data**.
+2. Read the **Node Data** panel, open by default (reopen it from **View → Node Data** if you closed it).
 3. Filter columns or change pages to inspect larger tables.
 
 When selected nodes have compatible rows, BioImageFlow can combine their fields in one table.
@@ -91,7 +91,8 @@ Select the workflow in **Workflows** and click **Open latest outputs** for a con
 
 Choose **Workflow → Export**, then:
 
-- **Latest results** for independent copies with the same per-node latest behavior;
-- **Workflow with results** for one successful run together with the workflow.
+- **Latest result from each node** for independent copies with the same per-node latest behavior;
+- **Workflow with results from the latest successful run** for one successful run together with the workflow;
+- **Results from the latest successful run** for that run’s results without a workflow archive.
 
 See [Manage Workflows](manage-workflows.md#import-or-export) for every sharing and export choice.

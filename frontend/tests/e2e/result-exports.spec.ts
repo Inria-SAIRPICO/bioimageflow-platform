@@ -243,6 +243,24 @@ test.describe('result exports', () => {
     expect([...latest.values()].some(value => value.toString('utf8').includes('0,97\n'))).toBe(false)
 
     await openExportDialog(page)
+    const successfulDownloadPromise = page.waitForEvent('download')
+    await page.getByTestId('export-successful-run-results').click()
+    const successfulDownload = await successfulDownloadPromise
+    expect(successfulDownload.suggestedFilename()).toContain('successful-run-results.zip')
+    const successful = zipEntries(await readFile((await successfulDownload.path())!))
+    const successfulManifest = JSON.parse(successful.get('bioimageflow-results-bundle.json')!.toString('utf8'))
+    expect(successfulManifest).toMatchObject({
+      kind: 'results-only',
+      workflow_id: workflowName,
+      results: { kind: 'latest-successful-run', run_id: secondRunId },
+    })
+    expect(successfulManifest).not.toHaveProperty('workflow')
+    expect([...successful.keys()].some(name => name.startsWith('workflow/'))).toBe(false)
+    const generatedCsv = [...successful.entries()].find(([name]) => name.endsWith('/generate_result/outputs/dataframe.csv'))
+    expect(generatedCsv?.[1].toString('utf8')).toBe(',marker\n0,2\n')
+    expect([...successful.values()].some(value => value.toString('utf8').includes(otherRunId))).toBe(false)
+
+    await openExportDialog(page)
     let unexpectedDownloads = 0
     const countDownload = () => { unexpectedDownloads += 1 }
     page.on('download', countDownload)

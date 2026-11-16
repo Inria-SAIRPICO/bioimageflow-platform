@@ -250,6 +250,7 @@ describe('useWebSocket workflow draft dispatch', () => {
         type: 'tool_reload',
         tool_name: 'CustomTool',
         tool_metadata: {
+          output_file_declarations: {},
           name: 'CustomTool',
           display_name: 'Custom Tool',
           package: '__custom__',

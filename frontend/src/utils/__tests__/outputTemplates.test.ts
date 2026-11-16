@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { reconcileOutputTemplates } from '../outputTemplates'
+import { isWritableOutputTemplate, reconcileOutputTemplates } from '../outputTemplates'
 import type { ToolMetadata } from '@/api/types'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
+    output_file_declarations: {},
     name: 'LabelOverlaps',
     display_name: 'Label Overlaps',
     package: 'bioimageflow-common-tools',
@@ -30,6 +31,54 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
 }
 
 describe('reconcileOutputTemplates', () => {
+  it('uses declared roles for union outputs instead of interpreting the display type', () => {
+    const union = 'pathlib._local.Path | bioimageflow_core.types.SharedArray'
+    const tool = makeTool({
+      outputs: {
+        exact: { type: union, default: 'image_{row_index}.tif' },
+        base: { type: union, default: 'tile.tif' },
+        reference: { type: union },
+        count: { type: 'int' },
+        unknownPath: { type: 'Path' },
+      },
+      output_file_declarations: {
+        exact: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+        base: { output_role: 'base', file_group: null, description: '' },
+        reference: { output_role: 'reference', file_group: null, description: '' },
+      },
+    })
+    expect(isWritableOutputTemplate({ type: union, output_role: 'exact' })).toBe(true)
+    expect(isWritableOutputTemplate({ type: union, output_role: 'base' })).toBe(true)
+    expect(isWritableOutputTemplate({ type: union, output_role: 'reference' })).toBe(false)
+    expect(reconcileOutputTemplates(tool)).toEqual({ exact: 'image_{row_index}.tif', base: 'tile.tif' })
+    expect(reconcileOutputTemplates(tool, {
+      exact: 'authored_{row_index}.tif', reference: 'legacy-reference.tif',
+      unknownPath: 'legacy-path.tif', count: 'stale.csv',
+    })).toEqual({
+      exact: 'authored_{row_index}.tif', base: 'tile.tif',
+      reference: 'legacy-reference.tif', unknownPath: 'legacy-path.tif',
+    })
+  })
+  it('initializes only declared writable destinations and naming bases', () => {
+    const result = reconcileOutputTemplates(makeTool({
+      outputs: {
+        exact: { type: 'Path', default: 'mask.tif' }, base: { type: 'Path', default: 'tile.tif' }, reference: { type: 'Path' },
+      },
+      output_file_declarations: {
+        exact: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+        base: { output_role: 'base', file_group: null, description: 'Generated filenames.' },
+        reference: { output_role: 'reference', file_group: null, description: '' },
+      },
+    }))
+    expect(result).toEqual({ exact: 'mask.tif', base: 'tile.tif' })
+  })
+
+  it('preserves an authored legacy override for backend diagnosis rather than silently erasing it', () => {
+    expect(reconcileOutputTemplates(makeTool({
+      outputs: { reference: { type: 'Path' } },
+      output_file_declarations: { reference: { output_role: 'reference', file_group: null, description: '' } },
+    }), { reference: 'legacy.tif' })).toEqual({ reference: 'legacy.tif' })
+  })
   it('drops stale template keys that are no longer path outputs', () => {
     const result = reconcileOutputTemplates(makeTool(), {
       overlaps: '{label_image.stem}_overlaps.csv',
@@ -55,6 +104,7 @@ describe('reconcileOutputTemplates', () => {
   it('does not create templates for DataFrameTool column declarations', () => {
     const result = reconcileOutputTemplates(
       makeTool({
+        output_file_declarations: {},
         tool_type: 'DataFrameTool',
         outputs: { path: { type: 'Path' } },
       }),

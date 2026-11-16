@@ -113,7 +113,7 @@ The latest-output view chooses the latest successful result independently for ea
 After partial, failed, cancelled, or overlapping runs, it can contain files from different runs.
 
 Check the selected nodes, node status, **Execution**, and **Node Data**.
-Use **Workflow with results** when every copied output must come from one successful run.
+Use **Workflow with results from the latest successful run** when every copied output must come from one successful run.
 
 If pointer files appear, open **Edit → Preferences... → Storage** and read **Latest output view**.
 Use an export when you need ordinary file copies.

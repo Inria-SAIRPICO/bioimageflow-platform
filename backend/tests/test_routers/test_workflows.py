@@ -1326,6 +1326,11 @@ async def test_export_nested_workflow_uses_safe_flat_filename(tmp_path: Path) ->
             "prepare_workflow_run_bundle",
             "wf-workflow-and-results.zip",
         ),
+        (
+            "successful-run-results",
+            "prepare_successful_run_results",
+            "wf-successful-run-results.zip",
+        ),
     ],
 )
 async def test_results_download_streams_and_cleans_temporary_archive(

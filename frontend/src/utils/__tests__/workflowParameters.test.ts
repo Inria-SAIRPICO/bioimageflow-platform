@@ -5,7 +5,8 @@ import { decodeWorkflowConstant, encodeWorkflowConstant } from '../workflowConst
 import { workflowInputPresentations } from '../workflowInputPresentation'
 
 const field: InputFieldSchema = { type: 'float', nullable: true, required: false, connectable: 'not_by_default', min: 0, max: 1, step: .000001, default: null }
-const tool: ToolMetadata = { name: 'Atlas', display_name: 'Atlas', package: 'example', package_version: '1', tool_type: 'ProcessingTool', inputs: { p: field }, outputs: {}, accepts_upstream: true, dynamic_outputs: false, dataframe_output: true, row_consumption: 'mapped', documentation: '', tags: [], categories: [], source_kind: 'package', editable: false, environment: null }
+const tool: ToolMetadata = {
+output_file_declarations: {}, name: 'Atlas', display_name: 'Atlas', package: 'example', package_version: '1', tool_type: 'ProcessingTool', inputs: { p: field }, outputs: {}, accepts_upstream: true, dynamic_outputs: false, dataframe_output: true, row_consumption: 'mapped', documentation: '', tags: [], categories: [], source_kind: 'package', editable: false, environment: null }
 function leaf(id: string): ToolNodeState {
   return { type: 'tool', id, name: id, tool_name: 'Atlas', position: [0, 0], parameters: {}, enabled: true, collapsed: false }
 }
