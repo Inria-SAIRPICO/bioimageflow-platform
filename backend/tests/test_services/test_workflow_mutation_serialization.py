@@ -202,57 +202,43 @@ def test_delete_waits_for_saved_workflow_write_and_removes_accepted_state(
     assert not workflow_dir.exists()
 
 
-def test_delete_captured_before_workflow_move_cannot_delete_moved_identity(
-    store: WorkflowStoreService,
-    monkeypatch: pytest.MonkeyPatch,
+def test_delete_captured_before_move_still_targets_that_uuid_after_path_reuse(
+    store: WorkflowStoreService, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    identities: dict[str, str] = {}
-    identities.update({item.relative_path: item.id for item in store.list_workflows()})
-    old_id = "project/wf"
-    new_id = "archive/wf"
-    created_202 = store.create_workflow(WorkflowCreate(name=old_id, display_name="Workflow"))
-    identities[created_202.relative_path] = created_202.id
-    old_dir = store.workflow_dir(identities[old_id])
-    new_dir = store.workflow_dir(identities[new_id])
-    delete_generation_captured = threading.Event()
-    release_delete = threading.Event()
+    original = store.create_workflow(WorkflowCreate(name="project/wf", display_name="Original"))
+    moved_directory = store.root_dir / "archive" / "wf"
+    captured = threading.Event()
+    release = threading.Event()
     delete_thread_id: list[int] = []
     original_capture = store._capture_workflow_generations
-
     def observed_capture(names: list[str]) -> dict[str, int]:
         generations = original_capture(names)
         if delete_thread_id and threading.get_ident() == delete_thread_id[0]:
-            delete_generation_captured.set()
-            assert release_delete.wait(timeout=5)
+            captured.set()
+            assert release.wait(timeout=5)
         return generations
-
-    def delete_old_identity() -> int:
+    def delayed_delete() -> int:
         delete_thread_id.append(threading.get_ident())
-        return store.delete_workflow(identities[old_id])
-
+        return store.delete_workflow(original.id)
     monkeypatch.setattr(store, "_capture_workflow_generations", observed_capture)
-
     with ThreadPoolExecutor(max_workers=1) as pool:
-        delete_future = pool.submit(delete_old_identity)
-        assert delete_generation_captured.wait(timeout=5)
+        deleting = pool.submit(delayed_delete)
+        assert captured.wait(timeout=5)
         try:
-            moved = _patch_workflow(
-                store,
-                identities[old_id],
-                WorkflowUpdate(action="update", new_id=new_id),
-            )
+            moved = _patch_workflow(store, original.id, WorkflowUpdate(action="update", new_id="archive/wf"))
+            replacement = store.create_workflow(WorkflowCreate(name="project/wf", display_name="Replacement"))
         finally:
-            release_delete.set()
+            release.set()
+        assert deleting.result(timeout=5) == 2
+    assert moved.id == original.id
+    assert replacement.id != original.id
+    assert not moved_directory.exists()
+    assert store.get_workflow(replacement.id).info.display_name == "Replacement"
+    with pytest.raises(FileNotFoundError):
+        store.get_workflow(original.id)
 
-        with pytest.raises(WorkflowGenerationChangedError):
-            delete_future.result(timeout=5)
 
-    assert moved.id == new_id
-    assert not old_dir.exists()
-    assert new_dir.exists()
-
-
-def test_folder_move_waits_for_draft_write_and_rewrites_the_accepted_identity(
+def test_folder_move_waits_for_draft_write_and_preserves_the_accepted_identity(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -300,8 +286,9 @@ def test_folder_move_waits_for_draft_write_and_rewrites_the_accepted_identity(
         assert put_future.result(timeout=5).draft_revision == 1
         rename_future.result(timeout=5)
 
-    moved = drafts.get_draft_snapshot(identities["archive/wf"])
-    assert moved.workflow_id == "archive/wf"
+    moved = drafts.get_draft_snapshot(identities["project/wf"])
+    assert moved.workflow_id == identities["project/wf"]
+    assert store.get_workflow(moved.workflow_id).info.relative_path == "archive/wf"
     assert moved.draft_revision == 1
     assert rename_entered.is_set()
     assert not old_folder.exists()
@@ -389,8 +376,9 @@ def test_workflow_info_tracks_delete_and_same_id_recreation_generation(
 
     recreated = store.create_workflow(WorkflowCreate(name="wf"))
     identities[recreated.relative_path] = recreated.id
-    assert recreated.identity_generation == 3
-    assert recreated.identity_generation > deleted_generation
+    assert recreated.id != created.id
+    assert recreated.identity_generation == 1
+    assert store.workflow_generation(created.id) == deleted_generation
 
 
 @pytest.mark.parametrize("reader", ["get", "list"])
@@ -445,14 +433,15 @@ def test_workflow_info_read_is_coherent_with_its_identity_generation(
     assert old_info.display_name == "Original"
     assert old_info.identity_generation == 1
     assert replacement.display_name == "Replacement"
-    assert replacement.identity_generation == 3
+    assert replacement.id != old_info.id
+    assert replacement.identity_generation == 1
 
 
 def test_workflow_delete_waits_for_snapshot_boundary_before_identity_mutation(
     store: WorkflowStoreService,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     snapshots = NestedWorkflowSnapshotService(lambda: store)
     snapshot_locked = threading.Event()
     release_snapshot = threading.Event()
@@ -484,7 +473,7 @@ def test_workflow_delete_waits_for_snapshot_boundary_before_identity_mutation(
             _delete_workflow_with_snapshots,
             store,
             snapshots,
-            "wf",
+            workflow_id,
         )
         try:
             assert not store_delete_started.wait(timeout=0.1)

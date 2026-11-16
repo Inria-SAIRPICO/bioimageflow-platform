@@ -202,11 +202,12 @@ async def test_validation_from_deleted_generation_cannot_mutate_same_id_replacem
     )
     try:
         await _wait_for_thread_event(validation_entered)
-        await asyncio.to_thread(store.delete_workflow, "wf")
-        await asyncio.to_thread(
+        await asyncio.to_thread(store.delete_workflow, identities["wf"])
+        replacement = await asyncio.to_thread(
             store.create_workflow,
             WorkflowCreate(name="wf", display_name="Replacement"),
         )
+        identities["wf"] = replacement.id
     finally:
         release_validation.set()
 
@@ -250,7 +251,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
 
     reset = asyncio.create_task(
         drafts.reset_draft_to_saved_async(
-            "wf",
+            identities["wf"],
             expected_revision=0,
         )
     )
@@ -258,7 +259,7 @@ async def test_reset_revalidates_when_saved_workflow_changes_during_validation(
         await _wait_for_thread_event(first_validation_entered)
         await asyncio.to_thread(
             store.save_workflow,
-            "wf",
+            identities["wf"],
             WorkflowSaveBody(graph=replacement_saved_graph),
         )
     finally:
@@ -375,15 +376,16 @@ async def test_nested_validation_cannot_commit_into_replaced_root_identity(
     )
     try:
         await _wait_for_thread_event(validation_entered)
-        await asyncio.to_thread(store.delete_workflow, "wf")
-        await asyncio.to_thread(
+        await asyncio.to_thread(store.delete_workflow, identities["wf"])
+        replacement = await asyncio.to_thread(
             store.create_workflow,
             WorkflowCreate(name="wf", display_name="Replacement"),
         )
+        identities["wf"] = replacement.id
     finally:
         release_validation.set()
 
-    with pytest.raises(WorkflowGenerationChangedError):
+    with pytest.raises((WorkflowGenerationChangedError, FileNotFoundError)):
         await stale_write
 
     current = snapshots.get_snapshot(opened.session_id)
