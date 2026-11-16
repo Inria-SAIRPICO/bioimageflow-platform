@@ -451,6 +451,7 @@ External duplicate UUIDs are exposed as exact directory/digest choices by the fo
 `POST /workflows/identity-copies/resolve` accepts `relative_path`, `expected_workflow_id` and `expected_document_hash`, rechecks the selected directory under storage and mutation guards, backs up changed authorities and assigns that selected copy a fresh UUID through a restart-safe journal.
 It preserves graph content, tools and results, root draft revisions and baselines; the other directories retain their identities and bytes.
 The Workflows panel's **Review copies** action requires affected root and nested tabs to close and lets the user select one directory to make independent; active storage owners refuse resolution.
+Delete confirmations, including demo removal, capture the canonical workspace and workspace-selection revision when opened; changing workspace before or during persistence barriers refuses the action, and a late success cannot dispose another workspace's canvases or clear its recovery.
 Canvas-owned requests carry their captured canonical workspace through `X-BioImageFlow-Workspace`; a mismatch returns HTTP 409 before mutation, and the selected store remains bound to that request across asynchronous waits.
 Create additionally accepts `expected_workspace_path` and `expected_parent_path` assertions, with an empty parent selecting the workflows root.
 

@@ -119,6 +119,7 @@ New workflow canvases load the backend's accepted draft or saved graph, preservi
 Startup and explicit Open repair a newer recovery snapshot whose definition name equals its slash-containing workspace ID by restoring the accepted backend definition name while retaining queued graph edits and the accepted draft revision.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
 Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
+Delete confirmations, including demo removal, capture canonical workspace and selection revision before persistence barriers; workspace changes withdraw the action and late responses cannot dispose another owner or clear its recovery.
 
 The artifact hash is a deterministic identity for canonical recursive graph content and referenced owned sources.
 Do not add timestamps, runtime state, workspace paths, source labels, or Python-authoring provenance to that hash without changing the explicit contract.

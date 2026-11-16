@@ -397,6 +397,7 @@ Backend listing and format scans discover current workspace folders without desc
 Any shared path snapshot expires with that operation rather than hiding subsequent external filesystem changes.
 Pending tree reuse is limited to that current catalog authority and captured workspace-selection revision, and a caller retries a stale catalog read at most once without joining its own expired request.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
+Delete confirmation captures canonical workspace and selection revision before any freshness barrier, including demo removal; workspace changes withdraw the request and late responses cannot dispose a new owner or erase its scoped recovery.
 Moves coordinate physical locations and path metadata under the mutation gate and recovery journal.
 Idle affected canvases flush root drafts and private nested snapshots without Save or apply and retain their registrations, unsaved state and undo history.
 Writes recheck UUID and storage independently of Refresh, reject duplicate or missing identities, and never recreate an old directory after an external move.
