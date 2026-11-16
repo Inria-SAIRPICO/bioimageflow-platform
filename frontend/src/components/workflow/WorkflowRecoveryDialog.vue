@@ -7,6 +7,7 @@ import { useWorkflowRecoveryStore } from '@/stores/workflowRecovery'
 import { getWorkflowFormatStatus } from '@/api/workflowFormats'
 import { loadRootWorkflowPresentation } from '@/services/rootWorkflowPresentation'
 import { useAutoSave } from '@/composables/useAutoSave'
+import { recoveryEntryId } from '@/sessions/recoveryIdentity'
 
 const workflows = useWorkflowStore()
 const recovery = useWorkflowRecoveryStore()
@@ -26,7 +27,7 @@ function refresh(): Promise<void> {
 }
 
 watch(() => recovery.conflicts, entries => {
-  if (!entries.some(entry => entry.name === selectedSource.value)) selectedSource.value = entries[0]?.name ?? ''
+  if (!entries.some(entry => recoveryEntryId(entry) === selectedSource.value)) selectedSource.value = entries[0] ? recoveryEntryId(entries[0]) : ''
 }, { immediate: true })
 
 onMounted(() => {
@@ -36,7 +37,7 @@ onMounted(() => {
 onUnmounted(() => window.removeEventListener('bioimageflow:reconcile-workflow-recovery', refresh))
 
 async function restore(): Promise<void> {
-  const source = recovery.conflicts.find(entry => entry.name === selectedSource.value)
+  const source = recovery.conflicts.find(entry => recoveryEntryId(entry) === selectedSource.value)
   if (!source || !selectedTarget.value || recovery.restoring) return
   try {
     await recovery.restore(source, selectedTarget.value)
@@ -56,7 +57,7 @@ async function restore(): Promise<void> {
     <p>The original browser snapshot will remain available until these edits are accepted as an unsaved workflow draft.</p>
     <label for="workflow-recovery-source">Browser snapshot</label>
     <select id="workflow-recovery-source" v-model="selectedSource" :disabled="recovery.restoring" data-testid="workflow-recovery-source">
-      <option v-for="entry in recovery.conflicts" :key="entry.name" :value="entry.name">{{ entry.graph.display_name }} — {{ entry.name }}</option>
+      <option v-for="entry in recovery.conflicts" :key="recoveryEntryId(entry)" :value="recoveryEntryId(entry)">{{ entry.graph.display_name }} — {{ entry.name }} — {{ entry.workspace_path ?? 'Unknown workspace' }}<template v-if="entry.identity_generation !== undefined"> (generation {{ entry.identity_generation }})</template></option>
     </select>
     <label for="workflow-recovery-target">Restore into workflow</label>
     <select id="workflow-recovery-target" v-model="selectedTarget" :disabled="recovery.restoring" data-testid="workflow-recovery-target">

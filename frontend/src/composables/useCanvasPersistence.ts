@@ -16,6 +16,7 @@ import {
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
+import { recoveryOwnerKey, type AutoSaveOwner } from '@/sessions/recoveryIdentity'
 import {
   clearRecoveryPersistenceKeyStrict,
   createRecoveryPersistenceCoordinator,
@@ -84,7 +85,7 @@ export interface CanvasPersistenceTransports {
     expectedRevision: number,
     workspacePath?: string,
   ): Promise<WorkflowDraftResponse>
-  clearRecovery?(workflowId: string): Promise<void>
+  clearRecovery?(workflowId: string, owner?: AutoSaveOwner): Promise<void>
 }
 
 export interface CanvasScopedPersistenceOptions {
@@ -153,10 +154,10 @@ const productionTransports: CanvasPersistenceTransports = {
   putDraft: putWorkflowDraft,
   writeRecovery: writeAutoSaveEntry,
   resetDraftToSaved: resetWorkflowDraftToSaved,
-  clearRecovery: workflowId => clearRecoveryPersistenceKeyStrict(
-    workflowId,
-    () => useAutoSave().clearAutoSaveStrict(workflowId),
-  ),
+  clearRecovery: (workflowId, owner) => owner ? clearRecoveryPersistenceKeyStrict(
+    recoveryOwnerKey(workflowId, owner),
+    () => useAutoSave().clearAutoSaveStrict(workflowId, owner),
+  ) : Promise.resolve(),
 }
 
 // Shell commands use this state-free adapter to follow Dockview activation.
@@ -258,11 +259,15 @@ function createRootPersistenceResource(options: {
   const recoveryGeneration = options.initialWorkflowId
     ? useWorkflowStore().workflowServerIdentityGeneration(options.initialWorkflowId) ?? undefined
     : undefined
+  const recoveryOwner = recoveryWorkspace && recoveryGeneration !== undefined
+    ? { workspace_path: recoveryWorkspace, identity_generation: recoveryGeneration }
+    : undefined
 
   const recoveryCoordinator: RecoveryPersistenceCoordinator =
     createRecoveryPersistenceCoordinator({
       canvasId: options.canvasId,
       debounceMs: options.debounceMs,
+      ownershipKey: id => recoveryOwner ? recoveryOwnerKey(id, recoveryOwner) : JSON.stringify(['unresolved', options.canvasId, id]),
       transport: async request => {
         await options.transports.writeRecovery({
           name: request.recoveryKey,
@@ -691,7 +696,7 @@ function createRootPersistenceResource(options: {
     acceptDraftResponse(response, true)
     useWorkflowDraftStore().acknowledgeAcceptedDraft(response)
     try {
-      await options.transports.clearRecovery(capturedId)
+      await options.transports.clearRecovery(capturedId, ...(recoveryOwner ? [recoveryOwner] : []))
     } catch (error) {
       throw new CanvasDiscardRecoveryCleanupError(response, error)
     }

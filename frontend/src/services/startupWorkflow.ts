@@ -25,11 +25,12 @@ async function applyFreshRecovery(
   info: WorkflowInfo | undefined,
 ): Promise<RootWorkflowPresentation> {
   if (recovery?.name !== presentation.workflowName) return presentation
+  if (!recovery.recovery_key) return presentation
   if (!recovery.workspace_path || recovery.workspace_path !== info?.workspace_path
     || recovery.identity_generation === undefined || recovery.identity_generation !== info.identity_generation) return presentation
   const persistedTimestamp = newestPersistedTimestamp(presentation, info.last_modified)
   if (persistedTimestamp !== 0 && recovery.timestamp <= persistedTimestamp) {
-    await useAutoSave().clearAutoSave(recovery.name)
+    await useAutoSave().clearAutoSaveEntryStrict(recovery)
     return presentation
   }
   // Older creation canvases used the workspace path as the definition name.
@@ -50,7 +51,9 @@ export async function loadRootWorkflowForOpen(workflowName: string): Promise<Roo
   const info = useWorkflowStore().workflows.find(
     workflow => workflowInfoId(workflow) === workflowName,
   )
-  const recovery = await useAutoSave().loadAutoSave(workflowName)
+  const recovery = info?.workspace_path && info.identity_generation !== undefined
+    ? await useAutoSave().loadAutoSave(workflowName, { workspace_path: info.workspace_path, identity_generation: info.identity_generation })
+    : null
   const result = await applyFreshRecovery(presentation, recovery, info)
   useWorkflowStore().assertWorkflowIdentityCurrent(workflowName, presentation.identityGeneration)
   return result
@@ -68,7 +71,7 @@ export async function resolveStartupWorkflow(
   let recovery = await autoSave.loadMostRecentAutoSave()
   const lastOpened = await autoSave.getLastOpenedWorkflow()
 
-  if (recovery !== null && !knownIds.has(recovery.name)) {
+  if (recovery !== null && (!knownIds.has(recovery.name) || !recovery.recovery_key)) {
     // A legacy path or missing UUID is not proof that recovery may be deleted.
     // The recovery dialog retains it for explicit owner resolution.
     recovery = null
@@ -90,7 +93,12 @@ export async function resolveStartupWorkflow(
       const info = workflowStore.workflows.find(
         workflow => workflowInfoId(workflow) === workflowName,
       )
-      return applyFreshRecovery(presentation, recovery, info)
+      const ownedRecovery = recovery?.name === workflowName && recovery.workspace_path === info?.workspace_path
+        && recovery.identity_generation === info?.identity_generation ? recovery
+        : info?.workspace_path && info.identity_generation !== undefined
+          ? await autoSave.loadAutoSave(workflowName, { workspace_path: info.workspace_path, identity_generation: info.identity_generation })
+          : null
+      return applyFreshRecovery(presentation, ownedRecovery, info)
     } catch {
       if (recovery?.name === workflowName) {
         recovery = null
