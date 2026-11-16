@@ -18,7 +18,7 @@ async function togglePanel(page: Page, title: string) {
   await page.getByRole('menuitem', { name: `${title} Panel`, exact: true }).click()
 }
 
-test('long workflow titles keep the menu height stable when a canvas opens', { tag: '@critical' }, async ({ page }) => {
+test('workflow title and actions stay right aligned without changing menu height', { tag: '@critical' }, async ({ page }) => {
   const api = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
   const suffix = `${test.info().project.name}_${Date.now()}`
   const names = [`menu_short_${suffix}`, `menu_long_${suffix}`]
@@ -39,13 +39,28 @@ test('long workflow titles keep the menu height stable when a canvas opens', { t
       await page.getByTestId('workflow-open-btn').click()
       await expect(page.getByTestId('workflow-title')).toHaveText(labels[index]!)
     }
-    await open(0)
     const menu = page.getByTestId('app-menubar')
-    const before = await menu.boundingBox()
-    expect(before).not.toBeNull()
-    await open(1)
-    await expect.poll(async () => (await menu.boundingBox())!.height).toBe(before!.height)
-    await expect(page.getByTestId('workflow-title')).toHaveAttribute('title', labels[1]!)
+    for (const width of [1440, 1024]) {
+      await page.setViewportSize({ width, height: 900 })
+      await open(0)
+      const before = await menu.boundingBox()
+      expect(before).not.toBeNull()
+      for (const index of [0, 1]) {
+        if (index === 1) await open(index)
+        await expect.poll(async () => {
+          const bar = (await menu.boundingBox())!
+          const run = (await page.getByTestId('run-button-group').boundingBox())!
+          return bar.x + bar.width - run.x - run.width
+        }).toBeLessThan(24)
+        await expect.poll(async () => {
+          const label = (await menu.locator('.workflow-title__label').boundingBox())!
+          const edit = (await page.getByTestId('workflow-title-edit').boundingBox())!
+          return edit.x - label.x - label.width
+        }).toBeLessThan(24)
+        await expect.poll(async () => (await menu.boundingBox())!.height).toBe(before!.height)
+        await expect(page.getByTestId('workflow-title')).toHaveAttribute('title', labels[index]!)
+      }
+    }
   } finally {
     for (const name of names) await page.request.delete(`${api}/workflows/${name}`)
   }

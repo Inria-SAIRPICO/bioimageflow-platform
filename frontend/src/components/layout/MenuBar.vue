@@ -1508,13 +1508,17 @@ defineExpose({
   align-items: center;
   display: flex;
   gap: 0.75rem;
+  justify-content: flex-end;
   min-width: 0;
+}
+.workflow-actions > :not(.workflow-title) {
+  flex-shrink: 0;
 }
 .workflow-title {
   color: var(--text-color-secondary);
   display: flex;
   font-size: 0.875rem;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   max-width: 20rem;
   min-width: 0;
   white-space: nowrap;
