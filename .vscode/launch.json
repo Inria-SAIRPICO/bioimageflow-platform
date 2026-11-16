@@ -51,7 +51,6 @@
             "name": "Backend",
             "type": "debugpy",
             "request": "launch",
-            "preLaunchTask": "Frontend: backend debug",
             "module": "uvicorn",
             "args": [
                 "bioimageflow_server.app:create_app", 
@@ -88,7 +87,6 @@
             "name": "Backend (local core)",
             "type": "debugpy",
             "request": "launch",
-            "preLaunchTask": "Frontend: backend debug",
             "module": "uvicorn",
             "args": [
                 "bioimageflow_server.app:create_app",

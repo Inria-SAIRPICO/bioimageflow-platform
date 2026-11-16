@@ -89,22 +89,16 @@ def test_vite_backend_proxy_uses_ipv4_loopback() -> None:
     assert "const backendHttpUrl = `http://127.0.0.1:${backendPort}`" in vite_config
 
 
-def test_vscode_backend_profiles_start_frontend_with_matching_proxy_port() -> None:
+def test_vscode_backend_profiles_run_independently_on_port_8008() -> None:
     repository_root = Path(__file__).resolve().parents[2]
     text = (repository_root / ".vscode" / "launch.json").read_text()
-    tasks = json.loads((repository_root / ".vscode" / "tasks.json").read_text())
-    frontend_task = next(
-        task for task in tasks["tasks"] if task["label"] == "Frontend: backend debug"
-    )
 
-    for name in ("Backend", "Backend (local core)"):
+    for name in ("Backend", "Backend (local core)", "Backend-worktree"):
         block = _launch_profile_block(text, name)
-        assert '"preLaunchTask": "Frontend: backend debug"' in block
+        assert re.search(r'^\s*"preLaunchTask"\s*:', block, re.MULTILINE) is None
         port = re.search(r'"--port",\s*"(\d+)"', block)
         assert port is not None
-        assert frontend_task["options"]["env"]["BIOIMAGEFLOW_BACKEND_PORT"] == port.group(1)
-    assert "--strictPort" in frontend_task["args"]
-    assert frontend_task["isBackground"] is True
+        assert port.group(1) == "8008"
 
 
 def test_packaged_launcher_uses_production_desktop_mode() -> None:
