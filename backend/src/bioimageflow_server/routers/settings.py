@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -38,21 +39,31 @@ def get_output_view_probe_path() -> Path:
     return Path.cwd()
 
 
+def get_resolved_workspace_path() -> Callable[[], Path | None]:
+    """Provide a late workspace resolver so PATCH responses use updated settings."""
+    return lambda: None
+
+
 class SettingsResponse(Settings):
     """``GET``/``PATCH`` /settings response wrapper.
 
-    Adds the resolved tool-store path and effective latest-output view.
+    Adds resolved workspace/tool-store paths and the effective latest-output view.
     """
 
     model_config = ConfigDict(extra="allow")
 
     omero_instances: list[OMEROInstanceResponse] = []  # pyright: ignore[reportIncompatibleVariableOverride]
     resolved_tool_store_path: str
+    resolved_workspace_path: str | None = None
     latest_output_effective_mode: Literal["symlink", "pointer", "unavailable"]
     latest_output_warning: str | None = None
 
 
-def _wrap(store: SettingsStore, output_view_probe_path: Path) -> SettingsResponse:
+def _wrap(
+    store: SettingsStore,
+    output_view_probe_path: Path,
+    resolve_workspace_path: Callable[[], Path | None],
+) -> SettingsResponse:
     settings = store.get()
     omero_instances = [
         OMEROInstanceResponse(
@@ -74,8 +85,10 @@ def _wrap(store: SettingsStore, output_view_probe_path: Path) -> SettingsRespons
     except OSError as exc:
         effective_mode = "unavailable"
         output_warning = str(exc)
+    workspace_path = resolve_workspace_path()
     return SettingsResponse(
         **payload,
+        resolved_workspace_path=(str(workspace_path.resolve(strict=False)) if workspace_path is not None else None),
         resolved_tool_store_path=str(_resolved_tool_store_path(store)),
         latest_output_effective_mode=effective_mode,
         latest_output_warning=output_warning,
@@ -110,9 +123,10 @@ def _keyring_http_error(exc: OmeroCredentialError) -> HTTPException:
 async def get_settings(
     store: SettingsStore = Depends(get_settings_store),
     output_view_probe_path: Path = Depends(get_output_view_probe_path),
+    resolve_workspace_path: Callable[[], Path | None] = Depends(get_resolved_workspace_path),
 ) -> SettingsResponse:
     try:
-        return _wrap(store, output_view_probe_path)
+        return _wrap(store, output_view_probe_path, resolve_workspace_path)
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc
 
@@ -122,6 +136,7 @@ async def patch_settings(
     body: dict[str, Any],
     store: SettingsStore = Depends(get_settings_store),
     output_view_probe_path: Path = Depends(get_output_view_probe_path),
+    resolve_workspace_path: Callable[[], Path | None] = Depends(get_resolved_workspace_path),
 ) -> SettingsResponse:
     body = dict(body)
     napari_registry_fields = {
@@ -174,6 +189,6 @@ async def patch_settings(
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc
     try:
-        return _wrap(store, output_view_probe_path)
+        return _wrap(store, output_view_probe_path, resolve_workspace_path)
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc

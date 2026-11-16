@@ -109,6 +109,7 @@ from bioimageflow_server.routers.nodes import (
 )
 from bioimageflow_server.routers.settings import (
     get_output_view_probe_path as settings_get_output_view_probe_path,
+    get_resolved_workspace_path as settings_get_resolved_workspace_path,
     get_settings_store as settings_get_store,
     router as settings_router,
 )
@@ -1100,6 +1101,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: settings_store
+        app.dependency_overrides[settings_get_resolved_workspace_path] = (
+            lambda: lambda: _current_workspace_service().workspace_path()
+        )
         app.dependency_overrides[settings_get_output_view_probe_path] = (
             _current_stateless_storage_path
         )
