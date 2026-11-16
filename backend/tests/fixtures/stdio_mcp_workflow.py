@@ -44,7 +44,7 @@ async def exercise(config_path: Path, workflow_id: str, mode: str) -> dict[str, 
                 return payload
 
             capabilities = await call("get_bioimageflow_capabilities")
-            assert capabilities["ok"] and capabilities["mcp_contract_version"] == 2
+            assert capabilities["ok"] and capabilities["mcp_contract_version"] == 3
             assert capabilities["max_operation_batch_size"] == 10
             context = await call("get_workspace_context")
             assert context["ok"] and context["active_workflow_id"] == workflow_id
