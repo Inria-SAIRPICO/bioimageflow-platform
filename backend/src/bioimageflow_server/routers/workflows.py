@@ -147,7 +147,7 @@ def _ensure_workflow_storage_unowned(
             detail={
                 "error": "workflow_storage_locked",
                 "detail": "Workflow storage is owned by an active execution.",
-                "execution_ids": owners,
+                "details": {"execution_ids": owners},
             },
         )
 
