@@ -461,6 +461,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 hot_reload.add_watch_root(current_root)
         return cached
 
+    configure_workflow_event_owner = getattr(ws_manager, "set_workflow_workspace_provider", None)
+    if callable(configure_workflow_event_owner):
+        configure_workflow_event_owner(
+            lambda: str(_current_workflow_store().workspace_dir.resolve(strict=False))
+        )
+
     workflow_draft_service = WorkflowDraftService(
         _current_workflow_store,
     )

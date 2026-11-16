@@ -1466,3 +1466,37 @@ def test_endpoint_multiple_concurrent_clients_all_receive_broadcast() -> None:
             m2 = ws2.receive_json()
             assert m1["type"] == "progress"
             assert m2["type"] == "progress"
+
+
+@pytest.mark.parametrize("method,payload,event_type", [
+    ("publish_workflow_draft_changed", {"workflow_id": "persistent-uuid", "draft_revision": 7,
+     "updated_by": "agent", "updated_at": "2026-05-29T12:00:00Z", "dirty_against_saved": True},
+     "workflow_draft_changed"),
+    ("publish_workflow_tree_changed", {"action": "workflow_deleted", "workflow_id": "persistent-uuid",
+     "identity_generation": 2}, "workflow_tree_changed"),
+    ("publish_active_workflow_changed", {"workflow_id": "persistent-uuid", "updated_by": "agent"},
+     "active_workflow_changed"),
+])
+async def test_workflow_event_captures_workspace_before_scheduled_delivery(
+    method: str, payload: dict, event_type: str,
+) -> None:
+    from pydantic import TypeAdapter
+    from bioimageflow_server.models.ws import ServerMessage
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    selected_workspace = "/workspace-a"
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    mgr.set_workflow_workspace_provider(lambda: selected_workspace)
+    pending = []
+    published = []
+    mgr._schedule = lambda coroutine, _kind: pending.append(coroutine)
+    mgr._enqueue_all = published.append
+
+    getattr(mgr, method)(**payload)
+    selected_workspace = "/workspace-b"
+    [delivery] = pending
+    await delivery
+
+    assert published == [{"type": event_type, **payload, "workspace_path": "/workspace-a"}]
+    accepted = TypeAdapter(ServerMessage).validate_python(published[0])
+    assert accepted.workspace_path == "/workspace-a"
