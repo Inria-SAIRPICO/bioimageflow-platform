@@ -1614,7 +1614,7 @@ class WorkflowStoreService:
             folder=self._folder_name(name),
             display_name=document.graph.display_name,
             description=metadata.description,
-            workspace_path=str(self.workspace_dir),
+            workspace_path=str(self.workspace_dir.resolve(strict=False)),
             results_path=str(self._storage_path(name)),
             path=str(path),
             last_modified=last_modified,
@@ -2645,7 +2645,7 @@ class WorkflowStoreService:
             notices=notices, pending_plan_id=plan_id,
             identity_migrations=self.identity_migration_receipts(),
             identity_migration_id=self.identity_migration_id(),
-            workspace_path=str(self.workspace_dir),
+            workspace_path=str(self.workspace_dir.resolve(strict=False)),
         )
 
     def ensure_workflow_format_current(self, name: str) -> None:
