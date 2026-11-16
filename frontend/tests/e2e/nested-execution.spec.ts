@@ -225,7 +225,7 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
   try {
     await openWorkflow(page, rootName, rootDisplayName)
     const draft = await acceptedDraft(page, rootName)
-    expect(draft.graph.name).toBe(rootName)
+    expect(draft.graph.name).toBe(graph.name)
     expect(draft.graph.nodes.map(node => node.id)).toEqual([
       'root_seed', 'nested_step', 'root_increment', 'unrelated_nested',
     ])
