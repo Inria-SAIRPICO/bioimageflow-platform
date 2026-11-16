@@ -106,6 +106,32 @@ class WorkflowIdentityMigration(BaseModel):
     workflow_id: str
 
 
+class WorkflowIdentityCopy(BaseModel):
+    relative_path: str
+    document_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class WorkflowIdentityConflict(BaseModel):
+    workflow_id: str
+    copies: list[WorkflowIdentityCopy]
+
+
+class WorkflowIdentityCopyResolve(BaseModel):
+    relative_path: str
+    expected_workflow_id: str
+    expected_document_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        return validate_workflow_id(value)
+
+    @field_validator("expected_workflow_id")
+    @classmethod
+    def validate_identity(cls, value: str) -> str:
+        return validate_workflow_identity(value)
+
+
 class WorkflowFormatStatus(BaseModel):
     """Format notices that should be visible to the workspace user."""
 
@@ -114,6 +140,7 @@ class WorkflowFormatStatus(BaseModel):
     identity_migrations: list[WorkflowIdentityMigration] = Field(default_factory=list)
     identity_migration_id: str | None = None
     workspace_path: str | None = None
+    identity_conflicts: list[WorkflowIdentityConflict] = Field(default_factory=list)
 
 
 class WorkflowIdentityMigrationAck(BaseModel):
