@@ -419,17 +419,24 @@ class ${className}(DataFrameTool):
   } finally {
     page.off('response', observe)
     const cleanupErrors: unknown[] = []
+    const removeWorkflow = async (workflowId: string) => {
+      // Local completion can precede the retained run's final snapshot.
+      // Storage stays protected until that owner has actually settled.
+      await expect.poll(async () => {
+        const removed = await page.request.delete(`${API}/workflows/${workflowId}`)
+        expect([200, 204, 404, 423], await removed.text()).toContain(removed.status())
+        return removed.status() === 423
+      }, { timeout: 15_000 }).toBe(false)
+    }
     const cleanupActions = [
       async () => { await page.goto('about:blank') },
       async () => {
         if (!formatsCreated) return
-        const removed = await page.request.delete(`${API}/workflows/${formatsName}`)
-        expect([200, 204, 404], await removed.text()).toContain(removed.status())
+        await removeWorkflow(formatsName)
       },
       async () => {
         if (!created) return
-        const removed = await page.request.delete(`${API}/workflows/${name}`)
-        expect([200, 204, 404], await removed.text()).toContain(removed.status())
+        await removeWorkflow(name)
       },
       async () => { if (catalogMayHaveChanged) await restoreCatalog() },
     ]
