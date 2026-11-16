@@ -352,7 +352,7 @@ test('reconnects with an acknowledged unfiltered subscription while preserving l
     expect(opened.ok(), await opened.text()).toBe(true)
     const accepted = await opened.json() as WorkflowDraftResponse
     expect(accepted.workflow_id).toBe(name)
-    await expect(page.getByTestId('workflow-title')).toHaveText(name)
+    await expect(page.getByTestId('workflow-title')).toHaveText(relativePath)
     await page.locator('.dv-tab').filter({ hasText: /^Logger$/ }).click()
     await expect(page.getByTestId('panel-logger')).toBeVisible()
     await expect.poll(() => transports.length).toBe(1)
