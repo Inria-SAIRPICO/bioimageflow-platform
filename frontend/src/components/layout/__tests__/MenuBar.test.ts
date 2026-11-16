@@ -180,6 +180,7 @@ function registerActiveRootWorkflow(options: {
     name,
     display_name: displayName,
     description: options.description ?? null,
+    workspace_path: '/tmp/workspace',
     results_path: `/tmp/workflows/${name}/results`,
     path: `/tmp/workflows/${name}.json`,
     last_modified: '2026-01-01T00:00:00Z',
@@ -631,6 +632,28 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
+    it('captures the root resource workspace for deletion before later metadata or selection changes', async () => {
+      const { persistence } = registerActiveRootWorkflow({ name: 'a' })
+      vi.spyOn(persistence, 'workspacePath', 'get').mockReturnValue('/original-owner')
+      const store = useWorkflowStore()
+      store.workflows[0]!.workspace_path = '/later-metadata'
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      expect(vm.deleteCanvasTarget).toMatchObject({
+        workspacePath: '/original-owner', workspaceSelectionRevision: useSettingsStore().workspaceSelectionRevision,
+      })
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stop = observeWorkflowDeletion(detail => { deletionRequest = detail })
+      useSettingsStore().workspaceSelectionRevision += 1
+      await vm.confirmDeleteWorkflow()
+      expect(deletionRequest).toBeNull()
+      expect(vm.deleteDialogVisible).toBe(false)
+      stop()
+      wrapper.unmount()
+    })
+
     it('keeps the confirmed canvas mounted when workflow deletion fails', async () => {
       const { canvasId, workflow } = registerActiveRootWorkflow({
         name: 'a',
@@ -941,6 +964,7 @@ describe('MenuBar', () => {
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/cell_segmentation',
         { graph: makeGraph() },
+        { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } },
       )
       expect(apiMocks.post).not.toHaveBeenCalled()
     })
@@ -1896,6 +1920,7 @@ describe('MenuBar', () => {
         name: 'beta',
         folder: 'Analysis',
         display_name: 'Beta',
+        workspace_path: '/tmp/workspace',
         path: '/tmp/Analysis/beta/workflow.json',
         results_path: '/tmp/Analysis/beta/results',
         last_modified: '2026-05-22T08:00:00Z',
@@ -1973,6 +1998,7 @@ describe('MenuBar', () => {
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/new_workflow',
         { graph: makeGraph() },
+        { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } },
       )
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
         summary: 'Workflow saved',
@@ -2458,7 +2484,7 @@ describe('MenuBar', () => {
 
       expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
         graph: makeGraph(),
-      })
+      }, { headers: { 'X-BioImageFlow-Workspace': '/tmp/workspace' } })
       expect(persistenceA.queueDraft).toHaveBeenCalledWith(makeGraph())
       expect(persistenceA.flush).toHaveBeenCalledOnce()
       expect(persistenceB.ensureFreshForCriticalOperation).not.toHaveBeenCalled()

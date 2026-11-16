@@ -51,6 +51,7 @@ import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import OutputPlanningRecovery from './components/execution/OutputPlanningRecovery.vue'
 import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
 import { useUIStore } from './stores/ui'
+import { useSettingsStore } from './stores/settings'
 import { useDatasetsStore } from './stores/datasets'
 import { useNapariStore } from './stores/napari'
 import { useFileDrop } from './composables/useFileDrop'
@@ -1280,18 +1281,22 @@ async function deleteWorkflowFromRequest(
         closingCanvasId: targetCanvasId ?? undefined,
         allowMountedIdentity: true,
         expectedIdentityGeneration: request.serverIdentityGeneration ?? undefined,
+        workspacePath: request.workspacePath,
+        workspaceSelectionRevision: request.workspaceSelectionRevision,
         beforeRecoveryCleanup: () => {
           disposedBeforeRecoveryCleanup = true
           removedRootPanel = disposeRemovedWorkflowCanvases(workflowName)
         },
       })
+      assertWorkflowDeletionWorkspaceCurrent(request)
       if (!disposedBeforeRecoveryCleanup) {
         await convergeRemovedWorkflow(workflowName)
       } else if (removedRootPanel) {
         await activateWorkflowFallback(new Set([workflowName]))
       }
     } catch (error) {
-      if (disposedBeforeRecoveryCleanup && removedRootPanel) {
+      if (request.workspaceSelectionRevision === useSettingsStore().workspaceSelectionRevision
+        && disposedBeforeRecoveryCleanup && removedRootPanel) {
         await activateWorkflowFallback(new Set([workflowName]))
       }
       if (disposedBeforeRecoveryCleanup) {
@@ -1326,9 +1331,17 @@ function isWorkflowDeleteGenerationConflict(error: unknown): boolean {
     ).response?.data?.error === 'workflow_identity_generation_conflict'
 }
 
+function assertWorkflowDeletionWorkspaceCurrent(request: WorkflowDeletionRequest): void {
+  if (!request.workspacePath
+    || request.workspaceSelectionRevision !== useSettingsStore().workspaceSelectionRevision) {
+    throw new WorkflowDeletionTargetChangedError(request.workflowName)
+  }
+}
+
 function assertWorkflowDeletionTargetCurrent(
   request: WorkflowDeletionRequest,
 ): void {
+  assertWorkflowDeletionWorkspaceCurrent(request)
   if (!workflowStore.isWorkflowIdentityCurrent(
     request.workflowName,
     request.localIdentityGeneration,
