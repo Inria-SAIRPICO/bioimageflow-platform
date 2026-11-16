@@ -311,6 +311,7 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
 
 test('executes nested Direct work and preserves scoped results after save and reopen', async ({ page }) => {
   let rootName = workflowId('nested_execution')
+  const rootDefinitionName = rootName
   const rootDisplayName = `Nested execution ${rootName}`
   let siblingName = workflowId('nested_execution_sibling')
   const siblingDisplayName = `Nested sibling ${siblingName}`
@@ -324,7 +325,7 @@ test('executes nested Direct work and preserves scoped results after save and re
     await openWorkflow(page, rootName, rootDisplayName)
 
     const draft = await acceptedDraft(page, rootName)
-    expect(draft.graph.name).toBe(rootName)
+    expect(draft.graph.name).toBe(rootDefinitionName)
     expect(draft.graph.display_name).toBe(rootDisplayName)
     expect(draft.validation).toMatchObject({ valid: true, errors: [] })
     expect(draft.graph.config).toMatchObject({ engine: 'direct', execution: 'sequential' })
