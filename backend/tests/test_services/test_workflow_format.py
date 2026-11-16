@@ -66,6 +66,14 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
 
 
+def _confirm_current_plan(store: WorkflowStoreService) -> list:
+    preview = store.workflow_format_status()
+    if preview.pending_plan_id is None:
+        return []
+    applied = store.apply_workflow_format_migrations(preview.pending_plan_id)
+    return [notice for notice in applied.notices if notice.status == "migrated"]
+
+
 def test_migrates_legacy_workflow_and_dirty_draft_with_backups(tmp_path: Path) -> None:
     store = _store(tmp_path)
     workflow_dir = store.root_dir / "Folder" / "legacy"
@@ -92,7 +100,7 @@ def test_migrates_legacy_workflow_and_dirty_draft_with_backups(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    notices = store.migrate_legacy_workflows()
+    notices = _confirm_current_plan(store)
 
     assert [notice.workflow_id for notice in notices] == ["Folder/legacy"]
     document = WorkflowDocument.model_validate_json(workflow_path.read_text())
@@ -104,8 +112,8 @@ def test_migrates_legacy_workflow_and_dirty_draft_with_backups(tmp_path: Path) -
     assert draft.draft_revision == 7
     assert draft.base_saved_revision == document.artifact_hash
     assert draft.validation.valid is True
-    assert len(list((workflow_dir / ".bioimageflow" / "backups").glob("*.json"))) == 2
-    assert [workflow.id for workflow in store.list_workflows()] == ["Folder/legacy"]
+    assert len(notices[0].backup_paths) == 2
+    assert [workflow.relative_path for workflow in store.list_workflows()] == ["Folder/legacy"]
     assert store.workflow_format_status().notices == notices
 
 
@@ -117,7 +125,7 @@ def test_leaves_unrecognized_workflow_unchanged_and_reports_it(tmp_path: Path) -
     original = {"graph": {"nodes": []}, "unexpected": True}
     workflow_path.write_text(json.dumps(original), encoding="utf-8")
 
-    assert store.migrate_legacy_workflows() == []
+    assert _confirm_current_plan(store) == []
     assert json.loads(workflow_path.read_text()) == original
     assert store.list_workflows() == []
     status = store.workflow_format_status()
@@ -134,9 +142,10 @@ def test_recovers_legacy_draft_when_saved_workflow_is_already_current(tmp_path: 
     legacy = _legacy_document()
     workflow_path = workflow_dir / "workflow.json"
     workflow_path.write_text(json.dumps(legacy), encoding="utf-8")
-    store.migrate_legacy_workflows()
+    _confirm_current_plan(store)
 
     draft_path = workflow_dir / ".bioimageflow" / "draft.json"
+    draft_path.parent.mkdir(exist_ok=True)
     draft_path.write_text(
         json.dumps(
             {
@@ -154,10 +163,10 @@ def test_recovers_legacy_draft_when_saved_workflow_is_already_current(tmp_path: 
         encoding="utf-8",
     )
 
-    notices = store.migrate_legacy_workflows()
+    notices = _confirm_current_plan(store)
 
     assert len(notices) == 1
-    assert "live draft" in notices[0].detail
+    assert "editing state" in notices[0].detail
     draft = WorkflowDraftResponse.model_validate_json(draft_path.read_text())
     assert draft.graph.nodes[0].parameters == {"threshold": 11}
     assert draft.draft_revision == 2
@@ -179,7 +188,7 @@ def test_refuses_ambiguous_legacy_published_interfaces(tmp_path: Path) -> None:
     ]
     workflow_path.write_text(json.dumps(legacy), encoding="utf-8")
 
-    assert store.migrate_legacy_workflows() == []
+    assert _confirm_current_plan(store) == []
     assert json.loads(workflow_path.read_text()) == legacy
     assert store.workflow_format_status().notices[0].status == "error"
 

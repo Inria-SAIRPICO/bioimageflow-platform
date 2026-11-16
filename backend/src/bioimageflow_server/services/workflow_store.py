@@ -81,7 +81,6 @@ from bioimageflow_server.services.workflow_containment import (
     validate_workflow_containment,
 )
 from bioimageflow_server.services.workflow_format import (
-    migrate_legacy_workflow,
     normalize_legacy_workflow_document,
     normalize_legacy_workflow_draft,
     workflow_format_error,
@@ -1950,26 +1949,6 @@ class WorkflowStoreService:
                 continue
         counts = Counter(workflow.id for workflow in workflows)
         return [workflow for workflow in workflows if counts[workflow.id] == 1]
-
-    def migrate_legacy_workflows(self) -> list[WorkflowFormatNotice]:
-        """Upgrade recognized pre-recursive documents without hiding failures."""
-
-        if not self.root_dir.exists():
-            return []
-        notices: list[WorkflowFormatNotice] = []
-        paths, _folders = self._workflow_catalog_paths()
-        for path in paths:
-            workflow_id = path.parent.relative_to(self.root_dir).as_posix()
-            try:
-                with self.workflow_mutation(workflow_id):
-                    notice = migrate_legacy_workflow(path, workflow_id)
-                if notice is not None:
-                    notices.append(notice)
-                    logger.warning("%s Backups: %s", notice.detail, ", ".join(notice.backup_paths))
-            except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
-                logger.warning("Could not migrate workflow %s: %s", workflow_id, exc)
-        self._workflow_format_notices.extend(notices)
-        return notices
 
     def _plan_schema_v2_workflows(
         self,
