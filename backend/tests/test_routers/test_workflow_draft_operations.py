@@ -337,7 +337,7 @@ async def test_nested_deletion_batch_preserves_full_authority_on_failure_and_ret
         reloaded = (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json()
         assert reloaded["graph"] == expected_graph
         assert reloaded["draft_revision"] == updated["draft_revision"]
-        reopened = WorkflowDraftService(lambda: store).get_draft_authority_snapshot("wf")
+        reopened = WorkflowDraftService(lambda: store).get_draft_authority_snapshot(workflow_id)
         assert reopened.graph.model_dump(mode="json", by_alias=True) == expected_graph
         assert reopened.draft_revision == updated["draft_revision"]
         assert saved_path.read_bytes() == saved_bytes

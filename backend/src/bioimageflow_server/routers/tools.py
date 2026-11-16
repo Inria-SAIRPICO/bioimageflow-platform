@@ -621,15 +621,22 @@ async def uninstall_package(
 async def _settle_environment_operation(operation: Callable[[], Awaitable[str]]) -> str:
     """Preserve request cancellation only after the physical operation settles."""
 
-    async def run() -> str:
-        # The child owns the complete service operation, including final status
-        # publication. Request cancellation must not abandon its worker thread.
+    async def run() -> str | BaseException:
+        # Keep failure as an observed outcome: Python 3.14 reports a failed
+        # shielded future to the loop when its request waiter was cancelled,
+        # even though this owner later drains that future.
         with anyio.CancelScope(shield=True):
-            return await operation()
+            try:
+                return await operation()
+            except BaseException as exc:
+                return exc
 
     task = asyncio.create_task(run(), name="manual-tool-environment-operation")
     try:
-        return await asyncio.shield(task)
+        result = await asyncio.shield(task)
+        if isinstance(result, BaseException):
+            raise result
+        return result
     except asyncio.CancelledError as primary:
         with anyio.CancelScope(shield=True):
             while not task.done():
@@ -639,14 +646,11 @@ async def _settle_environment_operation(operation: Callable[[], Awaitable[str]])
                     # Repeated raw Task.cancel() can interrupt this awaiter
                     # even inside an AnyIO shield; the child still owns work.
                     continue
-                except BaseException:
-                    break
-            try:
-                task.result()
-            except BaseException as operation_error:
+            result = task.result()
+            if isinstance(result, BaseException):
                 _logger.error(
                     "Manual environment operation failed after request cancellation",
-                    exc_info=(type(operation_error), operation_error, operation_error.__traceback__),
+                    exc_info=(type(result), result, result.__traceback__),
                 )
         raise primary
 

@@ -185,14 +185,14 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+        workflow_id = await _create_workflow(client)
         assert (
             await client.put(
-                "/api/v1/workflows/wf",
+                f"/api/v1/workflows/{workflow_id}",
                 json={"graph": graph.model_dump(mode="json")},
             )
         ).status_code == 200
-        storage_path = store.get_storage_path("wf")
+        storage_path = store.get_storage_path(workflow_id)
         workflow, errors, _disabled = build_workflow(
             graph,
             registry,
@@ -215,7 +215,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         record_dir = storage.result_dir(node_plan.final_result_key) / "records" / pointer.record_id
         (record_dir / "dataframe.parquet").write_bytes(b"corrupt")
 
-        draft_response = await client.get("/api/v1/workflow-drafts/wf")
+        draft_response = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert draft_response.status_code == 200
         draft = draft_response.json()
         assert draft["validation"]["valid"] is False
@@ -223,7 +223,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         assert draft["validation"]["node_statuses"]["source"]["status"] == "failed"
 
         saved = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": graph.model_dump(mode="json"),
                 "expected_revision": draft["draft_revision"],
@@ -233,7 +233,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         assert saved.status_code == 200
         accepted = saved.json()
         assert accepted["validation"]["errors"][0]["type"] == "cache_corrupt"
-        draft_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        draft_path = store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
         accepted_bytes = draft_path.read_bytes()
 
         with monkeypatch.context() as patch:
@@ -246,7 +246,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
                     set(),
                 ),
             )
-            partial = await client.get("/api/v1/workflow-drafts/wf")
+            partial = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert partial.status_code == 200
         assert partial.json()["validation"]["valid"] is False
         assert [error["type"] for error in partial.json()["validation"]["errors"]] == [
@@ -258,7 +258,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         blocked = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": accepted["draft_revision"],
             },
         )
@@ -269,7 +269,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
             "/api/v1/execution/clear",
             json={
                 "nodes": ["source"],
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": accepted["draft_revision"],
             },
         )
@@ -277,7 +277,7 @@ async def test_corrupt_cache_keeps_draft_editable_blocks_run_and_clear_repairs(
         assert cleared.json()["node_statuses"]["source"]["status"] == "unexecuted"
         assert not record_dir.exists()
 
-        repaired = await client.get("/api/v1/workflow-drafts/wf")
+        repaired = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert repaired.status_code == 200
         assert repaired.json()["validation"]["node_statuses"]["source"]["status"] == "unexecuted"
         assert repaired.json()["validation"]["valid"] is True
@@ -297,7 +297,7 @@ async def test_get_synthesizes_draft_from_saved_workflow(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["workflow_id"] == "wf"
+    assert body["workflow_id"] == workflow_id
     assert body["draft_revision"] == 0
     assert body["dirty_against_saved"] is False
     assert body["updated_by"] == "system"
@@ -750,9 +750,9 @@ async def test_nested_workflow_draft_route_does_not_shadow_workflow_get(
     workflow = await client.get(f"/api/v1/workflows/{workflow_id}")
 
     assert draft.status_code == 200
-    assert draft.json()["workflow_id"] == "folder/wf"
+    assert draft.json()["workflow_id"] == workflow_id
     assert workflow.status_code == 200
-    assert workflow.json()["info"]["id"] == "folder/wf"
+    assert workflow.json()["info"]["id"] == workflow_id
 
 
 async def test_put_rejects_writes_while_execution_is_running(
@@ -918,7 +918,7 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
             duplicate = await client.post("/api/v1/execution/run", json=payload)
 
             assert status["state"] == "starting"
-            assert status["workflow_id"] == "wf"
+            assert status["workflow_id"] == workflow_id
             assert status["draft_revision"] == 0
             assert status["execution_id"]
             assert duplicate.status_code == 409
@@ -940,8 +940,8 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
     )
-    store.create_workflow(WorkflowCreate(name="run-wf"))
-    store.create_workflow(WorkflowCreate(name="move-source"))
+    run_id = store.create_workflow(WorkflowCreate(name="run-wf")).id
+    move_id = store.create_workflow(WorkflowCreate(name="move-source")).id
     manager = ExecutionManager(
         NullEventBus(),
         registry,
@@ -961,7 +961,7 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
             **intent,
         ) as context:
             operation_id = store.prepare_workflow_patch_move(
-                "move-source",
+                move_id,
                 WorkflowUpdate(action="update", new_id="move-destination"),
             )
             assert operation_id is not None
@@ -984,7 +984,7 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
         run = await client.post(
             "/api/v1/execution/run",
             json={
-                "workflow_id": "run-wf",
+                "workflow_id": run_id,
                 "draft_revision": 0,
             },
         )
