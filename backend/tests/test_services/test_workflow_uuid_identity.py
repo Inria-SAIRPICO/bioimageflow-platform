@@ -319,3 +319,26 @@ def test_active_reference_migration_block_is_a_diagnostic_not_a_write(tmp_path: 
     assert status.pending_plan_id is None
     assert any("blocked by active execution" in notice.detail for notice in status.notices)
     assert path.read_bytes() == before
+
+
+def test_move_recovery_refuses_a_different_uuid_at_the_captured_directory(tmp_path: Path) -> None:
+    from uuid import uuid4
+    from bioimageflow_server.services.workflow_store import WorkflowMoveRecoveryError
+
+    store = store_at(tmp_path)
+    source = store.create_workflow(WorkflowCreate(name="source"))
+    operation = store.prepare_workflow_patch_move(source.id, WorkflowUpdate(action="update", new_id="destination"))
+    assert operation is not None
+    # Simulate external directory replacement after the durable move intent.
+    path = Path(source.path)
+    raw = json.loads(path.read_text())
+    raw["workflow_id"] = str(uuid4())
+    path.write_text(json.dumps(raw))
+    before = path.read_bytes()
+    # A committed journal phase requires forward recovery, never intent replay
+    # against an independently recreated owner at the same physical path.
+    store.mark_workflow_move_phase(operation, "artifacts_rewritten")
+    with pytest.raises(WorkflowMoveRecoveryError):
+        store.recover_pending_workflow_move()
+    assert path.read_bytes() == before
+    assert not (store.root_dir / "destination").exists()

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from bioimageflow_server.models.workflow import validate_workflow_id
+from bioimageflow_server.models.workflow import validate_workflow_id, validate_workflow_identity
 
 WorkflowMoveKind = Literal[
     "direct_workflow_move",
@@ -77,6 +77,10 @@ class WorkflowArtifactMove(BaseModel):
             raise ValueError("Source workflow generation must remain unchanged")
         if self.destination_generation_after != self.destination_generation_before + increment:
             raise ValueError("Destination workflow generation must remain unchanged")
+        if not self.legacy_path_identity:
+            validate_workflow_identity(self.workflow_id)
+            if self.destination_generation_before != self.source_generation_before:
+                raise ValueError("A physical move must preserve one identity generation")
         return self
 
 
@@ -113,6 +117,10 @@ class WorkflowMoveJournal(BaseModel):
 
     @model_validator(mode="after")
     def validate_operation_shape(self) -> WorkflowMoveJournal:
+        if any(move.legacy_path_identity != (self.journal_version == 1) for move in self.moves):
+            raise ValueError("Move journal version does not match its identity authority")
+        if len({move.workflow_id for move in self.moves}) != len(self.moves):
+            raise ValueError("Move journal persistent workflow identities must be unique")
         _validate_relative_path(self.source_path)
         _validate_relative_path(
             self.destination_path,
