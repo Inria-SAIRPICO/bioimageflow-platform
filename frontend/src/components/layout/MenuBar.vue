@@ -993,6 +993,10 @@ function captureWorkflowDeletionTarget(name: string): WorkflowDeletionRequest {
   return {
     canvasId: mountedRoot ? canvasId : null,
     workflowName: name,
+    workspacePath: (mountedRoot ? getRootCanvasPersistenceResource(canvasId)?.workspacePath : undefined)
+      ?? workflowStore.workflows.find(info => (info.id ?? info.name) === name)?.workspace_path
+      ?? settingsStore.settings?.resolved_workspace_path ?? undefined,
+    workspaceSelectionRevision: settingsStore.workspaceSelectionRevision,
     localIdentityGeneration: workflowStore.workflowIdentityGeneration(name),
     serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(name),
     sessionRegistrationToken: mountedRoot?.registrationToken ?? null,
@@ -1002,6 +1006,7 @@ function captureWorkflowDeletionTarget(name: string): WorkflowDeletionRequest {
 function workflowDeletionTargetIsCurrent(
   target: WorkflowDeletionRequest,
 ): boolean {
+  if (!target.workspacePath || target.workspaceSelectionRevision !== settingsStore.workspaceSelectionRevision) return false
   if (!workflowStore.isWorkflowIdentityCurrent(
     target.workflowName,
     target.localIdentityGeneration,

@@ -10,6 +10,7 @@ import ToastService from 'primevue/toastservice'
 import StorageSection from '../StorageSection.vue'
 import { getDemoWorkflowsStatus } from '@/api/demoWorkflows'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useSettingsStore } from '@/stores/settings'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn(),
@@ -106,7 +107,7 @@ describe('StorageSection demo workflows', () => {
     expect(wrapper.get('[data-testid="demo-workflows-remove"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('shows one confirmation and sends one deletion per installed demo', async () => {
+  it.each([false, true])('keeps confirmed demo deletion bound to its workspace (changed %s)', async changed => {
     vi.mocked(getDemoWorkflowsStatus).mockResolvedValue({
       bundle_version: 2,
       status: 'installed',
@@ -127,8 +128,10 @@ describe('StorageSection demo workflows', () => {
     vi.spyOn(useWorkflowStore(), 'fetchWorkflowTree').mockResolvedValue([])
     const deleted: string[] = []
     const onDelete = (event: Event) => {
-      const detail = (event as CustomEvent<{ workflowName: string; resolve: () => void }>).detail
+      const detail = (event as CustomEvent<{ workflowName: string; workspacePath: string; workspaceSelectionRevision: number; resolve: () => void }>).detail
       deleted.push(detail.workflowName)
+      expect(detail.workspacePath).toBe('/tmp/workspace')
+      expect(detail.workspaceSelectionRevision).toBe(0)
       detail.resolve()
     }
     window.addEventListener('bioimageflow:request-delete-workflow', onDelete)
@@ -153,9 +156,10 @@ describe('StorageSection demo workflows', () => {
       const accept = [...document.querySelectorAll('button')]
         .find(button => button.textContent?.trim() === 'Yes')
       expect(accept).toBeDefined()
+      if (changed) useSettingsStore().workspaceSelectionRevision += 1
       accept?.click()
       await flushPromises()
-      expect(deleted).toEqual(['Demo/Fish Analysis', 'Demo/Parameters Space Exploration'])
+      expect(deleted).toEqual(changed ? [] : ['Demo/Fish Analysis', 'Demo/Parameters Space Exploration'])
       expect(useWorkflowStore().fetchWorkflowTree).toHaveBeenCalledWith({ fresh: true })
     } finally {
       wrapper.unmount()

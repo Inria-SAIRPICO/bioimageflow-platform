@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { WorkflowInfo } from '@/api/types'
+import type { SettingsResponse, WorkflowInfo } from '@/api/types'
 
 vi.mock('@/api/client', () => ({ api: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }))
 vi.mock('@/composables/useAutoSave', () => ({ useAutoSave: () => ({
@@ -62,6 +62,18 @@ describe('workflow responses retain workspace ownership', () => {
     store.workflowFolderIds = { [workflowId]: 'Original' }
     store.current = original
     store.selectedFolderId = 'Original'
+  })
+
+  it.each([null, '~/configured'])('uses the resolved canonical owner for an empty workspace folder operation (configured %s)', async configured => {
+    useSettingsStore().settings = { workspace_path: configured, resolved_workspace_path: '/canonical-default' } as SettingsResponse
+    const store = useWorkflowStore()
+    store.workflows = []
+    store.workflowFolders = []
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { path: 'Results', display_name: 'Results' } })
+    await store.createWorkflowFolder('Results')
+    expect(api.post).toHaveBeenCalledWith('/api/v1/workflows/folders', { path: 'Results' }, {
+      headers: { 'X-BioImageFlow-Workspace': '/canonical-default' },
+    })
   })
 
   it('does not publish a delayed workflow move into a copied workspace', async () => {

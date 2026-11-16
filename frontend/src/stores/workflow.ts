@@ -574,7 +574,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const generation = workflowCollectionGeneration
     const epoch = catalogAuthorityEpoch
     const workspaceSelection = captureWorkspaceSelection()
-    const ownerWorkspace = useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = useSettingsStore().settings?.resolved_workspace_path
     const owner = ++catalogMessageOwner
     pendingCatalogReads.add(owner)
     isLoading.value = true
@@ -696,7 +696,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   ): Promise<GraphState> {
     const identityGeneration = captureWorkflowIdentity(name)
     const workspaceSelection = useSettingsStore().workspaceSelectionRevision
-    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.resolved_workspace_path
     const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`,
       ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []))
     if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) throw new WorkflowIdentityChangedError(name)
@@ -747,7 +747,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const identityGeneration = captureWorkflowIdentity(targetWorkflowName)
     const workspaceSelection = useSettingsStore().workspaceSelectionRevision
     const owner = captureRecoveryOwner(targetWorkflowName)
-    const ownerWorkspace = owner?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = owner?.workspace_path ?? useSettingsStore().settings?.resolved_workspace_path
     const { data } = await api.put<WorkflowInfo>(
       `/api/v1/workflows/${workflowUrl(targetWorkflowName)}`,
       { graph },
@@ -792,9 +792,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
       closingCanvasId?: CanvasId
       allowMountedIdentity?: boolean
       expectedIdentityGeneration?: number
+      workspacePath?: string
+      workspaceSelectionRevision?: number
       beforeRecoveryCleanup?: () => void | Promise<void>
     } = {},
   ): Promise<void> {
+    const workspaceSelection = options.workspaceSelectionRevision ?? captureWorkspaceSelection()
+    const workspacePath = options.workspacePath ?? workflowByName.value.get(name)?.workspace_path
+      ?? useSettingsStore().settings?.resolved_workspace_path
+    assertWorkspaceSelectionCurrent(workspaceSelection)
     if (!options.allowMountedIdentity) {
       assertWorkflowIdentitiesUnmounted([name], options.closingCanvasId)
     }
@@ -810,20 +816,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     workflowDeletionsInFlight.add(name)
     try {
       const url = `/api/v1/workflows/${workflowUrl(name)}`
-      const request = options.expectedIdentityGeneration === undefined
-        ? api.delete<{
-            deleted: boolean
-            identity_generation?: number
-          }>(url)
-        : api.delete<{
-            deleted: boolean
-            identity_generation?: number
-          }>(url, {
-            params: {
-              expected_identity_generation: options.expectedIdentityGeneration,
-            },
-          })
-      const { data } = await request
+      const config = {
+        ...(workspacePath ? { headers: { 'X-BioImageFlow-Workspace': workspacePath } } : {}),
+        ...(options.expectedIdentityGeneration !== undefined
+          ? { params: { expected_identity_generation: options.expectedIdentityGeneration } } : {}),
+      }
+      const { data } = await api.delete<{ deleted: boolean; identity_generation?: number }>(
+        url, ...(Object.keys(config).length ? [config] : []),
+      )
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       invalidateWorkflowIdentity(name)
       if (data.identity_generation !== undefined) {
         const accepted = observeWorkflowServerIdentityGeneration(
@@ -834,6 +835,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         if (!accepted) throw new WorkflowIdentityChangedError(name)
       }
       await options.beforeRecoveryCleanup?.()
+      assertWorkspaceSelectionCurrent(workspaceSelection)
       await forgetDeletedWorkflow(name)
     } finally {
       workflowDeletionsInFlight.delete(name)
@@ -1048,7 +1050,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
     const workspaceSelection = captureWorkspaceSelection()
-    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.resolved_workspace_path
     const requestIdentities = captureWorkflowIdentities([name])
     const issuedAt = identityMutationSequence
     const apply = async () => {
@@ -1148,7 +1150,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       throw new Error('Parent folder does not exist')
     }
     const workspaceSelection = captureWorkspaceSelection()
-    const ownerWorkspace = useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = useSettingsStore().settings?.resolved_workspace_path
     const path = childFolderPath(parentId, trimmed)
     const { data } = await api.post<WorkflowFolderResponse>('/api/v1/workflows/folders', {
       path,
@@ -1170,7 +1172,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     previousWorkflowIds: string[],
   ): Promise<void> {
     const workspaceSelection = captureWorkspaceSelection()
-    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.resolved_workspace_path
     const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
     const { withWorkflowMove } = await import('@/services/workflowMove')
@@ -1214,7 +1216,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     if (policy === 'delete_children') assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     const workspaceSelection = captureWorkspaceSelection()
-    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.resolved_workspace_path
     const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
     const apply = async () => {
