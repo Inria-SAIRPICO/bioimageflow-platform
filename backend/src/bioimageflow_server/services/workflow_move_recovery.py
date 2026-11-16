@@ -41,20 +41,26 @@ class WorkflowMoveRecoveryService:
             if pending is None:
                 return None
 
-            current_generations = {
-                workflow_id: store.workflow_generation(workflow_id)
-                for move in pending.moves
-                for workflow_id in (
-                    move.source_workflow_id,
-                    move.destination_workflow_id,
-                )
-            }
-            expected_after = {
-                move.source_workflow_id: move.source_generation_after for move in pending.moves
-            } | {
-                move.destination_workflow_id: move.destination_generation_after
-                for move in pending.moves
-            }
+            if pending.journal_version == 1:
+                current_generations = {
+                    path: store.workflow_generation(path)
+                    for move in pending.moves
+                    for path in (move.source_relative_path, move.destination_relative_path)
+                }
+                expected_after = {
+                    move.source_relative_path: move.source_generation_after for move in pending.moves
+                } | {
+                    move.destination_relative_path: move.destination_generation_after for move in pending.moves
+                }
+            else:
+                current_generations = {
+                    move.workflow_id: store.workflow_generation(move.workflow_id)
+                    for move in pending.moves
+                }
+                expected_after = {
+                    move.workflow_id: move.destination_generation_after
+                    for move in pending.moves
+                }
             if pending.moves and current_generations == expected_after:
                 self._nested_snapshot_service.preflight_root_workflow_moves()
 
@@ -65,16 +71,21 @@ class WorkflowMoveRecoveryService:
             if recovered.phase in {"prepared", "artifacts_rewritten"}:
                 snapshot_moves = [
                     RootWorkflowSnapshotMove(
-                        old_workflow_id=move.source_workflow_id,
+                        old_workflow_id=(move.source_relative_path if recovered.journal_version == 1 else move.workflow_id),
                         old_identity_generation=move.source_generation_before,
-                        new_workflow_id=move.destination_workflow_id,
+                        new_workflow_id=(move.destination_relative_path if recovered.journal_version == 1 else move.workflow_id),
                         new_identity_generation=move.destination_generation_after,
                     )
                     for move in recovered.moves
                 ]
                 if snapshot_moves:
                     self._nested_snapshot_service.preflight_root_workflow_moves()
-                    self._nested_snapshot_service.move_root_workflows(snapshot_moves)
+                    if recovered.journal_version == 1:
+                        self._nested_snapshot_service.move_root_workflows(
+                            snapshot_moves, validate_destination=False,
+                        )
+                    else:
+                        self._nested_snapshot_service.move_root_workflows(snapshot_moves)
                 store.mark_workflow_move_phase(
                     recovered.operation_id,
                     "snapshots_rewritten",
@@ -85,9 +96,9 @@ class WorkflowMoveRecoveryService:
                     for move in recovered.moves:
                         self._viewer_preference_store.move_workflow_generation(
                             workspace_id=workspace_id,
-                            source_workflow_id=move.source_workflow_id,
+                            source_workflow_id=(move.source_relative_path if recovered.journal_version == 1 else move.workflow_id),
                             source_generation=move.source_generation_before,
-                            destination_workflow_id=move.destination_workflow_id,
+                            destination_workflow_id=(move.destination_relative_path if recovered.journal_version == 1 else move.workflow_id),
                             destination_generation=move.destination_generation_after,
                         )
                 store.mark_workflow_move_phase(

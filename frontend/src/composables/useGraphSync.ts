@@ -38,6 +38,7 @@ export interface CanvasScopedGraphSyncOptions {
   descriptor: CanvasSessionDescriptor
   getWorkflowId: () => string | null
   nestedSnapshot?: {
+    workspacePath?: string
     initialSnapshot: NestedWorkflowSnapshotResponse
     onAccepted?: (snapshot: NestedWorkflowSnapshotResponse) => void
   }
@@ -290,6 +291,7 @@ function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSy
       resource = createNestedSnapshotPersistence({
         canvasId: options.descriptor.canvasId,
         initialSnapshot: options.nestedSnapshot.initialSnapshot,
+        workspacePath: options.nestedSnapshot.workspacePath,
         onAccepted: options.nestedSnapshot.onAccepted,
       })
       retainedNestedSnapshotResources.set(sessionId, resource)

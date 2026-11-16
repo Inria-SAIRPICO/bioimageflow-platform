@@ -416,5 +416,6 @@
     "description": "Explore a grid of ATLAS spot-detection parameters."
   },
   "owned_source_ids": [],
-  "platform_document_version": 1
+  "platform_document_version": 2,
+  "workflow_id": "6a08f3d6-ca24-5e91-9f89-5e9c23ebbe50"
 }

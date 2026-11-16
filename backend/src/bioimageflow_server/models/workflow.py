@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,6 +13,13 @@ from bioimageflow_server.models.graph import GraphState, ViewerSpec
 
 
 _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]*$")
+
+
+def validate_workflow_identity(value: str) -> str:
+    """Require a canonical persistent workflow identity, never a storage path."""
+    if not isinstance(value, str) or str(UUID(value)) != value:
+        raise ValueError("Workflow identity must be a canonical UUID")
+    return value
 
 
 def validate_workflow_id(value: str) -> str:
@@ -55,6 +63,8 @@ class WorkflowCreate(BaseModel):
     name: str
     display_name: str | None = None
     description: str | None = None
+    expected_workspace_path: str | None = None
+    expected_parent_path: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -65,8 +75,9 @@ class WorkflowCreate(BaseModel):
 class WorkflowInfo(BaseModel):
     """Workflow list item returned by GET /workflows."""
 
-    id: str | None = None
+    id: str
     name: str
+    relative_path: str
     folder: str = ""
     display_name: str
     path: str
@@ -87,11 +98,27 @@ class WorkflowFormatNotice(BaseModel):
     backup_paths: list[str] = Field(default_factory=list)
 
 
+class WorkflowIdentityMigration(BaseModel):
+    """A migration-only receipt for recovering a former path-owned browser draft."""
+
+    old_path: str
+    identity_generation: int = Field(ge=0)
+    workflow_id: str
+
+
 class WorkflowFormatStatus(BaseModel):
     """Format notices that should be visible to the workspace user."""
 
     notices: list[WorkflowFormatNotice] = Field(default_factory=list)
     pending_plan_id: str | None = None
+    identity_migrations: list[WorkflowIdentityMigration] = Field(default_factory=list)
+    identity_migration_id: str | None = None
+    workspace_path: str | None = None
+
+
+class WorkflowIdentityMigrationAck(BaseModel):
+    migration_id: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    entries: list[WorkflowIdentityMigration]
 
 
 class WorkflowFormatMigrationApply(BaseModel):
@@ -229,12 +256,18 @@ class WorkflowDocument(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    platform_document_version: Literal[1] = 1
+    platform_document_version: Literal[2] = 2
+    workflow_id: str
     graph: GraphState
     metadata: WorkspaceWorkflowMetadata
     authoring_source: PythonAuthoringProvenance | None = None
     owned_source_ids: list[str] = Field(default_factory=list)
     artifact_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @field_validator("workflow_id")
+    @classmethod
+    def validate_identity(cls, value: str) -> str:
+        return validate_workflow_identity(value)
 
 
 class ViewingRequirementEntry(BaseModel):

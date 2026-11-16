@@ -1073,8 +1073,8 @@ async def test_carried_workflow_get_cannot_readmit_during_physical_uninstall(too
     registry = ToolRegistryService()
     registry.scan_tool_store(tool_store)
     workflows = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
-    workflows.create_workflow(WorkflowCreate(name="Carried"))
-    workflows.save_workflow("Carried", WorkflowSaveBody(graph=graph_state(nodes=[{
+    carried_id = workflows.create_workflow(WorkflowCreate(name="Carried")).id
+    workflows.save_workflow(carried_id, WorkflowSaveBody(graph=graph_state(nodes=[{
         "type": "tool", "id": "subject", "name": "Subject", "tool_name": "Retained",
         "position": [0, 0], "parameters": {}, "tool_module": package,
         "tool_class": "Retained", "tool_package": package, "tool_package_version": version,
@@ -1098,14 +1098,14 @@ async def test_carried_workflow_get_cannot_readmit_during_physical_uninstall(too
     task = None
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            initial = await client.get("/api/v1/workflows/Carried")
+            initial = await client.get(f"/api/v1/workflows/{carried_id}")
             assert initial.status_code == 200 and initial.json()["missing_tools"] == []
             task = asyncio.create_task(installer.uninstall(package, version))
             assert await asyncio.to_thread(entered.wait, 3)
             # The directory still exists, but retirement reserves its namespace
             # until removal and registry publication have physically settled.
             assert source.is_dir()
-            during = await client.get("/api/v1/workflows/Carried")
+            during = await client.get(f"/api/v1/workflows/{carried_id}")
             assert during.status_code == 200
             assert [tool["tool_name"] for tool in during.json()["missing_tools"]] == ["Retained"]
             with pytest.raises(RuntimeError, match="package mutation is in progress"):

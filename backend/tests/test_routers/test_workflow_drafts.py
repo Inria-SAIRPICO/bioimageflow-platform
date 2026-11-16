@@ -113,12 +113,13 @@ async def locked_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         yield ac
 
 
-async def _create_workflow(client: httpx.AsyncClient, name: str = "wf") -> None:
+async def _create_workflow(client: httpx.AsyncClient, name: str = "wf") -> str:
     response = await client.post(
         "/api/v1/workflows",
         json={"name": name, "display_name": name.split("/")[-1]},
     )
     assert response.status_code == 201
+    return response.json()["id"]
 
 
 def _graph_state(node_id: str) -> GraphState:
@@ -290,9 +291,9 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     client: httpx.AsyncClient,
     tmp_path: Path,
 ) -> None:
-    await _create_workflow(client, "wf")
+    workflow_id = await _create_workflow(client, "wf")
 
-    response = await client.get("/api/v1/workflow-drafts/wf")
+    response = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
 
     assert response.status_code == 200
     body = response.json()
@@ -311,8 +312,8 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     agent_state = tmp_path / "workspace" / ".bioimageflow" / "agent-state.json"
     assert agent_state.exists()
     context = json.loads(agent_state.read_text())
-    assert context["mcp_contract_version"] == 2
-    assert context["active_workflow_id"] == "wf"
+    assert context["mcp_contract_version"] == 3
+    assert context["active_workflow_id"] == workflow_id
     assert context["api_base_url"] == "http://test/api/v1"
     assert context["health_url"] == "http://test/api/v1/health"
     assert all(command.startswith("MCP ") for command in context["recommended_commands"])
@@ -414,7 +415,7 @@ async def test_synthesized_get_keeps_source_bound_schema_and_definition_errors(
 ) -> None:
     registry = ToolRegistryService()
     store = WorkflowStoreService(tmp_path / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     graph = graph_state(
         config={"engine": "direct", "execution": "parallel"},
         nodes=[
@@ -429,7 +430,7 @@ async def test_synthesized_get_keeps_source_bound_schema_and_definition_errors(
             },
         ],
     )
-    store.save_workflow("wf", WorkflowSaveBody(graph=graph))
+    store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     app = create_app(AppConfig(
         tool_registry=registry, workflow_store=store,
@@ -450,7 +451,7 @@ async def test_synthesized_get_keeps_source_bound_schema_and_definition_errors(
         transport=httpx.ASGITransport(app=app), base_url="http://test",
     ) as ac:
         for expected_count in (1, 2):
-            response = await ac.get("/api/v1/workflow-drafts/wf")
+            response = await ac.get(f"/api/v1/workflow-drafts/{workflow_id}")
             assert response.status_code == 200
             body = response.json()
             validation = body["validation"]
@@ -465,17 +466,17 @@ async def test_synthesized_get_keeps_source_bound_schema_and_definition_errors(
             assert set(validation["node_statuses"]) == {"bound", "missing"}
             validations.append(validation)
     assert validations[0] == validations[1]
-    assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
+    assert not (store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json").exists()
 
 
 async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(
     client: httpx.AsyncClient,
     tmp_path: Path,
 ) -> None:
-    await _create_workflow(client, "wf")
+    workflow_id = await _create_workflow(client, "wf")
 
     first = await client.put(
-        "/api/v1/workflow-drafts/wf",
+        f"/api/v1/workflow-drafts/{workflow_id}",
         json={
             "graph": _graph("n1"),
             "expected_revision": 0,
@@ -492,13 +493,13 @@ async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(
     draft_path = tmp_path / "workspace" / "workflows" / "wf" / ".bioimageflow" / "draft.json"
     assert draft_path.exists()
     assert json.loads(draft_path.read_text())["graph"]["nodes"][0]["id"] == "n1"
-    read_back = await client.get("/api/v1/workflow-drafts/wf")
+    read_back = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
     assert read_back.status_code == 200
     assert read_back.json()["validation"]["errors"] == accepted_errors
     assert read_back.json()["validation"]["valid"] is False
 
     stale = await client.put(
-        "/api/v1/workflow-drafts/wf",
+        f"/api/v1/workflow-drafts/{workflow_id}",
         json={
             "graph": _graph("n2"),
             "expected_revision": 0,
@@ -523,16 +524,16 @@ async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
     manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
 
     async for client in _client(tmp_path, connection_manager=manager):
-        await _create_workflow(client, "wf")
+        workflow_id = await _create_workflow(client, "wf")
         saved_graph = _graph("saved")
         saved = await client.put(
-            "/api/v1/workflows/wf",
+            f"/api/v1/workflows/{workflow_id}",
             json={"graph": saved_graph},
         )
         assert saved.status_code == 200
 
         dirty = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("discarded"),
                 "expected_revision": 0,
@@ -544,7 +545,7 @@ async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
         published.clear()
 
         reset = await client.post(
-            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            f"/api/v1/workflow-drafts/{workflow_id}/reset-to-saved",
             json={"expected_revision": 1, "updated_by": "frontend"},
         )
 
@@ -555,7 +556,7 @@ async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
         assert accepted["graph"]["nodes"][0]["id"] == "saved"
         assert published == [
             {
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 2,
                 "updated_by": "frontend",
                 "updated_at": accepted["updated_at"],
@@ -566,7 +567,7 @@ async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
         draft_path = tmp_path / "workspace" / "workflows" / "wf" / ".bioimageflow" / "draft.json"
         accepted_bytes = draft_path.read_bytes()
         stale = await client.post(
-            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            f"/api/v1/workflow-drafts/{workflow_id}/reset-to-saved",
             json={"expected_revision": 1, "updated_by": "frontend"},
         )
 
@@ -581,10 +582,10 @@ async def test_reset_to_saved_rejects_locked_and_missing_workflows(
     tmp_path: Path,
 ) -> None:
     async for client in _client(tmp_path, is_running=True):
-        await _create_workflow(client, "wf")
+        workflow_id = await _create_workflow(client, "wf")
 
         locked = await client.post(
-            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            f"/api/v1/workflow-drafts/{workflow_id}/reset-to-saved",
             json={"expected_revision": 0},
         )
 
@@ -612,14 +613,14 @@ async def test_put_publishes_one_workflow_draft_changed_event_per_success(
     manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
 
     async for client in _client(tmp_path, connection_manager=manager):
-        await _create_workflow(client, "wf")
+        workflow_id = await _create_workflow(client, "wf")
 
-        get_response = await client.get("/api/v1/workflow-drafts/wf")
+        get_response = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert get_response.status_code == 200
         assert published == []
 
         first = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("n1"),
                 "expected_revision": 0,
@@ -630,7 +631,7 @@ async def test_put_publishes_one_workflow_draft_changed_event_per_success(
         first_body = first.json()
         assert published == [
             {
-                "workflow_id": "wf",
+                "workflow_id": workflow_id,
                 "draft_revision": 1,
                 "updated_by": "frontend",
                 "updated_at": first_body["updated_at"],
@@ -639,7 +640,7 @@ async def test_put_publishes_one_workflow_draft_changed_event_per_success(
         ]
 
         second = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("n2"),
                 "expected_revision": 1,
@@ -649,7 +650,7 @@ async def test_put_publishes_one_workflow_draft_changed_event_per_success(
         assert second.status_code == 200
         second_body = second.json()
         assert published[-1] == {
-            "workflow_id": "wf",
+            "workflow_id": workflow_id,
             "draft_revision": 2,
             "updated_by": "agent",
             "updated_at": second_body["updated_at"],
@@ -670,10 +671,10 @@ async def test_put_does_not_publish_for_unsuccessful_writes(
     manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
 
     async for client in _client(tmp_path, connection_manager=manager):
-        await _create_workflow(client, "wf")
+        workflow_id = await _create_workflow(client, "wf")
 
         first = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("n1"),
                 "expected_revision": 0,
@@ -684,7 +685,7 @@ async def test_put_does_not_publish_for_unsuccessful_writes(
         assert len(published) == 1
 
         stale = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("n2"),
                 "expected_revision": 0,
@@ -700,7 +701,7 @@ async def test_put_does_not_publish_for_unsuccessful_writes(
             },
         )
         invalid = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "expected_revision": 1,
                 "updated_by": "agent",
@@ -725,10 +726,10 @@ async def test_put_does_not_publish_when_locked(
     manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
 
     async for client in _client(tmp_path, is_running=True, connection_manager=manager):
-        await _create_workflow(client, "wf")
+        workflow_id = await _create_workflow(client, "wf")
 
         response = await client.put(
-            "/api/v1/workflow-drafts/wf",
+            f"/api/v1/workflow-drafts/{workflow_id}",
             json={
                 "graph": _graph("n1"),
                 "expected_revision": 0,
@@ -743,10 +744,10 @@ async def test_put_does_not_publish_when_locked(
 async def test_nested_workflow_draft_route_does_not_shadow_workflow_get(
     client: httpx.AsyncClient,
 ) -> None:
-    await _create_workflow(client, "folder/wf")
+    workflow_id = await _create_workflow(client, "folder/wf")
 
-    draft = await client.get("/api/v1/workflow-drafts/folder/wf")
-    workflow = await client.get("/api/v1/workflows/folder/wf")
+    draft = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
+    workflow = await client.get(f"/api/v1/workflows/{workflow_id}")
 
     assert draft.status_code == 200
     assert draft.json()["workflow_id"] == "folder/wf"
@@ -757,10 +758,10 @@ async def test_nested_workflow_draft_route_does_not_shadow_workflow_get(
 async def test_put_rejects_writes_while_execution_is_running(
     locked_client: httpx.AsyncClient,
 ) -> None:
-    await _create_workflow(locked_client, "wf")
+    workflow_id = await _create_workflow(locked_client, "wf")
 
     response = await locked_client.put(
-        "/api/v1/workflow-drafts/wf",
+        f"/api/v1/workflow-drafts/{workflow_id}",
         json={
             "graph": graph_document(),
             "expected_revision": 0,
@@ -781,12 +782,12 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
     )
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     graph_a = _graph_state("graph-a")
     graph_b = _graph_state("graph-b")
     accepted = drafts.put_draft(
-        "wf",
+        workflow_id,
         graph=graph_a,
         expected_revision=0,
         should_validate=False,
@@ -825,7 +826,7 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         draft_write = asyncio.create_task(
             client.put(
-                "/api/v1/workflow-drafts/wf",
+                f"/api/v1/workflow-drafts/{workflow_id}",
                 json={
                     "graph": graph_b.model_dump(mode="json"),
                     "expected_revision": accepted.draft_revision,
@@ -841,7 +842,7 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
             run = await client.post(
                 "/api/v1/execution/run",
                 json={
-                    "workflow_id": "wf",
+                    "workflow_id": workflow_id,
                     "draft_revision": accepted.draft_revision,
                 },
             )
@@ -870,7 +871,7 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
     )
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     manager = ExecutionManager(
         NullEventBus(),
@@ -902,7 +903,7 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
     app.dependency_overrides[execution_get_workflow_draft_service] = lambda: drafts
     transport = httpx.ASGITransport(app=app)
     payload = {
-        "workflow_id": "wf",
+        "workflow_id": workflow_id,
         "draft_revision": 0,
     }
 
@@ -1002,7 +1003,7 @@ async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authoriti
 ) -> None:
     registry = ToolRegistryService()
     store = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     other = WorkflowStoreService(store.root_dir, registry)
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     app = create_app(
@@ -1028,23 +1029,23 @@ async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authoriti
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as ac:
-        first = await ac.get("/api/v1/workflow-drafts/wf")
+        first = await ac.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert first.status_code == 200
         first_body = first.json()
         assert first_body["graph"] == captures[0][1]["graph"]
         assert first_body["base_saved_revision"] == captures[0][0].artifact_hash
         assert first_body["updated_at"] == captures[0][0].info.last_modified
         assert first_body["draft_revision"] == 0
-        assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
+        assert not (store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json").exists()
         assert all(saved.model_dump(mode="json") == raw for saved, raw in captures)
         assert len(captures) == 2
 
-        changed = other.get_workflow("wf").graph.model_copy(deep=True)
+        changed = other.get_workflow(workflow_id).graph.model_copy(deep=True)
         changed.display_name = "Saved by another owner"
-        other.save_workflow("wf", WorkflowSaveBody(graph=changed))
-        saved_now = other.get_workflow("wf")
+        other.save_workflow(workflow_id, WorkflowSaveBody(graph=changed))
+        saved_now = other.get_workflow(workflow_id)
         captures.clear()
-        next_read = await ac.get("/api/v1/workflow-drafts/wf")
+        next_read = await ac.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert next_read.status_code == 200
         assert next_read.json()["graph"] == changed.model_dump(mode="json")
         assert next_read.json()["base_saved_revision"] == saved_now.artifact_hash
@@ -1055,14 +1056,14 @@ async def test_revision_zero_get_reuses_saved_snapshot_and_keeps_later_authoriti
         accepted_graph = changed.model_copy(deep=True)
         accepted_graph.display_name = "Accepted durable draft"
         accepted = workflow_draft_service.WorkflowDraftService(lambda: other).put_draft(
-            "wf",
+            workflow_id,
             graph=accepted_graph,
             expected_revision=0,
         )
-        durable_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        durable_path = store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
         durable_before = durable_path.read_bytes()
         captures.clear()
-        accepted_read = await ac.get("/api/v1/workflow-drafts/wf")
+        accepted_read = await ac.get(f"/api/v1/workflow-drafts/{workflow_id}")
         assert accepted_read.status_code == 200
         assert accepted_read.json()["graph"] == accepted_graph.model_dump(mode="json")
         assert accepted_read.json()["draft_revision"] == accepted.draft_revision
@@ -1078,7 +1079,7 @@ async def test_revision_zero_get_observes_other_owner_during_initial_validation(
 ) -> None:
     registry = ToolRegistryService()
     store = WorkflowStoreService(tmp_path / "workspace" / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="wf"))
+    workflow_id = store.create_workflow(WorkflowCreate(name="wf")).id
     other = WorkflowStoreService(store.root_dir, registry)
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
     app = create_app(
@@ -1108,20 +1109,20 @@ async def test_revision_zero_get_observes_other_owner_during_initial_validation(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as ac:
-        pending = asyncio.create_task(ac.get("/api/v1/workflow-drafts/wf"))
+        pending = asyncio.create_task(ac.get(f"/api/v1/workflow-drafts/{workflow_id}"))
         try:
             async with asyncio.timeout(5):
                 while not entered.is_set():
                     await asyncio.sleep(0)
-            changed = other.get_workflow("wf").graph.model_copy(deep=True)
+            changed = other.get_workflow(workflow_id).graph.model_copy(deep=True)
             changed.display_name = f"Other owner accepted {authority}"
             if authority == "saved":
-                other.save_workflow("wf", WorkflowSaveBody(graph=changed))
+                other.save_workflow(workflow_id, WorkflowSaveBody(graph=changed))
                 expected_revision = 0
-                expected_saved = other.get_workflow("wf").artifact_hash
+                expected_saved = other.get_workflow(workflow_id).artifact_hash
             else:
                 accepted = workflow_draft_service.WorkflowDraftService(lambda: other).put_draft(
-                    "wf",
+                    workflow_id,
                     graph=changed,
                     expected_revision=0,
                 )
@@ -1152,7 +1153,7 @@ async def test_rebind_versions_updates_accepted_recursive_draft_preserving_saved
     registry.register_package('example_tools', PackageInfo(
         name='example_tools', installed_versions=['1.0.0', '2.0.0'], active_version='2.0.0',
     ))
-    await _create_workflow(client)
+    workflow_id = await _create_workflow(client)
     path = tmp_path / 'workspace/workflows/wf/workflow.json'
     saved_bytes = path.read_bytes()
     graph = _graph('edited')
@@ -1171,12 +1172,12 @@ async def test_rebind_versions_updates_accepted_recursive_draft_preserving_saved
     # Preserve authored edge identities and positions even when metadata is unavailable.
     graph['edges'] = [{'type': 'dataframe', 'id': 'retained-edge',
                       'source_node': 'edited', 'target_node': 'second', 'target_position': 0}]
-    put = await client.put('/api/v1/workflow-drafts/wf', json={
+    put = await client.put(f'/api/v1/workflow-drafts/{workflow_id}', json={
         'graph': graph, 'expected_revision': 0,
     })
     assert put.status_code == 200, put.text
     original = put.json()['graph']
-    response = await client.post('/api/v1/workflow-drafts/wf/rebind-versions', json={
+    response = await client.post(f'/api/v1/workflow-drafts/{workflow_id}/rebind-versions', json={
         'expected_revision': 1,
     })
     assert response.status_code == 200, response.text
@@ -1189,14 +1190,14 @@ async def test_rebind_versions_updates_accepted_recursive_draft_preserving_saved
     expected['nodes'][1]['workflow']['nodes'][0]['tool_package_version'] = '2.0.0'
     assert accepted['graph'] == expected
     assert path.read_bytes() == saved_bytes
-    reopened = await client.get('/api/v1/workflow-drafts/wf')
+    reopened = await client.get(f'/api/v1/workflow-drafts/{workflow_id}')
     assert reopened.json()['graph'] == expected
-    stale = await client.post('/api/v1/workflow-drafts/wf/rebind-versions', json={
+    stale = await client.post(f'/api/v1/workflow-drafts/{workflow_id}/rebind-versions', json={
         'expected_revision': 1,
     })
     assert stale.status_code == 409
     assert stale.json()['error'] == 'draft_revision_conflict'
-    assert (await client.get('/api/v1/workflow-drafts/wf')).json()['graph'] == expected
+    assert (await client.get(f'/api/v1/workflow-drafts/{workflow_id}')).json()['graph'] == expected
 
 
 async def test_rebind_versions_refuses_execution_lock(locked_client: httpx.AsyncClient) -> None:

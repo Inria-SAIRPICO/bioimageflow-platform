@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -60,6 +61,54 @@ def test_capability_inventory_uses_only_recursive_workflow_operations() -> None:
     assert "expose_workflow_input" in SUPPORTED_OPERATION_TYPES
     assert "connect_column_edge" in SUPPORTED_OPERATION_TYPES
     assert "connect_dataframe_edge" in SUPPORTED_OPERATION_TYPES
+
+
+async def test_management_distinguishes_destination_paths_and_returned_uuids(tmp_path: Path) -> None:
+    source_id, created_id, copied_id = str(uuid4()), str(uuid4()), str(uuid4())
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content) if request.content else {}
+        calls.append((request.method, request.url.path, payload))
+        if request.url.path == "/api/v1/workflows":
+            return httpx.Response(201, json={"id": created_id, "name": created_id, "relative_path": "Folder/new"})
+        if request.url.path.endswith("/activate"):
+            return httpx.Response(200, json={})
+        if "/workflow-drafts/" in request.url.path:
+            return httpx.Response(200, json={"workflow_id": request.url.path.rsplit("/", 1)[-1], "draft_revision": 0})
+        identity = copied_id if payload.get("action") == "duplicate" else source_id
+        return httpx.Response(200, json={"id": identity, "name": identity, "relative_path": "Folder/destination"})
+
+    gateway = _gateway(tmp_path, handler)
+    created = await gateway.create_workflow(path="Folder/new", set_active=True)
+    copied = await gateway.duplicate_workflow(source_id, new_path="Folder/copy", set_active=True)
+    renamed = await gateway.rename_workflow(source_id, new_path="Folder/renamed")
+
+    assert created["workflow"]["id"] == created_id
+    assert created["workflow"]["relative_path"] == "Folder/new"
+    assert copied["workflow"]["id"] == copied_id
+    assert renamed["workflow"]["id"] == source_id
+    assert calls[0] == ("POST", "/api/v1/workflows", {"name": "Folder/new"})
+    assert ("POST", f"/api/v1/workflows/{created_id}/activate", {}) in calls
+    assert ("POST", f"/api/v1/workflows/{copied_id}/activate", {}) in calls
+    assert ("PATCH", f"/api/v1/workflows/{source_id}", {"action": "duplicate", "new_name": "Folder/copy"}) in calls
+    assert calls[-1] == ("PATCH", f"/api/v1/workflows/{source_id}", {"action": "update", "new_id": "Folder/renamed"})
+
+
+async def test_agent_transport_sends_its_workspace_owner(tmp_path: Path) -> None:
+    state = _state(tmp_path / "agent-state.json")
+    payload = json.loads(state.read_text())
+    payload["workspace_path"] = "/captured/workspace"
+    state.write_text(json.dumps(payload))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["X-BioImageFlow-Workspace"] == "/captured/workspace"
+        return httpx.Response(409, json={"error": "workflow_workspace_conflict", "detail": "Wrong workspace"})
+
+    gateway = BioImageFlowMCPGateway(state_path=state, transport=httpx.MockTransport(handler))
+    result = await gateway.create_workflow(path="Folder/workflow")
+    assert result["ok"] is False
+    assert result["error"] == "workflow_workspace_conflict"
 
 
 async def test_run_addresses_accepted_draft_without_submitting_graph(tmp_path: Path) -> None:

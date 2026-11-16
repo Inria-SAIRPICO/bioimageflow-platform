@@ -4,21 +4,9 @@ import type { NodeDataResponse } from '../../src/api/types'
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 const AVIVATOR_ORIGIN = 'https://avivator.gehlenborglab.org'
 
-function deriveWorkflowId(value: string): string {
-  return value
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .replace(/_+/g, '_')
-    .toLowerCase()
-}
-
 test.describe('Avivator viewer', () => {
   test('opens a converted OME-TIFF image inside the Dockview panel', async ({ page }) => {
     const displayName = `Image result ${test.info().project.name} ${Date.now()}`
-    const workflowName = deriveWorkflowId(displayName)
     await page.route('https://avivator.gehlenborglab.org/**', async (route) => {
       await route.fulfill({
         status: 200,
@@ -63,7 +51,9 @@ test.describe('Avivator viewer', () => {
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'New', exact: true }).click()
     await page.getByTestId('workflow-display-name-input').fill(displayName)
+    const workflowCreated = page.waitForResponse(response => response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST')
     await page.getByTestId('workflow-dialog-submit').click()
+    const workflowName = (await (await workflowCreated).json()).id as string
     await expect(page.getByTestId('workflow-title')).toContainText(displayName)
 
     await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()

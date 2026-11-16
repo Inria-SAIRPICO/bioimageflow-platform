@@ -62,10 +62,12 @@ function graph(nodeId: string): GraphState {
 function workflowInfo(name: string, lastModified = '2026-05-21T10:00:00Z'): WorkflowInfo {
   const parts = name.split('/')
   return {
+    relative_path: name,
     id: name,
     name: parts[parts.length - 1]!,
     folder: parts.slice(0, -1).join('/'),
     display_name: `Display ${name}`,
+    workspace_path: '/workspace',
     path: `/workspace/workflows/${name}/workflow.json`,
     results_path: `/workspace/workflows/${name}/results`,
     last_modified: lastModified,
@@ -112,7 +114,7 @@ describe('resolveStartupWorkflow', () => {
     workflowStoreMock.workflows = [info]
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
     autoSaveMock.loadAutoSave.mockResolvedValueOnce({
-      name: 'recovered', graph: recovered, timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      name: 'recovered', graph: recovered, workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
 
     await expect(loadRootWorkflowForOpen('recovered')).resolves.toMatchObject({
@@ -126,7 +128,7 @@ describe('resolveStartupWorkflow', () => {
     const loaded = presentation('selected')
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
     autoSaveMock.loadAutoSave.mockResolvedValueOnce({
-      name: 'other', graph: graph('other-recovery'), timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      name: 'other', graph: graph('other-recovery'), workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     await expect(loadRootWorkflowForOpen('selected')).resolves.toEqual(loaded)
     expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
@@ -140,7 +142,7 @@ describe('resolveStartupWorkflow', () => {
       draft: { draft_revision: 7, updated_at: '2026-05-21T11:00:00Z' } as WorkflowDraftResponse,
     })
     const recovered = { ...graph('queued-node'), name }
-    const recovery = { name, graph: recovered, timestamp: Date.parse('2026-05-21T12:00:00Z') }
+    const recovery = { name, graph: recovered, workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z') }
     workflowStoreMock.workflows = [info]
     workflowStoreMock.flattenedWorkflows = [info]
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
@@ -184,7 +186,7 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'recovered',
       graph: recoveryGraph,
-      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('last-opened')
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(presentation('last-opened'))
@@ -217,7 +219,7 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'recovered',
       graph: recoveryGraph,
-      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('recovered')
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(
@@ -241,7 +243,7 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'recovered',
       graph: graph('recovery'),
-      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(presentation('first'))
 
@@ -257,7 +259,7 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'saved',
       graph: graph('stale'),
-      timestamp: Date.parse('2026-05-21T11:59:59Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T11:59:59Z'),
     })
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
 
@@ -266,7 +268,7 @@ describe('resolveStartupWorkflow', () => {
     expect(autoSaveMock.clearAutoSave).toHaveBeenCalledWith('saved')
   })
 
-  it('clears recovery for an obsolete workflow name and opens the known last workflow', async () => {
+  it('retains recovery for an unresolved former workflow owner and opens the known last workflow', async () => {
     const info = workflowInfo('renamed')
     const loaded = presentation('renamed')
     workflowStoreMock.flattenedWorkflows = [info]
@@ -274,14 +276,14 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'Untitled',
       graph: graph('stale'),
-      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('renamed')
     presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
 
     await expect(resolveStartupWorkflow()).resolves.toEqual(loaded)
 
-    expect(autoSaveMock.clearAutoSave).toHaveBeenCalledWith('Untitled')
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
     expect(presentationMocks.loadRootWorkflowPresentation).toHaveBeenCalledWith('renamed', { background: true, canPresent: expect.any(Function) })
   })
 
@@ -294,7 +296,7 @@ describe('resolveStartupWorkflow', () => {
     autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce({
       name: 'missing',
       graph: graph('recovery'),
-      timestamp: Date.parse('2026-05-21T12:00:00Z'),
+      workspace_path: '/workspace', identity_generation: 0, timestamp: Date.parse('2026-05-21T12:00:00Z'),
     })
     autoSaveMock.getLastOpenedWorkflow.mockResolvedValueOnce('missing')
     presentationMocks.loadRootWorkflowPresentation
@@ -303,7 +305,7 @@ describe('resolveStartupWorkflow', () => {
 
     await expect(resolveStartupWorkflow()).resolves.toEqual(loaded)
 
-    expect(autoSaveMock.clearAutoSave).toHaveBeenCalledWith('missing')
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
     expect(autoSaveMock.setLastOpenedWorkflow).toHaveBeenCalledWith(null)
     expect(presentationMocks.loadRootWorkflowPresentation.mock.calls).toEqual([
       ['missing', { background: true, canPresent: expect.any(Function) }],

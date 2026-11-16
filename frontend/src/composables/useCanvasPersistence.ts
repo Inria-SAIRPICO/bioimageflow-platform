@@ -14,6 +14,8 @@ import {
   type AutoSaveEntry,
 } from '@/composables/useAutoSave'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useWorkflowStore } from '@/stores/workflow'
+import { useSettingsStore } from '@/stores/settings'
 import {
   clearRecoveryPersistenceKeyStrict,
   createRecoveryPersistenceCoordinator,
@@ -65,7 +67,7 @@ export class CanvasDiscardRecoveryCleanupError extends Error {
 }
 
 export interface CanvasPersistenceTransports {
-  fetchDraft(workflowId: string): Promise<WorkflowDraftResponse>
+  fetchDraft(workflowId: string, workspacePath?: string): Promise<WorkflowDraftResponse>
   putDraft(
     workflowId: string,
     body: {
@@ -74,11 +76,13 @@ export interface CanvasPersistenceTransports {
       updated_by?: 'frontend'
       validate?: boolean
     },
+    workspacePath?: string,
   ): Promise<WorkflowDraftResponse>
   writeRecovery(entry: AutoSaveEntry): Promise<void>
   resetDraftToSaved?(
     workflowId: string,
     expectedRevision: number,
+    workspacePath?: string,
   ): Promise<WorkflowDraftResponse>
   clearRecovery?(workflowId: string): Promise<void>
 }
@@ -93,6 +97,7 @@ export interface CanvasScopedPersistenceOptions {
 export type CanvasDraftResolutionOrigin = 'local' | 'external'
 
 export interface CanvasPersistenceApi {
+  readonly workspacePath: string | undefined
   readonly canvasId: CanvasId | null
   readonly workflowId: Ref<string | null>
   readonly acceptedDraftRevision: Ref<number | null>
@@ -116,6 +121,7 @@ export interface CanvasPersistenceApi {
 }
 
 export interface RootCanvasPersistenceResource extends DisposableCanvasResource {
+  readonly workspacePath: string | undefined
   readonly canvasId: CanvasId
   readonly workflowId: Ref<string | null>
   readonly acceptedDraftRevision: Ref<number | null>
@@ -247,6 +253,11 @@ function createRootPersistenceResource(options: {
   } | null = null
   const queuedDraftRevision = ref(0)
   const nextDraftRevision = ref(0)
+  const recoveryWorkspace = useWorkflowStore().workflows.find(info => info.id === options.initialWorkflowId)?.workspace_path
+    ?? useSettingsStore().settings?.workspace_path ?? undefined
+  const recoveryGeneration = options.initialWorkflowId
+    ? useWorkflowStore().workflowServerIdentityGeneration(options.initialWorkflowId) ?? undefined
+    : undefined
 
   const recoveryCoordinator: RecoveryPersistenceCoordinator =
     createRecoveryPersistenceCoordinator({
@@ -257,6 +268,8 @@ function createRootPersistenceResource(options: {
           name: request.recoveryKey,
           graph: cloneGraph(request.graph),
           timestamp: request.timestamp,
+          workspace_path: recoveryWorkspace,
+          identity_generation: recoveryGeneration,
         })
       },
       onOperationalError: error => {
@@ -445,7 +458,7 @@ function createRootPersistenceResource(options: {
     initializationError.value = null
     const initial = authoritativeDraft
     initialization = (async () => {
-      const response = initial ?? await options.transports.fetchDraft(capturedId)
+      const response = initial ?? await options.transports.fetchDraft(capturedId, ...(recoveryWorkspace ? [recoveryWorkspace] : []))
       assertUsable()
       if (response.workflow_id !== capturedId) {
         throw new Error(`Draft response '${response.workflow_id}' does not match '${capturedId}'`)
@@ -472,7 +485,7 @@ function createRootPersistenceResource(options: {
           expected_revision: request.expectedDraftRevision,
           updated_by: 'frontend',
           validate: true,
-        }),
+        }, ...(recoveryWorkspace ? [recoveryWorkspace] : [])),
         onAccepted: acceptDraftWrite,
         onOperationalError: error => {
           console.warn('[canvas-persistence] Failed to save workflow draft:', error)
@@ -624,7 +637,7 @@ function createRootPersistenceResource(options: {
     const coordinator = draftCoordinator.value
     const capturedId = workflowId.value
     if (coordinator === null || capturedId === null || hasConflict.value) return false
-    const latest = await options.transports.fetchDraft(capturedId)
+    const latest = await options.transports.fetchDraft(capturedId, ...(recoveryWorkspace ? [recoveryWorkspace] : []))
     if (latest.draft_revision > coordinator.currentDraftRevision.value) {
       remoteDraftRevision.value = latest.draft_revision
       return false
@@ -649,10 +662,11 @@ function createRootPersistenceResource(options: {
       response = await options.transports.resetDraftToSaved(
         capturedId,
         expectedRevision,
+        ...(recoveryWorkspace ? [recoveryWorkspace] : []),
       )
     } catch (error) {
       if (isConflict(error)) {
-        const latest = await options.transports.fetchDraft(capturedId)
+        const latest = await options.transports.fetchDraft(capturedId, ...(recoveryWorkspace ? [recoveryWorkspace] : []))
         remoteDraftRevision.value = latest.draft_revision
         useWorkflowDraftStore().noteRemoteChange({
           type: 'workflow_draft_changed',
@@ -695,6 +709,7 @@ function createRootPersistenceResource(options: {
 
   return {
     canvasId: options.canvasId,
+    workspacePath: recoveryWorkspace,
     workflowId,
     acceptedDraftRevision,
     currentGraph,
@@ -728,6 +743,7 @@ function createBoundApi(
 ): CanvasPersistenceApi {
   return {
     canvasId: resource.canvasId,
+    workspacePath: resource.workspacePath,
     workflowId: resource.workflowId,
     acceptedDraftRevision: resource.acceptedDraftRevision,
     currentGraph: resource.currentGraph,
@@ -761,6 +777,7 @@ function createUnavailableBoundApi(
   const currentGraph = ref<GraphState>(emptyGraph()) as Ref<GraphState>
   return {
     canvasId,
+    workspacePath: undefined,
     workflowId,
     acceptedDraftRevision,
     currentGraph,
@@ -809,6 +826,9 @@ function createActiveFacade(): CanvasPersistenceApi {
   return {
     get canvasId() {
       return canvasSessionRegistry.activeCanvasId.value
+    },
+    get workspacePath() {
+      return selected()?.workspacePath
     },
     workflowId: computed(() => selected()?.workflowId.value ?? null),
     acceptedDraftRevision: computed(

@@ -112,14 +112,16 @@ function groupingBoundaryGraph(name: string, displayName: string): GraphState {
   }
 }
 
-async function createWorkflow(page: Page, name: string, displayName: string): Promise<void> {
-  await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+async function createWorkflow(page: Page, name: string, displayName: string): Promise<string> {
+  const response = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name, display_name: displayName },
-  })).status()).toBe(201)
-  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  })
+  expect(response.status()).toBe(201)
+  const workflowId = (await response.json()).id as string
+  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph: graph(name, displayName) },
   })).ok()).toBeTruthy()
+  return workflowId
 }
 
 async function openWorkflow(page: Page, name: string, displayName: string): Promise<void> {
@@ -320,9 +322,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('edits a workflow node field binding in the Nodes panel', async ({ page }) => {
-    const name = workflowName('workflow_binding')
-    const displayName = `Workflow binding ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('workflow_binding')
+    const displayName = `Workflow binding ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const response = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: nestedInterfaceGraph(name, displayName) },
     })
@@ -342,9 +344,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('exposes and renames stable interface ports', async ({ page }) => {
-    const name = workflowName('interface')
-    const displayName = `Interface ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('interface')
+    const displayName = `Interface ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     await page.goto('/')
     await openWorkflow(page, name, displayName)
     await page.locator('.vue-flow__node[data-id="blur_1"]').click()
@@ -376,9 +378,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('groups a selected tool into an ordinary workflow node', async ({ page }) => {
-    const name = workflowName('group')
-    const displayName = `Group ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('group')
+    const displayName = `Group ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     await page.goto('/')
     await openWorkflow(page, name, displayName)
 
@@ -396,9 +398,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('groups connected nodes with stable ports as one durable undo transition @critical', async ({ page }) => {
-    const name = workflowName('group_routes')
-    const displayName = `Group routes ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('group_routes')
+    const displayName = `Group routes ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const fixture = groupingBoundaryGraph(name, displayName)
     const setup = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: fixture },
@@ -533,9 +535,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('publishes multiple DataFrames and compacts slots without changing surviving IDs or edges', async ({ page }) => {
-    const name = workflowName('dataframe_interface')
-    const displayName = `DataFrames ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('dataframe_interface')
+    const displayName = `DataFrames ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const initial = graph(name, displayName)
     initial.nodes = [{
       type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers',
@@ -668,9 +670,9 @@ test.describe('workflow interface and grouping', () => {
   })
 
   test('publishes an existing child DataFrame port through the parent interface', async ({ page }) => {
-    const name = workflowName('forward_dataframe')
-    const displayName = `Forward ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('forward_dataframe')
+    const displayName = `Forward ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     const child = graph('child', 'Child')
     child.nodes = [{ type: 'tool', id: 'increment', name: 'Increment', tool_name: 'IncrementNumbers', position: [180, 160], parameters: { number: 1 } }]
     child.interface.inputs.push({
@@ -2292,9 +2294,9 @@ test.describe('workflow interface and grouping', () => {
   test('deleting an exposed node removes its interface references before autosave', async ({
     page,
   }) => {
-    const name = workflowName('delete_exposed')
-    const displayName = `Delete exposed ${name}`
-    await createWorkflow(page, name, displayName)
+    const relativePath = workflowName('delete_exposed')
+    const displayName = `Delete exposed ${relativePath}`
+    const name = await createWorkflow(page, relativePath, displayName)
     expect((await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
       data: { graph: graphWithExposedOutput(name, displayName) },
     })).ok()).toBeTruthy()

@@ -1,5 +1,6 @@
 import { useAutoSave, type AutoSaveEntry } from '@/composables/useAutoSave'
 import { useWorkflowStore } from '@/stores/workflow'
+import type { WorkflowInfo } from '@/api/types'
 import {
   loadRootWorkflowPresentation,
   workflowInfoId,
@@ -21,18 +22,19 @@ function newestPersistedTimestamp(
 async function applyFreshRecovery(
   presentation: RootWorkflowPresentation,
   recovery: AutoSaveEntry | null,
-  savedModified: string | undefined,
+  info: WorkflowInfo | undefined,
 ): Promise<RootWorkflowPresentation> {
   if (recovery?.name !== presentation.workflowName) return presentation
-  const persistedTimestamp = newestPersistedTimestamp(presentation, savedModified)
+  if (!recovery.workspace_path || recovery.workspace_path !== info?.workspace_path
+    || recovery.identity_generation === undefined || recovery.identity_generation !== info.identity_generation) return presentation
+  const persistedTimestamp = newestPersistedTimestamp(presentation, info.last_modified)
   if (persistedTimestamp !== 0 && recovery.timestamp <= persistedTimestamp) {
     await useAutoSave().clearAutoSave(recovery.name)
     return presentation
   }
   // Older creation canvases used the workspace path as the definition name.
   // Restore that field from backend authority while retaining queued edits.
-  const recoveredGraph = recovery.graph.name === presentation.workflowName
-    && recovery.graph.name.includes('/')
+  const recoveredGraph = recovery.graph.name.includes('/')
     ? { ...recovery.graph, name: presentation.graph.name }
     : recovery.graph
   return {
@@ -49,7 +51,7 @@ export async function loadRootWorkflowForOpen(workflowName: string): Promise<Roo
     workflow => workflowInfoId(workflow) === workflowName,
   )
   const recovery = await useAutoSave().loadAutoSave(workflowName)
-  const result = await applyFreshRecovery(presentation, recovery, info?.last_modified)
+  const result = await applyFreshRecovery(presentation, recovery, info)
   useWorkflowStore().assertWorkflowIdentityCurrent(workflowName, presentation.identityGeneration)
   return result
 }
@@ -67,7 +69,8 @@ export async function resolveStartupWorkflow(
   const lastOpened = await autoSave.getLastOpenedWorkflow()
 
   if (recovery !== null && !knownIds.has(recovery.name)) {
-    await autoSave.clearAutoSave(recovery.name)
+    // A legacy path or missing UUID is not proof that recovery may be deleted.
+    // The recovery dialog retains it for explicit owner resolution.
     recovery = null
   }
   if (lastOpened !== null && !knownIds.has(lastOpened)) {
@@ -87,10 +90,9 @@ export async function resolveStartupWorkflow(
       const info = workflowStore.workflows.find(
         workflow => workflowInfoId(workflow) === workflowName,
       )
-      return applyFreshRecovery(presentation, recovery, info?.last_modified)
+      return applyFreshRecovery(presentation, recovery, info)
     } catch {
       if (recovery?.name === workflowName) {
-        await autoSave.clearAutoSave(workflowName)
         recovery = null
       }
       if (lastOpened === workflowName) {

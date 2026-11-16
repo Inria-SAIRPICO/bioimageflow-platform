@@ -29,6 +29,8 @@ Use exact tool names, input names, output names, and parameter names from MCP me
 Do not infer names from labels, filenames, or saved JSON.
 Use `list_workflows`, `get_workflow_info`, `create_workflow`, `duplicate_workflow`, `rename_workflow`, `delete_workflow`, and `set_active_workflow` for workspace workflow lifecycle tasks.
 `duplicate_workflow` copies the saved workflow and workflow-local tools, not unsaved active draft edits.
+Workflow identifiers are persistent UUIDs returned by lifecycle operations and listings; use `relative_path` for the filesystem location.
+MCP contract version 3 uses `path` for creation and `new_path` for duplicate/move destinations; moves preserve the workflow UUID.
 `delete_workflow` refuses to delete the active workflow; call `set_active_workflow` with another workflow first.
 Use `apply_workflow_operations` for small ordered batches of related graph edits.
 Use `get_execution_status` to inspect progress or the latest execution result after starting or stopping a run.

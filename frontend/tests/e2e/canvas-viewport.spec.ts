@@ -7,14 +7,17 @@ for (const extent of [0, 8000]) {
   test(`centers a ${extent ? 'large' : 'small'} workflow with a working folder grid @critical`, async ({ page }) => {
     await page.request.post(`${API_BASE}/api/v1/dev/seed`)
     const folder = `viewport_${Date.now()}`
-    const name = `${folder}/workflow`
+    const relativePath = `${folder}/workflow`
+    let name = ''
     expect((await page.request.post(`${API_BASE}/api/v1/workflows/folders`, {
       data: { path: folder },
     })).ok()).toBe(true)
     try {
-      expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
-        data: { name, display_name: 'Viewport test' },
-      })).ok()).toBe(true)
+      const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+        data: { name: relativePath, display_name: 'Viewport test' },
+      })
+      expect(created.ok(), await created.text()).toBe(true)
+      name = (await created.json()).id
       const nodes = [0, ...(extent ? [extent] : [])].map((x, index) => ({
         type: 'tool', id: `source_${index}`, name: `Source ${index}`, tool_name: 'SeedNumbers',
         parameters: {}, position: [x, 100], enabled: true, collapsed: false,

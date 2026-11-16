@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -24,10 +25,13 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
 def test_catalog_never_enumerates_saved_or_private_subtrees(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="Folder/Visible"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_28 = store.create_workflow(WorkflowCreate(name="Folder/Visible"))
+    identities[created_28.relative_path] = created_28.id
     store.create_folder("Empty/Sub")
-    visible = store.workflow_dir("Folder/Visible")
+    visible = store.workflow_dir(identities["Folder/Visible"])
     document = (visible / "workflow.json").read_bytes()
     broken = store.root_dir / "Folder/Broken"
     broken.mkdir()
@@ -59,13 +63,13 @@ def test_catalog_never_enumerates_saved_or_private_subtrees(
     result = getattr(store, operation)()
 
     if operation == "list_workflows":
-        assert [workflow.id for workflow in result] == ["Folder/Visible"]
+        assert [workflow.relative_path for workflow in result] == ["Folder/Visible"]
     elif operation == "workflow_tree":
         assert [folder.path for folder in result.folders] == ["Empty", "Folder"]
         assert [folder.path for folder in result.folders[0].folders] == ["Empty/Sub"]
         folder = result.folders[1]
         assert folder.folders == []
-        assert [workflow.id for workflow in folder.workflows] == ["Folder/Visible"]
+        assert [workflow.relative_path for workflow in folder.workflows] == ["Folder/Visible"]
     elif operation == "workflow_format_status":
         assert [(notice.workflow_id, notice.status) for notice in result.notices] == [
             ("Folder/Broken", "error")
@@ -84,41 +88,49 @@ def test_catalog_never_enumerates_saved_or_private_subtrees(
 
 
 def test_catalog_observes_external_changes_on_the_next_call(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="Initial"))
-    assert [workflow.id for workflow in store.list_workflows()] == ["Initial"]
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_88 = store.create_workflow(WorkflowCreate(name="Initial"))
+    identities[created_88.relative_path] = created_88.id
+    assert [workflow.relative_path for workflow in store.list_workflows()] == ["Initial"]
     assert store.workflow_tree().folders == []
     assert store.workflow_format_status().notices == []
-    source = (store.workflow_dir("Initial") / "workflow.json").read_bytes()
+    source = json.loads((store.workflow_dir(identities["Initial"]) / "workflow.json").read_text())
+    source["workflow_id"] = str(uuid4())
 
     added = store.root_dir / "Added/Nested"
     added.mkdir(parents=True)
-    (added / "workflow.json").write_bytes(source)
+    (added / "workflow.json").write_text(json.dumps(source))
     (store.root_dir / "ExternalEmpty/Child").mkdir(parents=True)
     invalid = store.root_dir / "Broken"
     invalid.mkdir()
     (invalid / "workflow.json").write_text("not json")
 
-    assert [workflow.id for workflow in store.list_workflows()] == ["Added/Nested", "Initial"]
+    assert [workflow.relative_path for workflow in store.list_workflows()] == ["Added/Nested", "Initial"]
     tree = store.workflow_tree()
     assert [folder.path for folder in tree.folders] == ["Added", "ExternalEmpty"]
-    assert [workflow.id for workflow in tree.folders[0].workflows] == ["Added/Nested"]
+    assert [workflow.relative_path for workflow in tree.folders[0].workflows] == ["Added/Nested"]
     assert tree.folders[1].folders[0].path == "ExternalEmpty/Child"
     assert [notice.workflow_id for notice in store.workflow_format_status().notices] == ["Broken"]
 
     (added / "workflow.json").unlink()
-    assert [workflow.id for workflow in store.list_workflows()] == ["Initial"]
+    assert [workflow.relative_path for workflow in store.list_workflows()] == ["Initial"]
     assert store.workflow_tree().folders[0].folders[0].path == "Added/Nested"
 
 
 def test_catalog_keeps_valid_folder_names_and_pending_migration_ownership(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="results/tools/runtime/Current"))
-    current_path = store.workflow_dir("results/tools/runtime/Current") / "workflow.json"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_116 = store.create_workflow(WorkflowCreate(name="results/tools/runtime/Current"))
+    identities[created_116.relative_path] = created_116.id
+    current_path = store.workflow_dir(identities["results/tools/runtime/Current"]) / "workflow.json"
     current = json.loads(current_path.read_text())
     pending = store.root_dir / "Folder/Pending"
     pending.mkdir(parents=True)
     legacy = json.loads(current_path.read_text())
+    legacy["workflow_id"] = str(uuid4())
     legacy["graph"]["schema_version"] = 1
     (pending / "workflow.json").write_text(json.dumps(legacy))
     nested = pending / "results/ShouldNotMigrate"
@@ -127,7 +139,7 @@ def test_catalog_keeps_valid_folder_names_and_pending_migration_ownership(tmp_pa
     nested_path.write_text(json.dumps(legacy))
     nested_before = nested_path.read_bytes()
 
-    assert [workflow.id for workflow in store.list_workflows()] == ["results/tools/runtime/Current"]
+    assert [workflow.relative_path for workflow in store.list_workflows()] == ["results/tools/runtime/Current"]
     status = store.workflow_format_status()
     assert status.pending_plan_id is not None
     assert [notice.workflow_id for notice in status.notices] == ["Folder/Pending"]
@@ -136,12 +148,15 @@ def test_catalog_keeps_valid_folder_names_and_pending_migration_ownership(tmp_pa
     assert store.workflow_tree().folders[1].path == "results"
 
 
-def test_catalog_does_not_follow_directory_links_but_keeps_file_link_authority(
+def test_catalog_does_not_follow_directory_links_and_reports_file_link_identity_conflict(
     tmp_path: Path,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="Folder/Actual"))
-    actual = store.workflow_dir("Folder/Actual")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_143 = store.create_workflow(WorkflowCreate(name="Folder/Actual"))
+    identities[created_143.relative_path] = created_143.id
+    actual = store.workflow_dir(identities["Folder/Actual"])
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "workflow.json").write_bytes((actual / "workflow.json").read_bytes())
@@ -152,10 +167,12 @@ def test_catalog_does_not_follow_directory_links_but_keeps_file_link_authority(
     linked_file.mkdir()
     (linked_file / "workflow.json").symlink_to(actual / "workflow.json")
 
-    assert [workflow.id for workflow in store.list_workflows()] == ["Folder/Actual", "LinkedFile"]
+    assert store.list_workflows() == []
     tree = store.workflow_tree()
     assert [folder.path for folder in tree.folders] == ["External", "Folder", "LinkedFolder"]
     assert tree.folders[0].workflows == tree.folders[0].folders == []
     assert tree.folders[2].workflows == tree.folders[2].folders == []
-    assert [workflow.id for workflow in tree.workflows] == ["LinkedFile"]
-    assert store.workflow_format_status().notices == []
+    assert tree.workflows == []
+    notices = store.workflow_format_status().notices
+    assert len(notices) == 2
+    assert all(notice.status == "error" and notice.workflow_id == identities["Folder/Actual"] for notice in notices)

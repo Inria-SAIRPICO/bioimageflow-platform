@@ -10,6 +10,8 @@ export interface AutoSaveEntry {
   name: string
   graph: GraphState
   timestamp: number
+  workspace_path?: string
+  identity_generation?: number
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -76,6 +78,9 @@ async function deleteAutoSaveEntry(name: string): Promise<void> {
 }
 
 export function useAutoSave() {
+  async function loadAutoSaves(): Promise<AutoSaveEntry[]> {
+    return withStore(WORKFLOW_STORE, 'readonly', store => requestResult<AutoSaveEntry[]>(store.getAll()))
+  }
   async function loadAutoSave(name: string): Promise<AutoSaveEntry | null> {
     try {
       return await withStore(WORKFLOW_STORE, 'readonly', (store) => (
@@ -157,6 +162,7 @@ export function useAutoSave() {
   }
 
   return {
+    loadAutoSaves,
     loadAutoSave,
     loadMostRecentAutoSave,
     clearAutoSave,

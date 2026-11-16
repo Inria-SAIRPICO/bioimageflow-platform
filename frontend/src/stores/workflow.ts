@@ -4,6 +4,7 @@ import { AxiosError } from 'axios'
 import { api } from '@/api/client'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useUIStore } from '@/stores/ui'
+import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import {
   canvasSessionRegistry,
@@ -131,6 +132,10 @@ function workflowId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfoWithTreeFields).id || workflow.name
 }
 
+export function workflowRelativePath(workflow: WorkflowInfo): string {
+  return workflow.relative_path
+}
+
 function childFolderPath(parentId: string | null, name: string): string {
   const trimmed = name.trim().replace(/^\/+|\/+$/g, '')
   return parentId ? `${parentId}/${trimmed}` : trimmed
@@ -162,6 +167,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const workflowFolderIds = ref<Record<string, string | null>>({})
   const workflowOrder = ref<string[]>([])
   const current = ref<WorkflowInfo | null>(null)
+  const selectedFolderId = ref<string | null>(null)
   const presentationPublication = shallowRef<WorkflowPresentationPublication | null>(null)
   let presentationSequence = 0
   const missingPackages = ref<MissingPackage[]>([])
@@ -169,6 +175,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const workflowIdentityGenerations = new Map<string, number>()
+  const identityMutationSequences = new Map<string, number>()
+  let identityMutationSequence = 0
   const workflowServerIdentityGenerations = new Map<string, number>()
   const workflowDeletionsInFlight = new Set<string>()
   const workflowRemovalPromises = new Map<string, Promise<void>>()
@@ -238,6 +246,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function invalidateWorkflowIdentity(name: string): number {
     const generation = workflowIdentityGeneration(name) + 1
     workflowIdentityGenerations.set(name, generation)
+    identityMutationSequences.set(name, ++identityMutationSequence)
     noteWorkflowStructuralEvent()
     return generation
   }
@@ -335,8 +344,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function workflowIdsInFolderPrefix(folderId: string): string[] {
     return workflows.value
-      .map((workflow) => workflowId(workflow))
-      .filter((id) => id === folderId || id.startsWith(`${folderId}/`))
+      .filter((workflow) => {
+        const path = workflowRelativePath(workflow)
+        return path === folderId || path.startsWith(`${folderId}/`)
+      })
+      .map(workflowId)
   }
 
   function assertWorkflowIdentitiesUnmounted(
@@ -358,7 +370,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function workflowUpdateIdentity(name: string, patch: WorkflowUpdate): string | null {
     if (patch.action !== 'update') return null
     if (patch.new_id !== null && patch.new_id !== undefined) return patch.new_id
-    const currentFolder = parentFolderPath(name)
+    if (patch.new_name == null && patch.folder == null) return null
+    const path = workflowByName.value.get(name)
+    const currentPath = path ? workflowRelativePath(path) : name
+    const currentFolder = parentFolderPath(currentPath)
     if (patch.new_name !== null && patch.new_name !== undefined) {
       const targetFolder = patch.folder !== null && patch.folder !== undefined
         ? patch.folder
@@ -367,7 +382,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       return targetFolder ? `${targetFolder}/${leaf}` : leaf
     }
     if (patch.folder !== null && patch.folder !== undefined) {
-      const leaf = folderLeafName(name)
+      const leaf = folderLeafName(currentPath)
       return patch.folder ? `${patch.folder}/${leaf}` : leaf
     }
     return null
@@ -390,56 +405,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  function assertWorkflowGenerationValues(captured: WorkflowIdentityCapture): void {
-    for (const [id, generation] of captured) {
-      if (workflowIdentityGeneration(id) !== generation) {
-        throw new WorkflowIdentityChangedError(id)
-      }
-    }
-  }
-
-  function invalidateWorkflowIdentities(workflowIds: Iterable<string>): WorkflowIdentityCapture {
-    const generations = new Map<string, number>()
-    for (const id of new Set(workflowIds)) {
-      if (!id) continue
-      generations.set(id, invalidateWorkflowIdentity(id))
-    }
-    return generations
-  }
-
   function assertWorkflowInfoIdentity(info: WorkflowInfo, expectedId: string): void {
     if (workflowId(info) !== expectedId || !acceptWorkflowInfoGeneration(info)) {
       throw new WorkflowIdentityChangedError(expectedId)
     }
-  }
-
-  function workflowPatchDestination(name: string, patch: WorkflowUpdate): string {
-    if (patch.action === 'duplicate') return patch.new_name ?? ''
-    return workflowUpdateIdentity(name, patch) ?? name
-  }
-
-  function importedWorkflowIdentity(file: File, nameOverride?: string): string {
-    if (nameOverride) return nameOverride
-    for (const suffix of ['.bioimageflow.zip', '.zip']) {
-      if (file.name.endsWith(suffix)) return file.name.slice(0, -suffix.length)
-    }
-    const extensionIndex = file.name.lastIndexOf('.')
-    return extensionIndex > 0 ? file.name.slice(0, extensionIndex) : file.name
-  }
-
-  function workflowIdentityMovesForFolder(
-    workflowIds: Iterable<string>,
-    oldPrefix: string,
-    newPrefix: string | null,
-  ): Array<readonly [string, string]> {
-    return [...workflowIds]
-      .map((id) => [id, remapWorkflowIdPrefix(id, oldPrefix, newPrefix)] as const)
-      .filter(([oldId, newId]) => oldId !== newId && newId.length > 0)
-  }
-
-  function forgetRetainedDrafts(workflowIds: Iterable<string>): void {
-    const drafts = useWorkflowDraftStore()
-    for (const id of workflowIds) drafts.forgetWorkflow(id)
   }
 
   function remapWorkflowIdPrefix(id: string, oldPrefix: string, newPrefix: string | null): string {
@@ -447,24 +416,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!id.startsWith(`${oldPrefix}/`)) return id
     const suffix = id.slice(oldPrefix.length + 1)
     return newPrefix ? `${newPrefix}/${suffix}` : suffix
-  }
-
-  async function renameAutoSavesForFolderMove(
-    oldPrefix: string,
-    newPrefix: string | null,
-  ): Promise<void> {
-    const moves = workflowIdsInFolderPrefix(oldPrefix)
-      .map((id) => [id, remapWorkflowIdPrefix(id, oldPrefix, newPrefix)] as const)
-      .filter(([oldId, newId]) => oldId !== newId && newId.length > 0)
-    await renameAutoSavesForIdentityMoves(moves)
-  }
-
-  async function renameAutoSavesForIdentityMoves(
-    moves: Array<readonly [string, string]>,
-  ): Promise<void> {
-    for (const [oldId, newId] of moves) {
-      await autoSave.renameWorkflow(oldId, newId)
-    }
   }
 
   function workflowsForFolder(folderId: string | null): WorkflowInfo[] {
@@ -535,6 +486,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       workflows.value[index] = info
     }
     const infoId = workflowId(info)
+    workflowFolderIds.value[infoId] = workflowFolderPath(info)
     if (previousName && previousName !== infoId) {
       const previousFolderId = workflowFolderIds.value[previousName]
       delete workflowFolderIds.value[previousName]
@@ -670,13 +622,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
     body: WorkflowCreate,
     canvasId?: CanvasId,
   ): Promise<WorkflowInfo> {
-    const requestedName = body.name.trim()
-    const requestedGeneration = captureWorkflowIdentity(requestedName)
+    const issuedAt = identityMutationSequence
+    const workspaceSelection = useSettingsStore().workspaceSelectionRevision
     try {
       const { data } = await api.post<WorkflowInfo>('/api/v1/workflows', body)
       const createdName = workflowId(data)
-      assertWorkflowIdentityCurrent(requestedName, requestedGeneration)
-      assertWorkflowInfoIdentity(data, requestedName)
+      if ((identityMutationSequences.get(createdName) ?? 0) > issuedAt) throw new WorkflowIdentityChangedError(createdName)
+      const expectedWorkspace = (body as WorkflowCreate & { expected_workspace_path?: string }).expected_workspace_path
+      if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection
+        || (expectedWorkspace && data.workspace_path && expectedWorkspace !== data.workspace_path)) {
+        throw new Error('The workflow was created in the original workspace. Switch back to that workspace to open it.')
+      }
+      if (!acceptWorkflowInfoGeneration(data)) throw new WorkflowIdentityChangedError(createdName)
       const identityGeneration = invalidateWorkflowIdentity(createdName)
       upsertWorkflow(data)
       setCurrent(data, canvasId, 'foreground')
@@ -1012,8 +969,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     file: File,
     options: { nameOverride?: string } = {},
   ): Promise<WorkflowImportResponse> {
-    const requestedName = importedWorkflowIdentity(file, options.nameOverride)
-    const requestedGeneration = captureWorkflowIdentity(requestedName)
+    const issuedAt = identityMutationSequence
     const body = new FormData()
     body.append('file', file)
     if (options.nameOverride) {
@@ -1024,13 +980,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
         '/api/v1/workflows/import',
         body,
       )
-      assertWorkflowIdentityCurrent(requestedName, requestedGeneration)
-      assertWorkflowInfoIdentity(data.info, requestedName)
-      const identityGeneration = invalidateWorkflowIdentity(requestedName)
+      const importedId = workflowId(data.info)
+      if ((identityMutationSequences.get(importedId) ?? 0) > issuedAt) throw new WorkflowIdentityChangedError(importedId)
+      if (!acceptWorkflowInfoGeneration(data.info)) throw new WorkflowIdentityChangedError(importedId)
+      const identityGeneration = invalidateWorkflowIdentity(importedId)
       upsertWorkflow(data.info)
       missingPackages.value = data.missing_packages ?? []
       missingTools.value = data.missing_tools ?? []
-      assertWorkflowIdentityCurrent(requestedName, identityGeneration)
+      assertWorkflowIdentityCurrent(importedId, identityGeneration)
       return data
     } catch (err: unknown) {
       const conflict = conflictFromError(err)
@@ -1044,50 +1001,43 @@ export const useWorkflowStore = defineStore('workflow', () => {
     patch: WorkflowUpdate,
     target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
-    const nextIdentity = workflowUpdateIdentity(name, patch)
-    if (nextIdentity !== null && nextIdentity !== name) {
-      assertWorkflowIdentitiesUnmounted([name])
-    }
-    const destination = workflowPatchDestination(name, patch)
-    const requestIdentities = captureWorkflowIdentities([name, destination])
-    try {
+    const ownerWorkspace = workflowByName.value.get(name)?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const requestIdentities = captureWorkflowIdentities([name])
+    const issuedAt = identityMutationSequence
+    const apply = async () => {
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         patch,
+        ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
       )
-      const dataId = workflowId(data)
       assertWorkflowIdentitiesCurrent(requestIdentities)
-      assertWorkflowInfoIdentity(data, destination)
-      const appliedIdentities = patch.action === 'duplicate'
-        ? invalidateWorkflowIdentities([dataId])
-        : dataId === name
-          ? requestIdentities
-          : invalidateWorkflowIdentities([name, dataId])
-      if (patch.action === 'update' && dataId !== name) {
-        forgetRetainedDrafts([name])
-        await autoSave.renameWorkflow(name, dataId)
-        assertWorkflowIdentitiesCurrent(appliedIdentities)
+      const dataId = workflowId(data)
+      if (patch.action === 'update') assertWorkflowInfoIdentity(data, name)
+      else {
+        if ((identityMutationSequences.get(dataId) ?? 0) > issuedAt) throw new WorkflowIdentityChangedError(dataId)
+        if (!acceptWorkflowInfoGeneration(data)) throw new WorkflowIdentityChangedError(dataId)
+        invalidateWorkflowIdentity(dataId)
       }
-      upsertWorkflow(data, patch.action === 'update' ? name : undefined)
+      upsertWorkflow(data)
       if (target === undefined) {
-        if (patch.action === 'update' && currentName.value === name) {
-          setCurrent(data)
-        }
+        if (patch.action === 'update' && currentName.value === name) setCurrent(data)
         return data
       }
-
-      if (uiStore.canvasWorkflowId(target.canvasId) !== target.workflowName) {
-        return data
-      }
+      if (uiStore.canvasWorkflowId(target.canvasId) !== target.workflowName) return data
       uiStore.setCanvasWorkflow(target.canvasId, dataId, data.display_name)
-      if (
-        canvasSessionRegistry.activeCanvasId.value === target.canvasId
-        && currentName.value === target.workflowName
-      ) {
+      if (canvasSessionRegistry.activeCanvasId.value === target.canvasId
+        && currentName.value === target.workflowName) {
         setCurrent(data)
         await autoSave.setLastOpenedWorkflow(dataId)
       }
       return data
+    }
+    try {
+      if (patch.action === 'update' && workflowUpdateIdentity(name, patch) !== null) {
+        const { withWorkflowMove } = await import('@/services/workflowMove')
+        return await withWorkflowMove([name], apply)
+      }
+      return await apply()
     } catch (err: unknown) {
       const conflict = conflictFromError(err)
       if (conflict) throw conflict
@@ -1167,31 +1117,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
     nextPath: string,
     previousWorkflowIds: string[],
   ): Promise<void> {
-    const identityMoves = workflowIdentityMovesForFolder(previousWorkflowIds, id, nextPath)
-    const requestIdentities = captureWorkflowIdentities([
-      ...previousWorkflowIds,
-      ...identityMoves.map(([, nextId]) => nextId),
-    ])
+    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
-    const { data } = await api.patch<WorkflowFolderResponse>(
-      `/api/v1/workflows/folders/${workflowUrl(id)}`,
-      { new_path: nextPath },
-    )
-    assertWorkflowIdentitiesCurrent(requestIdentities)
-    if (data.path !== nextPath) {
-      throw new WorkflowIdentityChangedError(previousWorkflowIds[0] ?? id)
-    }
-    const appliedIdentities = identityMoves.length === 0
-      ? requestIdentities
-      : invalidateWorkflowIdentities(identityMoves.flatMap(([oldId, newId]) => [oldId, newId]))
-    if (identityMoves.length > 0) forgetRetainedDrafts(previousWorkflowIds)
-    const nextCurrent = previousCurrent
-      ? remapWorkflowIdPrefix(previousCurrent, id, nextPath)
-      : null
-    await renameAutoSavesForIdentityMoves(identityMoves)
-    assertWorkflowIdentitiesCurrent(appliedIdentities)
-    await fetchWorkflowTree({ fresh: true })
-    if (nextCurrent) activateWorkflow(nextCurrent, undefined, 'passive')
+    const { withWorkflowMove } = await import('@/services/workflowMove')
+    await withWorkflowMove(previousWorkflowIds, async () => {
+      const { data } = await api.patch<WorkflowFolderResponse>(
+        `/api/v1/workflows/folders/${workflowUrl(id)}`,
+        { new_path: nextPath },
+        ...(ownerWorkspace ? [{ headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } }] : []),
+      )
+      assertWorkflowIdentitiesCurrent(requestIdentities)
+      if (data.path !== nextPath) throw new Error('The folder move returned a different destination.')
+      if (selectedFolderId.value) selectedFolderId.value = remapWorkflowIdPrefix(selectedFolderId.value, id, nextPath)
+      await fetchWorkflowTree({ fresh: true })
+      if (previousCurrent) activateWorkflow(previousCurrent, undefined, 'passive')
+    })
   }
 
   async function renameWorkflowFolder(id: string, name: string): Promise<void> {
@@ -1205,7 +1146,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const newPath = childFolderPath(workflowFolders.value[index].parentId, trimmed)
-    if (newPath !== id) assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     await applyWorkflowFolderIdentityMove(id, newPath, previousWorkflowIds)
   }
 
@@ -1213,55 +1153,30 @@ export const useWorkflowStore = defineStore('workflow', () => {
     id: string,
     policy: WorkflowFolderDeletePolicy = 'empty',
   ): Promise<void> {
-    const folder = workflowFolders.value.find((item) => item.id === id)
+    const folder = workflowFolders.value.find(item => item.id === id)
     if (!folder) return
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
-    if (policy !== 'empty') assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
-    const fencedWorkflowIds = policy === 'empty' ? [] : previousWorkflowIds
-    const identityMoves = policy === 'move_children_up'
-      ? workflowIdentityMovesForFolder(previousWorkflowIds, id, folder.parentId)
-      : []
-    const destinationIdentities = captureWorkflowIdentities(
-      identityMoves.map(([, destination]) => destination),
-    )
-    for (const workflowName of fencedWorkflowIds) {
-      if (isWorkflowDeletionInFlight(workflowName)) {
-        throw new Error(`Workflow '${workflowName}' is already completing a structural change.`)
-      }
-    }
-    const fencedIdentityGenerations = invalidateWorkflowIdentities(fencedWorkflowIds)
-    for (const workflowName of fencedWorkflowIds) workflowDeletionsInFlight.add(workflowName)
+    if (policy === 'delete_children') assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
+    const ownerWorkspace = workflows.value.find(workflow => previousWorkflowIds.includes(workflowId(workflow)))?.workspace_path ?? useSettingsStore().settings?.workspace_path
+    const requestIdentities = captureWorkflowIdentities(previousWorkflowIds)
     const previousCurrent = currentName.value
-    try {
-      await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, {
-        data: { policy },
-      })
-      assertWorkflowGenerationValues(fencedIdentityGenerations)
-      assertWorkflowIdentitiesCurrent(destinationIdentities)
-      if (policy !== 'empty') forgetRetainedDrafts(previousWorkflowIds)
+    const apply = async () => {
+      await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, { data: { policy }, ...(ownerWorkspace ? { headers: { 'X-BioImageFlow-Workspace': ownerWorkspace } } : {}) })
+      assertWorkflowIdentitiesCurrent(requestIdentities)
       if (policy === 'delete_children') {
+        for (const workflowId of previousWorkflowIds) invalidateWorkflowIdentity(workflowId)
+        const drafts = useWorkflowDraftStore()
+        for (const workflowId of previousWorkflowIds) drafts.forgetWorkflow(workflowId)
         await Promise.all(previousWorkflowIds.map(forgetDeletedWorkflow))
-        await fetchWorkflowTree({ fresh: true })
-        return
       }
-      const nextCurrent = previousCurrent
-        ? remapWorkflowIdPrefix(previousCurrent, id, folder.parentId)
-        : null
-      const appliedDestinations = invalidateWorkflowIdentities(
-        identityMoves.map(([, destination]) => destination),
-      )
-      await renameAutoSavesForIdentityMoves(identityMoves)
-      assertWorkflowGenerationValues(fencedIdentityGenerations)
-      assertWorkflowIdentitiesCurrent(appliedDestinations)
+      if (selectedFolderId.value) selectedFolderId.value = remapWorkflowIdPrefix(selectedFolderId.value, id, folder.parentId)
       await fetchWorkflowTree({ fresh: true })
-      if (nextCurrent) {
-        activateWorkflow(nextCurrent, undefined, 'passive')
-      }
-    } finally {
-      for (const workflowName of fencedWorkflowIds) {
-        workflowDeletionsInFlight.delete(workflowName)
-      }
+      if (previousCurrent && policy !== 'delete_children') activateWorkflow(previousCurrent, undefined, 'passive')
     }
+    if (policy === 'move_children_up') {
+      const { withWorkflowMove } = await import('@/services/workflowMove')
+      await withWorkflowMove(previousWorkflowIds, apply)
+    } else await apply()
   }
 
   async function moveWorkflowFolder(
@@ -1280,7 +1195,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const nextPath = childFolderPath(targetParentId, folderLeafName(id))
-    if (nextPath !== id) assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     await applyWorkflowFolderIdentityMove(id, nextPath, previousWorkflowIds)
   }
 
@@ -1288,32 +1202,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     name: string,
     folderId: string | null,
   ): Promise<string> {
-    const destination = workflowUpdateIdentity(name, {
-      action: 'update',
-      folder: folderId ?? '',
-    }) ?? name
-    const requestIdentities = captureWorkflowIdentities([name, destination])
-    const wasCurrent = currentName.value === name
-    const { data } = await api.patch<WorkflowInfo>(
-      `/api/v1/workflows/${workflowUrl(name)}`,
-      { action: 'update', folder: folderId ?? '' },
-    )
-    assertWorkflowIdentitiesCurrent(requestIdentities)
-    assertWorkflowInfoIdentity(data, destination)
-    const appliedIdentities = destination === name
-      ? requestIdentities
-      : invalidateWorkflowIdentities([name, destination])
-    if (destination !== name) {
-      forgetRetainedDrafts([name])
-      await autoSave.renameWorkflow(name, destination)
-      assertWorkflowIdentitiesCurrent(appliedIdentities)
-    }
-    upsertWorkflow(data, name)
-    if (wasCurrent) {
-      setCurrent(data)
-      await autoSave.setLastOpenedWorkflow(destination)
-    }
-    return destination
+    await patchWorkflow(name, { action: 'update', folder: folderId ?? '' })
+    return name
   }
 
   async function moveWorkflowToFolder(
@@ -1329,7 +1219,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const previousFolderId = workflowFolderId(name)
     if (previousFolderId !== folderId) {
-      assertWorkflowIdentitiesUnmounted([name])
       name = await applyWorkflowIdentityMove(name, folderId)
     }
     workflowFolderIds.value = {
@@ -1360,7 +1249,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const folderId = workflowFolderId(beforeName)
     const previousFolderId = workflowFolderId(name)
     if (previousFolderId !== folderId) {
-      assertWorkflowIdentitiesUnmounted([name])
       name = await applyWorkflowIdentityMove(name, folderId)
     }
     workflowFolderIds.value = {
@@ -1387,6 +1275,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     workflowTree,
     flattenedWorkflows,
     current,
+    selectedFolderId,
     currentName,
     presentationPublication: computed(() => presentationPublication.value),
     hasWorkflow,

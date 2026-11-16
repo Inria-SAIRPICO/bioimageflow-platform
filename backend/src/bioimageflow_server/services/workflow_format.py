@@ -8,6 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, cast
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
 
@@ -245,10 +246,18 @@ def _legacy_document(raw: dict[str, Any], workflow_id: str) -> WorkflowDocument:
         tool_metadata=_legacy_tool_metadata(raw),
     )
     return WorkflowDocument(
+        workflow_id=migrated_workflow_identity(raw, workflow_id),
         graph=converted,
         metadata=WorkspaceWorkflowMetadata(description=metadata.get("description")),
         artifact_hash=artifact_hash(converted, []),
     )
+
+
+def migrated_workflow_identity(raw: dict[str, Any], relative_path: str) -> str:
+    """Derive one repeatable preview identity from the exact old document."""
+    material = json.dumps(raw, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(material.encode()).hexdigest()
+    return str(uuid5(NAMESPACE_URL, f"bioimageflow:workflow:{relative_path}:{digest}"))
 
 
 def normalize_legacy_workflow_document(
@@ -259,6 +268,13 @@ def normalize_legacy_workflow_document(
     try:
         document = WorkflowDocument.model_validate(raw)
     except ValidationError:
+        if raw.get("platform_document_version") == 1:
+            document = WorkflowDocument.model_validate({
+                **raw,
+                "platform_document_version": 2,
+                "workflow_id": migrated_workflow_identity(raw, workflow_id),
+            })
+            return document, _document_tool_metadata(document)
         return _legacy_document(raw, workflow_id), _legacy_tool_metadata(raw)
     return document, _document_tool_metadata(document)
 

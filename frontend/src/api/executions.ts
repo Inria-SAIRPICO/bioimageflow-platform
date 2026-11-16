@@ -83,7 +83,7 @@ export interface ExecutionJobSnapshot {
 export interface ExecutionSnapshot {
   id: string
   revision: number
-  workflow_id: string
+  workflow_id: string | null
   workflow_name?: string | null
   draft_revision?: number | null
   target_id: string
@@ -186,6 +186,7 @@ export async function fetchExecutionTargets(): Promise<ExecutionTargets> {
 
 export async function preflightExecution(
   request: ManagedExecutionIntent,
+  workspacePath?: string,
 ): Promise<ExecutionPreflightResponse> {
   const choices: Record<string, Record<string, unknown>> = {}
   for (const resolution of request.node_path_resolutions ?? []) {
@@ -205,6 +206,7 @@ export async function preflightExecution(
   const { data } = await api.post<ExecutionPreflightWireResponse>(
     '/api/v1/execution/preflight',
     body,
+    ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
   )
   if (data.kind === 'resolution_required') {
     const unresolvedKeys = new Set(data.unresolved.flatMap((item) => {
@@ -262,7 +264,7 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
   return {
     id: data.execution_id,
     revision: data.revision,
-    workflow_id: data.workflow_id,
+    workflow_id: data.workflow_id ?? null,
     draft_revision: data.draft_revision,
     target_id: data.target_id,
     target_label: data.target_label,
@@ -311,6 +313,7 @@ export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSn
 export async function applyPreparedExecution(
   token: string,
   request: ManagedExecutionIntent,
+  workspacePath?: string,
 ): Promise<ExecutionSnapshot> {
   const body: ApplyPreparedExecutionWireRequest = {
     token,
@@ -322,6 +325,7 @@ export async function applyPreparedExecution(
   const { data } = await api.post<ExecutionPresentationWire>(
     '/api/v1/executions',
     body,
+    ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
   )
   return normalizeExecution(data)
 }

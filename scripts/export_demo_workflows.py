@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -250,6 +251,7 @@ def _render_definition(
 
     require_schema_v2(graph_payload)
     document = WorkflowDocument(
+        workflow_id=str(uuid5(NAMESPACE_URL, f"bioimageflow:demo:{definition.template_id}")),
         graph=graph,
         metadata=WorkspaceWorkflowMetadata(
             description=definition.description,

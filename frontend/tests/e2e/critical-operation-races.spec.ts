@@ -152,18 +152,17 @@ async function createWorkflow(
   name: string,
   displayName: string,
   graph: GraphState,
-): Promise<void> {
-  await page.request
-    .delete(`${API_BASE}/api/v1/workflows/${name}`)
-    .catch(() => undefined)
+): Promise<string> {
   const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name, display_name: displayName },
   })
   expect(created.status()).toBe(201)
-  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+  const workflowId = (await created.json()).id as string
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph: { ...graph, name, display_name: displayName } },
   })
   expect(saved.ok()).toBeTruthy()
+  return workflowId
 }
 
 async function openWorkflow(
@@ -299,15 +298,15 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('recovers a newer browser fallback after a refused root-draft write', { tag: '@critical' }, async ({ page }) => {
-    const workflowName = uniqueName('interrupted_draft_recovery')
-    const displayName = `Interrupted Draft Recovery ${workflowName}`
+    const workflowNamePath = uniqueName('interrupted_draft_recovery')
+    const displayName = `Interrupted Draft Recovery ${workflowNamePath}`
     const sourceId = 'recovery_seed'
     const targetId = 'recovery_increment'
-    await createWorkflow(
+    const workflowName = await createWorkflow(
       page,
-      workflowName,
+      workflowNamePath,
       displayName,
-      connectedDraftGraph(workflowName, displayName, sourceId, targetId, 1),
+      connectedDraftGraph(workflowNamePath, displayName, sourceId, targetId, 1),
     )
 
     try {
@@ -375,14 +374,14 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('Save keeps its initiating snapshot and canvas while a newer edit remains dirty', async ({ page }) => {
-    const firstName = uniqueName('save_race_a')
-    const secondName = uniqueName('save_race_b')
-    const firstDisplay = `Save Race A ${firstName}`
-    const secondDisplay = `Save Race B ${secondName}`
+    const firstNamePath = uniqueName('save_race_a')
+    const secondNamePath = uniqueName('save_race_b')
+    const firstDisplay = `Save Race A ${firstNamePath}`
+    const secondDisplay = `Save Race B ${secondNamePath}`
     const firstNode = 'blur_a'
     const secondNode = 'blur_b'
-    await createWorkflow(page, firstName, firstDisplay, gaussianGraph(firstNode, 1))
-    await createWorkflow(page, secondName, secondDisplay, gaussianGraph(secondNode, 9))
+    const firstName = await createWorkflow(page, firstNamePath, firstDisplay, gaussianGraph(firstNode, 1))
+    const secondName = await createWorkflow(page, secondNamePath, secondDisplay, gaussianGraph(secondNode, 9))
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
@@ -451,25 +450,25 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('recovers an accepted root draft and makes Cancel, conflict, and Discard lossless', { tag: '@critical' }, async ({ page }) => {
-    const workflowName = uniqueName('discard_recovery')
-    const displayName = `Discard Recovery ${workflowName}`
-    const siblingName = uniqueName('discard_recovery_sibling')
-    const siblingDisplay = `Discard Recovery Sibling ${siblingName}`
+    const workflowNamePath = uniqueName('discard_recovery')
+    const displayName = `Discard Recovery ${workflowNamePath}`
+    const siblingNamePath = uniqueName('discard_recovery_sibling')
+    const siblingDisplay = `Discard Recovery Sibling ${siblingNamePath}`
     const sourceId = 'recovery_seed'
     const targetId = 'recovery_increment'
     const siblingSourceId = 'sibling_seed'
     const siblingTargetId = 'sibling_increment'
-    await createWorkflow(
+    const workflowName = await createWorkflow(
       page,
-      workflowName,
+      workflowNamePath,
       displayName,
-      connectedDraftGraph(workflowName, displayName, sourceId, targetId, 1),
+      connectedDraftGraph(workflowNamePath, displayName, sourceId, targetId, 1),
     )
-    await createWorkflow(
+    const siblingName = await createWorkflow(
       page,
-      siblingName,
+      siblingNamePath,
       siblingDisplay,
-      connectedDraftGraph(siblingName, siblingDisplay, siblingSourceId, siblingTargetId, 9),
+      connectedDraftGraph(siblingNamePath, siblingDisplay, siblingSourceId, siblingTargetId, 9),
     )
 
     try {
@@ -644,10 +643,10 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('Run asks again when the accepted graph changes during confirmation', async ({ page }) => {
-    const workflowName = uniqueName('run_confirmation')
-    const displayName = `Run Confirmation ${workflowName}`
+    const workflowNamePath = uniqueName('run_confirmation')
+    const displayName = `Run Confirmation ${workflowNamePath}`
     const nodeId = 'blur_confirmation'
-    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+    const workflowName = await createWorkflow(page, workflowNamePath, displayName, gaussianGraph(nodeId, 1))
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
@@ -739,10 +738,10 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('delayed parameter persistence keeps node presentation stable and success quiet', async ({ page }) => {
-    const workflowName = uniqueName('parameter_feedback')
-    const displayName = `Parameter Feedback ${workflowName}`
+    const workflowNamePath = uniqueName('parameter_feedback')
+    const displayName = `Parameter Feedback ${workflowNamePath}`
     const nodeId = 'blur_parameter_feedback'
-    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+    const workflowName = await createWorkflow(page, workflowNamePath, displayName, gaussianGraph(nodeId, 1))
 
     let releaseDraftPut!: () => void
     const draftPutGate = new Promise<void>((resolve) => {
@@ -923,10 +922,10 @@ test.describe('critical operation race contracts', () => {
   })
 
   test('immediate Node Panel parameter edit is the exact accepted Run input', async ({ page }) => {
-    const workflowName = uniqueName('parameter_run')
-    const displayName = `Parameter Run ${workflowName}`
+    const workflowNamePath = uniqueName('parameter_run')
+    const displayName = `Parameter Run ${workflowNamePath}`
     const nodeId = 'blur_parameter_run'
-    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+    const workflowName = await createWorkflow(page, workflowNamePath, displayName, gaussianGraph(nodeId, 1))
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()

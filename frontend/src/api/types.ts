@@ -1090,6 +1090,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/identity-migrations/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Workflow Identity Migrations */
+        post: operations["acknowledge_workflow_identity_migrations_api_v1_workflows_identity_migrations_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/format-migrations/apply": {
         parameters: {
             query?: never;
@@ -2765,7 +2782,7 @@ export interface components {
             /** Execution Id */
             execution_id: string;
             /** Workflow Id */
-            workflow_id: string;
+            workflow_id?: string | null;
             /** Draft Revision */
             draft_revision?: number | null;
             /**
@@ -5317,6 +5334,10 @@ export interface components {
             display_name?: string | null;
             /** Description */
             description?: string | null;
+            /** Expected Workspace Path */
+            expected_workspace_path?: string | null;
+            /** Expected Parent Path */
+            expected_parent_path?: string | null;
         };
         /**
          * WorkflowDeleteResponse
@@ -5577,6 +5598,31 @@ export interface components {
             notices?: components["schemas"]["WorkflowFormatNotice"][];
             /** Pending Plan Id */
             pending_plan_id?: string | null;
+            /** Identity Migrations */
+            identity_migrations?: components["schemas"]["WorkflowIdentityMigration"][];
+            /** Identity Migration Id */
+            identity_migration_id?: string | null;
+            /** Workspace Path */
+            workspace_path?: string | null;
+        };
+        /**
+         * WorkflowIdentityMigration
+         * @description A migration-only receipt for recovering a former path-owned browser draft.
+         */
+        WorkflowIdentityMigration: {
+            /** Old Path */
+            old_path: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Workflow Id */
+            workflow_id: string;
+        };
+        /** WorkflowIdentityMigrationAck */
+        WorkflowIdentityMigrationAck: {
+            /** Migration Id */
+            migration_id: string;
+            /** Entries */
+            entries: components["schemas"]["WorkflowIdentityMigration"][];
         };
         /**
          * WorkflowImportResponse
@@ -5596,9 +5642,11 @@ export interface components {
          */
         WorkflowInfo: {
             /** Id */
-            id?: string | null;
+            id: string;
             /** Name */
             name: string;
+            /** Relative Path */
+            relative_path: string;
             /**
              * Folder
              * @default
@@ -6161,6 +6209,8 @@ export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate']
 export type WorkflowFormatMigrationApply = components['schemas']['WorkflowFormatMigrationApply'];
 export type WorkflowFormatNotice = components['schemas']['WorkflowFormatNotice'];
 export type WorkflowFormatStatus = components['schemas']['WorkflowFormatStatus'];
+export type WorkflowIdentityMigration = components['schemas']['WorkflowIdentityMigration'];
+export type WorkflowIdentityMigrationAck = components['schemas']['WorkflowIdentityMigrationAck'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
 export type WorkflowInput = components['schemas']['WorkflowInput'];
@@ -8574,6 +8624,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+        };
+    };
+    acknowledge_workflow_identity_migrations_api_v1_workflows_identity_migrations_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowIdentityMigrationAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

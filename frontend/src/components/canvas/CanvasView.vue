@@ -278,6 +278,7 @@ const graphSync = useGraphSync({
   getWorkflowId: owningWorkflowId,
   nestedSnapshot: initialNestedSession && props.nestedWorkflowSessionId
     ? {
+        workspacePath: workflowStore.workflows.find(info => (info.id ?? info.name) === ownedWorkflowName.value)?.workspace_path ?? undefined,
         initialSnapshot: nestedWorkflowSessionsStore.snapshotForSession(
           props.nestedWorkflowSessionId,
         ),
@@ -985,6 +986,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   const detail = (event as CustomEvent<{
     canvasId?: string
     draft?: WorkflowDraftResponse
+    dirty?: boolean
     handled?: boolean
     resolve?: () => void
     reject?: (error: unknown) => void
@@ -993,7 +995,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   detail.handled = true
   try {
     await applyGraphState(
-      detail.draft.graph, workflowStore.missingTools, false, true,
+      detail.draft.graph, workflowStore.missingTools, detail.dirty ?? false, true,
       rootMetadataAuthority(detail.draft),
     )
     detail.resolve?.()
@@ -2786,6 +2788,7 @@ function deleteNodes(nodeIds: string[]): boolean {
 async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   if (isLocked.value || isNestedWorkflowEditor || nodeIds.length === 0) return false
   const workflowName = currentWorkflowName()
+  const ownerWorkspace = canvasPersistence.workspacePath
   if (workflowName === null) return false
   const accepted = await flushNow()
   if (accepted === null || isLocked.value) return false
@@ -2794,7 +2797,9 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  const cleared = await executionStore.clear(requestedIds, workflowName, draftRevision)
+  const cleared = await executionStore.clear(
+    requestedIds, workflowName, draftRevision, ...(ownerWorkspace ? [ownerWorkspace] : []),
+  )
   if (validationResult.value !== null) {
     validationResult.value = validationAfterCacheClear(
       validationResult.value,
@@ -4306,7 +4311,9 @@ defineExpose({
         ? 'Saving workflow…'
         : lifecycleOperation === 'discarding'
           ? 'Restoring saved workflow…'
-          : 'Deleting workflow…' }}
+          : lifecycleOperation === 'moving'
+            ? 'Moving workflow…'
+            : 'Deleting workflow…' }}
     </div>
     <CanvasErrorBanner :validation-result="validationResult" />
     <CanvasPersistenceFeedback

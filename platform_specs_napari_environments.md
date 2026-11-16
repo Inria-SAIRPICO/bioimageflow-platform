@@ -400,7 +400,7 @@ Browser local storage may cache this state but is never its authority.
 Use these logical keys:
 
 ```text
-output key = (workspace identity, root workflow identity generation,
+output key = (workspace identity, root workflow UUID and identity generation,
               structural node-instance path,
               output field key or stable public output ID)
 
@@ -408,7 +408,7 @@ favorite: output key -> environment ID
 ```
 
 Use existing stable workspace identity where available, otherwise define a persisted local workspace identity as part of implementation; do not hash a mutable display name or raw workflow path as identity.
-Workflow path can be retained as a lookup/display index, with the generation guarding against delete-and-recreate collisions.
+Workflow UUID is the persistent owner; the path is display/location metadata only, and moves preserve both UUID and generation. Confirmed format migration remaps legacy path/generation keys without copying preferences to a new or ambiguous owner.
 Structural node paths use node IDs, never node labels or nesting positions.
 Tool output field names are schema identities until the library offers stable field IDs; a tool-field rename invalidates that preference.
 Public workflow output labels can change while their stable IDs preserve preferences.

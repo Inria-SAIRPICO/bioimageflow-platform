@@ -1,5 +1,10 @@
 # BioImageFlow Agent Instructions
 
+Workflow addresses are persistent UUIDs, distinct from the `relative_path` shown in listings.
+Use the UUID returned by creation or listing in later calls; UUIDs in the examples are illustrative.
+Creation takes `path`, while duplication and directory renaming take `new_path`; these destinations are workspace-relative filesystem paths.
+
+
 Use BioImageFlow MCP tools for workflow inspection, editing, validation, and execution.
 Do not use REST, shell requests, saved `workflow.json` edits, or raw graph replacement as agent workflow actions.
 
@@ -69,8 +74,8 @@ Workflow management:
 - `list_workflows`: returns the workspace workflow list.
 - `get_workflow_info`: returns metadata for one workflow, and optionally the full saved graph.
 - `create_workflow`: creates an empty workflow. Pass `set_active: true` when subsequent MCP calls should target it.
-- `duplicate_workflow`: copies the saved workflow and workflow-local tools to a new workflow id. Unsaved active draft edits are not copied. Pass `set_active: true` when subsequent MCP calls should target the copy.
-- `rename_workflow`: renames or moves one workflow to a new workflow id.
+- `duplicate_workflow`: copies the saved workflow and workflow-local tools to a new path with a fresh workflow UUID. Unsaved active draft edits are not copied. Pass `set_active: true` when subsequent MCP calls should target the copy.
+- `rename_workflow`: renames or moves the directory of one workflow while preserving its UUID.
 - `delete_workflow`: deletes one non-active workflow. `confirm_workflow_id` must exactly match `workflow_id`; call `set_active_workflow` with another workflow before deleting the current active workflow.
 - `set_active_workflow`: makes one workflow the active workflow for subsequent MCP calls by refreshing its draft context.
 
@@ -132,25 +137,25 @@ List workspace workflows:
 Create and activate a new workflow:
 
 ```json
-{"tool": "create_workflow", "arguments": {"workflow_id": "segmentation-demo", "display_name": "Segmentation Demo", "set_active": true}}
+{"tool": "create_workflow", "arguments": {"path": "segmentation-demo", "display_name": "Segmentation Demo", "set_active": true}}
 ```
 
 Duplicate and activate a workflow:
 
 ```json
-{"tool": "duplicate_workflow", "arguments": {"source_workflow_id": "segmentation-demo", "new_workflow_id": "segmentation-demo-copy", "display_name": "Segmentation Demo Copy", "set_active": true}}
+{"tool": "duplicate_workflow", "arguments": {"source_workflow_id": "f6d0fc20-6461-4a69-9265-09eb0c42e57b", "new_path": "segmentation-demo-copy", "display_name": "Segmentation Demo Copy", "set_active": true}}
 ```
 
 Rename or move a workflow:
 
 ```json
-{"tool": "rename_workflow", "arguments": {"workflow_id": "segmentation-demo-copy", "new_workflow_id": "examples/segmentation-demo-copy", "display_name": "Segmentation Demo Copy"}}
+{"tool": "rename_workflow", "arguments": {"workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893", "new_path": "examples/segmentation-demo-copy", "display_name": "Segmentation Demo Copy"}}
 ```
 
 Delete a workflow:
 
 ```json
-{"tool": "delete_workflow", "arguments": {"workflow_id": "examples/segmentation-demo-copy", "confirm_workflow_id": "examples/segmentation-demo-copy"}}
+{"tool": "delete_workflow", "arguments": {"workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893", "confirm_workflow_id": "12bbcf0e-d750-4c04-ac76-21c1625b8893"}}
 ```
 
 Create a node:

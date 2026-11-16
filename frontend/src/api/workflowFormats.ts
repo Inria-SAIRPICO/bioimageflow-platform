@@ -1,5 +1,9 @@
 import { api } from './client'
-import type { WorkflowFormatNotice, WorkflowFormatStatus } from './types'
+import type { WorkflowFormatNotice, WorkflowFormatStatus, WorkflowIdentityMigrationAck } from './types'
+
+export async function acknowledgeWorkflowIdentityMigrations(body: WorkflowIdentityMigrationAck): Promise<WorkflowFormatStatus> {
+  return (await api.post<WorkflowFormatStatus>('/api/v1/workflows/identity-migrations/ack', body)).data
+}
 
 export async function getWorkflowFormatStatus(): Promise<WorkflowFormatStatus> {
   const response = await api.get<WorkflowFormatStatus>('/api/v1/workflows/format-status')

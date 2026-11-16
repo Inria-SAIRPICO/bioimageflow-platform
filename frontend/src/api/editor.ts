@@ -214,6 +214,7 @@ export async function openNodeWithEditor(
   const workflowId = descriptor.kind === 'root' ? descriptor.workflowId
     : useNestedWorkflowSessionsStore().sessionById(descriptor.sessionId)?.parentWorkflowName
   if (!workflowId) throw new Error('Save the workflow before opening its tool script')
+  const workspacePath = workflow.workflows.find(info => info.id === workflowId)?.workspace_path
   const generation = workflow.workflowServerIdentityGeneration(workflowId)
   if (generation === null) throw new Error('The workflow identity is unavailable')
   const requestId = beginEditorOpenRequest()
@@ -240,6 +241,7 @@ export async function openNodeWithEditor(
     }
     const { data } = await api.post<components['schemas']['EditorOpenNodeResponse']>(
       '/api/v1/editor/open-node', body,
+      ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
     )
     if (data.snapshot) acceptNestedSourceEdit(data.snapshot)
     await handleEditorOpenResponse(data, null, requestId)

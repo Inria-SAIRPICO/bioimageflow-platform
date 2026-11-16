@@ -68,9 +68,13 @@ async function createWorkflowInGui(page: Page, displayName: string) {
   await openWorkflowItem(page, 'New')
   await expect(page.locator('[data-testid="workflow-dialog"]')).toBeVisible()
   await page.locator('[data-testid="workflow-display-name-input"]').fill(displayName)
+  const created = page.waitForResponse(response =>
+    response.url().endsWith('/api/v1/workflows') && response.request().method() === 'POST',
+  )
   await page.locator('[data-testid="workflow-dialog-submit"]').click()
   await expect(page.locator('[data-testid="workflow-dialog"]')).not.toBeVisible()
   await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
+  return (await (await created).json()).id as string
 }
 
 async function addSourceNode(page: Page, source: ToolMetadata, workflowName: string) {
@@ -284,10 +288,7 @@ test.describe('execution lifecycle', () => {
     page,
   }) => {
     const displayName = uniqueDisplayName('Execution Workflow')
-    const workflowName = deriveWorkflowId(displayName)
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
-
-    await createWorkflowInGui(page, displayName)
+    const workflowName = await createWorkflowInGui(page, displayName)
     const source = await sourceTool(page)
     const node = await addSourceNode(page, source, workflowName)
     const nodeId = await node.getAttribute('data-id')
@@ -332,10 +333,7 @@ test.describe('execution lifecycle', () => {
     page,
   }) => {
     const displayName = uniqueDisplayName('Selected Branch Workflow')
-    const workflowName = deriveWorkflowId(displayName)
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
-
-    await createWorkflowInGui(page, displayName)
+    const workflowName = await createWorkflowInGui(page, displayName)
     const draftRevision = await replaceWithSelectedRunFixture(page, workflowName, displayName)
 
     await expect(page.getByTestId('workflow-title')).toHaveText(displayName)

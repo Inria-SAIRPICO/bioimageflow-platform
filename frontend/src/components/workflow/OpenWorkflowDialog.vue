@@ -4,6 +4,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import type { WorkflowInfo } from '@/api/types'
+import { workflowRelativePath } from '@/stores/workflow'
 
 const props = defineProps<{
   visible: boolean
@@ -27,7 +28,7 @@ const filteredWorkflows = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.workflows
   return props.workflows.filter((workflow) => (
-    workflowId(workflow).toLowerCase().includes(q)
+    workflowRelativePath(workflow).toLowerCase().includes(q)
     || workflow.display_name.toLowerCase().includes(q)
     || (workflow.description ?? '').toLowerCase().includes(q)
   ))
@@ -87,7 +88,7 @@ function onOpen() {
         @dblclick="emit('open', workflowId(workflow))"
       >
         <span class="workflow-card__name">{{ workflow.display_name }}</span>
-        <span class="workflow-card__path">{{ workflowId(workflow) }}</span>
+        <span class="workflow-card__path">{{ workflowRelativePath(workflow) }}</span>
         <span v-if="workflow.description" class="workflow-card__description">
           {{ workflow.description }}
         </span>

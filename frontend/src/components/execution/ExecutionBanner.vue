@@ -217,6 +217,7 @@ defineExpose({ mode, isVisible })
           Open Execution
         </button>
       </div>
+      <p v-if="exec.storageError" role="alert" data-testid="execution-storage-error">{{ exec.storageError }}</p>
       <div
         v-if="totalNodes > 0 && (mode === 'running' || mode === 'stopping' || mode === 'success' || mode === 'failure' || mode === 'stopped')"
         class="execution-banner__progress"

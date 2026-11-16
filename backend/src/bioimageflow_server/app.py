@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager, nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -126,6 +127,7 @@ from bioimageflow_server.routers.tools import (
 from bioimageflow_server.routers.workflows import (
     get_connection_manager as workflows_get_connection_manager,
     get_execution_manager as workflows_get_execution_manager,
+    get_execution_registry as workflows_get_execution_registry,
     get_workflow_store as workflows_get_workflow_store,
     get_workflow_source_service,
     get_viewer_preference_store as workflows_get_viewer_preference_store,
@@ -164,6 +166,9 @@ from bioimageflow_server.services.distributed_execution_integration import (
 )
 from bioimageflow_server.services.execution_preflight import PreparedSubmissionTokenManager
 from bioimageflow_server.services.execution_registry import ExecutionRegistry
+from bioimageflow_server.services.workflow_identity_migration import (
+    workflow_identity_reference_artifacts,
+)
 from bioimageflow_server.services.execution_runtime import (
     ExecutionCoordinator,
     open_public_submitted_run,
@@ -192,6 +197,7 @@ from bioimageflow_server.services.tool_environments import ToolEnvironmentServic
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import (
+    WorkflowIdentityConflictError,
     WorkflowMoveRecoveryError,
     WorkflowStoreService,
 )
@@ -363,6 +369,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         workspace_path=config.workspace_path,
         workspaces_root=config.workspaces_root,
         user_id=config.user_id,
+        workflow_root=(
+            config.workflow_store.root_dir
+            if config.workflow_store is not None
+            else config.workflow_root
+        ),
     )
     workspace_path = workspace_service.workspace_path()
     stateless_storage_path = normalize_workflow_storage_path(
@@ -380,7 +391,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
         new_workflow_execution=lambda: _live_settings().new_workflow_execution,
     )
+
+    def _configure_workflow_identity_migration(store: WorkflowStoreService) -> None:
+        preferences_path = (
+            viewer_preference_store.path if viewer_preference_store is not None else None
+        )
+        store.configure_identity_migration_artifacts(
+            lambda identities: workflow_identity_reference_artifacts(
+                store.workspace_dir,
+                identities,
+                viewer_preferences_path=preferences_path,
+            ),
+            {"viewer_preferences": preferences_path} if preferences_path is not None else {},
+        )
+
+    _configure_workflow_identity_migration(workflow_store)
     workflow_store_cache: dict[str, WorkflowStoreService] = {str(workflow_root): workflow_store}
+    request_workflow_store: ContextVar[WorkflowStoreService | None] = ContextVar(
+        "bioimageflow_request_workflow_store", default=None,
+    )
     workflow_store_initializer: Callable[[WorkflowStoreService], None] | None = None
 
     def _register_workflow_custom_tools(store: WorkflowStoreService) -> None:
@@ -406,6 +435,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return live_storage_path
 
     def _current_workflow_store() -> WorkflowStoreService:
+        bound = request_workflow_store.get()
+        if bound is not None:
+            return bound
         if config.workflow_store is not None:
             return workflow_store
         current_root = _current_workflow_root()
@@ -417,6 +449,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 tool_registry=registry,
                 new_workflow_execution=lambda: _live_settings().new_workflow_execution,
             )
+            _configure_workflow_identity_migration(cached)
             workflow_store_cache[cache_key] = cached
             try:
                 if workflow_store_initializer is not None:
@@ -885,6 +918,30 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 return _workflow_move_recovery_response(exc)
             return await call_next(request)
 
+    @app.middleware("http")
+    async def bind_workflow_request_owner(request: Request, call_next: Any) -> Any:
+        if not request.url.path.startswith("/api/v1/"):
+            return await call_next(request)
+        try:
+            selected_store = _current_workflow_store()
+        except WorkflowMoveRecoveryError as exc:
+            return _workflow_move_recovery_response(exc)
+        expected_workspace = request.headers.get("X-BioImageFlow-Workspace")
+        if expected_workspace is not None and (
+            Path(expected_workspace).expanduser().resolve(strict=False)
+            != selected_store.workspace_dir.resolve(strict=False)
+        ):
+            body = ErrorResponse(
+                error="workflow_workspace_conflict",
+                detail="The workflow operation belongs to a different workspace.",
+            )
+            return JSONResponse(status_code=409, content=body.model_dump())
+        token = request_workflow_store.set(selected_store)
+        try:
+            return await call_next(request)
+        finally:
+            request_workflow_store.reset(token)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -940,6 +997,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                         "detail": str(exc),
                     },
                 ),
+            ),
+        )
+
+    @app.exception_handler(WorkflowIdentityConflictError)
+    async def workflow_identity_conflict_exception_handler(
+        request: Request,
+        exc: WorkflowIdentityConflictError,
+    ) -> JSONResponse:
+        return await http_exception_handler(
+            request,
+            HTTPException(
+                status_code=409,
+                detail={"error": "workflow_identity_conflict", "detail": str(exc)},
             ),
         )
 
@@ -1052,6 +1122,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[workflows_get_execution_registry] = lambda: distributed_registry
     app.dependency_overrides[workflows_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[get_demo_workflow_service] = lambda: DemoWorkflowService(

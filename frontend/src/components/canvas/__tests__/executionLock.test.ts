@@ -311,6 +311,8 @@ describe('CanvasView execution lock', () => {
     vi.mocked(api.put).mockReset()
     mockedApi.post.mockResolvedValue({
       data: {
+        id: 'untitled',
+        relative_path: 'untitled',
         name: 'untitled',
         display_name: 'Untitled',
         path: '/tmp/untitled.json',

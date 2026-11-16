@@ -172,6 +172,24 @@ describe('application shell startup ownership', () => {
     expect(dock.addPanel.mock.calls.filter(([options]) => options.id === 'workflow:analysis')).toHaveLength(1)
   })
 
+  it('preserves accepted Create presentation when an older startup finishes before its graph loads', async () => {
+    const loading = deferred<RootWorkflowPresentation>()
+    startup.resolve.mockReturnValueOnce(loading.promise)
+    const { dock } = mountShell()
+    window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', { detail: { cause: 'create' } }))
+    loading.resolve(presentation())
+    await flushPromises()
+    expect(dock.panels.has('workflow:analysis')).toBe(false)
+    const id = '8851bdb9-bc35-4725-a14a-a98a75d4bf28'
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail: {
+      ...presentation(), graph: makeGraph({ name: 'created' }), workflowName: id, workflowDisplayName: 'Created workflow',
+    } }))
+    await flushPromises()
+    expect(dock.panels.has(`workflow:${id}`)).toBe(true)
+    expect(dock.active()?.id).toBe(`workflow:${id}`)
+    expect(dock.panels.has('workflow:analysis')).toBe(false)
+  })
+
   it('does not reactivate a root after explicit Open and child/dock activation', async () => {
     const loading = deferred<RootWorkflowPresentation>()
     startup.resolve.mockReturnValueOnce(loading.promise)

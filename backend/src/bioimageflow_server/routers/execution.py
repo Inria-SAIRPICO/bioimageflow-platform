@@ -36,6 +36,7 @@ from bioimageflow_server.services.execution import (
     ExecutionRetryError,
     OutputTemplateCorrectionUnavailable,
     WorkflowBuildError,
+    WorkflowStorageUnavailableError,
     NodeCacheClearPlan,
     commit_node_cache_clear,
     prepare_node_cache_clear,
@@ -195,6 +196,7 @@ async def run_execution(
                     )
             while True:
                 attempt_context = runtime_context
+                directory_identity = _runtime_directory_identity(attempt_context.storage_path)
 
                 async def ensure_context_current() -> None:
                     await run_graph_work(
@@ -244,6 +246,13 @@ async def run_execution(
                         ensure_context_current=ensure_context_current,
                         reserved_context=reserved_context,
                         workflow_generation=attempt_context.identity_generation,
+                        ensure_storage_current=partial(
+                            _ensure_run_storage_context,
+                            workflow_store,
+                            body.workflow_id,
+                            attempt_context,
+                            directory_identity,
+                        ),
                     )
                     return {"status": "started", **context.model_dump()}
                 except _RunWorkflowContextChanged:
@@ -513,6 +522,37 @@ def _refresh_workflow_runtime_context(
                 fallback_storage_path,
             ),
         )
+
+
+def _runtime_directory_identity(storage_path: Path | None) -> tuple[int, int] | None:
+    if storage_path is None:
+        return None
+    stat = storage_path.parent.stat()
+    return stat.st_dev, stat.st_ino
+
+
+def _ensure_run_storage_context(
+    store: WorkflowStoreService,
+    workflow_id: str,
+    expected: _WorkflowRuntimeContext,
+    directory_identity: tuple[int, int] | None,
+) -> None:
+    """Check captured storage without retargeting an admitted running engine."""
+
+    try:
+        with store.workflow_mutation(workflow_id):
+            store.ensure_workflow_generation(workflow_id, expected.identity_generation)
+            current = store.get_storage_path(workflow_id)
+            if current != expected.storage_path or _runtime_directory_identity(current) != directory_identity:
+                raise WorkflowStorageUnavailableError(
+                    "Workflow storage moved or was replaced during execution. "
+                    "The running engine retains its original storage location."
+                )
+    except (OSError, ValueError) as exc:
+        raise WorkflowStorageUnavailableError(
+            "Workflow storage is unavailable during execution; restore the original "
+            "directory before retrying."
+        ) from exc
 
 
 def _commit_clear_workflow_context(

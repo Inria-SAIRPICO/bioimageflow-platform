@@ -72,3 +72,16 @@ def test_webapp_workspace_cannot_be_changed_by_user(tmp_path: Path) -> None:
 
     with pytest.raises(WorkspacePermissionError):
         service.update_workspace_path(str(tmp_path / "other"))
+
+
+def test_explicit_workflow_root_defines_the_reported_workspace_authority(tmp_path: Path) -> None:
+    service = WorkspaceService(
+        settings=Settings(deployment_mode="desktop"), deployment_mode="desktop",
+        workspace_path=tmp_path / "other-workspace", workflow_root=tmp_path / "actual" / "workflows",
+    )
+    info = service.info()
+    assert info.workspace_path == str(tmp_path / "actual")
+    assert info.workflows_root == str(tmp_path / "actual" / "workflows")
+    assert info.user_editable is False
+    with pytest.raises(WorkspacePermissionError, match="fixed"):
+        service.update_workspace_path(str(tmp_path / "replacement"))

@@ -101,7 +101,8 @@ class DemoWorkflowService:
                 status="missing",
             )
         try:
-            document = self.store.read_workflow_document(template.workflow_id)
+            workflow_id = self.store.workflow_id_at_path(template.workflow_id)
+            document = self.store.read_workflow_document(workflow_id)
         except (FileNotFoundError, OSError, ValueError):
             return DemoWorkflowStatus(
                 id=template.id,
@@ -122,11 +123,11 @@ class DemoWorkflowService:
         return DemoWorkflowStatus(
             id=template.id,
             version=template.version,
-            workflow_id=template.workflow_id,
+            workflow_id=workflow_id,
             display_name=display_name,
             status="installed",
             installed_version=provenance.version,
-            identity_generation=self.store.workflow_generation(template.workflow_id),
+            identity_generation=self.store.workflow_generation(workflow_id),
         )
 
     def status(self) -> DemoWorkflowsStatus:

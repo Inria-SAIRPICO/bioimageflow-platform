@@ -242,6 +242,7 @@ async function runDistributed(
   command: ExecutionCommand,
   workflowId: string,
   draftRevision: number | null,
+  workspacePath?: string,
 ): Promise<boolean> {
   if (command.kind !== 'workflow' && command.kind !== 'selected') {
     throw new Error('Retry and recompute are not available for distributed targets yet')
@@ -260,14 +261,14 @@ async function runDistributed(
     profile_revision: profileRevision,
     command: preflightCommand(command),
   }
-  let response = await preflightExecution(baseRequest)
+  let response = await preflightExecution(baseRequest, workspacePath)
   if (response.status === 'resolution_required') {
     const resolutions = await requestRemoteResolution(response.unresolved_paths)
     if (resolutions === null) return false
     response = await preflightExecution({
       ...baseRequest,
       node_path_resolutions: resolutions,
-    })
+    }, workspacePath)
   }
   if (response.status !== 'ready') {
     throw new Error('Remote data resolution is incomplete')
@@ -275,7 +276,7 @@ async function runDistributed(
   remoteDialogBusy.value = true
   try {
     try {
-      const snapshot = await applyPreparedExecution(response.token, baseRequest)
+      const snapshot = await applyPreparedExecution(response.token, baseRequest, workspacePath)
       executionRegistry.applySnapshot(snapshot, true)
       remoteDialogVisible.value = false
       return true
@@ -308,6 +309,7 @@ async function runCore(command: ExecutionCommand) {
   if (exec.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const targetCanvasId = canvasPersistence.canvasId
   const workflowName = activeWorkflowId.value
+  const ownerWorkspace = canvasPersistence.workspacePath
   if (!workflowName) return
   const isTargetActive = () => canvasPersistence.canvasId === targetCanvasId
     && activeWorkflowId.value === workflowName
@@ -358,6 +360,7 @@ async function runCore(command: ExecutionCommand) {
           command,
           workflowName,
           preparedDraftRevision,
+          ownerWorkspace,
         )
         if (started && isTargetActive()) emit('run-started')
         return
@@ -367,6 +370,7 @@ async function runCore(command: ExecutionCommand) {
         ...(command.kind === 'selected' ? { nodes: command.nodes } : {}),
         validationResult: preparedValidation,
         workflowName,
+        ...(ownerWorkspace ? { workspacePath: ownerWorkspace } : {}),
         mode: commandMode(command),
         ...(
           command.kind === 'retry' || command.kind === 'invalidate_failed'

@@ -160,14 +160,15 @@ def worker(config: dict[str, Any], *, count_only: bool = False) -> dict[str, Any
         from bioimageflow_server.services.workflow_store import WorkflowStoreService
         imports_seconds = time.perf_counter() - import_started
         document = json.loads((target / "workflow.json").read_text())
+        workflow_id = document["workflow_id"]
         draft_path = target / ".bioimageflow" / "draft.json"
         if draft_path.exists():
             draft = json.loads(draft_path.read_text())
-            draft["workflow_id"] = "benchmark"
+            draft["workflow_id"] = workflow_id
             draft_origin = "copied"
         else:
             draft = {
-                "workflow_id": "benchmark", "base_saved_revision": document["artifact_hash"],
+                "workflow_id": workflow_id, "base_saved_revision": document["artifact_hash"],
                 "draft_revision": 0, "updated_at": "2020-01-01T00:00:00Z",
                 "updated_by": "system", "dirty_against_saved": False,
                 "graph": document["graph"], "validation": {"valid": True},
@@ -199,8 +200,8 @@ def worker(config: dict[str, Any], *, count_only: bool = False) -> dict[str, Any
         for index in range(2 if count_only else config["warm_operations"] + 1):
             sample: dict[str, Any] = {"temperature": "cold" if index == 0 else "warm"}
             operations = {
-                "saved_load": lambda: store.get_workflow("benchmark"),
-                "projected_draft": lambda: drafts._read_projected_draft(store, "benchmark"),
+                "saved_load": lambda: store.get_workflow(workflow_id),
+                "projected_draft": lambda: drafts._read_projected_draft(store, workflow_id),
                 "compile": lambda: compiler.compile(graph, storage_path=target / "results"),
                 "validation_plan": lambda: validator.validation_from_compilation(graph, compiled),
             }

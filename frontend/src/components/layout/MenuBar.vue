@@ -26,7 +26,7 @@ import {
   useCanvasPersistence,
 } from '@/composables/useCanvasPersistence'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
-import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
+import { useWorkflowStore, workflowRelativePath, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
 import { useNapariStore, SupersededViewingReadinessError } from '@/stores/napari'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
@@ -45,6 +45,7 @@ import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue
 import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
+import WorkflowRecoveryDialog from '@/components/workflow/WorkflowRecoveryDialog.vue'
 import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
 import ViewingRequirementsGuidance from '@/components/workflow/ViewingRequirementsGuidance.vue'
 import type { GraphState, MissingTool, NapariViewingRequirementGroup, ViewingRequirementsManifestInput, WorkflowInfo } from '@/api/types'
@@ -127,6 +128,14 @@ const workflowDialogInitialDisplayName = ref('')
 const workflowDialogInitialDescription = ref<string | null>(null)
 const workflowDialogSuggestedName = ref<string | null>(null)
 const workflowDialogFolderId = ref<string | null>(null)
+const workflowCreationTarget = ref<{ folderId: string | null; workspacePath: string; workspaceSelection: number } | null>(null)
+const workflowCreationBusy = ref(false)
+const workflowCreationWorkspace = ref<string | null>(null)
+let workflowCreationWorkspaceRead = 0
+const workflowCreationFolder = computed(() => workflowCreationTarget.value
+  ? workflowCreationTarget.value.folderId
+  : workflowStore.selectedFolderId)
+const workflowCreationDestination = computed(() => workflowCreationFolder.value || 'Workflows root')
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
 const deleteTargetName = ref<string | null>(null)
@@ -403,19 +412,46 @@ watch(
 )
 
 function workflowNameInDialogFolder(name: string): string {
-  if (!workflowDialogFolderId.value || name.includes('/')) return name
-  return `${workflowDialogFolderId.value}/${name}`
+  const folderId = workflowDialogMode.value === 'new'
+    ? workflowCreationFolder.value
+    : workflowDialogFolderId.value
+  if (!folderId || name.includes('/')) return name
+  return `${folderId}/${name}`
 }
 
-function createNewWorkflow(folderId: string | null = null): void {
+async function refreshCreationWorkspace(): Promise<void> {
+  const request = ++workflowCreationWorkspaceRead
+  const expectedSelection = settingsStore.workspaceSelectionRevision
+  workflowCreationWorkspace.value = null
+  try {
+    const { data } = await api.get<{ workspace_path: string }>('/api/v1/workspace')
+    if (request !== workflowCreationWorkspaceRead || !workflowDialogVisible.value
+      || workflowDialogMode.value !== 'new' || workflowCreationTarget.value) return
+    if (settingsStore.workspaceSelectionRevision !== expectedSelection) return
+    workflowCreationWorkspace.value = data.workspace_path
+  } catch (error) {
+    if (request === workflowCreationWorkspaceRead) showError('Workspace could not be loaded', error)
+  }
+}
+
+watch(() => settingsStore.workspaceSelectionRevision, () => {
+  if (workflowDialogVisible.value && workflowDialogMode.value === 'new' && !workflowCreationTarget.value) {
+    void refreshCreationWorkspace()
+  }
+})
+
+function createNewWorkflow(folderId?: string | null): void {
   if (executionStore.isMutationLocked) return
-  workflowDialogFolderId.value = folderId
+  if (folderId !== undefined) workflowStore.selectedFolderId = folderId
+  workflowCreationTarget.value = null
+  workflowDialogFolderId.value = null
   workflowDialogMode.value = 'new'
   workflowDialogInitialName.value = 'Untitled'
   workflowDialogInitialDisplayName.value = 'Untitled'
   workflowDialogInitialDescription.value = null
   workflowDialogSuggestedName.value = null
   workflowDialogVisible.value = true
+  void refreshCreationWorkspace()
 }
 
 async function onWorkflowDialogSubmit(payload: {
@@ -424,17 +460,36 @@ async function onWorkflowDialogSubmit(payload: {
   description: string | null
 }): Promise<void> {
   if (executionStore.isMutationLocked) return
+  if (workflowCreationBusy.value) return
   try {
     if (workflowDialogMode.value === 'new') {
-      const info = await workflowStore.createWorkflow({
-        ...payload,
-        name: workflowNameInDialogFolder(payload.name),
-      })
+      if (!workflowCreationTarget.value) {
+        const workspacePath = workflowCreationWorkspace.value
+        if (!workspacePath) throw new Error('The workspace is still loading. Try creating the workflow again when it is ready.')
+        workflowCreationTarget.value = { folderId: workflowStore.selectedFolderId, workspacePath, workspaceSelection: settingsStore.workspaceSelectionRevision }
+      }
+      workflowCreationBusy.value = true
+      const target = workflowCreationTarget.value
+      const request = {
+        ...payload, name: workflowNameInDialogFolder(payload.name),
+        expected_workspace_path: target.workspacePath,
+        expected_parent_path: target.folderId ?? '',
+      }
+      const intent = beginViewingIntent()
+      window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', {
+        detail: { cause: 'create' },
+      }))
+      const info = await workflowStore.createWorkflow(request)
+      if (settingsStore.workspaceSelectionRevision !== target.workspaceSelection) {
+        throw new Error('The workflow was created in the original workspace. Open that workspace to continue editing it.')
+      }
       const loaded = await loadRootWorkflowPresentation(workflowId(info))
+      if (executionStore.isMutationLocked || !viewingIntentCurrent(intent)) return
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       workflowDialogFolderId.value = null
       applyGraph(loaded.graph, loaded.dirty, loaded)
+      workflowCreationTarget.value = null
       return
     }
 
@@ -466,6 +521,8 @@ async function onWorkflowDialogSubmit(payload: {
       return
     }
     showError('Workflow action failed', err)
+  } finally {
+    workflowCreationBusy.value = false
   }
 }
 
@@ -882,7 +939,7 @@ function saveWorkflowAs(): void {
   if (!target.workflowName || target.canvasId === null) return
   workflowDialogFolderId.value = null
   workflowDialogMode.value = 'save-as'
-  const baseName = target.workflowName
+  const baseName = activeWorkflow.value ? workflowRelativePath(activeWorkflow.value) : target.workflowName
   workflowDialogInitialName.value = `${baseName}_copy`
   workflowDialogInitialDisplayName.value = `${uiStore.activeWorkflowName ?? baseName} copy`
   workflowDialogInitialDescription.value = activeWorkflow.value?.description ?? null
@@ -903,7 +960,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
   try {
     const info = await workflowStore.patchWorkflow(name, {
       action: 'duplicate',
-      new_name: `${name}_copy`,
+      new_name: `${source ? workflowRelativePath(source) : name}_copy`,
       display_name: displayName,
       description: source?.description ?? null,
     })
@@ -1095,7 +1152,7 @@ function onWorkflowPanelCommand(event: Event): void {
   }
   if (executionStore.isMutationLocked) return
   if (action === 'new') {
-    createNewWorkflow(detail.folderId ?? null)
+    createNewWorkflow(detail.folderId)
   } else if (action === 'save') {
     void saveWorkflow()
   } else if (action === 'import') {
@@ -1357,8 +1414,12 @@ defineExpose({
     :initial-display-name="workflowDialogInitialDisplayName"
     :initial-description="workflowDialogInitialDescription"
     :suggested-name="workflowDialogSuggestedName"
+    :destination="workflowDialogMode === 'new' ? workflowCreationDestination : undefined"
+    :busy="workflowCreationBusy"
+    :submit-disabled="workflowDialogMode === 'new' && !workflowCreationWorkspace"
     @submit="onWorkflowDialogSubmit"
   />
+  <WorkflowRecoveryDialog />
 
   <OpenWorkflowDialog
     v-model:visible="openDialogVisible"

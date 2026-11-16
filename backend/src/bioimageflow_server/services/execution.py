@@ -188,6 +188,10 @@ class ExecutionConflictError(RuntimeError):
     """Raised when ``start()`` is called while an execution is already running."""
 
 
+class WorkflowStorageUnavailableError(RuntimeError):
+    """The admitted workflow directory moved or disappeared during execution."""
+
+
 class ExecutionRetryError(RuntimeError):
     """Raised when a retry does not address the latest failed execution."""
 
@@ -550,6 +554,8 @@ class ExecutionManager:
         self._output_run_authority: _OutputRunAuthority | None = None
         self._output_corrections: dict[str, _OutputCorrection] = {}
         self._output_correction_expiry: asyncio.TimerHandle | None = None
+        self._ensure_storage_current: Callable[[], None] | None = None
+        self._storage_error: str | None = None
 
     # ---- Public properties -------------------------------------------------
 
@@ -564,6 +570,11 @@ class ExecutionManager:
         return self.state == "running" or self._starting
 
     def get_status(self) -> ExecutionStatus:
+        if self._ensure_storage_current is not None and self.is_execution_active:
+            try:
+                self._ensure_storage_current()
+            except (OSError, ValueError, WorkflowStorageUnavailableError) as exc:
+                self._storage_error = str(exc)
         if self._starting:
             assert self._pending_context is not None
             return ExecutionStatus(
@@ -585,6 +596,7 @@ class ExecutionManager:
             })
         return ExecutionStatus(
             state=self.state,
+            storage_error=self._storage_error,
             last_result=result,
             progress=self.progress,
             node_statuses=dict(self._node_statuses),
@@ -836,6 +848,7 @@ class ExecutionManager:
         ensure_context_current: Callable[[], Awaitable[None]] | None = None,
         reserved_context: ExecutionContext | None = None,
         workflow_generation: int | None = None,
+        ensure_storage_current: Callable[[], None] | None = None,
     ) -> ExecutionContext:
         """Kick off a background execution.
 
@@ -859,6 +872,7 @@ class ExecutionManager:
                     storage_path,
                     ensure_context_current,
                     workflow_generation,
+                    ensure_storage_current,
                 )
         if (
             not self._starting
@@ -874,6 +888,7 @@ class ExecutionManager:
             storage_path,
             ensure_context_current,
             workflow_generation,
+            ensure_storage_current,
         )
 
     @asynccontextmanager
@@ -955,6 +970,7 @@ class ExecutionManager:
         storage_path: Path | None,
         ensure_context_current: Callable[[], Awaitable[None]] | None,
         workflow_generation: int | None,
+        ensure_storage_current: Callable[[], None] | None,
     ) -> ExecutionContext:
         run_storage_path = storage_path if storage_path is not None else self.storage_path
         build_graph = graph
@@ -1044,6 +1060,8 @@ class ExecutionManager:
             await ensure_context_current()
 
         self.context = context
+        self._ensure_storage_current = ensure_storage_current
+        self._storage_error = None
         self._release_output_corrections()
         self._output_run_authority = output_authority
         self.state = "running"
@@ -1094,6 +1112,8 @@ class ExecutionManager:
                 value = None
                 primary: BaseException | None = None
                 try:
+                    if ensure_storage_current is not None:
+                        ensure_storage_current()
                     engine = self._create_execution_engine(workflow, context)
                     try:
                         value = workflow.compute(
@@ -1108,6 +1128,8 @@ class ExecutionManager:
                             logger.exception("Output projection failed while preserving execution failure")
                         raise
                     else:
+                        if ensure_storage_current is not None:
+                            ensure_storage_current()
                         self._materialize_latest_outputs(workflow, run_storage_path, context)
                     self._export_managed_result(context, value)
                     return None
@@ -1251,6 +1273,8 @@ class ExecutionManager:
         """Best-effort human output publication that never changes run success."""
         if storage_path is None:
             return
+        if self._ensure_storage_current is not None:
+            self._ensure_storage_current()
         from bioimageflow_server.services.output_views import materialize_latest_outputs
 
         try:

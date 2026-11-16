@@ -15,7 +15,7 @@ async function openWorkflow(page: Page, name: string, label: string): Promise<vo
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(label)
   await page.getByTestId(`workflow-row-${name}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(label)
   await expect(page.getByTestId('run-workflow-button')).toBeEnabled()
@@ -23,7 +23,8 @@ async function openWorkflow(page: Page, name: string, label: string): Promise<vo
 
 test('trusted Python Build cancels, rejects a stale preview, and Run uses the materialized graph', async ({ page }) => {
   const suffix = `${test.info().project.name}_${Date.now()}`
-  const name = `python_authored_${suffix}`
+  const relativePath = `python_authored_${suffix}`
+  let name = ''
   const helperName = `authoring_helper_${suffix}`
   const firstLabel = `First authored ${suffix}`
   const freshLabel = `Rebuilt authored ${suffix}`
@@ -40,9 +41,10 @@ test('trusted Python Build cancels, rejects a stale preview, and Run uses the ma
   try {
     const seed = await page.request.post(`${API}/dev/seed`)
     expect(seed.ok(), await seed.text()).toBeTruthy()
-    const created = await page.request.post(`${API}/workflows`, { data: { name } })
+    const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
     expect(created.status(), await created.text()).toBe(201)
     const info = await created.json() as WorkflowInfo
+    name = info.id
     expect(info.id ?? info.name).toBe(name)
     const root = dirname(info.path)
     expect(dirname(info.results_path)).toBe(root)

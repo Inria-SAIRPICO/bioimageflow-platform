@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import type { CanvasId } from '@/sessions/canvasSessionRegistry'
 
-export type CanvasLifecycleOperation = 'saving' | 'discarding' | 'deleting'
+export type CanvasLifecycleOperation = 'saving' | 'discarding' | 'deleting' | 'moving'
 
 export const useCanvasLifecycleStore = defineStore('canvasLifecycle', () => {
   const operations = reactive(new Map<CanvasId, CanvasLifecycleOperation>())

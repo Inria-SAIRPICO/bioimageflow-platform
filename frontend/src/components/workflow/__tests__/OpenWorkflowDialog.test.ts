@@ -6,6 +6,7 @@ import type { WorkflowInfo } from '@/api/types'
 
 const workflows: WorkflowInfo[] = [
   {
+    relative_path: 'A/nuclei',
     id: 'A/nuclei',
     name: 'nuclei',
     folder: 'A',
@@ -16,6 +17,7 @@ const workflows: WorkflowInfo[] = [
       identity_generation: 0,
   },
   {
+    relative_path: 'B/nuclei',
     id: 'B/nuclei',
     name: 'nuclei',
     folder: 'B',

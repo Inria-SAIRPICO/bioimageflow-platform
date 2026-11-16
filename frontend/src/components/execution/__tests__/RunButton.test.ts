@@ -80,6 +80,8 @@ describe('RunButton', () => {
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     useWorkflowStore().current = {
+      id: 'wf_a',
+      relative_path: 'wf_a',
       name: 'wf_a',
       folder: '',
       display_name: 'Workflow A',
@@ -389,6 +391,8 @@ describe('RunButton', () => {
     const exec = useExecutionStore()
     const workflows = useWorkflowStore()
     workflows.current = {
+      id: 'wf_a',
+      relative_path: 'wf_a',
       name: 'wf_a',
       folder: '',
       display_name: 'Workflow A',

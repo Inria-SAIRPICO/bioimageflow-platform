@@ -30,6 +30,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<WorkspaceSettings | null>(null)
   const error = ref<string | null>(null)
   const isLoading = ref(false)
+  // Explicit retargeting intent is separate from initial settings hydration.
+  const workspaceSelectionRevision = ref(0)
 
   // Internal serialization chain: each updateSettings() call appends to it
   // so concurrent calls run in submit order rather than racing the server.
@@ -75,6 +77,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function _doPatch(partial: SettingsPatch): Promise<void> {
+    if (Object.prototype.hasOwnProperty.call(partial, 'workspace_path')) workspaceSelectionRevision.value += 1
     const previous = settings.value
     const containsOmeroInstances = partial.omero_instances !== undefined
     // Optimistic merge so listeners see ordinary changes immediately. OMERO
@@ -111,6 +114,7 @@ export const useSettingsStore = defineStore('settings', () => {
     settings,
     error,
     isLoading,
+    workspaceSelectionRevision,
     isLoaded,
     isDesktop,
     isWebapp,

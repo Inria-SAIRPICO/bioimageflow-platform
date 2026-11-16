@@ -200,9 +200,9 @@ async def test_lifespan_completes_real_pending_move_before_serving(
         root_dir=workspace / "workflows",
         tool_registry=ToolRegistryService(),
     )
-    seed.create_workflow(WorkflowCreate(name="old"))
+    workflow_id = seed.create_workflow(WorkflowCreate(name="old")).id
     patch = WorkflowUpdate(action="update", new_id="new")
-    operation_id = seed.prepare_workflow_patch_move("old", patch)
+    operation_id = seed.prepare_workflow_patch_move(workflow_id, patch)
     assert operation_id is not None
 
     def fail_after_workflow_move(*_args: object, **_kwargs: object) -> None:
@@ -212,7 +212,7 @@ async def test_lifespan_completes_real_pending_move_before_serving(
         scoped.setattr(seed, "_write_raw", fail_after_workflow_move)
         with pytest.raises(OSError, match="startup recovery boundary"):
             seed.patch_workflow(
-                "old",
+                workflow_id,
                 patch,
                 move_operation_id=operation_id,
             )
@@ -240,8 +240,9 @@ async def test_lifespan_completes_real_pending_move_before_serving(
         tool_registry=ToolRegistryService(),
     )
     assert restarted.pending_workflow_move() is None
-    assert not restarted.workflow_dir("old").exists()
-    assert restarted.get_workflow("new").info.id == "new"
+    assert not (workspace / "workflows" / "old").exists()
+    assert restarted.get_workflow(workflow_id).info.id == workflow_id
+    assert restarted.get_workflow(workflow_id).info.relative_path == "new"
 
 
 async def test_lifespan_snapshot_cleanup_failure_is_logged_and_nonfatal(

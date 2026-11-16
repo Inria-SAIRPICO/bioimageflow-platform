@@ -27,8 +27,8 @@ class LocalNumbers(DataFrameTool):
 def _store(tmp_path: Path) -> tuple[WorkflowStoreService, Path]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(tmp_path / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="local"))
-    source = store.workflow_dir("local") / "tools" / "local_numbers.py"
+    local_id = store.create_workflow(WorkflowCreate(name="local")).id
+    source = store.workflow_dir(local_id) / "tools" / "local_numbers.py"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(SOURCE)
     return store, source
@@ -62,8 +62,10 @@ def _graph(*, nested: bool = False) -> GraphState:
 def test_saved_local_viewing_metadata_is_complete_without_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool,
 ) -> None:
+    identities: dict[str, str] = {}
     store, source = _store(tmp_path)
-    store.save_workflow("local", WorkflowSaveBody(graph=_graph(nested=nested)))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=_graph(nested=nested)))
     saved = store._path_for("local").read_bytes()
     original_source = source.read_bytes()
 
@@ -74,7 +76,7 @@ def test_saved_local_viewing_metadata_is_complete_without_execution(
     monkeypatch.setattr(Workflow, "plan", forbidden)
     monkeypatch.setattr(WetlandsEnvManager, "admit_runtime", forbidden)
     monkeypatch.setattr(WetlandsEnvManager, "get_or_create", forbidden)
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is True
     assert all(entry.status == "known" for entry in manifest.outputs.values())
@@ -86,15 +88,17 @@ def test_saved_local_viewing_metadata_is_complete_without_execution(
         assert "nested::workflow-output/published" in manifest.outputs
     assert store._path_for("local").read_bytes() == saved
     assert source.read_bytes() == original_source
-    assert not list(store.get_storage_path("local").rglob("run.json"))
+    assert not list(store.get_storage_path(identities["local"]).rglob("run.json"))
 
 
 def test_viewing_inspection_preserves_invalid_source_diagnostic(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store, source = _store(tmp_path)
-    store.save_workflow("local", WorkflowSaveBody(graph=_graph()))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=_graph()))
     source.write_text("def broken(:\n")
 
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is False
     entry = manifest.outputs["numbers::tool-output/*"]
@@ -104,14 +108,16 @@ def test_viewing_inspection_preserves_invalid_source_diagnostic(tmp_path: Path) 
 
 
 def test_viewing_inspection_preserves_missing_tool_diagnostic(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store, _source = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     graph = _graph()
     graph.nodes[0].tool_module = "unavailable_viewing_tool_package"
     graph.nodes[0].tool_class = "MissingTool"
     graph.nodes[0].tool_name = "MissingTool"
-    store.save_workflow("local", WorkflowSaveBody(graph=graph))
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=graph))
 
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is False
     entry = manifest.outputs["numbers::tool-output/*"]
@@ -121,11 +127,13 @@ def test_viewing_inspection_preserves_missing_tool_diagnostic(tmp_path: Path) ->
 
 
 def test_viewing_inspection_preserves_missing_local_file_diagnostic(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store, source = _store(tmp_path)
-    store.save_workflow("local", WorkflowSaveBody(graph=_graph()))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=_graph()))
     source.unlink()
 
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is False
     entry = manifest.outputs["numbers::tool-output/*"]
@@ -138,7 +146,9 @@ def test_viewing_inspection_preserves_missing_local_file_diagnostic(tmp_path: Pa
 def test_nested_missing_tool_remains_unknown_with_its_scoped_diagnostic(
     tmp_path: Path, healthy_sibling: bool,
 ) -> None:
+    identities: dict[str, str] = {}
     store, _source = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     graph = _graph(nested=True)
     child = graph.nodes[0].workflow
     missing = child.nodes[0]
@@ -147,9 +157,9 @@ def test_nested_missing_tool_remains_unknown_with_its_scoped_diagnostic(
     missing.tool_module = "unavailable_nested_viewing_tool"
     missing.tool_class = "MissingTool"
     missing.tool_name = "MissingTool"
-    store.save_workflow("local", WorkflowSaveBody(graph=graph))
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=graph))
 
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is False
     unknown = manifest.outputs["nested/numbers::tool-output/*"]
@@ -161,9 +171,11 @@ def test_nested_missing_tool_remains_unknown_with_its_scoped_diagnostic(
 
 
 def test_empty_saved_workflow_has_complete_empty_viewing_metadata(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store, _source = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
 
-    manifest = store.viewing_requirements("local")
+    manifest = store.viewing_requirements(identities["local"])
 
     assert manifest.complete is True
     assert manifest.outputs == {}
@@ -172,11 +184,13 @@ def test_empty_saved_workflow_has_complete_empty_viewing_metadata(tmp_path: Path
 def test_viewing_inspection_forwards_the_selected_tool_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    identities: dict[str, str] = {}
     store, _source = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     selected = tmp_path / "selected-tool-store"
     selected.mkdir()
     store.tool_registry.scan_tool_store(selected)
-    store.save_workflow("local", WorkflowSaveBody(graph=_graph()))
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=_graph()))
     original = Workflow.from_dict
     selected_paths = []
 
@@ -186,5 +200,5 @@ def test_viewing_inspection_forwards_the_selected_tool_store(
 
     monkeypatch.setattr(Workflow, "from_dict", observed)
 
-    assert store.viewing_requirements("local").complete is True
+    assert store.viewing_requirements(identities["local"]).complete is True
     assert selected_paths == [selected]

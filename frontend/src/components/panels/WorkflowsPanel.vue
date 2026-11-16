@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import Tree from 'primevue/tree'
-import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowStore, workflowRelativePath } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
 import { api } from '@/api/client'
 import {
@@ -56,7 +56,7 @@ const searchQuery = ref('')
 const selectedName = ref<string | null>(workflowStore.currentName)
 let browseOwnsSelection = false
 let foregroundObserved = false
-const selectedFolderId = ref<string | null>(null)
+const selectedFolderId = toRef(workflowStore, 'selectedFolderId')
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
 const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
@@ -174,7 +174,7 @@ function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
 function workflowMatchesQuery(workflow: WorkflowInfo, query: string): boolean {
   return (
     workflow.display_name.toLowerCase().includes(query)
-    || workflowId(workflow).toLowerCase().includes(query)
+    || workflowRelativePath(workflow).toLowerCase().includes(query)
   )
 }
 
@@ -244,7 +244,7 @@ watch(
     if (publication.cause === 'foreground') {
       foregroundObserved = true
       browseOwnsSelection = false
-      selectedFolderId.value = null
+      selectedFolderId.value = workflowStore.workflowFolderIds[publication.workflowName] ?? null
       selectedName.value = publication.workflowName
     } else if (!browseOwnsSelection && !foregroundObserved) {
       selectedName.value = publication.workflowName
@@ -267,6 +267,8 @@ watch(
   () => selectedName.value,
   (name) => {
     if (name) {
+      const workflow = workflowStore.workflows.find(item => workflowId(item) === name)
+      if (workflow) selectedFolderId.value = workflow.folder || null
       selectedKeys.value = { [nodeKey(`workflow:${name}`)]: true }
     } else if (selectedFolderId.value) {
       selectedKeys.value = { [nodeKey(`folder:${selectedFolderId.value}`)]: true }
@@ -282,15 +284,6 @@ watch(
   (folderId) => {
     if (!selectedName.value) {
       selectedKeys.value = folderId ? { [nodeKey(`folder:${folderId}`)]: true } : {}
-    }
-  },
-)
-
-watch(
-  () => workflowStore.workflowFolders.map((folder) => folder.id),
-  (folderIds) => {
-    if (selectedFolderId.value && !folderIds.includes(selectedFolderId.value)) {
-      selectedFolderId.value = null
     }
   },
 )
@@ -327,10 +320,7 @@ watch(
     if (selectedName.value && workflows.some((workflow) => workflowId(workflow) === selectedName.value)) {
       return
     }
-    if (
-      selectedFolderId.value
-      && workflowStore.workflowFolders.some((folder) => folder.id === selectedFolderId.value)
-    ) {
+    if (selectedFolderId.value) {
       return
     }
     selectedName.value = workflowStore.currentName ?? (
@@ -372,6 +362,7 @@ async function confirmFormatUpdate(): Promise<void> {
     pendingFormatPlanId.value = status.pending_plan_id ?? null
     formatDialogVisible.value = false
     await workflowStore.fetchWorkflowTree({ fresh: true }).catch(() => workflowStore.fetchWorkflows())
+    window.dispatchEvent(new Event('bioimageflow:reconcile-workflow-recovery'))
   } catch (error) {
     formatUpdateError.value = apiErrorMessage(error)
   } finally {
@@ -517,7 +508,7 @@ async function submitFolderDialog(): Promise<void> {
         display_name: name,
       })
       selectedName.value = workflowId(renamed)
-      selectedFolderId.value = null
+      selectedFolderId.value = renamed.folder || null
     }
     folderDialogVisible.value = false
   })
@@ -914,8 +905,8 @@ defineExpose({
           </dd>
         </div>
         <div>
-          <dt>API name</dt>
-          <dd data-testid="workflow-detail-api-name">{{ workflowId(selectedWorkflow) }}</dd>
+          <dt>Location</dt>
+          <dd data-testid="workflow-detail-api-name">{{ workflowRelativePath(selectedWorkflow) }}</dd>
         </div>
         <div>
           <dt class="workflow-detail__term-with-action">

@@ -106,8 +106,11 @@ Catalog and format discovery walk workspace folders freshly and stop at workflow
 They remain byte-for-byte unchanged and unavailable until the user confirms the content-derived plan; current unrelated workflows remain usable.
 Confirmation first synchronizes exact backups under `<workspace>/.bioimageflow/backups/workflow-format/<plan-id>/`, then replaces all planned authorities through one forward-recoverable journal whose already-confirmed work is completed after restart.
 
-Workflow IDs are workspace-relative paths and carry identity generations.
-New workflow canvases load the backend's accepted draft or saved graph; path-derived IDs stay separate from slash-free graph definition names and backend-initialized configuration.
+Workflow IDs are immutable UUIDs stored in the platform document envelope, with mutable filesystem locations exposed separately as `relative_path`; folder IDs remain relative paths.
+Creation, import and duplication allocate fresh workflow identities; moves retain identity generations, accepted revisions, root/nested canvas registrations, undo histories and unsaved baselines while changing only physical location and path metadata.
+Confirmed identity migration extends exact backups and restart-safe replacement to mutable references, with a temporary old-path/generation receipt for browser recovery; ambiguous ownership remains recoverable and is never guessed from a reused path.
+Fresh UUID/storage checks refuse missing or duplicate identities before writes, independently of Refresh; local and managed storage ownership blocks moves, and active engines are never retargeted after external movement.
+New workflow canvases load the backend's accepted draft or saved graph, preserving slash-free definition names and configuration. Every New entry point captures the Workflows panel's selected parent and workspace at submission; vanished destinations are refused, and delayed requests cannot retarget creation.
 Startup and explicit Open repair a newer recovery snapshot whose definition name equals its slash-containing workspace ID by restoring the accepted backend definition name while retaining queued graph edits and the accepted draft revision.
 Saving an agent draft as a copy duplicates the captured graph together with its recursively referenced owned sources and editable local tools in one staged backend operation, without promoting or replacing the original draft.
 Operations that wait, move, rename, delete, duplicate, save, or apply must remain bound to the captured identity so that a delayed response cannot mutate a newly created workflow that happens to reuse the same path.
@@ -188,9 +191,9 @@ The platform app environment supplies `pip` for tool-store package installation;
 Processing recipes provision their worker dependencies through Wetlands at execution preparation, independently of tool-store installation.
 Workflow-local tools are editable source files owned by a workflow and travel with its exports.
 Owned source members reject POSIX and Windows path anchors, including rooted and drive-relative paths, before walking ancestors for symlink checks.
-Custom-tool usage reports traverse saved recursive graphs, distinguish tool and workflow nodes, and return each affected workspace-relative workflow ID once.
+Custom-tool usage reports traverse saved recursive graphs, distinguish tool and workflow nodes, and return each affected persistent workflow UUID once.
 Import unpacks custom sources into `tools/<source-id>/`, where `module.json` contains identity and module-layout metadata and ordinary files contain the executable code.
-An explicit import rename sets both the destination workflow ID and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
+An explicit import rename selects the destination relative path and the root graph's visible and definition names (using the destination leaf), while preserving embedded workflow names.
 There is no opened-bundle execution mode or persisted JSON source-text fallback.
 Opening a saved workflow with missing owned-source files reports `workflow_source_missing` (HTTP 409), with workflow-relative file and recovery details; older JSON source records are identified but are not automatically converted.
 Compilation and export capture current file bytes and assign content-derived runtime module identities, independently of watcher delivery, so package helper imports cannot reuse older code.

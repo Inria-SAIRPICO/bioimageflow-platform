@@ -374,6 +374,7 @@ class ConnectionManager:
         action: str,
         workflow_id: str | None = None,
         identity_generation: int | None = None,
+        relative_path: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "type": "workflow_tree_changed",
@@ -382,6 +383,8 @@ class ConnectionManager:
         }
         if identity_generation is not None:
             payload["identity_generation"] = identity_generation
+        if relative_path is not None:
+            payload["relative_path"] = relative_path
         self._enqueue_all(payload)
 
     async def broadcast_active_workflow_changed(
@@ -566,12 +569,14 @@ class ConnectionManager:
         action: str,
         workflow_id: str | None = None,
         identity_generation: int | None = None,
+        relative_path: str | None = None,
     ) -> None:
         self._schedule(
             self.broadcast_workflow_tree_changed(
                 action=action,
                 workflow_id=workflow_id,
                 identity_generation=identity_generation,
+                relative_path=relative_path,
             ),
             "workflow_tree_changed",
         )

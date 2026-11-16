@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 
 import pytest
 
@@ -25,7 +26,9 @@ def _fixture(tmp_path: Path) -> Path:
     source = tmp_path / "source"
     source.mkdir()
     graph = graph_state()
-    document = WorkflowDocument(graph=graph, metadata={}, artifact_hash=artifact_hash(graph, []))
+    document = WorkflowDocument(
+        workflow_id=str(uuid4()), graph=graph, metadata={}, artifact_hash=artifact_hash(graph, [])
+    )
     (source / "workflow.json").write_text(document.model_dump_json())
     return source
 

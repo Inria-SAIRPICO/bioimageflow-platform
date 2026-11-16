@@ -34,7 +34,8 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 function info(displayName = 'Before'): WorkflowInfo {
-  return { id: 'analysis', name: 'analysis', folder: '', display_name: displayName,
+  return {
+    relative_path: 'analysis', id: 'analysis', name: 'analysis', folder: '', display_name: displayName,
     path: '/workspace/workflows/analysis/workflow.json',
     results_path: '/workspace/workflows/analysis/results',
     last_modified: displayName, identity_generation: 0 }
