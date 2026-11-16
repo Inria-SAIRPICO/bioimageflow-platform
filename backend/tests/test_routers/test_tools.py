@@ -1066,10 +1066,10 @@ async def test_accepted_environment_lifecycle_keeps_run_admission_until_completi
 
 
 @pytest.mark.parametrize("cancel_kind,physical_failure", [
-    ("task", False), ("task", True), ("scope", False),
-], ids=["task", "task-failure", "scope"])
+    ("task", False), ("task", True), ("scope", False), ("scope", True),
+], ids=["task", "task-failure", "scope", "scope-failure"])
 async def test_cancelled_manual_lifecycle_retains_admission_until_physical_completion(
-    cancel_kind: str, physical_failure: bool,
+    cancel_kind: str, physical_failure: bool, caplog: pytest.LogCaptureFixture,
 ) -> None:
     entered, release, completed = threading.Event(), threading.Event(), threading.Event()
     registry = ToolRegistryService()
@@ -1124,7 +1124,14 @@ async def test_cancelled_manual_lifecycle_retains_admission_until_physical_compl
                 pass
             assert await asyncio.to_thread(completed.wait, 2)
 
+        if cancel_kind == "task":
+            assert operation.cancelled()
         assert manager.recreate.call_count == 1
+        failure_logs = [
+            record for record in caplog.records
+            if record.getMessage() == "Manual environment operation failed after request cancellation"
+        ]
+        assert len(failure_logs) == int(physical_failure)
         if physical_failure:
             connection.publish_environment_status.assert_any_call("selected-env", "failed")
         async with execution.reserve_start("selected-workflow", 1):

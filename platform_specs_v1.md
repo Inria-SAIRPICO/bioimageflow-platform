@@ -1307,6 +1307,7 @@ Below the TreeTable, the dialog includes an inline footer explicitly labelled **
 
 Each tool row shows the indicator and controls for its declared environment; tools sharing one environment share its lifecycle and busy state.
 Manual controls serialize with other idle mutations and block Run until physical completion, including when the initiating request is canceled; an admitted Run or application shutdown refuses the manual operation without changing its environment.
+A later physical failure is logged once and its environment failure status remains observable, without an unhandled task error, while the request retains its original cancellation.
 
 ### 3.5 Node Panel (Right Sidebar)
 

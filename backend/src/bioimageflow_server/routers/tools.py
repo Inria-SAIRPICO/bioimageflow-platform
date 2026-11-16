@@ -629,21 +629,27 @@ async def _settle_environment_operation(operation: Callable[[], Awaitable[str]])
 
     task = asyncio.create_task(run(), name="manual-tool-environment-operation")
     try:
-        return await asyncio.shield(task)
+        # Waiting does not transfer request cancellation to the child. Unlike
+        # shield(), it also leaves failure reporting solely to this owner when
+        # the request is canceled before the child finishes (Python 3.14+).
+        await asyncio.wait({task})
+        return task.result()
     except asyncio.CancelledError as primary:
         with anyio.CancelScope(shield=True):
             while not task.done():
                 try:
-                    await asyncio.shield(task)
+                    # Observe completion without raising the child's failure
+                    # into the original cancellation's exception context.
+                    await asyncio.wait({task})
                 except asyncio.CancelledError:
                     # Repeated raw Task.cancel() can interrupt this awaiter
                     # even inside an AnyIO shield; the child still owns work.
                     continue
-                except BaseException:
-                    break
             try:
-                task.result()
-            except BaseException as operation_error:
+                operation_error = task.exception()
+            except BaseException as child_cancellation:
+                operation_error = child_cancellation
+            if operation_error is not None:
                 _logger.error(
                     "Manual environment operation failed after request cancellation",
                     exc_info=(type(operation_error), operation_error, operation_error.__traceback__),
