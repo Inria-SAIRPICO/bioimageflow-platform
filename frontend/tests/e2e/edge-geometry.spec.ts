@@ -69,7 +69,7 @@ test('column strands follow real mapped, collective, workflow and repaired targe
     const created = await page.request.post(`${API}/workflows`, { data: { name, display_name: name } })
     expect(created.status(), await created.text()).toBe(201)
     info = await created.json() as WorkflowInfo
-    const saved = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
+    const saved = await page.request.put(`${API}/workflows/${info.id}`, { data: { graph } })
     expect(saved.ok(), await saved.text()).toBe(true)
     // Startup may already open this graph. Capture that real response before
     // navigation instead of waiting for an unnecessary second Open request.
@@ -80,13 +80,13 @@ test('column strands follow real mapped, collective, workflow and repaired targe
     const initialDraft = await openedResponse.json() as WorkflowDraftResponse
     await expect(page.getByTestId('workflow-title')).toContainText(initialDraft.graph.display_name)
     const dependencies = page.getByTestId('missing-package-dialog')
-    if (initialDraft.workflow_id !== name) {
+    if (initialDraft.workflow_id !== info.id) {
       if (await dependencies.isVisible()) await dependencies.locator('.p-dialog-footer').getByRole('button', { name: 'Close', exact: true }).click()
       await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
       await page.getByTestId('workflow-search').fill(name)
       const opened = page.waitForResponse(response => response.request().method() === 'GET'
-        && new URL(response.url()).pathname === `/api/v1/workflow-drafts/${name}`)
-      await page.getByTestId(`workflow-row-${name}`).dblclick()
+        && new URL(response.url()).pathname === `/api/v1/workflow-drafts/${info.id}`)
+      await page.getByTestId(`workflow-row-${info.id}`).dblclick()
       openedResponse = await opened
     }
     expect(openedResponse.ok(), await openedResponse.text()).toBe(true)
@@ -130,7 +130,7 @@ test('column strands follow real mapped, collective, workflow and repaired targe
     const repairedNode = repairedGraph.nodes.find(node => node.id === 'unknown')!
     if (repairedNode.type !== 'tool') throw new Error('Expected a tool target')
     repairedNode.tool_name = 'ParameterControls'
-    const repairResponse = await page.request.put(`${API}/workflow-drafts/${name}`, {
+    const repairResponse = await page.request.put(`${API}/workflow-drafts/${info.id}`, {
       data: { graph: repairedGraph, expected_revision: accepted.draft_revision, updated_by: 'agent' },
     })
     expect(repairResponse.ok(), await repairResponse.text()).toBe(true)
@@ -154,12 +154,12 @@ test('column strands follow real mapped, collective, workflow and repaired targe
       x: sourceBounds!.x + sourceBounds!.width, y: sourceBounds!.y + sourceBounds!.height / 2,
     })).toBeLessThan(1.5)
     expect(distance(workflowAfter[0]!.end, await inputAnchor(workflowPin))).toBeLessThan(1.5)
-    const finalResponse = await page.request.get(`${API}/workflow-drafts/${name}`)
+    const finalResponse = await page.request.get(`${API}/workflow-drafts/${info.id}`)
     expect(finalResponse.ok(), await finalResponse.text()).toBe(true)
     const finalDraft = await finalResponse.json() as WorkflowDraftResponse
     expect(finalDraft.graph).toEqual(repairedGraph)
     expect(finalDraft.draft_revision).toBe(repaired.draft_revision)
-    expect((await (await page.request.get(`${API}/workflows/${name}`)).json()).graph).toEqual(accepted.graph)
+    expect((await (await page.request.get(`${API}/workflows/${info.id}`)).json()).graph).toEqual(accepted.graph)
     expect(runRequests).toBe(0)
   } catch (error) {
     primaryOccurred = true
@@ -169,7 +169,7 @@ test('column strands follow real mapped, collective, workflow and repaired targe
       () => page.goto('about:blank'),
       async () => {
         if (!info) return
-        const response = await page.request.delete(`${API}/workflows/${name}`, { params: { expected_identity_generation: info.identity_generation } })
+        const response = await page.request.delete(`${API}/workflows/${info.id}`, { params: { expected_identity_generation: info.identity_generation } })
         expect(response.ok(), await response.text()).toBe(true)
       },
     ]) {

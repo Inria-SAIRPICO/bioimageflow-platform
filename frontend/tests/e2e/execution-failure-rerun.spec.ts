@@ -130,10 +130,12 @@ async function createAndOpenFixture(
   const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: graph })
   expect(validation.ok()).toBeTruthy()
   expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name: workflowName, display_name: workflowName },
-  })).status()).toBe(201)
-  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+  })
+  expect(created.status(), await created.text()).toBe(201)
+  const workflowId = (await created.json()).id as string
+  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph },
   })).ok()).toBeTruthy()
 
@@ -141,9 +143,10 @@ async function createAndOpenFixture(
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+  await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+  return workflowId
 }
 
 async function executionStatus(page: Page) {
@@ -181,12 +184,13 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
   const control = new WorkerControl()
   const controlPort = await control.listen()
   const workflowName = uniqueWorkflowName()
+  let workflowId: string | undefined
   let workflowCreated = false
 
   try {
-    await createAndOpenFixture(page, workflowName, controlPort)
+    workflowId = await createAndOpenFixture(page, workflowName, controlPort)
     workflowCreated = true
-    const initialDraft = await fetchDraft(page, workflowName)
+    const initialDraft = await fetchDraft(page, workflowId)
     const runResponsePromise = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
     ))
@@ -196,13 +200,13 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const firstAccepted = await runResponse.json()
     const firstRequest = runResponse.request().postDataJSON()
     expect(firstRequest).toMatchObject({
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: initialDraft.draft_revision,
     })
     expect(firstRequest).not.toHaveProperty('graph')
     expect(firstAccepted).toMatchObject({
       execution_id: expect.stringMatching(/^run_/),
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: initialDraft.draft_revision,
     })
 
@@ -215,7 +219,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const running = await executionStatus(page)
     expect(running).toMatchObject({
       state: 'running', execution_id: firstAccepted.execution_id,
-      workflow_id: workflowName, draft_revision: initialDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: initialDraft.draft_revision,
       node_statuses: {
         [SOURCE_ID]: { status: 'executed' },
         [WORKER_ID]: { status: 'running' },
@@ -229,7 +233,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const failed = await executionStatus(page)
     expect(failed).toMatchObject({
       state: 'idle', execution_id: firstAccepted.execution_id,
-      workflow_id: workflowName, draft_revision: initialDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: initialDraft.draft_revision,
       last_result: { success: false },
       node_statuses: {
         [SOURCE_ID]: { status: 'executed' },
@@ -247,7 +251,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
       }),
     ])
     const partial = await page.request.post(`${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`, {
-      data: { workflow_name: workflowName },
+      data: { workflow_name: workflowId },
     })
     expect(partial.status()).toBe(404)
 
@@ -281,7 +285,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const multiplierInput = multiplierRow.locator('.param-number input')
     await expect(multiplierInput).toBeEnabled()
     const acceptedCorrectionPromise = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)
       && response.request().method() === 'PUT'
     ), { timeout: 15_000 })
     await multiplierInput.fill('4')
@@ -296,7 +300,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     expect(acceptedCorrection.graph.nodes.find(
       (node: { id: string }) => node.id === WORKER_ID,
     ).parameters.multiplier).toBe(4)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(acceptedCorrection.graph)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(acceptedCorrection.graph)
 
     const rerunResponsePromise = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/run') && response.request().method() === 'POST'
@@ -306,13 +310,13 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     expect(rerunResponse.status()).toBe(202)
     const rerunAccepted = await rerunResponse.json()
     expect(rerunResponse.request().postDataJSON()).toMatchObject({
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedCorrection.draft_revision,
     })
     expect(rerunResponse.request().postDataJSON()).not.toHaveProperty('graph')
     expect(rerunAccepted).toMatchObject({
       execution_id: expect.stringMatching(/^run_/),
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedCorrection.draft_revision,
     })
     expect(rerunAccepted.execution_id).not.toBe(firstAccepted.execution_id)
@@ -330,7 +334,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     const succeeded = await executionStatus(page)
     expect(succeeded).toMatchObject({
       execution_id: rerunAccepted.execution_id,
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedCorrection.draft_revision,
       last_result: { success: true, errors: [] },
       node_statuses: {
@@ -341,7 +345,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
 
     const workerResult = await page.request.post(
       `${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )
     expect(workerResult.ok()).toBeTruthy()
     const result = await workerResult.json()
@@ -352,7 +356,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
     ))
     expect(resultPids.size).toBe(1)
     expect(resultPids.has(backendPid)).toBe(false)
-    const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowId}`)
     expect(workflowResponse.ok()).toBeTruthy()
     const workflow = await workflowResponse.json()
     expect(workflow.info.results_path).toBeTruthy()
@@ -390,7 +394,7 @@ test('shows a real sequential worker failure, accepts a GUI correction, and reru
         }
       }
       if (workflowCreated && !page.isClosed()) {
-        const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+        const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`)
         expect(deletion.ok()).toBeTruthy()
       }
     } finally {
@@ -404,11 +408,12 @@ test('refuses exposed-node Delete and Group during a real worker run, then accep
   const control = new WorkerControl()
   const controlPort = await control.listen()
   const workflowName = uniqueWorkflowName()
+  let workflowId: string | undefined
   let workflowCreated = false
   try {
-    await createAndOpenFixture(page, workflowName, controlPort, true)
+    workflowId = await createAndOpenFixture(page, workflowName, controlPort, true)
     workflowCreated = true
-    const before = await fetchDraft(page, workflowName)
+    const before = await fetchDraft(page, workflowId)
     expect(before.graph.interface.outputs).toMatchObject([{
       id: 'published-number', source: { node: SOURCE_ID, column: 'number' },
     }])
@@ -427,7 +432,7 @@ test('refuses exposed-node Delete and Group during a real worker run, then accep
     await expect(page.locator('.p-toast')).toContainText('Delete is unavailable')
     await expect(page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`)).toBeVisible()
     await expect(page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`)).toBeVisible()
-    const refused = await fetchDraft(page, workflowName)
+    const refused = await fetchDraft(page, workflowId)
     expect(refused.graph).toEqual(before.graph)
     expect(refused.draft_revision).toBe(before.draft_revision)
 
@@ -439,33 +444,33 @@ test('refuses exposed-node Delete and Group during a real worker run, then accep
 
     await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click()
     const grouped = page.waitForResponse(response => response.url().endsWith(
-      `/api/v1/workflow-drafts/${workflowName}`,
+      `/api/v1/workflow-drafts/${workflowId}`,
     ) && response.request().method() === 'PUT' && response.ok())
     await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click({ button: 'right' })
     await page.getByText('Group into workflow', { exact: true }).click()
     await grouped
-    await expect.poll(async () => (await fetchDraft(page, workflowName)).draft_revision).toBe(
+    await expect.poll(async () => (await fetchDraft(page, workflowId)).draft_revision).toBe(
       before.draft_revision + 1,
     )
-    const groupedDraft = await fetchDraft(page, workflowName)
+    const groupedDraft = await fetchDraft(page, workflowId)
     expect(groupedDraft.graph.nodes.some((node: { type: string }) => node.type === 'workflow')).toBe(true)
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Undo', exact: true }).click()
-    await expect.poll(async () => (await fetchDraft(page, workflowName)).graph).toEqual(before.graph)
+    await expect.poll(async () => (await fetchDraft(page, workflowId)).graph).toEqual(before.graph)
 
     await page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`).click()
     await page.locator(`.vue-flow__node[data-id="${WORKER_ID}"]`).click({ modifiers: ['Shift'] })
     await expect(page.locator('.vue-flow__node.selected')).toHaveCount(2)
     await page.locator('.canvas-view').press('Delete')
-    await expect.poll(async () => (await fetchDraft(page, workflowName)).graph.nodes.map(
+    await expect.poll(async () => (await fetchDraft(page, workflowId)).graph.nodes.map(
       (node: { id: string }) => node.id,
     )).toEqual([])
-    const deleted = await fetchDraft(page, workflowName)
+    const deleted = await fetchDraft(page, workflowId)
     expect(deleted.graph.interface.outputs).toEqual([])
     expect(deleted.graph.edges).toEqual([])
     expect(deleted.draft_revision).toBe(before.draft_revision + 3)
     const saved = page.waitForResponse(response => response.url().endsWith(
-      `/api/v1/workflows/${workflowName}`,
+      `/api/v1/workflows/${workflowId}`,
     ) && response.request().method() === 'PUT')
     await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
@@ -473,9 +478,9 @@ test('refuses exposed-node Delete and Group during a real worker run, then accep
     await page.reload()
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
     await page.getByTestId('workflow-search').fill(workflowName)
-    await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+    await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
     await expect(page.locator('.vue-flow__node')).toHaveCount(0)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(deleted.graph)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(deleted.graph)
   } finally {
     control.releaseAll()
     try {
@@ -484,7 +489,7 @@ test('refuses exposed-node Delete and Group during a real worker run, then accep
           timeout: 60_000,
         }).toBe('idle')
         if (workflowCreated) {
-          const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+          const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`)
           expect(deletion.ok()).toBeTruthy()
         }
       }
