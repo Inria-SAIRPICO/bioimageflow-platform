@@ -686,3 +686,69 @@ class TestPatchSettings:
         assert all(
             '"password"' not in text for text in [followup.text, response.text, path.read_text()]
         )
+
+
+@pytest.mark.parametrize("configured_owner", ["default", "workspace", "workflow_root", "workflow_store"])
+async def test_settings_reports_actual_canonical_workspace_without_persisting_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured_owner: str,
+) -> None:
+    home = tmp_path / "profile"
+    monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(home))
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "workspace-alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"deployment_mode": "desktop", "workspace_path": None}))
+    settings_store = SettingsStore(path=path, omero_credentials=FakeOmeroCredentials())
+    await settings_store.load()
+    registry = ToolRegistryService()
+    overrides = {}
+    if configured_owner == "workspace":
+        overrides["workspace_path"] = alias
+    elif configured_owner == "workflow_root":
+        overrides["workflow_root"] = alias / "workflows"
+    elif configured_owner == "workflow_store":
+        overrides["workflow_store"] = WorkflowStoreService(alias / "workflows", registry)
+    app = create_app(AppConfig(settings_store=settings_store, tool_registry=registry,
+                               disable_hot_reload=True, **overrides))
+    expected = (home / "workspace" if configured_owner == "default" else physical).resolve()
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/settings")
+        assert response.status_code == 200, response.text
+        assert response.json()["workspace_path"] is None
+        assert response.json()["resolved_workspace_path"] == str(expected)
+        assert (await client.get("/api/v1/workspace")).json()["workspace_path"] == str(expected)
+        patched = await client.patch("/api/v1/settings", json={"node_data_page_size": 50})
+        assert patched.status_code == 200
+        assert patched.json()["resolved_workspace_path"] == str(expected)
+        before = path.read_bytes()
+        rejected = await client.patch("/api/v1/settings", json={"resolved_workspace_path": str(tmp_path / "spoofed")})
+        assert rejected.status_code == 422
+        assert path.read_bytes() == before
+    assert "resolved_workspace_path" not in json.loads(path.read_text())
+    assert "resolved_workspace_path" not in settings_store.get().model_dump()
+
+
+async def test_patch_settings_resolves_new_workspace_after_mutation_in_same_response(tmp_path: Path) -> None:
+    physical_a, physical_b = tmp_path / "a", tmp_path / "b"
+    physical_a.mkdir()
+    physical_b.mkdir()
+    alias_a, alias_b = tmp_path / "alias-a", tmp_path / "alias-b"
+    alias_a.symlink_to(physical_a, target_is_directory=True)
+    alias_b.symlink_to(physical_b, target_is_directory=True)
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"deployment_mode": "desktop", "workspace_path": str(alias_a)}))
+    store = SettingsStore(path=path, omero_credentials=FakeOmeroCredentials())
+    await store.load()
+    app = create_app(AppConfig(settings_store=store, tool_registry=ToolRegistryService(), disable_hot_reload=True))
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        initial = await client.get("/api/v1/settings")
+        assert initial.json()["resolved_workspace_path"] == str(physical_a.resolve())
+        response = await client.patch("/api/v1/settings", json={"workspace_path": str(alias_b)})
+        assert response.status_code == 200, response.text
+        assert response.json()["workspace_path"] == str(alias_b)
+        assert response.json()["resolved_workspace_path"] == str(physical_b.resolve())
+        assert (await client.get("/api/v1/workspace")).json()["workspace_path"] == str(physical_b.resolve())
+    assert json.loads(path.read_text())["workspace_path"] == str(alias_b)
+    assert "resolved_workspace_path" not in json.loads(path.read_text())
