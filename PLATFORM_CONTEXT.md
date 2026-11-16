@@ -347,7 +347,7 @@ The backend dependency manifest and lock select `bioimageflow[parsl,psij]==0.10.
 The selected line retains canonical native local-storage bindings, including Windows paths, and strict POSIX bindings for remote downloads.
 The explicit scheduler groups replace a dependency-free `cluster` selection; installed package availability does not certify excluded distributed features.
 The Python debug launch profiles use that backend environment.
-The VS Code Backend profiles start a dedicated Vite task whose HTTP/WebSocket proxy matches their backend port 8008; the Desktop profiles retain the default port 8000 development task.
+The VS Code Backend profiles run independently on port 8008, without a frontend pre-launch dependency; Vite is started separately with its proxy pointed to that port, while Desktop profiles retain the default port 8000 development task.
 Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
 Source investigations use an explicitly owned environment and do not supply published compatibility evidence.
 
