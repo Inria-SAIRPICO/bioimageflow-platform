@@ -132,6 +132,35 @@ describe('resolveStartupWorkflow', () => {
     expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
   })
 
+  it.each(['startup', 'open'])('%s repairs a path used as a recovery definition name without losing edits', async (mode) => {
+    const name = 'Analysis Results/nuclei'
+    const info = workflowInfo(name)
+    const loaded = presentation(name, {
+      graph: makeGraph({ name: 'accepted_definition' }),
+      draft: { draft_revision: 7, updated_at: '2026-05-21T11:00:00Z' } as WorkflowDraftResponse,
+    })
+    const recovered = { ...graph('queued-node'), name }
+    const recovery = { name, graph: recovered, timestamp: Date.parse('2026-05-21T12:00:00Z') }
+    workflowStoreMock.workflows = [info]
+    workflowStoreMock.flattenedWorkflows = [info]
+    presentationMocks.loadRootWorkflowPresentation.mockResolvedValueOnce(loaded)
+    autoSaveMock.loadAutoSave.mockResolvedValueOnce(recovery)
+    autoSaveMock.loadMostRecentAutoSave.mockResolvedValueOnce(recovery)
+
+    const result = mode === 'startup'
+      ? await resolveStartupWorkflow()
+      : await loadRootWorkflowForOpen(name)
+
+    expect(result).toMatchObject({
+      workflowName: name,
+      graph: { ...recovered, name: 'accepted_definition' },
+      dirty: true,
+      draft: { draft_revision: 7 },
+    })
+    expect(recovery.graph.name).toBe(name)
+    expect(autoSaveMock.clearAutoSave).not.toHaveBeenCalled()
+  })
+
   it('falls back to the flat workflow list when the tree request fails', async () => {
     const info = workflowInfo('analysis')
     const loaded = presentation('analysis')

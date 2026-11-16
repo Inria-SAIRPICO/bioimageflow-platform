@@ -48,7 +48,6 @@ import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
 import ViewingRequirementsGuidance from '@/components/workflow/ViewingRequirementsGuidance.vue'
 import type { GraphState, MissingTool, NapariViewingRequirementGroup, ViewingRequirementsManifestInput, WorkflowInfo } from '@/api/types'
-import { emptyGraph } from '@/sessions/graphDocument'
 import { loadRootWorkflowForOpen } from '@/services/startupWorkflow'
 import {
   loadRootWorkflowPresentation,
@@ -431,16 +430,11 @@ async function onWorkflowDialogSubmit(payload: {
         ...payload,
         name: workflowNameInDialogFolder(payload.name),
       })
+      const loaded = await loadRootWorkflowPresentation(workflowId(info))
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       workflowDialogFolderId.value = null
-      applyGraph(emptyGraph(workflowId(info), info.display_name), false, {
-        workflowName: workflowId(info),
-        workflowDisplayName: info.display_name,
-        missingTools: [],
-        identityGeneration: workflowStore.workflowIdentityGeneration(workflowId(info)),
-        serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowId(info)),
-      })
+      applyGraph(loaded.graph, loaded.dirty, loaded)
       return
     }
 

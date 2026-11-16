@@ -29,9 +29,15 @@ async function applyFreshRecovery(
     await useAutoSave().clearAutoSave(recovery.name)
     return presentation
   }
+  // Older creation canvases used the workspace path as the definition name.
+  // Restore that field from backend authority while retaining queued edits.
+  const recoveredGraph = recovery.graph.name === presentation.workflowName
+    && recovery.graph.name.includes('/')
+    ? { ...recovery.graph, name: presentation.graph.name }
+    : recovery.graph
   return {
     ...presentation,
-    graph: recovery.graph,
+    graph: recoveredGraph,
     dirty: true,
   }
 }
