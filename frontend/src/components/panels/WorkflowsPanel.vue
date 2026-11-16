@@ -12,7 +12,8 @@ import {
   applyWorkflowFormatMigrations,
   getWorkflowFormatStatus,
 } from '@/api/workflowFormats'
-import type { WorkflowFormatNotice, WorkflowInfo } from '@/api/types'
+import WorkflowIdentityCopiesDialog from '@/components/workflow/WorkflowIdentityCopiesDialog.vue'
+import type { WorkflowFormatNotice, WorkflowFormatStatus, WorkflowInfo } from '@/api/types'
 import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/workflow'
 import type { TreeNodeDropEvent } from 'primevue/tree'
 import { apiErrorMessage } from '@/utils/apiError'
@@ -60,6 +61,7 @@ const selectedFolderId = toRef(workflowStore, 'selectedFolderId')
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
 const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
+const workflowFormatStatus = ref<WorkflowFormatStatus | null>(null)
 const workflowFormatNotices = ref<WorkflowFormatNotice[]>([])
 const pendingFormatPlanId = ref<string | null>(null)
 const formatDialogVisible = ref(false)
@@ -334,6 +336,7 @@ watch(
 onMounted(() => {
   void getWorkflowFormatStatus()
     .then((status) => {
+      workflowFormatStatus.value = status
       workflowFormatNotices.value = status.notices ?? []
       pendingFormatPlanId.value = status.pending_plan_id ?? null
       formatDialogVisible.value = pendingFormatPlanId.value !== null
@@ -343,6 +346,12 @@ onMounted(() => {
     void workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
   }
 })
+
+function identityCopiesResolved(status: WorkflowFormatStatus): void {
+  workflowFormatStatus.value = status
+  workflowFormatNotices.value = status.notices ?? []
+  pendingFormatPlanId.value = status.pending_plan_id ?? null
+}
 
 function deferFormatUpdate(): void {
   formatDialogVisible.value = false
@@ -359,6 +368,7 @@ async function confirmFormatUpdate(): Promise<void> {
   formatUpdateError.value = null
   try {
     const status = await applyWorkflowFormatMigrations(pendingFormatPlanId.value)
+    workflowFormatStatus.value = status
     workflowFormatNotices.value = status.notices ?? []
     pendingFormatPlanId.value = status.pending_plan_id ?? null
     formatDialogVisible.value = false
@@ -758,6 +768,7 @@ defineExpose({
       class="workflows-panel__tree-shell"
       data-testid="workflow-list"
     >
+      <WorkflowIdentityCopiesDialog :status="workflowFormatStatus" @resolved="identityCopiesResolved" />
       <div
         v-if="workflowFormatNotices.length > 0"
         class="workflows-panel__format-warning"

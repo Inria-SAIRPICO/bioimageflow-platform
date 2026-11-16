@@ -5,8 +5,8 @@ export async function acknowledgeWorkflowIdentityMigrations(body: WorkflowIdenti
   return (await api.post<WorkflowFormatStatus>('/api/v1/workflows/identity-migrations/ack', body)).data
 }
 
-export async function getWorkflowFormatStatus(): Promise<WorkflowFormatStatus> {
-  const response = await api.get<WorkflowFormatStatus>('/api/v1/workflows/format-status')
+export async function getWorkflowFormatStatus(workspacePath?: string): Promise<WorkflowFormatStatus> {
+  const response = await api.get<WorkflowFormatStatus>('/api/v1/workflows/format-status', ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []))
   return response.data
 }
 

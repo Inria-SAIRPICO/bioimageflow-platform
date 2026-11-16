@@ -1107,6 +1107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/identity-copies/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Workflow Identity Copy */
+        post: operations["resolve_workflow_identity_copy_api_v1_workflows_identity_copies_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/format-migrations/apply": {
         parameters: {
             query?: never;
@@ -5604,6 +5621,31 @@ export interface components {
             identity_migration_id?: string | null;
             /** Workspace Path */
             workspace_path?: string | null;
+            /** Identity Conflicts */
+            identity_conflicts?: components["schemas"]["WorkflowIdentityConflict"][];
+        };
+        /** WorkflowIdentityConflict */
+        WorkflowIdentityConflict: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Copies */
+            copies: components["schemas"]["WorkflowIdentityCopy"][];
+        };
+        /** WorkflowIdentityCopy */
+        WorkflowIdentityCopy: {
+            /** Relative Path */
+            relative_path: string;
+            /** Document Hash */
+            document_hash: string;
+        };
+        /** WorkflowIdentityCopyResolve */
+        WorkflowIdentityCopyResolve: {
+            /** Relative Path */
+            relative_path: string;
+            /** Expected Workflow Id */
+            expected_workflow_id: string;
+            /** Expected Document Hash */
+            expected_document_hash: string;
         };
         /**
          * WorkflowIdentityMigration
@@ -6209,6 +6251,9 @@ export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate']
 export type WorkflowFormatMigrationApply = components['schemas']['WorkflowFormatMigrationApply'];
 export type WorkflowFormatNotice = components['schemas']['WorkflowFormatNotice'];
 export type WorkflowFormatStatus = components['schemas']['WorkflowFormatStatus'];
+export type WorkflowIdentityConflict = components['schemas']['WorkflowIdentityConflict'];
+export type WorkflowIdentityCopy = components['schemas']['WorkflowIdentityCopy'];
+export type WorkflowIdentityCopyResolve = components['schemas']['WorkflowIdentityCopyResolve'];
 export type WorkflowIdentityMigration = components['schemas']['WorkflowIdentityMigration'];
 export type WorkflowIdentityMigrationAck = components['schemas']['WorkflowIdentityMigrationAck'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
@@ -8648,6 +8693,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_workflow_identity_copy_api_v1_workflows_identity_copies_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowIdentityCopyResolve"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
                 };
             };
             /** @description Validation Error */
