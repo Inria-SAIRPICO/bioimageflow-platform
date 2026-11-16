@@ -20,7 +20,7 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
 
 @pytest.mark.parametrize("operation", [
     "list_workflows", "workflow_tree", "workflow_format_status",
-    "_plan_schema_v2_workflows", "migrate_legacy_workflows",
+    "_plan_schema_v2_workflows",
 ])
 def test_catalog_never_enumerates_saved_or_private_subtrees(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,

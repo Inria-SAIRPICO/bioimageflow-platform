@@ -161,7 +161,8 @@ def test_source_refresh_conflicts_when_destination_is_recreated_with_same_artifa
     store.delete_workflow(identities["parent"])
     recreated = store.create_workflow(WorkflowCreate(name="parent"))
     identities[recreated.relative_path] = recreated.id
-    assert recreated.identity_generation == 3
+    assert recreated.id != original.info.id
+    assert recreated.identity_generation == 1
     store.save_workflow(identities["parent"], WorkflowSaveBody(graph=parent_graph))
     before = store.get_workflow(identities["parent"])
     before_files = {
@@ -213,7 +214,7 @@ def test_source_refresh_preview_captures_parent_and_generation_under_one_lock(
 
     def paused_get_workflow(workflow_id: str):
         result = original_get_workflow(workflow_id)
-        if workflow_id == "parent" and not parent_read.is_set():
+        if workflow_id == identities["parent"] and not parent_read.is_set():
             parent_read.set()
             assert allow_preview_to_continue.wait(timeout=5)
         return result
