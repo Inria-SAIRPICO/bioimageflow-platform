@@ -37,6 +37,8 @@ from bioimageflow_server.models.workflow import (
     WorkflowFormatNotice,
     WorkflowFormatStatus,
     WorkflowIdentityMigration,
+    WorkflowIdentityConflict,
+    WorkflowIdentityCopy,
     WorkflowInfo,
     WorkflowImportResponse,
     WorkflowSaveBody,
@@ -560,6 +562,11 @@ class WorkflowStoreService:
     ) -> None:
         """Fence ordinary writes while an interrupted identity move is pending."""
 
+        if self._schema_v2_migration_journal_path.is_file():
+            raise WorkflowMoveRecoveryError(
+                "A confirmed workflow-format transaction must recover before workspace mutation"
+            )
+
         pending = self.pending_workflow_move()
         if pending is None:
             if move_operation_id is not None:
@@ -903,6 +910,12 @@ class WorkflowStoreService:
                         legacy_draft = json.loads(draft_path.read_text())
                         WorkflowDraftResponse.model_validate({**legacy_draft, "workflow_id": move.destination_relative_path})
                 else:
+                    document = WorkflowDocument.model_validate(raw)
+                    if document.workflow_id != move.workflow_id:
+                        raise ValueError("Move journal workflow identity does not match its directory")
+                    location = self.relative_path_for_workflow(move.workflow_id)
+                    if location not in {move.source_relative_path, move.destination_relative_path}:
+                        raise ValueError("Move journal workflow is outside its captured locations")
                     _prepared_workflow_draft_identity(current_document.parent, move.workflow_id)
             except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
                 raise WorkflowMoveRecoveryError(
@@ -1510,6 +1523,7 @@ class WorkflowStoreService:
             raise WorkflowMoveRecoveryError(
                 f"Workflow move {pending.operation_id} must complete before another move"
             )
+        self.ensure_workflow_mutations_available()
 
     def _persist_prepared_workflow_move(
         self,
@@ -2227,6 +2241,10 @@ class WorkflowStoreService:
             return None, [], migrated_ids, scan_errors
         if not targets:
             return None, [], set(), scan_errors
+        plan_id = self._prepare_format_targets(targets)
+        return plan_id, targets, migrated_ids, scan_errors
+
+    def _prepare_format_targets(self, targets: list[dict[str, Any]]) -> str:
         plan_material = [
             {
                 "kind": target["kind"],
@@ -2245,7 +2263,7 @@ class WorkflowStoreService:
         )
         for target in targets:
             target["backup_path"] = (backup_root / target["path"]).as_posix()
-        return plan_id, targets, migrated_ids, scan_errors
+        return plan_id
 
     def migrate_schema_v2_workflows(self) -> list[WorkflowFormatNotice]:
         """Compatibility helper that explicitly confirms the current preview."""
@@ -2269,19 +2287,7 @@ class WorkflowStoreService:
                 raise WorkflowFormatPlanStaleError(
                     "Workflow files changed after the format update preview; review again."
                 )
-            self._create_schema_v2_backups(plan_id, targets)
-            journal = {
-                "version": 2,
-                "confirmed": True,
-                "plan_id": plan_id,
-                "targets": targets,
-            }
-            self._write_schema_v2_json(self._schema_v2_migration_journal_path, journal)
-            self._apply_schema_v2_targets(targets, plan_id=plan_id)
-            with self._workflow_generations_guard:
-                self._workflow_generations.update(self._load_workflow_generation_ledger())
-            self._schema_v2_migration_journal_path.unlink()
-            self._fsync_directory(self._schema_v2_migration_journal_path.parent)
+            self._commit_format_targets(plan_id, targets)
             all_backups = [str(self.workspace_dir / target["backup_path"]) for target in targets if target["source_digest"] is not None]
             notices = [
                 WorkflowFormatNotice(
@@ -2307,6 +2313,26 @@ class WorkflowStoreService:
                 notices[0].backup_paths.extend(path for path in all_backups if path not in assigned)
             self._workflow_format_notices = notices
             return self.workflow_format_status()
+
+    def _commit_format_targets(
+        self, plan_id: str, targets: list[dict[str, Any]],
+        *, before_journal: Callable[[], None] | None = None,
+    ) -> None:
+        self._create_schema_v2_backups(plan_id, targets)
+        if before_journal is not None:
+            before_journal()
+        journal = {
+            "version": 2,
+            "confirmed": True,
+            "plan_id": plan_id,
+            "targets": targets,
+        }
+        self._write_schema_v2_json(self._schema_v2_migration_journal_path, journal)
+        self._apply_schema_v2_targets(targets, plan_id=plan_id)
+        with self._workflow_generations_guard:
+            self._workflow_generations.update(self._load_workflow_generation_ledger())
+        self._schema_v2_migration_journal_path.unlink()
+        self._fsync_directory(self._schema_v2_migration_journal_path.parent)
 
     def _migration_target_path(self, relative: str, kind: str) -> Path:
         label = Path(relative)
@@ -2530,6 +2556,11 @@ class WorkflowStoreService:
                 if validated is not None and validated.graph.schema_version != 2:
                     raise ValueError("Migration target graph is not canonical schema v2")
                 normalized = validated.model_dump(mode="json", by_alias=True, exclude_none=True) if validated is not None else payload
+                if kind in {"saved_workflow", "root_draft"} and source_digest is not None:
+                    source_payload = json.loads(backup.read_text())
+                    source_payload["workflow_id"] = payload["workflow_id"]
+                    if source_payload == payload:
+                        normalized = payload
             except (ValidationError, ValueError) as exc:
                 raise WorkflowMoveRecoveryError(
                     f"Schema-v2 migration {kind} payload is invalid"
@@ -2625,6 +2656,74 @@ class WorkflowStoreService:
                 self._fsync_directory(self._identity_migration_receipt_path.parent)
             return self.workflow_format_status()
 
+    def resolve_identity_copy(
+        self,
+        relative_path: str,
+        expected_workflow_id: str,
+        expected_document_hash: str,
+    ) -> WorkflowInfo:
+        """Confirm one exact directory as an independent copy, retaining its files.
+
+        The application caller holds execution/storage admission for the affected
+        UUID. This exceptional path operation never makes paths workflow aliases.
+        """
+        relative_path = validate_workflow_id(relative_path)
+        identity = validate_workflow_identity(expected_workflow_id)
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", expected_document_hash) is None:
+            raise ValueError("Expected workflow document hash is invalid")
+        with self.workflow_structure_mutation(), self.workflow_mutation(identity):
+            self._recover_schema_v2_migration()
+            self.ensure_workflow_mutations_available()
+            path = self._path_for(relative_path)
+            paths, _folders = self._workflow_catalog_paths()
+            if path not in paths:
+                raise FileNotFoundError(relative_path)
+            directory_identity = path.parent.stat()
+
+            def recheck_copy() -> dict[str, Any]:
+                current_directory = path.parent.stat()
+                if (current_directory.st_dev, current_directory.st_ino) != (
+                    directory_identity.st_dev, directory_identity.st_ino,
+                ):
+                    raise WorkflowIdentityConflictError("The selected workflow directory changed")
+                content = path.read_bytes()
+                if f"sha256:{hashlib.sha256(content).hexdigest()}" != expected_document_hash:
+                    raise WorkflowIdentityConflictError("The selected workflow document changed; review copies again")
+                raw = json.loads(content)
+                document = WorkflowDocument.model_validate(raw)
+                if document.workflow_id != identity:
+                    raise WorkflowIdentityConflictError("The selected workflow identity changed")
+                copies = 0
+                for candidate in self._workflow_catalog_paths()[0]:
+                    try:
+                        candidate_raw = json.loads(candidate.read_text())
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    if isinstance(candidate_raw, dict) and candidate_raw.get("workflow_id") == identity:
+                        copies += 1
+                if copies < 2:
+                    raise WorkflowIdentityConflictError("This identity no longer has multiple copies")
+                return raw
+
+            raw = recheck_copy()
+            _plan, _targets, pending_paths, _errors = self._plan_schema_v2_workflows()
+            if relative_path in pending_paths:
+                raise WorkflowFormatUpdateRequiredError(relative_path)
+            new_identity = str(uuid4())
+            changed = {**raw, "workflow_id": new_identity}
+            targets = [self._schema_v2_target(path, changed)]
+            draft_path = path.parent / ".bioimageflow" / "draft.json"
+            if draft_path.is_file():
+                draft = json.loads(draft_path.read_text())
+                validated = WorkflowDraftResponse.model_validate(draft)
+                if validated.workflow_id != identity:
+                    raise WorkflowIdentityConflictError("The copied draft has an unrelated owner; recover it explicitly")
+                targets.append(self._schema_v2_target(draft_path, {**draft, "workflow_id": new_identity}))
+            plan_id = self._prepare_format_targets(targets)
+            self._reserve_workflow_generations([new_identity])
+            self._commit_format_targets(plan_id, targets, before_journal=recheck_copy)
+            return self._metadata_from_raw(relative_path, self._read_raw(relative_path), path)
+
     def workflow_format_status(self) -> WorkflowFormatStatus:
         """Preview pending migrations and report invalid workflow files."""
 
@@ -2643,20 +2742,28 @@ class WorkflowStoreService:
             )
             for workflow_id in sorted(pending_ids)
         )
-        identity_paths: dict[str, list[Path]] = {}
+        identity_paths: dict[str, list[tuple[Path, str]]] = {}
         for path in paths:
             try:
-                raw = json.loads(path.read_text())
+                content = path.read_bytes()
+                raw = json.loads(content)
                 identity = validate_workflow_identity(raw.get("workflow_id", ""))
             except (OSError, json.JSONDecodeError, ValueError, AttributeError):
                 continue
-            identity_paths.setdefault(identity, []).append(path)
+            identity_paths.setdefault(identity, []).append((path, f"sha256:{hashlib.sha256(content).hexdigest()}"))
+        identity_conflicts: list[WorkflowIdentityConflict] = []
         for identity, copies in identity_paths.items():
             if len(copies) > 1:
+                identity_conflicts.append(WorkflowIdentityConflict(
+                    workflow_id=identity, copies=[WorkflowIdentityCopy(
+                        relative_path=path.parent.relative_to(self.root_dir).as_posix(),
+                        document_hash=digest,
+                    ) for path, digest in copies],
+                ))
                 notices.extend(WorkflowFormatNotice(
                     status="error", workflow_id=identity, path=str(path),
                     detail="Multiple workflow directories claim this identity; resolve the external copy before editing.",
-                ) for path in copies)
+                ) for path, _digest in copies)
         for path in paths:
             workflow_id = path.parent.relative_to(self.root_dir).as_posix()
             issue = workflow_format_error(path, workflow_id)
@@ -2667,6 +2774,7 @@ class WorkflowStoreService:
             identity_migrations=self.identity_migration_receipts(),
             identity_migration_id=self.identity_migration_id(),
             workspace_path=str(self.workspace_dir.resolve(strict=False)),
+            identity_conflicts=identity_conflicts,
         )
 
     def ensure_workflow_format_current(self, name: str) -> None:
