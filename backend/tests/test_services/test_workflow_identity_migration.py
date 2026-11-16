@@ -181,3 +181,33 @@ def test_source_publication_refuses_external_move_before_creating_source_directo
     assert not original.exists()
     assert not (moved / "tools/new-source").exists()
     assert store.read_workflow_document(info.id).graph == graph
+
+
+def test_result_download_filename_uses_relative_path_without_leaking_uuid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import shutil
+
+    from bioimageflow_server.models.workflow import WorkflowCreate
+    from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.services.workflow_archive import safe_workflow_export_stem
+    from bioimageflow_server.services.workflow_exports import WorkflowExportService
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    info = store.create_workflow(WorkflowCreate(name="folder/workflow"))
+
+    def export(_storage, *, destination, **_kwargs):
+        destination.mkdir(parents=True)
+        output = destination / "result.txt"
+        output.write_text("retained result")
+        return [output]
+
+    monkeypatch.setattr("bioimageflow_server.services.workflow_exports.export_outputs", export)
+    prepared = WorkflowExportService(store).prepare_latest_results(info.id)
+    try:
+        assert prepared.filename == f"{safe_workflow_export_stem(info.relative_path)}-latest-results.zip"
+        assert info.id not in prepared.filename
+        assert prepared.path.is_file()
+    finally:
+        shutil.rmtree(prepared.cleanup_root)
