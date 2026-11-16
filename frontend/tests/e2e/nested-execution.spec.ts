@@ -110,15 +110,17 @@ function siblingGraph(name: string, displayName: string): GraphState {
   }
 }
 
-async function createSavedWorkflow(page: Page, graph: GraphState): Promise<void> {
+async function createSavedWorkflow(page: Page, graph: GraphState): Promise<string> {
   const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name: graph.name, display_name: graph.display_name },
   })
   expect(created.status(), await created.text()).toBe(201)
-  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${graph.name}`, {
+  const id: string = (await created.json()).id
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${id}`, {
     data: { graph },
   })
   expect(saved.ok(), await saved.text()).toBeTruthy()
+  return id
 }
 
 async function openWorkflow(page: Page, name: string, displayName: string): Promise<void> {
@@ -199,7 +201,7 @@ async function inspectNodeData(
 }
 
 test('Run Selected expands recursive dependencies and refuses an invalid nested boundary', async ({ page }) => {
-  const rootName = workflowId('recursive_selected')
+  let rootName = workflowId('recursive_selected')
   const rootDisplayName = `Recursive selected ${rootName}`
   const graph = nestedExecutionGraph(rootName, rootDisplayName)
   const invalidChild = nestedExecutionGraph('invalid_child', 'Invalid child').nodes[1]
@@ -215,9 +217,9 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
-  await createSavedWorkflow(page, graph)
-  const siblingName = workflowId('recursive_selected_sibling')
-  await createSavedWorkflow(page, siblingGraph(siblingName, `Recursive selected sibling ${siblingName}`))
+  rootName = await createSavedWorkflow(page, graph)
+  let siblingName = workflowId('recursive_selected_sibling')
+  siblingName = await createSavedWorkflow(page, siblingGraph(siblingName, `Recursive selected sibling ${siblingName}`))
   const siblingBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
 
   try {
@@ -308,13 +310,13 @@ test('Run Selected expands recursive dependencies and refuses an invalid nested 
 })
 
 test('executes nested Direct work and preserves scoped results after save and reopen', async ({ page }) => {
-  const rootName = workflowId('nested_execution')
+  let rootName = workflowId('nested_execution')
   const rootDisplayName = `Nested execution ${rootName}`
-  const siblingName = workflowId('nested_execution_sibling')
+  let siblingName = workflowId('nested_execution_sibling')
   const siblingDisplayName = `Nested sibling ${siblingName}`
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
-  await createSavedWorkflow(page, nestedExecutionGraph(rootName, rootDisplayName))
-  await createSavedWorkflow(page, siblingGraph(siblingName, siblingDisplayName))
+  rootName = await createSavedWorkflow(page, nestedExecutionGraph(rootName, rootDisplayName))
+  siblingName = await createSavedWorkflow(page, siblingGraph(siblingName, siblingDisplayName))
 
   try {
     await page.goto('/')
@@ -437,7 +439,7 @@ test('executes nested Direct work and preserves scoped results after save and re
 })
 
 test('opened nested canvases inspect the results of their own instance', async ({ page }) => {
-  const rootName = workflowId('nested_instance_results')
+  let rootName = workflowId('nested_instance_results')
   const rootDisplayName = `Nested instance results ${rootName}`
   const graph = nestedExecutionGraph(rootName, rootDisplayName)
   const first = graph.nodes.find(node => node.id === 'nested_step')
@@ -470,7 +472,7 @@ test('opened nested canvases inspect the results of their own instance', async (
   secondSeed.parameters = { column_name: 'number', values: [10, 20, 30] }
   graph.nodes.push(second)
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
-  await createSavedWorkflow(page, graph)
+  rootName = await createSavedWorkflow(page, graph)
 
   try {
     await page.goto('/')
@@ -573,13 +575,13 @@ test('opened nested canvases inspect the results of their own instance', async (
 })
 
 test('recovers a failed nested Direct child through an applied GUI correction', async ({ page }) => {
-  const rootName = workflowId('nested_direct_recovery')
+  let rootName = workflowId('nested_direct_recovery')
   const rootDisplayName = `Nested recovery ${rootName}`
-  const siblingName = workflowId('nested_direct_sibling')
+  let siblingName = workflowId('nested_direct_sibling')
   const siblingDisplayName = `Independent sibling ${siblingName}`
   await page.request.post(`${API_BASE}/api/v1/dev/seed`)
-  await createSavedWorkflow(page, nestedExecutionGraph(rootName, rootDisplayName, true))
-  await createSavedWorkflow(page, siblingGraph(siblingName, siblingDisplayName))
+  rootName = await createSavedWorkflow(page, nestedExecutionGraph(rootName, rootDisplayName, true))
+  siblingName = await createSavedWorkflow(page, siblingGraph(siblingName, siblingDisplayName))
 
   try {
     const siblingBefore = await (await page.request.get(`${API_BASE}/api/v1/workflows/${siblingName}`)).json()
