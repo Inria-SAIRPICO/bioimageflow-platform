@@ -10,6 +10,7 @@ import { useNapariStore } from '@/stores/napari'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useSettingsStore } from '@/stores/settings'
 import {
   useWorkflowDraftStore,
   type WorkflowDraftChangedMessage,
@@ -94,10 +95,17 @@ function cancelAllPending(reason: Error) {
   state.pending.clear()
 }
 
-async function refreshWorkflowTree(): Promise<void> {
+function workflowEventOwnsSelectedWorkspace(msg: Record<string, unknown>): boolean {
+  const selected = useSettingsStore().settings?.workspace_path
+  return typeof selected === 'string' && msg.workspace_path === selected
+}
+
+async function refreshWorkflowTree(): Promise<boolean> {
+  const workspaceSelection = useSettingsStore().workspaceSelectionRevision
   try {
     const workflowStore = useWorkflowStore()
     await workflowStore.fetchWorkflowTree({ fresh: true })
+    if (workspaceSelection !== useSettingsStore().workspaceSelectionRevision) return false
     window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
       detail: {
         workflows: workflowStore.workflows.map((workflow) => {
@@ -114,7 +122,9 @@ async function refreshWorkflowTree(): Promise<void> {
     }))
   } catch (err) {
     console.warn('[useWebSocket] fetchWorkflowTree failed:', err)
+    return false
   }
+  return true
 }
 
 function notifyWorkflowRemoved(msg: Record<string, unknown>): void {
@@ -155,7 +165,10 @@ function requestOpenWorkflow(workflowId: string): void {
 async function handleActiveWorkflowChanged(msg: Record<string, unknown>): Promise<void> {
   const workflowId = msg.workflow_id
   if (typeof workflowId !== 'string' || workflowId.length === 0) return
-  await refreshWorkflowTree()
+  const workspaceSelection = useSettingsStore().workspaceSelectionRevision
+  if (!await refreshWorkflowTree()) return
+  if (workspaceSelection !== useSettingsStore().workspaceSelectionRevision
+    || !workflowEventOwnsSelectedWorkspace(msg)) return
   requestOpenWorkflow(workflowId)
 }
 
@@ -289,16 +302,19 @@ function dispatch(raw: unknown) {
       useNapariStore().applyEnvironmentStatus(msg)
       break
     case 'workflow_draft_changed':
+      if (!workflowEventOwnsSelectedWorkspace(msg)) break
       useWorkflowDraftStore().noteRemoteChange(
         msg as unknown as WorkflowDraftChangedMessage,
       )
       break
     case 'workflow_tree_changed':
+      if (!workflowEventOwnsSelectedWorkspace(msg)) break
       if (!acceptWorkflowTreeGeneration(msg)) break
       notifyWorkflowRemoved(msg)
       void refreshWorkflowTree()
       break
     case 'active_workflow_changed':
+      if (!workflowEventOwnsSelectedWorkspace(msg)) break
       void handleActiveWorkflowChanged(msg)
       break
     case 'system_error':

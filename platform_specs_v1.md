@@ -973,13 +973,13 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `log` | `{level, message, node_id?, timestamp, execution_id?, workflow_id?, draft_revision?}` | BioImageFlow and Wetlands records attributable to an execution carry that execution's immutable context; non-execution tool, environment, thumbnail, and platform logs omit it and remain global |
 | `execution_complete` | `{success, node_statuses: dict[str, NodeStatus], planned_node_ids, planned_node_names, execution_id, workflow_id, errors?: [...], draft_revision}` | Workflow execution finished with final statuses and the fixed executable plan for one accepted execution context |
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, planned_node_ids, planned_node_names, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state and its fixed executable plan sent on connection and used for context-aware recovery |
-| `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one persistent workflow UUID |
+| `workflow_draft_changed` | `{workspace_path, workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one persistent workflow UUID |
 | `tool_reload` | `{tool_name, tool_metadata}` | An editable tool reloaded or a controlled package operation updated its registry metadata. Includes the full updated tool schema. |
 | `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
 | `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
 | `environment_status` | `{env_name: str, status: "stopped" | "creating" | "updating" | "ready" | "running" | "failed"}` | Environment state change; ready content is separate from worker startup, and canceled manual requests still publish their physical operation's final state |
-| `workflow_tree_changed` | `{action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
+| `workflow_tree_changed` | `{workspace_path, action, workflow_id?, identity_generation?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. Identity-specific mutations include the current workspace-durable generation so delayed events cannot target a newer same-ID incarnation, including after backend restart. |
 | `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
@@ -989,6 +989,8 @@ Progress, node-state, and completion messages always carry `execution_id`, `work
 
 There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
 
+Workflow draft, catalog and active-workflow notifications capture the canonical workspace when published, before asynchronous delivery.
+The frontend ignores notifications for another selected workspace; an active-workflow request also requires a successful catalog refresh and unchanged workspace selection before opening its canvas.
 The frontend retains `workflow_draft_changed` notices by `workflow_id` instead of projecting every notice onto the active canvas. A matching root canvas without local semantic edits or pending draft writes auto-loads and applies the newer draft, including a strictly newer notice received during an earlier fetch or install. Accepted external graphs may remain dirty against the saved artifact, and recovery-only pending writes do not create a local conflict. A matching canvas with local semantic edits or pending draft writes keeps its graph and presents conflict resolution; inactive workflows retain their notice until tracked. Nested canvases do not auto-apply root-draft notices.
 
 **Client-to-server messages:**

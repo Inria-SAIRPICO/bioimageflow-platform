@@ -401,6 +401,7 @@ Moves coordinate physical locations and path metadata under the mutation gate an
 Idle affected canvases flush root drafts and private nested snapshots without Save or apply and retain their registrations, unsaved state and undo history.
 Writes recheck UUID and storage independently of Refresh, reject duplicate or missing identities, and never recreate an old directory after an external move.
 The optional `X-BioImageFlow-Workspace` owner header binds pending canvas, editor and agent requests to their captured canonical workspace and refuses a same-UUID workflow in a newly selected workspace; asynchronous request work retains the selected store.
+Workflow draft, tree and active-workflow notifications carry their workspace captured before scheduling; clients reject a different selected owner and guard active-workflow completion after catalog refresh.
 Catalog and structural responses from a previously selected workspace cannot update the new workspace's workflow metadata, folder selection or active canvas, including copies sharing UUIDs and generations.
 Duplicate UUIDs remain unavailable until explicit copy resolution selects an exact relative path, UUID and saved-document digest.
 That operation uses synchronized backups and a forward-recoverable journal to assign the selected directory a fresh UUID, preserving its content, results and root draft revision/baseline; other copies remain unchanged.
