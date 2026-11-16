@@ -32,6 +32,7 @@ import {
 } from '@/composables/useCanvasPersistence'
 import {
   useCanvasCommands,
+  type CanvasToolBinding,
   type CanvasInterfaceCommandResult,
   type CanvasInterfaceRejectionReason,
 } from '@/composables/useCanvasCommands'
@@ -277,6 +278,7 @@ const graphSync = useGraphSync({
   getWorkflowId: owningWorkflowId,
   nestedSnapshot: initialNestedSession && props.nestedWorkflowSessionId
     ? {
+        workspacePath: workflowStore.workflows.find(info => (info.id ?? info.name) === ownedWorkflowName.value)?.workspace_path ?? undefined,
         initialSnapshot: nestedWorkflowSessionsStore.snapshotForSession(
           props.nestedWorkflowSessionId,
         ),
@@ -290,11 +292,13 @@ const graphSync = useGraphSync({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isNestedWorkflowEditor ? () => saveNestedWorkflowSession() : undefined,
-  addToolNode: (toolName, parameters) => onAddNode({
+  addToolNode: (toolName, parameters, binding) => onAddNode({
     toolName,
     parameters,
+    binding,
     position: canvasCenterPosition(),
   }),
+  canAddToolNode: () => !isLocked.value,
   renameNode,
   setNodeEnabled,
   setNodesEnabled,
@@ -304,6 +308,7 @@ const canvasCommands = useCanvasCommands({
   setNodeResources,
   setInputPinned,
   setOutputTemplate,
+  setOutputTemplates,
   toggleWorkflowInput,
   toggleWorkflowOutput,
   renameWorkflowInput,
@@ -981,6 +986,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   const detail = (event as CustomEvent<{
     canvasId?: string
     draft?: WorkflowDraftResponse
+    dirty?: boolean
     handled?: boolean
     resolve?: () => void
     reject?: (error: unknown) => void
@@ -989,7 +995,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
   detail.handled = true
   try {
     await applyGraphState(
-      detail.draft.graph, workflowStore.missingTools, false, true,
+      detail.draft.graph, workflowStore.missingTools, detail.dirty ?? false, true,
       rootMetadataAuthority(detail.draft),
     )
     detail.resolve?.()
@@ -1129,8 +1135,7 @@ async function keepCurrentCanvasDraft(): Promise<void> {
 }
 
 function nextAgentCopyWorkflowName(baseName: string): string {
-  const existing = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
-  if (workflowStore.currentName) existing.add(workflowStore.currentName)
+  const existing = new Set(workflowStore.workflows.map(workflow => workflow.relative_path))
   let suffix = 2
   let name = `${baseName}_agent_${suffix}`
   while (existing.has(name)) {
@@ -1154,25 +1159,30 @@ async function saveAgentDraftAsCopy(): Promise<void> {
   remoteDraftActionError.value = null
   remoteDraftResolutionMessage.value = null
   try {
-    const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName)
-    const copyName = nextAgentCopyWorkflowName(workflowName)
+    const source = workflowStore.workflows.find(workflow => workflowInfoId(workflow) === workflowName)
+    if (!source) throw new Error('The source workflow is unavailable. Refresh the workflow list before saving a copy.')
+    const workspacePath = canvasPersistence.workspacePath
+    const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName, workspacePath)
+    const copyName = nextAgentCopyWorkflowName(source.relative_path)
+    const displayName = `${remoteDraft.graph.display_name} (agent copy)`
     const { data } = await api.patch<WorkflowInfo>(
       `/api/v1/workflows/${workflowUrl(workflowName)}`,
       {
         action: 'duplicate',
         new_name: copyName,
-        display_name: copyName,
+        display_name: displayName,
         graph: remoteDraft.graph,
         expected_identity_generation: sourceGeneration,
       },
+      ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
     )
     rememberCreatedWorkflow(data)
     if (isCanvasUnmounted || currentWorkflowName() !== workflowName) return
-    remoteDraftResolutionMessage.value = `Agent version saved as ${workflowInfoId(data)}.`
+    remoteDraftResolutionMessage.value = `Agent version saved as ${data.display_name}.`
     clipboardToast?.add({
       severity: 'success',
       summary: 'Agent version saved',
-      detail: workflowInfoId(data),
+      detail: data.display_name,
       life: 5000,
     })
   } catch (err) {
@@ -2592,13 +2602,21 @@ function onAddNode({
   toolName,
   position,
   parameters: parameterOverrides,
+  binding,
 }: {
   toolName: string
   position?: { x: number; y: number }
   parameters?: Record<string, unknown>
+  binding?: CanvasToolBinding
 }): string | null {
   if (isLocked.value) return null
-  const tool = toolRegistryStore.getToolByName(toolName)
+  const tool = binding
+    ? toolRegistryStore.tools.find(candidate => candidate.name === toolName
+      && candidate.name === binding.tool_class
+      && candidate.package === binding.tool_package
+      && candidate.package_version === binding.tool_package_version
+      && candidate.source_kind === 'package')
+    : toolRegistryStore.getToolByName(toolName)
   if (!tool) return null
 
   const existingIds = getNodes.value.map((n: any) => n.id)
@@ -2637,6 +2655,12 @@ function onAddNode({
       name,
       toolName,
       tool,
+      ...(binding ? {
+        toolModule: binding.tool_module,
+        toolClass: binding.tool_class,
+        toolPackage: binding.tool_package,
+        toolPackageVersion: binding.tool_package_version,
+      } : {}),
       status: 'unexecuted',
       parameters,
       collapsed: false,
@@ -2768,6 +2792,7 @@ function deleteNodes(nodeIds: string[]): boolean {
 async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   if (isLocked.value || isNestedWorkflowEditor || nodeIds.length === 0) return false
   const workflowName = currentWorkflowName()
+  const ownerWorkspace = canvasPersistence.workspacePath
   if (workflowName === null) return false
   const accepted = await flushNow()
   if (accepted === null || isLocked.value) return false
@@ -2776,7 +2801,9 @@ async function clearNodeOutputs(nodeIds: string[]): Promise<boolean> {
   const existingIds = new Set(accepted.graph.nodes.map(node => node.id))
   const requestedIds = [...new Set(nodeIds)].filter(nodeId => existingIds.has(nodeId))
   if (requestedIds.length === 0) return false
-  const cleared = await executionStore.clear(requestedIds, workflowName, draftRevision)
+  const cleared = await executionStore.clear(
+    requestedIds, workflowName, draftRevision, ...(ownerWorkspace ? [ownerWorkspace] : []),
+  )
   if (validationResult.value !== null) {
     validationResult.value = validationAfterCacheClear(
       validationResult.value,
@@ -3875,6 +3902,43 @@ function setOutputTemplate(
   return true
 }
 
+function setOutputTemplates(nodePath: string, templates: Record<string, string>): boolean {
+  if (isLocked.value || isNestedWorkflowEditor || Object.keys(templates).length === 0) return false
+  const segments = nodePath.split('/')
+  const rootId = segments.shift()
+  const root = getNodes.value.find((candidate: any) => candidate.id === rootId)
+  if (!root?.data) return false
+  if (segments.length === 0) {
+    if (root.data.nodeType !== 'tool') return false
+    if (Object.entries(templates).every(([field, value]) => root.data.output_templates?.[field] === value)) return false
+    root.data.output_templates = { ...(root.data.output_templates ?? {}), ...templates }
+  } else {
+    if (root.data.nodeType !== 'workflow') return false
+    if (nestedWorkflowSessionsStore.hasOpenEditorForNode({
+      kind: 'root', canvas_id: canvasId, workflow_id: ownedWorkflowName.value,
+    }, root.id)) {
+      throw new Error('Close the nested workflow editor before correcting its output templates.')
+    }
+    const workflow = deepClone(root.data.workflow) as GraphState
+    let graph = workflow
+    for (const [position, id] of segments.entries()) {
+      const node = graph.nodes.find(candidate => candidate.id === id)
+      if (!node) return false
+      if (position === segments.length - 1) {
+        if (node.type !== 'tool') return false
+        if (Object.entries(templates).every(([field, value]) => node.output_templates?.[field] === value)) return false
+        node.output_templates = { ...node.output_templates, ...templates }
+      } else {
+        if (node.type !== 'workflow') return false
+        graph = node.workflow
+      }
+    }
+    root.data.workflow = workflow
+  }
+  emitGraphChanged()
+  return true
+}
+
 function workflowInterfaceRejected(
   reason: CanvasInterfaceRejectionReason,
   name?: string,
@@ -4251,7 +4315,9 @@ defineExpose({
         ? 'Saving workflow…'
         : lifecycleOperation === 'discarding'
           ? 'Restoring saved workflow…'
-          : 'Deleting workflow…' }}
+          : lifecycleOperation === 'moving'
+            ? 'Moving workflow…'
+            : 'Deleting workflow…' }}
     </div>
     <CanvasErrorBanner :validation-result="validationResult" />
     <CanvasPersistenceFeedback

@@ -237,7 +237,7 @@ def _child_graph() -> GraphState:
     return GraphState.model_validate(graph)
 
 
-def _parent_graph(child: GraphState, artifact_hash: str) -> GraphState:
+def _parent_graph(child: GraphState, artifact_hash: str, child_id: str) -> GraphState:
     graph = _empty_graph("qa_parent", "QA Nested Parent")
     graph["nodes"] = [
         _tool_node("numbers", "QaNumbers", 80, 120),
@@ -249,7 +249,7 @@ def _parent_graph(child: GraphState, artifact_hash: str) -> GraphState:
             "bindings": {},
             "source": {
                 "kind": "workspace",
-                "workflow_id": "QA/Nested Child",
+                "workflow_id": child_id,
                 "artifact_hash": artifact_hash,
             },
             "position": [400, 120],
@@ -339,25 +339,25 @@ def _create_workflow(
     display_name: str,
     graph: GraphState,
     description: str,
-) -> None:
-    store.create_workflow(
+) -> str:
+    info = store.create_workflow(
         WorkflowCreate(
             name=workflow_id,
             display_name=display_name,
             description=description,
         )
     )
-    store.save_workflow(workflow_id, WorkflowSaveBody(graph=graph))
+    store.save_workflow(info.id, WorkflowSaveBody(graph=graph))
+    return info.id
 
 
 def _write_workflows(root: Path) -> WorkflowStoreService:
     registry = ToolRegistryService()
     store = WorkflowStoreService(root / "workspace" / "workflows", registry)
 
-    reference_id = "QA/Reference Workflow"
-    _create_workflow(
+    reference_id = _create_workflow(
         store,
-        reference_id,
+        "QA/Reference Workflow",
         "QA Reference Workflow",
         GraphState.model_validate(_empty_graph("qa_reference", "QA Reference Workflow")),
         "Deterministic two-step workflow for manual QA.",
@@ -375,19 +375,19 @@ def _write_workflows(root: Path) -> WorkflowStoreService:
     store.save_workflow(reference_id, WorkflowSaveBody(graph=_reference_graph()))
 
     child = _child_graph()
-    _create_workflow(
+    child_id = _create_workflow(
         store,
         "QA/Nested Child",
         "QA Nested Child",
         child,
         "Reusable child with one stable input and output.",
     )
-    child_hash = store.get_workflow("QA/Nested Child").artifact_hash
+    child_hash = store.get_workflow(child_id).artifact_hash
     _create_workflow(
         store,
         "QA/Nested Parent",
         "QA Nested Parent",
-        _parent_graph(child, child_hash),
+        _parent_graph(child, child_hash, child_id),
         "Parent containing a saved nested-workflow snapshot.",
     )
     _create_workflow(
@@ -397,14 +397,14 @@ def _write_workflows(root: Path) -> WorkflowStoreService:
         _failing_graph(),
         "Always fails in QaFail for error, retry, and logging checks.",
     )
-    _create_workflow(
+    authoring_id = _create_workflow(
         store,
         "QA/Python Authoring",
         "QA Python Authoring",
         GraphState.model_validate(_empty_graph("qa_python_authoring", "QA Python Authoring")),
         "Contains trusted workflow.py for Build from Python source.",
     )
-    (store.workflow_dir("QA/Python Authoring") / "workflow.py").write_text(
+    (store.workflow_dir(authoring_id) / "workflow.py").write_text(
         PYTHON_WORKFLOW_SOURCE,
         encoding="utf-8",
     )
@@ -426,7 +426,7 @@ def _write_archives(root: Path, store: WorkflowStoreService) -> None:
         ("qa_import_collision", "qa_import_collision.bioimageflow.zip"),
         ("QA/Nested Parent", "qa-nested-parent.bioimageflow.zip"),
     ):
-        _, payload = store.export_workflow_archive(workflow_id)
+        _, payload = store.export_workflow_archive(store.workflow_id_at_path(workflow_id))
         (imports / filename).write_bytes(payload)
 
     (imports / "corrupt-workflow.bioimageflow.zip").write_bytes(
@@ -439,7 +439,7 @@ def _write_archives(root: Path, store: WorkflowStoreService) -> None:
     manifest = {
         "schema": RESULTS_BUNDLE_SCHEMA,
         "kind": "workflow-with-results",
-        "workflow_id": "qa_import_collision",
+        "workflow_id": store.workflow_id_at_path("qa_import_collision"),
         "workflow": {
             "archive": workflow_member,
             "sha256": hashlib.sha256(workflow_payload).hexdigest(),

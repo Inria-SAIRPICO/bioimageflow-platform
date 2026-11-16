@@ -215,9 +215,9 @@ class WorkflowExportService:
 
     def prepare_latest_results(self, workflow_id: str) -> PreparedDownload:
         cleanup_root = _temporary_root()
-        stem = safe_workflow_export_stem(workflow_id)
         try:
             with self.store.workflow_mutation(workflow_id):
+                stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
                 storage_path = self.store.get_storage_path(workflow_id)
                 try:
                     exported = export_outputs(
@@ -257,7 +257,8 @@ class WorkflowExportService:
                 workflow_dir=workflow_dir,
                 results_dir=storage_path,
             )
-            destination = parent / f"{safe_workflow_export_stem(workflow_id)}-latest-results"
+            stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
+            destination = parent / f"{stem}-latest-results"
             if destination.is_symlink():
                 _raise(
                     "unsafe_export_destination",
@@ -326,12 +327,19 @@ class WorkflowExportService:
             return FolderExport(destination=destination, exported_items=len(exported))
 
     def prepare_workflow_run_bundle(self, workflow_id: str) -> PreparedDownload:
+        return self._prepare_successful_run(workflow_id, include_workflow=True)
+
+    def prepare_successful_run_results(self, workflow_id: str) -> PreparedDownload:
+        return self._prepare_successful_run(workflow_id, include_workflow=False)
+
+    def _prepare_successful_run(
+        self, workflow_id: str, *, include_workflow: bool
+    ) -> PreparedDownload:
         cleanup_root = _temporary_root()
-        stem = safe_workflow_export_stem(workflow_id)
         bundle_root = cleanup_root / "bundle"
         try:
             with self.store.workflow_mutation(workflow_id):
-                filename, workflow_payload = self.store.export_workflow_archive(workflow_id)
+                stem = safe_workflow_export_stem(self.store.relative_path_for_workflow(workflow_id))
                 storage_path = self.store.get_storage_path(workflow_id)
                 try:
                     run_id = Storage(storage_path).latest_success_run_id()
@@ -344,10 +352,6 @@ class WorkflowExportService:
                         409,
                     )
 
-                nested_filename = filename
-                workflow_path = bundle_root / "workflow" / nested_filename
-                workflow_path.parent.mkdir(parents=True, exist_ok=True)
-                workflow_path.write_bytes(workflow_payload)
                 try:
                     exported = export_outputs(
                         storage_path,
@@ -366,27 +370,33 @@ class WorkflowExportService:
                         409,
                     )
 
-                workflow_member = f"workflow/{nested_filename}"
+                _ensure_materialized(exported)
                 results_member = f"results/runs/{run_id}"
                 manifest = {
                     "schema": RESULTS_BUNDLE_SCHEMA,
-                    "kind": "workflow-with-results",
+                    "kind": "workflow-with-results" if include_workflow else "results-only",
                     "workflow_id": workflow_id,
-                    "workflow": {
-                        "archive": workflow_member,
-                        "sha256": hashlib.sha256(workflow_payload).hexdigest(),
-                    },
                     "results": {
                         "kind": "latest-successful-run",
                         "run_id": run_id,
                         "path": results_member,
                     },
                 }
+                if include_workflow:
+                    filename, workflow_payload = self.store.export_workflow_archive(workflow_id)
+                    workflow_path = bundle_root / "workflow" / filename
+                    workflow_path.parent.mkdir(parents=True, exist_ok=True)
+                    workflow_path.write_bytes(workflow_payload)
+                    manifest["workflow"] = {
+                        "archive": f"workflow/{filename}",
+                        "sha256": hashlib.sha256(workflow_payload).hexdigest(),
+                    }
                 (bundle_root / RESULTS_BUNDLE_MANIFEST).write_text(
                     json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                archive_path = cleanup_root / f"{stem}-workflow-and-results.zip"
+                suffix = "workflow-and-results" if include_workflow else "successful-run-results"
+                archive_path = cleanup_root / f"{stem}-{suffix}.zip"
                 _zip_tree(bundle_root, archive_path)
             return PreparedDownload(
                 path=archive_path,

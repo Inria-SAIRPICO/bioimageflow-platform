@@ -1,5 +1,5 @@
 {
-  "artifact_hash": "sha256:f81c2e469b36d8a71d4824aaaa1cf496adfa5901a675f2a475b0f18b22e35477",
+  "artifact_hash": "sha256:57f5db3bc5a870844cc1c1fe1f935d843099d733d287cbdece3712b22269a89c",
   "graph": {
     "config": {
       "engine": "wetlands",
@@ -77,8 +77,21 @@
           "id": "output-image-index",
           "name": "image_index",
           "schema": {
+            "connectable": "not_by_default",
+            "default": null,
+            "description": "Identifier of the source image (copied from the DataFrame index).",
+            "display_name": "Image index",
+            "group": null,
             "image_spec": null,
-            "type": "str"
+            "max": null,
+            "min": null,
+            "nullable": false,
+            "required": true,
+            "step": null,
+            "type": "str",
+            "type_spec": {
+              "kind": "str"
+            }
           },
           "source": {
             "column": "image_index",
@@ -89,8 +102,21 @@
           "id": "output-fols2",
           "name": "avg_fols2_per_nucleus",
           "schema": {
+            "connectable": "not_by_default",
+            "default": null,
+            "description": "Average number of distinct FOLS2 spots overlapping each nucleus.",
+            "display_name": "Avg FOLS2 spots / nucleus",
+            "group": null,
             "image_spec": null,
-            "type": "float"
+            "max": null,
+            "min": null,
+            "nullable": false,
+            "required": true,
+            "step": null,
+            "type": "float",
+            "type_spec": {
+              "kind": "float"
+            }
           },
           "source": {
             "column": "avg_fols2_per_nucleus",
@@ -101,8 +127,21 @@
           "id": "output-csf1r",
           "name": "avg_csf1r_per_nucleus",
           "schema": {
+            "connectable": "not_by_default",
+            "default": null,
+            "description": "Average number of distinct CSF1R spots overlapping each nucleus.",
+            "display_name": "Avg CSF1R spots / nucleus",
+            "group": null,
             "image_spec": null,
-            "type": "float"
+            "max": null,
+            "min": null,
+            "nullable": false,
+            "required": true,
+            "step": null,
+            "type": "float",
+            "type_spec": {
+              "kind": "float"
+            }
           },
           "source": {
             "column": "avg_csf1r_per_nucleus",
@@ -164,7 +203,7 @@
         "tool_module": "bioimageflow_io_tools.selection",
         "tool_name": "SelectChannel",
         "tool_package": "bioimageflow_io_tools",
-        "tool_package_version": "0.2.2",
+        "tool_package_version": "0.3.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -186,7 +225,7 @@
         "tool_module": "bioimageflow_segmentation_tools.cellpose_v3",
         "tool_name": "Cellpose3",
         "tool_package": "bioimageflow_segmentation_tools",
-        "tool_package_version": "0.3.2",
+        "tool_package_version": "0.4.0",
         "type": "tool",
         "viewer_additions": {}
       },
@@ -263,7 +302,10 @@
                       "intensity"
                     ]
                   },
-                  "type": "ImageFile"
+                  "type": "ImageFile",
+                  "type_spec": {
+                    "kind": "Path"
+                  }
                 },
                 "targets": [
                   {
@@ -295,7 +337,10 @@
                       "label"
                     ]
                   },
-                  "type": "ImageFile"
+                  "type": "ImageFile",
+                  "type_spec": {
+                    "kind": "Path"
+                  }
                 },
                 "targets": [
                   {
@@ -317,7 +362,10 @@
                 "name": "channel",
                 "schema": {
                   "image_spec": null,
-                  "type": "int"
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "targets": [
                   {
@@ -339,7 +387,10 @@
                 "name": "gaussian_std",
                 "schema": {
                   "image_spec": null,
-                  "type": "int"
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "targets": [
                   {
@@ -361,7 +412,10 @@
                 "name": "p_value",
                 "schema": {
                   "image_spec": null,
-                  "type": "float"
+                  "type": "float",
+                  "type_spec": {
+                    "kind": "float"
+                  }
                 },
                 "targets": [
                   {
@@ -379,8 +433,21 @@
                 "id": "output-reference-label",
                 "name": "reference_label",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Label value from the reference image.",
+                  "display_name": "Reference label",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "reference_label",
@@ -391,8 +458,21 @@
                 "id": "output-spot-label",
                 "name": "spot_label",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Label value from the label image.",
+                  "display_name": "Spot label",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "spot_label",
@@ -403,8 +483,21 @@
                 "id": "output-overlap-count",
                 "name": "overlap_count",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Number of pixels where the two labels overlap.",
+                  "display_name": "Overlap count",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "overlap_count",
@@ -445,7 +538,7 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -455,7 +548,10 @@
               "id": "fols2_detect_marker_spots",
               "name": "detect_marker_spots",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "area_lim": null,
+                "verbose": false
+              },
               "position": [
                 320.0,
                 0.0
@@ -465,7 +561,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -485,7 +581,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -495,7 +591,9 @@
               "id": "fols2_measure_nucleus_overlaps",
               "name": "measure_nucleus_overlaps",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "source_image": null
+              },
               "position": [
                 960.0,
                 0.0
@@ -584,7 +682,10 @@
                       "intensity"
                     ]
                   },
-                  "type": "ImageFile"
+                  "type": "ImageFile",
+                  "type_spec": {
+                    "kind": "Path"
+                  }
                 },
                 "targets": [
                   {
@@ -616,7 +717,10 @@
                       "label"
                     ]
                   },
-                  "type": "ImageFile"
+                  "type": "ImageFile",
+                  "type_spec": {
+                    "kind": "Path"
+                  }
                 },
                 "targets": [
                   {
@@ -638,7 +742,10 @@
                 "name": "channel",
                 "schema": {
                   "image_spec": null,
-                  "type": "int"
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "targets": [
                   {
@@ -660,7 +767,10 @@
                 "name": "gaussian_std",
                 "schema": {
                   "image_spec": null,
-                  "type": "int"
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "targets": [
                   {
@@ -682,7 +792,10 @@
                 "name": "p_value",
                 "schema": {
                   "image_spec": null,
-                  "type": "float"
+                  "type": "float",
+                  "type_spec": {
+                    "kind": "float"
+                  }
                 },
                 "targets": [
                   {
@@ -700,8 +813,21 @@
                 "id": "output-reference-label",
                 "name": "reference_label",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Label value from the reference image.",
+                  "display_name": "Reference label",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "reference_label",
@@ -712,8 +838,21 @@
                 "id": "output-spot-label",
                 "name": "spot_label",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Label value from the label image.",
+                  "display_name": "Spot label",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "spot_label",
@@ -724,8 +863,21 @@
                 "id": "output-overlap-count",
                 "name": "overlap_count",
                 "schema": {
+                  "connectable": "not_by_default",
+                  "default": null,
+                  "description": "Number of pixels where the two labels overlap.",
+                  "display_name": "Overlap count",
+                  "group": null,
                   "image_spec": null,
-                  "type": "int"
+                  "max": null,
+                  "min": null,
+                  "nullable": false,
+                  "required": true,
+                  "step": null,
+                  "type": "int",
+                  "type_spec": {
+                    "kind": "int"
+                  }
                 },
                 "source": {
                   "column": "overlap_count",
@@ -766,7 +918,7 @@
               "tool_module": "bioimageflow_io_tools.selection",
               "tool_name": "SelectChannel",
               "tool_package": "bioimageflow_io_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -776,7 +928,10 @@
               "id": "csf1r_detect_marker_spots",
               "name": "detect_marker_spots",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "area_lim": null,
+                "verbose": false
+              },
               "position": [
                 320.0,
                 0.0
@@ -786,7 +941,7 @@
               "tool_module": "bioimageflow_spot_tools.atlas",
               "tool_name": "AtlasSpotDetection",
               "tool_package": "bioimageflow_spot_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -806,7 +961,7 @@
               "tool_module": "bioimageflow_common_tools.connected_components",
               "tool_name": "ConnectedComponents",
               "tool_package": "bioimageflow_common_tools",
-              "tool_package_version": "0.2.2",
+              "tool_package_version": "0.3.0",
               "type": "tool",
               "viewer_additions": {}
             },
@@ -816,7 +971,9 @@
               "id": "csf1r_measure_nucleus_overlaps",
               "name": "measure_nucleus_overlaps",
               "output_templates": {},
-              "parameters": {},
+              "parameters": {
+                "source_image": null
+              },
               "position": [
                 960.0,
                 0.0
@@ -856,10 +1013,11 @@
   "metadata": {
     "bundled_template": {
       "id": "fish-analysis",
-      "version": 6
+      "version": 7
     },
     "description": "Analyze FISH marker spots per segmented nucleus."
   },
   "owned_source_ids": [],
-  "platform_document_version": 1
+  "platform_document_version": 2,
+  "workflow_id": "4d20c483-47aa-5078-9a03-150afe996933"
 }

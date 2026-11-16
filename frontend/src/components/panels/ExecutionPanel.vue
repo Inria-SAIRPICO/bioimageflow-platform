@@ -133,6 +133,9 @@ function formatBytes(value: number): string {
 }
 
 function action(name: keyof ExecutionActions): ExecutionActionAvailability {
+  if ((name === 'retry' || name === 'recompute') && !registry.selectedRun?.workflow_id) {
+    return { available: false, reason: 'Resolve the retained execution’s workflow identity before starting another run.' }
+  }
   return registry.selectedRun?.actions[name] ?? {
     available: false,
     reason: 'This action is unavailable for the retained execution.',
@@ -140,6 +143,7 @@ function action(name: keyof ExecutionActions): ExecutionActionAvailability {
 }
 
 function selectOnCanvas(job: ExecutionJobSnapshot): void {
+  if (!registry.selectedRun?.workflow_id || registry.selectedRun.workflow_id !== ui.activeWorkflowId) return
   const segments = job.scoped_node_path.split('/')
   ui.setSelectedNodes([segments[segments.length - 1]!])
   ui.panels.nodePanel = true
@@ -207,7 +211,7 @@ async function downloadResults(id: string): Promise<void> {
 
 function openRetry(): void {
   const run = registry.selectedRun
-  if (!run || !run.actions.retry.available) return
+  if (!run || !action('retry').available) return
   retryParentId.value = run.id
   retryInitialMode.value = 'retry'
   retryInitialNodePath.value = null
@@ -495,7 +499,7 @@ function closeRetryDialog(): void {
           <header>
             <strong>{{ selectedJob.scoped_node_path }}</strong>
             <div>
-              <Button label="Canvas" icon="pi pi-sitemap" text size="small" @click="selectOnCanvas(selectedJob)" />
+              <Button label="Canvas" icon="pi pi-sitemap" text size="small" :disabled="!registry.selectedRun?.workflow_id || registry.selectedRun.workflow_id !== ui.activeWorkflowId" @click="selectOnCanvas(selectedJob)" />
               <Button v-if="registry.selectedRun.backend !== 'managed_remote'" label="Logs" icon="pi pi-list" text size="small" data-testid="execution-job-logs" @click="openLogs(selectedJob)" />
             </div>
           </header>

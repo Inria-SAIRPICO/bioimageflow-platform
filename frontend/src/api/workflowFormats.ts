@@ -1,8 +1,14 @@
 import { api } from './client'
-import type { WorkflowFormatNotice, WorkflowFormatStatus } from './types'
+import type { WorkflowFormatNotice, WorkflowFormatStatus, WorkflowIdentityMigrationAck } from './types'
 
-export async function getWorkflowFormatStatus(): Promise<WorkflowFormatStatus> {
-  const response = await api.get<WorkflowFormatStatus>('/api/v1/workflows/format-status')
+export async function acknowledgeWorkflowIdentityMigrations(body: WorkflowIdentityMigrationAck, workspacePath: string): Promise<WorkflowFormatStatus> {
+  return (await api.post<WorkflowFormatStatus>('/api/v1/workflows/identity-migrations/ack', body, {
+    headers: { 'X-BioImageFlow-Workspace': workspacePath },
+  })).data
+}
+
+export async function getWorkflowFormatStatus(workspacePath?: string): Promise<WorkflowFormatStatus> {
+  const response = await api.get<WorkflowFormatStatus>('/api/v1/workflows/format-status', ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []))
   return response.data
 }
 

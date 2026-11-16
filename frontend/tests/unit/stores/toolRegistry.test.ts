@@ -17,6 +17,7 @@ const mockedApi = api as unknown as {
 
 const mockTools: ToolMetadata[] = [
   {
+    output_file_declarations: {},
     name: 'threshold',
     display_name: 'Threshold',
     package: 'bioimageflow-core',
@@ -30,6 +31,7 @@ const mockTools: ToolMetadata[] = [
     environment: null,
   },
   {
+    output_file_declarations: {},
     name: 'gaussian_blur',
     display_name: 'Gaussian Blur',
     package: 'bioimageflow-core',
@@ -43,6 +45,7 @@ const mockTools: ToolMetadata[] = [
     environment: null,
   },
   {
+    output_file_declarations: {},
     name: 'cellpose',
     display_name: 'Cellpose Segmentation',
     package: 'bioimageflow-cellpose',

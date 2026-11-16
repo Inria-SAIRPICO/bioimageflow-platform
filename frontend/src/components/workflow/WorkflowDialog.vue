@@ -12,6 +12,9 @@ const props = defineProps<{
   initialDisplayName?: string
   initialDescription?: string | null
   suggestedName?: string | null
+  destination?: string
+  busy?: boolean
+  submitDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -82,7 +85,7 @@ function onCancel() {
 }
 
 function onSubmit() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || props.busy || props.submitDisabled) return
   const trimmedDisplayName = displayName.value.trim()
   const trimmedName = (generatedName.value || name.value).trim()
   emit('submit', {
@@ -111,6 +114,7 @@ function onSubmit() {
     </template>
 
     <div class="workflow-form">
+      <p v-if="destination !== undefined" data-testid="workflow-creation-destination">Create in: {{ destination }}</p>
       <label class="field">
         <span>Name</span>
         <InputText
@@ -145,11 +149,11 @@ function onSubmit() {
     </div>
 
     <template #footer>
-      <Button label="Cancel" text data-testid="workflow-dialog-cancel" @click="onCancel" />
+      <Button label="Cancel" text :disabled="busy" data-testid="workflow-dialog-cancel" @click="onCancel" />
       <Button
         :label="mode === 'new' ? 'Create' : 'Save copy'"
         icon="pi pi-check"
-        :disabled="!canSubmit"
+        :disabled="!canSubmit || busy || submitDisabled"
         data-testid="workflow-dialog-submit"
         @click="onSubmit"
       />

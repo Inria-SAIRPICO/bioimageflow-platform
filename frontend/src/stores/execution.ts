@@ -12,6 +12,7 @@ import type {
   GraphState,
   GraphValidationError,
   NodeStatus,
+  OutputPlanningReport,
 } from '@/api/types'
 
 export interface ProgressInfo {
@@ -29,12 +30,14 @@ interface ExecutionResult {
   success: boolean
   errors: Array<Record<string, unknown>>
   node_statuses: Record<string, NodeStatus>
+  output_planning_reports?: OutputPlanningReport[]
 }
 
 interface ExecutionStatus {
   state: 'starting' | 'running' | 'idle'
   last_result: ExecutionResult | null
   progress: ProgressInfo | null
+  storage_error?: string | null
 }
 
 interface ExecutionContextFields {
@@ -95,6 +98,7 @@ export interface RunExecutionOptions {
   draftRevision: number
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
+  workspacePath?: string
 }
 
 export type ExecutionMode = 'normal' | 'retry' | 'invalidate_failed' | 'recompute'
@@ -218,6 +222,7 @@ export const useExecutionStore = defineStore('execution', () => {
   const plannedNodeIds = ref<string[]>([])
   const plannedNodeNames = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
+  const storageError = ref<string | null>(null)
   const isConflict = ref(false)
   const conflictCode = ref<string | null>(null)
   const validationErrors = ref<GraphValidationError[]>([])
@@ -287,6 +292,7 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function clearRuntimeResult(): void {
+    storageError.value = null
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
@@ -543,6 +549,7 @@ export const useExecutionStore = defineStore('execution', () => {
       const { data } = await api.post<ExecutionContextFields & { status: string }>(
         '/api/v1/execution/run',
         payload,
+        ...(options.workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': options.workspacePath } }] : []),
       )
       if (activeStartRequest === requestId) {
         const responseContext = executionContextFrom(data)
@@ -615,6 +622,7 @@ export const useExecutionStore = defineStore('execution', () => {
     nodeIds: string[],
     workflowName: string,
     draftRevision: number,
+    workspacePath?: string,
   ) {
     if (workflowName.trim().length === 0) {
       throw new Error('Workflow identity is required for cache clearing')
@@ -625,6 +633,7 @@ export const useExecutionStore = defineStore('execution', () => {
     const { data } = await api.post<ClearResponse>(
       '/api/v1/execution/clear',
       { nodes: nodeIds, workflow_id: workflowName, draft_revision: draftRevision },
+      ...(workspacePath ? [{ headers: { 'X-BioImageFlow-Workspace': workspacePath } }] : []),
     )
     if (data?.node_statuses && executionWorkflowId.value === workflowName && executionDraftRevision.value === draftRevision) {
       originCanvasId.value = resolveOriginCanvas(workflowName)
@@ -712,6 +721,7 @@ export const useExecutionStore = defineStore('execution', () => {
       && incoming !== null
       && pendingRun?.executionId === incoming.execution_id
     if (!applyBackendPhase(snapshot.state, ownsPendingRun)) return
+    storageError.value = snapshot.storage_error ?? null
     lastResult.value = snapshot.last_result
     progress.value = snapshot.progress
     if (snapshot.node_statuses) {
@@ -777,13 +787,15 @@ export const useExecutionStore = defineStore('execution', () => {
         payload,
       )
       const { reportError } = useErrorReporting()
-      reportError({
-        kind: 'execution_failed',
-        detail,
-        ...(fullDetail ? { fullDetail } : {}),
-        ...(nodeId ? { nodeId } : {}),
-        logToLogger: false,
-      })
+      if (!payload.output_planning_reports?.length) {
+        reportError({
+          kind: 'execution_failed',
+          detail,
+          ...(fullDetail ? { fullDetail } : {}),
+          ...(nodeId ? { nodeId } : {}),
+          logToLogger: false,
+        })
+      }
       if (!alreadyLogged) {
         useLoggerStore().addEntry({
           level: 'ERROR',
@@ -811,6 +823,7 @@ export const useExecutionStore = defineStore('execution', () => {
     plannedNodeIds,
     plannedNodeNames,
     error,
+    storageError,
     isConflict,
     conflictCode,
     validationErrors,

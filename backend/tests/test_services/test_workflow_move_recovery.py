@@ -35,11 +35,11 @@ def _journal_path(store: WorkflowStoreService) -> Path:
 
 
 def _workflow_json(store: WorkflowStoreService, workflow_id: str) -> Path:
-    return store.workflow_dir(workflow_id) / "workflow.json"
+    return store.root_dir / workflow_id / "workflow.json"
 
 
 def _draft_json(store: WorkflowStoreService, workflow_id: str) -> Path:
-    return store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
+    return store.root_dir / workflow_id / ".bioimageflow" / "draft.json"
 
 
 def _draft_payload(workflow_id: str) -> dict[str, object]:
@@ -57,7 +57,7 @@ def _draft_payload(workflow_id: str) -> dict[str, object]:
 
 
 def _write_draft(store: WorkflowStoreService, workflow_id: str) -> dict[str, object]:
-    payload = _draft_payload(workflow_id)
+    payload = _draft_payload(store.workflow_id_at_path(workflow_id))
     path = _draft_json(store, workflow_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -92,7 +92,7 @@ def test_post_directory_rename_failure_recovers_metadata_draft_results_and_gener
         display_name="After",
         description="new description",
     )
-    operation_id = store.prepare_workflow_patch_move("project/source", patch)
+    operation_id = store.prepare_workflow_patch_move(created.id, patch)
     assert operation_id is not None
     prepared = store.pending_workflow_move()
     assert prepared is not None
@@ -108,18 +108,18 @@ def test_post_directory_rename_failure_recovers_metadata_draft_results_and_gener
         )
         with pytest.raises(OSError, match="post-directory-rename"):
             store.patch_workflow(
-                "project/source",
+                created.id,
                 patch,
                 move_operation_id=operation_id,
             )
 
-    assert not store.workflow_dir("project/source").exists()
-    assert store.workflow_dir("archive/destination").exists()
+    assert not (store.root_dir / "project/source").exists()
+    assert (store.root_dir / "archive/destination").exists()
     assert (
         json.loads(_draft_json(store, "archive/destination").read_text(encoding="utf-8"))[
             "workflow_id"
         ]
-        == "project/source"
+        == created.id
     )
 
     restarted = _store(tmp_path)
@@ -129,9 +129,9 @@ def test_post_directory_rename_failure_recovers_metadata_draft_results_and_gener
     assert recovered.operation_id == operation_id
     assert recovered.phase == "artifacts_rewritten"
     move = recovered.moves[0]
-    assert restarted.workflow_generation("project/source") == move.source_generation_after
-    assert restarted.workflow_generation("archive/destination") == move.destination_generation_after
-    destination_results = restarted.get_storage_path("archive/destination")
+    assert restarted.workflow_generation(created.id) == move.source_generation_after
+    assert restarted.workflow_generation(created.id) == move.destination_generation_after
+    destination_results = restarted.get_storage_path(created.id)
     assert not source_results.exists()
     assert (destination_results / "result.txt").read_text(encoding="utf-8") == "preserved"
 
@@ -146,7 +146,7 @@ def test_post_directory_rename_failure_recovers_metadata_draft_results_and_gener
     )
     assert recovered_draft == {
         **original_draft,
-        "workflow_id": "archive/destination",
+        "workflow_id": created.id,
     }
 
     workflow_bytes = _workflow_json(restarted, "archive/destination").read_bytes()
@@ -160,7 +160,7 @@ def test_post_directory_rename_failure_recovers_metadata_draft_results_and_gener
     assert restarted.pending_workflow_move() is None
 
 
-def test_generation_only_failure_rolls_forward_without_incrementing_twice(
+def test_pre_directory_failure_abandons_without_changing_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -170,7 +170,7 @@ def test_generation_only_failure_rolls_forward_without_incrementing_twice(
     results.mkdir(parents=True)
     (results / "marker").write_text("kept", encoding="utf-8")
     patch = WorkflowUpdate(action="update", new_id="new")
-    operation_id = store.prepare_workflow_patch_move("old", patch)
+    operation_id = store.prepare_workflow_patch_move(created.id, patch)
     assert operation_id is not None
     prepared = store.pending_workflow_move()
     assert prepared is not None
@@ -183,35 +183,35 @@ def test_generation_only_failure_rolls_forward_without_incrementing_twice(
         scoped.setattr(Path, "rename", fail_before_move)
         with pytest.raises(OSError, match="generation-only"):
             store.patch_workflow(
-                "old",
+                created.id,
                 patch,
                 move_operation_id=operation_id,
             )
 
-    assert store.workflow_dir("old").exists()
-    assert not store.workflow_dir("new").exists()
-    assert store.workflow_generation("old") == move.source_generation_after
-    assert store.workflow_generation("new") == move.destination_generation_after
+    assert (store.root_dir / "old").exists()
+    assert not (store.root_dir / "new").exists()
+    assert store.workflow_generation(created.id) == move.source_generation_after
+    assert store.workflow_generation(created.id) == move.destination_generation_after
 
     recovered = _store(tmp_path).recover_pending_workflow_move()
 
-    assert recovered is not None
+    assert recovered is None
     restarted = _store(tmp_path)
-    assert restarted.workflow_generation("old") == move.source_generation_after
-    assert restarted.workflow_generation("new") == move.destination_generation_after
-    assert not restarted.workflow_dir("old").exists()
-    assert restarted.workflow_dir("new").exists()
-    assert (restarted.get_storage_path("new") / "marker").read_text() == "kept"
+    assert restarted.workflow_generation(created.id) == move.source_generation_after
+    assert restarted.workflow_generation(created.id) == move.destination_generation_after
+    assert (restarted.root_dir / "old").exists()
+    assert not (restarted.root_dir / "new").exists()
+    assert (restarted.get_storage_path(created.id) / "marker").read_text() == "kept"
 
 
-def test_recovery_reaffirms_existing_destination_parent_chain_before_rename(
+def test_retry_after_unstarted_move_reaffirms_destination_parent_chain(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     patch = WorkflowUpdate(action="update", new_id="deep/nested/new")
-    operation_id = store.prepare_workflow_patch_move("old", patch)
+    operation_id = store.prepare_workflow_patch_move(created.id, patch)
     assert operation_id is not None
     destination_parent = store.root_dir / "deep" / "nested"
     original_ensure = store._ensure_directory_durable
@@ -226,14 +226,17 @@ def test_recovery_reaffirms_existing_destination_parent_chain_before_rename(
         scoped.setattr(store, "_ensure_directory_durable", fail_after_mkdir)
         with pytest.raises(OSError, match="parent-chain fsync"):
             store.patch_workflow(
-                "old",
+                created.id,
                 patch,
                 move_operation_id=operation_id,
             )
 
     assert destination_parent.exists()
-    assert store.workflow_dir("old").exists()
+    assert (store.root_dir / "old").exists()
     restarted = _store(tmp_path)
+    assert restarted.recover_pending_workflow_move() is None
+    retry_operation = restarted.prepare_workflow_patch_move(created.id, patch)
+    assert retry_operation is not None
     events: list[tuple[str, Path]] = []
     original_fsync = workflow_store_module._fsync_directory
     original_rename = Path.rename
@@ -243,16 +246,16 @@ def test_recovery_reaffirms_existing_destination_parent_chain_before_rename(
         original_fsync(path)
 
     def record_rename(path: Path, target: Path) -> Path:
-        if path == restarted.workflow_dir("old"):
+        if path == (restarted.root_dir / "old"):
             events.append(("rename", Path(target)))
         return original_rename(path, target)
 
     with monkeypatch.context() as scoped:
         scoped.setattr(workflow_store_module, "_fsync_directory", record_fsync)
         scoped.setattr(Path, "rename", record_rename)
-        restarted.recover_pending_workflow_move()
+        restarted.patch_workflow(created.id, patch, move_operation_id=retry_operation)
 
-    rename_index = events.index(("rename", restarted.workflow_dir("deep/nested/new")))
+    rename_index = events.index(("rename", (restarted.root_dir / "deep/nested/new")))
     for directory in (
         destination_parent,
         destination_parent.parent,
@@ -264,10 +267,12 @@ def test_recovery_reaffirms_existing_destination_parent_chain_before_rename(
 
 def test_legacy_generation_zero_move_commits_exactly_once(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    store._write_raw("legacy", store._empty_raw(WorkflowCreate(name="legacy")))
-    assert store.workflow_generation("legacy") == 0
+    raw = store._empty_raw(WorkflowCreate(name="legacy"))
+    store._write_raw("legacy", raw, allow_create=True)
+    workflow_id = raw["workflow_id"]
+    assert store.workflow_generation(workflow_id) == 0
     patch = WorkflowUpdate(action="update", new_id="current")
-    operation_id = store.prepare_workflow_patch_move("legacy", patch)
+    operation_id = store.prepare_workflow_patch_move(workflow_id, patch)
     assert operation_id is not None
     prepared = store.pending_workflow_move()
     assert prepared is not None
@@ -275,7 +280,7 @@ def test_legacy_generation_zero_move_commits_exactly_once(tmp_path: Path) -> Non
     assert prepared.moves[0].destination_generation_before == 0
 
     store.patch_workflow(
-        "legacy",
+        workflow_id,
         patch,
         move_operation_id=operation_id,
     )
@@ -285,16 +290,16 @@ def test_legacy_generation_zero_move_commits_exactly_once(tmp_path: Path) -> Non
     store.complete_workflow_move(operation_id)
 
     restarted = _store(tmp_path)
-    assert restarted.workflow_generation("legacy") == 1
-    assert restarted.workflow_generation("current") == 1
-    assert restarted.get_workflow("current").info.identity_generation == 1
+    assert restarted.workflow_generation(workflow_id) == 0
+    assert restarted.workflow_generation(workflow_id) == 0
+    assert restarted.get_workflow(workflow_id).info.identity_generation == 0
 
 
 def test_prepared_but_unreserved_move_is_abandoned(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     operation_id = store.prepare_workflow_patch_move(
-        "old",
+        created.id,
         WorkflowUpdate(action="update", new_id="new"),
     )
     assert operation_id is not None
@@ -303,19 +308,19 @@ def test_prepared_but_unreserved_move_is_abandoned(tmp_path: Path) -> None:
 
     assert recovered is None
     assert store.pending_workflow_move() is None
-    assert store.workflow_dir("old").exists()
-    assert not store.workflow_dir("new").exists()
-    assert store.workflow_generation("old") == 1
-    assert store.workflow_generation("new") == 0
+    assert (store.root_dir / "old").exists()
+    assert not (store.root_dir / "new").exists()
+    assert store.workflow_generation(created.id) == 1
+    assert store.relative_path_for_workflow(created.id) == "old"
 
 
 def test_claimed_artifact_phase_with_untouched_generations_fails_closed(
     tmp_path: Path,
 ) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     operation_id = store.prepare_workflow_patch_move(
-        "old",
+        created.id,
         WorkflowUpdate(action="update", new_id="new"),
     )
     assert operation_id is not None
@@ -324,8 +329,8 @@ def test_claimed_artifact_phase_with_untouched_generations_fails_closed(
     with pytest.raises(WorkflowMoveRecoveryError, match="phase claims committed"):
         store.recover_pending_workflow_move()
 
-    assert store.workflow_dir("old").exists()
-    assert not store.workflow_dir("new").exists()
+    assert (store.root_dir / "old").exists()
+    assert not (store.root_dir / "new").exists()
     assert store.pending_workflow_move() is not None
 
 
@@ -333,11 +338,11 @@ def test_identity_move_executors_require_their_exact_prepared_journal(
     tmp_path: Path,
 ) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     patch = WorkflowUpdate(action="update", new_id="new")
 
     with pytest.raises(WorkflowMoveRecoveryError, match="requires a prepared"):
-        store.patch_workflow("old", patch)
+        store.patch_workflow(created.id, patch)
 
     store.create_folder("project")
     with pytest.raises(WorkflowMoveRecoveryError, match="requires a prepared"):
@@ -346,24 +351,24 @@ def test_identity_move_executors_require_their_exact_prepared_journal(
     with pytest.raises(WorkflowMoveRecoveryError, match="requires a prepared"):
         store.delete_folder("project", "move_children_up")
 
-    assert store.workflow_dir("old").exists()
+    assert (store.root_dir / "old").exists()
     assert (store.root_dir / "project" / "note.txt").read_text(encoding="utf-8") == "keep"
 
 
 def test_prepared_direct_move_rejects_changed_patch_intent(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old", display_name="Original"))
+    created = store.create_workflow(WorkflowCreate(name="old", display_name="Original"))
     prepared_patch = WorkflowUpdate(
         action="update",
         new_id="new",
         display_name="Prepared",
     )
-    operation_id = store.prepare_workflow_patch_move("old", prepared_patch)
+    operation_id = store.prepare_workflow_patch_move(created.id, prepared_patch)
     assert operation_id is not None
 
     with pytest.raises(WorkflowMoveRecoveryError, match="metadata no longer matches"):
         store.patch_workflow(
-            "old",
+            created.id,
             WorkflowUpdate(
                 action="update",
                 new_id="new",
@@ -372,8 +377,8 @@ def test_prepared_direct_move_rejects_changed_patch_intent(tmp_path: Path) -> No
             move_operation_id=operation_id,
         )
 
-    assert store.get_workflow("old").info.display_name == "Original"
-    assert not store.workflow_dir("new").exists()
+    assert store.get_workflow(created.id).info.display_name == "Original"
+    assert not (store.root_dir / "new").exists()
     store.discard_workflow_move_if_unstarted(operation_id)
 
 
@@ -381,41 +386,41 @@ def test_pending_committed_move_fences_other_workflow_mutations(
     tmp_path: Path,
 ) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     store.create_folder("spare-folder")
     patch = WorkflowUpdate(action="update", new_id="new")
-    operation_id = store.prepare_workflow_patch_move("old", patch)
+    operation_id = store.prepare_workflow_patch_move(created.id, patch)
     assert operation_id is not None
     store.patch_workflow(
-        "old",
+        created.id,
         patch,
         move_operation_id=operation_id,
     )
-    generation = store.workflow_generation("new")
+    generation = store.workflow_generation(created.id)
 
     mutations = [
         lambda: store.create_workflow(WorkflowCreate(name="other")),
         lambda: store.create_folder("other-folder"),
         lambda: store.save_workflow(
-            "new",
+            created.id,
             WorkflowSaveBody(graph=graph_state(nodes=[], edges=[])),
         ),
-        lambda: store.delete_workflow("new"),
+        lambda: store.delete_workflow(created.id),
         lambda: store.patch_workflow(
-            "new",
+            created.id,
             WorkflowUpdate(action="duplicate", new_name="copy"),
         ),
-        lambda: store.rebind_versions("new"),
+        lambda: store.rebind_versions(created.id),
         lambda: store.delete_folder("spare-folder"),
     ]
     for mutation in mutations:
         with pytest.raises(WorkflowMoveRecoveryError, match="must recover"):
             mutation()
 
-    assert store.workflow_generation("new") == generation
-    assert store.workflow_dir("new").exists()
-    assert not store.workflow_dir("other").exists()
-    assert not store.workflow_dir("copy").exists()
+    assert store.workflow_generation(created.id) == generation
+    assert (store.root_dir / "new").exists()
+    assert not (store.root_dir / "other").exists()
+    assert not (store.root_dir / "copy").exists()
     assert (store.root_dir / "spare-folder").exists()
 
 
@@ -454,21 +459,20 @@ def test_recovery_fails_closed_when_both_workflow_paths_exist(tmp_path: Path) ->
     source_results.mkdir(parents=True)
     (source_results / "marker").write_text("source", encoding="utf-8")
     operation_id = store.prepare_workflow_patch_move(
-        "old",
+        created.id,
         WorkflowUpdate(action="update", new_id="new"),
     )
     assert operation_id is not None
     journal = store.pending_workflow_move()
     assert journal is not None
-    store._reserve_workflow_generations(["old", "new"])
-    destination = store.workflow_dir("new")
+    destination = (store.root_dir / "new")
     destination.mkdir(parents=True)
     (destination / "collision.txt").write_text("do not overwrite", encoding="utf-8")
 
     with pytest.raises(WorkflowMoveRecoveryError, match="exactly one source/destination"):
         store.recover_pending_workflow_move()
 
-    assert store.workflow_dir("old").exists()
+    assert (store.root_dir / "old").exists()
     assert (destination / "collision.txt").read_text(encoding="utf-8") == "do not overwrite"
     assert (source_results / "marker").read_text(encoding="utf-8") == "source"
     assert store.pending_workflow_move() == journal
@@ -478,7 +482,7 @@ def test_corrupt_or_extra_field_journal_is_rejected_without_mutation(
     tmp_path: Path,
 ) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="old"))
+    created = store.create_workflow(WorkflowCreate(name="old"))
     journal_path = _journal_path(store)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     journal_path.write_text('{"journal_version": 1, "unexpected": true}', encoding="utf-8")
@@ -487,12 +491,12 @@ def test_corrupt_or_extra_field_journal_is_rejected_without_mutation(
         store.pending_workflow_move()
     with pytest.raises(WorkflowMoveRecoveryError, match="Cannot trust"):
         store.prepare_workflow_patch_move(
-            "old",
+            created.id,
             WorkflowUpdate(action="update", new_id="new"),
         )
 
-    assert store.workflow_dir("old").exists()
-    assert not store.workflow_dir("new").exists()
+    assert (store.root_dir / "old").exists()
+    assert not (store.root_dir / "new").exists()
 
 
 def test_folder_preparations_capture_all_identity_and_child_mappings(
@@ -506,7 +510,7 @@ def test_folder_preparations_capture_all_identity_and_child_mappings(
     assert rename_id is not None
     rename = store.pending_workflow_move()
     assert rename is not None
-    assert {(move.source_workflow_id, move.destination_workflow_id) for move in rename.moves} == {
+    assert {(move.source_relative_path, move.destination_relative_path) for move in rename.moves} == {
         ("project/a", "archive/a"),
         ("project/nested/b", "archive/nested/b"),
     }
@@ -517,7 +521,7 @@ def test_folder_preparations_capture_all_identity_and_child_mappings(
     promotion = store.pending_workflow_move()
     assert promotion is not None
     assert {
-        (move.source_workflow_id, move.destination_workflow_id) for move in promotion.moves
+        (move.source_relative_path, move.destination_relative_path) for move in promotion.moves
     } == {("project/a", "a"), ("project/nested/b", "nested/b")}
     assert {
         (child.source_relative_path, child.destination_relative_path)

@@ -8,18 +8,20 @@ for (const mode of ['paginated', 'continuous'] as const) {
   test(`${mode} virtual rows reuse four previews and preserve a pinned window`, async ({ page }) => {
     // Forty-eight tiny response rows cross one 32-row block. Only four 1px PNG
     // responses exist; no scientific environment or bulk image work runs.
-    const name = `small_window_${mode}_${test.info().project.name}_${Date.now()}`
+    const relativePath = `small_window_${mode}_${test.info().project.name}_${Date.now()}`
     const settings = await (await page.request.get(`${API}/settings`)).json()
     const previousMode = (settings.settings ?? settings).node_data_browsing_mode ?? 'paginated'
     expect((await page.request.post(`${API}/dev/seed`)).ok()).toBeTruthy()
     expect((await page.request.patch(`${API}/settings`, { data: { node_data_browsing_mode: mode } })).ok()).toBeTruthy()
-    expect((await page.request.post(`${API}/workflows`, { data: { name } })).ok()).toBeTruthy()
+    const created = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const name = (await created.json()).id as string
     let viewerReads = 0
     const previews: { row: number; identity: unknown }[] = []
     const queries: Record<string, any>[] = []
     try {
       expect((await page.request.put(`${API}/workflows/${name}`, { data: { graph: {
-        schema_version: 2, name, display_name: name,
+        schema_version: 2, name: relativePath, display_name: relativePath,
         nodes: [
           { type: 'tool', id: 'seed', name: 'Seed', tool_name: 'SeedNumbers', position: [100, 160], parameters: {} },
           { type: 'tool', id: 'child', name: 'Measurements', tool_name: 'IncrementNumbers', position: [400, 160], parameters: {} },
@@ -55,9 +57,9 @@ for (const mode of ['paginated', 'continuous'] as const) {
       })
       await page.goto('/')
       await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-      await page.getByTestId('workflow-search').fill(name)
+      await page.getByTestId('workflow-search').fill(relativePath)
       await page.getByTestId(`workflow-row-${name}`).dblclick()
-      await expect(page.getByTestId('workflow-title')).toHaveText(name)
+      await expect(page.getByTestId('workflow-title')).toHaveText(relativePath)
       await page.locator('.vue-flow__node[data-id="child"]').click()
       await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
       const depth = page.getByTestId('upstream-depth').locator('input')

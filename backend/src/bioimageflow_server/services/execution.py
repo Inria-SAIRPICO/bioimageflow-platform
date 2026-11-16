@@ -36,6 +36,10 @@ from bioimageflow_server.models.execution import (
 )
 from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
 from bioimageflow_server.models.graph import GraphState, WorkflowNodeState
+from bioimageflow_server.models.output_planning import (
+    OutputPlanningReport,
+    OutputTemplateCheckResponse,
+)
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.environment_logging import environment_log_entry
 from bioimageflow_server.services.graph_validator import GraphValidationOutput, GraphValidationService
@@ -184,8 +188,16 @@ class ExecutionConflictError(RuntimeError):
     """Raised when ``start()`` is called while an execution is already running."""
 
 
+class WorkflowStorageUnavailableError(RuntimeError):
+    """The admitted workflow directory moved or disappeared during execution."""
+
+
 class ExecutionRetryError(RuntimeError):
     """Raised when a retry does not address the latest failed execution."""
+
+
+class OutputTemplateCorrectionUnavailable(ExecutionConflictError):
+    """A correction no longer owns its original workflow and input evidence."""
 
 
 class WorkflowBuildError(RuntimeError):
@@ -207,6 +219,45 @@ class _RunCleanup:
     run_context: Any
     engine: Any | None
     groups: tuple[Any, ...]
+
+
+@dataclass(frozen=True)
+class _OutputRunAuthority:
+    context: ExecutionContext
+    graph: GraphState
+    execution_graph: GraphState
+    storage_path: Path
+    workflow_generation: int | None
+    source_fingerprint: str
+    tool_types: dict[str, type]
+
+
+@dataclass(frozen=True)
+class _OutputCorrection:
+    authority: _OutputRunAuthority
+    report: OutputPlanningReport
+    evidence: Any
+    expires_at: float
+
+
+def _output_tool_types(workflow: Any, scope: tuple[str, ...] = ()) -> dict[str, type]:
+    result: dict[str, type] = {}
+    for name, node in workflow.nodes.items():
+        path = (*scope, name)
+        if hasattr(node, "workflow"):
+            result.update(_output_tool_types(node.workflow, path))
+        elif hasattr(node, "tool"):
+            result["/".join(path)] = type(node.tool)
+    return result
+
+
+def _output_source_fingerprint(
+    graph: GraphState, storage_path: Path, registry: ToolRegistryService,
+) -> str:
+    from bioimageflow_server.services.workflow_artifacts import artifact_hash, capture_working_graph
+
+    captured, sources = capture_working_graph(graph, storage_path.parent, registry)
+    return artifact_hash(captured, sources)
 
 
 class _ExecutionEnvironmentManager:
@@ -500,6 +551,11 @@ class ExecutionManager:
         self._retained_result_exports: dict[str, ResultExportSnapshot] = {}
         self._pending_resource_cleanup: dict[str, _RunCleanup] = {}
         self._resource_cleanup_lock = threading.RLock()
+        self._output_run_authority: _OutputRunAuthority | None = None
+        self._output_corrections: dict[str, _OutputCorrection] = {}
+        self._output_correction_expiry: asyncio.TimerHandle | None = None
+        self._ensure_storage_current: Callable[[], None] | None = None
+        self._storage_error: str | None = None
 
     # ---- Public properties -------------------------------------------------
 
@@ -514,6 +570,11 @@ class ExecutionManager:
         return self.state == "running" or self._starting
 
     def get_status(self) -> ExecutionStatus:
+        if self._ensure_storage_current is not None and self.is_execution_active:
+            try:
+                self._ensure_storage_current()
+            except (OSError, ValueError, WorkflowStorageUnavailableError) as exc:
+                self._storage_error = str(exc)
         if self._starting:
             assert self._pending_context is not None
             return ExecutionStatus(
@@ -525,9 +586,18 @@ class ExecutionManager:
             )
         context = self.context
         context_fields = context.model_dump() if context is not None else {}
+        result = self.last_result
+        if result is not None and result.output_planning_reports:
+            result = result.model_copy(update={
+                "output_planning_reports": [
+                    self._current_output_report(report)
+                    for report in result.output_planning_reports
+                ]
+            })
         return ExecutionStatus(
             state=self.state,
-            last_result=self.last_result,
+            storage_error=self._storage_error,
+            last_result=result,
             progress=self.progress,
             node_statuses=dict(self._node_statuses),
             **context_fields,
@@ -545,6 +615,226 @@ class ExecutionManager:
         ):
             self._node_statuses.update(statuses)
 
+    def _current_output_report(self, report: OutputPlanningReport) -> OutputPlanningReport:
+        from bioimageflow_server.services.output_planning import explanation_only
+
+        correction = self._output_corrections.get(report.node_id)
+        if (
+            correction is not None
+            and correction.authority.context == self.context
+            and time.monotonic() < correction.expires_at
+            and not self.is_execution_active
+        ):
+            return report.model_copy(update={
+                "correction_available": True, "correction_unavailable_reason": None,
+            })
+        self._output_corrections.pop(report.node_id, None)
+        return explanation_only(report)
+
+    def _release_output_corrections(self) -> None:
+        self._output_corrections.clear()
+        self._output_run_authority = None
+        if self._output_correction_expiry is not None:
+            self._output_correction_expiry.cancel()
+            self._output_correction_expiry = None
+
+    def _capture_output_reports(self, error: BaseException) -> list[OutputPlanningReport]:
+        from bioimageflow_server.services.output_planning import (
+            explanation_only,
+            planning_report,
+            public_planning_errors,
+        )
+
+        reports: list[OutputPlanningReport] = []
+        authority = self._output_run_authority
+        for failure in public_planning_errors(error):
+            available = (
+                authority is not None
+                and failure.evidence is not None
+                and authority.workflow_generation is not None
+            )
+            report = planning_report(
+                failure.report,
+                correction_available=available,
+                unavailable_reason=None if available else (
+                    "The complete original correction inputs are unavailable. "
+                    "Edit the template in the workflow and run again."
+                ),
+            )
+            if self.context is None or report.node_id not in self.context.planned_node_ids:
+                logger.warning("Dropping output report outside the admitted node plan")
+                continue
+            reports.append(report)
+            if available:
+                assert authority is not None
+                self._output_corrections[report.node_id] = _OutputCorrection(
+                    authority, report, failure.evidence, time.monotonic() + 1800,
+                )
+            with self._retained_progress_lock:
+                self._retained_progress_sequence += 1
+                self._retained_progress_events.append({
+                    "sequence": self._retained_progress_sequence,
+                    "kind": "output_planning",
+                    "payload": explanation_only(report).model_dump(mode="json"),
+                })
+            self._node_statuses[report.node_id] = NodeStatus(
+                node_id=report.node_id, status="failed", cached=False, error=report.detail,
+            )
+        if self._output_corrections:
+            self._output_correction_expiry = asyncio.get_running_loop().call_later(
+                1800, self._release_output_corrections,
+            )
+        return reports
+
+    def check_output_templates(
+        self,
+        *,
+        execution_id: str,
+        workflow_id: str,
+        draft_revision: int,
+        node_id: str,
+        templates: dict[str, str],
+        graph: GraphState,
+        workflow_generation: int,
+        storage_path: Path,
+    ) -> OutputTemplateCheckResponse:
+        """Check a proposal against the failed run's exact, lightweight evidence."""
+        from bioimageflow.output_planning import OutputPlanningError
+        from bioimageflow_server.services.graph_compiler import GraphCompiler
+        from bioimageflow_server.services.output_planning import planning_report
+
+        correction = self._output_corrections.get(node_id)
+        if correction is None or time.monotonic() >= correction.expires_at:
+            self._output_corrections.pop(node_id, None)
+            raise OutputTemplateCorrectionUnavailable(
+                "Correction inputs have expired; edit the output template and run again."
+            )
+        authority = correction.authority
+        context = authority.context
+        if (
+            self.context != context
+            or self.is_execution_active
+            or execution_id != context.execution_id
+            or workflow_id != context.workflow_id
+            or draft_revision != context.draft_revision
+            or workflow_generation != authority.workflow_generation
+            or storage_path != authority.storage_path
+            or graph != authority.graph
+        ):
+            raise OutputTemplateCorrectionUnavailable(
+                "The workflow or execution changed; edit the current template and run again."
+            )
+        allowed = {field.field for field in correction.report.fields}
+        if not set(templates).issubset(allowed):
+            raise ValueError("Only the reported writable output templates can be corrected")
+        if _output_source_fingerprint(
+            authority.execution_graph, storage_path, self.tool_registry,
+        ) != authority.source_fingerprint:
+            raise OutputTemplateCorrectionUnavailable(
+                "Workflow tool sources changed; edit the current template and run again."
+            )
+        compiled = GraphCompiler(self.tool_registry).compile(
+            authority.execution_graph, storage_path=storage_path,
+        )
+        if compiled.workflow is None or compiled.errors:
+            raise OutputTemplateCorrectionUnavailable(
+                "The original tool declarations are no longer available; validate the workflow again."
+            )
+        current_types = _output_tool_types(compiled.workflow)
+        if any(current_types.get(path) is not cls for path, cls in authority.tool_types.items()):
+            raise OutputTemplateCorrectionUnavailable(
+                "The selected tool generation changed; validate the current workflow and run again."
+            )
+        try:
+            correction.evidence.check_templates(templates)
+        except OutputPlanningError as error:
+            return OutputTemplateCheckResponse(
+                valid=False,
+                reports=[planning_report(error.report, correction_available=True)],
+            )
+        return OutputTemplateCheckResponse(valid=True)
+
+    def output_planning_warnings(
+        self, graph: GraphState, workflow: Any, storage_path: Path,
+    ) -> list[OutputPlanningReport]:
+        """Combine public static proofs and retained inputs under current tool authority."""
+        from bioimageflow.output_planning import (
+            OutputPlanningError,
+            inspect_workflow_output_files,
+            output_file_declarations,
+        )
+        from bioimageflow_server.services.output_planning import planning_report
+
+        if self.is_execution_active or workflow is None:
+            return []
+        current_types = _output_tool_types(workflow)
+        warnings = [planning_report(report) for report in inspect_workflow_output_files(workflow)]
+        for node_id, correction in tuple(self._output_corrections.items()):
+            authority = correction.authority
+            if (
+                time.monotonic() >= correction.expires_at
+                or storage_path != authority.storage_path
+                or self.context != authority.context
+                or any(current_types.get(path) is not cls for path, cls in authority.tool_types.items())
+            ):
+                continue
+            expected = authority.graph.model_copy(deep=True)
+            candidate = graph.model_copy(deep=True)
+            fields = {field.field for field in correction.report.fields}
+            compiled_node = None
+            compiled_workflow = workflow
+            for part in node_id.split("/"):
+                compiled_node = compiled_workflow.nodes.get(part)
+                if compiled_node is None:
+                    break
+                if hasattr(compiled_node, "workflow"):
+                    compiled_workflow = compiled_node.workflow
+            if compiled_node is None or not hasattr(compiled_node, "tool"):
+                continue
+            declarations = output_file_declarations(
+                compiled_node.tool, compiled_node.output_templates,
+            )
+            templates = {
+                field: declarations[field]["template"]
+                for field in fields if field in declarations
+            }
+            if len(templates) != len(fields):
+                continue
+            matched = True
+            for definition in (expected, candidate):
+                current = definition
+                for position, part in enumerate(node_id.split("/")):
+                    node = next((item for item in current.nodes if item.id == part), None)
+                    if node is None:
+                        matched = False
+                        break
+                    if position == len(node_id.split("/")) - 1:
+                        if isinstance(node, WorkflowNodeState):
+                            matched = False
+                            break
+                        for field in fields:
+                            node.output_templates.pop(field, None)
+                    elif isinstance(node, WorkflowNodeState):
+                        current = node.workflow
+                    else:
+                        matched = False
+                        break
+            if not matched or expected != candidate:
+                continue
+            try:
+                correction.evidence.check_templates(templates)
+            except OutputPlanningError as error:
+                report = planning_report(error.report)
+                warnings = [
+                    existing for existing in warnings
+                    if (existing.node_id, existing.code) != (report.node_id, report.code)
+                ]
+                warnings.append(report)
+            except ValueError:
+                # Syntax/input diagnostics retain their ordinary validation path.
+                continue
+        return warnings
+
     # ---- Lifecycle ---------------------------------------------------------
 
     async def start(
@@ -557,6 +847,8 @@ class ExecutionManager:
         draft_revision: int,
         ensure_context_current: Callable[[], Awaitable[None]] | None = None,
         reserved_context: ExecutionContext | None = None,
+        workflow_generation: int | None = None,
+        ensure_storage_current: Callable[[], None] | None = None,
     ) -> ExecutionContext:
         """Kick off a background execution.
 
@@ -579,6 +871,8 @@ class ExecutionManager:
                     nodes,
                     storage_path,
                     ensure_context_current,
+                    workflow_generation,
+                    ensure_storage_current,
                 )
         if (
             not self._starting
@@ -593,6 +887,8 @@ class ExecutionManager:
             nodes,
             storage_path,
             ensure_context_current,
+            workflow_generation,
+            ensure_storage_current,
         )
 
     @asynccontextmanager
@@ -673,9 +969,12 @@ class ExecutionManager:
         nodes: list[str] | None,
         storage_path: Path | None,
         ensure_context_current: Callable[[], Awaitable[None]] | None,
+        workflow_generation: int | None,
+        ensure_storage_current: Callable[[], None] | None,
     ) -> ExecutionContext:
         run_storage_path = storage_path if storage_path is not None else self.storage_path
         build_graph = graph
+        execution_graph = build_graph
         planned_node_ids, planned_node_names = _planned_leaf_nodes(build_graph, nodes)
         context = context.model_copy(
             update={
@@ -738,7 +1037,33 @@ class ExecutionManager:
                 execution_output.compilation.workflow, nodes
             )
 
+        output_authority = None
+        if run_storage_path is not None:
+            try:
+                source_fingerprint = await asyncio.to_thread(
+                    _output_source_fingerprint,
+                    execution_graph, run_storage_path, self.tool_registry,
+                )
+            except (OSError, ValueError):
+                logger.warning("Could not retain source authority for output correction", exc_info=True)
+            else:
+                output_authority = _OutputRunAuthority(
+                    context=context,
+                    graph=graph.model_copy(deep=True),
+                    execution_graph=execution_graph.model_copy(deep=True),
+                    storage_path=run_storage_path,
+                    workflow_generation=workflow_generation,
+                    source_fingerprint=source_fingerprint,
+                    tool_types=_output_tool_types(workflow),
+                )
+        if ensure_context_current is not None:
+            await ensure_context_current()
+
         self.context = context
+        self._ensure_storage_current = ensure_storage_current
+        self._storage_error = None
+        self._release_output_corrections()
+        self._output_run_authority = output_authority
         self.state = "running"
         self.progress = None
         self.last_result = None
@@ -787,6 +1112,8 @@ class ExecutionManager:
                 value = None
                 primary: BaseException | None = None
                 try:
+                    if ensure_storage_current is not None:
+                        ensure_storage_current()
                     engine = self._create_execution_engine(workflow, context)
                     try:
                         value = workflow.compute(
@@ -801,6 +1128,8 @@ class ExecutionManager:
                             logger.exception("Output projection failed while preserving execution failure")
                         raise
                     else:
+                        if ensure_storage_current is not None:
+                            ensure_storage_current()
                         self._materialize_latest_outputs(workflow, run_storage_path, context)
                     self._export_managed_result(context, value)
                     return None
@@ -944,6 +1273,8 @@ class ExecutionManager:
         """Best-effort human output publication that never changes run success."""
         if storage_path is None:
             return
+        if self._ensure_storage_current is not None:
+            self._ensure_storage_current()
         from bioimageflow_server.services.output_views import materialize_latest_outputs
 
         try:
@@ -992,6 +1323,7 @@ class ExecutionManager:
                 # The normal completion callback owns the scientific failure.
                 pass
         await asyncio.to_thread(self.retry_resource_cleanup)
+        self._release_output_corrections()
 
     def _settle_run_resources(
         self, execution_id: str, run_context: Any, engine: Any | None,
@@ -1510,6 +1842,7 @@ class ExecutionManager:
 
         success: bool
         errors: list[dict[str, Any]] = []
+        output_reports: list[OutputPlanningReport] = []
 
         if exc is None:
             success = True
@@ -1529,6 +1862,7 @@ class ExecutionManager:
                 logger.info("Workflow execution cancelled: %s", exc)
             else:
                 success = False
+                output_reports = self._capture_output_reports(exc)
                 local_tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
                 detail, tb = _format_exception_for_client(exc, local_tb)
                 errors.append(
@@ -1538,6 +1872,12 @@ class ExecutionManager:
                         "traceback": tb,
                     }
                 )
+                for report in output_reports:
+                    errors.append({
+                        "type": report.code,
+                        "detail": report.detail,
+                        "output_planning_report": report.model_dump(mode="json"),
+                    })
                 logger.error(
                     "Workflow execution failed: %s",
                     exc,
@@ -1609,6 +1949,7 @@ class ExecutionManager:
             success=success,
             errors=errors,
             node_statuses=dict(self._node_statuses),
+            output_planning_reports=output_reports,
         )
         terminal_status = (
             "succeeded"

@@ -58,16 +58,18 @@ async function fetchDraft(page: Page, workflowName: string): Promise<WorkflowDra
   return response.json() as Promise<WorkflowDraftResponse>
 }
 
-async function createAndOpenFixture(page: Page, workflowName: string): Promise<void> {
+async function createAndOpenFixture(page: Page, workflowName: string): Promise<string> {
   expect((await page.request.post(`${API_BASE}/api/v1/dev/seed`)).ok()).toBeTruthy()
   const graph = clipboardGraph(workflowName)
   const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: graph })
   expect(validation.ok(), await validation.text()).toBeTruthy()
   expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name: workflowName, display_name: workflowName },
-  })).status()).toBe(201)
-  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+  })
+  expect(created.status(), await created.text()).toBe(201)
+  const workflowId = (await created.json()).id as string
+  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph },
   })).ok()).toBeTruthy()
 
@@ -75,10 +77,11 @@ async function createAndOpenFixture(page: Page, workflowName: string): Promise<v
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+  await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   await expect(page.locator('.vue-flow__node')).toHaveCount(3)
-  await expect.poll(async () => (await fetchDraft(page, workflowName)).validation.valid).toBe(true)
+  await expect.poll(async () => (await fetchDraft(page, workflowId)).validation.valid).toBe(true)
+  return workflowId
 }
 
 async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> {
@@ -88,15 +91,16 @@ async function pressCanvasShortcut(page: Page, shortcut: string): Promise<void> 
 
 test.describe('canvas clipboard and shortcuts', () => {
   let workflowName: string
+  let workflowId: string
   const additionalWorkflows: string[] = []
 
   test.beforeEach(async ({ page }) => {
     workflowName = uniqueWorkflowName('clipboard_shortcuts')
-    await createAndOpenFixture(page, workflowName)
+    workflowId = await createAndOpenFixture(page, workflowName)
   })
 
   test.afterEach(async ({ page }) => {
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`).catch(() => undefined)
     await Promise.all(additionalWorkflows.splice(0).map(name => (
       page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
     )))
@@ -112,15 +116,15 @@ test.describe('canvas clipboard and shortcuts', () => {
 
     await page.keyboard.press('Control+c')
 
-    const beforePaste = await fetchDraft(page, workflowName)
+    const beforePaste = await fetchDraft(page, workflowId)
     let failNextWrite = true
-    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+    await page.route(`**/api/v1/workflow-drafts/${workflowId}`, async route => {
       if (route.request().method() !== 'PUT' || !failNextWrite) return route.continue()
       failNextWrite = false
       await route.fulfill({ status: 500, json: { detail: 'forced clipboard persistence failure' } })
     })
     const failedPaste = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)
       && response.request().method() === 'PUT'
       && response.status() === 500
     ))
@@ -139,12 +143,12 @@ test.describe('canvas clipboard and shortcuts', () => {
     await expect(page.locator(`.vue-flow__edge[data-id="${attemptedEdge!.id}"]`)).toHaveCount(1)
     await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced clipboard persistence failure')
     await expect(page.getByTestId('canvas-persistence-retry')).toBeVisible()
-    const afterFailure = await fetchDraft(page, workflowName)
+    const afterFailure = await fetchDraft(page, workflowId)
     expect(afterFailure.draft_revision).toBe(beforePaste.draft_revision)
     expect(afterFailure.graph).toEqual(beforePaste.graph)
 
     const acceptedPaste = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -154,7 +158,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await expect(page.locator('.vue-flow__node')).toHaveCount(5)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(3)
 
-    const pasted = await fetchDraft(page, workflowName)
+    const pasted = await fetchDraft(page, workflowId)
     expect(pasted.draft_revision).toBe(beforePaste.draft_revision + 1)
     expect(pasted.validation).toMatchObject({ valid: true, errors: [] })
     const newNodes = pasted.graph.nodes.filter(node => ![SOURCE_ID, MIDDLE_ID, OUTSIDE_ID].includes(node.id))
@@ -177,7 +181,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await page.reload()
     await expect(page.locator('.vue-flow__node')).toHaveCount(5)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(3)
-    const reloaded = await fetchDraft(page, workflowName)
+    const reloaded = await fetchDraft(page, workflowId)
     expect(reloaded.graph).toEqual(pasted.graph)
 
     await page.evaluate(() => {
@@ -189,34 +193,36 @@ test.describe('canvas clipboard and shortcuts', () => {
         },
       })
     })
-    const beforeRefusal = await fetchDraft(page, workflowName)
+    const beforeRefusal = await fetchDraft(page, workflowId)
     await page.locator('.vue-flow__pane').click({ position: { x: 20, y: 20 } })
     await page.keyboard.press('Control+v')
     await expect(page.getByText('Clipboard does not contain BioImageFlow nodes')).toBeVisible()
-    const afterRefusal = await fetchDraft(page, workflowName)
+    const afterRefusal = await fetchDraft(page, workflowId)
     expect(afterRefusal.draft_revision).toBe(beforeRefusal.draft_revision)
     expect(afterRefusal.graph).toEqual(beforeRefusal.graph)
   })
 
   test('routes core shortcuts to the active canvas and preserves text-field input', async ({ page }) => {
     test.setTimeout(60_000)
-    const inactiveName = workflowName
+    const inactiveId = workflowId
     const activeName = uniqueWorkflowName('shortcut_active')
-    additionalWorkflows.push(activeName)
     const activeGraph = clipboardGraph(activeName)
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
       data: { name: activeName, display_name: activeName },
-    })).status()).toBe(201)
-    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${activeName}`, {
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const activeId = (await created.json()).id as string
+    additionalWorkflows.push(activeId)
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${activeId}`, {
       data: { graph: activeGraph },
     })).ok()).toBeTruthy()
 
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
     await page.getByTestId('workflow-search').fill(activeName)
-    await page.getByTestId(`workflow-row-${activeName}`).dblclick()
+    await page.getByTestId(`workflow-row-${activeId}`).dblclick()
     await expect(page.getByTestId('workflow-title')).toContainText(activeName)
     await expect(page.locator('.vue-flow__node')).toHaveCount(3)
-    const inactiveBaseline = await fetchDraft(page, inactiveName)
+    const inactiveBaseline = await fetchDraft(page, inactiveId)
 
     const pane = page.locator('.vue-flow__pane')
     const source = page.locator(`.vue-flow__node[data-id="${SOURCE_ID}"]`)
@@ -229,7 +235,7 @@ test.describe('canvas clipboard and shortcuts', () => {
 
     await outside.click()
     let acceptedEdit = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -237,7 +243,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await acceptedEdit
     await expect(page.locator('.vue-flow__node')).toHaveCount(2)
     acceptedEdit = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -247,7 +253,7 @@ test.describe('canvas clipboard and shortcuts', () => {
 
     await outside.click()
     acceptedEdit = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -255,7 +261,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await acceptedEdit
     await expect(page.locator('.vue-flow__node')).toHaveCount(2)
     acceptedEdit = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -266,14 +272,14 @@ test.describe('canvas clipboard and shortcuts', () => {
     await middle.click({ modifiers: ['Shift'] })
     await page.keyboard.press('Control+c')
     acceptedEdit = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
     await page.keyboard.press('Control+v')
     await acceptedEdit
     await expect(page.locator('.vue-flow__node')).toHaveCount(5)
-    expect((await fetchDraft(page, inactiveName)).graph).toEqual(inactiveBaseline.graph)
+    expect((await fetchDraft(page, inactiveId)).graph).toEqual(inactiveBaseline.graph)
 
     const zoom = () => page.locator('.vue-flow__transformationpane').evaluate(element => (
       new DOMMatrix(getComputedStyle(element).transform).a
@@ -289,13 +295,13 @@ test.describe('canvas clipboard and shortcuts', () => {
     const parameter = page.getByTestId('panel-nodePanel').locator('.param-number input')
     await parameter.fill('7')
     const forcedValidation = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${activeName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
     await pressCanvasShortcut(page, 'Control+Enter')
     await forcedValidation
-    await expect.poll(async () => (await fetchDraft(page, activeName)).validation.valid).toBe(true)
+    await expect.poll(async () => (await fetchDraft(page, activeId)).validation.valid).toBe(true)
 
     await middle.click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
@@ -303,7 +309,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await nodePanel.locator('.node-name').dblclick()
     const nameInput = nodePanel.locator('.name-input')
     await nameInput.fill('Uncommitted active-canvas name')
-    const beforeTyping = await fetchDraft(page, activeName)
+    const beforeTyping = await fetchDraft(page, activeId)
     await nameInput.press('Delete')
     await nameInput.press('Backspace')
     await nameInput.press('Control+a')
@@ -317,7 +323,7 @@ test.describe('canvas clipboard and shortcuts', () => {
     await nameInput.press('Escape')
     await expect(nameInput).toBeFocused()
     await expect(middle).toHaveClass(/selected/)
-    expect((await fetchDraft(page, activeName)).graph).toEqual(beforeTyping.graph)
+    expect((await fetchDraft(page, activeId)).graph).toEqual(beforeTyping.graph)
     await expect(middle).toBeVisible()
 
     await pressCanvasShortcut(page, 'Control+f')
@@ -326,15 +332,15 @@ test.describe('canvas clipboard and shortcuts', () => {
     await expect(page.locator('.dv-tab.dv-active-tab').filter({ hasText: 'Tools' })).toBeVisible()
 
     const saved = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflows/${activeName}`)
+      response.url().endsWith(`/api/v1/workflows/${activeId}`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
     await pressCanvasShortcut(page, 'Control+s')
     await saved
-    const savedActive = await (await page.request.get(`${API_BASE}/api/v1/workflows/${activeName}`)).json()
-    expect(savedActive.graph).toEqual((await fetchDraft(page, activeName)).graph)
-    const savedInactive = await (await page.request.get(`${API_BASE}/api/v1/workflows/${inactiveName}`)).json()
+    const savedActive = await (await page.request.get(`${API_BASE}/api/v1/workflows/${activeId}`)).json()
+    expect(savedActive.graph).toEqual((await fetchDraft(page, activeId)).graph)
+    const savedInactive = await (await page.request.get(`${API_BASE}/api/v1/workflows/${inactiveId}`)).json()
     expect(savedInactive.graph).toEqual(inactiveBaseline.graph)
   })
 })

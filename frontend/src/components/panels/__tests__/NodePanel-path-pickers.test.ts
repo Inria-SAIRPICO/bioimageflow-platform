@@ -32,6 +32,7 @@ const mockedIsDesktop = vi.mocked(isDesktop)
 const mockedSelectFiles = vi.mocked(selectFiles)
 
 const filesTool: ToolMetadata = {
+  output_file_declarations: {},
   name: 'Files',
   display_name: 'Files',
   package: 'bioimageflow_common_tools',

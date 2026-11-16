@@ -70,6 +70,20 @@ describe('settings store', () => {
     expect(store.isLoading).toBe(false)
   })
 
+  it('does not replace a selected workspace with late startup settings', async () => {
+    let resolveFetch!: (value: { data: Record<string, unknown> }) => void
+    mockedApi.get.mockReturnValueOnce(new Promise(resolve => { resolveFetch = resolve }))
+    const selected = { workspace_path: '/workspace-b', resolved_workspace_path: '/canonical-b' }
+    mockedApi.patch.mockResolvedValueOnce({ data: selected })
+    const store = useSettingsStore()
+    const loading = store.fetchSettings()
+    await store.updateSettings({ workspace_path: '/workspace-b' })
+    resolveFetch({ data: { workspace_path: null, resolved_workspace_path: '/old-default' } })
+    await loading
+    expect(store.settings).toEqual(selected)
+    expect(store.isLoading).toBe(false)
+  })
+
   it('isDesktop returns true for desktop mode', async () => {
     mockedApi.get.mockResolvedValueOnce({
       data: { deployment_mode: 'desktop' },

@@ -1,6 +1,7 @@
 """Tests for ToolRegistryService."""
 
 import csv
+import logging
 import py_compile
 import sys
 from pathlib import Path
@@ -323,6 +324,36 @@ def test_scan_tool_store_prefers_newest_successfully_loaded_version(
     assert info.tools["1.0.0"] == ["GaussianSmooth"]
     assert info.tools["2.0.0"] == []
     assert "2.0.0" in info.load_errors
+
+
+def test_scan_reports_incompatible_old_version_without_startup_error(
+    tmp_path, _cleanup_dummy_modules, caplog,
+):
+    from tests.fixtures.package_metadata import write_package_metadata
+
+    _write_dummy_pkg(tmp_path, "1.0.0")
+    _write_dummy_pkg(tmp_path, "2.0.0")
+    rejected_root = tmp_path / DUMMY_PKG / "1.0.0" / DUMMY_PKG
+    write_package_metadata(rejected_root, "1.0.0", requires_dist=("bioimageflow-core<0.6",))
+
+    reg = _scan(tmp_path)
+
+    info = reg.get_package(DUMMY_PKG)
+    assert info is not None
+    assert info.installed_versions == ["1.0.0", "2.0.0"]
+    assert info.active_version == "2.0.0"
+    assert info.tools["1.0.0"] == []
+    assert info.tools["2.0.0"] == ["GaussianSmooth"]
+    assert "does not satisfy bioimageflow-core<0.6" in info.load_errors["1.0.0"]
+    assert rejected_root.is_dir()
+    records = [
+        record for record in caplog.records
+        if record.name == tool_registry_module.__name__ and DUMMY_PKG in record.getMessage()
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert records[0].exc_info is None
+    assert "bioimageflow-core<0.6" in records[0].getMessage()
 
 
 def test_set_active_version_rejects_failed_version(tmp_path, _cleanup_dummy_modules):

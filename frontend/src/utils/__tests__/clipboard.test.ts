@@ -8,6 +8,7 @@ import {
 } from '../clipboard'
 
 const tool: ToolMetadata = {
+  output_file_declarations: {},
   name: 'tool', display_name: 'Tool', package: 'pkg', package_version: '2',
   tool_type: 'ProcessingTool', accepts_upstream: true, dynamic_outputs: false,
   dataframe_output: true, row_consumption: 'mapped', source_kind: 'package', editable: false,

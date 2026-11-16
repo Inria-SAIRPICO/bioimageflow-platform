@@ -181,6 +181,7 @@ const canvasCommandMocks = vi.hoisted(() => ({
   setInputPinned: null as null | ((nodeId: string, key: string, pinned: boolean) => boolean),
   toggleWorkflowInput: null as null | ((nodeId: string, input: string | number) => unknown),
   clearNodeOutputs: null as null | ((nodeIds: string[]) => Promise<boolean>),
+  setOutputTemplates: null as null | ((nodePath: string, templates: Record<string, string>) => boolean),
 }))
 
 vi.mock('@/composables/useCanvasCommands', () => ({
@@ -191,6 +192,7 @@ vi.mock('@/composables/useCanvasCommands', () => ({
     setInputPinned?: (nodeId: string, key: string, pinned: boolean) => boolean
     toggleWorkflowInput?: (nodeId: string, input: string | number) => unknown
     clearNodeOutputs?: (nodeIds: string[]) => Promise<boolean>
+    setOutputTemplates?: (nodePath: string, templates: Record<string, string>) => boolean
   }) => {
     if (options?.updateWorkflowBinding) canvasCommandMocks.updateWorkflowBinding = options.updateWorkflowBinding
     if (options?.resetWorkflowBinding) canvasCommandMocks.resetWorkflowBinding = options.resetWorkflowBinding
@@ -204,6 +206,7 @@ vi.mock('@/composables/useCanvasCommands', () => ({
     if (options?.clearNodeOutputs) {
       canvasCommandMocks.clearNodeOutputs = options.clearNodeOutputs
     }
+    if (options?.setOutputTemplates) canvasCommandMocks.setOutputTemplates = options.setOutputTemplates
     return {
       routeSave: vi.fn().mockResolvedValue('root'),
       updateParameter: (nodeId: string, key: string, value: unknown) => (
@@ -308,6 +311,8 @@ describe('CanvasView execution lock', () => {
     vi.mocked(api.put).mockReset()
     mockedApi.post.mockResolvedValue({
       data: {
+        id: 'untitled',
+        relative_path: 'untitled',
         name: 'untitled',
         display_name: 'Untitled',
         path: '/tmp/untitled.json',
@@ -336,6 +341,39 @@ describe('CanvasView execution lock', () => {
     canvasCommandMocks.setInputPinned = null
     canvasCommandMocks.toggleWorkflowInput = null
     canvasCommandMocks.clearNodeOutputs = null
+    canvasCommandMocks.setOutputTemplates = null
+  })
+
+  it('corrects nested output templates as one ordinary root edit while preserving source provenance', async () => {
+    const graph = makeGraph({ nodes: [{
+      type: 'workflow', id: 'child', name: 'Child', workflow: makeGraph({ nodes: [makeGraphNode({ id: 'atlas' })] }),
+      position: [0, 0], bindings: {}, resources: {}, enabled: true, collapsed: false,
+    }] })
+    const wrapper = mountCanvas(graph)
+    await flushPromises()
+    const node = mockNodes.find(candidate => candidate.id === 'child')!
+    node.data.source = { kind: 'workspace', workflow_id: 'Original' }
+    graphSyncMocks.syncGraphState.mockClear()
+    expect(canvasCommandMocks.setOutputTemplates?.('child/atlas', { mask: 'mask_{group_index}.tif', report: 'report.csv' })).toBe(true)
+    expect(node.data.workflow.nodes[0].output_templates).toEqual({ mask: 'mask_{group_index}.tif', report: 'report.csv' })
+    expect(node.data.source).toEqual({ kind: 'workspace', workflow_id: 'Original' })
+    expect(graphSyncMocks.syncGraphState).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('refuses a correction while a private editor owns its enclosing workflow', async () => {
+    const graph = makeGraph({ nodes: [{
+      type: 'workflow', id: 'child', name: 'Child', workflow: makeGraph({ nodes: [makeGraphNode({ id: 'atlas' })] }),
+      position: [0, 0], bindings: {}, resources: {}, enabled: true, collapsed: false,
+    }] })
+    const wrapper = mountCanvas(graph)
+    await flushPromises()
+    const sessions = useNestedWorkflowSessionsStore()
+    vi.spyOn(sessions, 'hasOpenEditorForNode').mockReturnValue(true)
+    graphSyncMocks.syncGraphState.mockClear()
+    expect(() => canvasCommandMocks.setOutputTemplates?.('child/atlas', { mask: 'safe.tif' })).toThrow('Close the nested workflow editor')
+    expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('drains a newer remote draft revision received while an earlier clean-canvas fetch is busy', async () => {
@@ -959,6 +997,7 @@ describe('CanvasView execution lock', () => {
 
   it('publishes a positional DataFrame input with its canonical default in a nested editor', async () => {
     useToolRegistryStore().tools = [{
+      output_file_declarations: {},
       name: 'CrossJoin',
       display_name: 'Cross join',
       package: 'bioimageflow-common-tools',
@@ -1165,6 +1204,7 @@ describe('CanvasView execution lock', () => {
 
   it('creates tool nodes with both canonical and renderer discriminators', () => {
     useToolRegistryStore().tools = [{
+      output_file_declarations: {},
       name: 'CrossJoin',
       display_name: 'Cross join',
       package: 'bioimageflow-common-tools',
@@ -1203,6 +1243,7 @@ describe('CanvasView execution lock', () => {
 
   it('creates a Files node from a desktop folder drop without uploading it', async () => {
     useToolRegistryStore().tools = [{
+      output_file_declarations: {},
       name: 'Files',
       display_name: 'Files',
       package: 'bioimageflow-common-tools',
@@ -1409,6 +1450,7 @@ describe('CanvasView execution lock', () => {
 
   it('keeps parameter-edit status invalidation scoped to the edited node', async () => {
     const tool = {
+      output_file_declarations: {},
       name: 'files',
       display_name: 'Files',
       package: 'bioimageflow-core',

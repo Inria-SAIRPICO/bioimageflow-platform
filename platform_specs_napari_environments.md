@@ -400,7 +400,7 @@ Browser local storage may cache this state but is never its authority.
 Use these logical keys:
 
 ```text
-output key = (workspace identity, root workflow identity generation,
+output key = (workspace identity, root workflow UUID and identity generation,
               structural node-instance path,
               output field key or stable public output ID)
 
@@ -408,7 +408,7 @@ favorite: output key -> environment ID
 ```
 
 Use existing stable workspace identity where available, otherwise define a persisted local workspace identity as part of implementation; do not hash a mutable display name or raw workflow path as identity.
-Workflow path can be retained as a lookup/display index, with the generation guarding against delete-and-recreate collisions.
+Workflow UUID is the persistent owner; the path is display/location metadata only, and moves preserve both UUID and generation. Confirmed format migration remaps legacy path/generation keys without copying preferences to a new or ambiguous owner.
 Structural node paths use node IDs, never node labels or nesting positions.
 Tool output field names are schema identities until the library offers stable field IDs; a tool-field rename invalidates that preference.
 Public workflow output labels can change while their stable IDs preserve preferences.
@@ -443,7 +443,8 @@ After an import or explicit saved Open has been accepted into its root canvas, r
 A pending check alone does not mount a banner; a covered report completes silently, while completed unknown/setup/error guidance remains visible until dismissal or a change of owning presentation.
 Bind the check, report, error, toast, and requirement-group prefills to the latest presentation intent, workflow local and server identity generations, exact canvas registration, and currently active owning root; a refused or superseded presentation must not publish these effects.
 Superseding a request or removing its owning presentation invalidates both successful and failed late responses before they can replace another workflow's guidance or form.
-The guidance names the workflow, states that execution is unaffected, and offers expandable output identities, grouped requirements, candidate failures, unknown metadata, explicit setup actions, and dismissal to configure later.
+The guidance names the workflow, explains that viewer setup does not block execution, and offers expandable output identities, grouped requirements, candidate failures, unknown metadata, explicit setup actions, and dismissal to configure later.
+When tool/source metadata is unknown, it explicitly reminds users that missing tools and workflow validation errors must still be resolved before Run.
 Run the same check on workflow open, requirement changes, and relevant environment inventory changes, without reopening a modal repeatedly.
 Preserve inactive and unknown outputs in the backend report, but do not render a per-output report in Image Viewers Settings.
 Imported workflows with no declarations continue to work through automatic readers and local format rules.

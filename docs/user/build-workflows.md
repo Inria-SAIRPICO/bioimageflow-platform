@@ -62,8 +62,46 @@ The **Outputs** section lists what the selected tool produces.
 Use **Expose as workflow output** when a parent workflow should receive that value.
 Give each public output a clear name.
 
-For file outputs, enter a relative path that describes the result, such as `segmentation/masks.tif`.
-Keep output paths distinct when one tool writes several files.
+### Name files with output templates
+
+For a processing tool that writes files, **Outputs** contains an editable **output path template**.
+A template is a filename pattern: BioImageFlow replaces the parts in braces with values for the current input.
+You can keep the tool's default or customize it.
+
+For example, if the tool has an input called `input_image`, this template:
+
+```text
+segmentation/{input_image.stem}_mask_{row_index}.tif
+```
+
+produces `segmentation/cell_01_mask_3.tif` for an input named `cell_01.tif` at row index `3`.
+These paths are relative to the tool's managed result files; use **Open latest outputs** to find them after a run.
+
+| Template part | Meaning |
+|---|---|
+| `{input_image.stem}` | Input filename without its extension; replace `input_image` with the tool's actual input name. |
+| `{input_image.name}` | Input filename including its extension. |
+| `{row_index}` | Input table row index, useful for separate per-row files. |
+| `{group_index}` | File-group index, useful when several rows contribute to one file. |
+| `{node_name}` | Current node name. |
+| `{column:sample}` | Value in the input table's `sample` column. |
+
+Keep a distinct destination for every file the tool writes.
+The description below each output explains whether it writes one file per input row, one for the whole batch, or one per group.
+For grouped files, use a value shared by the group, such as `{group_index}`, rather than a different filename for every contributing row.
+Changing a template changes naming, not how the tool groups inputs.
+
+A **naming base** is a pattern from which the tool generates its own final filenames.
+Outputs that refer to existing files, and DataFrame tools that return table columns, have no filename-template editor.
+
+If declared output paths collide during execution, a dialog explains the template and shows how its parts resolve to the conflicting filename.
+You can cancel, or change the template and continue with a new run that reuses available cached results.
+The change updates your workflow draft without automatically saving it.
+Changing filenames can affect downstream tools that interpret names.
+Warnings during editing appear only when a conflict is known; missing upstream data does not produce a speculative warning.
+
+Existing workflows retain their pinned tool-package versions.
+Update incompatible tool dependencies explicitly; installing a newer package does not rewrite existing workflows automatically.
 
 ## Group related steps
 

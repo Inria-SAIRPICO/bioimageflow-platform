@@ -5,22 +5,37 @@ See [Choose Input Data](choose-input-data.md) before adding your own files.
 
 ## Install the desktop application
 
-1. Open the [BioImageFlow releases page](https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases).
-2. Find the launcher download for your operating system in the latest release notes.
-3. Download and extract the launcher package, following the platform-specific instructions in those notes.
-4. Move the launcher to a stable location, such as **Applications** on macOS, and open it while connected to the internet.
+Download the launcher for your operating system from the [release page](https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases), extract it to a stable location, and launch it while connected to the internet.
+Use **Applications** (or `~/Applications`) on macOS, a folder such as `%LOCALAPPDATA%\Programs\BioImageFlow` on Windows, or `~/Applications/BioImageFlow` on Linux.
+Keep the extracted package together and outside temporary folders such as Downloads.
+Choose the launcher linked in the release notes, rather than the source-code ZIP.
 
-Do not download a source-code archive as a substitute for the launcher.
+The first launch asks where to install the application, then downloads and prepares it.
+Accept the suggested installation folder unless you need another disk.
+Setup can take several minutes; keep the launcher open while progress is displayed.
 
 ```{note}
-The first launch can take several minutes while the launcher verifies the release, downloads the application, and prepares an isolated environment.
-Keep the launcher open while progress is displayed.
-Later launches normally reuse that environment and start faster.
+**What is stored where, and what happens during updates?**
 
-The installation location contains the application and its Python environment.
-Settings, installed tool packages, and workflows belong to your user profile and are reused even if you download another launcher or replace the application installation.
-Replacing an installation therefore does not reset your work.
-See [Storage](preferences.md#storage) to choose a different workspace.
+The launcher, application, and your analysis files have separate locations.
+Here `~` means your home folder (`C:\Users\<you>` on Windows).
+
+| Files | Default location | When updating |
+|---|---|---|
+| **Launcher** — the program you open | The stable folder where you extracted the download | Keep using it: it checks for application updates. Replace it only when release notes request a newer launcher. |
+| **Application files and application Python environment** | The installation folder selected on first launch, under `sources/` and `wetlands/` | Managed by the launcher; new releases install new code and prepare the matching environment. Reinstalling here can replace these files. |
+| **Workspace** — workflows, custom tools, and results | `~/BioImageFlow/workspace/` | Reused; an application update does not replace your workflows or results. |
+| **Settings** — preferences, workspace selection, and viewer configuration | `~/.bioimageflow/settings.json` | Reused by the new application. |
+| **Installed tool packages** — versioned tool definitions | `~/.bioimageflow/tool_packages/` | Reused; workflows keep their selected package versions. |
+| **Tool and viewer environments** — dependencies used to execute tools and open images | `~/.bioimageflow/wetlands/` | Reused when compatible; an environment may be updated or rebuilt when its requirements change. |
+
+**Wetlands is the environment manager**: it installs and runs dependencies in isolated environments so tools can use different software versions.
+The launcher's `wetlands/` directory serves the application itself; the profile's `~/.bioimageflow/wetlands/` serves tools and integrations.
+
+The suggested application installation root is `~/Library/Application Support/BioImageFlow` on macOS, `%LOCALAPPDATA%\BioImageFlow` on Windows, or `~/.local/share/BioImageFlow` on Linux.
+Launcher state (including the selected installation location) is kept under `~/Library/Application Support/BioImageFlow`, `%APPDATA%\BioImageFlow`, or `~/.local/state/BioImageFlow`, respectively.
+Custom installation choices and environment-variable overrides can change these defaults.
+Use [Storage preferences](preferences.md#storage) to find your actual workspace and tool store, and keep your analysis files in the workspace rather than the application installation folder.
 ```
 
 ## Open a bundled demo
@@ -51,15 +66,15 @@ The first run can take longer while BioImageFlow prepares tool environments and 
 
 ## Run and inspect the demo
 
-1. Click **Run Workflow** in the upper-right corner.
-2. Follow node status on the canvas and messages in the **Logger** panel.
-3. Select a completed node.
-4. Open **View → Node Data** to inspect its table, image previews, and output paths.
-5. Double-click **FOLS2 Marker Spot Analysis** or **CSF1R Marker Spot Analysis**, then select an internal node to inspect that branch's intermediate results.
-6. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files.
+1. Click **Run Workflow** in the upper-right corner and follow progress on the canvas and in **Logger**.
+2. Select a completed image-producing node to show its results in **Node Data**, which is open by default.
+   To inspect a marker branch, double-click **FOLS2 Marker Spot Analysis** or **CSF1R Marker Spot Analysis**, then select an internal node with image outputs.
+3. In an image cell, use **Open in Napari** for interactive desktop viewing or **Open in Avivator** for a supported image in the web viewer.
+   If Napari needs setup, follow the environment guidance; see [Image viewers](preferences.md#image-viewers) for configuration.
+4. Use the cell's **Reveal in file browser** action to find the image on disk.
 
-The latest-output folder can combine the latest successful result from different runs.
-Use **Workflow → Export** when you need independent copies or one complete workflow-and-results bundle.
+You can also select the workflow in **Workflows** and click **Open latest outputs** to browse its output folder.
+For copies you can share or move, use [Workflow → Export](manage-workflows.md#import-or-export).
 
 ## Make an editable copy
 

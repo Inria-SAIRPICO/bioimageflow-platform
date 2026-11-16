@@ -6,37 +6,48 @@ Each installed package can provide several tools and one or more versions.
 ## Find a tool
 
 1. Enter a name or technique in **Search tools...**.
-   Search covers tool names, tags, categories and documentation keywords; every word you enter must match.
-   Partial terms work directly, and ordinary words of 4–64 characters also tolerate one missing, extra, changed or swapped letter.
+   Search covers tool names, tags, categories, and documentation keywords.
 2. Expand a matching category.
 3. Click a tool row to show its information at the bottom of the panel; click the row again to hide it.
 4. Double-click the row to add the tool at the default canvas position, or drag it to a chosen position.
-
-An available tool may still need an environment to be prepared before its first run.
 
 ## Choose package versions
 
 Click **Manage tools** at the top of **Tools**.
 The dialog lists known packages, available and installed versions, the tools in each version, and environment status.
-The dialog always shows the full inventory independently of text in **Search tools...**.
 
 Use a version's row action to install, select, or uninstall it.
 A workflow uses one selected version of each package.
 If changing the selection affects existing nodes, BioImageFlow asks before updating their outputs.
 
-## Prepare environments
+## Tool environments
 
-The environment status shows whether a package environment is stopped, being created or updated, running, ready, failed, or unavailable.
-Use the power action to start or stop an environment.
-Use the labeled **Create / recreate** action in **Manage tools** to create a missing environment or intentionally rebuild it from the tool's declared recipe.
-The tool information area shows where that managed environment is stored.
-Environment controls are unavailable during workflow execution.
+A tool package provides the code and descriptions you see in **Tools**.
+A **tool environment** contains the software needed to execute processing tools: a Python interpreter, libraries, and any other programs declared by the tool.
+Keeping these dependencies in isolated environments lets tools use different versions without changing your system Python or other applications.
+**Wetlands**, BioImageFlow's environment manager, creates and runs these environments from recipes supplied by tool authors.
+Tools with the same requirements can share an environment; this is separate from the version of the tool package selected in your workflow.
+DataFrame tools operate on tables in the application's own process rather than a separate processing environment.
 
-When an application update changes the processing recipe, the platform updates an owned environment automatically on first use. The Execution panel shows **Updating execution environment** while this happens. An incompatible `bioimageflow-core` requirement in a tool is reported as a validation error and must be corrected in the tool definition.
+You can usually click **Run Workflow** and let BioImageFlow prepare missing environments as needed.
+The first preparation requires internet access and may take several minutes to download dependencies.
+Later runs reuse the installed environment.
+Follow setup progress in **Execution** and detailed messages in **Logger**.
 
-```{note}
-Installing a package or preparing its environment can download dependencies and take several minutes.
-```
+To prepare or inspect an environment yourself, open **Manage tools**:
+
+- Check its status to see whether it needs setup, is being prepared, is ready, or has failed.
+- Use **Create / recreate** to install a missing environment or rebuild it from the declared recipe after a setup problem.
+- Use the power action to start or stop its running process.
+  Stopping releases the process; it does not uninstall the environment, tool code, or workflow results.
+- Select the tool to find its environment location in the tool information area.
+
+Environment controls are unavailable while a workflow is executing.
+If an application update changes the required execution recipe, BioImageFlow updates a managed environment on first use and reports **Updating execution environment**.
+If setup fails, read **Logger** for the failed download or dependency, correct the cause, and retry **Create / recreate**.
+A tool that declares an incompatible BioImageFlow Core version needs an updated tool definition or package version; recreating the same incompatible recipe will not fix it.
+
+Napari uses separate viewer environments, configured under [Image viewers](preferences.md#image-viewers).
 
 ## Resolve missing tools
 
@@ -46,6 +57,7 @@ BioImageFlow keeps those nodes visible and marks the missing tools, but it block
 - Click **Install all missing packages** to install every requested version.
 - Open **Manage tools** to install versions one at a time.
 - Use **Use installed alternatives...** only when the versions already installed are acceptable replacements.
+  Confirm the listed replacements, review the updated draft, then **Save** to keep the new dependency versions.
 
 Review replacements carefully because a different package version can change workflow behavior or outputs.
 

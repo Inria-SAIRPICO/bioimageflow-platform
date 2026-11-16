@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
-import { emptyGraph } from '@/sessions/graphDocument'
+import { emptyGraph, graphDocumentsEqual } from '@/sessions/graphDocument'
 import { serializeGraph } from '../useGraphSync'
 
 describe('canonical canvas serialization', () => {
@@ -116,6 +116,32 @@ describe('canonical canvas serialization', () => {
         },
       },
     })
+  })
+
+  it('keeps inherited resource fields stable across a server roundtrip and preserves explicit overrides', () => {
+    const child = emptyGraph('child', 'Child')
+    child.nodes.push({
+      type: 'tool', id: 'child', name: 'Child tool', tool_name: 'tool',
+      position: [0, 0], parameters: {}, enabled: true, collapsed: false,
+      resources: { gpu: 0, memory: '2 GiB' },
+    })
+    const graph = serializeGraph({
+      nodes: [{
+        id: 'tool', type: 'tool', position: { x: 0, y: 0 },
+        data: { nodeType: 'tool', name: 'Tool', toolName: 'tool' },
+      }, {
+        id: 'workflow', type: 'workflow', position: { x: 100, y: 0 },
+        data: { nodeType: 'workflow', name: 'Workflow', workflow: child },
+      }],
+      edges: [],
+    })
+    const inherited = { cpu: null, gpu: null, memory: null, gpu_memory: null, max_concurrent: null }
+    const returned = structuredClone(graph)
+    returned.nodes[0]!.resources = inherited
+    if (returned.nodes[1]?.type !== 'workflow') throw new Error('Expected workflow node')
+    returned.nodes[1].workflow.nodes[0]!.resources = { ...inherited, gpu: 0, memory: '2 GiB' }
+    expect(graphDocumentsEqual(graph, returned)).toBe(true)
+    expect(graph.nodes[1].resources).toEqual({})
   })
 
   it('rejects canvas nodes without an explicit discriminator', () => {

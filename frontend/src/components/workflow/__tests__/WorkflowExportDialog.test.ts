@@ -78,21 +78,29 @@ describe('WorkflowExportDialog', () => {
     const wrapper = mountDialog()
 
     expect(wrapper.text()).toContain('Workflow only')
-    expect(wrapper.text()).toContain('Latest results')
-    expect(wrapper.text()).toContain('may come from different workflow runs')
-    expect(wrapper.text()).toContain('one latest successful run')
+    expect(wrapper.findAll('.workflow-export-dialog__choice strong').map(choice => choice.text())).toEqual([
+      'Workflow only',
+      'Workflow with results from the latest successful run',
+      'Latest result from each node',
+      'Results from the latest successful run',
+    ])
+    expect(wrapper.text()).toContain('may come from different runs')
+    expect(wrapper.text()).toContain('one successful run')
     expect(wrapper.find('[data-testid="export-latest-results-folder"]').exists()).toBe(false)
   })
 
-  it('downloads latest results without crossing the workflow save barrier', async () => {
+  it.each([
+    ['export-latest-results', 'exportLatestResults'],
+    ['export-successful-run-results', 'exportSuccessfulRunResults'],
+  ] as const)('downloads %s without crossing the workflow save barrier', async (testId, method) => {
     const prepare = vi.fn().mockResolvedValue('folder/wf')
     const store = useWorkflowStore()
     const exportLatestResults = vi
-      .spyOn(store, 'exportLatestResults')
+      .spyOn(store, method)
       .mockResolvedValue(undefined)
     const wrapper = mountDialog({ prepareWorkflowExport: prepare })
 
-    await wrapper.get('[data-testid="export-latest-results"]').trigger('click')
+    await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
     await flushPromises()
 
     expect(prepare).not.toHaveBeenCalled()
@@ -136,6 +144,8 @@ describe('WorkflowExportDialog', () => {
       wrapper.get('[data-testid="export-workflow-with-results"]').attributes('disabled'),
     ).toBeDefined()
     expect(wrapper.get('[data-testid="export-latest-results"]').attributes('disabled'))
+      .toBeUndefined()
+    expect(wrapper.get('[data-testid="export-successful-run-results"]').attributes('disabled'))
       .toBeUndefined()
     expect(wrapper.text()).toContain('Results-only exports remain available')
   })

@@ -127,10 +127,12 @@ async function createAndOpenFixture(page: Page, workflowName: string, controlPor
   const validation = await page.request.put(`${API_BASE}/api/v1/graph`, { data: graph })
   expect(validation.ok()).toBeTruthy()
   expect(await validation.json()).toMatchObject({ valid: true, errors: [] })
-  expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name: workflowName, display_name: workflowName },
-  })).status()).toBe(201)
-  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+  })
+  expect(created.status(), await created.text()).toBe(201)
+  const workflowId = (await created.json()).id as string
+  expect((await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph },
   })).ok()).toBeTruthy()
 
@@ -138,9 +140,10 @@ async function createAndOpenFixture(page: Page, workflowName: string, controlPor
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
+  await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   await expect(page.locator('.vue-flow__node')).toHaveCount(2)
+  return workflowId
 }
 
 async function executionStatus(page: Page) {
@@ -201,33 +204,33 @@ test('cancels a held real sequential worker without mutating its exact draft', a
   const controlPort = await control.listen()
   const workflowName = uniqueWorkflowName()
   const siblingName = `${workflowName}_sibling`
-  let workflowCreated = false
-  let siblingCreated = false
+  let workflowId: string | undefined
+  let siblingId: string | undefined
   let primaryOccurred = false
   const cleanupErrors: unknown[] = []
 
   try {
-    await createAndOpenFixture(page, workflowName, controlPort)
-    workflowCreated = true
+    workflowId = await createAndOpenFixture(page, workflowName, controlPort)
     const acceptedDraft = await (await page.request.get(
-      `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+      `${API_BASE}/api/v1/workflow-drafts/${workflowId}`,
     )).json()
     // This sibling has the same declared tools and node IDs, but is never run.
     const siblingGraph = heldGraph(siblingName, controlPort)
     siblingGraph.nodes[0]!.name = 'Unexecuted sibling source'
     siblingGraph.nodes[1]!.name = 'Unexecuted sibling worker'
-    expect((await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    const siblingCreated = await page.request.post(`${API_BASE}/api/v1/workflows`, {
       data: { name: siblingName, display_name: siblingName },
-    })).status()).toBe(201)
-    siblingCreated = true
-    const savedSibling = await page.request.put(`${API_BASE}/api/v1/workflows/${siblingName}`, {
+    })
+    expect(siblingCreated.status(), await siblingCreated.text()).toBe(201)
+    siblingId = (await siblingCreated.json()).id as string
+    const savedSibling = await page.request.put(`${API_BASE}/api/v1/workflows/${siblingId}`, {
       data: { graph: siblingGraph },
     })
     expect(savedSibling.ok(), await savedSibling.text()).toBeTruthy()
     const siblingDraft = await (await page.request.get(
-      `${API_BASE}/api/v1/workflow-drafts/${siblingName}`,
+      `${API_BASE}/api/v1/workflow-drafts/${siblingId}`,
     )).json()
-    const openExistingWorkflow = async (id: string) => {
+    const openExistingWorkflow = async (id: string, label: string) => {
       const panel = page.getByTestId('workflows-panel')
       if (!await panel.isVisible()) {
         const catalogGroup = page.locator('.dv-groupview').filter({
@@ -237,9 +240,9 @@ test('cancels a held real sequential worker without mutating its exact draft', a
         await catalogGroup.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
       }
       await expect(panel).toBeVisible()
-      await panel.getByTestId('workflow-search').fill(id)
+      await panel.getByTestId('workflow-search').fill(label)
       await panel.getByTestId(`workflow-row-${id}`).dblclick()
-      await expect(page.getByTestId('workflow-title')).toHaveText(id)
+      await expect(page.getByTestId('workflow-title')).toHaveText(label)
     }
     const activateCanvas = async (id: string) => {
       const title = page.getByTestId('canvas-tab').getByText(id, { exact: true })
@@ -248,7 +251,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       await expect(page.getByTestId('workflow-title')).toHaveText(id)
     }
     // A new Open is locked during Run; existing canvas tabs remain inspectable.
-    await openExistingWorkflow(siblingName)
+    await openExistingWorkflow(siblingId, siblingName)
     await activateCanvas(workflowName)
 
     for (const [targets, detail] of [
@@ -258,7 +261,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     ] as const) {
       const refusal = await page.request.post(`${API_BASE}/api/v1/execution/run`, {
         data: {
-          workflow_id: workflowName,
+          workflow_id: workflowId,
           draft_revision: acceptedDraft.draft_revision, nodes: targets,
         },
       })
@@ -266,12 +269,12 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       expect(JSON.stringify(await refusal.json())).toContain(detail)
       expect(await executionStatus(page)).toMatchObject({ state: 'idle' })
       expect(await (await page.request.get(
-        `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+        `${API_BASE}/api/v1/workflow-drafts/${workflowId}`,
       )).json()).toMatchObject({
         draft_revision: acceptedDraft.draft_revision, graph: acceptedDraft.graph,
       })
       expect((await page.request.post(`${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`, {
-        data: { workflow_name: workflowName },
+        data: { workflow_name: workflowId },
       })).status()).toBe(404)
     }
 
@@ -290,7 +293,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
 
     const heldStatus = await executionStatus(page)
     expect(heldStatus).toMatchObject({
-      state: 'running', workflow_id: workflowName,
+      state: 'running', workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
       planned_node_ids: [SOURCE_ID, WORKER_ID],
       planned_node_names: {
@@ -312,7 +315,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect(page.getByTestId('execution-banner-row-progress')).toHaveCount(0)
 
     const sourceResponse = await page.request.post(`${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/query`, {
-      data: { workflow_name: workflowName },
+      data: { workflow_name: workflowId },
     })
     expect(sourceResponse.ok(), await sourceResponse.text()).toBeTruthy()
     const originResult = await sourceResponse.json() as NodeDataResponse
@@ -345,7 +348,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect.poll(() => transports.find(transport => transport.socket === reconnected)
       ?.frames.find(frame => frame.type === 'status_snapshot'), { timeout: 15_000 }).toMatchObject({
       type: 'status_snapshot', state: 'running', execution_id: heldStatus.execution_id,
-      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: acceptedDraft.draft_revision,
       planned_node_ids: [SOURCE_ID, WORKER_ID], planned_node_names: heldStatus.planned_node_names,
       node_statuses: {
         [SOURCE_ID]: { status: 'executed' }, [WORKER_ID]: { status: 'running' },
@@ -361,19 +364,19 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect(siblingWorker).toHaveClass(/status-unexecuted/)
     for (const nodeId of [SOURCE_ID, WORKER_ID]) {
       expect((await page.request.post(`${API_BASE}/api/v1/nodes/${nodeId}/data/query`, {
-        data: { workflow_name: siblingName },
+        data: { workflow_name: siblingId },
       })).status()).toBe(404)
     }
     for (const identity of [undefined, originResult.source_identity]) {
       const retained = await page.request.post(`${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/query`, {
-        data: { workflow_name: workflowName, ...(identity ? { result_identity: identity } : {}) },
+        data: { workflow_name: workflowId, ...(identity ? { result_identity: identity } : {}) },
       })
       expect(retained.ok(), await retained.text()).toBeTruthy()
       expect(await retained.json()).toMatchObject({
         source_identity: originResult.source_identity, rows: originResult.rows,
       })
     }
-    for (const [id, draft] of [[workflowName, acceptedDraft], [siblingName, siblingDraft]] as const) {
+    for (const [id, draft] of [[workflowId, acceptedDraft], [siblingId, siblingDraft]] as const) {
       expect(await (await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${id}`)).json()).toMatchObject({
         graph: draft.graph, draft_revision: draft.draft_revision,
       })
@@ -390,7 +393,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const recovered = await executionStatus(page)
     expect(recovered).toMatchObject({
       state: 'running', execution_id: heldStatus.execution_id,
-      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: acceptedDraft.draft_revision,
     })
 
     const injectExecutionEvent = (event: Record<string, unknown>) => page.evaluate(payload => {
@@ -400,7 +403,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const progressContext = {
       type: 'progress', node_id: WORKER_ID, status: 'row_progress',
       row: 0, total_rows: 3, task_current: 2, task_maximum: 4,
-      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: acceptedDraft.draft_revision,
     }
     await injectExecutionEvent({ ...progressContext, execution_id: 'run_stale_context' })
     await injectExecutionEvent({
@@ -421,7 +424,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       'aria-disabled', 'true',
     )
     const draftWhileHeld = await (await page.request.get(
-      `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+      `${API_BASE}/api/v1/workflow-drafts/${workflowId}`,
     )).json()
     expect(draftWhileHeld).toMatchObject({
       draft_revision: acceptedDraft.draft_revision, graph: acceptedDraft.graph,
@@ -444,7 +447,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
 
     const stopped = await executionStatus(page)
     expect(stopped).toMatchObject({
-      execution_id: heldStatus.execution_id, workflow_id: workflowName,
+      execution_id: heldStatus.execution_id, workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
       node_statuses: {
         [SOURCE_ID]: { status: 'executed' },
@@ -452,7 +455,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       },
     })
     const partial = await page.request.post(`${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`, {
-      data: { workflow_name: workflowName },
+      data: { workflow_name: workflowId },
     })
     expect(partial.status()).toBe(404)
 
@@ -471,7 +474,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     const rerunContext = await acceptedRerun.json()
     expect(rerunContext).toMatchObject({
       execution_id: expect.stringMatching(/^run_/),
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
       planned_node_ids: [SOURCE_ID, WORKER_ID],
     })
@@ -481,7 +484,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     expect(firstRerunStart.process_id).not.toBe(backendPid.process_id)
     expect(await executionStatus(page)).toMatchObject({
       state: 'running', execution_id: rerunContext.execution_id,
-      workflow_id: workflowName, draft_revision: acceptedDraft.draft_revision,
+      workflow_id: workflowId, draft_revision: acceptedDraft.draft_revision,
       planned_node_ids: [SOURCE_ID, WORKER_ID],
       node_statuses: {
         [SOURCE_ID]: { status: 'executed', cached: true },
@@ -493,7 +496,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect.poll(() => executionEvents.some(event => event.type === 'node_state'
       && event.status === 'running' && event.node_id === WORKER_ID
       && event.execution_id === rerunContext.execution_id
-      && event.workflow_id === workflowName
+      && event.workflow_id === workflowId
       && event.draft_revision === acceptedDraft.draft_revision), {
       timeout: 5_000,
     }).toBe(true)
@@ -518,7 +521,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     ))
     expect(firstProgress).toMatchObject({
       execution_id: rerunContext.execution_id,
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
     })
     await expect.poll(() => executionEvents.some(event => (
@@ -529,16 +532,16 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     ))).toMatchObject({
       success: true,
       execution_id: rerunContext.execution_id,
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
     })
     expect(executionEvents.filter(event => event.execution_id === rerunContext.execution_id)
-      .every(event => event.workflow_id === workflowName
+      .every(event => event.workflow_id === workflowId
         && event.draft_revision === acceptedDraft.draft_revision)).toBe(true)
     const completed = await executionStatus(page)
     expect(completed).toMatchObject({
       execution_id: rerunContext.execution_id,
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
       last_result: { success: true },
     })
@@ -549,14 +552,14 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     await expect(page.getByTestId('execution-banner-overall-progress')).toHaveAttribute('aria-valuenow', '100')
     expect(await executionStatus(page)).toMatchObject({
       execution_id: rerunContext.execution_id,
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: acceptedDraft.draft_revision,
       last_result: { success: true },
     })
 
     const workerResult = await page.request.post(
       `${API_BASE}/api/v1/nodes/${WORKER_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )
     expect(workerResult.ok()).toBeTruthy()
     const result = await workerResult.json()
@@ -566,7 +569,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
     )
     expect(workerPids.size).toBe(1)
     expect(workerPids.has(backendPid.process_id)).toBe(false)
-    const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+    const workflowResponse = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowId}`)
     expect(workflowResponse.ok()).toBeTruthy()
     const workflow = await workflowResponse.json()
     await expect.poll(async () => Promise.all([1, 2, 3].map(async (value) => {
@@ -598,7 +601,7 @@ test('cancels a held real sequential worker without mutating its exact draft', a
       }).toBe('idle')
     } catch (error) { cleanupErrors.push(error) }
     try { await page.goto('about:blank') } catch (error) { cleanupErrors.push(error) }
-    for (const id of [workflowCreated ? workflowName : null, siblingCreated ? siblingName : null]) {
+    for (const id of [workflowId, siblingId]) {
       if (id === null) continue
       try {
         const deletion = await page.request.delete(`${API_BASE}/api/v1/workflows/${id}`)

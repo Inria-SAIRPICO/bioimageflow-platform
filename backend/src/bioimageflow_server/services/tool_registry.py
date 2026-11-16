@@ -125,8 +125,17 @@ class ToolRegistryService:
                         version,
                     )
                 except Exception as exc:
-                    logger.exception("Failed to load %s==%s", package_name, version)
-                    load_errors[version] = _format_package_load_error(exc)
+                    detail = _format_package_load_error(exc)
+                    if isinstance(exc, ImportError):
+                        logger.warning(
+                            "Tool package %s==%s is unavailable: %s. "
+                            "See Manage Tools for installed versions.",
+                            package_name, version, detail,
+                        )
+                        logger.debug("Tool package import traceback", exc_info=True)
+                    else:
+                        logger.exception("Failed to load %s==%s", package_name, version)
+                    load_errors[version] = detail
                     try:
                         unload_versioned_package(package_name, version, self._store_path)
                     except Exception:
@@ -230,6 +239,22 @@ class ToolRegistryService:
             logger.warning("Failed to serialize outputs for %s: %s", class_name, exc)
             outputs_dict = {}
 
+        from bioimageflow_server.models.output_planning import OutputFileDeclaration
+
+        output_file_declarations = {}
+        for name, spec in outputs_dict.items():
+            if not isinstance(spec, dict) or spec.get("output_role") not in {"exact", "base", "reference"}:
+                continue
+            group = spec.get("file_group")
+            output_file_declarations[name] = OutputFileDeclaration.model_validate({
+                "output_role": spec["output_role"],
+                "file_group": (
+                    {"kind": group["kind"], "keys": group.get("keys", [])}
+                    if isinstance(group, dict) else None
+                ),
+                "description": group.get("description", "") if isinstance(group, dict) else "",
+            })
+
         # Extract environment info
         env_spec = getattr(tool_cls, "environment", None)
         environment: dict[str, Any] | None = None
@@ -257,6 +282,7 @@ class ToolRegistryService:
                 categories=categories,
                 inputs=inputs_dict,
                 outputs=outputs_dict,
+                output_file_declarations=output_file_declarations,
                 environment=environment,
                 source_kind=source_kind,  # type: ignore[arg-type]
                 editable=editable,

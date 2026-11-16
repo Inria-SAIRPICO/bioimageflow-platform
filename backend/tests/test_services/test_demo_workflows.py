@@ -37,7 +37,7 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
 
 def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
     service, _store = _service(tmp_path)
-    assert service.bundle_version == 6
+    assert service.bundle_version == 7
     assert {path.name for path in service.resource_root.iterdir()} == {
         "manifest.json",
         "fish-analysis",
@@ -51,10 +51,10 @@ def test_bundled_graphs_are_recursively_schema_v2(tmp_path: Path) -> None:
                 assert_schema_v2(node["workflow"])
             elif node.get("tool_package"):
                 assert node["tool_package_version"] == {
-                    "bioimageflow_common_tools": "0.2.2",
-                    "bioimageflow_io_tools": "0.2.2",
-                    "bioimageflow_segmentation_tools": "0.3.2",
-                    "bioimageflow_spot_tools": "0.2.2",
+                    "bioimageflow_common_tools": "0.3.0",
+                    "bioimageflow_io_tools": "0.3.0",
+                    "bioimageflow_segmentation_tools": "0.4.0",
+                    "bioimageflow_spot_tools": "0.3.0",
                 }[node["tool_package"]]
 
     for template in service.templates:
@@ -87,13 +87,15 @@ def test_bundled_graphs_flow_left_to_right_without_overlapping_nodes(tmp_path: P
 
 
 def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     service, store = _service(tmp_path)
 
     assert service.status().status == "missing"
     installed = service.install()
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
 
     assert installed.status == "installed"
-    assert [item.workflow_id for item in installed.workflows] == [
+    assert [store.get_workflow(item.workflow_id).info.relative_path for item in installed.workflows] == [
         "Demo/Fish Analysis",
         "Demo/Parameters Space Exploration",
     ]
@@ -108,13 +110,13 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
         assert all(
             node.source_module is None for node in document.graph.nodes if node.type == "tool"
         )
-    assert store.get_workflow("Demo/Fish Analysis").graph.interface.inputs == []
+    assert store.get_workflow(identities["Demo/Fish Analysis"]).graph.interface.inputs == []
     parameter_inputs = store.get_workflow(
-        "Demo/Parameters Space Exploration"
+        identities["Demo/Parameters Space Exploration"]
     ).graph.interface.inputs
     assert [item.name for item in parameter_inputs] == ["marker_channel"]
-    fish = store.get_workflow("Demo/Fish Analysis")
-    fish_document = store.read_workflow_document("Demo/Fish Analysis")
+    fish = store.get_workflow(identities["Demo/Fish Analysis"])
+    fish_document = store.read_workflow_document(identities["Demo/Fish Analysis"])
     assert fish_document.artifact_hash == artifact_hash(fish_document.graph, [])
     assert fish_document.graph.config.execution == "parallel"
     branches = {
@@ -148,11 +150,11 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
         assert any(output.name == "source_image" for output in branch.workflow.interface.outputs)
     branch_node_ids = [node.id for branch in branches.values() for node in branch.workflow.nodes]
     assert len(branch_node_ids) == len(set(branch_node_ids))
-    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    fish_path = store.workflow_dir(identities["Demo/Fish Analysis"]) / "workflow.json"
     saved_bytes = fish_path.read_bytes()
-    generation = store.workflow_generation("Demo/Fish Analysis")
+    generation = store.workflow_generation(identities["Demo/Fish Analysis"])
     reopened = WorkflowStoreService(store.root_dir, ToolRegistryService())
-    fresh_fish = reopened.get_workflow("Demo/Fish Analysis")
+    fresh_fish = reopened.get_workflow(identities["Demo/Fish Analysis"])
     local_names = {"DownloadImages", "AverageSpotsPerNucleus", "FishLabelOverlaps"}
     assert not local_names.intersection(item.tool_name for item in fresh_fish.missing_tools)
     assert fresh_fish.graph == fish_document.graph
@@ -160,25 +162,27 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
 
     # Presence and syntax validation are separate: an edited local file stays
     # available to Open for repair, without hiding the other bundled sources.
-    download = reopened.workflow_tools_dir("Demo/Fish Analysis") / "download_images.py"
+    download = reopened.workflow_tools_dir(identities["Demo/Fish Analysis"]) / "download_images.py"
     download.write_text("invalid Python !!!")
-    edited_fish = reopened.get_workflow("Demo/Fish Analysis")
+    edited_fish = reopened.get_workflow(identities["Demo/Fish Analysis"])
     assert not local_names.intersection(item.tool_name for item in edited_fish.missing_tools)
     assert edited_fish.graph == fish_document.graph
     download.unlink()
     with pytest.raises(WorkflowSourceMissingError) as missing:
-        reopened.get_workflow("Demo/Fish Analysis")
+        reopened.get_workflow(identities["Demo/Fish Analysis"])
     assert missing.value.missing_path == "tools/download_images.py"
     assert fish_path.read_bytes() == saved_bytes
-    assert reopened.workflow_generation("Demo/Fish Analysis") == generation
+    assert reopened.workflow_generation(identities["Demo/Fish Analysis"]) == generation
 
 
 def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    identities: dict[str, str] = {}
     service, store = _service(tmp_path)
     service.install()
-    workflow_id = "Demo/Parameters Space Exploration"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    workflow_id = identities["Demo/Parameters Space Exploration"]
     graph = store.read_workflow_document(workflow_id).graph
     tools = {node.id: node for node in graph.nodes if node.type == "tool"}
     assert tools["spot_mask_counts"].tool_module == "tools.spot_mask_metrics"
@@ -210,9 +214,11 @@ def test_parameter_demo_processing_tool_loads_without_orchestrator_in_worker(
 
 
 def test_parameter_demo_atlas_masks_have_distinct_paths_for_each_setting(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     service, store = _service(tmp_path)
     service.install()
-    graph = store.read_workflow_document("Demo/Parameters Space Exploration").graph
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    graph = store.read_workflow_document(identities["Demo/Parameters Space Exploration"]).graph
     atlas = next(node for node in graph.nodes if node.id == "atlas_detections")
     template = atlas.output_templates["output_image"]
 
@@ -270,17 +276,20 @@ def test_fish_average_keeps_image_origins_and_adds_weighted_global_average() -> 
 
 
 def test_install_is_idempotent_and_never_overwrites_installed_demo(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     service, store = _service(tmp_path)
     service.install()
-    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    fish_path = store.workflow_dir(identities["Demo/Fish Analysis"]) / "workflow.json"
     before = fish_path.read_bytes()
-    fish = store.get_workflow("Demo/Fish Analysis")
+    fish = store.get_workflow(identities["Demo/Fish Analysis"])
     edited = fish.graph.model_copy(update={"display_name": "My edited demo"})
-    store.save_workflow("Demo/Fish Analysis", WorkflowSaveBody(graph=edited))
+    store.save_workflow(identities["Demo/Fish Analysis"], WorkflowSaveBody(graph=edited))
     edited_bytes = fish_path.read_bytes()
 
     restarted = DemoWorkflowService(store, service.registry)
     result = restarted.install()
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
 
     assert result.status == "installed"
     assert fish_path.read_bytes() == edited_bytes
@@ -295,18 +304,22 @@ def test_install_is_idempotent_and_never_overwrites_installed_demo(tmp_path: Pat
 
     upgraded = DemoWorkflowService(store, service.registry, resource_root=changed_bundle)
     assert upgraded.install().status == "installed"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     assert fish_path.read_bytes() == edited_bytes
 
 
 def test_missing_demo_can_be_reinstalled_without_touching_other_demo(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     service, store = _service(tmp_path)
     service.install()
-    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    fish_path = store.workflow_dir(identities["Demo/Fish Analysis"]) / "workflow.json"
     fish_bytes = fish_path.read_bytes()
-    store.delete_workflow("Demo/Parameters Space Exploration")
+    store.delete_workflow(identities["Demo/Parameters Space Exploration"])
 
     assert service.status().status == "partial"
     assert service.install().status == "installed"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     assert fish_path.read_bytes() == fish_bytes
 
 
@@ -326,6 +339,7 @@ def test_unrelated_workflow_at_canonical_path_is_a_visible_conflict(tmp_path: Pa
 
 @pytest.mark.anyio
 async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versions(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     from unittest.mock import AsyncMock
 
     from bioimageflow_server.models.tools import PackageInfo
@@ -333,10 +347,10 @@ async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versi
 
     service, store = _service(tmp_path)
     service.registry.register_package("bioimageflow_common_tools", PackageInfo(
-        name="bioimageflow_common_tools", installed_versions=["0.2.2", "9.0.0"], active_version="9.0.0",
+        name="bioimageflow_common_tools", installed_versions=["0.3.0", "9.0.0"], active_version="9.0.0",
     ))
     service.registry.register_package("bioimageflow_io_tools", PackageInfo(
-        name="bioimageflow_io_tools", installed_versions=["0.2.2"], load_errors={"0.2.2": "broken"},
+        name="bioimageflow_io_tools", installed_versions=["0.3.0"], load_errors={"0.3.0": "broken"},
     ))
     installer = AsyncMock(spec=PackageInstallerService)
 
@@ -347,19 +361,21 @@ async def test_package_setup_precedes_publication_and_reuses_exact_healthy_versi
 
     installer.install.side_effect = install
     result = await service.install_with_packages(installer)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
 
     assert result.status == "installed"
     assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
-        ("bioimageflow_io_tools", "0.2.2"),
-        ("bioimageflow_segmentation_tools", "0.3.2"),
-        ("bioimageflow_spot_tools", "0.2.2"),
+        ("bioimageflow_io_tools", "0.3.0"),
+        ("bioimageflow_segmentation_tools", "0.4.0"),
+        ("bioimageflow_spot_tools", "0.3.0"),
     ]
     assert service.registry.get_package("bioimageflow_common_tools").active_version == "9.0.0"
-    assert store.get_workflow("Demo/Fish Analysis").missing_packages == []
-    fish_path = store.workflow_dir("Demo/Fish Analysis") / "workflow.json"
+    assert store.get_workflow(identities["Demo/Fish Analysis"]).missing_packages == []
+    fish_path = store.workflow_dir(identities["Demo/Fish Analysis"]) / "workflow.json"
     before = fish_path.read_bytes()
     installer.install.reset_mock()
     assert (await service.install_with_packages(installer)).status == "installed"
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     installer.install.assert_not_awaited()
     assert fish_path.read_bytes() == before
 
@@ -387,8 +403,8 @@ async def test_package_failure_keeps_demos_absent_and_retry_reuses_partial_insta
     installer.install.reset_mock(side_effect=True)
     assert (await service.install_with_packages(installer)).status == "installed"
     assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
-        ("bioimageflow_segmentation_tools", "0.3.2"),
-        ("bioimageflow_spot_tools", "0.2.2"),
+        ("bioimageflow_segmentation_tools", "0.4.0"),
+        ("bioimageflow_spot_tools", "0.3.0"),
     ]
 
 
@@ -432,6 +448,7 @@ async def test_all_bundled_pins_are_validated_before_any_download(tmp_path: Path
 
 @pytest.mark.anyio
 async def test_collision_created_during_package_setup_is_preserved(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     from unittest.mock import AsyncMock
 
     from bioimageflow_server.services.package_installer import PackageInstallerService
@@ -441,10 +458,12 @@ async def test_collision_created_during_package_setup_is_preserved(tmp_path: Pat
 
     async def install(package: str, *, version: str) -> None:
         if package == "bioimageflow_spot_tools":
-            store.create_workflow(WorkflowCreate(name="Demo/Fish Analysis", display_name="My workflow"))
+            created_444 = store.create_workflow(WorkflowCreate(name="Demo/Fish Analysis", display_name="My workflow"))
+            identities[created_444.relative_path] = created_444.id
 
     installer.install.side_effect = install
     with pytest.raises(DemoWorkflowConflictError):
         await service.install_with_packages(installer)
-    assert store.read_workflow_document("Demo/Fish Analysis").graph.display_name == "My workflow"
+        identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    assert store.read_workflow_document(identities["Demo/Fish Analysis"]).graph.display_name == "My workflow"
     assert not store.has_workflow_collision("Demo/Parameters Space Exploration")

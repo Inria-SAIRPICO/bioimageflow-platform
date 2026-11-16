@@ -75,12 +75,13 @@ async def _client(
         yield client
 
 
-async def _create_workflow(client: httpx.AsyncClient, workflow_id: str = "wf") -> None:
+async def _create_workflow(client: httpx.AsyncClient, workflow_id: str = "wf") -> str:
     response = await client.post(
         "/api/v1/workflows",
         json={"name": workflow_id, "display_name": workflow_id.split("/")[-1]},
     )
     assert response.status_code == 201
+    return response.json()["id"]
 
 
 async def test_batch_is_atomic_and_publishes_one_revision(tmp_path: Path) -> None:
@@ -91,9 +92,9 @@ async def test_batch_is_atomic_and_publishes_one_revision(tmp_path: Path) -> Non
     )
 
     async for client in _client(tmp_path, connection_manager=manager):
-        await _create_workflow(client)
+        workflow_id = await _create_workflow(client)
         response = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [
@@ -124,9 +125,9 @@ async def test_batch_is_atomic_and_publishes_one_revision(tmp_path: Path) -> Non
 
 async def test_nested_scope_addresses_workflow_node_ids(tmp_path: Path) -> None:
     async for client in _client(tmp_path):
-        await _create_workflow(client)
+        workflow_id = await _create_workflow(client)
         response = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [
@@ -168,9 +169,9 @@ async def test_nested_scope_addresses_workflow_node_ids(tmp_path: Path) -> None:
 
 async def test_interface_operations_use_stable_ids(tmp_path: Path) -> None:
     async for client in _client(tmp_path):
-        await _create_workflow(client)
+        workflow_id = await _create_workflow(client)
         response = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [
@@ -217,9 +218,9 @@ async def test_interface_operations_use_stable_ids(tmp_path: Path) -> None:
 
 async def test_semantic_failure_preserves_revision(tmp_path: Path) -> None:
     async for client in _client(tmp_path):
-        await _create_workflow(client)
+        workflow_id = await _create_workflow(client)
         response = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [
@@ -234,7 +235,7 @@ async def test_semantic_failure_preserves_revision(tmp_path: Path) -> None:
                 ],
             },
         )
-        current = await client.get("/api/v1/workflow-drafts/wf")
+        current = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
 
     assert response.status_code == 422
     assert response.json()["operation_index"] == 1
@@ -284,36 +285,36 @@ async def test_nested_deletion_batch_preserves_full_authority_on_failure_and_ret
         "scope": {"workflow_path": ["child"]},
     }
     async for client in _client(tmp_path, connection_manager=manager):
-        await _create_workflow(client)
-        saved = (await client.get("/api/v1/workflows/wf")).json()
+        workflow_id = await _create_workflow(client)
+        saved = (await client.get(f"/api/v1/workflows/{workflow_id}")).json()
         saved_path = Path(saved["info"]["path"])
         # These are structural/control-plane operations, with real endpoint
         # metadata checks; executable scientific validation is not claimed.
-        setup = await client.put("/api/v1/workflow-drafts/wf", json={
+        setup = await client.put(f"/api/v1/workflow-drafts/{workflow_id}", json={
             "graph": graph, "expected_revision": 0, "validate": False,
         })
         assert setup.status_code == 200, setup.text
         accepted = setup.json()
         store = WorkflowStoreService(saved_path.parent.parent, ToolRegistryService())
-        draft_path = store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+        draft_path = store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
         saved_bytes = saved_path.read_bytes()
         draft_bytes = draft_path.read_bytes()
         published.clear()
-        failed = await client.post("/api/v1/workflow-draft-operations/wf", json={
+        failed = await client.post(f"/api/v1/workflow-draft-operations/{workflow_id}", json={
             "expected_revision": accepted["draft_revision"], "validate": False,
             "operations": [delete_bound, {"type": "delete_edge", "edge_id": "missing"}],
         })
         assert failed.status_code == 422, failed.text
         assert failed.json()["operation_index"] == 1
         assert failed.json()["code"] == "missing_edge"
-        after_failure = (await client.get("/api/v1/workflow-drafts/wf")).json()
+        after_failure = (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json()
         assert after_failure["graph"] == accepted["graph"]
         assert after_failure["draft_revision"] == accepted["draft_revision"]
         assert saved_path.read_bytes() == saved_bytes
         assert draft_path.read_bytes() == draft_bytes
         assert published == []
 
-        succeeded = await client.post("/api/v1/workflow-draft-operations/wf", json={
+        succeeded = await client.post(f"/api/v1/workflow-draft-operations/{workflow_id}", json={
             "expected_revision": accepted["draft_revision"], "validate": False,
             "operations": [delete_bound, {
                 "type": "delete_workflow_input", "input_id": "input-edge",
@@ -333,10 +334,10 @@ async def test_nested_deletion_batch_preserves_full_authority_on_failure_and_ret
         assert updated["graph"] == expected_graph
         assert updated["draft_revision"] == accepted["draft_revision"] + 1
         assert len(published) == 1
-        reloaded = (await client.get("/api/v1/workflow-drafts/wf")).json()
+        reloaded = (await client.get(f"/api/v1/workflow-drafts/{workflow_id}")).json()
         assert reloaded["graph"] == expected_graph
         assert reloaded["draft_revision"] == updated["draft_revision"]
-        reopened = WorkflowDraftService(lambda: store).get_draft_authority_snapshot("wf")
+        reopened = WorkflowDraftService(lambda: store).get_draft_authority_snapshot(workflow_id)
         assert reopened.graph.model_dump(mode="json", by_alias=True) == expected_graph
         assert reopened.draft_revision == updated["draft_revision"]
         assert saved_path.read_bytes() == saved_bytes
@@ -347,9 +348,9 @@ async def test_stale_revision_and_execution_lock_are_machine_readable(
     tmp_path: Path,
 ) -> None:
     async for client in _client(tmp_path):
-        await _create_workflow(client)
+        workflow_id = await _create_workflow(client)
         first = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [
@@ -364,7 +365,7 @@ async def test_stale_revision_and_execution_lock_are_machine_readable(
             },
         )
         stale = await client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [{"type": "delete_node", "node_id": "n1"}],
@@ -375,9 +376,9 @@ async def test_stale_revision_and_execution_lock_are_machine_readable(
     assert stale.json()["error"] == "draft_revision_conflict"
 
     async for locked_client in _client(tmp_path / "locked", is_running=True):
-        await _create_workflow(locked_client)
+        workflow_id = await _create_workflow(locked_client)
         locked = await locked_client.post(
-            "/api/v1/workflow-draft-operations/wf",
+            f"/api/v1/workflow-draft-operations/{workflow_id}",
             json={
                 "expected_revision": 0,
                 "operations": [{"type": "delete_node", "node_id": "n1"}],

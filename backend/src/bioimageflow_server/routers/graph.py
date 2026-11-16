@@ -101,7 +101,10 @@ async def validate_graph_endpoint(
         graph = body
         workflow_name = None
     graph = graph.model_copy(deep=True)
-    validation_service = GraphValidationService(registry)
+    validation_service = GraphValidationService(
+        registry,
+        output_warning_provider=getattr(execution_manager, "output_planning_warnings", None),
+    )
     async with _idle_validation_lease(execution_manager):
         while True:
             try:

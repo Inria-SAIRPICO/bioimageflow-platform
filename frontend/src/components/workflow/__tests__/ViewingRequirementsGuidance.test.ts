@@ -22,7 +22,7 @@ const declared: NapariViewingReadinessOutput = {
 
 function mountGuidance(report: NapariViewingReadinessResponse) {
   return mount(ViewingRequirementsGuidance, {
-    props: { workflowName: 'Analysis', report, pending: false, error: null },
+    props: { workflowLabel: 'Analysis', report, pending: false, error: null },
   })
 }
 
@@ -38,7 +38,7 @@ describe('ViewingRequirementsGuidance', () => {
     })
 
     expect(wrapper.text()).toContain('Viewing requirements are unknown for 1 node')
-    expect(wrapper.text()).toContain('Workflow execution is unaffected.')
+    expect(wrapper.text()).toContain('Resolve missing tools or workflow validation errors before running.')
     expect(wrapper.get('summary').text()).toBe('Tool/source details')
     expect(wrapper.text()).toContain('Tool declaration is unavailable')
     expect(wrapper.text()).toContain('Check the tool/source diagnostics')

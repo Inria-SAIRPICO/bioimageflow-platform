@@ -26,7 +26,7 @@ import {
   useCanvasPersistence,
 } from '@/composables/useCanvasPersistence'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
-import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
+import { useWorkflowStore, workflowRelativePath, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
 import { useNapariStore, SupersededViewingReadinessError } from '@/stores/napari'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
@@ -35,7 +35,7 @@ import {
   applyWorkflowSourceOperation,
   previewPythonWorkflowSource,
 } from '@/api/workflowSources'
-import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
+import { rebindWorkflowDraftVersions, resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 import ExecutionTargetSelector from '@/components/execution/ExecutionTargetSelector.vue'
@@ -45,10 +45,10 @@ import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue
 import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
+import WorkflowRecoveryDialog from '@/components/workflow/WorkflowRecoveryDialog.vue'
 import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
 import ViewingRequirementsGuidance from '@/components/workflow/ViewingRequirementsGuidance.vue'
 import type { GraphState, MissingTool, NapariViewingRequirementGroup, ViewingRequirementsManifestInput, WorkflowInfo } from '@/api/types'
-import { emptyGraph } from '@/sessions/graphDocument'
 import { loadRootWorkflowForOpen } from '@/services/startupWorkflow'
 import {
   loadRootWorkflowPresentation,
@@ -128,6 +128,14 @@ const workflowDialogInitialDisplayName = ref('')
 const workflowDialogInitialDescription = ref<string | null>(null)
 const workflowDialogSuggestedName = ref<string | null>(null)
 const workflowDialogFolderId = ref<string | null>(null)
+const workflowCreationTarget = ref<{ folderId: string | null; workspacePath: string; workspaceSelection: number } | null>(null)
+const workflowCreationBusy = ref(false)
+const workflowCreationWorkspace = ref<string | null>(null)
+let workflowCreationWorkspaceRead = 0
+const workflowCreationFolder = computed(() => workflowCreationTarget.value
+  ? workflowCreationTarget.value.folderId
+  : workflowStore.selectedFolderId)
+const workflowCreationDestination = computed(() => workflowCreationFolder.value || 'Workflows root')
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
 const deleteTargetName = ref<string | null>(null)
@@ -404,19 +412,46 @@ watch(
 )
 
 function workflowNameInDialogFolder(name: string): string {
-  if (!workflowDialogFolderId.value || name.includes('/')) return name
-  return `${workflowDialogFolderId.value}/${name}`
+  const folderId = workflowDialogMode.value === 'new'
+    ? workflowCreationFolder.value
+    : workflowDialogFolderId.value
+  if (!folderId || name.includes('/')) return name
+  return `${folderId}/${name}`
 }
 
-function createNewWorkflow(folderId: string | null = null): void {
+async function refreshCreationWorkspace(): Promise<void> {
+  const request = ++workflowCreationWorkspaceRead
+  const expectedSelection = settingsStore.workspaceSelectionRevision
+  workflowCreationWorkspace.value = null
+  try {
+    const { data } = await api.get<{ workspace_path: string }>('/api/v1/workspace')
+    if (request !== workflowCreationWorkspaceRead || !workflowDialogVisible.value
+      || workflowDialogMode.value !== 'new' || workflowCreationTarget.value) return
+    if (settingsStore.workspaceSelectionRevision !== expectedSelection) return
+    workflowCreationWorkspace.value = data.workspace_path
+  } catch (error) {
+    if (request === workflowCreationWorkspaceRead) showError('Workspace could not be loaded', error)
+  }
+}
+
+watch(() => settingsStore.workspaceSelectionRevision, () => {
+  if (workflowDialogVisible.value && workflowDialogMode.value === 'new' && !workflowCreationTarget.value) {
+    void refreshCreationWorkspace()
+  }
+})
+
+function createNewWorkflow(folderId?: string | null): void {
   if (executionStore.isMutationLocked) return
-  workflowDialogFolderId.value = folderId
+  if (folderId !== undefined) workflowStore.selectedFolderId = folderId
+  workflowCreationTarget.value = null
+  workflowDialogFolderId.value = null
   workflowDialogMode.value = 'new'
   workflowDialogInitialName.value = 'Untitled'
   workflowDialogInitialDisplayName.value = 'Untitled'
   workflowDialogInitialDescription.value = null
   workflowDialogSuggestedName.value = null
   workflowDialogVisible.value = true
+  void refreshCreationWorkspace()
 }
 
 async function onWorkflowDialogSubmit(payload: {
@@ -425,22 +460,36 @@ async function onWorkflowDialogSubmit(payload: {
   description: string | null
 }): Promise<void> {
   if (executionStore.isMutationLocked) return
+  if (workflowCreationBusy.value) return
   try {
     if (workflowDialogMode.value === 'new') {
-      const info = await workflowStore.createWorkflow({
-        ...payload,
-        name: workflowNameInDialogFolder(payload.name),
-      })
+      if (!workflowCreationTarget.value) {
+        const workspacePath = workflowCreationWorkspace.value
+        if (!workspacePath) throw new Error('The workspace is still loading. Try creating the workflow again when it is ready.')
+        workflowCreationTarget.value = { folderId: workflowStore.selectedFolderId, workspacePath, workspaceSelection: settingsStore.workspaceSelectionRevision }
+      }
+      workflowCreationBusy.value = true
+      const target = workflowCreationTarget.value
+      const request = {
+        ...payload, name: workflowNameInDialogFolder(payload.name),
+        expected_workspace_path: target.workspacePath,
+        expected_parent_path: target.folderId ?? '',
+      }
+      const intent = beginViewingIntent()
+      window.dispatchEvent(new CustomEvent('bioimageflow:root-workflow-open-started', {
+        detail: { cause: 'create' },
+      }))
+      const info = await workflowStore.createWorkflow(request)
+      if (settingsStore.workspaceSelectionRevision !== target.workspaceSelection) {
+        throw new Error('The workflow was created in the original workspace. Open that workspace to continue editing it.')
+      }
+      const loaded = await loadRootWorkflowPresentation(workflowId(info))
+      if (executionStore.isMutationLocked || !viewingIntentCurrent(intent)) return
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       workflowDialogFolderId.value = null
-      applyGraph(emptyGraph(workflowId(info), info.display_name), false, {
-        workflowName: workflowId(info),
-        workflowDisplayName: info.display_name,
-        missingTools: [],
-        identityGeneration: workflowStore.workflowIdentityGeneration(workflowId(info)),
-        serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowId(info)),
-      })
+      applyGraph(loaded.graph, loaded.dirty, loaded)
+      workflowCreationTarget.value = null
       return
     }
 
@@ -472,6 +521,8 @@ async function onWorkflowDialogSubmit(payload: {
       return
     }
     showError('Workflow action failed', err)
+  } finally {
+    workflowCreationBusy.value = false
   }
 }
 
@@ -738,27 +789,46 @@ async function confirmImportRename(): Promise<void> {
   }
 }
 
+const dependencyRebindConfirmation = ref<{ canvasId: CanvasId; workflowName: string; identityGeneration: number; registrationToken: number; substitutions: string[] } | null>(null)
+
 async function rebindImportedDependencies(): Promise<void> {
   if (executionStore.isMutationLocked) return
-  const target = currentSaveTarget()
+  const captured = dependencyRebindConfirmation.value
+  const target = captured ?? currentSaveTarget()
+  dependencyRebindConfirmation.value = null
   if (!target.workflowName || target.canvasId === null) return
   const workflowName = target.workflowName
+  const identityGeneration = captured?.identityGeneration ?? workflowStore.captureWorkflowIdentity(workflowName)
+  const resource = getRootCanvasPersistenceResource(target.canvasId)
+  const session = canvasSessionRegistry.get(target.canvasId)
+  const registrationToken = captured?.registrationToken ?? session?.registrationToken
+  const current = () => canvasSessionRegistry.activeCanvasId.value === target.canvasId
+    && canvasSessionRegistry.get(target.canvasId!)?.registrationToken === registrationToken
+    && uiStore.canvasWorkflowId(target.canvasId!) === workflowName
+    && workflowStore.isWorkflowIdentityCurrent(workflowName, identityGeneration)
+  if (!resource || resource.workflowId.value !== workflowName || !current()) return
   try {
-    const graph = await workflowStore.rebindVersions({
-      canvasId: target.canvasId,
-      workflowName,
-    })
-    if (
-      canvasSessionRegistry.activeCanvasId.value !== target.canvasId
-      || uiStore.canvasWorkflowId(target.canvasId) !== workflowName
-    ) return
+    if (!await resource.ensureFreshForCriticalOperation() || !current()) return
+    const revision = resource.acceptedDraftRevision.value
+    if (revision === null) throw new Error('The active root workflow draft is unavailable')
+    const initiatingGraph = JSON.stringify(resource.currentGraph.value)
+    const accepted = await rebindWorkflowDraftVersions(workflowName, revision)
+    workflowStore.assertWorkflowIdentityCurrent(workflowName, identityGeneration)
+    if (!current()) return
+    if (JSON.stringify(resource.currentGraph.value) !== initiatingGraph) {
+      throw new Error('The canvas changed during dependency replacement. Reload the accepted draft to review the replacement.')
+    }
+    resource.resolveFromDraft(accepted, 'local')
     dependencyDialogVisible.value = false
+    // The old saved-workflow viewer report describes the previous bindings.
+    beginViewingIntent()
     const workflow = workflowStore.workflows.find(item => workflowId(item) === workflowName)
-    applyGraph(graph, false, {
+    applyGraph(accepted.graph, accepted.dirty_against_saved, {
       workflowName,
       workflowDisplayName: workflow?.display_name ?? workflowName,
-      missingTools: [...workflowStore.missingTools],
-      identityGeneration: workflowStore.workflowIdentityGeneration(workflowName),
+      missingTools: [],
+      draft: accepted,
+      identityGeneration,
       serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
     })
   } catch (err: unknown) {
@@ -768,20 +838,25 @@ async function rebindImportedDependencies(): Promise<void> {
 
 function requestDependencyRebind(): void {
   if (!canRebindDependencies.value) return
+  const target = currentSaveTarget()
+  if (!target.workflowName || !target.canvasId) return
+  const session = canvasSessionRegistry.get(target.canvasId)
+  if (!session) return
   const substitutions = installableMissingPackages.value.map((item) => {
-    const installed = toolRegistryStore.packages.find(
-      pkg => pkg.name === item.package_name,
-    )
+    const installed = toolRegistryStore.packages.find(pkg => pkg.name === item.package_name)
     const alternatives = item.installed_versions ?? []
     const replacement = installed?.active_version
       ?? alternatives[alternatives.length - 1]
       ?? 'installed version'
     return `${item.package_name}: ${item.required_version} → ${replacement}`
   })
-  const confirmed = window.confirm(
-    `Replace the workflow's required package versions?\n\n${substitutions.join('\n')}`,
-  )
-  if (confirmed) void rebindImportedDependencies()
+  dependencyRebindConfirmation.value = {
+    canvasId: target.canvasId,
+    workflowName: target.workflowName,
+    identityGeneration: workflowStore.captureWorkflowIdentity(target.workflowName),
+    registrationToken: session.registrationToken,
+    substitutions,
+  }
 }
 
 async function installMissingDependencies(): Promise<void> {
@@ -864,7 +939,7 @@ function saveWorkflowAs(): void {
   if (!target.workflowName || target.canvasId === null) return
   workflowDialogFolderId.value = null
   workflowDialogMode.value = 'save-as'
-  const baseName = target.workflowName
+  const baseName = activeWorkflow.value ? workflowRelativePath(activeWorkflow.value) : target.workflowName
   workflowDialogInitialName.value = `${baseName}_copy`
   workflowDialogInitialDisplayName.value = `${uiStore.activeWorkflowName ?? baseName} copy`
   workflowDialogInitialDescription.value = activeWorkflow.value?.description ?? null
@@ -885,7 +960,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
   try {
     const info = await workflowStore.patchWorkflow(name, {
       action: 'duplicate',
-      new_name: `${name}_copy`,
+      new_name: `${source ? workflowRelativePath(source) : name}_copy`,
       display_name: displayName,
       description: source?.description ?? null,
     })
@@ -918,6 +993,10 @@ function captureWorkflowDeletionTarget(name: string): WorkflowDeletionRequest {
   return {
     canvasId: mountedRoot ? canvasId : null,
     workflowName: name,
+    workspacePath: (mountedRoot ? getRootCanvasPersistenceResource(canvasId)?.workspacePath : undefined)
+      ?? workflowStore.workflows.find(info => (info.id ?? info.name) === name)?.workspace_path
+      ?? settingsStore.settings?.resolved_workspace_path ?? undefined,
+    workspaceSelectionRevision: settingsStore.workspaceSelectionRevision,
     localIdentityGeneration: workflowStore.workflowIdentityGeneration(name),
     serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(name),
     sessionRegistrationToken: mountedRoot?.registrationToken ?? null,
@@ -927,6 +1006,7 @@ function captureWorkflowDeletionTarget(name: string): WorkflowDeletionRequest {
 function workflowDeletionTargetIsCurrent(
   target: WorkflowDeletionRequest,
 ): boolean {
+  if (!target.workspacePath || target.workspaceSelectionRevision !== settingsStore.workspaceSelectionRevision) return false
   if (!workflowStore.isWorkflowIdentityCurrent(
     target.workflowName,
     target.localIdentityGeneration,
@@ -1077,7 +1157,7 @@ function onWorkflowPanelCommand(event: Event): void {
   }
   if (executionStore.isMutationLocked) return
   if (action === 'new') {
-    createNewWorkflow(detail.folderId ?? null)
+    createNewWorkflow(detail.folderId)
   } else if (action === 'save') {
     void saveWorkflow()
   } else if (action === 'import') {
@@ -1318,7 +1398,7 @@ defineExpose({
   </Menubar>
   <ViewingRequirementsGuidance
     v-if="acceptedViewingOwner && !viewingDismissed && (viewingError || (viewingReport && (viewingReport.summary.outputs_needing_setup > 0 || viewingReport.summary.unknown_outputs > 0)))"
-    :workflow-name="acceptedViewingOwner.workflowName"
+    :workflow-label="activeWorkflow?.display_name ?? acceptedViewingOwner.workflowName"
     :report="viewingReport"
     :error="viewingError"
     :pending="napariStore.viewingReadinessPending"
@@ -1339,8 +1419,12 @@ defineExpose({
     :initial-display-name="workflowDialogInitialDisplayName"
     :initial-description="workflowDialogInitialDescription"
     :suggested-name="workflowDialogSuggestedName"
+    :destination="workflowDialogMode === 'new' ? workflowCreationDestination : undefined"
+    :busy="workflowCreationBusy"
+    :submit-disabled="workflowDialogMode === 'new' && !workflowCreationWorkspace"
     @submit="onWorkflowDialogSubmit"
   />
+  <WorkflowRecoveryDialog />
 
   <OpenWorkflowDialog
     v-model:visible="openDialogVisible"
@@ -1368,6 +1452,24 @@ defineExpose({
     @install-all="installMissingDependencies"
     @rebind="requestDependencyRebind"
   />
+
+  <Dialog
+    :visible="dependencyRebindConfirmation !== null"
+    modal
+    header="Replace workflow dependencies?"
+    :style="{ width: '520px' }"
+    data-testid="dependency-rebind-confirmation"
+    @update:visible="visible => { if (!visible) dependencyRebindConfirmation = null }"
+  >
+    <p>Replace the workflow's required package versions in the current draft? Review the workflow before saving.</p>
+    <ul>
+      <li v-for="substitution in dependencyRebindConfirmation?.substitutions" :key="substitution">{{ substitution }}</li>
+    </ul>
+    <template #footer>
+      <Button label="Cancel" text @click="dependencyRebindConfirmation = null" />
+      <Button label="Replace versions" @click="rebindImportedDependencies" />
+    </template>
+  </Dialog>
 
   <WorkflowExportDialog
     v-model:visible="exportDialogVisible"
@@ -1472,13 +1574,17 @@ defineExpose({
   align-items: center;
   display: flex;
   gap: 0.75rem;
+  justify-content: flex-end;
   min-width: 0;
+}
+.workflow-actions > :not(.workflow-title) {
+  flex-shrink: 0;
 }
 .workflow-title {
   color: var(--text-color-secondary);
   display: flex;
   font-size: 0.875rem;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   max-width: 20rem;
   min-width: 0;
   white-space: nowrap;

@@ -72,6 +72,9 @@ cd frontend
 BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev
 ```
 
+The VS Code **Backend** and **Backend (local core)** launch profiles run independently on port `8008` and do not start or wait for Vite.
+Start the frontend separately with `BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev` when using these profiles.
+
 ## Run the desktop application with hot reload
 
 Start Vite and the desktop entry point in separate terminals:
@@ -125,12 +128,12 @@ Changing installed controller dependencies requires a backend restart.
 The Tools Panel's package-index Refresh updates release availability, not installed executable code.
 Tool-store installation uses `--no-deps`: declarations and DataFrame tools import compatible dependencies already supplied by the controller environment, while ProcessingTool recipes provision worker dependencies separately during execution preparation.
 
-The normal manifest and lock select published BioImageFlow 0.9.6/Core 0.5.1 with this generation lifecycle.
+The normal dependency set is published BioImageFlow 0.10.0/Core 0.6.0 with this generation lifecycle and the explicit output-file ownership contract.
 The [workflow loading guide](workflow-loading.md) describes the benchmark and the remaining per-operation checks.
 
 ## Use local BioImageFlow source
 
-The backend's `pyproject.toml` and `uv.lock` resolve published `bioimageflow[parsl,psij]==0.9.6`, Core 0.5.1 and Wetlands 2.6.1 from the registry.
+The backend's normal dependency set is published `bioimageflow[parsl,psij]==0.10.0`, Core 0.6.0 and Wetlands 2.6.1 from the registry.
 A sibling library checkout is optional and is not required by ordinary development or CI.
 Sync and validate the normal published environment with:
 

@@ -26,7 +26,7 @@ from bioimageflow_server.services.agent_workspace_context import (
     agent_workspace_instructions,
 )
 from bioimageflow_server.services.graph_compiler import GraphCompiler
-from bioimageflow_server.services.graph_validator import GraphValidationService, validate_graph
+from bioimageflow_server.services.graph_validator import GraphValidationService, OutputWarningProvider, validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.workflow_store import (
@@ -294,6 +294,10 @@ class WorkflowDraftService:
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self.server_boot_id = server_boot_id or uuid.uuid4().hex
+        self._output_warning_provider: OutputWarningProvider | None = None
+
+    def set_output_warning_provider(self, provider: OutputWarningProvider | None) -> None:
+        self._output_warning_provider = provider
 
     def get_draft(
         self,
@@ -436,6 +440,45 @@ class WorkflowDraftService:
             )
         )
 
+    async def rebind_versions_async(
+        self,
+        workflow_id: str,
+        *,
+        expected_revision: int,
+        updated_by: DraftWriter = "frontend",
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """Rebind the accepted draft with revision and identity fences intact."""
+        from bioimageflow_server.services.graph_translator import rebind_graph_versions
+
+        def rebind() -> WorkflowDraftResponse:
+            while True:
+                store = self._store()
+                with store.workflow_mutation(workflow_id):
+                    current = self._read_current_for_mutation_locked(store, workflow_id)
+                    self._ensure_expected_revision(current, expected_revision)
+                    graph = rebind_graph_versions(current.graph, store.tool_registry)
+                    prepared = self._prepare_draft_write(
+                        workflow_id, graph=graph, expected_revision=expected_revision,
+                    )
+                try:
+                    validation = self._validate(store, workflow_id, graph)
+                except Exception:
+                    try:
+                        self._ensure_draft_preparation_current(prepared)
+                    except _SavedWorkflowChanged:
+                        continue
+                    raise
+                try:
+                    return self._commit_draft_write(
+                        prepared, validation=validation, updated_by=updated_by,
+                        api_base_url=api_base_url,
+                    )
+                except _SavedWorkflowChanged:
+                    continue
+
+        return await run_graph_work(rebind)
+
     def reset_draft_to_saved(
         self,
         workflow_id: str,
@@ -523,13 +566,14 @@ class WorkflowDraftService:
         )
         context = {
             "agent_state_version": 2,
-            "mcp_contract_version": 2,
+            "mcp_contract_version": 3,
             "generated_at": _utc_now(),
             "server_boot_id": self.server_boot_id,
             "server_pid": os.getpid(),
             "api_base_url": api_url,
             "health_url": f"{api_url}/health",
             "active_workflow_id": workflow_id,
+            "identity_generation": store.workflow_generation(workflow_id),
             "current_draft_revision": draft.draft_revision,
             "workspace_path": str(store.workspace_dir),
             "workflows_root": str(store.root_dir),
@@ -545,8 +589,8 @@ class WorkflowDraftService:
                 "MCP describe_workflow {}",
                 "MCP list_tools {}",
                 'MCP describe_bioimageflow_tool {"tool_name":"<tool name>"}',
-                'MCP create_workflow {"workflow_id":"<workflow id>","display_name":"<display name>","set_active":true}',
-                'MCP duplicate_workflow {"source_workflow_id":"<workflow id>","new_workflow_id":"<new workflow id>","set_active":true}',
+                'MCP create_workflow {"path":"<relative path>","display_name":"<display name>","set_active":true}',
+                'MCP duplicate_workflow {"source_workflow_id":"<workflow UUID>","new_path":"<relative path>","set_active":true}',
                 'MCP set_active_workflow {"workflow_id":"<workflow id>"}',
                 'MCP create_node {"node_id":"<id>","tool_name":"<tool name>","name":"<display name>","position":[0,0],"parameters":{}}',
                 'MCP connect_nodes {"source_node":"<id>","source_output":"<output>","target_node":"<id>","target_input":"<input>"}',
@@ -674,6 +718,8 @@ class WorkflowDraftService:
                         is not None
                     ),
                     planned_node_ids=planned_node_ids,
+                    output_warning_provider=self._output_warning_provider,
+                    storage_path=authority.storage_path,
                 )
                 if not accepted:
                     return draft.model_copy(update={"validation": projected})
@@ -705,6 +751,7 @@ class WorkflowDraftService:
                                 "valid": not errors,
                                 "errors": errors,
                                 "node_statuses": statuses,
+                                "output_planning_warnings": projected.output_planning_warnings,
                             }
                         )
                     }
@@ -914,6 +961,7 @@ class WorkflowDraftService:
             graph,
             store.tool_registry,
             storage_path=store.get_storage_path(workflow_id),
+            output_warning_provider=self._output_warning_provider,
         )
 
     @staticmethod

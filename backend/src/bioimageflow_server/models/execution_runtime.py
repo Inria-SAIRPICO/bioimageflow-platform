@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 
 RunState = Literal[
     "preparing",
@@ -55,6 +56,7 @@ class FailureDiagnosticSnapshot(BaseModel):
     attempt_id: str | None = None
     retry_status: str = "terminal"
     terminal: bool = True
+    output_planning_report: OutputPlanningReport | None = None
 
 
 class ClusterDiagnosticValue(BaseModel):
@@ -199,7 +201,7 @@ class ExecutionSnapshot(BaseModel):
     schema_version: Literal[2] = 2
     revision: int = Field(default=0, ge=0)
     execution_id: str = Field(min_length=1)
-    workflow_id: str = Field(min_length=1)
+    workflow_id: str | None = Field(default=None, min_length=1)
     draft_revision: int | None = Field(default=None, ge=0)
     graph_fingerprint: str | None = None
     command: Literal["run", "run_selected", "retry", "invalidate_retry", "recompute"] = "run"
@@ -244,7 +246,7 @@ class ExecutionPresentation(BaseModel):
 
     revision: int = Field(ge=0)
     execution_id: str = Field(min_length=1)
-    workflow_id: str = Field(min_length=1)
+    workflow_id: str | None = Field(default=None, min_length=1)
     draft_revision: int | None = Field(default=None, ge=0)
     command: Literal["run", "run_selected", "retry", "invalidate_retry", "recompute"]
     retry_of_execution_id: str | None = None

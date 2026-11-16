@@ -36,14 +36,22 @@ class WorkspaceService:
         workspace_path: Path | None = None,
         workspaces_root: Path | None = None,
         user_id: str | None = None,
+        workflow_root: Path | None = None,
     ) -> None:
         self.settings = settings
         self.deployment_mode: Literal["desktop", "webapp"] = deployment_mode
         self._workspace_path = workspace_path
         self._workspaces_root = workspaces_root
         self.user_id = user_id or "default"
+        self._workflow_root = normalize_workspace_path(workflow_root) if workflow_root is not None else None
 
     def workspace_path(self) -> Path:
+        if self._workflow_root is not None:
+            return (
+                self._workflow_root.parent
+                if self._workflow_root.name == "workflows"
+                else self._workflow_root
+            )
         if self.deployment_mode == "webapp":
             root = self._workspaces_root or (
                 Path(self.settings.workspaces_root)
@@ -63,7 +71,7 @@ class WorkspaceService:
         return normalize_workspace_path(configured)
 
     def workflows_root(self) -> Path:
-        return self.workspace_path() / "workflows"
+        return self._workflow_root or self.workspace_path() / "workflows"
 
     def tools_root(self) -> Path:
         return self.workspace_path() / "tools"
@@ -72,14 +80,16 @@ class WorkspaceService:
         workspace = self.workspace_path()
         return WorkspaceInfo(
             workspace_path=str(workspace),
-            workflows_root=str(workspace / "workflows"),
+            workflows_root=str(self.workflows_root()),
             tools_root=str(workspace / "tools"),
             deployment_mode=self.deployment_mode,
-            user_editable=self.deployment_mode == "desktop",
+            user_editable=self.deployment_mode == "desktop" and self._workflow_root is None,
         )
 
     def update_workspace_path(self, path: str) -> WorkspaceInfo:
         if self.deployment_mode != "desktop":
             raise WorkspacePermissionError("workspace path is admin-managed in webapp mode")
+        if self._workflow_root is not None:
+            raise WorkspacePermissionError("workspace path is fixed by the application's workflow root")
         self._workspace_path = normalize_workspace_path(path)
         return self.info()

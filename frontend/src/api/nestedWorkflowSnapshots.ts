@@ -20,11 +20,12 @@ function snapshotUrl(sessionId: string): string {
 export async function openNestedWorkflowSnapshot(
   body: NestedWorkflowSnapshotOpenRequest,
   signal?: AbortSignal,
+  workspacePath?: string,
 ): Promise<NestedWorkflowSnapshotResponse> {
   const { data } = await api.post<NestedWorkflowSnapshotResponse>(
     '/api/v1/nested-workflow-snapshots/open',
     body,
-    { signal },
+    { signal, ...(workspacePath ? { headers: { 'X-BioImageFlow-Workspace': workspacePath } } : {}) },
   )
   return data
 }
@@ -32,10 +33,11 @@ export async function openNestedWorkflowSnapshot(
 export async function getNestedWorkflowSnapshot(
   sessionId: string,
   signal?: AbortSignal,
+  workspacePath?: string,
 ): Promise<NestedWorkflowSnapshotResponse> {
   const { data } = await api.get<NestedWorkflowSnapshotResponse>(
     snapshotUrl(sessionId),
-    { signal },
+    { signal, ...(workspacePath ? { headers: { 'X-BioImageFlow-Workspace': workspacePath } } : {}) },
   )
   return data
 }
@@ -44,11 +46,12 @@ export async function putNestedWorkflowSnapshot(
   sessionId: string,
   body: NestedWorkflowSnapshotPutRequest,
   signal?: AbortSignal,
+  workspacePath?: string,
 ): Promise<NestedWorkflowSnapshotResponse> {
   const { data } = await api.put<NestedWorkflowSnapshotResponse>(
     snapshotUrl(sessionId),
     body,
-    { signal },
+    { signal, ...(workspacePath ? { headers: { 'X-BioImageFlow-Workspace': workspacePath } } : {}) },
   )
   return data
 }
@@ -57,9 +60,11 @@ export async function deleteNestedWorkflowSnapshot(
   sessionId: string,
   expectedRevision: number,
   signal?: AbortSignal,
+  workspacePath?: string,
 ): Promise<void> {
   await api.delete(snapshotUrl(sessionId), {
     params: { expected_revision: expectedRevision },
     signal,
+    ...(workspacePath ? { headers: { 'X-BioImageFlow-Workspace': workspacePath } } : {}),
   })
 }

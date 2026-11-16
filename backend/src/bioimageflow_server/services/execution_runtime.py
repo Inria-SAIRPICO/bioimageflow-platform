@@ -1327,6 +1327,9 @@ def _execution_actions(
     if "retry_start_failed" in snapshot.backend_metadata:
         retry_available = recompute_available = False
         retry_reason = recompute_reason = "The confirmed child failed before launch."
+    if snapshot.workflow_id is None:
+        retry_available = recompute_available = False
+        retry_reason = recompute_reason = "The execution's workflow identity is unresolved."
 
     result_capability = "submitted_result_export" if submitted else "attached_result_export"
     result_supported, result_reason = _capability(capabilities, result_capability)

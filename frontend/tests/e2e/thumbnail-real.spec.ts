@@ -38,7 +38,7 @@ async function openData(page: Page, name: string, label: string): Promise<void> 
   await page.goto('/')
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-  await page.getByTestId('workflow-search').fill(name)
+  await page.getByTestId('workflow-search').fill(label)
   // A startup read can already be in flight. Bind acceptance to the GET
   // dispatched after this explicit Open, rather than an older same-URL reply.
   const openedRequest = page.waitForRequest(request => request.method() === 'GET'
@@ -96,11 +96,13 @@ assert image.dtype == expected.dtype
 `, source, configuredTiff ? 'existing' : 'create'], { encoding: 'utf8', timeout: 30_000 })
   const sourceBytes = readFileSync(source)
   const sourceHash = createHash('sha256').update(sourceBytes).digest('hex')
-  const name = `real_thumbnail_${testInfo.project.name}_${Date.now()}`
-  const formatsName = `${name}_formats`
-  const label = `Real TIFF ${name}`
+  const relativePath = `real_thumbnail_${testInfo.project.name}_${Date.now()}`
+  const formatsPath = `${relativePath}_formats`
+  let name = ''
+  let formatsName = ''
+  const label = `Real TIFF ${relativePath}`
   const graph: GraphState = {
-    schema_version: 2, name, display_name: label,
+    schema_version: 2, name: relativePath, display_name: label,
     nodes: [{
       type: 'tool', id: NODE, name: 'Published Files', tool_name: 'Files',
       tool_module: 'bioimageflow_common_tools.files', tool_class: 'Files',
@@ -171,8 +173,9 @@ if code:
     })
     expect(installation.ok(), await installation.text()).toBeTruthy()
     await restoreCatalog()
-    const creation = await page.request.post(`${API}/workflows`, { data: { name, display_name: label } })
+    const creation = await page.request.post(`${API}/workflows`, { data: { name: relativePath, display_name: label } })
     expect(creation.status(), await creation.text()).toBe(201)
+    name = (await creation.json()).id
     created = true
     const installed = await page.request.put(`${API}/workflows/${name}`, { data: { graph } })
     expect(installed.ok(), await installed.text()).toBeTruthy()
@@ -322,12 +325,13 @@ for t in range(3):
         (array / f"{t}.0.{z}.0.0").write_bytes(stack[t, 0, z].astype("<u2").tobytes())
 `, formatRoot], { encoding: 'utf8', timeout: 30_000 })
     const formatSources = ['color.png', 'color.jpg', 'stack.ome.tif', 'image.ome.zarr'].map(file => resolve(formatRoot, file))
-    const formatsLabel = `BioIO formats ${formatsName}`
+    const formatsLabel = `BioIO formats ${formatsPath}`
     const formatsGraph = structuredClone(graph)
-    formatsGraph.name = formatsName
+    formatsGraph.name = formatsPath
     formatsGraph.display_name = formatsLabel
-    const formatCreation = await page.request.post(`${API}/workflows`, { data: { name: formatsName, display_name: formatsLabel } })
+    const formatCreation = await page.request.post(`${API}/workflows`, { data: { name: formatsPath, display_name: formatsLabel } })
     expect(formatCreation.status(), await formatCreation.text()).toBe(201)
+    formatsName = (await formatCreation.json()).id
     formatsCreated = true
     const filesNode = formatsGraph.nodes[0]
     if (filesNode?.type !== 'tool') throw new Error('The Files fixture lost its tool node')
@@ -364,7 +368,15 @@ class ${className}(DataFrameTool):
     const formatRun = page.waitForResponse(response => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/v1/execution/run', { timeout: 30_000 })
     await page.getByTestId('run-workflow-button').click()
-    expect((await formatRun).status()).toBe(202)
+    const formatStarted = await formatRun
+    expect(formatStarted.status(), await formatStarted.text()).toBe(202)
+    const formatExecution = await formatStarted.json() as { execution_id: string }
+    await expect.poll(async () => {
+      const response = await page.request.get(`${API}/execution/status`)
+      expect(response.ok(), await response.text()).toBeTruthy()
+      const status = await response.json() as { execution_id: string; state: string; last_result?: { success: boolean } }
+      return { id: status.execution_id, state: status.state, success: status.last_result?.success }
+    }, { timeout: 30_000 }).toEqual({ id: formatExecution.execution_id, state: 'idle', success: true })
     await expect(table).toBeVisible()
     const viewport = table.getByTestId('node-data-viewport')
     for (let index = 0; index < formatSources.length; index += 1) {
@@ -373,11 +385,15 @@ class ${className}(DataFrameTool):
         element.scrollTop = element.scrollHeight * target.index / target.total
       }, { index, total: formatSources.length })
       const row = table.locator(`tr[data-virtual-index="${index}"]`)
-      await row.scrollIntoViewIfNeeded()
+      // Wait for the new result row before scrolling: the virtual table
+      // replaces its loading rows when the completed result arrives.
       await expect(row.getByTestId('path-display')).toHaveAttribute('title', formatSources[index]!)
+      // Thumbnail completion can replace a virtual row during Playwright's
+      // stability wait. Resolve and scroll it in one synchronous DOM action.
+      await row.evaluate(element => element.scrollIntoView({ block: 'nearest' }))
       // The pending thumbnail element is replaced by an image on completion.
       const cell = row.locator('.image-cell')
-      await cell.scrollIntoViewIfNeeded()
+      await expect(cell).toBeInViewport()
       const preview = cell.getByTestId('image-thumbnail')
       await expect(preview).toHaveAttribute('src', /^blob:/, { timeout: 30_000 })
       const pixels = await preview.evaluate(async element => {
@@ -405,17 +421,24 @@ class ${className}(DataFrameTool):
   } finally {
     page.off('response', observe)
     const cleanupErrors: unknown[] = []
+    const removeWorkflow = async (workflowId: string) => {
+      // Local completion can precede the retained run's final snapshot.
+      // Storage stays protected until that owner has actually settled.
+      await expect.poll(async () => {
+        const removed = await page.request.delete(`${API}/workflows/${workflowId}`)
+        expect([200, 204, 404, 423], await removed.text()).toContain(removed.status())
+        return removed.status() === 423
+      }, { timeout: 15_000 }).toBe(false)
+    }
     const cleanupActions = [
       async () => { await page.goto('about:blank') },
       async () => {
         if (!formatsCreated) return
-        const removed = await page.request.delete(`${API}/workflows/${formatsName}`)
-        expect([200, 204, 404], await removed.text()).toContain(removed.status())
+        await removeWorkflow(formatsName)
       },
       async () => {
         if (!created) return
-        const removed = await page.request.delete(`${API}/workflows/${name}`)
-        expect([200, 204, 404], await removed.text()).toContain(removed.status())
+        await removeWorkflow(name)
       },
       async () => { if (catalogMayHaveChanged) await restoreCatalog() },
     ]

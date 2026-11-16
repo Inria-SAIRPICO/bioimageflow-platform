@@ -41,70 +41,71 @@ def _ledger_path(tmp_path: Path) -> Path:
 
 
 def test_unchanged_workflow_keeps_its_generation_after_restart(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     first = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in first.list_workflows()})
     created = first.create_workflow(WorkflowCreate(name="wf"))
+    identities[created.relative_path] = created.id
 
     restarted = _store(tmp_path)
-    loaded = restarted.get_workflow("wf")
+    identities.update({item.relative_path: item.id for item in restarted.list_workflows()})
+    loaded = restarted.get_workflow(identities["wf"])
 
     assert created.identity_generation == 1
     assert loaded.info.identity_generation == created.identity_generation
-    assert restarted.workflow_generation("wf") == created.identity_generation
+    assert restarted.workflow_generation(identities["wf"]) == created.identity_generation
 
 
 def test_delete_tombstone_and_stale_token_survive_restart(tmp_path: Path) -> None:
     first = _store(tmp_path)
     created = first.create_workflow(WorkflowCreate(name="wf"))
-    deleted_generation = first.delete_workflow("wf")
-
+    deleted_generation = first.delete_workflow(created.id)
     restarted = _store(tmp_path)
-    assert restarted.workflow_generation("wf") == deleted_generation
+    assert restarted.workflow_generation(created.id) == deleted_generation
     recreated = restarted.create_workflow(WorkflowCreate(name="wf"))
-
-    assert created.identity_generation < deleted_generation
-    assert deleted_generation < recreated.identity_generation
+    assert recreated.id != created.id
+    assert recreated.identity_generation == 1
     with pytest.raises(WorkflowGenerationChangedError):
-        restarted.ensure_workflow_generation("wf", created.identity_generation)
-
+        restarted.ensure_workflow_generation(created.id, created.identity_generation)
+    with pytest.raises(FileNotFoundError):
+        restarted.get_workflow(created.id)
     restarted_again = _store(tmp_path)
-    assert (
-        restarted_again.get_workflow("wf").info.identity_generation == recreated.identity_generation
-    )
+    assert restarted_again.get_workflow(recreated.id).info.identity_generation == 1
+    assert restarted_again.workflow_generation(created.id) == deleted_generation
 
 
-def test_multiple_stores_share_generation_state_and_cannot_overwrite_newer_ledger(
-    tmp_path: Path,
-) -> None:
+def test_multiple_stores_share_generation_state_and_cannot_overwrite_newer_ledger(tmp_path: Path) -> None:
     current = _store(tmp_path)
-    current.create_workflow(WorkflowCreate(name="wf"))
+    original = current.create_workflow(WorkflowCreate(name="wf"))
     stale = _store(tmp_path)
-
     assert current._workflow_locks is stale._workflow_locks
     assert current._workflow_locks_guard is stale._workflow_locks_guard
     assert current._workflow_structure_lock is stale._workflow_structure_lock
     assert current._workflow_generations is stale._workflow_generations
     assert current._workflow_generations_guard is stale._workflow_generations_guard
-
-    assert current.delete_workflow("wf") == 2
+    assert current.delete_workflow(original.id) == 2
     recreated = current.create_workflow(WorkflowCreate(name="wf"))
-    assert recreated.identity_generation == 3
-
-    deleted_by_previously_stale_store = stale.delete_workflow("wf")
-
-    assert deleted_by_previously_stale_store == 4
+    assert recreated.id != original.id
+    assert recreated.identity_generation == 1
+    assert stale.delete_workflow(recreated.id) == 2
     restarted = _store(tmp_path)
-    assert restarted.workflow_generation("wf") == 4
+    assert restarted.workflow_generation(original.id) == 2
+    assert restarted.workflow_generation(recreated.id) == 2
 
 
 def test_multiple_stores_serialize_saved_write_against_delete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    identities: dict[str, str] = {}
     writer = _store(tmp_path)
-    writer.create_workflow(WorkflowCreate(name="wf"))
+    identities.update({item.relative_path: item.id for item in writer.list_workflows()})
+    created_104 = writer.create_workflow(WorkflowCreate(name="wf"))
+    identities[created_104.relative_path] = created_104.id
     deleter = _store(tmp_path)
-    workflow_path = writer.workflow_dir("wf") / "workflow.json"
-    workflow_dir = writer.workflow_dir("wf")
+    identities.update({item.relative_path: item.id for item in deleter.list_workflows()})
+    workflow_path = writer.workflow_dir(identities["wf"]) / "workflow.json"
+    workflow_dir = writer.workflow_dir(identities["wf"])
     save_entered = threading.Event()
     release_save = threading.Event()
     delete_entered = threading.Event()
@@ -128,11 +129,11 @@ def test_multiple_stores_serialize_saved_write_against_delete(
     with ThreadPoolExecutor(max_workers=2) as pool:
         save_future = pool.submit(
             writer.save_workflow,
-            "wf",
+            identities["wf"],
             WorkflowSaveBody(graph=graph_state(nodes=[], edges=[])),
         )
         assert save_entered.wait(timeout=5)
-        delete_future = pool.submit(deleter.delete_workflow, "wf")
+        delete_future = pool.submit(deleter.delete_workflow, identities["wf"])
         try:
             assert not delete_entered.wait(timeout=0.1)
         finally:
@@ -145,66 +146,45 @@ def test_multiple_stores_serialize_saved_write_against_delete(
     assert not workflow_dir.exists()
 
 
-def test_direct_move_preserves_old_tombstone_and_new_generation_after_restart(
-    tmp_path: Path,
-) -> None:
+def test_direct_move_preserves_uuid_generation_and_allows_new_owner_at_old_path(tmp_path: Path) -> None:
     first = _store(tmp_path)
     created = first.create_workflow(WorkflowCreate(name="project/wf"))
-    moved = _patch_workflow(
-        first,
-        "project/wf",
-        WorkflowUpdate(action="update", new_id="archive/wf"),
-    )
-    old_tombstone = first.workflow_generation("project/wf")
-
+    moved = _patch_workflow(first, created.id, WorkflowUpdate(action="update", new_id="archive/wf"))
+    assert moved.id == created.id
+    assert moved.identity_generation == created.identity_generation
     restarted = _store(tmp_path)
-
-    assert old_tombstone > created.identity_generation
-    assert restarted.workflow_generation("project/wf") == old_tombstone
-    assert (
-        restarted.get_workflow("archive/wf").info.identity_generation == moved.identity_generation
-    )
-    recreated_old = restarted.create_workflow(WorkflowCreate(name="project/wf"))
-    assert recreated_old.identity_generation > old_tombstone
+    assert restarted.get_workflow(created.id).info.relative_path == "archive/wf"
+    assert restarted.workflow_generation(created.id) == created.identity_generation
+    replacement = restarted.create_workflow(WorkflowCreate(name="project/wf"))
+    assert replacement.id != created.id
+    assert restarted.get_workflow(created.id).info.relative_path == "archive/wf"
+    assert restarted.get_workflow(replacement.id).info.relative_path == "project/wf"
 
 
-def test_folder_move_generations_and_tombstones_survive_restart(tmp_path: Path) -> None:
+def test_folder_move_uuids_and_generations_survive_restart(tmp_path: Path) -> None:
     first = _store(tmp_path)
-    first.create_workflow(WorkflowCreate(name="project/a"))
-    first.create_workflow(WorkflowCreate(name="project/nested/b"))
-
+    created = [first.create_workflow(WorkflowCreate(name=path)) for path in ("project/a", "project/nested/b")]
     _rename_folder(first, "project", "archive")
-    old_generations = {
-        workflow_id: first.workflow_generation(workflow_id)
-        for workflow_id in ("project/a", "project/nested/b")
-    }
-    new_generations = {
-        workflow_id: first.workflow_generation(workflow_id)
-        for workflow_id in ("archive/a", "archive/nested/b")
-    }
-
     restarted = _store(tmp_path)
-
-    assert restarted.workflow_generation("project/a") == old_generations["project/a"]
-    assert restarted.workflow_generation("project/nested/b") == old_generations["project/nested/b"]
-    assert (
-        restarted.get_workflow("archive/a").info.identity_generation == new_generations["archive/a"]
-    )
-    assert (
-        restarted.get_workflow("archive/nested/b").info.identity_generation
-        == new_generations["archive/nested/b"]
-    )
+    for original in created:
+        current = restarted.get_workflow(original.id).info
+        assert current.id == original.id
+        assert current.relative_path == original.relative_path.replace("project/", "archive/", 1)
+        assert current.identity_generation == original.identity_generation
 
 
 def test_create_duplicate_and_import_generations_survive_restart(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     first = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in first.list_workflows()})
     source = first.create_workflow(WorkflowCreate(name="source"))
+    identities[source.relative_path] = source.id
     duplicate = _patch_workflow(
         first,
-        "source",
+        identities["source"],
         WorkflowUpdate(action="duplicate", new_name="copy"),
     )
-    filename, exported = first.export_workflow_archive("source")
+    filename, exported = first.export_workflow_archive(identities["source"])
     imported = first.import_workflow_archive(
         exported,
         filename=filename,
@@ -212,70 +192,54 @@ def test_create_duplicate_and_import_generations_survive_restart(tmp_path: Path)
     )
 
     restarted = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in restarted.list_workflows()})
 
-    assert restarted.get_workflow("source").info.identity_generation == source.identity_generation
-    assert restarted.get_workflow("copy").info.identity_generation == duplicate.identity_generation
+    assert restarted.get_workflow(identities["source"]).info.identity_generation == source.identity_generation
+    assert restarted.get_workflow(identities["copy"]).info.identity_generation == duplicate.identity_generation
     assert (
-        restarted.get_workflow("imported").info.identity_generation
+        restarted.get_workflow(identities["imported"]).info.identity_generation
         == imported.info.identity_generation
     )
 
 
-def test_tombstoned_targets_advance_for_duplicate_import_and_move(tmp_path: Path) -> None:
+def test_duplicate_import_and_move_cannot_reuse_retired_destination_identities(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="source"))
-    filename, exported = store.export_workflow_archive("source")
-
-    tombstones: dict[str, int] = {}
-    for target in ("copy", "imported", "moved"):
-        store.create_workflow(WorkflowCreate(name=target))
-        tombstones[target] = store.delete_workflow(target)
-
-    duplicate = _patch_workflow(
-        store,
-        "source",
-        WorkflowUpdate(action="duplicate", new_name="copy"),
-    )
-    imported = store.import_workflow_archive(
-        exported,
-        filename=filename,
-        name_override="imported",
-    )
-    store.create_workflow(WorkflowCreate(name="move-source"))
-    moved = _patch_workflow(
-        store,
-        "move-source",
-        WorkflowUpdate(action="update", new_id="moved"),
-    )
-
-    assert duplicate.identity_generation > tombstones["copy"]
-    assert imported.info.identity_generation > tombstones["imported"]
-    assert moved.identity_generation > tombstones["moved"]
-
+    source = store.create_workflow(WorkflowCreate(name="source"))
+    filename, exported = store.export_workflow_archive(source.id)
+    retired = {}
+    for destination in ("copy", "imported", "moved"):
+        previous = store.create_workflow(WorkflowCreate(name=destination))
+        retired[destination] = (previous.id, store.delete_workflow(previous.id))
+    duplicate = _patch_workflow(store, source.id, WorkflowUpdate(action="duplicate", new_name="copy"))
+    imported = store.import_workflow_archive(exported, filename=filename, name_override="imported").info
+    move_source = store.create_workflow(WorkflowCreate(name="move-source"))
+    moved = _patch_workflow(store, move_source.id, WorkflowUpdate(action="update", new_id="moved"))
+    assert moved.id == move_source.id
     restarted = _store(tmp_path)
-    assert restarted.get_workflow("copy").info.identity_generation == duplicate.identity_generation
-    assert (
-        restarted.get_workflow("imported").info.identity_generation
-        == imported.info.identity_generation
-    )
-    assert restarted.get_workflow("moved").info.identity_generation == moved.identity_generation
+    for current in (duplicate, imported, moved):
+        old_id, tombstone = retired[current.relative_path]
+        assert current.id != old_id
+        assert current.identity_generation == 1
+        assert restarted.get_workflow(current.id).info.identity_generation == 1
+        assert restarted.workflow_generation(old_id) == tombstone
+        with pytest.raises(FileNotFoundError):
+            restarted.get_workflow(old_id)
 
 
-def test_folder_move_advances_tombstoned_destination_after_restart(
-    tmp_path: Path,
-) -> None:
+def test_folder_move_preserves_source_identity_and_destination_tombstone(tmp_path: Path) -> None:
     first = _store(tmp_path)
-    first.create_workflow(WorkflowCreate(name="archive/a"))
-    destination_tombstone = first.delete_workflow("archive/a")
+    former = first.create_workflow(WorkflowCreate(name="archive/a"))
+    tombstone = first.delete_workflow(former.id)
     first.delete_folder("archive")
-    first.create_workflow(WorkflowCreate(name="project/a"))
-
+    source = first.create_workflow(WorkflowCreate(name="project/a"))
     _rename_folder(first, "project", "archive")
-    moved_generation = first.workflow_generation("archive/a")
-
-    assert moved_generation > destination_tombstone
     restarted = _store(tmp_path)
-    assert restarted.get_workflow("archive/a").info.identity_generation == moved_generation
+    moved = restarted.get_workflow(source.id).info
+    assert moved.relative_path == "archive/a"
+    assert moved.identity_generation == source.identity_generation
+    assert restarted.workflow_generation(former.id) == tombstone
+    with pytest.raises(FileNotFoundError):
+        restarted.get_workflow(former.id)
 
 
 @pytest.mark.parametrize(
@@ -307,8 +271,11 @@ def test_ledger_write_failure_prevents_workflow_delete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     created = store.create_workflow(WorkflowCreate(name="wf"))
+    identities[created.relative_path] = created.id
 
     def fail_ledger_write(_generations: dict[str, int]) -> None:
         raise OSError("ledger unavailable")
@@ -316,19 +283,22 @@ def test_ledger_write_failure_prevents_workflow_delete(
     monkeypatch.setattr(store, "_write_workflow_generation_ledger", fail_ledger_write)
 
     with pytest.raises(OSError, match="ledger unavailable"):
-        store.delete_workflow("wf")
+        store.delete_workflow(identities["wf"])
 
-    assert store.get_workflow("wf").info.identity_generation == created.identity_generation
-    assert store.workflow_dir("wf").exists()
+    assert store.get_workflow(identities["wf"]).info.identity_generation == created.identity_generation
+    assert store.workflow_dir(identities["wf"]).exists()
 
 
 def test_workflow_removal_failure_before_commit_still_propagates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="wf"))
-    workflow_dir = store.workflow_dir("wf")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_330 = store.create_workflow(WorkflowCreate(name="wf"))
+    identities[created_330.relative_path] = created_330.id
+    workflow_dir = store.workflow_dir(identities["wf"])
     original_rmtree = workflow_store_module.shutil.rmtree
 
     def fail_workflow_removal(path: str | Path, *args: Any, **kwargs: Any) -> None:
@@ -339,41 +309,42 @@ def test_workflow_removal_failure_before_commit_still_propagates(
     monkeypatch.setattr(workflow_store_module.shutil, "rmtree", fail_workflow_removal)
 
     with pytest.raises(OSError, match="workflow removal failed"):
-        store.delete_workflow("wf")
+        store.delete_workflow(identities["wf"])
 
-    assert store.get_workflow("wf").info.id == "wf"
+    assert store.get_workflow(identities["wf"]).info.id == identities["wf"]
 
 
 def test_collision_preflight_does_not_consume_generation(tmp_path: Path) -> None:
+    identities: dict[str, str] = {}
     store = _store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     created = store.create_workflow(WorkflowCreate(name="wf"))
+    identities[created.relative_path] = created.id
     ledger_before = _ledger_path(tmp_path).read_bytes()
 
     with pytest.raises(FileExistsError):
-        store.create_workflow(WorkflowCreate(name="wf"))
+        created_353 = store.create_workflow(WorkflowCreate(name="wf"))
+        identities[created_353.relative_path] = created_353.id
 
-    assert store.workflow_generation("wf") == created.identity_generation
+    assert store.workflow_generation(identities["wf"]) == created.identity_generation
     assert _ledger_path(tmp_path).read_bytes() == ledger_before
 
 
-def test_failure_after_reservation_leaves_durable_harmless_gap(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_failure_after_reservation_retires_only_its_unpublished_uuid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = _store(tmp_path)
     original_write = store._write_raw
-
-    def fail_workflow_write(_name: str, _raw: dict[str, object]) -> None:
+    attempted: list[str] = []
+    def fail_workflow_write(_name: str, raw: dict[str, object], **_kwargs: Any) -> None:
+        attempted.append(str(raw["workflow_id"]))
         raise OSError("workflow write failed")
-
     monkeypatch.setattr(store, "_write_raw", fail_workflow_write)
-
     with pytest.raises(OSError, match="workflow write failed"):
         store.create_workflow(WorkflowCreate(name="wf"))
-
-    assert store.workflow_generation("wf") == 1
+    assert len(attempted) == 1
+    assert store.workflow_generation(attempted[0]) == 1
     monkeypatch.setattr(store, "_write_raw", original_write)
-
     restarted = _store(tmp_path)
     created = restarted.create_workflow(WorkflowCreate(name="wf"))
-    assert created.identity_generation == 2
+    assert created.id != attempted[0]
+    assert created.identity_generation == 1
+    assert restarted.workflow_generation(attempted[0]) == 1

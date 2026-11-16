@@ -33,7 +33,7 @@ async def test_real_archive_import_preserves_grouped_requirements_and_unknown_sn
     metadata = next(tool for tool in _SEED_TOOLS if tool.name == "SeedNumbers")
     registry.register_tool(metadata.name, metadata, SeedNumbers)
     store = WorkflowStoreService(tmp_path / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="original"))
+    original_id = store.create_workflow(WorkflowCreate(name="original")).id
     requirement = {"napari": {"required_packages": [{
         "distribution": "Unavailable_Reader", "normalized_name": "unavailable-reader", "version": ">=2,<3",
     }]}}
@@ -47,8 +47,8 @@ async def test_real_archive_import_preserves_grouped_requirements_and_unknown_sn
         "edges": [], "interface": {"inputs": [], "outputs": []},
         "config": {"engine": "direct", "execution": "sequential"},
     })
-    store.save_workflow("original", WorkflowSaveBody(graph=graph))
-    filename, exported = store.export_workflow_archive("original")
+    store.save_workflow(original_id, WorkflowSaveBody(graph=graph))
+    filename, exported = store.export_workflow_archive(original_id)
     with zipfile.ZipFile(BytesIO(exported)) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
     document = json.loads(files["workflow.json"])
@@ -80,7 +80,7 @@ async def test_real_archive_import_preserves_grouped_requirements_and_unknown_sn
     assert imported.missing_packages == []
     assert imported.viewing_requirements.model_dump(mode="json", by_alias=True) == manifest
 
-    reopened = WorkflowStoreService(tmp_path / "workflows", registry).get_workflow("imported")
+    reopened = WorkflowStoreService(tmp_path / "workflows", registry).get_workflow(imported.info.id)
     assert reopened.info.identity_generation == imported.info.identity_generation
     assert reopened.graph.name == "imported"
     restored = reopened.graph.nodes[0].viewer_additions["number"].napari
@@ -108,7 +108,7 @@ async def test_real_archive_import_preserves_grouped_requirements_and_unknown_sn
     assert environments.snapshot().environments == []
     assert (settings.path.read_bytes() if settings.path.exists() else None) == before
 
-    storage_path = store.get_storage_path("imported")
+    storage_path = store.get_storage_path(imported.info.id)
     compiled = GraphCompiler(registry).compile(reopened.graph, storage_path=storage_path)
     assert compiled.errors == []
     assert compiled.workflow is not None

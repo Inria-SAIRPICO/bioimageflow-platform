@@ -92,7 +92,7 @@ def imported_store(tmp_path: Path) -> WorkflowStoreService:
 
 
 def run(
-    store: WorkflowStoreService, name: str = "reference", graph: GraphState | None = None
+    store: WorkflowStoreService, name: str, graph: GraphState | None = None
 ) -> list[int]:
     built = build_workflow(
         graph or store.get_workflow(name).graph,
@@ -111,51 +111,60 @@ def run(
 
 
 def test_import_materializes_editable_file_and_immediate_run_uses_saved_bytes(tmp_path: Path):
+    identities: dict[str, str] = {}
     store = imported_store(tmp_path)
-    sources = OwnedWorkflowSources(store.workflow_dir("reference"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    sources = OwnedWorkflowSources(store.workflow_dir(identities["reference"]))
     path = sources.source_path("increment")
-    assert path == store.workflow_dir("reference") / "tools/increment/qa_increment.py"
+    assert path == store.workflow_dir(identities["reference"]) / "tools/increment/qa_increment.py"
     assert "source" not in json.loads((path.parent / "module.json").read_text())
-    assert not (store.workflow_dir("reference") / ".bioimageflow/dependencies").exists()
-    assert run(store) == [2, 3, 4]
+    assert not (store.workflow_dir(identities["reference"]) / ".bioimageflow/dependencies").exists()
+    assert run(store, identities["reference"]) == [2, 3, 4]
     path.write_text(SOURCE.replace("n + 1", "n + 20"))
-    assert run(store) == [21, 22, 23]
+    assert run(store, identities["reference"]) == [21, 22, 23]
 
 
 def test_execution_snapshot_and_other_import_remain_independent(tmp_path: Path):
+    identities: dict[str, str] = {}
     store = imported_store(tmp_path)
-    store.import_workflow_archive(b"fixture", filename="other.bioimageflow.zip")
-    graph = store.get_workflow("reference").graph
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_127 = store.import_workflow_archive(b"fixture", filename="other.bioimageflow.zip")
+    identities[created_127.info.relative_path] = created_127.info.id
+    graph = store.get_workflow(identities["reference"]).graph
     captured = build_workflow(
-        graph, store.tool_registry, storage_path=store.get_storage_path("reference")
+        graph, store.tool_registry, storage_path=store.get_storage_path(identities["reference"])
     )
-    OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment").write_text(
+    OwnedWorkflowSources(store.workflow_dir(identities["reference"])).source_path("increment").write_text(
         SOURCE.replace("n + 1", "n + 20")
     )
     captured.workflow.compute()
     assert ResultStoreService(
-        storage_path=store.get_storage_path("reference"), tool_registry=store.tool_registry
+        storage_path=store.get_storage_path(identities["reference"]), tool_registry=store.tool_registry
     ).get_latest_dataframe("increment")["number_plus_one"].tolist() == [2, 3, 4]
-    assert run(store) == [21, 22, 23]
-    assert run(store, "other") == [2, 3, 4]
+    assert run(store, identities["reference"]) == [21, 22, 23]
+    assert run(store, identities["other"]) == [2, 3, 4]
 
 
 def test_duplicate_and_export_include_edits(tmp_path: Path):
+    identities: dict[str, str] = {}
     store = imported_store(tmp_path)
-    OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment").write_text(
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    OwnedWorkflowSources(store.workflow_dir(identities["reference"])).source_path("increment").write_text(
         SOURCE.replace("n + 1", "n + 20")
     )
-    store.patch_workflow("reference", WorkflowUpdate(action="duplicate", new_name="copy"))
-    assert run(store, "copy") == [21, 22, 23]
-    store.export_workflow_archive("copy")
+    created_148 = store.patch_workflow(identities["reference"], WorkflowUpdate(action="duplicate", new_name="copy"))
+    identities[created_148.relative_path] = created_148.id
+    assert run(store, identities["copy"]) == [21, 22, 23]
+    store.export_workflow_archive(identities["copy"])
     assert "n + 20" in store.archive_adapter.exported["custom_sources"][0]["source"]
-    OwnedWorkflowSources(store.workflow_dir("copy")).source_path("increment").write_text(SOURCE)
-    assert run(store) == [21, 22, 23]
+    OwnedWorkflowSources(store.workflow_dir(identities["copy"])).source_path("increment").write_text(SOURCE)
+    assert run(store, identities["reference"]) == [21, 22, 23]
 
 
 def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    identities: dict[str, str] = {}
     from bioimageflow import Workflow
 
     runtime_calls: list[str] = []
@@ -170,35 +179,37 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     # Only the initial legacy fixture import uses a fake adapter. Every archive
     # operation below uses a fresh store's genuine default library adapter.
     seed = imported_store(tmp_path)
-    seed.import_workflow_archive(b"fixture", filename="other.bioimageflow.zip")
+    identities.update({item.relative_path: item.id for item in seed.list_workflows()})
+    created_173 = seed.import_workflow_archive(b"fixture", filename="other.bioimageflow.zip")
+    identities[created_173.info.relative_path] = created_173.info.id
     store = WorkflowStoreService(seed.root_dir, seed.tool_registry)
-    original = store.read_workflow_document("reference")
-    original_bytes = (store.workflow_dir("reference") / "workflow.json").read_bytes()
-    original_generation = store.workflow_generation("reference")
-    other_document = store.read_workflow_document("other")
-    other_generation = store.workflow_generation("other")
+    original = store.read_workflow_document(identities["reference"])
+    original_bytes = (store.workflow_dir(identities["reference"]) / "workflow.json").read_bytes()
+    original_generation = store.workflow_generation(identities["reference"])
+    other_document = store.read_workflow_document(identities["other"])
+    other_generation = store.workflow_generation(identities["other"])
     other_files = {
-        path.relative_to(store.workflow_dir("other")): path.read_bytes()
-        for path in store.workflow_dir("other").rglob("*")
+        path.relative_to(store.workflow_dir(identities["other"])): path.read_bytes()
+        for path in store.workflow_dir(identities["other"]).rglob("*")
         if path.is_file()
     }
-    origin_sources = OwnedWorkflowSources(store.workflow_dir("reference"))
+    origin_sources = OwnedWorkflowSources(store.workflow_dir(identities["reference"]))
     origin_path = origin_sources.source_path("increment")
     origin_manifest = (origin_path.parent / "module.json").read_bytes()
     edited_bytes = SOURCE.replace("n + 1", "n + 20").encode("utf-8")
     origin_path.write_bytes(edited_bytes)
 
     def assert_retained_authority() -> None:
-        assert store.read_workflow_document("reference") == original
-        assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
-        assert store.workflow_generation("reference") == original_generation
+        assert store.read_workflow_document(identities["reference"]) == original
+        assert (store.workflow_dir(identities["reference"]) / "workflow.json").read_bytes() == original_bytes
+        assert store.workflow_generation(identities["reference"]) == original_generation
         assert origin_path.read_bytes() == edited_bytes
         assert (origin_path.parent / "module.json").read_bytes() == origin_manifest
-        assert store.read_workflow_document("other") == other_document
-        assert store.workflow_generation("other") == other_generation
+        assert store.read_workflow_document(identities["other"]) == other_document
+        assert store.workflow_generation(identities["other"]) == other_generation
         assert {
-            path.relative_to(store.workflow_dir("other")): path.read_bytes()
-            for path in store.workflow_dir("other").rglob("*")
+            path.relative_to(store.workflow_dir(identities["other"])): path.read_bytes()
+            for path in store.workflow_dir(identities["other"]).rglob("*")
             if path.is_file()
         } == other_files
 
@@ -217,14 +228,14 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     with monkeypatch.context() as failure:
         failure.setattr(store.archive_adapter, "export_archive", fail_after_real_export)
         with pytest.raises(WorkflowArchiveError, match="Owned archive write failed") as failed:
-            store.export_workflow_archive("reference")
+            store.export_workflow_archive(identities["reference"])
     assert isinstance(failed.value.__cause__, OSError)
     assert len(failed_exports) == 1
     assert not failed_exports[0].parent.exists()
     assert_retained_authority()
 
     # Explicit retry uses the real adapter again, without recomputing a result.
-    filename, archive_bytes = store.export_workflow_archive("reference")
+    filename, archive_bytes = store.export_workflow_archive(identities["reference"])
     assert filename == "reference.bioimageflow.zip"
     with ZipFile(BytesIO(archive_bytes)) as archive:
         assert archive.namelist() == ["workflow.json"]
@@ -243,9 +254,9 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     assert exported_node["source_module"] == captured_id
     assert exported_node["tool_class"] == "QaIncrement"
     assert exported_node["tool_module"] == record["module"]
-    assert store.read_workflow_document("reference") == original
-    assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
-    assert store.workflow_generation("reference") == original_generation
+    assert store.read_workflow_document(identities["reference"]) == original
+    assert (store.workflow_dir(identities["reference"]) / "workflow.json").read_bytes() == original_bytes
+    assert store.workflow_generation(identities["reference"]) == original_generation
     assert origin_path.read_bytes() == edited_bytes
 
     real_read = store.archive_adapter.read_archive
@@ -260,13 +271,14 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     with monkeypatch.context() as failure:
         failure.setattr(store.archive_adapter, "read_archive", fail_after_real_read)
         with pytest.raises(WorkflowArchiveError, match="Owned archive read failed") as failed:
-            store.import_workflow_archive(
+            created_263 = store.import_workflow_archive(
                 archive_bytes, filename="roundtrip.bioimageflow.zip"
             )
+            identities[created_263.info.relative_path] = created_263.info.id
     assert isinstance(failed.value.__cause__, OSError)
     assert len(failed_reads) == 1
     assert not failed_reads[0].parent.exists()
-    assert not store.workflow_dir("roundtrip").exists()
+    assert not (store.root_dir / "roundtrip").exists()
     assert_retained_authority()
 
     # The held ZIP, rather than later working-file edits, owns the import.
@@ -275,11 +287,12 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     imported = store.import_workflow_archive(
         archive_bytes, filename="roundtrip.bioimageflow.zip"
     )
+    identities[imported.info.relative_path] = imported.info.id
     assert imported.missing_tools == []
     assert imported.missing_packages == []
     reopened = WorkflowStoreService(store.root_dir, store.tool_registry)
-    loaded = reopened.get_workflow("roundtrip")
-    document = reopened.read_workflow_document("roundtrip")
+    loaded = reopened.get_workflow(identities["roundtrip"])
+    document = reopened.read_workflow_document(identities["roundtrip"])
     assert document.graph == lib_dict_to_graph_state(exported)
     assert loaded.graph == document.graph
     assert document.graph.name == original.graph.name
@@ -292,10 +305,10 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     assert node.source_module == captured_id
     assert node.tool_class == exported_node["tool_class"]
     assert node.tool_module == exported_node["tool_module"]
-    imported_sources = OwnedWorkflowSources(reopened.workflow_dir("roundtrip"))
+    imported_sources = OwnedWorkflowSources(reopened.workflow_dir(identities["roundtrip"]))
     assert imported_sources.collect_for_graph(document.graph) == [record]
     imported_path = imported_sources.source_path(captured_id, node.tool_module)
-    assert imported_path.is_relative_to(reopened.workflow_dir("roundtrip"))
+    assert imported_path.is_relative_to(reopened.workflow_dir(identities["roundtrip"]))
     assert imported_path != origin_path
     assert imported_path.read_bytes() == edited_bytes
     manifest = json.loads((imported_path.parent / "module.json").read_text())
@@ -304,19 +317,21 @@ def test_edited_source_genuine_zip_round_trip_retains_captured_bytes_without_exe
     }
     assert document.artifact_hash == artifact_hash(document.graph, [record])
     assert loaded.artifact_hash == document.artifact_hash
-    assert reopened.read_workflow_document("reference") == original
-    assert (reopened.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
-    assert reopened.workflow_generation("reference") == original_generation
+    assert reopened.read_workflow_document(identities["reference"]) == original
+    assert (reopened.workflow_dir(identities["reference"]) / "workflow.json").read_bytes() == original_bytes
+    assert reopened.workflow_generation(identities["reference"]) == original_generation
     assert origin_path.read_bytes() == later_bytes
     assert runtime_calls == []
 
 
 def test_scoped_metadata_comes_from_executed_source(tmp_path: Path):
+    identities: dict[str, str] = {}
     store = imported_store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     result = validate_graph(
-        store.get_workflow("reference").graph,
+        store.get_workflow(identities["reference"]).graph,
         store.tool_registry,
-        storage_path=store.get_storage_path("reference"),
+        storage_path=store.get_storage_path(identities["reference"]),
     )
     assert result.valid
     assert result.node_tools["increment"].outputs["number_plus_one"]["type"] == "int"
@@ -324,14 +339,16 @@ def test_scoped_metadata_comes_from_executed_source(tmp_path: Path):
 
 
 def test_invalid_edit_blocks_execution_instead_of_reusing_old_code(tmp_path: Path):
+    identities: dict[str, str] = {}
     store = imported_store(tmp_path)
-    original = store.read_workflow_document("reference")
-    original_bytes = (store.workflow_dir("reference") / "workflow.json").read_bytes()
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    original = store.read_workflow_document(identities["reference"])
+    original_bytes = (store.workflow_dir(identities["reference"]) / "workflow.json").read_bytes()
     graph = original.graph
-    storage_path = store.get_storage_path("reference")
+    storage_path = store.get_storage_path(identities["reference"])
     captured = build_workflow(graph, store.tool_registry, storage_path=storage_path)
     assert captured.errors == []
-    source_path = OwnedWorkflowSources(store.workflow_dir("reference")).source_path("increment")
+    source_path = OwnedWorkflowSources(store.workflow_dir(identities["reference"])).source_path("increment")
     invalid_bytes = b"invalid Python !!!"
     source_path.write_bytes(invalid_bytes)
 
@@ -358,13 +375,14 @@ def test_invalid_edit_blocks_execution_instead_of_reusing_old_code(tmp_path: Pat
     )
     assert repaired.valid
     assert repaired.errors == []
-    assert run(store) == [21, 22, 23]
-    assert store.read_workflow_document("reference") == original
-    assert (store.workflow_dir("reference") / "workflow.json").read_bytes() == original_bytes
+    assert run(store, identities["reference"]) == [21, 22, 23]
+    assert store.read_workflow_document(identities["reference"]) == original
+    assert (store.workflow_dir(identities["reference"]) / "workflow.json").read_bytes() == original_bytes
     assert source_path.read_bytes() == repaired_bytes
 
 
 def test_package_helper_edits_are_captured_and_not_reused_from_python_import_cache(tmp_path: Path):
+    identities: dict[str, str] = {}
     contents = {
         "tools/__init__.py": "",
         "tools/helper.py": "OFFSET = 1\n",
@@ -400,13 +418,14 @@ def test_package_helper_edits_are_captured_and_not_reused_from_python_import_cac
     store = WorkflowStoreService(
         tmp_path / "workflows", ToolRegistryService(), archive_adapter=_ArchiveAdapter(payload)
     )
-    store.import_workflow_archive(b"fixture", filename="reference.bioimageflow.zip")
-    source = OwnedWorkflowSources(store.workflow_dir("reference")).source_path(
+    created_403 = store.import_workflow_archive(b"fixture", filename="reference.bioimageflow.zip")
+    identities[created_403.info.relative_path] = created_403.info.id
+    source = OwnedWorkflowSources(store.workflow_dir(identities["reference"])).source_path(
         "increment", "tools.qa_increment"
     )
-    assert run(store) == [2, 3, 4]
+    assert run(store, identities["reference"]) == [2, 3, 4]
     source.with_name("helper.py").write_text("OFFSET = 20\n")
-    assert run(store) == [21, 22, 23]
+    assert run(store, identities["reference"]) == [21, 22, 23]
 
 
 @pytest.mark.parametrize("filename", [
@@ -577,12 +596,14 @@ def test_unbound_class_scan_ignores_unrelated_syntax_error_and_preserves_ambigui
 
 
 def test_rebind_preserves_current_local_binding_before_later_source_capture(tmp_path: Path):
+    identities: dict[str, str] = {}
     from bioimageflow_server.models.workflow import WorkflowSaveBody
 
     registry = ToolRegistryService()
     store = WorkflowStoreService(tmp_path / "workflows", registry)
-    store.create_workflow(WorkflowCreate(name="local"))
-    source = store.workflow_dir("local") / "tools" / "unexpected_filename.py"
+    created_584 = store.create_workflow(WorkflowCreate(name="local"))
+    identities[created_584.relative_path] = created_584.id
+    source = store.workflow_dir(identities["local"]) / "tools" / "unexpected_filename.py"
     source.parent.mkdir(exist_ok=True)
     source.write_text(SOURCE)
     registry.register_custom_tool_file(source, "QaIncrement")
@@ -594,12 +615,12 @@ def test_rebind_preserves_current_local_binding_before_later_source_capture(tmp_
         }],
         "edges": [], "interface": {"inputs": [], "outputs": []}, "config": {},
     })
-    store.save_workflow("local", WorkflowSaveBody(graph=graph))
+    store.save_workflow(identities["local"], WorkflowSaveBody(graph=graph))
 
-    rebound = store.rebind_versions("local").graph
+    rebound = store.rebind_versions(identities["local"]).graph
     edited = SOURCE.replace("n + 1", "n + 20")
     source.write_text(edited)
-    captured, records = capture_working_graph(rebound, store.workflow_dir("local"), registry)
+    captured, records = capture_working_graph(rebound, store.workflow_dir(identities["local"]), registry)
 
     assert len(records) == 1
     assert records[0]["source"] == edited
@@ -612,56 +633,64 @@ def test_rebind_preserves_current_local_binding_before_later_source_capture(tmp_
 
 
 def test_owned_source_engine_does_not_depend_on_same_named_catalog_tool(tmp_path: Path):
+    identities: dict[str, str] = {}
     from unittest.mock import Mock
     from bioimageflow import DataFrameTool
     from bioimageflow_server.services.graph_translator import graph_requires_wetlands
 
     store = imported_store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     registry = Mock(get_tool_class=Mock(return_value=DataFrameTool))
-    assert graph_requires_wetlands(store.get_workflow("reference").graph, registry)
+    assert graph_requires_wetlands(store.get_workflow(identities["reference"]).graph, registry)
     registry.get_tool_class.assert_not_called()
 
 
 def test_embedding_transfers_independent_sources_before_graph_insertion(tmp_path: Path):
+    identities: dict[str, str] = {}
     from bioimageflow_server.services.workflow_sources import WorkflowSourceService
 
     store = imported_store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="parent"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_629 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_629.relative_path] = created_629.id
     service = WorkflowSourceService(lambda: store)
     prepared = service.prepare_embedding(
-        "parent",
-        "reference",
-        identity_generation=store.workflow_generation("parent"),
+        identities["parent"],
+        identities["reference"],
+        identity_generation=store.workflow_generation(identities["parent"]),
     )
     source_id = prepared.graph.nodes[0].source_module
     assert source_id != "increment"
-    assert store.get_workflow("parent").graph.nodes == []
-    path = OwnedWorkflowSources(store.workflow_dir("parent")).source_path(source_id)
+    assert store.get_workflow(identities["parent"]).graph.nodes == []
+    path = OwnedWorkflowSources(store.workflow_dir(identities["parent"])).source_path(source_id)
     path.write_text(SOURCE.replace("n + 1", "n + 20"))
-    assert run(store, "parent", prepared.graph) == [21, 22, 23]
-    assert run(store) == [2, 3, 4]
-    store.delete_workflow("reference")
-    assert run(store, "parent", prepared.graph) == [21, 22, 23]
+    assert run(store, identities["parent"], prepared.graph) == [21, 22, 23]
+    assert run(store, identities["reference"]) == [2, 3, 4]
+    store.delete_workflow(identities["reference"])
+    assert run(store, identities["parent"], prepared.graph) == [21, 22, 23]
 
 
 def test_embedding_source_publication_failure_preserves_authority_and_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    identities: dict[str, str] = {}
     from bioimageflow_server.services import workflow_artifacts
     from bioimageflow_server.services.workflow_sources import WorkflowSourceService
 
     store = imported_store(tmp_path)
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
     for name in ("parent", "unrelated"):
-        store.import_workflow_archive(b"fixture", filename=f"{name}.bioimageflow.zip")
+        created_655 = store.import_workflow_archive(b"fixture", filename=f"{name}.bioimageflow.zip")
+        identities[created_655.info.relative_path] = created_655.info.id
     names = ("reference", "parent", "unrelated")
-    documents = {name: store.read_workflow_document(name) for name in names}
-    generations = {name: store.workflow_generation(name) for name in names}
+    documents = {name: store.read_workflow_document(identities[name]) for name in names}
+    generations = {name: store.workflow_generation(identities[name]) for name in names}
 
     def files() -> dict[Path, bytes]:
         return {
             path.relative_to(store.root_dir): path.read_bytes()
             for name in names
-            for path in store.workflow_dir(name).rglob("*")
+            for path in store.workflow_dir(identities[name]).rglob("*")
             if path.is_file()
         }
 
@@ -678,13 +707,13 @@ def test_embedding_source_publication_failure_preserves_authority_and_retries(
         owned: OwnedWorkflowSources, records: list[dict]
     ) -> list[tuple[Path, Path]]:
         staged = real_stage(owned, records)
-        if owned.root != store.workflow_tools_dir("parent"):
+        if owned.root != store.workflow_tools_dir(identities["parent"]):
             return staged
         assert len(staged) >= 2
         for temporary, final in staged:
             assert temporary.is_file()
             assert temporary.parent == final.parent
-            assert final.is_relative_to(store.workflow_tools_dir("parent"))
+            assert final.is_relative_to(store.workflow_tools_dir(identities["parent"]))
             assert not final.exists()
             staged_bytes[(temporary, final)] = temporary.read_bytes()
         staged_paths.extend(staged)
@@ -711,7 +740,7 @@ def test_embedding_source_publication_failure_preserves_authority_and_retries(
         failure.setattr(workflow_artifacts.os, "replace", fail_second_owned_replace)
         with pytest.raises(OSError, match="Owned embedding source publication failed"):
             service.prepare_embedding(
-                "parent", "reference", identity_generation=generations["parent"]
+                identities["parent"], identities["reference"], identity_generation=generations["parent"]
             )
 
     assert len(attempted_paths) == 2
@@ -722,16 +751,16 @@ def test_embedding_source_publication_failure_preserves_authority_and_retries(
     assert files() == before
     reopened = WorkflowStoreService(store.root_dir, store.tool_registry)
     for name in names:
-        assert reopened.read_workflow_document(name) == documents[name]
-        assert reopened.workflow_generation(name) == generations[name]
+        assert reopened.read_workflow_document(identities[name]) == documents[name]
+        assert reopened.workflow_generation(identities[name]) == generations[name]
 
     prepared = service.prepare_embedding(
-        "parent", "reference", identity_generation=generations["parent"]
+        identities["parent"], identities["reference"], identity_generation=generations["parent"]
     )
     source_id = prepared.graph.nodes[0].source_module
     assert source_id is not None
     assert source_id != documents["reference"].graph.nodes[0].source_module
-    path = OwnedWorkflowSources(store.workflow_dir("parent")).source_path(source_id)
+    path = OwnedWorkflowSources(store.workflow_dir(identities["parent"])).source_path(source_id)
     assert path not in [final for _, final in staged_paths]
     assert path.read_bytes() == SOURCE.encode("utf-8")
     expected_graph = documents["reference"].graph.model_copy(deep=True)
@@ -745,19 +774,22 @@ def test_embedding_source_publication_failure_preserves_authority_and_retries(
     for relative, content in before.items():
         assert (store.root_dir / relative).read_bytes() == content
     for name in names:
-        assert reopened.read_workflow_document(name) == documents[name]
-        assert reopened.workflow_generation(name) == generations[name]
+        assert reopened.read_workflow_document(identities[name]) == documents[name]
+        assert reopened.workflow_generation(identities[name]) == generations[name]
 
 
 def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residual(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    identities: dict[str, str] = {}
     from bioimageflow_server.services import workflow_artifacts
     from bioimageflow_server.services.workflow_sources import WorkflowSourceService
 
     store = imported_store(tmp_path)
-    store.import_workflow_archive(b"fixture", filename="parent.bioimageflow.zip")
-    generation = store.workflow_generation("parent")
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_759 = store.import_workflow_archive(b"fixture", filename="parent.bioimageflow.zip")
+    identities[created_759.info.relative_path] = created_759.info.id
+    generation = store.workflow_generation(identities["parent"])
 
     def files() -> dict[Path, bytes]:
         return {
@@ -778,7 +810,7 @@ def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residu
         owned: OwnedWorkflowSources, records: list[dict]
     ) -> list[tuple[Path, Path]]:
         staged = real_stage(owned, records)
-        if owned.root == store.workflow_tools_dir("parent"):
+        if owned.root == store.workflow_tools_dir(identities["parent"]):
             assert len(staged) >= 2
             assert all(not final.exists() for _, final in staged)
             staged_paths.extend(staged)
@@ -803,7 +835,7 @@ def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residu
         failure.setattr(workflow_artifacts.os, "replace", fail_second_owned_replace)
         failure.setattr(Path, "unlink", refuse_one_temporary_cleanup)
         with pytest.raises(OSError, match="Embedding source publication failed") as raised:
-            service.prepare_embedding("parent", "reference", identity_generation=generation)
+            service.prepare_embedding(identities["parent"], identities["reference"], identity_generation=generation)
 
     assert raised.value is primary
     assert staged_paths
@@ -812,7 +844,7 @@ def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residu
     assert all(not final.exists() for _, final in staged_paths)
     assert all(not temporary.exists() for temporary, _ in staged_paths if temporary != residual)
     assert files() == {**before, residual.relative_to(store.root_dir): staged_bytes[residual]}
-    assert store.workflow_generation("parent") == generation
+    assert store.workflow_generation(identities["parent"]) == generation
     assert any(
         record.exc_info is not None
         and record.exc_info[1] is cleanup_error
@@ -826,17 +858,20 @@ def test_embedding_cleanup_failure_keeps_publication_error_and_logs_owned_residu
 
 
 def test_embedding_rejects_stale_destination_and_self_containment(tmp_path: Path):
+    identities: dict[str, str] = {}
     from bioimageflow_server.services.workflow_sources import (
         WorkflowSourceService,
         WorkflowSourceConflict,
     )
 
     store = imported_store(tmp_path)
-    store.create_workflow(WorkflowCreate(name="parent"))
+    identities.update({item.relative_path: item.id for item in store.list_workflows()})
+    created_835 = store.create_workflow(WorkflowCreate(name="parent"))
+    identities[created_835.relative_path] = created_835.id
     service = WorkflowSourceService(lambda: store)
     with pytest.raises(WorkflowSourceConflict):
-        service.prepare_embedding("parent", "reference", identity_generation=999)
+        service.prepare_embedding(identities["parent"], identities["reference"], identity_generation=999)
     with pytest.raises(ValueError, match="contain itself"):
         service.prepare_embedding(
-            "reference", "reference", identity_generation=store.workflow_generation("reference")
+            identities["reference"], identities["reference"], identity_generation=store.workflow_generation(identities["reference"])
         )

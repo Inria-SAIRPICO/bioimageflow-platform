@@ -324,6 +324,9 @@ Obsolete attached-Parsl and submitted-local code paths, low-level remote transpo
 No dual wire path or deprecated alias is retained.
 
 Existing local workflow documents, resource overrides, scheduling preferences, local execution history, cache records, and results keep their current semantics.
+Workflow attribution uses the persistent workflow UUID independently of its relative path; confirmed identity migration changes mutable registry attribution only, leaving immutable run artifacts intact.
+Ambiguous legacy history remains accessible by execution ID with unresolved workflow attribution and cannot submit a retry against a guessed workflow.
+An affected local or managed run that owns workflow storage blocks application moves; an external move does not retarget its captured engine or result destination.
 Portable workflow archives remain free of platform profile IDs and remote attachment state.
 
 ## 14. Acceptance Criteria

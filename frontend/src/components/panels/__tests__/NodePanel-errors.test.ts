@@ -21,6 +21,7 @@ import {
   makeWorkflowDraft,
 } from '@/test-utils/persistenceFixtures'
 import type { ToolMetadata, ValidationResult } from '@/api/types'
+import { makeOutputPlanningReport } from '@/test-utils/outputPlanningFixtures'
 import { encodeEndpointHandle } from '@/utils/endpointHandles'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import {
@@ -61,6 +62,7 @@ const workflowBindingUpdate = vi.fn(() => true)
 
 function makeTool(): ToolMetadata {
   return {
+    output_file_declarations: {},
     name: 'gaussian_blur',
     display_name: 'Gaussian Blur',
     package: 'bioimageflow-core',
@@ -155,6 +157,59 @@ function mountWithErrors(
 }
 
 describe('NodePanel — parameter error wiring', () => {
+  it('offers template controls for declared union destinations and keeps union references read-only', () => {
+    const tool = makeTool()
+    const union = 'pathlib._local.Path | bioimageflow_core.types.SharedArray'
+    tool.outputs = {
+      image: { type: union, default: 'image_{row_index}.tif' },
+      reference: { type: union },
+    }
+    tool.output_file_declarations = {
+      image: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+      reference: { output_role: 'reference', file_group: null, description: '' },
+    }
+    const wrapper = mountWithErrors({ valid: true, node_statuses: {}, errors: [] }, {
+      tool, output_templates: { image: 'authored_{row_index}.tif' },
+    })
+    expect(wrapper.findAll('[data-testid="output-template"]')).toHaveLength(1)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="output-template"]').element.value).toBe('authored_{row_index}.tif')
+    expect(wrapper.get('[data-testid="output-group-image"]').text()).toContain('One file per input row')
+    wrapper.unmount()
+  })
+  it('shows writable groups and proven warnings without treating references as template destinations', () => {
+    const tool = makeTool()
+    tool.outputs = {
+      output_image: { type: 'Path', default: 'mask.tif' },
+      source_image: { type: 'Path' },
+      tile: { type: 'Path', default: 'tile.tif' },
+    }
+    tool.output_file_declarations = {
+      output_image: { output_role: 'exact', file_group: { kind: 'by', keys: ['image'] }, description: 'One file per source image.' },
+      source_image: { output_role: 'reference', file_group: null, description: '' },
+      tile: { output_role: 'base', file_group: null, description: '' },
+    }
+    const wrapper = mountWithErrors({
+      valid: true, node_statuses: {}, errors: [],
+      output_planning_warnings: [makeOutputPlanningReport({ node_id: 'node-1' })],
+    }, { tool })
+    expect(wrapper.findAll('[data-testid="output-template"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('One file per source image.')
+    expect(wrapper.text()).toContain('this tool generates the individual filenames')
+    expect(wrapper.get('[data-testid="output-template-warning-output_image"]').text()).toContain('Six rows')
+    expect(wrapper.get('[data-testid="output-template-guidance"]').text()).toContain('Each file written')
+    wrapper.unmount()
+  })
+
+  it('leaves unknown output collision cases silent', () => {
+    const tool = makeTool()
+    tool.outputs = { output_image: { type: 'Path', default: '{input_image.stem}.tif' } }
+    tool.output_file_declarations = {
+      output_image: { output_role: 'exact', file_group: { kind: 'per_row', keys: [] }, description: 'One file per input row.' },
+    }
+    const wrapper = mountWithErrors({ valid: true, node_statuses: {}, errors: [] }, { tool })
+    expect(wrapper.find('[data-testid="output-template-warning-output_image"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('shows and edits unconnected workflow field bindings', async () => {
     workflowBindingUpdate.mockClear()
     const wrapper = mountWithErrors(null, {

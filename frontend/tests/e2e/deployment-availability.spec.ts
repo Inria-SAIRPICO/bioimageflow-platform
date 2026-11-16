@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { realpath } from 'node:fs/promises'
-import { isAbsolute, relative, sep } from 'node:path'
+import { dirname, isAbsolute, relative, sep } from 'node:path'
 import type { SettingsResponse, WorkspaceInfo } from '../../src/api/types'
 
 const API = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}/api/v1`
@@ -21,7 +21,9 @@ test('Preferences reflects the actual deployment mode and refuses forbidden sett
     realpath(runtimeRoot!), realpath(workspaceInfo.workspace_path),
   ])
   const workspaceWithinRoot = relative(canonicalRoot, canonicalWorkspace)
-  expect(workspaceWithinRoot).not.toBe('')
+  // The explicit workflow-root override makes its parent the workspace.
+  // That parent may itself be the owned runtime root.
+  expect(canonicalWorkspace).toBe(await realpath(dirname(workspaceInfo.workflows_root)))
   expect(isAbsolute(workspaceWithinRoot)).toBe(false)
   expect(workspaceWithinRoot === '..' || workspaceWithinRoot.startsWith(`..${sep}`)).toBe(false)
   await page.goto('/')

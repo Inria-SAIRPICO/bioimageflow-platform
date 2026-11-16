@@ -7,6 +7,15 @@ import Password from 'primevue/password'
 import Tag from 'primevue/tag'
 import { useConfirm } from 'primevue/useconfirm'
 import type { OmeroInstanceResponse, SettingsResponse } from '@/api/types'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
+
+type OmeroConnection = Pick<OmeroInstanceResponse, 'host' | 'port' | 'username'>
+type OmeroTransfer = 'OmeroDownloadDataset' | 'OmeroUploadImage'
+const OMERO_PACKAGE = 'bioimageflow_omero_tools'
+const OMERO_MODULE = 'bioimageflow_omero_tools.omero'
+const commands = useCanvasCommands()
+const toolRegistry = useToolRegistryStore()
 
 type OmeroInstancePatch = Omit<OmeroInstanceResponse, 'password_stored'> & {
   password?: string | null
@@ -19,6 +28,7 @@ type LocalOmeroInstance = {
   username: string
   password: string
   password_stored: boolean
+  savedConnection: OmeroConnection | null
 }
 
 const props = defineProps<{ modelValue: SettingsResponse }>()
@@ -35,6 +45,7 @@ try {
 
 const rows = ref<LocalOmeroInstance[]>([])
 const validationError = ref<string | null>(null)
+const transferError = ref<string | null>(null)
 
 function syncRows() {
   rows.value = props.modelValue.omero_instances.map((instance) => ({
@@ -44,8 +55,10 @@ function syncRows() {
     username: instance.username,
     password: '',
     password_stored: instance.password_stored,
+    savedConnection: { host: instance.host, port: instance.port, username: instance.username },
   }))
   validationError.value = null
+  transferError.value = null
 }
 
 watch(() => props.modelValue.omero_instances, syncRows, { immediate: true })
@@ -63,6 +76,40 @@ function cardTitle(row: LocalOmeroInstance, index: number): string {
   const username = row.username.trim()
   if (host && username) return `${host}:${username}`
   return `OMERO instance ${index + 1}`
+}
+
+function transferTool(name: OmeroTransfer) {
+  return toolRegistry.tools.find(tool => tool.name === name
+    && tool.package === OMERO_PACKAGE && tool.source_kind === 'package')
+}
+
+function transferUnavailable(row: LocalOmeroInstance, name: OmeroTransfer): string | null {
+  const saved = row.savedConnection
+  if (!saved || row.host !== saved.host || row.port !== saved.port
+    || row.username !== saved.username || row.password !== '') {
+    return 'Save this instance before adding a transfer.'
+  }
+  if (!commands.canAddToolNode()) return 'Open an editable workflow to add a transfer.'
+  if (!transferTool(name)) return 'Install the OMERO tools from Tools to add a transfer.'
+  return null
+}
+
+function addTransfer(row: LocalOmeroInstance, name: OmeroTransfer) {
+  transferError.value = null
+  if (transferUnavailable(row, name)) return
+  const saved = row.savedConnection!
+  const tool = transferTool(name)!
+  const nodeId = commands.addToolNode(name, {
+    host: saved.host,
+    port: saved.port,
+    username: saved.username,
+  }, {
+    tool_module: OMERO_MODULE,
+    tool_class: name,
+    tool_package: tool.package,
+    tool_package_version: tool.package_version,
+  })
+  if (nodeId === null) transferError.value = 'Could not add the tool. Open an editable workflow and try again.'
 }
 
 function validateRows(): boolean {
@@ -119,13 +166,14 @@ function addRow() {
     username: '',
     password: '',
     password_stored: false,
+    savedConnection: null,
   })
   validationError.value = null
 }
 
 function duplicateRow(index: number) {
   const row = rows.value[index]
-  rows.value.splice(index + 1, 0, { ...row, password: '', password_stored: false })
+  rows.value.splice(index + 1, 0, { ...row, password: '', password_stored: false, savedConnection: null })
   validationError.value = null
 }
 
@@ -225,6 +273,22 @@ function removeRow(index: number) {
 
         <div class="actions-cell">
           <Button
+            label="Download"
+            icon="pi pi-download"
+            aria-label="Add OMERO download tool"
+            :title="transferUnavailable(row, 'OmeroDownloadDataset') ?? 'Add download tool to the active workflow'"
+            :disabled="transferUnavailable(row, 'OmeroDownloadDataset') !== null"
+            @click="addTransfer(row, 'OmeroDownloadDataset')"
+          />
+          <Button
+            label="Upload"
+            icon="pi pi-upload"
+            aria-label="Add OMERO upload tool"
+            :title="transferUnavailable(row, 'OmeroUploadImage') ?? 'Add upload tool to the active workflow'"
+            :disabled="transferUnavailable(row, 'OmeroUploadImage') !== null"
+            @click="addTransfer(row, 'OmeroUploadImage')"
+          />
+          <Button
             label="Save"
             icon="pi pi-save"
             aria-label="Save OMERO instance"
@@ -249,12 +313,16 @@ function removeRow(index: number) {
             @click="removeRow(index)"
           />
         </div>
+        <p v-if="!transferTool('OmeroDownloadDataset') || !transferTool('OmeroUploadImage')" class="empty-state">
+          Install the OMERO tools from Tools to enable the transfer actions.
+        </p>
       </section>
     </div>
 
     <p v-if="validationError" class="error-text" data-testid="omero-validation-error">
       {{ validationError }}
     </p>
+    <p v-if="transferError" class="error-text" role="alert">{{ transferError }}</p>
 
     <Button
       label="Add instance"

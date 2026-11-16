@@ -580,6 +580,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/execution/output-templates/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Output Templates
+         * @description Check a correction without changing its graph, cache, or execution.
+         */
+        post: operations["check_output_templates_api_v1_execution_output_templates_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/execution/stop": {
         parameters: {
             query?: never;
@@ -1018,6 +1038,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-drafts/{workflow_id}/rebind-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebind Workflow Draft Versions */
+        post: operations["rebind_workflow_draft_versions_api_v1_workflow_drafts__workflow_id__rebind_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -1047,6 +1084,40 @@ export interface paths {
         get: operations["workflow_format_status_api_v1_workflows_format_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/identity-migrations/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Workflow Identity Migrations */
+        post: operations["acknowledge_workflow_identity_migrations_api_v1_workflows_identity_migrations_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/identity-copies/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Workflow Identity Copy */
+        post: operations["resolve_workflow_identity_copy_api_v1_workflows_identity_copies_resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1207,6 +1278,23 @@ export interface paths {
         put?: never;
         /** Export Latest Workflow Results */
         post: operations["export_latest_workflow_results_api_v1_workflows__name__exports_latest_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/exports/successful-run-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Successful Run Results */
+        post: operations["export_successful_run_results_api_v1_workflows__name__exports_successful_run_results_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2711,7 +2799,7 @@ export interface components {
             /** Execution Id */
             execution_id: string;
             /** Workflow Id */
-            workflow_id: string;
+            workflow_id?: string | null;
             /** Draft Revision */
             draft_revision?: number | null;
             /**
@@ -2928,6 +3016,7 @@ export interface components {
              * @default true
              */
             terminal: boolean;
+            output_planning_report?: components["schemas"]["OutputPlanningReport"] | null;
         };
         /** FieldInputPort */
         FieldInputPort: {
@@ -2953,6 +3042,16 @@ export interface components {
             /** Workflow Name */
             workflow_name?: string | null;
             result_identity?: components["schemas"]["ResultArtifactIdentity"] | null;
+        };
+        /** FileGroupSchema */
+        FileGroupSchema: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "per_row" | "once" | "by";
+            /** Keys */
+            keys?: string[];
         };
         /** FolderCreate */
         FolderCreate: {
@@ -4104,6 +4203,114 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** OutputFileDeclaration */
+        OutputFileDeclaration: {
+            /**
+             * Output Role
+             * @enum {string}
+             */
+            output_role: "exact" | "base" | "reference";
+            file_group?: components["schemas"]["FileGroupSchema"] | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /** OutputPlanningConflict */
+        OutputPlanningConflict: {
+            /** Path */
+            path: string;
+            /** Members */
+            members: components["schemas"]["OutputPlanningMember"][];
+            /** Total Members */
+            total_members: number;
+        };
+        /** OutputPlanningField */
+        OutputPlanningField: {
+            /** Field */
+            field: string;
+            /** Template */
+            template: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "exact";
+            group: components["schemas"]["FileGroupSchema"];
+            /** Description */
+            description: string;
+        };
+        /** OutputPlanningMember */
+        OutputPlanningMember: {
+            /** Field */
+            field: string;
+            /** Row Position */
+            row_position: number | null;
+            /** Row Index */
+            row_index: string | null;
+            /** Group Index */
+            group_index: number;
+            /** Group Key */
+            group_key?: {
+                [key: string]: string | number | boolean | null;
+            };
+            /** Parts */
+            parts?: components["schemas"]["TemplateExpansionPart"][];
+        };
+        /** OutputPlanningReport */
+        OutputPlanningReport: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "output_path_collision" | "output_group_destination_mismatch";
+            /** Node Id */
+            node_id: string;
+            /** Detail */
+            detail: string;
+            /** Fields */
+            fields: components["schemas"]["OutputPlanningField"][];
+            /** Conflicts */
+            conflicts: components["schemas"]["OutputPlanningConflict"][];
+            /** Total Conflicts */
+            total_conflicts: number;
+            /** Total Owners */
+            total_owners: number;
+            /** Suggested Templates */
+            suggested_templates?: {
+                [key: string]: string;
+            };
+            /**
+             * Correction Available
+             * @default false
+             */
+            correction_available: boolean;
+            /** Correction Unavailable Reason */
+            correction_unavailable_reason?: string | null;
+        };
+        /** OutputTemplateCheckRequest */
+        OutputTemplateCheckRequest: {
+            /** Execution Id */
+            execution_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision: number;
+            /** Node Id */
+            node_id: string;
+            /** Templates */
+            templates: {
+                [key: string]: string;
+            };
+        };
+        /** OutputTemplateCheckResponse */
+        OutputTemplateCheckResponse: {
+            /** Valid */
+            valid: boolean;
+            /** Reports */
+            reports?: components["schemas"]["OutputPlanningReport"][];
+        };
         /** OutputViewConfig */
         OutputViewConfig: {
             /**
@@ -4536,7 +4743,7 @@ export interface components {
          * SettingsResponse
          * @description ``GET``/``PATCH`` /settings response wrapper.
          *
-         *     Adds the resolved tool-store path and effective latest-output view.
+         *     Adds resolved workspace/tool-store paths and the effective latest-output view.
          */
         SettingsResponse: {
             /**
@@ -4623,6 +4830,8 @@ export interface components {
             workspaces_root?: string | null;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
+            /** Resolved Workspace Path */
+            resolved_workspace_path?: string | null;
             /**
              * Latest Output Effective Mode
              * @enum {string}
@@ -4658,6 +4867,18 @@ export interface components {
              * @default false
              */
             affected_binding: boolean;
+        };
+        /** TemplateExpansionPart */
+        TemplateExpansionPart: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "literal" | "token";
+            /** Text */
+            text: string;
+            /** Value */
+            value: string;
         };
         /** ToolCreate */
         ToolCreate: {
@@ -4766,6 +4987,13 @@ export interface components {
              */
             outputs: {
                 [key: string]: unknown;
+            };
+            /**
+             * Output File Declarations
+             * @default {}
+             */
+            output_file_declarations: {
+                [key: string]: components["schemas"]["OutputFileDeclaration"];
             };
             /** Environment */
             environment?: {
@@ -4973,6 +5201,8 @@ export interface components {
             node_tools?: {
                 [key: string]: components["schemas"]["ToolMetadata"];
             };
+            /** Output Planning Warnings */
+            output_planning_warnings?: components["schemas"]["OutputPlanningReport"][];
         };
         /** ViewerFavorite */
         ViewerFavorite: {
@@ -5123,6 +5353,10 @@ export interface components {
             display_name?: string | null;
             /** Description */
             description?: string | null;
+            /** Expected Workspace Path */
+            expected_workspace_path?: string | null;
+            /** Expected Parent Path */
+            expected_parent_path?: string | null;
         };
         /**
          * WorkflowDeleteResponse
@@ -5237,6 +5471,20 @@ export interface components {
              * @default true
              */
             validate: boolean;
+        };
+        /**
+         * WorkflowDraftRebindRequest
+         * @description Replace package versions in the accepted draft at an expected revision.
+         */
+        WorkflowDraftRebindRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Updated By
+             * @default frontend
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
         };
         /**
          * WorkflowDraftResetRequest
@@ -5369,6 +5617,56 @@ export interface components {
             notices?: components["schemas"]["WorkflowFormatNotice"][];
             /** Pending Plan Id */
             pending_plan_id?: string | null;
+            /** Identity Migrations */
+            identity_migrations?: components["schemas"]["WorkflowIdentityMigration"][];
+            /** Identity Migration Id */
+            identity_migration_id?: string | null;
+            /** Workspace Path */
+            workspace_path?: string | null;
+            /** Identity Conflicts */
+            identity_conflicts?: components["schemas"]["WorkflowIdentityConflict"][];
+        };
+        /** WorkflowIdentityConflict */
+        WorkflowIdentityConflict: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Copies */
+            copies: components["schemas"]["WorkflowIdentityCopy"][];
+        };
+        /** WorkflowIdentityCopy */
+        WorkflowIdentityCopy: {
+            /** Relative Path */
+            relative_path: string;
+            /** Document Hash */
+            document_hash: string;
+        };
+        /** WorkflowIdentityCopyResolve */
+        WorkflowIdentityCopyResolve: {
+            /** Relative Path */
+            relative_path: string;
+            /** Expected Workflow Id */
+            expected_workflow_id: string;
+            /** Expected Document Hash */
+            expected_document_hash: string;
+        };
+        /**
+         * WorkflowIdentityMigration
+         * @description A migration-only receipt for recovering a former path-owned browser draft.
+         */
+        WorkflowIdentityMigration: {
+            /** Old Path */
+            old_path: string;
+            /** Identity Generation */
+            identity_generation: number;
+            /** Workflow Id */
+            workflow_id: string;
+        };
+        /** WorkflowIdentityMigrationAck */
+        WorkflowIdentityMigrationAck: {
+            /** Migration Id */
+            migration_id: string;
+            /** Entries */
+            entries: components["schemas"]["WorkflowIdentityMigration"][];
         };
         /**
          * WorkflowImportResponse
@@ -5388,9 +5686,11 @@ export interface components {
          */
         WorkflowInfo: {
             /** Id */
-            id?: string | null;
+            id: string;
             /** Name */
             name: string;
+            /** Relative Path */
+            relative_path: string;
             /**
              * Folder
              * @default
@@ -5799,6 +6099,7 @@ export type ExposeWorkflowOutputOperation = components['schemas']['ExposeWorkflo
 export type FailureDiagnosticSnapshot = components['schemas']['FailureDiagnosticSnapshot'];
 export type FieldInputPort = components['schemas']['FieldInputPort'];
 export type FijiOpenRequest = components['schemas']['FijiOpenRequest'];
+export type FileGroupSchema = components['schemas']['FileGroupSchema'];
 export type FolderCreate = components['schemas']['FolderCreate'];
 export type FolderUpdate = components['schemas']['FolderUpdate'];
 export type GraphState = components['schemas']['GraphState'];
@@ -5867,6 +6168,13 @@ export type NodeResourceOverrides = components['schemas']['NodeResourceOverrides
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
 export type ObservationSnapshot = components['schemas']['ObservationSnapshot'];
+export type OutputFileDeclaration = components['schemas']['OutputFileDeclaration'];
+export type OutputPlanningConflict = components['schemas']['OutputPlanningConflict'];
+export type OutputPlanningField = components['schemas']['OutputPlanningField'];
+export type OutputPlanningMember = components['schemas']['OutputPlanningMember'];
+export type OutputPlanningReport = components['schemas']['OutputPlanningReport'];
+export type OutputTemplateCheckRequest = components['schemas']['OutputTemplateCheckRequest'];
+export type OutputTemplateCheckResponse = components['schemas']['OutputTemplateCheckResponse'];
 export type OutputViewConfig = components['schemas']['OutputViewConfig'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
@@ -5899,6 +6207,7 @@ export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOpera
 export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type SetupScriptDescription = components['schemas']['SetupScriptDescription'];
 export type SourceDestructiveEffect = components['schemas']['SourceDestructiveEffect'];
+export type TemplateExpansionPart = components['schemas']['TemplateExpansionPart'];
 export type ToolCreate = components['schemas']['ToolCreate'];
 export type ToolCreateResponse = components['schemas']['ToolCreateResponse'];
 export type ToolDeleteResponse = components['schemas']['ToolDeleteResponse'];
@@ -5932,6 +6241,7 @@ export type WorkflowDraftOperationScope = components['schemas']['WorkflowDraftOp
 export type WorkflowDraftOperationValidationResponse = components['schemas']['WorkflowDraftOperationValidationResponse'];
 export type WorkflowDraftOperationsRequest = components['schemas']['WorkflowDraftOperationsRequest'];
 export type WorkflowDraftPutRequest = components['schemas']['WorkflowDraftPutRequest'];
+export type WorkflowDraftRebindRequest = components['schemas']['WorkflowDraftRebindRequest'];
 export type WorkflowDraftResetRequest = components['schemas']['WorkflowDraftResetRequest'];
 export type WorkflowDraftResponse = components['schemas']['WorkflowDraftResponse'];
 export type WorkflowEmbeddingRequest = components['schemas']['WorkflowEmbeddingRequest'];
@@ -5943,6 +6253,11 @@ export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate']
 export type WorkflowFormatMigrationApply = components['schemas']['WorkflowFormatMigrationApply'];
 export type WorkflowFormatNotice = components['schemas']['WorkflowFormatNotice'];
 export type WorkflowFormatStatus = components['schemas']['WorkflowFormatStatus'];
+export type WorkflowIdentityConflict = components['schemas']['WorkflowIdentityConflict'];
+export type WorkflowIdentityCopy = components['schemas']['WorkflowIdentityCopy'];
+export type WorkflowIdentityCopyResolve = components['schemas']['WorkflowIdentityCopyResolve'];
+export type WorkflowIdentityMigration = components['schemas']['WorkflowIdentityMigration'];
+export type WorkflowIdentityMigrationAck = components['schemas']['WorkflowIdentityMigrationAck'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
 export type WorkflowInput = components['schemas']['WorkflowInput'];
@@ -7120,6 +7435,39 @@ export interface operations {
             };
         };
     };
+    check_output_templates_api_v1_execution_output_templates_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutputTemplateCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputTemplateCheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stop_execution_api_v1_execution_stop_post: {
         parameters: {
             query?: never;
@@ -8201,6 +8549,59 @@ export interface operations {
             };
         };
     };
+    rebind_workflow_draft_versions_api_v1_workflow_drafts__workflow_id__rebind_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftRebindRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftLockedResponse"];
+                };
+            };
+        };
+    };
     list_workflows_api_v1_workflows_get: {
         parameters: {
             query?: never;
@@ -8270,6 +8671,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+        };
+    };
+    acknowledge_workflow_identity_migrations_api_v1_workflows_identity_migrations_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowIdentityMigrationAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFormatStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_workflow_identity_copy_api_v1_workflows_identity_copies_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowIdentityCopyResolve"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8660,6 +9127,37 @@ export interface operations {
         };
     };
     export_latest_workflow_results_api_v1_workflows__name__exports_latest_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_successful_run_results_api_v1_workflows__name__exports_successful_run_results_post: {
         parameters: {
             query?: never;
             header?: never;

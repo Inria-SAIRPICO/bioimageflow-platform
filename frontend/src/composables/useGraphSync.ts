@@ -38,6 +38,7 @@ export interface CanvasScopedGraphSyncOptions {
   descriptor: CanvasSessionDescriptor
   getWorkflowId: () => string | null
   nestedSnapshot?: {
+    workspacePath?: string
     initialSnapshot: NestedWorkflowSnapshotResponse
     onAccepted?: (snapshot: NestedWorkflowSnapshotResponse) => void
   }
@@ -150,13 +151,14 @@ function serializeEdge(e: any): Edge {
 }
 
 /**
- * Complete one serialized graph with the declared optional v2 viewer fields.
+ * Complete one serialized graph with declared optional resource and viewer fields.
  *
  * The workflow API serializes declared optional fields explicitly, and the
  * canvas adopts the persisted graph it receives back, so a document that
- * omitted an empty viewer addition would leave client and server holding two
- * spellings of the same content.  Absent additions become their declared empty
- * value and existing ones are preserved, recursively for embedded workflows.
+ * omitted inherited resource fields or an empty viewer addition would leave
+ * client and server holding two spellings of the same content. Absent fields
+ * become their declared null/empty value and existing ones are preserved,
+ * recursively for embedded workflows.
  */
 function completeGraphWireForm(graph: GraphState): GraphState {
   return {
@@ -167,7 +169,14 @@ function completeGraphWireForm(graph: GraphState): GraphState {
           viewer_additions: deepCloneJson(node.viewer_additions ?? {}),
           workflow: completeGraphWireForm(node.workflow),
         }
-      : { ...node, viewer_additions: deepCloneJson(node.viewer_additions ?? {}) }),
+      : {
+          ...node,
+          resources: {
+            cpu: null, gpu: null, memory: null, gpu_memory: null, max_concurrent: null,
+            ...deepCloneJson(node.resources ?? {}),
+          },
+          viewer_additions: deepCloneJson(node.viewer_additions ?? {}),
+        }),
     interface: {
       inputs: deepCloneJson(graph.interface.inputs),
       outputs: graph.interface.outputs.map(output => ({
@@ -282,6 +291,7 @@ function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSy
       resource = createNestedSnapshotPersistence({
         canvasId: options.descriptor.canvasId,
         initialSnapshot: options.nestedSnapshot.initialSnapshot,
+        workspacePath: options.nestedSnapshot.workspacePath,
         onAccepted: options.nestedSnapshot.onAccepted,
       })
       retainedNestedSnapshotResources.set(sessionId, resource)

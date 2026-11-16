@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import OmeroSection from '@/components/panels/sections/OmeroSection.vue'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
+import type { ToolMetadata, OmeroInstanceResponse } from '@/api/types'
+import type { CanvasCommandsApi } from '@/composables/useCanvasCommands'
+
+const canvasCommands = vi.hoisted(() => ({
+  addToolNode: vi.fn<CanvasCommandsApi['addToolNode']>(() => 'omero_1'),
+  canAddToolNode: vi.fn(() => true),
+}))
+vi.mock('@/composables/useCanvasCommands', () => ({ useCanvasCommands: () => canvasCommands }))
 
 const confirmRequire = vi.hoisted(() => vi.fn((options: { accept: () => void }) => {
   options.accept()
@@ -26,10 +36,10 @@ const NumberStub = defineComponent({
 })
 
 const ButtonStub = defineComponent({
-  props: { label: String, ariaLabel: String },
+  props: { label: String, ariaLabel: String, disabled: Boolean },
   emits: ['click'],
   template:
-    '<button :aria-label="ariaLabel || label" @click="$emit(\'click\')">{{ label || ariaLabel }}</button>',
+    '<button :disabled="disabled" :aria-label="ariaLabel || label" @click="$emit(\'click\')">{{ label || ariaLabel }}</button>',
 })
 
 const TagStub = defineComponent({
@@ -51,7 +61,7 @@ const baseSettings = {
   resolved_tool_store_path: '/tools',
 }
 
-function mountSection(instances = baseSettings.omero_instances) {
+function mountSection(instances: OmeroInstanceResponse[] = baseSettings.omero_instances) {
   return mount(OmeroSection, {
     props: {
       modelValue: {
@@ -73,7 +83,10 @@ function mountSection(instances = baseSettings.omero_instances) {
 
 describe('OmeroSection', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     confirmRequire.mockClear()
+    canvasCommands.addToolNode.mockReset().mockReturnValue('omero_1')
+    canvasCommands.canAddToolNode.mockReset().mockReturnValue(true)
   })
 
   it('shows an empty state before any instances are configured', () => {
@@ -202,5 +215,75 @@ describe('OmeroSection', () => {
     expect(wrapper.emitted('update:field')?.[0]).toEqual([
       { field: 'omero_instances', value: [] },
     ])
+  })
+
+  const savedInstance = {
+    name: 'Prod', host: 'omero.example.com', port: 4064, username: 'scientist', password_stored: true,
+  }
+  function installTools(packageName = 'bioimageflow_omero_tools') {
+    useToolRegistryStore().tools = ['OmeroDownloadDataset', 'OmeroUploadImage'].map(name => ({
+      name, display_name: name, package: packageName, package_version: '0.2.0', source_kind: 'package',
+      inputs: {}, outputs: {},
+    } as ToolMetadata))
+  }
+
+  it('adds transfer tools with only saved connection fields and exact installed bindings', async () => {
+    installTools()
+    const wrapper = mountSection([savedInstance])
+    for (const [action, tool] of [['download', 'OmeroDownloadDataset'], ['upload', 'OmeroUploadImage']]) {
+      await wrapper.get(`button[aria-label="Add OMERO ${action} tool"]`).trigger('click')
+      expect(canvasCommands.addToolNode).toHaveBeenLastCalledWith(tool, {
+        host: savedInstance.host, port: 4064, username: 'scientist',
+      }, {
+        tool_module: 'bioimageflow_omero_tools.omero', tool_class: tool,
+        tool_package: 'bioimageflow_omero_tools', tool_package_version: '0.2.0',
+      })
+    }
+    expect(wrapper.emitted('update:field')).toBeUndefined()
+    const captured = canvasCommands.addToolNode.mock.calls[0]
+    await wrapper.setProps({ modelValue: { ...baseSettings, omero_instances: [{ ...savedInstance, host: 'later.example.com' }] } })
+    expect(captured[1]).toEqual({ host: 'omero.example.com', port: 4064, username: 'scientist' })
+    expect(JSON.stringify(canvasCommands.addToolNode.mock.calls)).not.toContain('password')
+  })
+
+  it.each(['Host', 'Port', 'Username', 'Password'])('refuses transfers while %s has an unsaved edit', async field => {
+    installTools()
+    const wrapper = mountSection([savedInstance])
+    await wrapper.get(`input[aria-label="${field}"]`).setValue(field === 'Port' ? '4065' : 'unsaved-secret-or-value')
+    for (const action of ['download', 'upload']) {
+      const button = wrapper.get(`button[aria-label="Add OMERO ${action} tool"]`)
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    expect(canvasCommands.addToolNode).not.toHaveBeenCalled()
+    expect(wrapper.emitted('update:field')).toBeUndefined()
+  })
+
+  it('keeps new and duplicated cards disabled until settings accept them', async () => {
+    installTools()
+    const wrapper = mountSection([savedInstance])
+    await wrapper.get('button[aria-label="Duplicate OMERO instance"]').trigger('click')
+    await wrapper.get('[data-testid="omero-add-button"]').trigger('click')
+    for (const index of [1, 2]) {
+      expect(wrapper.get(`[data-testid="omero-card-${index}"] button[aria-label="Add OMERO download tool"]`).attributes('disabled')).toBeDefined()
+    }
+    expect(canvasCommands.addToolNode).not.toHaveBeenCalled()
+  })
+
+  it('requires a writable active canvas and exact first-party catalog tools', async () => {
+    installTools('unrelated-package')
+    const wrapper = mountSection([savedInstance])
+    expect(wrapper.get('button[aria-label="Add OMERO download tool"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Install the OMERO tools from Tools')
+    wrapper.unmount()
+    installTools()
+    canvasCommands.canAddToolNode.mockReturnValue(false)
+    const unavailable = mountSection([savedInstance])
+    for (const action of ['download', 'upload']) {
+      const button = unavailable.get(`button[aria-label="Add OMERO ${action} tool"]`)
+      expect(button.attributes('disabled')).toBeDefined()
+      await button.trigger('click')
+    }
+    expect(canvasCommands.addToolNode).not.toHaveBeenCalled()
   })
 })

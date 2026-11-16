@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
@@ -92,6 +93,7 @@ class ExecutionCompleteMessage(_MessageBase):
     node_statuses: dict[str, Any]
     planned_node_ids: list[str] = Field(default_factory=list)
     planned_node_names: dict[str, str] = Field(default_factory=dict)
+    output_planning_reports: list[OutputPlanningReport] = Field(default_factory=list)
     execution_id: str
     workflow_id: str
     draft_revision: int | None = None
@@ -158,6 +160,23 @@ class WorkflowDraftChangedMessage(_MessageBase):
     updated_by: DraftWriter
     updated_at: str
     dirty_against_saved: bool
+    workspace_path: str | None = None
+
+
+class WorkflowTreeChangedMessage(_MessageBase):
+    type: Literal["workflow_tree_changed"] = "workflow_tree_changed"
+    action: str
+    workflow_id: str | None = None
+    identity_generation: int | None = None
+    relative_path: str | None = None
+    workspace_path: str | None = None
+
+
+class ActiveWorkflowChangedMessage(_MessageBase):
+    type: Literal["active_workflow_changed"] = "active_workflow_changed"
+    workflow_id: str
+    updated_by: str
+    workspace_path: str | None = None
 
 
 class AckMessage(_MessageBase):
@@ -197,6 +216,8 @@ ServerMessage = Annotated[
         PackageInstallMessage,
         EnvironmentStatusMessage,
         WorkflowDraftChangedMessage,
+        WorkflowTreeChangedMessage,
+        ActiveWorkflowChangedMessage,
         AckMessage,
         ErrorMessage,
     ],
@@ -226,4 +247,6 @@ __all__ = [
     "ToolReloadMessage",
     "ToolRemovedMessage",
     "WorkflowDraftChangedMessage",
+    "WorkflowTreeChangedMessage",
+    "ActiveWorkflowChangedMessage",
 ]

@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
 
+import pytest
 import yaml
 
 
@@ -13,6 +15,26 @@ assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+@pytest.mark.parametrize("step_name", ["Full release validation", "Documentation validation"])
+def test_release_logging_preserves_validation_failure(tmp_path: Path, step_name: str) -> None:
+    workflow = yaml.safe_load(
+        (SCRIPT.parents[2] / ".github/workflows/release-validation.yml").read_text()
+    )
+    step = next(
+        item for item in workflow["jobs"]["certification"]["steps"]
+        if item.get("name") == step_name
+    )
+    (tmp_path / "scripts").mkdir()
+    command = tmp_path / "scripts/test"
+    command.write_text("#!/usr/bin/env bash\nexit 17\n")
+    command.chmod(0o755)
+    (tmp_path / ".ci").mkdir()
+
+    result = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=tmp_path, capture_output=True)
+
+    assert result.returncode == 17, result.stderr.decode()
 
 
 def test_docs_only_selects_documentation() -> None:

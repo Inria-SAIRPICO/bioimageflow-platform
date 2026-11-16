@@ -24,7 +24,7 @@ env:
 jobs:
   certification:
     name: Full local release certification
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: Check out the exact release candidate
@@ -48,10 +48,13 @@ jobs:
         run: bunx playwright install --with-deps chromium firefox
       - name: Full release validation
         run: |
+          set -o pipefail
           mkdir -p .ci
           scripts/test full 2>&1 | tee .ci/release-full.log
       - name: Documentation validation
-        run: scripts/test check docs 2>&1 | tee .ci/release-docs.log
+        run: |
+          set -o pipefail
+          scripts/test check docs 2>&1 | tee .ci/release-docs.log
       - name: Retain release evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

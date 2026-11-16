@@ -66,6 +66,7 @@ const graph = makeGraph({
 })
 
 const tool = {
+  output_file_declarations: {},
   name: 'files',
   folder: '',
   display_name: 'Files',
@@ -120,6 +121,8 @@ describe('parameter edit followed immediately by Run', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useWorkflowStore().current = {
+      id: 'parameter_edit',
+      relative_path: 'parameter_edit',
       name: 'parameter_edit',
       folder: '',
       display_name: 'Parameter edit',

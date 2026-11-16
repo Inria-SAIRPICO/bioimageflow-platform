@@ -35,6 +35,10 @@ from bioimageflow_server.services.workflow_exports import (
 )
 
 
+WORKFLOW_ID = "91ad482c-2037-4372-b43e-f2ad2f9da58b"
+WORKFLOW_RELATIVE_PATH = "folder/wf"
+
+
 class _Store:
     def __init__(self, root: Path, *, archive: bytes = b"workflow archive") -> None:
         self.root_dir = root / "workspace" / "workflows"
@@ -44,7 +48,7 @@ class _Store:
 
     @contextmanager
     def workflow_mutation(self, workflow_id: str):
-        assert workflow_id == "folder/wf"
+        assert workflow_id == WORKFLOW_ID
         assert not self.locked
         self.locked = True
         try:
@@ -52,8 +56,12 @@ class _Store:
         finally:
             self.locked = False
 
+    def relative_path_for_workflow(self, workflow_id: str) -> str:
+        assert workflow_id == WORKFLOW_ID
+        return WORKFLOW_RELATIVE_PATH
+
     def workflow_dir(self, workflow_id: str) -> Path:
-        return self.root_dir.joinpath(*workflow_id.split("/"))
+        return self.root_dir.joinpath(*self.relative_path_for_workflow(workflow_id).split("/"))
 
     def get_storage_path(self, workflow_id: str) -> Path:
         assert self.locked
@@ -71,7 +79,7 @@ class _Store:
 @pytest.fixture
 def store(tmp_path: Path) -> _Store:
     result = _Store(tmp_path)
-    workflow_dir = result.workflow_dir("folder/wf")
+    workflow_dir = result.workflow_dir(WORKFLOW_ID)
     workflow_dir.mkdir(parents=True)
     (workflow_dir / "workflow.json").write_text("{}")
     return result
@@ -168,7 +176,7 @@ def _seed_canonical_results(storage_path: Path) -> tuple[str, str]:
     node_id = "Node_1"
     storage.write_run_metadata(
         run_id,
-        workflow_identity="folder/wf",
+        workflow_identity=WORKFLOW_ID,
         engine="direct:parallel",
         status="succeeded",
         target_nodes=[node_id],
@@ -217,7 +225,7 @@ def test_latest_results_zip_contains_copies_and_provenance(
         _copying_export,
     )
 
-    prepared = WorkflowExportService(store).prepare_latest_results("folder/wf")  # type: ignore[arg-type]
+    prepared = WorkflowExportService(store).prepare_latest_results(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert prepared.filename.startswith("folder--wf-")
     with zipfile.ZipFile(prepared.path) as archive:
@@ -240,13 +248,13 @@ def test_real_folder_export_materializes_owned_asset_and_provenance_as_copies(
     store: _Store,
     tmp_path: Path,
 ) -> None:
-    storage_path = store.workflow_dir("folder/wf") / "results"
+    storage_path = store.workflow_dir(WORKFLOW_ID) / "results"
     node_id, _ = _seed_canonical_results(storage_path)
     destination_parent = tmp_path / "exports"
     destination_parent.mkdir()
 
     exported = WorkflowExportService(store).export_latest_results_folder(  # type: ignore[arg-type]
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -277,7 +285,7 @@ def test_latest_results_empty_export_cleans_temporary_root(
     )
 
     with pytest.raises(WorkflowExportError) as caught:
-        WorkflowExportService(store).prepare_latest_results("folder/wf")  # type: ignore[arg-type]
+        WorkflowExportService(store).prepare_latest_results(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert caught.value.code == "results_not_available"
     assert not cleanup.exists()
@@ -303,7 +311,7 @@ def test_latest_results_zip_failure_cleans_temporary_root(
     )
 
     with pytest.raises(OSError, match="zip failed"):
-        WorkflowExportService(store).prepare_latest_results("folder/wf")  # type: ignore[arg-type]
+        WorkflowExportService(store).prepare_latest_results(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert not cleanup.exists()
 
@@ -329,7 +337,7 @@ def test_bundle_pins_latest_success_once_and_writes_manifest(
         export,
     )
 
-    prepared = WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+    prepared = WorkflowExportService(store).prepare_workflow_run_bundle(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert storage.latest_success_run_id.call_count == 1
     assert calls == [
@@ -354,7 +362,7 @@ def test_bundle_pins_latest_success_once_and_writes_manifest(
         assert manifest == {
             "schema": RESULTS_BUNDLE_SCHEMA,
             "kind": "workflow-with-results",
-            "workflow_id": "folder/wf",
+            "workflow_id": WORKFLOW_ID,
             "workflow": {
                 "archive": nested,
                 "sha256": hashlib.sha256(store.archive).hexdigest(),
@@ -375,7 +383,7 @@ def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_sourc
 ) -> None:
     from bioimageflow_server.services import workflow_exports
 
-    storage_path = store.workflow_dir("folder/wf") / "results"
+    storage_path = store.workflow_dir(WORKFLOW_ID) / "results"
     node_id, run_id = _seed_canonical_results(storage_path)
     source_files = {
         path.relative_to(storage_path): path.read_bytes()
@@ -392,7 +400,7 @@ def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_sourc
     )
 
     with pytest.raises(OSError, match="bundle zip failed"):
-        WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+        WorkflowExportService(store).prepare_workflow_run_bundle(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert not failed_root.exists()
     assert {
@@ -404,7 +412,7 @@ def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_sourc
     monkeypatch.setattr(workflow_exports, "_zip_tree", real_zip_tree)
     retry_root = tmp_path / "retry-bundle"
     monkeypatch.setattr(workflow_exports, "_temporary_root", lambda: retry_root)
-    prepared = WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+    prepared = WorkflowExportService(store).prepare_workflow_run_bundle(WORKFLOW_ID)  # type: ignore[arg-type]
     with zipfile.ZipFile(prepared.path) as archive:
         manifest = json.loads(archive.read(RESULTS_BUNDLE_MANIFEST))
         assert manifest["results"]["run_id"] == run_id
@@ -418,7 +426,9 @@ def test_bundle_materialization_failure_cleans_staging_and_retry_preserves_sourc
     } == source_files
 
 
+@pytest.mark.parametrize("method", ["prepare_workflow_run_bundle", "prepare_successful_run_results"])
 def test_bundle_without_successful_run_is_unavailable(
+    method: str,
     store: _Store,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -436,7 +446,7 @@ def test_bundle_without_successful_run_is_unavailable(
     )
 
     with pytest.raises(WorkflowExportError) as caught:
-        WorkflowExportService(store).prepare_workflow_run_bundle("folder/wf")  # type: ignore[arg-type]
+        getattr(WorkflowExportService(store), method)(WORKFLOW_ID)  # type: ignore[arg-type]
 
     assert caught.value.code == "results_not_available"
     assert not cleanup.exists()
@@ -456,7 +466,7 @@ def test_folder_export_marks_target_and_only_replaces_matching_export(
     service = WorkflowExportService(store)  # type: ignore[arg-type]
 
     first = service.export_latest_results_folder(
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -465,18 +475,18 @@ def test_folder_export_marks_target_and_only_replaces_matching_export(
     marker = first.destination / OUTPUT_EXPORT_MARKER
     assert json.loads(marker.read_text()) == {
         "schema": OUTPUT_EXPORT_MARKER_SCHEMA,
-        "workflow_id": "folder/wf",
+        "workflow_id": WORKFLOW_ID,
     }
     with pytest.raises(WorkflowExportError) as exists:
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(destination_parent),
             replace=False,
         )
     assert exists.value.code == "export_destination_exists"
 
     replaced = service.export_latest_results_folder(
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=True,
     )
@@ -485,7 +495,7 @@ def test_folder_export_marks_target_and_only_replaces_matching_export(
     marker.write_text('{"workflow_id": "another"}')
     with pytest.raises(WorkflowExportError) as unsafe:
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(destination_parent),
             replace=True,
         )
@@ -505,7 +515,7 @@ def test_empty_folder_export_preserves_previous_marked_export(
         _copying_export,
     )
     previous = service.export_latest_results_folder(
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -518,7 +528,7 @@ def test_empty_folder_export_preserves_previous_marked_export(
 
     with pytest.raises(WorkflowExportError) as caught:
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(destination_parent),
             replace=True,
         )
@@ -541,7 +551,7 @@ def test_marker_failure_preserves_previous_export(
         _copying_export,
     )
     previous = service.export_latest_results_folder(
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -554,7 +564,7 @@ def test_marker_failure_preserves_previous_export(
 
     with pytest.raises(OSError, match="marker failed"):
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(destination_parent),
             replace=True,
         )
@@ -576,7 +586,7 @@ def test_install_failure_rolls_back_previous_export(
         _copying_export,
     )
     previous = service.export_latest_results_folder(
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -596,7 +606,7 @@ def test_install_failure_rolls_back_previous_export(
 
     with pytest.raises(OSError, match="install failed"):
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(destination_parent),
             replace=True,
         )
@@ -624,7 +634,7 @@ def test_folder_export_allows_home_descendant_outside_workspace(
     )
 
     exported = WorkflowExportService(store).export_latest_results_folder(  # type: ignore[arg-type]
-        "folder/wf",
+        WORKFLOW_ID,
         destination_parent=str(destination_parent),
         replace=False,
     )
@@ -644,7 +654,7 @@ def test_folder_export_rejects_symlink_parent_and_target(
 
     with pytest.raises(WorkflowExportError) as parent_error:
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(linked_parent),
             replace=False,
         )
@@ -654,7 +664,7 @@ def test_folder_export_rejects_symlink_parent_and_target(
     target.symlink_to(tmp_path / "somewhere", target_is_directory=True)
     with pytest.raises(WorkflowExportError) as target_error:
         service.export_latest_results_folder(
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=str(real_parent),
             replace=True,
         )
@@ -668,7 +678,7 @@ def test_folder_export_rejects_unsafe_parent(
 ) -> None:
     with pytest.raises(WorkflowExportError) as caught:
         WorkflowExportService(store).export_latest_results_folder(  # type: ignore[arg-type]
-            "folder/wf",
+            WORKFLOW_ID,
             destination_parent=raw_parent,
             replace=False,
         )
@@ -677,3 +687,36 @@ def test_folder_export_rejects_unsafe_parent(
         "invalid_export_destination",
         "unsafe_export_destination",
     }
+
+
+def test_successful_run_results_are_independent_of_workflow_and_latest_projection(
+    store: _Store,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_path = store.workflow_dir(WORKFLOW_ID) / "results"
+    node_id, run_id = _seed_canonical_results(storage_path)
+    # A newer failed execution cannot redirect
+    # a successful-run export. Broken/current tool source cannot block it either.
+    storage = Storage(storage_path)
+    storage.write_run_metadata(
+        "newer-failure", workflow_identity=WORKFLOW_ID, engine="direct:parallel",
+        status="failed", target_nodes=[node_id],
+    )
+    monkeypatch.setattr(store, "export_workflow_archive", Mock(side_effect=AssertionError("compiled workflow")))
+    definition = store.workflow_dir(WORKFLOW_ID) / "workflow.json"
+    before = definition.read_bytes()
+    prepared = WorkflowExportService(store).prepare_successful_run_results(WORKFLOW_ID)  # type: ignore[arg-type]
+    try:
+        with zipfile.ZipFile(prepared.path) as archive:
+            assert not any(name.startswith("workflow/") for name in archive.namelist())
+            manifest = json.loads(archive.read(RESULTS_BUNDLE_MANIFEST))
+            assert manifest["kind"] == "results-only"
+            assert "workflow" not in manifest
+            assert manifest["results"]["run_id"] == run_id
+            prefix = f"results/runs/{run_id}/nodes/{node_id}/outputs/"
+            assert archive.read(f"{prefix}assets/mask.txt") == b"canonical asset"
+            assert json.loads(archive.read(f"{prefix}provenance.json"))["run"]["run_id"] == run_id
+        assert definition.read_bytes() == before
+        assert prepared.filename.endswith("successful-run-results.zip")
+    finally:
+        shutil.rmtree(prepared.cleanup_root)

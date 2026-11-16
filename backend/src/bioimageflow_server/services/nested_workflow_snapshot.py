@@ -22,7 +22,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedWorkflowSnapshotResponse,
 )
 from bioimageflow_server.models.validation import ValidationResult
-from bioimageflow_server.models.workflow import validate_workflow_id
+from bioimageflow_server.models.workflow import validate_workflow_id, validate_workflow_identity
 from bioimageflow_server.services.filesystem_durability import fsync_directory
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
@@ -440,6 +440,8 @@ class NestedWorkflowSnapshotService:
     def move_root_workflows(
         self,
         moves: list[RootWorkflowSnapshotMove],
+        *,
+        validate_destination: bool = True,
     ) -> list[UUID]:
         """Move retained root ownership without changing nested session identity."""
 
@@ -469,7 +471,7 @@ class NestedWorkflowSnapshotService:
 
         with self._lock:
             store = self._store()
-            for move in move_by_old_identity.values():
+            for move in move_by_old_identity.values() if validate_destination else ():
                 with store.workflow_mutation(move.new_workflow_id):
                     workflow = store.get_workflow(move.new_workflow_id)
                     if workflow.info.identity_generation != move.new_identity_generation:
@@ -556,10 +558,20 @@ class NestedWorkflowSnapshotService:
                     invalid_session_ids.add(session_id)
                     continue
                 try:
-                    if validate_workflow_id(workflow_id) != workflow_id:
+                    if validate_workflow_identity(workflow_id) != workflow_id:
                         raise ValueError("Non-canonical retained root workflow identity")
                 except ValueError:
-                    invalid_session_ids.add(session_id)
+                    # Preserve legacy ownership until the confirmed format
+                    # migration rewrites it; cleanup must never erase recovery.
+                    try:
+                        legacy_path = validate_workflow_id(workflow_id)
+                    except ValueError:
+                        invalid_session_ids.add(session_id)
+                    else:
+                        if store.has_workflow_collision(legacy_path):
+                            uncertain_workflow_ids.add(workflow_id)
+                        else:
+                            invalid_session_ids.add(session_id)
                     continue
                 if workflow_id in uncertain_workflow_ids:
                     continue

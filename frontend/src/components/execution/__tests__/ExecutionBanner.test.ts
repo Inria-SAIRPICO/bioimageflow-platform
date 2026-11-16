@@ -78,6 +78,21 @@ describe('ExecutionBanner', () => {
     expect(headline.text()).toContain('Executing')
   })
 
+  it('shows unavailable storage while continuing to observe an active execution', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    establishExecution(exec)
+    exec.applyStatusSnapshot({
+      ...EXECUTION_CONTEXT, state: 'running', last_result: null, progress: null,
+      storage_error: 'The workflow directory moved outside the application. Restore its location to recover storage.',
+    })
+    await nextTick()
+    expect(wrapper.get('[data-testid="execution-storage-error"]').text()).toContain('directory moved')
+    expect(exec.state).toBe('running')
+    expect(wrapper.get('[data-testid="execution-banner-headline"]').text()).toContain('Executing')
+    wrapper.unmount()
+  })
+
   it('shows a non-terminal starting message', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()

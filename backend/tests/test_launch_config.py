@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -86,6 +87,18 @@ def test_vite_backend_proxy_uses_ipv4_loopback() -> None:
     vite_config = (repository_root / "frontend" / "vite.config.ts").read_text()
 
     assert "const backendHttpUrl = `http://127.0.0.1:${backendPort}`" in vite_config
+
+
+def test_vscode_backend_profiles_run_independently_on_port_8008() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    text = (repository_root / ".vscode" / "launch.json").read_text()
+
+    for name in ("Backend", "Backend (local core)", "Backend-worktree"):
+        block = _launch_profile_block(text, name)
+        assert re.search(r'^\s*"preLaunchTask"\s*:', block, re.MULTILINE) is None
+        port = re.search(r'"--port",\s*"(\d+)"', block)
+        assert port is not None
+        assert port.group(1) == "8008"
 
 
 def test_packaged_launcher_uses_production_desktop_mode() -> None:

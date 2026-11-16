@@ -7,6 +7,7 @@ import {
   type WorkflowDraftResponse,
 } from '@/api/workflowDrafts'
 import type { GraphState } from '@/api/types'
+import { useSettingsStore } from '@/stores/settings'
 
 function cloneGraph(graph: GraphState): GraphState {
   return JSON.parse(JSON.stringify(graph)) as GraphState
@@ -130,15 +131,19 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     projectState(state)
   }
 
-  async function loadDraft(id: string): Promise<WorkflowDraftResponse> {
+  async function loadDraft(id: string, workspacePath?: string): Promise<WorkflowDraftResponse> {
+    const workspaceSelection = useSettingsStore().workspaceSelectionRevision
     trackWorkflow(id)
-    const response = await fetchWorkflowDraft(id)
+    const response = await fetchWorkflowDraft(id, ...(workspacePath ? [workspacePath] : []))
+    if (useSettingsStore().workspaceSelectionRevision !== workspaceSelection) {
+      throw new Error('The workspace changed while the workflow draft was loading.')
+    }
     acknowledgeAcceptedDraft(response)
     return response
   }
 
-  async function fetchLatestDraft(id: string): Promise<WorkflowDraftResponse> {
-    return fetchWorkflowDraft(id)
+  async function fetchLatestDraft(id: string, workspacePath?: string): Promise<WorkflowDraftResponse> {
+    return fetchWorkflowDraft(id, ...(workspacePath ? [workspacePath] : []))
   }
 
   async function overwriteDraftWithGraph(

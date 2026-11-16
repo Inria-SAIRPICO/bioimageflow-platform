@@ -10,7 +10,8 @@ test('custom tools create, rename, reopen and retry deletion without changing an
   const name = `Campaign${suffix}Tool`
   const renamed = `Renamed${suffix}Tool`
   const occupied = `Occupied${suffix}Tool`
-  const workflowName = `custom_tools_${suffix}`
+  const relativePath = `custom_tools_${suffix}`
+  let workflowName = ''
   const ownedNames = new Set([name, renamed, occupied])
   const catalog = async () => {
     const response = await page.request.get(`${API}/tools`)
@@ -37,9 +38,9 @@ test('custom tools create, rename, reopen and retry deletion without changing an
   })
   const openWorkflow = async () => {
     await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).click()
-    await page.getByTestId('workflow-search').fill(workflowName)
+    await page.getByTestId('workflow-search').fill(relativePath)
     await page.getByTestId(`workflow-row-${workflowName}`).dblclick()
-    await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
+    await expect(page.getByTestId('workflow-title')).toHaveText(relativePath)
   }
   const openSettings = async () => {
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
@@ -62,8 +63,9 @@ test('custom tools create, rename, reopen and retry deletion without changing an
     return result
   }
   try {
-    const creation = await page.request.post(`${API}/workflows`, { data: { name: workflowName } })
+    const creation = await page.request.post(`${API}/workflows`, { data: { name: relativePath } })
     expect(creation.status(), await creation.text()).toBe(201)
+    workflowName = (await creation.json()).id
     info = await creation.json() as WorkflowInfo
     const originalWorkflow = await readFile(info.path)
     const collision = await page.request.post(`${API}/tools`, {

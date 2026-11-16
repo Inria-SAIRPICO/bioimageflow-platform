@@ -83,7 +83,7 @@ function editingGraph(workflowName: string): GraphState {
   }
 }
 
-async function createAndOpenFixture(page: Page, workflowName: string): Promise<void> {
+async function createAndOpenFixture(page: Page, workflowName: string): Promise<string> {
   const seeded = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
   expect(seeded.ok()).toBeTruthy()
 
@@ -113,7 +113,8 @@ async function createAndOpenFixture(page: Page, workflowName: string): Promise<v
     data: { name: workflowName, display_name: workflowName },
   })
   expect(created.status()).toBe(201)
-  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+  const workflowId = (await created.json()).id as string
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowId}`, {
     data: { graph },
   })
   expect(saved.ok()).toBeTruthy()
@@ -122,12 +123,13 @@ async function createAndOpenFixture(page: Page, workflowName: string): Promise<v
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  const row = page.getByTestId(`workflow-row-${workflowName}`)
+  const row = page.getByTestId(`workflow-row-${workflowId}`)
   await expect(row).toBeVisible()
   await row.dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
   await expect(page.locator('.vue-flow__node')).toHaveCount(2)
-  await expectAcceptedDraft(page, workflowName, draft => draft.validation.valid)
+  await expectAcceptedDraft(page, workflowId, draft => draft.validation.valid)
+  return workflowId
 }
 
 async function fetchDraft(page: Page, workflowName: string): Promise<WorkflowDraftResponse> {
@@ -246,10 +248,10 @@ async function boxSelectNodes(page: Page, nodeIds: string[]): Promise<void> {
   await page.keyboard.up('Shift')
 }
 
-async function openWorkflowFromPanel(page: Page, workflowName: string): Promise<void> {
+async function openWorkflowFromPanel(page: Page, workflowName: string, workflowId: string): Promise<void> {
   await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).first().click()
   await page.getByTestId('workflow-search').fill(workflowName)
-  const row = page.getByTestId(`workflow-row-${workflowName}`)
+  const row = page.getByTestId(`workflow-row-${workflowId}`)
   await expect(row).toBeVisible()
   await row.dblclick()
   await expect(page.getByTestId('workflow-title')).toHaveText(workflowName)
@@ -277,14 +279,15 @@ async function closeWorkflowTab(
 
 test.describe('everyday node editing', () => {
   let workflowName: string
+  let workflowId: string
 
   test.beforeEach(async ({ page }) => {
     workflowName = uniqueWorkflowName()
-    await createAndOpenFixture(page, workflowName)
+    workflowId = await createAndOpenFixture(page, workflowName)
   })
 
   test.afterEach(async ({ page }) => {
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`).catch(() => undefined)
   })
 
   test('selects, toggles a multiselection, deselects, and persists bulk enablement', async ({ page }) => {
@@ -305,10 +308,10 @@ test.describe('everyday node editing', () => {
     await expect(panel.getByTestId('bulk-enable-nodes')).toBeEnabled()
     await expect(panel.locator('.node-details')).toHaveCount(0)
 
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     let draftWrites = 0
     const countDraftWrites = (request: import('@playwright/test').Request) => {
-      if (request.method() === 'PUT' && request.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)) {
+      if (request.method() === 'PUT' && request.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)) {
         draftWrites += 1
       }
     }
@@ -316,36 +319,36 @@ test.describe('everyday node editing', () => {
     await expectUndoDisabled(page)
     await panel.getByTestId('bulk-enable-nodes').click()
     await expectUndoDisabled(page)
-    const refused = await fetchDraft(page, workflowName)
+    const refused = await fetchDraft(page, workflowId)
     expect(refused.draft_revision).toBe(baseline.draft_revision)
     expect(refused.graph).toEqual(baseline.graph)
     expect(draftWrites).toBe(0)
     page.off('request', countDraftWrites)
 
-    await waitForAcceptedEdit(page, workflowName, () => panel.getByTestId('bulk-disable-nodes').click())
+    await waitForAcceptedEdit(page, workflowId, () => panel.getByTestId('bulk-disable-nodes').click())
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
     await expect(target.locator('.tool-node')).toHaveClass(/disabled/)
     await expectAcceptedDraft(
       page,
-      workflowName,
+      workflowId,
       draft => draft.graph.nodes.map(graphNode => graphNode.enabled),
       [false, false],
     )
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(source.locator('.tool-node')).not.toHaveClass(/disabled/)
     await expect(target.locator('.tool-node')).not.toHaveClass(/disabled/)
     await expectAcceptedDraft(
       page,
-      workflowName,
+      workflowId,
       draft => draft.graph.nodes.map(graphNode => graphNode.enabled),
       [true, true],
     )
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
     await expectAcceptedDraft(
       page,
-      workflowName,
+      workflowId,
       draft => draft.graph.nodes.map(graphNode => graphNode.enabled),
       [false, false],
     )
@@ -355,7 +358,7 @@ test.describe('everyday node editing', () => {
     await expect(target.locator('.tool-node')).toHaveClass(/disabled/)
     await source.click()
     await target.click({ modifiers: ['Shift'] })
-    await waitForAcceptedEdit(page, workflowName, () => panel.getByTestId('bulk-enable-nodes').click())
+    await waitForAcceptedEdit(page, workflowId, () => panel.getByTestId('bulk-enable-nodes').click())
     await expect(source.locator('.tool-node')).not.toHaveClass(/disabled/)
     await expect(target.locator('.tool-node')).not.toHaveClass(/disabled/)
 
@@ -372,14 +375,15 @@ test.describe('everyday node editing', () => {
       data: { name: inactiveWorkflowName, display_name: inactiveWorkflowName },
     })
     expect(created.status()).toBe(201)
-    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`, {
+    const inactiveWorkflowId = (await created.json()).id as string
+    expect((await page.request.put(`${API_BASE}/api/v1/workflows/${inactiveWorkflowId}`, {
       data: { graph: inactiveGraph },
     })).ok()).toBeTruthy()
 
     try {
-      const baseline = await fetchDraft(page, workflowName)
+      const baseline = await fetchDraft(page, workflowId)
       const inactiveBaseline = await page.request.get(
-        `${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`,
+        `${API_BASE}/api/v1/workflows/${inactiveWorkflowId}`,
       )
       expect(inactiveBaseline.ok()).toBeTruthy()
       const inactiveDocument = await inactiveBaseline.json()
@@ -394,43 +398,43 @@ test.describe('everyday node editing', () => {
       await expect(page.getByTestId('node-destructive-dialog')).toBeVisible()
       await page.getByTestId('node-destructive-cancel').click()
       await expect(page.getByTestId('node-destructive-dialog')).not.toBeVisible()
-      const afterCancel = await fetchDraft(page, workflowName)
+      const afterCancel = await fetchDraft(page, workflowId)
       expect(afterCancel.draft_revision).toBe(baseline.draft_revision)
       expect(afterCancel.graph).toEqual(baseline.graph)
 
       await panel.getByTestId('bulk-delete-nodes').click()
-      await waitForAcceptedEdit(page, workflowName, () => (
+      await waitForAcceptedEdit(page, workflowId, () => (
         page.getByTestId('node-destructive-confirm').click()
       ))
       await expect(page.locator('.vue-flow__node')).toHaveCount(0)
       await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-      const deleted = await fetchDraft(page, workflowName)
+      const deleted = await fetchDraft(page, workflowId)
       expect(deleted.draft_revision).toBe(baseline.draft_revision + 1)
       expect(deleted.graph.nodes).toEqual([])
       expect(deleted.graph.edges).toEqual([])
       expect(deleted.validation).toMatchObject({ valid: true, errors: [] })
 
-      await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
-      const restored = await fetchDraft(page, workflowName)
+      await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
+      const restored = await fetchDraft(page, workflowId)
       expect(restored.draft_revision).toBe(deleted.draft_revision + 1)
       expect(restored.graph).toEqual(baseline.graph)
       await expect(page.locator(`.vue-flow__edge[data-id="${EDGE_ID}"]`)).toHaveCount(1)
 
-      await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
-      const redone = await fetchDraft(page, workflowName)
+      await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+      const redone = await fetchDraft(page, workflowId)
       expect(redone.draft_revision).toBe(restored.draft_revision + 1)
       expect(redone.graph.nodes).toEqual([])
       expect(redone.graph.edges).toEqual([])
 
       await page.reload()
       await expect(page.locator('.vue-flow__node')).toHaveCount(0)
-      expect((await fetchDraft(page, workflowName)).graph).toEqual(redone.graph)
+      expect((await fetchDraft(page, workflowId)).graph).toEqual(redone.graph)
       const inactiveAfter = await page.request.get(
-        `${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`,
+        `${API_BASE}/api/v1/workflows/${inactiveWorkflowId}`,
       )
       expect(await inactiveAfter.json()).toEqual(inactiveDocument)
     } finally {
-      await page.request.delete(`${API_BASE}/api/v1/workflows/${inactiveWorkflowName}`).catch(() => undefined)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${inactiveWorkflowId}`).catch(() => undefined)
     }
   })
 
@@ -447,23 +451,23 @@ test.describe('everyday node editing', () => {
     )
     const resultBefore = await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )
     expect(resultBefore.ok()).toBeTruthy()
 
     await node(page, SOURCE_ID).click()
     await node(page, TARGET_ID).click({ modifiers: ['Shift'] })
     const panel = await openNodesPanel(page)
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
 
     await panel.getByTestId('bulk-clear-node-outputs').click()
     await page.getByTestId('node-destructive-cancel').click()
-    const afterCancel = await fetchDraft(page, workflowName)
+    const afterCancel = await fetchDraft(page, workflowId)
     expect(afterCancel.draft_revision).toBe(baseline.draft_revision)
     expect(afterCancel.graph).toEqual(baseline.graph)
     expect((await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )).ok()).toBeTruthy()
 
     const clearResponse = page.waitForResponse(response => (
@@ -474,19 +478,19 @@ test.describe('everyday node editing', () => {
     await page.getByTestId('node-destructive-confirm').click()
     expect((await clearResponse).status()).toBe(200)
     await expect(page.getByTestId('node-destructive-dialog')).not.toBeVisible()
-    const afterClear = await fetchDraft(page, workflowName)
+    const afterClear = await fetchDraft(page, workflowId)
     expect(afterClear.draft_revision).toBe(baseline.draft_revision)
     expect(afterClear.graph).toEqual(baseline.graph)
     expect((await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )).status()).toBe(404)
 
     await page.reload()
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(baseline.graph)
     expect((await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )).status()).toBe(404)
   })
 
@@ -501,7 +505,7 @@ test.describe('everyday node editing', () => {
 
     const query = async (id: string) => page.request.post(
       `${API_BASE}/api/v1/nodes/${id}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )
     const originalSource = await query(SOURCE_ID)
     const originalTarget = await query(TARGET_ID)
@@ -518,7 +522,7 @@ test.describe('everyday node editing', () => {
 
     await node(page, SOURCE_ID).click()
     const panel = await openNodesPanel(page)
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     const clearResponse = page.waitForResponse(response => (
       response.url().endsWith('/api/v1/execution/clear')
       && response.request().method() === 'POST'
@@ -535,16 +539,16 @@ test.describe('everyday node editing', () => {
     })
     await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
     await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
-    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await fetchDraft(page, workflowId)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(baseline.graph)
     expect((await query(SOURCE_ID)).status()).toBe(404)
     expect((await query(TARGET_ID)).ok()).toBeTruthy()
 
     await page.reload()
     await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
     await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
-    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await fetchDraft(page, workflowId)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(baseline.graph)
     expect((await query(SOURCE_ID)).status()).toBe(404)
     expect((await query(TARGET_ID)).ok()).toBeTruthy()
 
@@ -561,7 +565,7 @@ test.describe('everyday node editing', () => {
     expect(rerunAccepted.status()).toBe(202)
     expect(await rerunAccepted.json()).toMatchObject({
       status: 'started',
-      workflow_id: workflowName,
+      workflow_id: workflowId,
       draft_revision: baseline.draft_revision,
       execution_id: expect.any(String),
     })
@@ -579,13 +583,13 @@ test.describe('everyday node editing', () => {
       ],
       total_rows: 3,
     })
-    expect((await fetchDraft(page, workflowName)).draft_revision).toBe(baseline.draft_revision)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(baseline.graph)
+    expect((await fetchDraft(page, workflowId)).draft_revision).toBe(baseline.draft_revision)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(baseline.graph)
   })
 
   test('quarantines a corrupt selected record through GUI Clear and reruns exact rows', async ({ page }) => {
-    const siblingId = await addSeedNodeFromCatalog(page, workflowName)
-    const baseline = await fetchDraft(page, workflowName)
+    const siblingId = await addSeedNodeFromCatalog(page, workflowId)
+    const baseline = await fetchDraft(page, workflowId)
     expect(baseline.graph.nodes.map(item => item.id)).toContain(siblingId)
 
     const firstRun = page.waitForResponse(response => (
@@ -598,7 +602,7 @@ test.describe('everyday node editing', () => {
     await expect(page.getByTestId('execution-banner-headline')).toHaveText('Execution complete', { timeout: 30000 })
 
     const query = (id: string) => page.request.post(`${API_BASE}/api/v1/nodes/${id}/data/query`, {
-      data: { workflow_name: workflowName },
+      data: { workflow_name: workflowId },
     })
     const expectedRows = [
       { number: 1, label: 'one', number_plus_one: 2 },
@@ -623,7 +627,7 @@ test.describe('everyday node editing', () => {
     writeFileSync(join(source.recordDir, 'dataframe.parquet'), corruptBytes)
     writeFileSync(join(source.recordDir, 'dataframe.csv'), 'number,label\n999,stale\n')
     await page.reload()
-    const corruptDraft = await fetchDraft(page, workflowName)
+    const corruptDraft = await fetchDraft(page, workflowId)
     expect(corruptDraft.draft_revision).toBe(baseline.draft_revision)
     expect(corruptDraft.graph).toEqual(baseline.graph)
     expect(corruptDraft.validation).toMatchObject({
@@ -638,10 +642,10 @@ test.describe('everyday node editing', () => {
     await expect(panel.getByTestId('node-validation-errors')).toContainText('Record dataframe transport digest mismatch')
     expect((await query(SOURCE_ID)).status()).toBe(409)
     expect((await page.request.get(
-      `${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/csv?workflow_name=${workflowName}`,
+      `${API_BASE}/api/v1/nodes/${SOURCE_ID}/data/csv?workflow_name=${workflowId}`,
     )).status()).toBe(409)
     const blocked = await page.request.post(`${API_BASE}/api/v1/execution/run`, {
-      data: { workflow_id: workflowName, draft_revision: baseline.draft_revision },
+      data: { workflow_id: workflowId, draft_revision: baseline.draft_revision },
     })
     expect(blocked.status()).toBe(422)
     expect(await blocked.json()).toMatchObject({ errors: [{ type: 'cache_corrupt', node: SOURCE_ID }] })
@@ -663,7 +667,7 @@ test.describe('everyday node editing', () => {
     const cleared = await clearResponse
     expect(cleared.status()).toBe(200)
     expect(cleared.request().postDataJSON()).toMatchObject({
-      nodes: [SOURCE_ID], workflow_id: workflowName, draft_revision: baseline.draft_revision,
+      nodes: [SOURCE_ID], workflow_id: workflowId, draft_revision: baseline.draft_revision,
     })
     expect(await cleared.json()).toMatchObject({
       node_statuses: {
@@ -686,7 +690,7 @@ test.describe('everyday node editing', () => {
     await expect(node(page, SOURCE_ID).locator('.status-indicator')).toHaveClass(/status-unexecuted/)
     await expect(node(page, TARGET_ID).locator('.status-indicator')).toHaveClass(/status-out-of-date/)
     await expect(node(page, siblingId).locator('.status-indicator')).toHaveClass(/status-executed/)
-    const refreshed = await fetchDraft(page, workflowName)
+    const refreshed = await fetchDraft(page, workflowId)
     expect(refreshed.draft_revision).toBe(baseline.draft_revision)
     expect(refreshed.graph).toEqual(baseline.graph)
     expect(refreshed.validation.errors).toEqual([])
@@ -722,12 +726,12 @@ test.describe('everyday node editing', () => {
     )
     expect((await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )).ok()).toBeTruthy()
 
     await node(page, TARGET_ID).click()
     const panel = await openNodesPanel(page)
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     let clearRequests = 0
     page.on('request', request => {
       if (
@@ -735,7 +739,7 @@ test.describe('everyday node editing', () => {
         && request.method() === 'POST'
       ) clearRequests += 1
     })
-    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+    await page.route(`**/api/v1/workflow-drafts/${workflowId}`, async route => {
       if (route.request().method() === 'PUT') {
         await route.fulfill({ status: 500, json: { detail: 'forced draft persistence failure' } })
       } else {
@@ -748,12 +752,12 @@ test.describe('everyday node editing', () => {
     await page.getByTestId('node-destructive-confirm').click()
     await expect(page.getByTestId('node-destructive-error')).toBeVisible()
     expect(clearRequests).toBe(0)
-    const afterRefusal = await fetchDraft(page, workflowName)
+    const afterRefusal = await fetchDraft(page, workflowId)
     expect(afterRefusal.draft_revision).toBe(baseline.draft_revision)
     expect(afterRefusal.graph).toEqual(baseline.graph)
     expect((await page.request.post(
       `${API_BASE}/api/v1/nodes/${TARGET_ID}/data/query`,
-      { data: { workflow_name: workflowName } },
+      { data: { workflow_name: workflowId } },
     )).ok()).toBeTruthy()
   })
 
@@ -761,15 +765,15 @@ test.describe('everyday node editing', () => {
     const source = node(page, SOURCE_ID)
     await source.click()
     const panel = await openNodesPanel(page)
-    const original = await fetchDraft(page, workflowName)
+    const original = await fetchDraft(page, workflowId)
 
     await panel.locator('.node-name').dblclick()
     const nameInput = panel.locator('.name-input')
     await nameInput.fill('Renamed source α')
-    await waitForAcceptedEdit(page, workflowName, () => nameInput.press('Enter'))
+    await waitForAcceptedEdit(page, workflowId, () => nameInput.press('Enter'))
     await expect(source.locator('.node-name')).toHaveText('Renamed source α')
     await expect(page.locator(`.vue-flow__edge[data-id="${EDGE_ID}"]`)).toHaveCount(1)
-    await expectAcceptedDraft(page, workflowName, (draft) => ({
+    await expectAcceptedDraft(page, workflowId, (draft) => ({
       valid: draft.validation.valid,
       source: draft.graph.nodes.find(graphNode => graphNode.id === SOURCE_ID)?.name,
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
@@ -781,14 +785,14 @@ test.describe('everyday node editing', () => {
       edge: original.graph.edges[0],
     })
 
-    const acceptedRename = await fetchDraft(page, workflowName)
+    const acceptedRename = await fetchDraft(page, workflowId)
     await panel.locator('.node-name').dblclick()
     await nameInput.fill('Target node')
     await nameInput.press('Enter')
     await expect(panel.getByTestId('node-name-error')).toHaveText('A node named “Target node” already exists.')
     await expect(nameInput).toHaveValue('Target node')
     await expect(source.locator('.node-name')).toHaveText('Renamed source α')
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await expectAcceptedDraft(page, workflowId, draft => ({
       revision: draft.draft_revision,
       source: draft.graph.nodes.find(graphNode => graphNode.id === SOURCE_ID)?.name,
       edge: draft.graph.edges[0],
@@ -806,15 +810,15 @@ test.describe('everyday node editing', () => {
   test('persists collapse and the single-node enabled toggle across reload', async ({ page }) => {
     const source = node(page, SOURCE_ID)
     await expect(source.locator('.node-body')).toBeVisible()
-    await waitForAcceptedEdit(page, workflowName, () => source.locator('.node-header').dblclick())
+    await waitForAcceptedEdit(page, workflowId, () => source.locator('.node-header').dblclick())
     await expect(source.locator('.tool-node')).toHaveClass(/collapsed/)
     await expect(source.locator('.node-body')).toBeHidden()
 
     await source.click()
     const panel = await openNodesPanel(page)
-    await waitForAcceptedEdit(page, workflowName, () => panel.getByTestId('node-enabled-toggle').click())
+    await waitForAcceptedEdit(page, workflowId, () => panel.getByTestId('node-enabled-toggle').click())
     await expect(source.locator('.tool-node')).toHaveClass(/disabled/)
-    await expectAcceptedDraft(page, workflowName, (draft) => {
+    await expectAcceptedDraft(page, workflowId, (draft) => {
       const graphNode = draft.graph.nodes.find(candidate => candidate.id === SOURCE_ID)
       return { valid: draft.validation.valid, collapsed: graphNode?.collapsed, enabled: graphNode?.enabled }
     }, { valid: true, collapsed: true, enabled: false })
@@ -826,11 +830,11 @@ test.describe('everyday node editing', () => {
   })
 
   test('disconnects and reconnects a DataFrame edge with pointer gestures and persists the accepted graph', async ({ page }) => {
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
 
-    await waitForAcceptedEdit(page, workflowName, () => disconnectDataframeToCanvas(page))
+    await waitForAcceptedEdit(page, workflowId, () => disconnectDataframeToCanvas(page))
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await expectAcceptedDraft(page, workflowId, draft => ({
       valid: draft.validation.valid,
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edges: draft.graph.edges,
@@ -844,9 +848,9 @@ test.describe('everyday node editing', () => {
     await expect(page.locator('.vue-flow__node')).toHaveCount(2)
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
 
-    await waitForAcceptedEdit(page, workflowName, () => connectDataframes(page))
+    await waitForAcceptedEdit(page, workflowId, () => connectDataframes(page))
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await expectAcceptedDraft(page, workflowId, draft => ({
       valid: draft.validation.valid,
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edge: draft.graph.edges[0],
@@ -865,7 +869,7 @@ test.describe('everyday node editing', () => {
 
     await page.reload()
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
-    const reloaded = await fetchDraft(page, workflowName)
+    const reloaded = await fetchDraft(page, workflowId)
     expect(reloaded.graph.nodes).toEqual(baseline.graph.nodes)
     expect(reloaded.graph.edges).toEqual([{
       type: 'dataframe',
@@ -878,7 +882,7 @@ test.describe('everyday node editing', () => {
   })
 
   test('recovers failed pointer disconnect and connection writes without losing edge identity', async ({ page }) => {
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     const edgeSelector = `.vue-flow__edge[data-id="${EDGE_ID}"]`
     const reconnectedEdge = {
       type: 'dataframe',
@@ -890,19 +894,19 @@ test.describe('everyday node editing', () => {
     }
     let failNextWrite = true
     let failedWrites = 0
-    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+    await page.route(`**/api/v1/workflow-drafts/${workflowId}`, async route => {
       if (route.request().method() !== 'PUT' || !failNextWrite) return route.continue()
       failNextWrite = false
       failedWrites += 1
       await route.fulfill({ status: 500, json: { detail: 'forced edge persistence failure' } })
     })
     const failedWrite = () => page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)
       && response.request().method() === 'PUT'
       && response.status() === 500
     ))
     const retry = async () => {
-      await waitForAcceptedEdit(page, workflowName, () => page.getByTestId('canvas-persistence-retry').click())
+      await waitForAcceptedEdit(page, workflowId, () => page.getByTestId('canvas-persistence-retry').click())
       await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
     }
 
@@ -911,22 +915,22 @@ test.describe('everyday node editing', () => {
     await disconnectFailure
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
     await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced edge persistence failure')
-    const refusedDisconnect = await fetchDraft(page, workflowName)
+    const refusedDisconnect = await fetchDraft(page, workflowId)
     expect(refusedDisconnect.draft_revision).toBe(baseline.draft_revision)
     expect(refusedDisconnect.graph).toEqual(baseline.graph)
     await retry()
-    const disconnected = await fetchDraft(page, workflowName)
+    const disconnected = await fetchDraft(page, workflowId)
     expect(disconnected.draft_revision).toBe(baseline.draft_revision + 1)
     expect(disconnected.graph.nodes).toEqual(baseline.graph.nodes)
     expect(disconnected.graph.edges).toEqual([])
     expect(disconnected.validation.valid).toBe(true)
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(page.locator(edgeSelector)).toHaveCount(1)
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual(baseline.graph.edges)
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual(baseline.graph.edges)
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([])
 
     failNextWrite = true
     const connectionFailure = failedWrite()
@@ -934,28 +938,28 @@ test.describe('everyday node editing', () => {
     await connectionFailure
     await expect(page.locator(`.vue-flow__edge[data-id="${reconnectedEdge.id}"]`)).toHaveCount(1)
     await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced edge persistence failure')
-    const refusedConnection = await fetchDraft(page, workflowName)
+    const refusedConnection = await fetchDraft(page, workflowId)
     expect(refusedConnection.draft_revision).toBe(disconnected.draft_revision + 2)
     expect(refusedConnection.graph.edges).toEqual([])
     await retry()
-    const connected = await fetchDraft(page, workflowName)
+    const connected = await fetchDraft(page, workflowId)
     expect(connected.draft_revision).toBe(refusedConnection.draft_revision + 1)
     expect(connected.graph.nodes).toEqual(baseline.graph.nodes)
     expect(connected.graph.edges).toEqual([reconnectedEdge])
     expect(connected.validation.valid).toBe(true)
     expect(failedWrites).toBe(2)
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([reconnectedEdge])
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([])
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([reconnectedEdge])
     await page.reload()
     await expect(page.locator(`.vue-flow__edge[data-id="${reconnectedEdge.id}"]`)).toHaveCount(1)
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([reconnectedEdge])
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([reconnectedEdge])
   })
 
   test('recovers a failed connected column-input disconnect with its label and edge intact', async ({ page }) => {
-    const initial = await fetchDraft(page, workflowName)
+    const initial = await fetchDraft(page, workflowId)
     const columnEdge = {
       type: 'column' as const,
       id: 'everyday_column_edge',
@@ -977,12 +981,12 @@ test.describe('everyday node editing', () => {
       }],
       edges: [columnEdge],
     }
-    const setup = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`, {
+    const setup = await page.request.put(`${API_BASE}/api/v1/workflow-drafts/${workflowId}`, {
       data: { graph, expected_revision: initial.draft_revision, updated_by: 'frontend' },
     })
     expect(setup.ok()).toBeTruthy()
     await page.reload()
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     expect(baseline.validation.valid).toBe(true)
     expect(baseline.graph.edges).toEqual([columnEdge])
     const input = node(page, 'image_target').locator('.body-inputs')
@@ -990,13 +994,13 @@ test.describe('everyday node editing', () => {
     await expect(page.locator(`.vue-flow__edge[data-id="${columnEdge.id}"]`)).toHaveCount(1)
 
     let failedWrites = 0
-    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async route => {
+    await page.route(`**/api/v1/workflow-drafts/${workflowId}`, async route => {
       if (route.request().method() !== 'PUT' || failedWrites > 0) return route.continue()
       failedWrites += 1
       await route.fulfill({ status: 500, json: { detail: 'forced column disconnect failure' } })
     })
     const failedWrite = page.waitForResponse(response => (
-      response.url().endsWith(`/api/v1/workflow-drafts/${workflowName}`)
+      response.url().endsWith(`/api/v1/workflow-drafts/${workflowId}`)
       && response.request().method() === 'PUT'
       && response.status() === 500
     ))
@@ -1010,31 +1014,31 @@ test.describe('everyday node editing', () => {
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
     await expect(input.locator('.pin-label')).toHaveText('input_image')
     await expect(page.getByTestId('canvas-persistence-issue')).toContainText('forced column disconnect failure')
-    const refused = await fetchDraft(page, workflowName)
+    const refused = await fetchDraft(page, workflowId)
     expect(refused.draft_revision).toBe(baseline.draft_revision)
     expect(refused.graph).toEqual(baseline.graph)
 
-    await waitForAcceptedEdit(page, workflowName, () => page.getByTestId('canvas-persistence-retry').click())
+    await waitForAcceptedEdit(page, workflowId, () => page.getByTestId('canvas-persistence-retry').click())
     await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
-    const disconnected = await fetchDraft(page, workflowName)
+    const disconnected = await fetchDraft(page, workflowId)
     expect(disconnected.draft_revision).toBe(baseline.draft_revision + 1)
     expect(disconnected.graph.nodes).toEqual(baseline.graph.nodes)
     expect(disconnected.graph.edges).toEqual([])
     expect(disconnected.validation.valid).toBe(false)
     expect(failedWrites).toBe(1)
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(page.locator(`.vue-flow__edge[data-id="${columnEdge.id}"]`)).toHaveCount(1)
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([columnEdge])
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([columnEdge])
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([])
     await page.reload()
     await expect(input.locator('.pin-label')).toContainText('input_image')
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-    expect((await fetchDraft(page, workflowName)).graph.edges).toEqual([])
+    expect((await fetchDraft(page, workflowId)).graph.edges).toEqual([])
   })
 
   test('refuses a column-to-DataFrame connection without replacing the accepted edge', async ({ page }) => {
-    const baseline = await fetchDraft(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
     const columnOutput = node(page, SOURCE_ID).locator('.body-outputs .vue-flow__handle').first()
     const freeDataframeInput = node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle').last()
     await expect(columnOutput).toBeVisible()
@@ -1051,30 +1055,30 @@ test.describe('everyday node editing', () => {
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
     await expect(node(page, TARGET_ID).locator('.header-inputs .vue-flow__handle')).toHaveCount(2)
     await page.waitForTimeout(600) // Allow the draft persistence debounce to expose an unintended edit.
-    const refused = await fetchDraft(page, workflowName)
+    const refused = await fetchDraft(page, workflowId)
     expect(refused.draft_revision).toBe(baseline.draft_revision)
     expect(refused.graph).toEqual(baseline.graph)
 
     await page.reload()
     await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
-    const reloaded = await fetchDraft(page, workflowName)
+    const reloaded = await fetchDraft(page, workflowId)
     expect(reloaded.graph).toEqual(baseline.graph)
   })
 
   test('undoes and redoes mixed node, edge, and parameter edits one action at a time', async ({ page }) => {
-    const baseline = await fetchDraft(page, workflowName)
-    const addedNodeId = await addSeedNodeFromCatalog(page, workflowName)
+    const baseline = await fetchDraft(page, workflowId)
+    const addedNodeId = await addSeedNodeFromCatalog(page, workflowId)
 
-    await waitForAcceptedEdit(page, workflowName, () => disconnectDataframeToCanvas(page))
+    await waitForAcceptedEdit(page, workflowId, () => disconnectDataframeToCanvas(page))
     await node(page, TARGET_ID).click()
     const panel = await openNodesPanel(page)
     const numberInput = panel.locator('.param-number input')
     await expect(numberInput).toHaveValue('1')
-    await waitForAcceptedEdit(page, workflowName, async () => {
+    await waitForAcceptedEdit(page, workflowId, async () => {
       await numberInput.fill('7')
       await numberInput.press('Enter')
     })
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await expectAcceptedDraft(page, workflowId, draft => ({
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edgeIds: draft.graph.edges.map(edge => edge.id),
       number: draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
@@ -1084,8 +1088,8 @@ test.describe('everyday node editing', () => {
       number: 7,
     })
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
+    await expectAcceptedDraft(page, workflowId, draft => ({
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edgeIds: draft.graph.edges.map(edge => edge.id),
       number: draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
@@ -1095,9 +1099,9 @@ test.describe('everyday node editing', () => {
       number: 1,
     })
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(page.locator(`.vue-flow__edge[data-id="${EDGE_ID}"]`)).toHaveCount(1)
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await expectAcceptedDraft(page, workflowId, draft => ({
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edge: draft.graph.edges[0],
     }), {
@@ -1105,16 +1109,16 @@ test.describe('everyday node editing', () => {
       edge: baseline.graph.edges[0],
     })
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+z'))
     await expect(node(page, addedNodeId)).toHaveCount(0)
-    await expectAcceptedDraft(page, workflowName, draft => draft.graph, baseline.graph)
+    await expectAcceptedDraft(page, workflowId, draft => draft.graph, baseline.graph)
 
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
     await expect(node(page, addedNodeId)).toBeVisible()
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-    await waitForAcceptedEdit(page, workflowName, () => pressCanvasShortcut(page, 'Control+Shift+z'))
-    await expectAcceptedDraft(page, workflowName, draft => ({
+    await waitForAcceptedEdit(page, workflowId, () => pressCanvasShortcut(page, 'Control+Shift+z'))
+    await expectAcceptedDraft(page, workflowId, draft => ({
       valid: draft.validation.valid,
       nodeIds: draft.graph.nodes.map(graphNode => graphNode.id),
       edges: draft.graph.edges,
@@ -1126,11 +1130,11 @@ test.describe('everyday node editing', () => {
       number: 7,
     })
 
-    const accepted = await fetchDraft(page, workflowName)
+    const accepted = await fetchDraft(page, workflowId)
     await page.reload()
     await expect(node(page, addedNodeId)).toBeVisible()
     await expect(page.locator('.vue-flow__edge')).toHaveCount(0)
-    expect((await fetchDraft(page, workflowName)).graph).toEqual(accepted.graph)
+    expect((await fetchDraft(page, workflowId)).graph).toEqual(accepted.graph)
   })
 
   test('keeps undo history isolated when switching between workflows', async ({ page }) => {
@@ -1144,32 +1148,33 @@ test.describe('everyday node editing', () => {
       data: { name: secondWorkflowName, display_name: secondWorkflowName },
     })
     expect(created.status()).toBe(201)
-    const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${secondWorkflowName}`, {
+    const secondWorkflowId = (await created.json()).id as string
+    const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${secondWorkflowId}`, {
       data: { graph: secondGraph },
     })
     expect(saved.ok()).toBeTruthy()
 
     try {
-      const firstBaseline = await fetchDraft(page, workflowName)
+      const firstBaseline = await fetchDraft(page, workflowId)
       await node(page, TARGET_ID).click()
       const firstPanel = await openNodesPanel(page)
       const firstNumberInput = firstPanel.locator('.param-number input')
-      await waitForAcceptedEdit(page, workflowName, async () => {
+      await waitForAcceptedEdit(page, workflowId, async () => {
         await firstNumberInput.fill('7')
         await firstNumberInput.press('Enter')
       })
       await expectAcceptedDraft(
         page,
-        workflowName,
+        workflowId,
         draft => draft.graph.nodes.find(graphNode => graphNode.id === TARGET_ID)?.parameters.number,
         7,
       )
-      const firstEdited = await fetchDraft(page, workflowName)
+      const firstEdited = await fetchDraft(page, workflowId)
       expect(firstEdited.graph).not.toEqual(firstBaseline.graph)
       await closeWorkflowTab(page, workflowName, true)
 
-      await openWorkflowFromPanel(page, secondWorkflowName)
-      const secondBaseline = await fetchDraft(page, secondWorkflowName)
+      await openWorkflowFromPanel(page, secondWorkflowName, secondWorkflowId)
+      const secondBaseline = await fetchDraft(page, secondWorkflowId)
       expect({
         valid: secondBaseline.validation.valid,
         nodeIds: secondBaseline.graph.nodes.map(graphNode => graphNode.id),
@@ -1188,24 +1193,24 @@ test.describe('everyday node editing', () => {
       await expectUndoDisabled(page)
       await pressCanvasShortcut(page, 'Control+z')
       await expectUndoDisabled(page)
-      const afterSecondUndo = await fetchDraft(page, secondWorkflowName)
+      const afterSecondUndo = await fetchDraft(page, secondWorkflowId)
       expect(afterSecondUndo.draft_revision).toBe(secondBaseline.draft_revision)
       expect(afterSecondUndo.graph).toEqual(secondBaseline.graph)
 
       await closeWorkflowTab(page, secondWorkflowName)
-      await openWorkflowFromPanel(page, workflowName)
-      const firstReloaded = await fetchDraft(page, workflowName)
+      await openWorkflowFromPanel(page, workflowName, workflowId)
+      const firstReloaded = await fetchDraft(page, workflowId)
       expect(firstReloaded.graph).toEqual(firstEdited.graph)
       await expectUndoDisabled(page)
       await pressCanvasShortcut(page, 'Control+z')
       await expectUndoDisabled(page)
-      const afterFirstReloadUndo = await fetchDraft(page, workflowName)
+      const afterFirstReloadUndo = await fetchDraft(page, workflowId)
       expect(afterFirstReloadUndo.draft_revision).toBe(firstReloaded.draft_revision)
       expect(afterFirstReloadUndo.graph).toEqual(firstReloaded.graph)
       await page.reload()
-      expect((await fetchDraft(page, workflowName)).graph).toEqual(firstEdited.graph)
+      expect((await fetchDraft(page, workflowId)).graph).toEqual(firstEdited.graph)
     } finally {
-      await page.request.delete(`${API_BASE}/api/v1/workflows/${secondWorkflowName}`).catch(() => undefined)
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${secondWorkflowId}`).catch(() => undefined)
     }
   })
 })

@@ -9,7 +9,7 @@ from bioimageflow.storage import Storage
 from fastapi import APIRouter, Depends
 from PIL import Image
 
-from bioimageflow_dev_tools.processing import GaussianBlur
+from bioimageflow_dev_tools.processing import GaussianBlur, WriteNumberFile
 from bioimageflow_dev_tools.tools import (
     ControlledDirectNumbers,
     ImageResultFixture,
@@ -254,6 +254,15 @@ _SEED_TOOLS: list[ToolMetadata] = [
     ),
 ]
 
+_SEED_TOOLS.append(ToolRegistryService.metadata_for_class(
+    WriteNumberFile, package="bioimageflow-dev-seed", version="0.1.0", editable=False,
+))
+for _seed_tool in _SEED_TOOLS:
+    if _seed_tool.name == "GaussianBlur":
+        _seed_tool.output_file_declarations = ToolRegistryService.metadata_for_class(
+            GaussianBlur, package="bioimageflow-filters", version="0.5.0", editable=False,
+        ).output_file_declarations
+
 _SEED_PACKAGES: list[PackageInfo] = [
     PackageInfo(
         name="bioimageflow-dev-seed",
@@ -268,6 +277,7 @@ _SEED_PACKAGES: list[PackageInfo] = [
                 "ControlledDirectNumbers",
                 "IncrementAgainNumbers",
                 "ImageResultFixture",
+                "WriteNumberFile",
             ]
         },
         environment_status="stopped",
@@ -303,6 +313,7 @@ async def seed_tools(
             "IncrementAgainNumbers": IncrementAgainNumbers,
             "ImageResultFixture": ImageResultFixture,
             "GaussianBlur": GaussianBlur,
+            "WriteNumberFile": WriteNumberFile,
         }.get(tool.name)
         registry.register_tool(tool.name, tool, tool_class=tool_class)
     for pkg in _SEED_PACKAGES:

@@ -13,6 +13,7 @@ from bioimageflow_server.models.workflow_draft import (
     WorkflowDraftConflictResponse,
     WorkflowDraftLockedResponse,
     WorkflowDraftPutRequest,
+    WorkflowDraftRebindRequest,
     WorkflowDraftResetRequest,
     WorkflowDraftResponse,
 )
@@ -192,6 +193,49 @@ async def reset_workflow_draft_to_saved(
     try:
         async with _idle_mutation_lease(execution_manager):
             draft = await service.reset_draft_to_saved_async(
+                workflow_id,
+                expected_revision=body.expected_revision,
+                updated_by=body.updated_by,
+                api_base_url=_api_base_url(request),
+            )
+            _publish_workflow_draft_changed(connection_manager, draft)
+            return draft
+    except ExecutionConflictError:
+        return _ensure_unlocked(execution_manager) or JSONResponse(
+            status_code=423,
+            content=WorkflowDraftLockedResponse(
+                detail="Workflow editing is locked while execution is in progress",
+            ).model_dump(),
+        )
+    except WorkflowDraftRevisionConflict as exc:
+        return _conflict_response(exc)
+    except WorkflowFormatUpdateRequiredError as exc:
+        return _format_update_response(exc)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{workflow_id:path}/rebind-versions",
+    response_model=WorkflowDraftResponse,
+    responses={
+        409: {"model": WorkflowDraftConflictResponse},
+        423: {"model": WorkflowDraftLockedResponse},
+    },
+)
+async def rebind_workflow_draft_versions(
+    workflow_id: str,
+    body: WorkflowDraftRebindRequest,
+    request: Request,
+    service: WorkflowDraftService = Depends(get_workflow_draft_service),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowDraftResponse | JSONResponse:
+    try:
+        async with _idle_mutation_lease(execution_manager):
+            draft = await service.rebind_versions_async(
                 workflow_id,
                 expected_revision=body.expected_revision,
                 updated_by=body.updated_by,

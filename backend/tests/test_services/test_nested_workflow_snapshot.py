@@ -65,6 +65,11 @@ def store(tmp_path: Path) -> WorkflowStoreService:
 
 
 @pytest.fixture
+def workflow_ids(store: WorkflowStoreService) -> dict[str, str]:
+    return {item.relative_path: item.id for item in store.list_workflows()}
+
+
+@pytest.fixture
 def service(store: WorkflowStoreService) -> NestedWorkflowSnapshotService:
     return NestedWorkflowSnapshotService(lambda: store)
 
@@ -78,11 +83,11 @@ def _root(workflow_id: str) -> NestedSnapshotOwner:
 
 
 def test_open_is_idempotent_and_root_owners_do_not_collide(
-    service: NestedWorkflowSnapshotService,
+    service: NestedWorkflowSnapshotService, workflow_ids: dict[str, str],
 ) -> None:
-    first = service.open_snapshot(_root("root-a"), "child_1", _graph("inner_a"))
-    reopened = service.open_snapshot(_root("root-a"), "child_1", _graph("ignored"))
-    other = service.open_snapshot(_root("root-b"), "child_1", _graph("inner_b"))
+    first = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner_a"))
+    reopened = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("ignored"))
+    other = service.open_snapshot(_root(workflow_ids["root-b"]), "child_1", _graph("inner_b"))
 
     assert reopened.session_id == first.session_id
     assert reopened.graph.nodes[0].id == "inner_a"
@@ -90,9 +95,9 @@ def test_open_is_idempotent_and_root_owners_do_not_collide(
 
 
 def test_nested_owner_identity_is_hierarchical(
-    service: NestedWorkflowSnapshotService,
+    service: NestedWorkflowSnapshotService, workflow_ids: dict[str, str],
 ) -> None:
-    parent = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    parent = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     child = service.open_snapshot(
         NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
         "grandchild_1",
@@ -100,17 +105,17 @@ def test_nested_owner_identity_is_hierarchical(
     )
 
     assert child.owner.session_id == parent.session_id
-    assert service.has_open_at_or_below("root-a", ["child_1"])
-    assert service.has_open_at_or_below("root-a", ["child_1", "grandchild_1"])
-    assert not service.has_open_at_or_below("root-b", ["child_1"])
+    assert service.has_open_at_or_below(workflow_ids["root-a"], ["child_1"])
+    assert service.has_open_at_or_below(workflow_ids["root-a"], ["child_1", "grandchild_1"])
+    assert not service.has_open_at_or_below(workflow_ids["root-b"], ["child_1"])
 
 
 def test_complete_graph_and_interface_survive_service_restart(
-    store: WorkflowStoreService,
+    store: WorkflowStoreService, workflow_ids: dict[str, str],
 ) -> None:
     first_service = NestedWorkflowSnapshotService(lambda: store)
     opened = first_service.open_snapshot(
-        _root("root-a"), "child_1", _graph("inner", "source")
+        _root(workflow_ids["root-a"]), "child_1", _graph("inner", "source")
     )
 
     recovered = NestedWorkflowSnapshotService(lambda: store).get_snapshot(
@@ -123,9 +128,9 @@ def test_complete_graph_and_interface_survive_service_restart(
 
 
 def test_replace_and_delete_are_revision_checked(
-    service: NestedWorkflowSnapshotService,
+    service: NestedWorkflowSnapshotService, workflow_ids: dict[str, str],
 ) -> None:
-    opened = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    opened = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     replaced = service.put_snapshot(
         opened.session_id,
         expected_revision=0,
@@ -148,9 +153,9 @@ def test_replace_and_delete_are_revision_checked(
 
 
 def test_parent_delete_requires_descendant_cleanup(
-    service: NestedWorkflowSnapshotService,
+    service: NestedWorkflowSnapshotService, workflow_ids: dict[str, str],
 ) -> None:
-    parent = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    parent = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     child = service.open_snapshot(
         NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
         "grandchild_1",
@@ -166,16 +171,16 @@ def test_parent_delete_requires_descendant_cleanup(
 
 
 def test_depth_two_refusal_and_ordered_close_preserve_exact_owners_after_restart(
-    store: WorkflowStoreService,
+    store: WorkflowStoreService, workflow_ids: dict[str, str],
 ) -> None:
     service = NestedWorkflowSnapshotService(lambda: store)
-    parent = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    parent = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     child = service.open_snapshot(
         NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
         "grandchild_1",
         _graph("deep"),
     )
-    unrelated = service.open_snapshot(_root("root-b"), "child_1", _graph("other"))
+    unrelated = service.open_snapshot(_root(workflow_ids["root-b"]), "child_1", _graph("other"))
     edited_child = service.put_snapshot(
         child.session_id,
         expected_revision=0,
@@ -199,26 +204,26 @@ def test_depth_two_refusal_and_ordered_close_preserve_exact_owners_after_restart
     recovered.delete_snapshot(parent.session_id, expected_revision=0)
     with pytest.raises(FileNotFoundError):
         recovered.get_snapshot(parent.session_id)
-    reopened = recovered.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    reopened = recovered.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     assert reopened.session_id not in {parent.session_id, child.session_id}
     assert reopened.owner == parent.owner
     assert recovered.get_snapshot(unrelated.session_id) == unrelated
 
 
 def test_root_cleanup_removes_exact_snapshot_tree(
-    service: NestedWorkflowSnapshotService,
+    service: NestedWorkflowSnapshotService, workflow_ids: dict[str, str],
 ) -> None:
-    parent = service.open_snapshot(_root("root-a"), "child_1", _graph("inner"))
+    parent = service.open_snapshot(_root(workflow_ids["root-a"]), "child_1", _graph("inner"))
     child = service.open_snapshot(
         NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
         "grandchild_1",
         _graph("deep"),
     )
     unrelated = service.open_snapshot(
-        _root("root-b"), "child_1", _graph("other")
+        _root(workflow_ids["root-b"]), "child_1", _graph("other")
     )
 
-    removed = service.delete_for_root_workflow("root-a")
+    removed = service.delete_for_root_workflow(workflow_ids["root-a"])
 
     assert set(removed) == {parent.session_id, child.session_id}
     assert service.get_snapshot(unrelated.session_id) == unrelated

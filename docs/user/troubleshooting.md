@@ -55,6 +55,11 @@ BioImageFlow verifies that the previewed files did not change, preserves their e
 If the preview became stale, review it again instead of overwriting newer edits.
 An interrupted confirmed update completes forward on restart from its journal and backups.
 
+If **Review recovery** appears, BioImageFlow has kept browser edits whose original workflow cannot be identified safely.
+Choose the browser snapshot and its intended workflow, then click **Restore as unsaved draft**.
+This replaces that workflow's editing draft without saving the workflow; review the recovered canvas before choosing Save.
+Cancel leaves the snapshot available for later recovery.
+
 ## An existing workflow cannot open because custom-tool files are missing
 
 The message identifies the missing file relative to the workflow's folder.
@@ -113,7 +118,7 @@ The latest-output view chooses the latest successful result independently for ea
 After partial, failed, cancelled, or overlapping runs, it can contain files from different runs.
 
 Check the selected nodes, node status, **Execution**, and **Node Data**.
-Use **Workflow with results** when every copied output must come from one successful run.
+Use **Workflow with results from the latest successful run** when every copied output must come from one successful run.
 
 If pointer files appear, open **Edit → Preferences... → Storage** and read **Latest output view**.
 Use an export when you need ordinary file copies.

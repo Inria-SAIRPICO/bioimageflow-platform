@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, field_validator, model_validator
 
 from bioimageflow_server.models.graph import ViewerSpec
+from bioimageflow_server.models.output_planning import OutputFileDeclaration
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
@@ -84,6 +85,7 @@ class ToolMetadata(BaseModel):
     categories: list[str] = []
     inputs: dict[str, InputFieldSchema] = {}
     outputs: dict[str, Any] = {}
+    output_file_declarations: dict[str, OutputFileDeclaration] = {}
     environment: dict[str, Any] | None = None
     source_kind: Literal["package", "custom"] = "package"
     editable: bool = False

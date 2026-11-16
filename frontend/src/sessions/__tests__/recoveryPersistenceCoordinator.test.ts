@@ -41,6 +41,28 @@ describe('recovery persistence coordinator', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
+  it('does not invalidate a copied workspace pending write when another owner is cleared', async () => {
+    const firstTransport = vi.fn(async () => {})
+    const secondTransport = vi.fn(async () => {})
+    const first = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('scoped:first'), transport: firstTransport,
+      ownershipKey: id => JSON.stringify(['/workspace/A', id, 0]),
+    })
+    const second = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('scoped:second'), transport: secondTransport,
+      ownershipKey: id => JSON.stringify(['/workspace/B', id, 0]),
+    })
+    first.queue('shared-uuid', graph('first'))
+    second.queue('shared-uuid', graph('second'))
+    await clearRecoveryPersistenceKeyStrict(JSON.stringify(['/workspace/A', 'shared-uuid', 0]), async () => {})
+    await first.flushLatest()
+    await second.flushLatest()
+    expect(firstTransport).not.toHaveBeenCalled()
+    expect(secondTransport).toHaveBeenCalledOnce()
+    first.dispose()
+    second.dispose()
+  })
+
   it('keeps two workflow snapshots queued inside one debounce window', async () => {
     const requests: RecoveryPersistenceRequest[] = []
     const transport = vi.fn(async (request: RecoveryPersistenceRequest) => {

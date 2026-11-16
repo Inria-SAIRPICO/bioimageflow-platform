@@ -108,10 +108,10 @@ async def test_startup_seeds_only_a_missing_workflow_root(tmp_path: Path) -> Non
         pass
     assert (new_root / "Demo" / "Fish Analysis" / "workflow.json").exists()
     assert [(call.args[0], call.kwargs["version"]) for call in installer.install.await_args_list] == [
-        ("bioimageflow_common_tools", "0.2.2"),
-        ("bioimageflow_io_tools", "0.2.2"),
-        ("bioimageflow_segmentation_tools", "0.3.2"),
-        ("bioimageflow_spot_tools", "0.2.2"),
+        ("bioimageflow_common_tools", "0.3.0"),
+        ("bioimageflow_io_tools", "0.3.0"),
+        ("bioimageflow_segmentation_tools", "0.4.0"),
+        ("bioimageflow_spot_tools", "0.3.0"),
     ]
 
     existing_root = tmp_path / "existing" / "workflows"

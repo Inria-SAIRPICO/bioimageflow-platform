@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.output_planning import OutputPlanningReport
 from bioimageflow_server.models.validation import (
     GraphValidationError,
     NodeStatus,
@@ -41,6 +42,9 @@ class GraphValidationOutput:
 
     compilation: BuildOutput
     validation: ValidationResult
+
+
+OutputWarningProvider = Callable[[GraphState, Any, Path], list[OutputPlanningReport]]
 
 
 def _error_key(error: GraphValidationError) -> tuple[Any, ...]:
@@ -199,8 +203,10 @@ class GraphValidationService:
         registry: ToolRegistryService,
         *,
         compiler: GraphCompiler | None = None,
+        output_warning_provider: OutputWarningProvider | None = None,
     ) -> None:
         self._compiler = compiler or GraphCompiler(registry)
+        self._output_warning_provider = output_warning_provider
 
     @staticmethod
     def validation_from_compilation(
@@ -209,14 +215,21 @@ class GraphValidationService:
         *,
         has_retained_latest: Callable[[str], bool] | None = None,
         planned_node_ids: set[str] | None = None,
+        output_warning_provider: OutputWarningProvider | None = None,
+        storage_path: Path | None = None,
     ) -> ValidationResult:
         """Project a compiled graph against cache state at the caller's linearization point."""
-        return _validation_from_compilation(
+        validation = _validation_from_compilation(
             graph,
             compilation,
             has_retained_latest=has_retained_latest,
             planned_node_ids=planned_node_ids,
         )
+        if output_warning_provider is not None and storage_path is not None:
+            validation.output_planning_warnings = output_warning_provider(
+                graph, compilation.workflow, storage_path,
+            )
+        return validation
 
     def validate_with_compilation(
         self,
@@ -230,9 +243,11 @@ class GraphValidationService:
             storage_path=storage_path,
             on_progress=on_progress,
         )
-        validation = _validation_from_compilation(
+        validation = self.validation_from_compilation(
             graph,
             compilation,
+            output_warning_provider=self._output_warning_provider,
+            storage_path=storage_path,
         )
         return GraphValidationOutput(
             compilation=compilation,
@@ -296,9 +311,10 @@ def validate_graph(
     registry: ToolRegistryService,
     *,
     storage_path: Path,
+    output_warning_provider: OutputWarningProvider | None = None,
 ) -> ValidationResult:
     """Validate one complete graph snapshot in its explicit storage context."""
-    return GraphValidationService(registry).validate(
+    return GraphValidationService(registry, output_warning_provider=output_warning_provider).validate(
         graph,
         storage_path=storage_path,
     )

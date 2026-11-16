@@ -36,7 +36,7 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     resp = await client.post("/api/v1/dev/seed")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["tools"] == 9
+    assert data["tools"] == 10
     assert data["packages"] == 3
 
     # Now tools and packages are populated

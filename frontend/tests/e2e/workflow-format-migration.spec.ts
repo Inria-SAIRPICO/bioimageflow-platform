@@ -13,10 +13,12 @@ test('defers and later confirms a workflow format update with visible backups', 
     data: { name: workflowId, display_name: 'Format update example' },
   })
   expect(created.status()).toBe(201)
+  const workflowUuid: string = (await created.json()).id
   const createdCurrent = await page.request.post(`${API_BASE}/api/v1/workflows`, {
     data: { name: currentId, display_name: 'Current format example' },
   })
   expect(createdCurrent.status()).toBe(201)
+  const currentUuid: string = (await createdCurrent.json()).id
   const workflowPath = join(E2E_ROOT!, 'workflows', workflowId, 'workflow.json')
   const currentPath = join(E2E_ROOT!, 'workflows', currentId, 'workflow.json')
   const currentBytes = await readFile(currentPath)
@@ -42,9 +44,9 @@ test('defers and later confirms a workflow format update with visible backups', 
   await expect(page.getByTestId('workflow-format-warning')).toContainText(
     'unavailable until it is updated',
   )
-  await expect(page.getByTestId(`workflow-row-${workflowId}`)).toHaveCount(0)
-  await expect(page.getByTestId(`workflow-row-${currentId}`)).toBeVisible()
-  await page.getByTestId(`workflow-row-${currentId}`).dblclick()
+  await expect(page.getByTestId(`workflow-row-${workflowUuid}`)).toHaveCount(0)
+  await expect(page.getByTestId(`workflow-row-${currentUuid}`)).toBeVisible()
+  await page.getByTestId(`workflow-row-${currentUuid}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText('Current format example')
   expect(await readFile(workflowPath)).toEqual(originalBytes)
   expect(await readFile(currentPath)).toEqual(currentBytes)
@@ -71,21 +73,21 @@ test('defers and later confirms a workflow format update with visible backups', 
   expect(await readFile(currentPath)).toEqual(currentBytes)
 
   await expect(dialog).not.toBeVisible()
-  await expect(page.getByTestId(`workflow-row-${workflowId}`)).toBeVisible()
+  await expect(page.getByTestId(`workflow-row-${workflowUuid}`)).toBeVisible()
   const warning = page.getByTestId('workflow-format-warning')
   await expect(warning).toContainText('A backup was preserved')
   for (const backupPath of backupPaths) {
     await expect(warning).toContainText(backupPath)
   }
-  await page.getByTestId(`workflow-row-${workflowId}`).dblclick()
+  await page.getByTestId(`workflow-row-${workflowUuid}`).dblclick()
   await expect(page.getByTestId('workflow-title')).toContainText('Format update example')
-  const migrated = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowId}`)
+  const migrated = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowUuid}`)
   expect(migrated.ok(), await migrated.text()).toBeTruthy()
   expect((await migrated.json()).graph.schema_version).toBe(2)
   await page.reload()
   await expect(page.getByTestId('workflow-title')).toContainText('Format update example')
   expect(await readFile(currentPath)).toEqual(currentBytes)
 
-  await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowId}`)
-  await page.request.delete(`${API_BASE}/api/v1/workflows/${currentId}`)
+  await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowUuid}`)
+  await page.request.delete(`${API_BASE}/api/v1/workflows/${currentUuid}`)
 })

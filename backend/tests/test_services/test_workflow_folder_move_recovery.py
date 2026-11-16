@@ -25,11 +25,11 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
 
 
 def _workflow_json(store: WorkflowStoreService, workflow_id: str) -> Path:
-    return store.workflow_dir(workflow_id) / "workflow.json"
+    return store.root_dir / workflow_id / "workflow.json"
 
 
 def _draft_json(store: WorkflowStoreService, workflow_id: str) -> Path:
-    return store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
+    return store.root_dir / workflow_id / ".bioimageflow" / "draft.json"
 
 
 def _draft_payload(workflow_id: str, revision: int) -> dict[str, object]:
@@ -60,7 +60,7 @@ def _seed_workflow(
     draft_path = _draft_json(store, workflow_id)
     draft_path.parent.mkdir(parents=True, exist_ok=True)
     draft_path.write_text(
-        json.dumps(_draft_payload(workflow_id, revision), indent=2, sort_keys=True) + "\n",
+        json.dumps(_draft_payload(created.id, revision), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return created.identity_generation, payload
@@ -70,7 +70,7 @@ def _generation_snapshot(
     store: WorkflowStoreService,
     workflow_ids: list[str],
 ) -> dict[str, int]:
-    return {workflow_id: store.workflow_generation(workflow_id) for workflow_id in workflow_ids}
+    return {info.id: info.identity_generation for info in store.list_workflows()}
 
 
 def _assert_recovered_workflow(
@@ -81,15 +81,17 @@ def _assert_recovered_workflow(
     revision: int,
     payload: bytes,
 ) -> None:
-    assert not store.workflow_dir(old_id).exists()
-    workflow = store.get_workflow(new_id)
-    expected_results = store.get_storage_path(new_id)
-    assert workflow.info.id == new_id
+    assert not (store.root_dir / old_id).exists()
+    workflow_id = store.workflow_id_at_path(new_id)
+    workflow = store.get_workflow(workflow_id)
+    expected_results = store.get_storage_path(workflow_id)
+    assert workflow.info.id == workflow_id
+    assert workflow.info.relative_path == new_id
     assert Path(workflow.info.results_path) == expected_results
     assert (expected_results / "result.bin").read_bytes() == payload
 
     draft = json.loads(_draft_json(store, new_id).read_text(encoding="utf-8"))
-    assert draft == _draft_payload(new_id, revision)
+    assert draft == _draft_payload(workflow_id, revision)
     assert not _draft_json(store, old_id).exists()
 
     raw = json.loads(_workflow_json(store, new_id).read_text(encoding="utf-8"))
@@ -160,12 +162,7 @@ def test_folder_rename_recovers_after_whole_tree_rename_before_artifact_rewrite(
     assert (store.root_dir / "archive").exists()
     assert store.pending_workflow_move() is not None
     generations_after_failure = _generation_snapshot(store, all_ids)
-    assert generations_after_failure == {
-        "project/a": first_generation + 1,
-        "project/nested/b": second_generation + 1,
-        "archive/a": generations_before["archive/a"] + 1,
-        "archive/nested/b": generations_before["archive/nested/b"] + 1,
-    }
+    assert generations_after_failure == generations_before
 
     restarted = _store(tmp_path)
     recovered_generations = _finish_recovery_twice(restarted, operation_id, all_ids)
@@ -218,16 +215,11 @@ def test_folder_rename_recovers_second_workflow_after_first_document_rewrite(
 
     assert (
         json.loads(_draft_json(store, "archive/b").read_text(encoding="utf-8"))["workflow_id"]
-        == "archive/b"
+        == store.workflow_id_at_path("archive/b")
     )
-    assert (store.get_storage_path("archive/b") / "result.bin").exists()
+    assert (store.get_storage_path(store.workflow_id_at_path("archive/b")) / "result.bin").exists()
     generations_after_failure = _generation_snapshot(store, all_ids)
-    assert generations_after_failure == {
-        "project/a": first_generation + 1,
-        "project/b": second_generation + 1,
-        "archive/a": generations_before["archive/a"] + 1,
-        "archive/b": generations_before["archive/b"] + 1,
-    }
+    assert generations_after_failure == generations_before
 
     restarted = _store(tmp_path)
     recovered_generations = _finish_recovery_twice(restarted, operation_id, all_ids)
@@ -297,12 +289,7 @@ def test_folder_promotion_recovers_after_first_immediate_child_move(
     assert promoted_count == 1
     assert store.pending_workflow_move() is not None
     generations_after_failure = _generation_snapshot(store, all_ids)
-    assert generations_after_failure == {
-        "project/a": first_generation + 1,
-        "project/nested/b": second_generation + 1,
-        "a": generations_before["a"] + 1,
-        "nested/b": generations_before["nested/b"] + 1,
-    }
+    assert generations_after_failure == generations_before
 
     restarted = _store(tmp_path)
     recovered_generations = _finish_recovery_twice(restarted, operation_id, all_ids)
@@ -343,8 +330,8 @@ def test_folder_promotion_recovery_fails_closed_for_unexpected_source_child(
     with pytest.raises(WorkflowMoveRecoveryError):
         store.recover_pending_workflow_move()
 
-    assert store.workflow_dir("project/a").exists()
-    assert not store.workflow_dir("a").exists()
+    assert (store.root_dir / "project/a").exists()
+    assert not (store.root_dir / "a").exists()
     assert unexpected.read_text(encoding="utf-8") == "do not move implicitly"
     assert store.workflow_generation("project/a") == created_generation
     assert store.workflow_generation("a") == 0
@@ -366,7 +353,7 @@ def test_folder_rename_recovery_fails_closed_when_source_and_destination_exist(
     with pytest.raises(WorkflowMoveRecoveryError):
         store.recover_pending_workflow_move()
 
-    assert store.workflow_dir("project/a").exists()
+    assert (store.root_dir / "project/a").exists()
     assert marker.read_text(encoding="utf-8") == "collision"
     assert store.workflow_generation("project/a") == created_generation
     assert store.workflow_generation("archive/a") == 0
