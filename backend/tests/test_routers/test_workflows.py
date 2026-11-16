@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
 import json
+import shutil
 from pathlib import Path
 import threading
 from typing import Any
@@ -411,6 +412,60 @@ async def test_active_managed_run_prevents_directory_moves_and_deletion(tmp_path
         assert (await client.get(f"/api/v1/workflows/{workflow_id}")).json()["info"]["relative_path"] == "project/workflow"
         assert (tmp_path / "workflows/project/workflow/workflow.json").is_file()
         assert not (tmp_path / "workflows/archive").exists()
+
+
+@pytest.mark.parametrize("active_owner", ["local", "managed"])
+async def test_identity_copy_resolution_refuses_active_storage_owner(
+    tmp_path: Path, active_owner: str,
+) -> None:
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    conflict = store.workflow_format_status().identity_conflicts[0]
+    copied = next(item for item in conflict.copies if item.relative_path == "copy")
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    owners = ([SimpleNamespace(execution_id="held-managed", workflow_id=created.id)]
+              if active_owner == "managed" else [])
+    async for client in _client(
+        tmp_path, is_running=active_owner == "local",
+        execution_registry=SimpleNamespace(non_terminal=lambda: owners),
+    ):
+        response = await client.post("/api/v1/workflows/identity-copies/resolve", json={
+            "relative_path": copied.relative_path, "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash,
+        })
+    assert response.status_code == 423
+    assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+    assert store.workflow_format_status().identity_conflicts
+
+
+async def test_identity_copy_resolution_fences_workspace_and_publishes_new_uuid(tmp_path: Path) -> None:
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    created = store.create_workflow(WorkflowCreate(name="original"))
+    shutil.copytree(store.workflow_dir(created.id), store.root_dir / "copy")
+    copied = next(item for item in store.workflow_format_status().identity_conflicts[0].copies
+                  if item.relative_path == "copy")
+    body = {"relative_path": copied.relative_path, "expected_workflow_id": created.id,
+            "expected_document_hash": copied.document_hash}
+    before = (store.root_dir / "copy" / "workflow.json").read_bytes()
+    manager = _ConnectionManager()
+    async for client in _client(tmp_path, connection_manager=manager):
+        refused = await client.post("/api/v1/workflows/identity-copies/resolve", json=body,
+                                   headers={"X-BioImageFlow-Workspace": str(tmp_path / "other")})
+        assert refused.status_code == 409
+        assert refused.json()["error"] == "workflow_workspace_conflict"
+        stale = await client.post("/api/v1/workflows/identity-copies/resolve",
+                                  json={**body, "expected_document_hash": "sha256:" + "0" * 64})
+        assert stale.status_code == 409
+        assert (store.root_dir / "copy" / "workflow.json").read_bytes() == before
+        resolved = await client.post("/api/v1/workflows/identity-copies/resolve", json=body,
+                                    headers={"X-BioImageFlow-Workspace": str(tmp_path.resolve())})
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["id"] != created.id
+    assert resolved.json()["relative_path"] == "copy"
+    assert manager.workflow_tree_events[-1]["workflow_id"] == resolved.json()["id"]
+    assert manager.workflow_tree_paths[-1] == "copy"
+    assert store.get_workflow(created.id).info.relative_path == "original"
 
 
 @pytest.mark.parametrize("missing", ["manifest", "python", "legacy"])
