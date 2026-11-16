@@ -60,7 +60,7 @@ from ${helperName} import LABEL
 def build_workflow(*, storage_path):
     with Path(${JSON.stringify(calls)}).open('a', encoding='utf-8') as log:
         log.write(LABEL + '\\n')
-    with Workflow(name=${JSON.stringify(name)}, display_name=LABEL, engine='direct', execution='sequential', storage_path=storage_path) as workflow:
+    with Workflow(name=${JSON.stringify(relativePath)}, display_name=LABEL, engine='direct', execution='sequential', storage_path=storage_path) as workflow:
         seed = SeedNumbers()(name='seed')
         workflow.output('number', seed['number'])
         workflow.output('label', seed['label'])
@@ -70,7 +70,7 @@ def build_workflow(*, storage_path):
     writeFileSync(helper, `LABEL = ${JSON.stringify(firstLabel)}\n`)
     const recordedCalls = () => readFileSync(calls, 'utf8').trimEnd().split('\n')
     page.on('request', observeApply)
-    await openWorkflow(page, name, name)
+    await openWorkflow(page, name, info.display_name)
 
     const startBuild = async () => {
       await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
@@ -163,6 +163,7 @@ def build_workflow(*, storage_path):
     await expect(page.getByTestId('workflow-title')).toContainText(freshLabel)
     await expect(page.locator('.vue-flow__node[data-id="seed"]')).toBeVisible()
     const materialized = await savedWorkflow(page, name)
+    expect(materialized.graph.name).toBe(relativePath)
     expect(materialized.graph).toEqual(freshPreview.replacement)
     expect(materialized.authoring_source).toMatchObject({ source_id: 'workflow.py', factory: 'build_workflow', source_hash: freshPreview.source_artifact_hash })
     expect(materialized.artifact_hash).not.toBe(staleBaseline.artifact_hash)
@@ -222,8 +223,12 @@ def build_workflow(*, storage_path):
         }, { timeout: 15_000 }).toBe('idle')
       },
       async () => {
-        const removed = await page.request.delete(`${API}/workflows/${name}`)
-        expect([200, 204, 404]).toContain(removed.status())
+        // The retained execution snapshot can settle after the local Run.
+        await expect.poll(async () => {
+          const removed = await page.request.delete(`${API}/workflows/${name}`)
+          expect([200, 204, 404, 423], await removed.text()).toContain(removed.status())
+          return removed.status() === 423
+        }, { timeout: 15_000 }).toBe(false)
       },
     ]) {
       try { await cleanup() } catch (error) {

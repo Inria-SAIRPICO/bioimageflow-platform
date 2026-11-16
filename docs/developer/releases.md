@@ -44,6 +44,7 @@ git status --short --untracked-files=no
 Run the [complete manual platform test plan](manual-testing.md#complete-test-plan) on the same revision and retain its operating-system and blocker record with the release evidence.
 
 When the release machine cannot run the Unix-oriented full lane, push the clean candidate to `release/${RELEASE_TAG}` and wait for **Release validation** to pass on that exact commit. This workflow runs `scripts/test full` and `scripts/test check docs` on Ubuntu 24.04, matching the pinned Playwright browser dependencies, and retains their logs and browser/coverage artifacts for 30 days. Its default local suite does not certify optional distributed features or replace native desktop acceptance. Promote the same validated commit to `main` before tagging.
+The workflow propagates failures through both log-capture pipelines; a retained log is evidence, and never a substitute for a successful validation command.
 
 The tracked worktree and index must be clean.
 If validation requires a fix, commit it and rerun the full lane.

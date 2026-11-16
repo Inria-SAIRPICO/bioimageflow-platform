@@ -254,6 +254,7 @@ Browser jobs and full release certification use Ubuntu 24.04, matching the opera
 Non-browser jobs retain their existing runner selection.
 
 Pushes to `release/**` and explicit **Release validation** dispatches run the authoritative local `full` lane followed by `check docs` on one exact candidate commit. The retained artifact includes command logs, browser evidence and coverage for 30 days. This is the automated release gate for machines that cannot run the Unix-oriented full runner locally; native desktop acceptance remains separate.
+Both logged validation steps enable pipeline failure propagation: a failing test or documentation command fails its step even when `tee` successfully writes the retained log.
 
 | Workflow | Trigger | Feature suite | Purpose |
 | --- | --- | --- | --- |
