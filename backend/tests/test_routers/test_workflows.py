@@ -270,6 +270,29 @@ async def test_creation_rejects_changed_workspace_or_missing_selected_folder(
     assert not (tmp_path / "workflows" / "missing").exists()
 
 
+async def test_created_workflow_reports_the_canonical_workspace_owner(tmp_path: Path) -> None:
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    alias = tmp_path / "workspace-alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(alias / "workflows", registry)
+    store.root_dir.mkdir()
+    app = create_app(AppConfig(
+        workflow_store=store, tool_registry=registry,
+        execution_manager=_ExecutionManager(), disable_hot_reload=True,
+    ))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        workspace = (await client.get("/api/v1/workspace")).json()["workspace_path"]
+        created = await client.post("/api/v1/workflows", json={
+            "name": "workflow", "expected_workspace_path": workspace, "expected_parent_path": "",
+        })
+        assert created.status_code == 201
+        assert created.json()["workspace_path"] == workspace == str(actual.resolve())
+        status = (await client.get("/api/v1/workflows/format-status")).json()
+        assert status["workspace_path"] == workspace
+
+
 async def test_workspace_header_rejects_a_cloned_uuid_from_another_owner(
     client: httpx.AsyncClient, tmp_path: Path,
 ) -> None:
