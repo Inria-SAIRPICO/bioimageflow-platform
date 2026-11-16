@@ -127,3 +127,57 @@ def test_agent_context_migration_preserves_only_unambiguous_ownership(tmp_path: 
     assert payload["active_workflow_id"] == (identity if generation == 1 else None)
     assert json.loads(path.read_text()) == raw
     validate_identity_reference_payload(kind, payload)
+
+
+def test_source_publication_addresses_the_workflow_uuid(tmp_path: Path) -> None:
+    from bioimageflow_server.models.workflow import WorkflowCreate
+    from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.services.workflow_sources import WorkflowSourceService
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    info = store.create_workflow(WorkflowCreate(name="folder/workflow"))
+    before = store.read_workflow_document(info.id)
+    graph = before.graph.model_copy(update={"display_name": "Applied source graph"})
+
+    result = WorkflowSourceService(lambda: store)._commit_graph_and_sources(
+        store, info.id, graph, [], authoring_source=None,
+    )
+
+    after = store.read_workflow_document(info.id)
+    assert after.graph == result.graph == graph
+    assert after.workflow_id == info.id
+    assert store.relative_path_for_workflow(info.id) == "folder/workflow"
+    assert not (store.root_dir / info.id).exists()
+
+
+def test_source_publication_refuses_external_move_before_creating_source_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow_server.models.workflow import WorkflowCreate
+    from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
+    from bioimageflow_server.services.workflow_sources import WorkflowSourceConflict, WorkflowSourceService
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
+
+    store = WorkflowStoreService(tmp_path / "workflows", ToolRegistryService())
+    info = store.create_workflow(WorkflowCreate(name="original"))
+    graph = store.read_workflow_document(info.id).graph
+    original = store.workflow_dir(info.id)
+    moved = original.with_name("external-move")
+
+    def moved_stage(owned, records):
+        temporary = owned.root / ".staged-source"
+        temporary.write_bytes(b"source")
+        final = owned.root / "new-source" / "module.json"
+        original.rename(moved)
+        return [(temporary, final)]
+
+    monkeypatch.setattr(OwnedWorkflowSources, "stage", moved_stage)
+    with pytest.raises(WorkflowSourceConflict, match="moved"):
+        WorkflowSourceService(lambda: store)._commit_graph_and_sources(
+            store, info.id, graph, [], authoring_source=None,
+        )
+    assert not original.exists()
+    assert not (moved / "tools/new-source").exists()
+    assert store.read_workflow_document(info.id).graph == graph
