@@ -29,6 +29,38 @@
                 "panel": "dedicated",
                 "focus": false
             }
+        },
+        {
+            "label": "Frontend: backend debug",
+            "type": "shell",
+            "command": "bun",
+            "args": [
+                "run",
+                "dev",
+                "--",
+                "--strictPort",
+                "--clearScreen=false"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend",
+                "env": {
+                    "BIOIMAGEFLOW_BACKEND_PORT": "8008"
+                }
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "base": "$tsc-watch",
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*",
+                    "endsPattern": "ready in"
+                }
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "focus": false
+            }
         }
     ]
 }

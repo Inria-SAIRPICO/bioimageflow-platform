@@ -80,6 +80,7 @@ Clean selected graphs reuse their complete-graph compilation.
 ### 2.3 Tool Discovery and the Tool Store
 
 The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/`) to discover and load versioned tool packages. At startup, the server loads all installed package versions via `load_versioned_package()` and builds the tool registry.
+Import rejections, including dependency incompatibility with the current runtime, are startup warnings with debug-level tracebacks; the rejected version remains installed and listed with its load error in Manage Tools, and the newest successfully loaded version remains active.
 
 The desktop application runtime uses Python 3.12 through 3.14. BioImageFlow Core 0.6.0 or newer in the 0.6.x line supplies explicit output-file ownership and Task5/Result5, retaining lazily evaluated annotation resolution and compiler-generated slice evidence on Python 3.14 so installed tools preserve their schemas and executable identity.
 

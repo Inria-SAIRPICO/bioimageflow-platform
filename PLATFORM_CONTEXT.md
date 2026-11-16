@@ -149,6 +149,7 @@ Tool annotation introspection resolves postponed and inherited annotations while
 Tool metadata describes tool type, inputs, outputs, parameters, packages, versions, resources, row-consumption semantics, and capabilities.
 Output metadata preserves each field's required and nullable facts from the library schema.
 Tool-store scanning and explicit package lifecycle operations admit package/version selectors through the library, ignore unsupported directory names including private installer staging, and keep genuine selected-installation failures visible without replacing their original diagnostics with cleanup errors.
+Startup import rejections, including installed versions requiring an incompatible controller runtime, produce concise warnings with tracebacks available at debug level; rejected versions remain installed with their exact load errors, while the newest successfully loaded version stays active.
 Installed tools use an admitted generation selected by the exact canonical store root, package and version; installation metadata, selected controller dependency compatibility, source content and installed inherited owners are captured once and reused while that selection remains immutable.
 The normal dependency manifest and lock select published BioImageFlow 0.10.0/Core 0.6.0 with this workflow-loading lifecycle and explicit output-file ownership.
 Core 0.6 retains Python 3.14 compiler-generated slice evidence, cycle rejection, and immutable global/closure restrictions.
@@ -353,6 +354,7 @@ The backend dependency manifest and lock select `bioimageflow[parsl,psij]==0.10.
 The selected line retains canonical native local-storage bindings, including Windows paths, and strict POSIX bindings for remote downloads.
 The explicit scheduler groups replace a dependency-free `cluster` selection; installed package availability does not certify excluded distributed features.
 The Python debug launch profiles use that backend environment.
+The VS Code Backend profiles start a dedicated Vite task whose HTTP/WebSocket proxy matches their backend port 8008; the Desktop profiles retain the default port 8000 development task.
 Explicit `(local core)` profiles opt into the sibling `bioimageflow-core` project through `BIOIMAGEFLOW_CORE_SOURCE` and `PYTHONPATH`, and isolate their Wetlands state under the repository's ignored `.bioimageflow` directory.
 Source investigations use an explicitly owned environment and do not supply published compatibility evidence.
 

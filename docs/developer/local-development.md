@@ -72,6 +72,9 @@ cd frontend
 BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev
 ```
 
+The VS Code **Backend** and **Backend (local core)** launch profiles start Vite automatically with its HTTP and WebSocket proxy targeting port `8008`.
+Stop an existing Vite process before switching between these profiles and the default port `8000` development setup; the frontend task uses `--strictPort` so it cannot silently start on a different browser port.
+
 ## Run the desktop application with hot reload
 
 Start Vite and the desktop entry point in separate terminals:
