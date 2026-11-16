@@ -125,8 +125,17 @@ class ToolRegistryService:
                         version,
                     )
                 except Exception as exc:
-                    logger.exception("Failed to load %s==%s", package_name, version)
-                    load_errors[version] = _format_package_load_error(exc)
+                    detail = _format_package_load_error(exc)
+                    if isinstance(exc, ImportError):
+                        logger.warning(
+                            "Tool package %s==%s is unavailable: %s. "
+                            "See Manage Tools for installed versions.",
+                            package_name, version, detail,
+                        )
+                        logger.debug("Tool package import traceback", exc_info=True)
+                    else:
+                        logger.exception("Failed to load %s==%s", package_name, version)
+                    load_errors[version] = detail
                     try:
                         unload_versioned_package(package_name, version, self._store_path)
                     except Exception:

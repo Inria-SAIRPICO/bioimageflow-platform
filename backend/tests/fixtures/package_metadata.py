@@ -7,7 +7,9 @@ import io
 from pathlib import Path
 
 
-def write_package_metadata(package_root: Path, version: str) -> None:
+def write_package_metadata(
+    package_root: Path, version: str, *, requires_dist: tuple[str, ...] = (),
+) -> None:
     """Record the exact current package members as one providing distribution."""
     installation = package_root.parent
     package = package_root.name
@@ -16,6 +18,7 @@ def write_package_metadata(package_root: Path, version: str) -> None:
     metadata_root.mkdir(exist_ok=True)
     (metadata_root / "METADATA").write_text(
         f"Metadata-Version: 2.3\nName: {distribution}\nVersion: {version}\n"
+        + "".join(f"Requires-Dist: {requirement}\n" for requirement in requires_dist)
     )
     (metadata_root / "top_level.txt").write_text(f"{package}\n")
     record_path = metadata_root / "RECORD"
